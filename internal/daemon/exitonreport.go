@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -30,7 +31,7 @@ import (
 var exitOnReportDelay = 5 * time.Second
 
 // stopAfterReport is the exit itself. A variable so a test can watch it without owning a terminal.
-var stopAfterReport = func(d *Daemon, taskID string) error { return d.StopRunnerBy(taskID, "atrium after its report") }
+var stopAfterReport = func(d runnerStopper, taskID string) error { return d.StopRunnerBy(taskID, "atrium after its report") }
 
 // exitsOnReport says whether this report ends the card's runner. A done report that carries an ask is a question
 // in a done report's clothes: the launcher's answer has to reach a running card, so it stays.
@@ -49,13 +50,13 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 		return false
 	}
 	for _, tag := range []string{ResidentTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
-		if hasTag(task.Tags, tag) {
+		if small.HasTag(task.Tags, tag) {
 			return false
 		}
 	}
 	// A per-item minion is launched as a director so it can end itself, and it has nothing to do once it has
 	// landed: it exits on done like any worker. See docs/changes/bug-idle-minion-spins-a-core.md.
-	if hasTag(task.Tags, DirectorTag) && !hasTag(task.Tags, MinionTag) {
+	if small.HasTag(task.Tags, DirectorTag) && !small.HasTag(task.Tags, MinionTag) {
 		return false
 	}
 	if isLinkCard(task) || staysOpen(task) {
@@ -80,20 +81,19 @@ const MinionTag = "atrium:minion"
 
 // isResident says whether a set of tags is a resident card's: the tag itself, or a director or the orchestrator.
 func isResident(t []string) bool {
-	return hasTag(t, ResidentTag) || hasTag(t, DirectorTag) || hasTag(t, OrchestratorTag)
+	return small.HasTag(t, ResidentTag) || small.HasTag(t, DirectorTag) || small.HasTag(t, OrchestratorTag)
 }
 
 // KeepOpenTag and InvestigationTag are the two tags that say a card is not closed by a done report and is never
 // reclaimed. The launcher puts one on when the card is meant to outlive its first answer: a long conversation, or
 // an investigation whose transcript is the product. See reclaim.go.
 const (
-	KeepOpenTag      = "atrium:keep-open"
 	InvestigationTag = "atrium:investigation"
 )
 
 // staysOpen says whether a card is tagged to stay open or is an investigation.
 func staysOpen(t *store.Task) bool {
-	return t != nil && (hasTag(t.Tags, KeepOpenTag) || hasTag(t.Tags, InvestigationTag) || hasTag(t.Tags, ResidentTag))
+	return t != nil && (small.HasTag(t.Tags, KeepOpenTag) || small.HasTag(t.Tags, InvestigationTag) || small.HasTag(t.Tags, ResidentTag))
 }
 
 // LinkTagPrefix marks a card a link opened (`link:<key>`, internal/api/open.go). Its lifetime is the link's: a done
@@ -121,7 +121,7 @@ const exitReportWhy = "it reported done and was not launched resident. the card,
 // quiet period, reportTypedQuiet.
 func (d *Daemon) exitAfterReport(taskID string) {
 	time.Sleep(d.hk.exitOnReportDelay)
-	if run := d.sup.get(taskID); run != nil && run.typedWithin(reportTypedQuiet) {
+	if run := d.sup.Get(taskID); run != nil && run.TypedWithin(reportTypedQuiet) {
 		log.Printf("[atrium] %s reported done and was typed in lately, so it keeps running", taskID)
 		return
 	}
@@ -131,4 +131,19 @@ func (d *Daemon) exitAfterReport(taskID string) {
 	if err := d.hk.stopAfterReport(d, taskID); err != nil {
 		log.Printf("[atrium] could not exit %s after its done report: %v", taskID, err)
 	}
+}
+
+// exitHooks are the seams of the exit on report.
+type exitHooks struct {
+	exitOnReportDelay time.Duration
+	stopAfterReport   func(r runnerStopper, taskID string) error
+}
+
+// runnerStopper is the part of the daemon the exit asks the runner to go through.
+type runnerStopper interface {
+	StopRunnerBy(taskID, by string) error
+}
+
+func defaultExitHooks() exitHooks {
+	return exitHooks{exitOnReportDelay: exitOnReportDelay, stopAfterReport: stopAfterReport}
 }

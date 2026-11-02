@@ -353,7 +353,7 @@ func TestARoomThatDidNotSayGitIsNeverAskedNorDialled(t *testing.T) {
 		t.Fatal("a collect from a room that never said Git was tried")
 	}
 	x.h.Attached(bg, "sg3")
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, the room must not be contacted
 	if x.syncs.Load() != 0 || x.requests.Load() != 0 {
 		t.Fatalf("the room was contacted: syncs=%d requests=%d", x.syncs.Load(), x.requests.Load())
 	}
@@ -405,7 +405,7 @@ func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
 		t.Fatalf("collect err = %v", err)
 	}
 	x.h.Attached(bg, "sg3")
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, the room must not be contacted
 	if x.syncs.Load() != 0 || x.requests.Load() != 0 {
 		t.Fatalf("the room was contacted: syncs=%d requests=%d", x.syncs.Load(), x.requests.Load())
 	}

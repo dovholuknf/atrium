@@ -13,7 +13,7 @@ func TestOutsideJobCommandLine(t *testing.T) {
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
-	if got := outsideJobCommandLine("x.exe", nil, ""); got != `cmd.exe /c ""x.exe" >NUL 2>&1"` {
+	if got := outsideJobCommandLine("x.exe", nil, ""); got != `"x.exe"` {
 		t.Fatalf("no log: %s", got)
 	}
 }

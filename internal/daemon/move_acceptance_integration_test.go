@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -63,9 +65,9 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		<-errCh
 	}()
 	// A's relay is room B: a say lands on B as it would from the hub.
-	fa.set(func(s RelaySay) (RelayResult, error) {
+	fa.set(func(s hublink.RelaySay) (hublink.RelayResult, error) {
 		code, out := say(t, b, map[string]string{"from": s.From + "@sg3", "to": s.To, "text": s.Text})
-		return RelayResult{OK: code < 400, Delivered: "queued", To: s.To + "@" + s.Room, Card: s.Room + "~" + s.To,
+		return hublink.RelayResult{OK: code < 400, Delivered: "queued", To: s.To + "@" + s.Room, Card: s.Room + "~" + s.To,
 			Code: code, Error: strings.TrimSpace(strings.Join([]string{asString(out["error"])}, ""))}, nil
 	})
 
@@ -104,7 +106,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		t.Fatalf("check %+v", out)
 	}
 	// Typing is refused while it is frozen. Its says and notices wait, once each.
-	if !a.frozenForMove(old.ID) || !a.holdingMessages(old.ID) {
+	if !a.FrozenForMove(old.ID) || !a.HoldingMessages(old.ID) {
 		t.Fatal("the old card is not held")
 	}
 	if code, out := say(t, a, map[string]string{"from": "sender", "to": "old", "text": "during the freeze"}); code != 200 {
@@ -132,7 +134,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		t.Fatalf("BRIEF.md on B: %q %v", bs, err)
 	}
 	h := slowHarness(t, b)
-	req := LaunchRequest{Harness: h, Cwd: newWt, Title: "old", Repo: "dovholuknf/atrium",
+	req := shared.LaunchRequest{Harness: h, Cwd: newWt, Title: "old", Repo: "dovholuknf/atrium",
 		MovedFrom: "sg3~" + old.ID, Pinned: true, PinOrder: 2, SpawnedBy: "boss@sg3", SpawnedByID: "sg3~BOSS"}
 	nc, err := b.Launch(req)
 	if err != nil {
@@ -216,7 +218,7 @@ func TestAnUndoLeavesTheOldCardAsItWas(t *testing.T) {
 	}
 	mvOK(t, a, "undo", map[string]any{"id": old.ID, "move_id": "mv9"})
 	mvOK(t, a, "undo", map[string]any{"id": old.ID, "move_id": "mv9"}) // idempotent
-	if a.frozenForMove(old.ID) {
+	if a.FrozenForMove(old.ID) {
 		t.Fatal("still frozen")
 	}
 	if got := pendingFrom(t, a, old.ID); len(got) != 1 || got[0].Text != "queued while moving" {
@@ -233,11 +235,11 @@ func TestAnExpiredLeaseUndoesTheFreeze(t *testing.T) {
 	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv7", "lease_seconds": 1})
 	say(t, a, map[string]string{"from": "sender", "to": "old", "text": "held"})
 	a.sweepFreezes(time.Now())
-	if !a.frozenForMove(old.ID) {
+	if !a.FrozenForMove(old.ID) {
 		t.Fatal("undone before the lease")
 	}
 	a.sweepFreezes(time.Now().Add(time.Minute))
-	if a.frozenForMove(old.ID) || len(pendingFrom(t, a, old.ID)) != 1 {
+	if a.FrozenForMove(old.ID) || len(pendingFrom(t, a, old.ID)) != 1 {
 		t.Fatal("the lease did not undo the freeze")
 	}
 	if code, _ := mv(t, a, "moved", map[string]any{"id": old.ID, "move_id": "mv7", "to": "x~y"}); code != http.StatusConflict {

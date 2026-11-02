@@ -1051,7 +1051,8 @@ func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
 	}
 	t.Parallel()
-	x := newRecv(t)
+	none := filepath.Join(t.TempDir(), "none.git")
+	x := newRecv(t, func(h *Hub) { h.Store().Forge = func(Ref) string { return none } })
 	sha := x.branch("fix/x", "x.txt")
 	card := roomCard("sg4", "C1")
 
@@ -1902,8 +1903,7 @@ func TestTwoCaseTwinRepositoriesMadeAtOnceLeaveOne(t *testing.T) {
 	}
 	x := newRecv(t)
 	x.create.Store(true)
-	// Wide enough that, without the lock, both pushes pass the case check before either has made a directory.
-	x.h.hk.inStoreWideLock = func() { time.Sleep(150 * time.Millisecond) }
+	x.h.hk.inStoreWideLock = func() { time.Sleep(150 * time.Millisecond) } // wait: wide enough that, without the lock, both pass the case check
 	for i := 0; i < 3; i++ {
 		a := fmt.Sprintf("github/Own%d/r", i)
 		b := fmt.Sprintf("github/own%d/r2", i)

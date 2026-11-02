@@ -5,11 +5,15 @@
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, fakeWait, fakeTick, fakePause, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, frames, until, settleStyle, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
 const { boardUsageSeen, landCard, mock, T1, SKINS } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { CTX_CARDS, CTX_USAGE, docImgDir } = require("../lib/helpers.js");
 const SCRIPTS = path.join(__dirname, "..");
+
+// The stream opening reloads the tab once; the onopen handler starts that read synchronously, so live and idle is settled.
+const usageSettled = p => p.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight,
+  null, { timeout: slow(10000) });
 
 async function boardUsageSection(browser, base) {
   const errors = [];
@@ -24,7 +28,7 @@ async function boardUsageSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     await p.click("#tabmore");
     if (stage === "before") {
       await p.screenshot({ path: path.join(imgs, "board-usage-menu-before.png"), clip: { x: 0, y: 0, width: 940, height: 400 } });
@@ -56,7 +60,6 @@ async function boardUsageSection(browser, base) {
     for (const sel of ["#usage-probe li:nth-child(1) button", "#usage-probe li:nth-child(2) button", "#usage-probe a",
       "#probedlg button", "#probedlg2 button"]) await p.click(sel);
     await p.evaluate(() => window.boardUsageFlush());
-    await p.waitForTimeout(300);
     const probe = [...boardUsageSeen].filter(([k]) => /stash|go$|ziti|zrok/.test(k));
     const rowNames = probe.filter(([k]) => k.startsWith("trow:"));
     if (rowNames.length !== 1 || rowNames[0][1] !== 2) fail("boardUsage: the same button in two card rows is not one control with 2 clicks: " + JSON.stringify(probe));
@@ -65,10 +68,10 @@ async function boardUsageSection(browser, base) {
     await p.evaluate(() => document.getElementById("usage-probe").remove());
     await p.click("#tabmore");
     await p.evaluate(() => window.boardUsageFlush());
-    await p.waitForTimeout(300);
     await p.click('#tabs-menu button[data-usage="menu:controls used"]');
     await p.waitForSelector("#usagedlg[open] .usagedlg-row");
-    await p.waitForTimeout(300);
+    await p.waitForFunction(h => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].some(r =>
+      r.querySelector(".name").textContent === "view:" + h && r.querySelector(".n").textContent === "2"), hot, { timeout: slow(5000) }).catch(() => {});
     const rows = await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].map(r => ({
       name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
     const at = (name) => rows.findIndex(r => r.name === name);
@@ -79,13 +82,15 @@ async function boardUsageSection(browser, base) {
     if (never < Math.max(used, more)) fail("boardUsage: a never control sits above a used one");
     if (rows.some(r => r.never) && rows.findIndex(r => r.never) < rows.filter(r => !r.never).length) fail("boardUsage: the never rows are not all at the bottom");
     // The snapshot: closing and opening again draws the rows in the same tick, before any read has come back.
+    const reread = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/usage/board", { timeout: slow(5000) }).catch(() => {});
     const instant = await p.evaluate(() => {
       document.getElementById("usagedlg").close();
       window.openControlsUsed();
       return document.querySelectorAll("#usagedlg-list .usagedlg-row").length;
     });
     if (instant < 5) fail("boardUsage: the view did not open from a snapshot: " + instant + " rows at once");
-    await p.waitForTimeout(300);
+    await reread;
+    await frames(p, 2);
     // Sorting: count most first by default, then the name header sorts A to Z and flips, and the count header is back.
     const names = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .name")].map(e => e.textContent));
     const counts = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .n")].map(e => Number(e.textContent)));
@@ -238,8 +243,12 @@ async function cacheChipSection(browser, base) {
       "cc-cold": /^\u2744 cold since (?:yesterday )?\d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
       "cc-off": /^\u25cb off \u00b7 cold$/, "cc-none": /^\u2744 no cache yet$/
     };
-    const check = (where, o) => {
+    const check = (where, o, hidden = []) => {
       for (const [id, re] of Object.entries(expect)) {
+        if (hidden.includes(id)) {
+          if (o[id] && o[id].length) fail("cacheChip " + where + ": " + id + " drew a chip the row hides " + JSON.stringify(o[id]));
+          continue;
+        }
         if (!o[id] || o[id].length !== 1 || !re.test(o[id][0])) fail("cacheChip " + where + ": " + id + " shows " + JSON.stringify(o[id]));
       }
       if (o["cc-shell"] && o["cc-shell"].length) fail("cacheChip " + where + ": a non-Claude card drew a chip " + JSON.stringify(o["cc-shell"]));
@@ -258,7 +267,7 @@ async function cacheChipSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector(".term-list .card", { timeout: slow(10000) });
     await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 6, null, { timeout: slow(10000) });
-    check("terminals list", await texts(".term-list .card"));
+    check("terminals list", await texts(".term-list .card"), ["cc-warm", "cc-cold", "cc-off", "cc-none"]);
     if (shots) await p.screenshot({ path: path.join(shots, "u-032-terms-1400x900.png") });
 
     // The header: attach a card and its chip is in the bar. A fake socket, as the phone sections use.
@@ -349,7 +358,7 @@ async function cacheChipSection(browser, base) {
           c.querySelectorAll(".chip.cache").forEach(ch => {
             const r = ch.getBoundingClientRect();
             if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.innerText);
-            shorts.push(ch.innerText.trim());
+            if (r.width) shorts.push(ch.innerText.trim());
             if (r.width > 16 || r.height > 16) bad.push("chip is " + r.width + "x" + r.height + ", not a dot");
             if (ch.getAttribute("aria-label").indexOf(ch.querySelector(".cfull").textContent) !== 0) bad.push("aria " + ch.innerText);
           });
@@ -578,11 +587,11 @@ async function contextCycleSection(browser, base) {
     // THE DO-NOT-ENTER SIGN is up from the cycle's first step to its end, and gone for a failed cycle and a capture.
     const sign = step => wp.evaluate(step => {
       composeBar({ new_context: step === "none" ? null : { step, n: 1, of: 3, label: "waiting for atrium ready" } });
-      const el = document.getElementById("t-nodev");
+      const el = document.getElementById("t-ctxbox");
       return !!el && !el.hidden ? el.textContent.replace(/\s+/g, " ").trim() : "";
     }, step);
     const upAt = await sign("limit");
-    if (!/typing is held for the new context step 1\/3: waiting for atrium ready let me type$/.test(upAt)) fail("no do-not-enter sign on the cycle's first step: " + JSON.stringify(upAt));
+    if (!/step 1\/3: waiting for atrium ready/.test(upAt) || /typing is held/.test(upAt) || await wp.evaluate(() => document.querySelectorAll("#t-nodev").length)) fail("not one panel with the step on the cycle's first step: " + JSON.stringify(upAt));
     const unarmed = await wp.evaluate(() => {
       composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for your line to clear", held: false } });
       const was = termTask, kind = termKind;
@@ -591,7 +600,7 @@ async function contextCycleSection(browser, base) {
       const gated = composeGate("x");
       termTask = was;
       termKind = kind;
-      return { sign: !document.getElementById("t-nodev").hidden, gated };
+      return { sign: !document.getElementById("t-ctxbox").hidden, gated };
     });
     if (unarmed.sign || unarmed.gated) fail("typing is held before the cycle found the line clear: " + JSON.stringify(unarmed));
     if (process.env.NODEV_SHOTS) {
@@ -601,38 +610,19 @@ async function contextCycleSection(browser, base) {
         await wp.setViewportSize({ width: w, height: h });
         await sign(step);
         await wp.evaluate(() => {
-          for (let e = document.getElementById("t-nodev"); e && e !== document.body; e = e.parentElement) {
-            e.hidden = e.id === "t-nodev" ? e.hidden : false;
+          for (let e = document.getElementById("t-ctxbox"); e && e !== document.body; e = e.parentElement) {
+            e.hidden = e.id === "t-ctxbox" ? e.hidden : false;
             if (getComputedStyle(e).display === "none") e.style.display = "block";
           }
         });
-        await wp.evaluate(() => document.getElementById("t-nodev").scrollIntoView({ block: "center" }));
+        await wp.evaluate(() => document.getElementById("t-ctxbox").scrollIntoView({ block: "center" }));
         await wp.screenshot({ path: path.join(process.env.NODEV_SHOTS, name + "-" + step + "-" + w + ".png") });
       }
       process.exit(0);
     }
-    const gate = await wp.evaluate(() => {
-      const realSend = window.send, frames = [];
-      window.send = m => { frames.push(m); };
-      termTask = { id: "ll-cycle", new_context: { step: "wake", n: 3, of: 3, label: "waking it to read x" } };
-      termKind = "runner";
-      sendInput("asdf");
-      const held = { frames: frames.slice(), box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
-      composeClose();
-      sendInput("[I", true);
-      const quiet = frames.length;
-      termTask.new_context = null;
-      sendInput("after");
-      window.send = realSend;
-      return { held, quiet, frames };
-    });
-    if (gate.held.frames.length || !gate.held.box || gate.held.text !== "asdf") fail("keys reached the terminal while the new context held typing: " + JSON.stringify(gate.held));
-    if (gate.quiet !== 1) fail("a focus report was dropped by the hold: " + JSON.stringify(gate));
-    if (gate.frames.length !== 2 || gate.frames[1].d !== "after") fail("typing did not pass once the hold ended: " + JSON.stringify(gate.frames));
-    for (const step of ["clear", "wake"]) if (!(await sign(step))) fail("no do-not-enter sign on the " + step + " step");
-    for (const step of ["failed", "capture", "none"]) if (await sign(step)) fail("a do-not-enter sign on a " + step + " cycle");
-    await sign("limit");
     const composed = [], freed = [];
+    let freeWake = null;
+    const nextFree = () => new Promise(r => { freeWake = r; });
     await wp.route("**/v1/tasks/ll-cycle/message", async route => {
       composed.push(JSON.parse(route.request().postData() || "{}"));
       await route.fulfill({ json: { delivered: "queued" } });
@@ -640,9 +630,31 @@ async function contextCycleSection(browser, base) {
     await wp.route("**/v1/tasks/ll-cycle/new-context", async route => {
       if (route.request().method() !== "DELETE") return route.fallback();
       freed.push(1);
+      if (freeWake) { const w = freeWake; freeWake = null; w(); }
       await route.fulfill({ json: { card: "ll-cycle", cleared: true } });
     });
-    await wp.evaluate(() => { termTask = { id: "ll-cycle" }; termKind = "runner"; composeNoteTyped("h"); composeRefused(); });
+    const gate = await wp.evaluate(() => {
+      const realSend = window.send, frames = [];
+      window.send = m => { frames.push(m); };
+      termTask = { id: "ll-cycle", new_context: { step: "wake", n: 3, of: 3, label: "waking it to read x" } };
+      termKind = "runner";
+      window.gateFrames = frames; window.gateSend = realSend;
+      sendInput("asdf");
+      const held = { frames: frames.length };
+      sendInput("[I", true);
+      return { held, quiet: frames.length };
+    });
+    // TYPING IS NEVER BLOCKED: the key releases the hold (one DELETE) and goes through.
+    await wp.waitForFunction(() => window.gateFrames.some(f => f.d === "asdf"), null, { timeout: slow(5000) });
+    if (gate.held.frames || gate.quiet !== 1) fail("a quiet report was held or a key skipped the release: " + JSON.stringify(gate));
+    if (freed.length !== 1) fail("typing into a held terminal did not release the hold: " + freed.length);
+    await wp.evaluate(() => { window.send = window.gateSend; });
+    freed.length = 0;
+    if (await wp.evaluate(() => composeOpen())) fail("the panel stayed open after typing released the hold");
+    for (const step of ["clear", "wake"]) if (!(await sign(step))) fail("no do-not-enter sign on the " + step + " step");
+    for (const step of ["failed", "capture", "none"]) if (await sign(step)) fail("a do-not-enter sign on a " + step + " cycle");
+    await sign("limit");
+    await wp.evaluate(() => { termTask = { id: "ll-cycle" }; termKind = "runner"; document.getElementById("t-ctxbox-in").value = ""; composeNoteTyped("h"); composeRefused(); });
     const cbox = await wp.evaluate(() => ({ open: composeOpen(), text: document.getElementById("t-ctxbox-in").value }));
     if (!cbox.open || cbox.text !== "h") fail("a refused key did not open the compose cbox seeded with it: " + JSON.stringify(cbox));
     if (/Typing dropped/.test(await wp.evaluate(() => document.body.innerText))) fail("the Typing dropped toast is still shown");
@@ -663,7 +675,7 @@ async function contextCycleSection(browser, base) {
         document.getElementById("t-ctxbox").hidden = true;
         toast("Typing dropped", "input is refused during a new context", null, "in-refused");
       });
-      await wp.waitForTimeout(400);
+      await settleStyle(wp);
       await wp.screenshot({ path: path.join(process.env.COMPOSE_SHOTS, "compose-before.png") });
       process.exit(0);
     }
@@ -673,16 +685,34 @@ async function contextCycleSection(browser, base) {
     if (composed.length !== 1 || composed[0].text !== "hello after the cycle") fail("Enter did not queue the text: " + JSON.stringify(composed));
     await wp.evaluate(() => composeRefused());
     await wp.evaluate(() => { document.getElementById("t-ctxbox-in").value = "never mind"; });
+    let woke = nextFree();
     await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
-    if (await wp.evaluate(() => composeOpen()) || composed.length !== 1) fail("Escape did not discard the compose cbox.");
+    await woke;
+    if (await wp.evaluate(() => composeOpen()) || composed.length !== 1 || freed.length !== 1) fail("Escape did not dismiss the panel and release the hold.");
     await wp.evaluate(() => composeRefused());
+    woke = nextFree();
     await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
+    await woke;
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
-    if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
+    if (freed.length !== 2) fail("'let me type' did not dismiss the cycle.");
     await sign("limit");
-    await wp.evaluate(() => document.querySelector("#t-nodev button").click());
-    await wp.waitForFunction(() => document.getElementById("t-nodev").hidden, null, { timeout: slow(5000) });
-    if (freed.length !== 2) fail("'let me type' on the do-not-enter sign did not dismiss the cycle.");
+    woke = nextFree();
+    await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
+    await woke;
+    await wp.waitForFunction(() => document.getElementById("t-ctxbox").hidden, null, { timeout: slow(5000) });
+    if (freed.length !== 3) fail("'let me type' on the panel did not dismiss the cycle.");
+    // DISMISSABLE AT EVERY STEP: Escape and the x both release the hold, whatever step the cycle is on.
+    for (const how of ["Escape", "x"]) for (const step of ["limit", "clear", "wake"]) {
+      freed.length = 0;
+      await sign(step);
+      const woke = nextFree();
+      if (how === "Escape") await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+      else await wp.evaluate(() => document.querySelector("#t-ctxbox [aria-label^=dismiss]").click());
+      await woke;
+      await wp.waitForFunction(() => document.getElementById("t-ctxbox").hidden, null, { timeout: slow(5000) });
+      if (freed.length !== 1) fail(how + " on the " + step + " step did not release the hold: " + freed.length);
+    }
+    freed.length = 0;
     // THE END FRAME TAKES THE STRIP AND THE BOX AWAY (r-new-context-strip-stuck-at-1of3). The bar followed only the list
     // pass, so a window that never ran it kept "1/3" and "let me type" after the cycle ended.
     const endFrame = await wp.evaluate(() => {
@@ -720,10 +750,28 @@ async function contextCycleSection(browser, base) {
     // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
     await wp.evaluate(() => {
       composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
-      document.querySelector("#t-nodev button").click();
+      document.getElementById("t-ctxbox-free").click();
     });
     await wp.waitForFunction(() => document.getElementById("t-ncbar").hidden, null, { timeout: slow(5000) });
-    if (freed.length !== 3) fail("the modal's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    if (freed.length !== 1) fail("the modal's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    // IMAGE PASTE: a file pasted into the panel goes up the way a terminal paste does and its path joins the text.
+    await wp.route("**/v1/tasks/ll-cycle/files", async route => {
+      await route.fulfill({ json: { paths: ["/w/.atrium/incoming/pasted.png"] } });
+    });
+    await sign("limit");
+    await wp.evaluate(() => {
+      const ta = document.getElementById("t-ctxbox-in");
+      ta.value = "look: ";
+      ta.setSelectionRange(6, 6);
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" }));
+      ta.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await wp.waitForFunction(() => document.getElementById("t-ctxbox-in").value.includes(".atrium/incoming/pasted.png"), null, { timeout: slow(5000) });
+    await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
+    if (composed.length !== 2 || !/^look: .*\.atrium\/incoming\/pasted\.png$/.test(composed[1].text))
+      fail("the pasted image path was not queued with the text: " + JSON.stringify(composed));
     await wp.evaluate(() => { termTask = null; });
 
     // The details: the switch on, no own limit, and a line naming the limit in force and where from.
@@ -762,13 +810,31 @@ async function contextCycleSection(browser, base) {
     // An own limit and the switch off are written as the card's overrides.
     await wp.fill("#d-ctx-limit", "300");
     await wp.dispatchEvent("#d-ctx-limit", "change");
-    await new Promise(r => setTimeout(r, 300));
+    await until(() => patches.some(p => (p.overrides || {}).context_limit_k === "300"), 5000, "the limit override").catch(() => {});
     await wp.click("#d-ctx-cycle");
-    await new Promise(r => setTimeout(r, 300));
+    await until(() => patches.some(p => (p.overrides || {}).context_cycle === "off"), 5000, "the switch override").catch(() => {});
     const o = patches.map(p => p.overrides || {});
     if (!o.some(x => x.context_limit_k === "300" && x.context_cycle === "")) fail("the limit box did not save as an override: " + JSON.stringify(patches));
     if (!o.some(x => x.context_cycle === "off" && x.context_limit_k === "300")) fail("the switch did not save off: " + JSON.stringify(patches));
     if (await wp.evaluate(() => document.getElementById("d-ctx-clear").hidden)) fail("the clear button is hidden although the card has its own limit.");
+
+    // The terminal cog's context limit row is a stepper that saves the same override.
+    const cog = await wp.evaluate(async () => {
+      termTask = current;
+      await termSettings({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10, currentTarget: document.body });
+      const row = [...document.querySelectorAll("#card-menu .stepper, .stepper")]
+        .find(r => /context limit/.test(r.textContent));
+      if (!row) return null;
+      const before = Number(row.querySelector(".stepval").value);
+      row.querySelector(".stepup").click();
+      return { before, after: Number(row.querySelector(".stepval").value) };
+    });
+    if (!cog || cog.after !== cog.before + 1) fail("the cog's context limit row did not step: " + JSON.stringify(cog));
+    const cogK = String(cog && cog.before + 1);
+    await wp.waitForFunction(v => termTask.overrides && termTask.overrides.context_limit_k === v, cogK, { timeout: slow(5000) })
+      .catch(() => {});
+    if (!patches.some(p => p.overrides && p.overrides.context_limit_k === cogK))
+      fail("the cog's context limit did not save as an override: " + JSON.stringify(patches));
 
     // The history: the start as a line, the handoff as a row with its text behind a disclosure, escaped.
     await wp.waitForSelector("#d-events details.handoff", { timeout: slow(5000) })
@@ -798,7 +864,7 @@ async function contextCycleSection(browser, base) {
       box.value = "claude=220, codex=300";
       box.dispatchEvent(new Event("change"));
     });
-    await new Promise(r => setTimeout(r, 300));
+    await until(() => posts.slice(before).some(p => p.context_limits), 5000, "the limits POST").catch(() => {});
     const sent = posts.slice(before).find(p => p.context_limits);
     if (!sent || sent.context_limits.claude !== 220 || sent.context_limits.codex !== 300) fail("the per-harness list saved " + JSON.stringify(posts));
     const n = posts.length;
@@ -886,7 +952,10 @@ async function ctxLineSection(browser, base) {
       const pb = body.querySelector(".peek-ctx .peek-bar");
       const shared = document.createElement("div");
       shared.innerHTML = ctxMeter(201000, 200000, "", "201k of 200k (land the plane)");
-      return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML };
+      const memOf = t => { const d = document.createElement("div"); d.innerHTML = peekBody(t, { context_now: 1000, totals: {} }); const r = d.querySelector(".peek-row[data-tip*='Process Explorer']"); return r ? r.textContent : null; };
+      const mem = { live: memOf({ id: "x", resume_id: "r", status: "running", pid: 1234, mem: 250 * 1048576 }), none: memOf({ id: "x", resume_id: "r", status: "running" }),
+        over: memOf({ id: "x", resume_id: "r", status: "done", mem: 250 * 1048576 }) };
+      return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML, mem };
     });
     // For checking by eye: ROWFLOOD_SHOTS=<dir> ROWFLOOD_TAG=before|after writes four rows side by side (a plain one,
     // and a context at 10%, 80% and 130% of the land line) at 2000px and 390px on a light and a dark skin.
@@ -903,7 +972,7 @@ async function ctxLineSection(browser, base) {
         await wp.setViewportSize({ width: w, height: h });
         for (const skin of ["paper", "graphite"]) {
           await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
-          await wp.waitForTimeout(1500);
+          await settleStyle(wp);
           await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}.png`) });
         }
       }
@@ -941,14 +1010,14 @@ async function ctxLineSection(browser, base) {
               applySkin(sk); document.documentElement.style.setProperty("--density", dn);
               await renderTermList();
             }, [skin, dens]);
-            await page.waitForTimeout(900);
+            await settleStyle(page);
             // A parent row is as tall as it is without its fold button, and the pinned heading is not under the
             // controls tray (the list's own scrollTop, not the header, is what a screenshot can get wrong).
             const m = await page.evaluate(async () => {
               // The list keeps whatever scrollTop an earlier render left it at (60px at density 1, 48 at 0.72), which
               // slid the heading under the tray in the shots. Start every shot from the top of the list.
               const top = document.querySelector(".termscroll"); if (top) top.scrollTop = 0;
-              await new Promise(r => setTimeout(r, 100));
+              await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
               const row = [...document.querySelectorAll("#term-list .card .tkidfold")].map(b => b.closest(".card"))[0];
               const out = { row: !!row };
               if (row) {
@@ -1071,6 +1140,8 @@ async function ctxLineSection(browser, base) {
       if (c.chip || c.landchip) fail("a cycling card draws the limit chip or badge instead of the cycle.");
       if (!c.cycle) fail("a cycling card does not show the new-context chip.");
     }
+    if (!/^memory\s*250(\.0)?M\s+pid 1234$/.test(got.mem.live || "")) fail("the details popover has no memory line for a live card: " + got.mem.live);
+    if (got.mem.none || got.mem.over) fail("the memory line is drawn for a card with no figure or one that is over: " + JSON.stringify(got.mem));
     if (!got.popover) fail("the details popover lost its .peek-bar.");
     else if (got.popover !== got.meter) fail("the popover's meter is not ctxMeter's drawing:\n" + got.popover + "\n" + got.meter);
     // Light and dark: the line's fill resolves to a colour in both.
@@ -1109,7 +1180,7 @@ async function contextSizeSection(browser, base) {
   const shots = process.env.CTX_SHOTS || "";
   const shoot = async (name, clip) => {
     if (!shots) return;
-    await new Promise(r => setTimeout(r, 350));
+    await settleStyle(sp);
     await sp.screenshot({ path: `${shots}/${name}.png`, clip });
   };
   const peekState = () => sp.evaluate(() => {
@@ -1139,7 +1210,8 @@ async function contextSizeSection(browser, base) {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => runRefresh());
-    await new Promise(r => setTimeout(r, 400));
+    await sp.waitForFunction(() => !!document.querySelector('#stack-list .stackrow[data-id="cx-big"] .chip.ctxwarn'), null, { timeout: slow(5000) })
+      .catch(() => {});
     // CTX_SKIN=noir draws it all in another skin, for the screenshots.
     if (process.env.CTX_SKIN) await sp.evaluate(s => applySkin(s), process.env.CTX_SKIN);
 
@@ -1188,7 +1260,7 @@ async function contextSizeSection(browser, base) {
 
     // A second on a stack row opens the details, and not half a second.
     await sp.hover('#stack-list .stackrow[data-id="cx-big"] .title, #stack-list .stackrow[data-id="cx-big"]');
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 500)); // wait: the half second the details must not open within
     let pk = await peekState();
     if (pk && pk.on) fail("the details opened after half a second of hover, not one.");
     await sp.waitForFunction(() => { const p = document.querySelector(".peek"); return p && p.classList.contains("on"); },
@@ -1224,7 +1296,7 @@ async function contextSizeSection(browser, base) {
       pk = await peekState();
       if (pk && (!pk.pinned || pk.warn)) fail("the menu's details are not pinned, or warn under the line: " + JSON.stringify(pk));
       await sp.mouse.move(1390, 890);
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 600)); // wait: a negative check, the pinned details must not close
       if (!(await peekState()).on) fail("the menu's details closed when the pointer left.");
       await shoot("menu-" + (await sp.evaluate(() => document.documentElement.getAttribute("data-skin") || "harbour")));
       await sp.keyboard.press("Escape");
@@ -1233,7 +1305,7 @@ async function contextSizeSection(browser, base) {
 
     // The shortcut strip's expando slides the drawer up for the attached card.
     await sp.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
-    await new Promise(r => setTimeout(r, 500));
+    await sp.waitForFunction(() => !document.getElementById("terms").hidden, null, { timeout: slow(5000) });
     // Attached, as far as the strip is concerned: no socket in a mocked room.
     await sp.evaluate(card => { termTask = card; }, CTX_CARDS[1]);
     await sp.waitForSelector("#t-expando", { state: "visible", timeout: slow(5000) })
@@ -1242,7 +1314,7 @@ async function contextSizeSection(browser, base) {
     await sp.click("#t-expando").catch(e => fail("the expando could not be clicked: " + e.message));
     await sp.waitForFunction(() => /212k/.test(document.getElementById("t-drawer-body").textContent),
       null, { timeout: slow(4000) }).catch(() => fail("the drawer did not open on the attached card's details."));
-    await new Promise(r => setTimeout(r, 400));
+    await settleStyle(sp);
     const dr = await sp.evaluate(() => {
       const d = document.getElementById("t-drawer"), help = document.querySelector(".term-help");
       const r = d.getBoundingClientRect(), h = help.getBoundingClientRect();
@@ -1329,7 +1401,7 @@ async function usageTurnsSection(browser, base) {
     if (!/noise: 16 turns/.test(t.noise) || !/10 no reply, 6 ack/.test(t.noise) || !/2 delivered, turn not ended yet/.test(t.noise)) fail("usageTurns: the noise line reads " + t.noise);
     if (process.env.TURNCOST_SHOT) {
       await sp.evaluate(() => { const b = document.querySelector("#uc-body [data-role=turns-kind]"); const hd = b && b.previousElementSibling; if (hd) hd.scrollIntoView(); });
-      await sp.waitForTimeout(300);
+      await settleStyle(sp);
       await sp.screenshot({ path: process.env.TURNCOST_SHOT });
     }
   } finally { await ctx.close(); }
@@ -1360,7 +1432,7 @@ async function turnLimitsSection(browser, base) {
   const again = async () => { await sp.evaluate(() => { turnLimits.at = 0; return renderTurnLimits(); }); };
   const shot = async name => {
     if (!process.env.TURNLIMIT_SHOT) return;
-    await sp.waitForTimeout(300);
+    await settleStyle(sp);
     await sp.screenshot({ path: process.env.TURNLIMIT_SHOT + "/" + name });
   };
   try {
@@ -1516,7 +1588,7 @@ async function usageTabSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(400);
+    await usageSettled(sp);
     if (process.env.USAGE_SHOT_ONLY) { await usageShot(sp, process.env.USAGE_SHOT_ONLY); return; }
 
     // by card and by group: one neutral fill, and totals that follow the toggle
@@ -1706,7 +1778,7 @@ async function usageWeekResetSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(400);
+    await usageSettled(sp);
 
     // the tab on Monday 12:00 EDT: last week's turns, then this week's. 40k an hour since the reset.
     const draw = range => sp.evaluate(range => {
@@ -1741,7 +1813,7 @@ async function usageWeekResetSection(browser, base) {
     // can be taken from a board that has no weekly reset. The old board has no "week" range, so it is asked for 7d.
     if (process.env.USAGE_WEEK_SHOT_ONLY) {
       await draw(process.env.USAGE_WEEK_RANGE || "week");
-      await sp.waitForTimeout(800);   // the range button's colour is eased
+      await settleStyle(sp);
       await sp.screenshot({ path: process.env.USAGE_WEEK_SHOT_ONLY, fullPage: true });
       return;
     }
@@ -1816,7 +1888,7 @@ async function usageWeekResetSection(browser, base) {
     if (process.env.USAGE_WEEK_SHOT) {
       await sp.evaluate(() => { UC.weekReset = { day: "sun", time: "18:00", tz: "America/New_York" }; });
       await draw(process.env.USAGE_WEEK_RANGE || "week");
-      await sp.waitForTimeout(800);
+      await settleStyle(sp);
       await sp.screenshot({ path: process.env.USAGE_WEEK_SHOT, fullPage: true });
     }
   } finally {
@@ -1962,7 +2034,7 @@ async function usageLimitsSection(browser, base) {
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
       await sp.waitForSelector("#uc-body #ul-limits", { timeout: slow(5000) });
-      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) }); // the stream opening reloads the tab once
       await fn(sp, asked);
     } finally { await ctx.close(); }
   };
@@ -2101,7 +2173,7 @@ async function usagePolishSection(browser, base) {
       await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
-      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) }); // the stream opening reloads the tab once
       await fn(sp);
     } finally { await ctx.close(); }
   };
@@ -2197,7 +2269,7 @@ async function clockSection(browser, base) {
     const wa = await read(w);
     if (want && !near(wa.h, wa.m)) fail("clock: a pop-out window reads " + wa.h + ":" + wa.m + ", not near " + spec);
     if (Math.abs(wa.now - Date.now()) > 2000) fail("clock: a pop-out window disagrees with Node by " + (wa.now - Date.now()) + "ms");
-    await p.waitForTimeout(400);
+    await p.waitForFunction(t0 => Date.now() - t0 >= 400, a.now, { timeout: slow(5000) });
     const b = await read(p);
     if (b.now - a.now < 300 || b.now - a.now > 3000) fail("clock: time did not advance sanely: " + (b.now - a.now) + "ms in 400ms");
     if (CLOCK_OFFSET) {
@@ -2273,7 +2345,7 @@ async function burnChartSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(1500);
+    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) });
     const MIN = 60000, HOUR = 3600000;
 
     // A day range, the 5h limit at 70%, resetting in 2h. The window started 3h ago: 12 buckets of 5000 = 60000 tokens
@@ -2371,7 +2443,7 @@ async function burnReadoutSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(1200);
+    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) });
     return { ctx, sp };
   };
   // 24h of 15 minute buckets; the last 20 hold `hot` counted tokens each; the 5h limit (if `pct`) was read 5 minutes ago.

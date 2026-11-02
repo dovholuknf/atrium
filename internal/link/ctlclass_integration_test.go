@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // headerTransport stamps a session's identity on every request, as Claude Code
@@ -24,10 +27,10 @@ type headerTransport struct{ agent, room string }
 func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	if h.agent != "" {
-		r.Header.Set(AgentHeader, h.agent)
+		r.Header.Set(ctl.AgentHeader, h.agent)
 	}
 	if h.room != "" {
-		r.Header.Set(RoomHeader, h.room)
+		r.Header.Set(wire.RoomHeader, h.room)
 	}
 	return http.DefaultTransport.RoundTrip(r)
 }
@@ -121,12 +124,12 @@ func toolNames(t *testing.T, s *mcp.ClientSession) []string {
 // workerSeven is the six a worker talks and reports with, and atrium_publish, because workers write the reports, and
 // atrium_git_push, because the cards that push to the hub are workers, and atrium_git_url, because the cards that read code they do not have are too.
 // The name is the count it had before those.
-var workerSeven = []string{"atrium_alias", "atrium_blocked", "atrium_ci", "atrium_close", "atrium_done", "atrium_export", "atrium_files", "atrium_get", "atrium_git_push", "atrium_git_url", "atrium_merge", "atrium_peers", "atrium_publish", "atrium_put", "atrium_record", "atrium_report", "atrium_reports", "atrium_resources", "atrium_say", "atrium_status", "atrium_task"}
+var workerSeven = []string{"atrium_alias", "atrium_blocked", "atrium_ci", "atrium_close", "atrium_done", "atrium_export", "atrium_files", "atrium_get", "atrium_git_push", "atrium_git_url", "atrium_merge", "atrium_need", "atrium_peers", "atrium_publish", "atrium_put", "atrium_record", "atrium_report", "atrium_reports", "atrium_resources", "atrium_say", "atrium_status", "atrium_task"}
 
 // fullFifteen is f-021's eleven, f-019's two git tools, atrium_deps and atrium_deploy, and atrium_model, and atrium_publish,
 // all full-only. The name is the count it had before atrium_model.
 var fullFifteen = []string{"atrium_alias", "atrium_backlog", "atrium_blocked", "atrium_ci", "atrium_close", "atrium_cull", "atrium_deploy", "atrium_deps", "atrium_done", "atrium_exit", "atrium_export", "atrium_files",
-	"atrium_flow", "atrium_get", "atrium_git_collect", "atrium_git_push", "atrium_git_sync", "atrium_git_url", "atrium_item", "atrium_launch", "atrium_launch_worker", "atrium_merge", "atrium_model", "atrium_peers", "atrium_publish", "atrium_put", "atrium_record", "atrium_report", "atrium_reports", "atrium_resources",
+	"atrium_flow", "atrium_get", "atrium_git_collect", "atrium_git_push", "atrium_git_sync", "atrium_git_url", "atrium_item", "atrium_launch", "atrium_launch_worker", "atrium_merge", "atrium_model", "atrium_need", "atrium_peers", "atrium_publish", "atrium_put", "atrium_record", "atrium_report", "atrium_reports", "atrium_resources",
 	"atrium_say", "atrium_status", "atrium_task", "atrium_transport", "atrium_wake_after_restart", "atrium_worktrees", "restart_atrium", "restart_pty_host"}
 
 func sameNames(t *testing.T, who string, got, want []string) {
@@ -212,8 +215,8 @@ func TestClassCacheIsBounded(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	for i := 0; i < classCacheMax+50; i++ {
 		r, _ := http.NewRequest(http.MethodPost, "/", nil)
-		r.Header.Set(AgentHeader, "worker1")
-		r.Header.Set(RoomHeader, "room"+strings.Repeat("x", i))
+		r.Header.Set(ctl.AgentHeader, "worker1")
+		r.Header.Set(wire.RoomHeader, "room"+strings.Repeat("x", i))
 		h.c.classOf(r)
 	}
 	if n := len(h.c.classes); n > classCacheMax {
@@ -221,7 +224,7 @@ func TestClassCacheIsBounded(t *testing.T) {
 	}
 	h.advance(classTTL + time.Second)
 	r, _ := http.NewRequest(http.MethodPost, "/", nil)
-	r.Header.Set(AgentHeader, "worker1")
+	r.Header.Set(ctl.AgentHeader, "worker1")
 	h.c.classOf(r)
 	if n := len(h.c.classes); n != 1 {
 		t.Fatalf("expired entries kept: %d entries, want 1", n)

@@ -190,7 +190,6 @@ func TestTheScopedStreamWithoutTheParameterIsUnchanged(t *testing.T) {
 		for i := 0; i < 20; i++ {
 			beta <- sse("task", `{"id":"card2","title":"indexed"}`)
 			alpha <- sse("task", own)
-			time.Sleep(5 * time.Millisecond)
 		}
 		hub.IndexEverywhere("beta", nil)
 	}()

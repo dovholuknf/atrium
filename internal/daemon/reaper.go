@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -72,8 +73,8 @@ const QuietAfter = 15 * time.Minute
 // Moving the status also clears `archived_at`, so a card the sweep already
 // took away comes back onto the board.
 func (d *Daemon) reviveOwnedDead() error {
-	for _, r := range d.sup.all() {
-		t, err := d.st.Get(r.taskID)
+	for _, r := range d.sup.All() {
+		t, err := d.st.Get(r.TaskID())
 		if err != nil {
 			// A card deleted out from under its runner is not this job's
 			// problem to report. Terminating it is.
@@ -96,7 +97,7 @@ func (d *Daemon) reviveOwnedDead() error {
 		}
 		log.Printf("[atrium] %s was filed dead with a live runner on it, back on the board",
 			t.DisplayTitle())
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 	return nil
 }
@@ -118,11 +119,11 @@ func (d *Daemon) reapOnce() error {
 		// may be a hook's report of some other process, or 0) nor silence is asked
 		// about it. Asking silence first is what filed a live supervised card dead
 		// one tick before `reviveOwnedDead` brought it back.
-		if d.sup.get(t.ID) != nil {
+		if d.sup.Get(t.ID) != nil {
 			continue
 		}
 		// A parked card has no process by design, and its pid is a stale hint.
-		if isParked(t) {
+		if small.IsParked(t) {
 			continue
 		}
 		// No pid to ask about, so fall back to silence. A card waiting on a
@@ -147,7 +148,7 @@ func (d *Daemon) reapOnce() error {
 			d.act.forget(t.ID)
 			log.Printf("[atrium] %s assumed gone: silent for %s and no pid to check",
 				t.DisplayTitle(), time.Since(t.LastActivityAt).Round(time.Minute))
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 			continue
 		}
 		if processAlive(t.PID) {
@@ -164,7 +165,7 @@ func (d *Daemon) reapOnce() error {
 		// Nothing a gone process was doing is still true.
 		d.act.forget(t.ID)
 		log.Printf("[atrium] %s is dead: pid %d is gone", t.DisplayTitle(), t.PID)
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 	return nil
 }
@@ -235,7 +236,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// What this room owes other rooms, for a hub or a room that was not
 		// answering. Off the tick, since a relay can wait on a slow room. See
 		// relay.go.
-		d.kickRelays()
+		d.KickRelays()
 		d.kickItems()
 		// Work items whose session is gone with no end recorded. Same tick,
 		// after liveness, for the same reason. See ledger.go.
@@ -246,7 +247,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// itself runs off it. See mergedcull.go.
 		d.sweepMergedCulls()
 		d.sweepLandedIdle()
-		d.sweepDocShares()
+		d.SweepDocShares()
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.
@@ -263,7 +264,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
 		// And the home ledger: folders already gone, removals to try again, a throwaway the room restarted past.
-		if err := d.sweepHomes(); err != nil {
+		if err := d.SweepHomes(); err != nil {
 			log.Printf("[atrium] sweeping card homes: %v", err)
 		}
 		// And the scrollback saved for cards that are no longer here. Same

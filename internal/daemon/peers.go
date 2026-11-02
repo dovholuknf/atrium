@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"log"
 	"net/http"
@@ -13,6 +15,8 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -84,15 +88,9 @@ const (
 	// Eight thousand characters is several paragraphs. A session that needs to
 	// hand over more than that is handing over a document, and the way to do
 	// that is to write a file and say where it is.
-	maxPeerMessage = 8000
+	maxPeerMessage = shared.MaxPeerMessage
 
-	// peerSendsPerMinute bounds how often one session may message others.
-	//
-	// A model in a loop is the failure this exists for: without a limit, one
-	// confused session can fill every other session's queue faster than any of
-	// them drains it. Twenty a minute is far more than deliberate use and far
-	// less than a loop.
-	peerSendsPerMinute = 20
+	peerSendsPerMinute = shared.PeerSendsPerMinute
 
 	// peerWindow is the period that limit is measured over.
 	peerWindow = time.Minute
@@ -218,7 +216,7 @@ func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := d.rosterWithin(q.Get("me"), fleet, within)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -232,10 +230,10 @@ func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {
 func checkPeerText(w http.ResponseWriter, text, nothing string) bool {
 	switch {
 	case text == "":
-		writeJSONErr(w, http.StatusBadRequest, errString(nothing))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString(nothing))
 		return false
 	case len(text) > maxPeerMessage:
-		writeJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf(
+		small.WriteJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf(
 			"that is %d characters, over the %d limit. write it to a file and say where it is",
 			len(text), maxPeerMessage))
 		return false
@@ -269,15 +267,15 @@ func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, whe
 func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text, when, kind string, reply, wake bool) *store.Task {
 	switch {
 	case from == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session is sending"))
 		return nil
 	case to == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session to "+verb))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session to "+verb))
 		return nil
 	case from == to:
 		// Not an error worth a stack trace, but worth refusing: a model
 		// messaging itself is a loop with extra steps.
-		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("a session cannot "+verb+" itself"))
 		return nil
 	}
 
@@ -296,7 +294,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	}
 	// The same self-check as above, for a session that named itself by alias.
 	if target.WireName == d.st.Qualify(from) {
-		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("a session cannot "+verb+" itself"))
 		return nil
 	}
 	// The same test the message endpoint uses, so `atrium tell` and `atrium_say`
@@ -306,7 +304,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 		end, err := d.followMoved(target)
 		switch {
 		case err != nil:
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return nil
 		case end.Live != nil:
 			target, gate = end.Live, d.sayGate(end.Live)
@@ -321,7 +319,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	wakeGone := gate == sayGone && (wake || (kind != "fyi" && d.fromFamily(from, target))) && resumable(target)
 	if gate == sayGone && !wakeGone {
 		if text == "" {
-			writeJSONErr(w, http.StatusConflict, fmt.Errorf(
+			small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf(
 				"%s has ended, so nothing would read this", to))
 			return nil
 		}
@@ -340,7 +338,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 			d.keepOnCard(w, from, target, verb, text, when, kind, reply, "it is parked")
 			return nil
 		}
-		writeJSONCode(w, http.StatusOK, map[string]any{
+		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{
 			"queued": false, "typed": false, "delivered": "parked", "reachable": "parked",
 			"to": to, "note": parkedNote(target),
 		})
@@ -348,20 +346,20 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	}
 
 	if !d.peerLimit.allow(from) {
-		writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+		small.WriteJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
 			"%s has sent %d messages in the last minute, which is the limit",
 			from, peerSendsPerMinute))
 		return nil
 	}
 	if gate == sayParked {
 		if err := d.unpark(target.ID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return nil
 		}
 	}
 	if wakeGone {
 		if err := d.wakeGone(target.ID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return nil
 		}
 		// Handed back as found, marked like a card this say woke, so the caller queues and does not type into a
@@ -374,10 +372,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	return target
 }
 
-// queuedNote is what a sender needs to know next: this did not land now, and
-// the first of three things to happen delivers it.
-const queuedNote = "queued. it is typed in when that session's terminal is free, or arrives on its " +
-	"next tool call or at the end of its turn, whichever comes first."
+const queuedNote = shared.QueuedNote
 
 // handleTell delivers a message from one session to another.
 func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
@@ -395,12 +390,12 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	when, err := parseWhen(in.When)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -419,13 +414,13 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
 	if name, room, err := address.SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {
-			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake, false)
+			code, body := d.SayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake, false)
 			if code < 400 {
 				// The two words `atrium tell` reads, beside the rest.
 				body["typed"] = body["delivered"] == "terminal"
 				body["queued"] = body["delivered"] != "terminal"
 			}
-			writeJSONCode(w, code, body)
+			hublink.WriteJSONCode(w, code, body)
 			return
 		}
 		in.To = name
@@ -440,9 +435,9 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	}
 	// A BARE NAME THAT IS NOT ON THIS ROOM, looked for among the cards tagged
 	// atrium:everywhere on the others. Only a name that is nobody here.
-	if d.localTarget(in.To) == nil && from != to {
+	if d.LocalTarget(in.To) == nil && from != to {
 		raw := strings.TrimSpace(in.From)
-		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Kind, in.Reply, in.Wake,
+		done, note := d.SayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Kind, in.Reply, in.Wake,
 			func(code int, body map[string]any) {
 				if code < 400 {
 					body["typed"] = body["delivered"] == "terminal"
@@ -496,7 +491,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	waitTurn := d.waitsForTurn(target.ID, when)
 	typed, msgID, err := d.deliverPeerWhenID(target, from, text, promptKind(in.Kind, in.Reply), waitTurn)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.recordTell(from, target, text, in.When, in.Reply, typed, msgID)
@@ -524,30 +519,21 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	if why != "" {
 		note = why
 	}
-	if d.holdingMessages(target.ID) {
-		note = newContextHoldNote
-	} else if d.deployHeld(target.ID) {
-		note = d.deployHoldNote()
+	if d.HoldingMessages(target.ID) {
+		note = cycle.NewContextHoldNote
+	} else if d.DeployHeld(target.ID) {
+		note = d.DeployHoldNote()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"queued": true, "to": to, "note": note, "reachable": reach, "when": whenWord(waitTurn),
 	})
 }
 
-// turnQueuedNote is queuedNote for a message that waits for the turn to end.
-const turnQueuedNote = "queued until that session's turn ends, then typed in when its terminal is " +
-	"free, or carried by the Stop hook."
+const turnQueuedNote = shared.TurnQueuedNote
 
-// whenWord is what a sender is told its message will wait for.
-func whenWord(waitTurn bool) string {
-	if waitTurn {
-		return WhenDone
-	}
-	return WhenImmediate
-}
+var whenWord = shared.WhenWord
 
-// typedNote is what a sender is told when its words went straight in.
-const typedNote = "typed into the terminal and sent."
+const typedNote = shared.TypedNote
 
 // deliverPeer is the one way a peer's words reach another session, shared by
 // `tell`, a routed `ask`, and `answer` so the three cannot drift apart.
@@ -587,18 +573,18 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 	// and carried by the ordinary path, never typed into a session that has only
 	// just started.
 	// The same for a say that arrives while an earlier wake is still waiting for its runner: injectKept takes it.
-	if _, waking := d.kept.Load(target.ID); isParked(target) || waking {
+	if _, waking := d.kept.Load(target.ID); small.IsParked(target) || waking {
 		// fall through to the queue
 	} else if typed, _ := d.tellByTyping(target, from, text, kind, waitTurn); typed {
 		d.noteDelivery(target.ID, from, store.DeliveryKind(from, cause))
-		d.publishTask(target.ID)
+		d.Publish(target.ID)
 		return true, "", nil
 	}
 	m, err := d.st.QueueCaused(target.ID, text, from, kind, cause, waitTurn)
 	if err != nil {
 		return false, "", err
 	}
-	d.publishTask(target.ID)
+	d.Publish(target.ID)
 	if !d.carriedByHooks(target.ID, waitTurn) {
 		d.deferPeerInjection(target.ID, m.ID, from, text, kind, waitTurn)
 	}
@@ -620,13 +606,6 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 // cannot press Enter for him, and the body follows it on the same line.
 func peerBanner(from string) string {
 	return atriumLabel("@" + from + " says:")
-}
-
-// atriumLabel is the grey `[atrium] ...` label atrium types ahead of text that
-// is not the operator's. peerBanner is one. The after-restart wake is the other.
-// The rule peerBanner gives holds for every label: no carriage return in `what`.
-func atriumLabel(what string) string {
-	return "\x1b[38;5;244m[atrium] " + what + " \x1b[0m"
 }
 
 // tellByTyping puts a peer's message into the terminal when the terminal is
@@ -654,10 +633,10 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	}
 	// Held for a new-context cycle or a room deploy: queued, delivered after the
 	// wake prompt.
-	if d.holdingFrom(target.ID, from) {
+	if d.HoldingFrom(target.ID, from) {
 		return false, ""
 	}
-	run := d.sup.get(target.ID)
+	run := d.sup.Get(target.ID)
 	if run == nil {
 		return false, ""
 	}
@@ -689,7 +668,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 		// A say from the card's own launcher is typed as keystrokes, not a paste, so the worker reads it as an
 		// instruction. See launchersay.go.
 		banner = launcherBanner(from)
-		body = launcherSayBody(d.saysDir(target.ID), target.ID, text)
+		body = launcherSayBody(d.SaysDir(target.ID), target.ID, text)
 	} else if d.bracketedPasteFor(target.ID, false) {
 		body = screen.BracketedPaste(body)
 	}
@@ -698,7 +677,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	// and never blocks the operator's keystrokes. A closed gate writes nothing,
 	// and the caller defers the message onto the backoff. See injectPeer and
 	// pendingInjector.
-	wrote, err := run.injectPeer(banner, body)
+	wrote, err := run.InjectPeer(banner, body)
 	if err != nil || !wrote {
 		return false, ""
 	}

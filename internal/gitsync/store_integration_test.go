@@ -1020,8 +1020,7 @@ func TestDifferentlyCasedOwnersWithDifferentReposDoNotRace(t *testing.T) {
 	go func() { _, err := x.s.Init(bg, "https://github.com/Foo/x"); errs <- err }()
 	<-paused
 	go func() { _, err := x.s.Init(bg, "https://github.com/foo/y"); errs <- err }()
-	// The second has to wait for the first to make its directories, and then see them.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a settle, the second Init blocks on a lock with no event to wait on
 	close(release)
 	var ok, refused int
 	for i := 0; i < 2; i++ {

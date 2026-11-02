@@ -1,2 +1,0 @@
-Each check job now writes one line to the run page (job, pass or fail, the artifact holding its full summary.md) instead of the whole report, so the rollup is no longer buried under twelve of them. The full summary.md stays in the artifact, where the flake ledger reads it. The rollup is still the last summary: GitHub orders them by job completion time.
-Docs: none, a CI summary page has no reference page

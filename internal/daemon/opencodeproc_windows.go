@@ -5,6 +5,8 @@ package daemon
 import (
 	"os/exec"
 	"strconv"
+
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 // prepareTree makes a kill take the whole tree: an npm opencode.cmd runs through
@@ -15,7 +17,7 @@ func prepareTree(cmd *exec.Cmd) {
 			return nil
 		}
 		kill := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid))
-		hideWindow(kill)
+		nowindow.Hide(kill)
 		return kill.Run()
 	}
 }

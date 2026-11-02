@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -66,8 +67,8 @@ func TestStopLeavesHostRunnersUp(t *testing.T) {
 	if n := len(filedExits(t, d2, task.ID)); n != 0 {
 		t.Fatalf("a stop that left the runner up filed %d exits", n)
 	}
-	if got := d2.readReopen(); len(got) != 0 {
-		t.Fatalf("the reopen list holds %v, but nothing was closed", got)
+	if got := d2.readReopen(); len(got) != 1 || got[0] != task.ID {
+		t.Fatalf("the reopen list is %v, want the held card in case the pty host goes too", got)
 	}
 }
 
@@ -81,10 +82,10 @@ func TestStopRunnersEndsHostRunners(t *testing.T) {
 	task, _ := hostRunnerCard(t, d, "stop-runners")
 
 	d.stopRunners.Store(true)
-	d.stopSupervised(2 * time.Second)
+	d.stopSupervised(200 * time.Millisecond)
 
 	hostWait(t, 30*time.Second, "the exit to be filed", func() bool { return len(filedExits(t, d, task.ID)) == 1 })
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, the exit must not be filed again
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("the runner's exit was filed %d times, want once", n)
 	}
@@ -122,7 +123,7 @@ func TestReattachCountsAsStartForAWake(t *testing.T) {
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task, _ := hostRunnerCard(t, d1, "wake-after-reattach")
-	w, _, err := d1.queueWake(task.ID, "carry on", "test")
+	w, _, err := d1.QueueWake(task.ID, "carry on", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +135,10 @@ func TestReattachCountsAsStartForAWake(t *testing.T) {
 		t.Fatal("not reattached")
 	}
 	now := time.Now()
-	if d2.wakeRunnerReady(w, r, now) {
+	if d2.WakeRunnerReady(w, r, now) {
 		t.Fatal("the wake was typed with no settle delay after the reattach")
 	}
-	if !d2.wakeRunnerReady(w, r, now.Add(wakeSettle+time.Second)) {
+	if !d2.WakeRunnerReady(w, r, now.Add(cycle.WakeSettle+time.Second)) {
 		t.Fatal("the wake still waits for a SessionStart that a reattached runner never sends")
 	}
 }
@@ -220,7 +221,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 	task, _ := hostRunnerCard(t, d, "gate-nctx")
 	d.gatePoll = 10 * time.Millisecond
 
-	d.nctx.begin(task.ID, "HANDOFF.x.md", "")
+	beginCycle(d.Nctx, task.ID, "HANDOFF.x.md", "")
 	done := make(chan struct{})
 	go func() { d.shortGate(); close(done) }()
 	select {
@@ -228,7 +229,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 		t.Fatal("the stop went ahead in the middle of a new-context cycle")
 	case <-time.After(300 * time.Millisecond):
 	}
-	d.nctx.clear(task.ID)
+	d.Nctx.Clear(task.ID)
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -237,7 +238,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 
 	// A gate nobody releases gives up and lets the stop go, ending nothing.
 	d.gateGiveUp = 200 * time.Millisecond
-	d.nctx.begin(task.ID, "HANDOFF.y.md", "")
+	beginCycle(d.Nctx, task.ID, "HANDOFF.y.md", "")
 	start := time.Now()
 	d.shortGate()
 	if took := time.Since(start); took > 3*time.Second {

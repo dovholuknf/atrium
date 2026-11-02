@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The scoped board's list of everywhere cards. See docs/rnd/everywhere-card-design.md.
@@ -76,7 +78,7 @@ func (p *Proxy) everywhereRow(ctx context.Context, c everyCard) map[string]any {
 		derive(obj)
 	}
 	obj["room"] = c.Room
-	obj["id"] = tagFor(c.Room, c.ID)
+	obj["id"] = wire.TagFor(c.Room, c.ID)
 	obj["everywhere"] = true
 	if offline {
 		obj["offline"] = true

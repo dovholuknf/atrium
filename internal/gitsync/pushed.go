@@ -35,6 +35,13 @@ var shaRe = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 // ValidSHA says whether s is a full commit id, the only form a read here takes.
 func ValidSHA(s string) bool { return shaRe.MatchString(s) }
 
+var revArgRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+var pathArgRe = regexp.MustCompile(`^[^-]`)
+
+// safeRevArg says whether s is a sha or ref name git may take as a revision, never an option and never a "..".
+func safeRevArg(s string) bool { return revArgRe.MatchString(s) && !strings.Contains(s, "..") }
+
 // Pushed is where a branch stands on the hub against the head a room has.
 type Pushed struct {
 	State string `json:"state"`
@@ -88,6 +95,9 @@ func (s *Store) BranchSHA(ctx context.Context, name, branch string) (string, boo
 }
 
 func (s *Store) tipOf(ctx context.Context, dir, branch string) (string, bool, error) {
+	if !revArgRe.MatchString(branch) || strings.Contains(branch, "..") {
+		return "", false, refuse("that is not a branch name")
+	}
 	out, err := s.git(ctx, dir, "for-each-ref", "--format=%(objectname)", headsPrefix+branch)
 	if err != nil {
 		return "", false, err
@@ -101,6 +111,9 @@ func (s *Store) tipOf(ctx context.Context, dir, branch string) (string, bool, er
 
 // commitHeld says whether the repository holds a commit by that id.
 func (s *Store) commitHeld(ctx context.Context, dir, sha string) (bool, error) {
+	if !safeRevArg(sha) {
+		return false, refuse("that is not a commit id")
+	}
 	_, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", sha+"^{commit}")
 	switch {
 	case err == nil:
@@ -113,6 +126,9 @@ func (s *Store) commitHeld(ctx context.Context, dir, sha string) (bool, error) {
 
 // isAncestor says whether a is b or a commit b is built on. Both must be commits the repository holds.
 func (s *Store) isAncestor(ctx context.Context, dir, a, b string) (bool, error) {
+	if !safeRevArg(a) || !safeRevArg(b) {
+		return false, refuse("that is not a commit id or a ref")
+	}
 	_, err := s.git(ctx, dir, "merge-base", "--is-ancestor", a, b)
 	switch {
 	case err == nil:

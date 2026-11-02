@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -90,7 +91,7 @@ func TestTheBoardProxyRefusesEverythingUnderV1Git(t *testing.T) {
 		if c.ctype != "" {
 			req.Header.Set("Content-Type", c.ctype)
 		}
-		req.Header.Set(RoomHeader, "sg3")
+		req.Header.Set(wire.RoomHeader, "sg3")
 		rec := httptest.NewRecorder()
 		p.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "never through the board") {

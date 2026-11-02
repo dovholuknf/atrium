@@ -13,8 +13,11 @@ pwsh -File D:\git\github\dovholuknf\atrium\scripts\live\install-live-scripts.ps1
 | Process | Binary | Ports | Directory |
 | --- | --- | --- | --- |
 | the hub (`run --no-room`) | `C:\Users\claude\.atrium\bin\atrium.exe` | board 7778, link 7779 | `.atrium2\hub` |
-| the claude-sg4 room | the same binary | board 7781, agents 7777 | `.atrium2\room` |
-| the sg4-control room (`--isolated`) | `C:\Users\claude\.atrium\ctl-bin\atrium.exe` | board 7791, agents 7787 | `.atrium2\ctl` |
+| the claude-sg4 room | the same binary | board 7781, agents 7777 | `D:\atrium\claude-sg4` |
+| the sg4-control room (`--isolated`) | `C:\Users\claude\.atrium\ctl-bin\atrium.exe` | board 7791, agents 7787 | `D:\atrium\sg4-control` |
+
+Each room folder holds `config` (keys, database, scrollback and the rest the room keeps beside its database), `logs`
+(`room.out`, `room.err` and the newest 20 kept) and `cards` (card homes, unless the room's `card_root` names another).
 
 The board you open is the hub's, http://127.0.0.1:7778. It shows every room, including the ones on m1mini and sg3,
 which run on their own machines and are not started or stopped by anything here.
@@ -34,7 +37,7 @@ pwsh -File C:\Users\claude\.atrium2\scripts\stop-atrium.ps1
 ```
 
 It asks claude-sg4 (and sg4-control first, only with -Control -IKnowItKillsMyShell), to wind down (runners are parked and what to reopen is saved), forces each one
-only after 45 seconds, and then stops the hub. Rooms on other machines lose the hub until it is back. Their runners
+only after its restart_wrap_wait_s plus 45 seconds, and then stops the hub. Rooms on other machines lose the hub until it is back. Their runners
 wait on the backoff they already have and reattach by themselves.
 
 After you log in again:
@@ -52,7 +55,8 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 
 | Script | What it does |
 | --- | --- |
-| `start-atrium.ps1` | Hub, claude-sg4 and sg4-control, which exits 1 if sg4-control does not answer on 7791. `-NoControl` skips it. |
+| `start-atrium.ps1` | Hub, claude-sg4, sg4-control and the remote rooms. Exits 1 if sg4-control does not answer on 7791 or a remote room does not come back on the hub. `-NoControl` and `-NoRemote` skip them. |
+| `start-atrium-remote.ps1` | Each remote room the hub does not list (sg3, sgg, sgg-zrok, m1mini), started over ssh. `-Rooms` picks some. |
 | `stop-atrium.ps1` | claude-sg4, hub. sg4-control too, first, only with both `-Control` and `-IKnowItKillsMyShell`. |
 | `start-atrium-hub.ps1` | The hub alone. |
 | `start-atrium-room.ps1` | The claude-sg4 room alone, when the hub is up and the room is not. |
@@ -62,6 +66,7 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 | `deploy-ready.ps1`, `deploy-batch.ps1` | Restart the room on a new build when the board is idle. Both first print the hub's deploy queue and save it as `DEPLOY-QUEUE.md` for HANDOFF. |
 | `maintenance-window.ps1` | Hold the room restart for a window. |
 | `install-live-scripts.ps1` | Copy this directory over the live copies. |
+| `cutover-room-layout.ps1` | Once: stop everything, `atrium room move` both rooms under `D:\atrium`, install, start. |
 | `live-common.ps1` | Shared paths and functions. Dot-sourced by the others, never run alone. |
 
 ## Rules every script here keeps
@@ -111,3 +116,6 @@ session and a dropped session is no verdict, so the hub decides. Either way the 
 candidate, so sgg is tried as `localai@sgg`, then `localai@sgg.atrium`. A host that answers and rejects the key is
 reported as `failed - ssh refused as <user>`, not offline. The connect allows 25s because a cold connect to sgg takes
 about 10s.
+
+sgg-zrok is a second room on sgg, so its row in `atrium-deploy.ps1` carries `SshName = 'sgg'` and it is reached, user
+included, by sgg's name and never its own.

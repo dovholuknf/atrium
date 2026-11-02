@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestCloseReleasesTheFileWithCallsInFlight(t *testing.T) {
@@ -24,10 +23,13 @@ func TestCloseReleasesTheFileWithCallsInFlight(t *testing.T) {
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 	errs := make(chan error, 8)
+	var started sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
+		started.Add(1)
 		go func() {
 			defer wg.Done()
+			first := true
 			for {
 				select {
 				case <-stop:
@@ -36,12 +38,19 @@ func TestCloseReleasesTheFileWithCallsInFlight(t *testing.T) {
 				}
 				if _, err := s.Resources(task.ID); err != nil && !errors.Is(err, ErrClosed) {
 					errs <- err
+					if first {
+						started.Done()
+					}
 					return
+				}
+				if first {
+					first = false
+					started.Done()
 				}
 			}
 		}()
 	}
-	time.Sleep(50 * time.Millisecond)
+	started.Wait()
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

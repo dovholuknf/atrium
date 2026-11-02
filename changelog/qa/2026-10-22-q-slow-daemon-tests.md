@@ -1,1 +1,0 @@
-The slowest daemon and api integration tests spend their time on git spawns, so the cull repo, the close-hub branches and the keepalive database are now set up with fewer processes (q-slow-daemon-tests).

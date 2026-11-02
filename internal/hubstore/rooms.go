@@ -190,7 +190,7 @@ func (s *Store) DropDefunctLocalRooms() (int, error) {
 // checkName refuses names that would not survive being a room.
 //
 // The name travels in a certificate's common name, in a URL path segment, and
-// in an id tagged with a tilde (see `idJoin` in internal/link). Refusing here
+// in an id tagged with a tilde (see `IDJoin` in internal/link/wire). Refusing here
 // is a sentence somebody reads when they type it; letting it through is a room
 // that enrols and then cannot be routed to.
 func checkName(name string) error {

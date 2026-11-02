@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // Running a shell command and keeping the environment it produced.
@@ -66,8 +69,8 @@ Write-Output ` + fence
 	cmd.Dir = cwd
 	// `-NonInteractive` already says nobody is going to type into this, so the
 	// console it would otherwise open is there to be looked at and cannot be
-	// used. See hideWindow.
-	hideWindow(cmd)
+	// used. See nowindow.Hide.
+	nowindow.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -78,7 +81,7 @@ Write-Output ` + fence
 		var ee *exec.ExitError
 		if ok := asExitError(err, &ee); ok && len(ee.Stderr) > 0 {
 			return nil, fmt.Errorf("the prepare command failed: %s",
-				firstLine(string(ee.Stderr)))
+				small.FirstLine(string(ee.Stderr)))
 		}
 		return nil, fmt.Errorf("the prepare command failed: %w", err)
 	}

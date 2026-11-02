@@ -3,10 +3,16 @@
 package ptyhost
 
 import (
+	"strings"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+)
+
+var (
+	openJobObject        = windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenJobObjectW")
+	getProcessMemoryInfo = windows.NewLazySystemDLL("psapi.dll").NewProc("GetProcessMemoryInfo")
 )
 
 // tree is the job object one runner lives in, so a kill ends what the runner started too.
@@ -16,10 +22,11 @@ type tree struct {
 }
 
 // newTree puts pid in a job that ends its processes when the handle closes. The job belongs to the runner alone: the
-// room exiting never closes it. A failure leaves a tree that only kills the runner.
-func newTree(pid int) *tree {
+// room exiting never closes it. A failure leaves a tree that only kills the runner. The job is named after label, so
+// Process Explorer's Job tab says whose the runner is.
+func newTree(pid int, label, runID string) *tree {
 	t := &tree{}
-	job, err := windows.CreateJobObject(nil, nil)
+	job, err := windows.CreateJobObject(nil, jobName(label, runID))
 	if err != nil {
 		return t
 	}
@@ -115,4 +122,83 @@ func (t *tree) kill() {
 		_ = windows.CloseHandle(t.job)
 		t.job = 0
 	}
+}
+
+// jobName is label as a job name, or nil for none. A name already taken gets the run id after it, since creating a
+// job under a taken name opens that job instead.
+func jobName(label, runID string) *uint16 {
+	if label == "" {
+		return nil
+	}
+	name := strings.ReplaceAll(label, `\`, "/")
+	if r := []rune(name); len(r) > 200 {
+		name = string(r[:200])
+	}
+	if jobExists(name) {
+		name += " " + runID
+	}
+	p, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return nil
+	}
+	return p
+}
+
+func jobExists(name string) bool {
+	p, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return false
+	}
+	const jobObjectQuery = 0x0004
+	h, _, _ := openJobObject.Call(jobObjectQuery, 0, uintptr(unsafe.Pointer(p)))
+	if h == 0 {
+		return false
+	}
+	_ = windows.CloseHandle(windows.Handle(h))
+	return true
+}
+
+type memCounters struct {
+	cb                         uint32
+	PageFaultCount             uint32
+	PeakWorkingSetSize         uintptr
+	WorkingSetSize             uintptr
+	QuotaPeakPagedPoolUsage    uintptr
+	QuotaPagedPoolUsage        uintptr
+	QuotaPeakNonPagedPoolUsage uintptr
+	QuotaNonPagedPoolUsage     uintptr
+	PagefileUsage              uintptr
+	PeakPagefileUsage          uintptr
+}
+
+// mem is the working set of every process in the job, 0 when it cannot be read.
+func (t *tree) mem() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.job == 0 {
+		return 0
+	}
+	const most = 4096
+	var buf struct {
+		assigned, listed uint32
+		pids             [most]uintptr
+	}
+	if err := windows.QueryInformationJobObject(t.job, windows.JobObjectBasicProcessIdList,
+		uintptr(unsafe.Pointer(&buf)), uint32(unsafe.Sizeof(buf)), nil); err != nil {
+		return 0
+	}
+	var sum int64
+	for _, pid := range buf.pids[:min(buf.listed, most)] {
+		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+		if err != nil {
+			continue
+		}
+		mc := memCounters{}
+		mc.cb = uint32(unsafe.Sizeof(mc))
+		if r, _, _ := getProcessMemoryInfo.Call(uintptr(h), uintptr(unsafe.Pointer(&mc)), uintptr(mc.cb)); r != 0 {
+			sum += int64(mc.WorkingSetSize)
+		}
+		_ = windows.CloseHandle(h)
+	}
+	return sum
 }

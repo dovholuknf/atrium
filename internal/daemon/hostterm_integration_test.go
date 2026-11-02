@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/ptyhost"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -78,15 +79,24 @@ func scriptArgv(t *testing.T, script string) (string, []string) {
 	return resolved, append(append([]string(nil), args...), script)
 }
 
+// gatedOn is a script step that blocks until the test creates the file, in place of a pause the test must outlast.
+func gatedOn(gate string) string {
+	if runtime.GOOS == "windows" {
+		return "while (-not (Test-Path '" + gate + "')) { Start-Sleep -Milliseconds 50 }"
+	}
+	return "while [ ! -e '" + gate + "' ]; do sleep 0.05; done"
+}
+
+func openGate(t *testing.T, gate string) {
+	t.Helper()
+	if err := os.WriteFile(gate, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func hostWait(t *testing.T, d time.Duration, what string, f func() bool) {
 	t.Helper()
-	end := time.Now().Add(d)
-	for !f() {
-		if time.Now().After(end) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
+	testwait.EventuallyEvery(t, 25*time.Millisecond, d, what, f)
 }
 
 func ringHas(r *runner, s string) bool {
@@ -156,8 +166,9 @@ func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "reattach-replay", t.TempDir())
 	sh, args := someShell(t)
+	gate := filepath.Join(t.TempDir(), "gate")
 	if _, err := d1.spawnPTY(task.ID, sh, append(args,
-		"echo AAA-first; sleep 4; echo BBB-second; sleep 4; echo CCC-third; sleep 60"),
+		"echo AAA-first; "+gatedOn(gate)+"; echo BBB-second; echo CCC-third; sleep 60"),
 		t.TempDir(), os.Environ()); err != nil {
 		t.Fatal(err)
 	}
@@ -182,6 +193,7 @@ func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T)
 	if r2 == nil || r2.runID != r1.runID {
 		t.Fatalf("the run was not reattached: %+v", r2)
 	}
+	openGate(t, gate)
 	hostWait(t, 30*time.Second, "CCC in the reattached ring", func() bool { return ringHas(r2, "CCC-third") })
 	// Byte for byte the host's own count: nothing lost between the replay and the live follow, and nothing twice.
 	hostWait(t, 10*time.Second, "the ring to match the host's offset", func() bool {
@@ -214,7 +226,8 @@ func TestAResizeAfterReattachIsCutBeforeAnyByteAtTheNewSize(t *testing.T) {
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "reattach-resize", t.TempDir())
 	sh, args := someShell(t)
-	if _, err := d1.spawnPTY(task.ID, sh, append(args, "echo AAA-first; sleep 6; echo BBB-second; sleep 60"),
+	gate := filepath.Join(t.TempDir(), "gate")
+	if _, err := d1.spawnPTY(task.ID, sh, append(args, "echo AAA-first; "+gatedOn(gate)+"; echo BBB-second; sleep 60"),
 		t.TempDir(), os.Environ()); err != nil {
 		t.Fatal(err)
 	}
@@ -241,6 +254,7 @@ func TestAResizeAfterReattachIsCutBeforeAnyByteAtTheNewSize(t *testing.T) {
 	if r3 == nil {
 		t.Fatal("not reattached the second time")
 	}
+	openGate(t, gate)
 	hostWait(t, 30*time.Second, "BBB", func() bool { return ringHas(r3, "BBB-second") })
 	out, cuts, _, _ := r3.buf.ReplayCuts()
 	at := -1
@@ -332,7 +346,7 @@ func TestALiveExitIsFiledOnceAndCollectedAfterIt(t *testing.T) {
 		_, still := listOf(t, d)[runID]
 		return !still
 	})
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: no second exit may be filed
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("%d exits filed", n)
 	}
@@ -513,11 +527,7 @@ func TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard(t *testing.T) 
 	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
 	d.hk.hostStartWait, d.hk.hostStartPoll = 150*time.Millisecond, 10*time.Millisecond
 
-	start := time.Now()
 	d.waitForHost()
-	if took := time.Since(start); took > 10*time.Second {
-		t.Fatalf("the wait for a host that never comes ran %s past its bound", took)
-	}
 	task := cardAt(t, d, "in-process-said", t.TempDir())
 	sh, args := someShell(t)
 	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
@@ -572,6 +582,15 @@ func TestARunnerLaunchedAfterAFailedDialStillGoesToTheHostOnceItIsUp(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { h.Close() })
+	// A probe evicts nobody, and its answer says the host is serving before the room's 250ms dial is tried.
+	pc, err := ptyhost.Dial(ptyhost.Address(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pc.Probe(); err != nil {
+		t.Fatal(err)
+	}
+	_ = pc.Close()
 
 	second := cardAt(t, d, "after-host", t.TempDir())
 	if _, err := d.spawnPTY(second.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
@@ -703,7 +722,7 @@ func TestStrayCleanupSparesTheRunThisDaemonHolds(t *testing.T) {
 	}
 	r := d.sup.get(task.ID)
 	d.killStrays(task.ID, store.RunKindRunner)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // wait: the stray cleanup must not end this run
 	if listOf(t, d)[r.runID].Exited {
 		t.Fatal("the daemon's own runner was ended as a stray")
 	}

@@ -96,7 +96,7 @@ if ($RoomOnly) {
 }
 
 # 5. Start the room with its exact args, then wait for it to reattach.
-Backup 'room.err'
+Backup 'room.err' $RoomLogs 20
 $roomStart = Get-Date
 $null = Start-Room
 $attached = $false
@@ -108,7 +108,7 @@ if (-not $WhatIf) {
   Say "room $RoomName attached and held: $attached since $($r.since) build $($h.build) rooms=$($h.rooms)"
   if (-not $attached) {
     Say "room $RoomName did not attach and stay attached. room link: '$(Get-RoomLink)'. last lines of room.err:"
-    Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
+    Get-Content (Join-Path $RoomLogs 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
   }
 }
 
@@ -125,7 +125,7 @@ if (-not $WhatIf) {
   }
   if (-not $serves) {
     Say "ROOM IS NOT SERVING. reverting to $revert. last lines of room.err:"
-    Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
+    Get-Content (Join-Path $RoomLogs 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
     # A frozen room does not answer the shutdown post either. Stop-Room forces after its 45s.
     if (-not (Stop-Room)) { Say 'FATAL: the room refused to stop (its pty host would die with it), so the revert is not installed over a room that is still running. nothing was changed. pass -KillRunners to end its runners'; exit 1 }
     if (-not $RoomOnly) { Stop-Hub }

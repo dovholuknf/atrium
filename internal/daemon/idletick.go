@@ -2,12 +2,14 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"log"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -34,8 +36,8 @@ const (
 // need not wait out a wind-down.
 var (
 	idleGoneWait = 5 * time.Second
-	idleLeave    = func(d *Daemon, r *runner, id string) {
-		windDown(r, idleParkGrace, d.exitKeysFor(id), d.hk.windDownKeyGap)
+	idleLeave    = func(r *runner, id string, keys [][]byte, keyGap time.Duration) {
+		windDown(r, idleParkGrace, keys, keyGap)
 	}
 )
 
@@ -94,7 +96,7 @@ func (p *idleParks) drop(id string) {
 // director, the orchestrator, or a card opted in. A subagent does not: its brief
 // and its branch are its state, and it has reported.
 func takesHandoff(t *store.Task) bool {
-	return hasTag(t.Tags, DirectorTag) || hasTag(t.Tags, ParkIdleTag) || hasTag(t.Tags, OrchestratorTag)
+	return small.HasTag(t.Tags, DirectorTag) || small.HasTag(t.Tags, ParkIdleTag) || small.HasTag(t.Tags, OrchestratorTag)
 }
 
 // rawIdleSince is the latest of the last turn end, the last prompt and the last
@@ -131,7 +133,7 @@ func (d *Daemon) idleSince(t *store.Task) time.Time {
 
 // idleParkEligible is the card's part of the rule: everything but the clock.
 func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
-	if isParked(t) || !d.mayIdlePark(t) {
+	if small.IsParked(t) || !d.mayIdlePark(t) {
 		return false
 	}
 	if t.Status != store.StatusNeedsInput && t.Status != store.StatusDone {
@@ -143,7 +145,7 @@ func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
 	if r := d.sup.get(id); r != nil && r.reattached.Load() {
 		return false
 	}
-	if d.nctx.holding(id) || d.frozenForMove(id) || d.deployHeld(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
+	if d.Nctx.Holding(id) || d.FrozenForMove(id) || d.DeployHeld(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
 		return false
 	}
 	// Work the last Stop said is still running: shells and the like. Subagents
@@ -175,7 +177,7 @@ func (d *Daemon) hasOutstandingLiveWorker(launcherID string) bool {
 		return true
 	}
 	for _, id := range ids {
-		if d.sup.get(id) != nil {
+		if d.sup.Get(id) != nil {
 			return true
 		}
 	}
@@ -241,16 +243,16 @@ func (d *Daemon) parkIdle(now time.Time) {
 
 // startIdleHandoff asks a card to write its handoff, on its own goroutine.
 func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
-	if d.sup.get(t.ID) == nil {
+	if d.sup.Get(t.ID) == nil {
 		return
 	}
 	// One capture at a time in a directory, as for the operator's own: the typing
 	// of two would interleave. Tried again at the next tick.
-	if other := d.nctx.sameDirBusy(d, t); other != "" {
+	if other := d.Nctx.SameDirBusy(d.st, t); other != "" {
 		return
 	}
-	file := HandoffName(t)
-	gen, ok := d.nctx.beginCaptureOnly(t.ID, file, d.conversationOf(t))
+	file := cycle.HandoffName(t)
+	gen, ok := d.Nctx.BeginCaptureOnly(t.ID, file, d.ConversationOf(t))
 	if !ok {
 		return
 	}
@@ -258,9 +260,9 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 	d.idle.put(t.ID, mark)
 	log.Printf("[atrium] %s has been idle %s, taking its handoff before it is parked",
 		t.DisplayTitle(), idle.Round(time.Minute))
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	go func() {
-		step, err := d.ncCapture(t.ID, gen, file)
+		step, err := d.NcCapture(t.ID, gen, file)
 		done := *mark
 		done.capturing = false
 		done.end = time.Now()
@@ -272,14 +274,14 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 		} else {
 			done.written = true
 		}
-		if d.nctx.mine(t.ID, gen) {
+		if d.Nctx.Mine(t.ID, gen) {
 			d.idle.put(t.ID, &done)
 		} else {
 			// Dismissed from the board: the operator is looking at it.
 			d.idle.drop(t.ID)
 		}
-		d.nctx.finish(t.ID, gen)
-		d.releaseHeld(t.ID)
+		d.Nctx.Finish(t.ID, gen)
+		d.ReleaseHeld(t.ID)
 	}()
 }
 
@@ -319,9 +321,9 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 			}
 		}
 		r.noteCause(store.CauseIdlePark, "")
-		d.hk.idleLeave(d, r, id)
+		d.hk.idleLeave(r, id, d.exitKeysFor(id), d.hk.windDownKeyGap)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
-		for d.sup.get(id) != nil && time.Now().Before(deadline) {
+		for d.sup.Get(id) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
 		if err := d.parkCard(id, was, extra); err != nil {
@@ -331,7 +333,7 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 			if err := d.st.SetWhy(id, "parked without a handoff: "+m.timeoutWhy); err != nil {
 				log.Printf("[atrium] could not note the missing handoff on %s: %v", id, err)
 			}
-			d.publishTask(id)
+			d.Publish(id)
 		}
 		d.idle.drop(id)
 		d.idle.parking.Delete(id)

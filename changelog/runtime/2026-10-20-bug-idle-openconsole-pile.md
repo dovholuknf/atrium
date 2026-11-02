@@ -1,1 +1,0 @@
-- The deploy script the hub starts, and the ssh, git and powershell helpers the room runs, no longer leave idle OpenConsole hosts behind on Windows when Windows Terminal is the default terminal. A guard test fails on a new unhidden spawn. bug-idle-openconsole-pile.

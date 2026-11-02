@@ -202,6 +202,8 @@ mock.typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "not
 mock.typingPolls = [];
 // Every PATCH that set a card's alias. See `aliasSection`.
 mock.aliasWrites = [];
+// Every POST that changed a card's parent. See `parentSection`.
+mock.parentWrites = [];
 
 mock.filesDeleted = [];  // what the mock's /_hub/files delete was asked for
 mock.boardDocs = false;    // whether the mock answers /_hub/docs, as a hub with documents does
@@ -554,6 +556,17 @@ const server = http.createServer((req, res) => {
   if (url.startsWith("/v1/tasks/") && url.endsWith("/typing")) {
     mock.typingPolls.push(req.url);
     sendJSON(res, mock.typingAnswer);
+    return;
+  }
+  if (url.startsWith("/v1/tasks/") && url.endsWith("/parent") && req.method === "POST") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      mock.parentWrites.push({ id: url.split("/")[3], body });
+      sendJSON(res, { spawned_by: body.parent });
+    });
     return;
   }
   // A card's keep-alive switch. Recorded, and answered the way the daemon does.

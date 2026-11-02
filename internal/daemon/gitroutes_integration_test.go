@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +28,7 @@ func TestTheRoomsGitSurfaceIsNotOnTheHumanGuestOrAgentListeners(t *testing.T) {
 		{"POST", "/v1/git/sync"},
 	}
 	board := d.BoardHandler()
-	guest := d.guestHandler(task.ID)
+	guest := d.GuestHandler(task.ID)
 	for _, p := range paths {
 		serve := func(h http.Handler) *httptest.ResponseRecorder {
 			rec := httptest.NewRecorder()
@@ -40,7 +41,7 @@ func TestTheRoomsGitSurfaceIsNotOnTheHumanGuestOrAgentListeners(t *testing.T) {
 		if rec := serve(guest); rec.Code != http.StatusNotFound && rec.Code != http.StatusForbidden {
 			t.Errorf("%s %s answered %d to a guest, want 403 or 404", p.method, p.path, rec.Code)
 		}
-		req, _ := http.NewRequest(p.method, addressOf(d.opts.AgentAddr)+p.path, strings.NewReader(`{}`))
+		req, _ := http.NewRequest(p.method, roomconf.AddressOf(d.opts.AgentAddr)+p.path, strings.NewReader(`{}`))
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("agent listener: %v", err)
@@ -51,7 +52,7 @@ func TestTheRoomsGitSurfaceIsNotOnTheHumanGuestOrAgentListeners(t *testing.T) {
 		}
 	}
 	// And the human listener itself, over a socket.
-	resp, err := http.Get(addressOf(d.opts.HumanAddr) + "/v1/git/status")
+	resp, err := http.Get(roomconf.AddressOf(d.opts.HumanAddr) + "/v1/git/status")
 	if err != nil {
 		t.Fatalf("human listener: %v", err)
 	}

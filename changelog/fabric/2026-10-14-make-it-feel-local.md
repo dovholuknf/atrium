@@ -1,1 +1,0 @@
-﻿A room whose hub address is this machine's own loopback now climbs that direct link before ziti, whatever the transport order says, so a room on the hub's machine stops paying the overlay round trip. Ziti stays below it as the fallback. Input lag lines and the p50/p95 summary name the card's room and its transport, `wire 87.0ms (claude-sg4 via ziti)`. u-bug-make-it-feel-local.

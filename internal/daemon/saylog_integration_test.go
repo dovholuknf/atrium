@@ -17,7 +17,7 @@ func sayAny(t *testing.T, d *Daemon, body map[string]any) (int, map[string]any) 
 	t.Helper()
 	raw, _ := json.Marshal(body)
 	rec := httptest.NewRecorder()
-	d.handleSay(rec, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
+	d.HandleSay(rec, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out

@@ -10,12 +10,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 func TestEveryLaunchArgTheRoomReadsIsAdvertisedOnTheHub(t *testing.T) {
 	ctx := context.Background()
-	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident, classWorkerItem} {
+	for _, class := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassFullResident, ctl.ClassWorkerResident, ctl.ClassWorkerItem} {
 		st, ct := mcp.NewInMemoryTransports()
 		ss, err := newControl("", nil, nil).server(class).Connect(ctx, st, nil)
 		if err != nil {
@@ -68,7 +69,7 @@ func daemonLaunchArgs() []string {
 		"source_url": true, "org": true, "host": true,
 	}
 	var out []string
-	rt := reflect.TypeOf(daemon.LaunchRequest{})
+	rt := reflect.TypeOf(shared.LaunchRequest{})
 	for i := 0; i < rt.NumField(); i++ {
 		name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
 		if name == "" || name == "-" || notAgentFacing[name] {

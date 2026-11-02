@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // A hub on two listeners, and a room with a ladder over both. The "direct" and
@@ -37,13 +39,13 @@ func (s *switchable) Dial(ctx context.Context) (net.Conn, error) {
 
 func (s *switchable) Describe() string { return s.addr }
 
-func attachedAs(h *Hub, name string) (Attached, bool) {
+func attachedAs(h *Hub, name string) (wire.Attached, bool) {
 	for _, a := range h.Rooms() {
 		if a.Name == name {
 			return a, true
 		}
 	}
-	return Attached{}, false
+	return wire.Attached{}, false
 }
 
 func TestRoomFallsBackInOrderAndComesBack(t *testing.T) {
@@ -148,7 +150,7 @@ func TestARefusalDoesNotFallBack(t *testing.T) {
 		T: Timings{Beat: 100 * time.Millisecond, Backoff: 20 * time.Millisecond}}
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool { return room.State().Error != "" })
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, a refusal must not send the room to ziti
 	if n := viaZiti.Load(); n != 0 {
 		t.Fatalf("a refusal on direct sent the room to ziti %d times", n)
 	}

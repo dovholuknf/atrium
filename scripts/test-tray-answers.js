@@ -140,6 +140,35 @@ const server = http.createServer((req, res) => {
     if (!/answered/.test(await p.innerText(row("t~one")))) fail("a question answered elsewhere should read answered in an open tray");
     if (await p.locator(row("t~one") + " .qa-q").count()) fail("a question answered elsewhere stops asking");
     if (messages.length !== 1) fail("nothing else should have been sent");
+
+    await p.evaluate(() => document.getElementById("toastlog").close());
+    await p.evaluate(() => newContext("t~one"));
+    await p.evaluate(() => {
+      window.landed = [];
+      landOnAlert = t => { landed.push(t); };
+      recordToLog("orchestrator is ready", "", "stack", null, "t~one", "g9");
+    });
+    const tray = async () => {
+      await p.evaluate(() => { growlSet = [{ id: "g9", state: "open" }]; openToastLog(); });
+      await p.waitForSelector("#toastlog[open] .tlrow");
+    };
+    const landed = () => p.evaluate(() => landed.slice());
+    const ctx = '.tlrow:has(b[data-tip="new context started"])';
+    const hit = sel => p.$eval(sel, e => e.click());
+    await tray();
+    if (!await p.locator(ctx).count()) fail("new context started should be a row for its card");
+    await hit(ctx + " .tlcopy");
+    await hit('.tlrow:has(b[data-tip="orchestrator is ready"]) .tlremind[data-remind="menu"]');
+    await p.waitForTimeout(150);
+    if ((await landed()).length) fail("the copy and remind-me buttons must not open the card: " + JSON.stringify(await landed()));
+    await tray();
+    await hit(ctx + " .tlwhen");
+    await p.waitForTimeout(150);
+    if (JSON.stringify(await landed()) !== '["t~one"]') fail("clicking the new context row should open t~one: " + JSON.stringify(await landed()));
+    await tray();
+    await hit('.tlrow:has(b[data-tip="orchestrator is ready"]) b.tlbody');
+    await p.waitForTimeout(150);
+    if (JSON.stringify(await landed()) !== '["t~one","t~one"]') fail("clicking the ready row should open t~one: " + JSON.stringify(await landed()));
   } catch (e) {
     fail(String(e && e.stack || e));
   }

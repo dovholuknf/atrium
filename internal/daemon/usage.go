@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"io"
 	"io/fs"
 	"log"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -62,19 +65,24 @@ const usagePricesVersion = "usageprices-2026-09-28b"
 // refresh. Per million tokens, from
 // https://platform.claude.com/docs/en/about-claude/pricing, fetched 2026-09-28.
 // A 5m write is 1.25 times input, a read 0.1 times, on both.
-var usageOnlyPrices = map[string]keepalivePrice{
-	"claude-haiku-4-5": {In: 1, Cw5m: 1.25, Cw1h: 2, Cr: 0.10, Out: 5},
-	"claude-sonnet-5":  {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
-	// Sonnet 5.5 reads at half Sonnet 5's price, and is its own key because the
-	// matcher below does not take one model's price for the other's.
-	"claude-sonnet-5-5": {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.10, Out: 10},
+var usageOnlyPrices = map[string]cycle.KeepalivePrice{
+	"claude-haiku-4-5":  {In: 1, Cw5m: 1.25, Cw1h: 2, Cr: 0.10, Out: 5},
+	"claude-opus-5":     {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-5":   {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-6":   {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-7":   {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-8":   {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-sonnet-4":   {In: 3, Cw5m: 3.75, Cw1h: 6, Cr: 0.30, Out: 15},
+	"claude-sonnet-4-5": {In: 3, Cw5m: 3.75, Cw1h: 6, Cr: 0.30, Out: 15},
+	"claude-sonnet-4-6": {In: 3, Cw5m: 3.75, Cw1h: 6, Cr: 0.30, Out: 15},
+	"claude-sonnet-5":   {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
 }
 
 // usagePriceFor prices a reply for a usage row: keep-alive's models, then the
 // others. An id matches its name alone or with a date stamp, so Sonnet 5's
 // price is not taken for a Sonnet 5.5.
-func usagePriceFor(model string) (keepalivePrice, bool) {
-	if p, ok := keepalivePriceFor(model); ok {
+func usagePriceFor(model string) (cycle.KeepalivePrice, bool) {
+	if p, ok := cycle.KeepalivePriceFor(model); ok {
 		return p, true
 	}
 	m := strings.ToLower(strings.TrimSpace(model))
@@ -89,7 +97,7 @@ func usagePriceFor(model string) (keepalivePrice, bool) {
 			return p, true
 		}
 	}
-	return keepalivePrice{}, false
+	return cycle.KeepalivePrice{}, false
 }
 
 // usageSegment is what is known about a turn when its Stop arrives.
@@ -192,7 +200,7 @@ func usageGroups(st *store.Store, t *store.Task) (dept, launcher, launcherID str
 		}
 		return c.WireName
 	}
-	if hasTag(t.Tags, DirectorTag) {
+	if small.HasTag(t.Tags, DirectorTag) {
 		return dept, name(t), t.ID
 	}
 	if !t.Launched() {
@@ -212,7 +220,7 @@ func newUsageTracker(st *store.Store) *usageTracker {
 		transcript: api.TranscriptPath,
 		isClaude: func(runner string) bool {
 			h, err := st.Harness(runner)
-			return err == nil && isClaude(h)
+			return err == nil && shared.IsClaude(h)
 		},
 		started: time.Now().UTC(),
 		settle:  usageSettle,
@@ -391,7 +399,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 		side   = newReplySet()
 		beyond bool
 	)
-	read, err := scanReplies(f, func(r *mainReply) {
+	read, err := cycle.ScanReplies(f, func(r *cycle.MainReply) {
 		if r.At.After(seg.stop) {
 			beyond = true
 			return
@@ -532,7 +540,7 @@ func readSubagentFiles(subs *subagentCursors, stop time.Time, set *replySet) err
 			return nil
 		}
 		beyond := false
-		read, err := scanReplies(f, func(r *mainReply) {
+		read, err := cycle.ScanReplies(f, func(r *cycle.MainReply) {
 			if r.At.After(stop) {
 				beyond = true
 				return
@@ -553,18 +561,18 @@ func readSubagentFiles(subs *subagentCursors, stop time.Time, set *replySet) err
 // one taken past each cursor.
 type replySet struct {
 	order []string
-	byID  map[string]*mainReply
-	from  map[*usageCursor]*mainReply
+	byID  map[string]*cycle.MainReply
+	from  map[*usageCursor]*cycle.MainReply
 }
 
 func newReplySet() *replySet {
-	return &replySet{byID: map[string]*mainReply{}, from: map[*usageCursor]*mainReply{}}
+	return &replySet{byID: map[string]*cycle.MainReply{}, from: map[*usageCursor]*cycle.MainReply{}}
 }
 
 // take counts a reply read past cur. A reply counted by an earlier read is
 // skipped, and so is every later line of it. Lines of one reply read here all
 // count as that reply.
-func (s *replySet) take(r *mainReply, cur *usageCursor) {
+func (s *replySet) take(r *cycle.MainReply, cur *usageCursor) {
 	if r.MessageID == "" {
 		r.MessageID = r.At.Format(time.RFC3339Nano)
 	}
@@ -636,26 +644,16 @@ func (s *replySet) row(t *store.Task) *store.SessionUsage {
 }
 
 // usageCost prices a row. Both write rates are in the table.
-func usageCost(u *store.SessionUsage, p keepalivePrice) float64 {
+func usageCost(u *store.SessionUsage, p cycle.KeepalivePrice) float64 {
 	return (float64(u.Input)*p.In + float64(u.CacheWrite5m)*p.Cw5m + float64(u.CacheWrite1h)*p.Cw1h +
 		float64(u.CacheRead)*p.Cr + float64(u.Output)*p.Out) / 1e6
-}
-
-// usageOfRefresh is a keep-alive refresh as a usage row. The fork writes at
-// the 1h rate, because only cards on the 1h cache are refreshed.
-func usageOfRefresh(r *store.KeepaliveRefresh) *store.SessionUsage {
-	return &store.SessionUsage{
-		TaskID: r.TaskID, ResumeID: r.ResumeID, Started: r.At, Ended: r.At, Cause: store.UsageKeepalive,
-		Model: r.Model, Replies: 1, Input: r.Input, Output: r.Output, CacheWrite1h: r.CacheWrite,
-		CacheRead: r.CacheRead, Context: r.Context,
-	}
 }
 
 // promptCause is what a prompt submitted now was: the peer message or wake
 // atrium just typed, or the operator.
 func (d *Daemon) promptCause(taskID string) string {
-	if run := d.sup.get(taskID); run != nil {
-		if c := run.peerPromptCause(time.Now()); c != "" {
+	if run := d.sup.Get(taskID); run != nil {
+		if c := run.PeerPromptCause(time.Now()); c != "" {
 			return c
 		}
 	}
@@ -664,7 +662,7 @@ func (d *Daemon) promptCause(taskID string) string {
 
 // causeOfBanner is what a turn atrium typed in with this label is.
 func causeOfBanner(banner string) string {
-	if banner == wakeLabel || banner == exitLabel {
+	if banner == cycle.WakeLabel || banner == exitLabel {
 		return store.UsageRestartWake
 	}
 	return store.UsageSay
@@ -720,7 +718,7 @@ func (d *Daemon) usageFor(taskID string, limit int) (any, error) {
 		}
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
-				if r, err := readLastReply(path); err == nil {
+				if r, err := d.replies.ReadLastReply(path); err == nil {
 					v.ContextNow, v.Model = r.Context, r.Model
 				}
 			}

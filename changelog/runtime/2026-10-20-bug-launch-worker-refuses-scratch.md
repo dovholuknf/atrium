@@ -1,1 +1,0 @@
-The stdio `atrium control` launch tools now take `scratch`, `lean`, `mcp` and `theme`, so `atrium_launch_worker` with `scratch: true` no longer fails as an unknown property. Item bug-launch-worker-refuses-scratch.

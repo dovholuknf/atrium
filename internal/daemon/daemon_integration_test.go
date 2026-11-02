@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testdiag"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // freePort asks the OS for a port nobody is using, so tests never collide with
@@ -63,18 +65,13 @@ func closeAtCleanup(t testing.TB, d *Daemon) {
 func releaseDB(t testing.TB, path string) {
 	t.Helper()
 	for _, p := range []string{path, path + "-wal", path + "-shm"} {
-		end := time.Now().Add(10 * time.Second)
-		for {
-			err := os.Remove(p)
-			if err == nil || os.IsNotExist(err) {
-				break
-			}
-			if time.Now().After(end) {
-				t.Errorf("%s is still held 10s after the daemon closed: %v", p, err)
-				testdiag.Dump(t, filepath.Base(p)+" is still held after the daemon closed")
-				break
-			}
-			time.Sleep(50 * time.Millisecond)
+		var err error
+		if !testwait.PollEvery(50*time.Millisecond, 10*time.Second, func() bool {
+			err = os.Remove(p)
+			return err == nil || os.IsNotExist(err)
+		}) {
+			t.Errorf("%s is still held 10s after the daemon closed: %v", p, err)
+			testdiag.Dump(t, filepath.Base(p)+" is still held after the daemon closed")
 		}
 	}
 }
@@ -166,6 +163,7 @@ func TestShutdownWithAnOpenEventStream(t *testing.T) {
 	d, _, cancel, errCh := startDaemon(t)
 
 	streamed := make(chan struct{})
+	heard := make(chan struct{})
 	go func() {
 		resp, err := http.Get("http://" + d.opts.HumanAddr + "/v1/events")
 		if err != nil {
@@ -174,8 +172,12 @@ func TestShutdownWithAnOpenEventStream(t *testing.T) {
 		}
 		defer resp.Body.Close()
 		close(streamed)
+		br := bufio.NewReader(resp.Body)
+		if _, err := br.ReadString('\n'); err == nil {
+			close(heard)
+		}
 		// Hold the stream open exactly as a browser would.
-		io.Copy(io.Discard, resp.Body)
+		io.Copy(io.Discard, br)
 	}()
 
 	select {
@@ -183,8 +185,15 @@ func TestShutdownWithAnOpenEventStream(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("event stream never opened")
 	}
-	// Let the subscription register before pulling the rug.
-	time.Sleep(200 * time.Millisecond)
+	testwait.EventuallyHTTP(t, 5*time.Second, "the event stream to subscribe", func() bool {
+		d.ap.Broadcast("ping", nil)
+		select {
+		case <-heard:
+			return true
+		default:
+			return false
+		}
+	})
 
 	start := time.Now()
 	cancel()

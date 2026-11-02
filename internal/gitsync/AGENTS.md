@@ -4,15 +4,15 @@ Git between the hub and its rooms. Git plumbing only: it knows nothing about the
 `docs/fabric/git-sync-design.md` is the mirror and sync, and `docs/fabric/hub-forge-design.md` is the hub's own
 store, the forwarders, the pass-through and the lookup.
 
-## Two halves, and the package comment describes only one
+## Two halves
 
-The package comment in `run.go` says code moves by FETCH and nothing else, and no receive-pack runs. That is true of
-the **`git_repos` mirror and sync** (`hub.go`, `sync.go`, `room.go`): the hub mirrors each configured repository,
-tells rooms to fetch from it, and collects each room's `claude/*` branches back by fetching them.
+Code moves by FETCH only in the **`git_repos` mirror and sync** (`hub.go`, `sync.go`, `room.go`): the hub mirrors
+each configured repository, tells rooms to fetch from it, and collects each room's `claude/*` branches back by
+fetching them.
 
-It is not true of the **hub's own store** (`store.go`, `receive.go`): bare repositories at
-`<git.store>/<host>/<owner>/<repo>.git`, served over smart HTTP at `/git/hub/...`, which DO take pushes from cards
-through the room's forwarder. Read the header of the file you are in, not only the package comment.
+The **hub's own store** (`store.go`, `receive.go`) is bare repositories at `<git.store>/<host>/<owner>/<repo>.git`,
+served over smart HTTP at `/git/hub/...`, which DO take pushes from cards through the room's forwarder. Read the
+header of the file you are in, not only the package comment.
 
 ## Invariants
 

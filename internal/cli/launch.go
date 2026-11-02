@@ -86,7 +86,7 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringSliceVar(&o.tags, "tags", nil,
 		"what you call this work, comma separated. free text, and what grouping and filtering use")
 	c.Flags().StringVar(&o.prompt, "prompt", "",
-		"the first instruction the runner gets. not available with --resume: "+
+		"the first instruction the runner gets, or @<name> for a named prompt by id. not available with --resume: "+
 			"that conversation already has one")
 	c.Flags().StringVar(&o.model, "model", "",
 		"which model this session runs on, for this session only. the runner has to "+
@@ -213,6 +213,9 @@ func launchAgent(o launchOpts) error {
 func launchBody(o launchOpts, cwd string) error {
 	env, err := parseEnvPairs(o.env)
 	if err != nil {
+		return err
+	}
+	if o.prompt, err = namedPrompt(o.boardURL, o.prompt); err != nil {
 		return err
 	}
 

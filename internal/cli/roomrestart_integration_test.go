@@ -18,12 +18,13 @@ import (
 func TestRestartArgsCarryTheWholeLaunch(t *testing.T) {
 	l := roomLaunch{
 		dir: `C:\rooms\a`, db: `C:\rooms\a.db`, human: "127.0.0.1:7781", agent: "127.0.0.1:7777",
-		isolated: true, upgrades: true,
+		isolated: true, upgrades: true, root: `D:\atrium`, name: "a",
 	}
 	got := strings.Join(l.restartArgs(), " ")
 	for _, want := range []string{
 		"room", "--restart-after " + roomRestartDelay.String(), `--dir C:\rooms\a`, `--db C:\rooms\a.db`,
 		"--http 127.0.0.1:7781", "--agent 127.0.0.1:7777", "--isolated", "--accept-upgrades",
+		`--root D:\atrium`, "--name a",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("restart args %q are missing %q", got, want)
@@ -33,7 +34,7 @@ func TestRestartArgsCarryTheWholeLaunch(t *testing.T) {
 	plain := roomLaunch{dir: `C:\rooms\a`, human: "h", agent: "a"}.restartArgs()
 	for _, a := range plain {
 		switch a {
-		case "--isolated", "--accept-upgrades", "--db":
+		case "--isolated", "--accept-upgrades", "--db", "--name", "--root":
 			t.Errorf("restart args %v carry %s the room was not started with", plain, a)
 		}
 	}

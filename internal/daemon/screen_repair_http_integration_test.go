@@ -87,7 +87,7 @@ func TestTheReportThroughHTTP(t *testing.T) {
 	if want := fmt.Sprintf("%d\t10\t30\t-\trepaired\t3\t3\t", len(nlines(1, 10))); lines[1] != want {
 		t.Fatalf("row %q, want %q", lines[1], want)
 	}
-	if want := "totals\trepaired=1\tresize-filed=0\tno-match=0\tambiguous=0\tcancelled=0\tincomplete=0\tadded=3"; lines[2] != want {
+	if want := "totals\trepaired=1\tunfiled=0\tresize-filed=0\tno-match=0\tambiguous=0\tcancelled=0\tincomplete=0\tadded=3"; lines[2] != want {
 		t.Fatalf("totals %q", lines[2])
 	}
 	if strings.Contains(got, "[atrium]") {
@@ -138,10 +138,9 @@ func TestThePlainReplayIsUnchangedByTheDetector(t *testing.T) {
 	if !strings.HasPrefix(plainBefore, "[atrium] screen mode, 30 columns, 10 rows,") {
 		t.Fatalf("the banner went: %q", plainBefore)
 	}
-	// And the rows the repaint overwrote are still not in it: nothing is spliced.
-	for _, gone := range []string{"line 01", "line 02", "line 03"} {
-		if strings.Contains(plainBefore, gone) {
-			t.Fatalf("%q is in history, which nothing here may do", gone)
+	for _, filed := range []string{"line 01", "line 02", "line 03"} {
+		if n := strings.Count(plainBefore, filed); n != 1 {
+			t.Fatalf("%q is in history %d times, want once: %q", filed, n, plainBefore)
 		}
 	}
 }

@@ -6,8 +6,6 @@ import (
 )
 
 // Names the link package reaches for, because it serves the kinds and routes this package carries.
-type ErrStatus = errStatus
-
 const (
 	AnnounceMax    = announceMax
 	ControlTimeout = controlTimeout
@@ -15,7 +13,6 @@ const (
 
 var (
 	NewHub    = newHub
-	KeyOf     = keyOf
 	HeaderHas = headerHas
 	PathClip  = pathClip
 )

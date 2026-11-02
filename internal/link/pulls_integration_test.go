@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // seenReq is one request a fake room received, as it arrived.
@@ -598,7 +600,7 @@ func TestANewReviewInTheAllViewIsPlacedOnOneRoom(t *testing.T) {
 		t.Fatalf("post = %d %s, alpha %d beta %d", code, body, a.count(http.MethodPost, "/v1/prs"), b.count(http.MethodPost, "/v1/prs"))
 	}
 	// Named, it lands on that room alone.
-	code, _, _ = pullsDo(t, http.MethodPost, front.URL+"/v1/prs", `{"url":"u"}`, map[string]string{RoomHeader: "beta"})
+	code, _, _ = pullsDo(t, http.MethodPost, front.URL+"/v1/prs", `{"url":"u"}`, map[string]string{wire.RoomHeader: "beta"})
 	if code != http.StatusCreated || b.count(http.MethodPost, "/v1/prs") != 1 || a.count(http.MethodPost, "/v1/prs") != 1 {
 		t.Fatalf("a named room did not get it alone: %d", code)
 	}
@@ -684,7 +686,7 @@ func TestAPlainPullIdFindsItsRoom(t *testing.T) {
 	}
 
 	before := len(a.requests())
-	code, _, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_a1", "", map[string]string{RoomHeader: "alpha"})
+	code, _, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_a1", "", map[string]string{wire.RoomHeader: "alpha"})
 	if code != 200 || len(a.requests()) != before+1 {
 		t.Errorf("a named room was searched: %d, alpha saw %d", code, len(a.requests())-before)
 	}
@@ -777,7 +779,7 @@ func TestAPullsRowOpensItsWalkThroughTheHub(t *testing.T) {
 	}
 
 	t.Run("scoped to the room", func(t *testing.T) {
-		walk(t, map[string]string{RoomHeader: "alpha"}, "/v1/events/room/alpha", "pr_01k8x2m4q7")
+		walk(t, map[string]string{wire.RoomHeader: "alpha"}, "/v1/events/room/alpha", "pr_01k8x2m4q7")
 	})
 	t.Run("in the all view with a second room", func(t *testing.T) {
 		walk(t, nil, "/v1/events/hub", "alpha~pr_01k8x2m4q7")

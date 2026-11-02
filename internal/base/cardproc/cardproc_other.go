@@ -67,6 +67,27 @@ func StopTree(pid int) error {
 	return nil
 }
 
+// Tree is pid and every process under it, each with its start time, read now. Read it before StopTree.
+func Tree(pid int) map[int]string {
+	kids := map[int][]int{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=").Output(); err == nil {
+		for _, l := range strings.Split(string(out), "\n") {
+			f := strings.Fields(l)
+			if len(f) != 2 {
+				continue
+			}
+			c, cerr := strconv.Atoi(f[0])
+			p, perr := strconv.Atoi(f[1])
+			if cerr == nil && perr == nil {
+				kids[p] = append(kids[p], c)
+			}
+		}
+	}
+	return treeOf(pid, kids, nil)
+}
+
 // OwnGroup makes cmd lead a process group of its own, so StopTree ends what it starts too.
 func OwnGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -74,3 +95,34 @@ func OwnGroup(cmd *exec.Cmd) {
 
 // Excluded is the reserved port ranges, which only Windows has.
 func Excluded() []Range { return nil }
+
+// Ancestors is pid's parent, its parent's parent and so on, up to hops of them, each with its executable's name.
+// Empty when pid is not running.
+func Ancestors(pid, hops int) []Proc {
+	type entry struct {
+		name   string
+		parent int
+	}
+	procs := map[int]entry{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=,comm=").Output()
+	if err != nil {
+		return nil
+	}
+	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) < 3 {
+			continue
+		}
+		c, cerr := strconv.Atoi(f[0])
+		p, perr := strconv.Atoi(f[1])
+		if cerr == nil && perr == nil {
+			procs[c] = entry{name: strings.Join(f[2:], " "), parent: p}
+		}
+	}
+	return ancestorsOf(pid, hops, func(p int) (string, int, bool) {
+		en, ok := procs[p]
+		return en.name, en.parent, ok
+	})
+}

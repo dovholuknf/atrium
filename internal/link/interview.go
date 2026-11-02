@@ -3,6 +3,8 @@ package link
 import (
 	"fmt"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // KindInterview is the `kind` of an atrium_launch that starts an interviewer.
@@ -40,7 +42,7 @@ func checkKind(kind string) error {
 	case "", KindInterview, KindReview:
 		return nil
 	}
-	return &refusedError{fmt.Sprintf("kind %q is not one atrium knows. the kinds there are: %s, %s", kind, KindInterview, KindReview)}
+	return &ctl.RefusedError{Msg: fmt.Sprintf("kind %q is not one atrium knows. the kinds there are: %s, %s", kind, KindInterview, KindReview)}
 }
 
 func isInterview(kind string) bool {

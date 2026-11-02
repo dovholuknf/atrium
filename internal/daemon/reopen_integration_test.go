@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -20,39 +21,70 @@ func reopenDaemon(t *testing.T) *Daemon {
 	return testDaemon(t)
 }
 
+func reopenCard(t *testing.T, d *Daemon, name string) string {
+	t.Helper()
+	task, _, err := d.st.Register(store.Observed{WireName: name, Worktree: t.TempDir(), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return task.ID
+}
+
 // THE BUG: a card with a runner that was not a fixture was left behind.
 func TestWhatWasOpenIsRecordedAtTheWindDown(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
+	a, b := reopenCard(t, d, "card-a"), reopenCard(t, d, "card-b")
 	live := []*runner{
-		{taskID: "card-a", buf: newRing(64, 80)},
-		{taskID: "card-b", buf: newRing(64, 80)},
+		{taskID: a, buf: newRing(64, 80)},
+		{taskID: b, buf: newRing(64, 80)},
 	}
 	d.saveReopen(live)
 
 	got := d.readReopen()
-	if !slices.Equal(got, []string{"card-a", "card-b"}) {
+	if !slices.Equal(got, []string{a, b}) {
 		t.Fatalf("recorded %v", got)
 	}
 }
 
-// AN EMPTY LIST IS A FACT, not an absence.
-//
-// Closing every terminal and then stopping must not reopen yesterday's set.
-// Skipping the write when there is nothing open would leave the last list in
-// place and do exactly that.
-func TestStoppingWithNothingOpenClearsTheList(t *testing.T) {
+// 2026-10-27: a reboot gave the wind-down no chance to write, the list was the one from the last clean stop a week
+// before, and the seven cards started since stayed dead.
+func TestACardStartedSinceTheLastStopIsReopenedAfterACrash(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
-	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
-	if len(d.readReopen()) != 1 {
-		t.Fatal("the fixture did not record anything")
+	old, started := reopenCard(t, d, "open-at-the-last-stop"), reopenCard(t, d, "started-since")
+	d.saveReopen([]*runner{{taskID: old, buf: newRing(64, 80)}})
+
+	d.noteOpen(started)
+	d.noteOpen(started)
+
+	var ids []string
+	for _, task := range d.reopenWanted() {
+		ids = append(ids, task.ID)
+	}
+	if !slices.Equal(ids, []string{old, started}) {
+		t.Fatalf("would reopen %v, want both cards", ids)
+	}
+}
+
+// A stop with nothing running keeps a card a failure killed and drops one closed on purpose.
+func TestAStopKeepsAKilledCardAndDropsAClosedOne(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	killed, closed := reopenCard(t, d, "killed-by-a-failure"), reopenCard(t, d, "closed-on-purpose")
+	d.noteOpen(killed)
+	d.noteOpen(closed)
+	if err := d.st.SetStatus(killed, store.StatusDead); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetExitAsked(closed); err != nil {
+		t.Fatal(err)
 	}
 
 	d.saveReopen(nil)
 
-	if got := d.readReopen(); len(got) != 0 {
-		t.Fatalf("a stop with nothing open left %v behind", got)
+	if got := d.readReopen(); !slices.Equal(got, []string{killed}) {
+		t.Fatalf("a stop left %v, want only the killed card", got)
 	}
 }
 
@@ -65,9 +97,7 @@ func TestNoRecordIsNormal(t *testing.T) {
 	}
 }
 
-// A daemon killed mid-write, or a file from a format that no longer exists.
-// Nothing, never an error: this is a convenience over disposable state and
-// refusing to start over it would be a self-inflicted outage.
+// An unreadable old file is removed and refuses nothing: refusing to start over it would be a self-inflicted outage.
 func TestAnUnreadableRecordIsIgnored(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
@@ -77,16 +107,31 @@ func TestAnUnreadableRecordIsIgnored(t *testing.T) {
 	if got := d.readReopen(); got != nil {
 		t.Fatalf("accepted a corrupt record: %v", got)
 	}
+	if _, err := os.Stat(d.reopenPath()); !os.IsNotExist(err) {
+		t.Fatal("left the corrupt file behind")
+	}
 }
 
-// WRITTEN ASIDE AND RENAMED, so a kill during the write leaves the last good
-// list rather than half of this one.
-func TestTheRecordIsWrittenAtomically(t *testing.T) {
+// A room upgraded from the file keeps what the file named, once, and the file goes.
+func TestAnOldReopenFileIsTakenIntoTheDatabase(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
-	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
-	if _, err := os.Stat(d.reopenPath() + ".tmp"); !os.IsNotExist(err) {
-		t.Fatal("left the temporary file behind")
+	a := reopenCard(t, d, "on-the-old-file")
+	raw, err := json.Marshal(map[string]any{"saved_at": "2026-10-20T23:23:21Z", "cards": []string{a, "pruned-since"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(d.reopenPath(), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{a}) {
+		t.Fatalf("took %v from the old file, want %v", got, []string{a})
+	}
+	if _, err := os.Stat(d.reopenPath()); !os.IsNotExist(err) {
+		t.Fatal("left the old file behind")
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{a}) {
+		t.Fatalf("a second read gave %v", got)
 	}
 }
 
@@ -190,32 +235,58 @@ func TestAStaleResumeIsDroppedRatherThanUsed(t *testing.T) {
 	}
 }
 
-// The record lives beside the database, so naming another database isolates it
+// The old file is read from beside the database, so naming another database isolates it
 // and a test can never reach the machine's real one.
 func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	d := &Daemon{hk: *testHooks(), opts: Options{DBPath: filepath.ToSlash(filepath.Join(dir, "a.db"))}}
+	d.initServices()
 	if filepath.Dir(d.reopenPath()) != dir {
 		t.Fatalf("the record went to %q, outside the database's directory", d.reopenPath())
 	}
 }
 
-// The shape on disk, locked so a future reader can tell an old file from a new
-// one rather than guessing.
-func TestTheRecordSaysWhenItWasWritten(t *testing.T) {
+// A session that quits by itself is closed. A kill, a crash and a wind-down are not.
+func TestAQuitLeavesTheLiveCardsAndAKillOrAStopStays(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
-	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
-	raw, err := os.ReadFile(d.reopenPath())
-	if err != nil {
+	quit, killed, stopped := reopenCard(t, d, "quit"), reopenCard(t, d, "killed"), reopenCard(t, d, "stopped")
+	for _, x := range []runExit{
+		{taskID: quit, runID: "r-quit", code: 0, lived: time.Hour},
+		{taskID: killed, runID: "r-killed", code: 1073807364, lived: time.Hour},
+		{taskID: stopped, runID: "r-stopped", code: 0, lived: time.Hour, cause: store.CauseShutdown},
+	} {
+		d.noteOpen(x.taskID)
+		if !d.fileExit(x) {
+			t.Fatalf("%s was not filed", x.runID)
+		}
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{killed, stopped}) {
+		t.Fatalf("live after the exits: %v, want the killed and the stopped card", got)
+	}
+}
+
+// 2026-10-27: the sweep archived the seven cards the room did not revive 17 seconds after it started, which took them
+// off the board and off any list.
+func TestTheSweepLeavesAKilledLiveCard(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	killed, closed, never := reopenCard(t, d, "killed"), reopenCard(t, d, "closed"), reopenCard(t, d, "never-ran")
+	d.noteOpen(killed)
+	d.noteOpen(closed)
+	for _, id := range []string{killed, closed, never} {
+		if err := d.st.SetStatus(id, store.StatusDead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.st.SetExitAsked(closed); err != nil {
 		t.Fatal(err)
 	}
-	var rec reopenRecord
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		t.Fatal(err)
+	if n, err := d.st.Archive(-time.Hour, store.StatusDead); err != nil || n != 2 {
+		t.Fatalf("archived %d (%v), want the closed card and the one that never ran", n, err)
 	}
-	if rec.SavedAt.IsZero() {
-		t.Fatal("wrote a record with no time on it")
+	if got := d.readReopen(); !slices.Equal(got, []string{killed}) {
+		t.Fatalf("live after the sweep: %v", got)
 	}
 }

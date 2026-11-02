@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io/fs"
 	"log"
 	"net/http"
@@ -15,16 +17,18 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // CAPTURING A TASK'S RESULT.
 
+const taskExitWait = 60 * time.Second
+
 const (
 	taskCaptureFiles   = 20
 	taskCaptureFileMax = 5 << 20
 	taskCaptureTotal   = 20 << 20
-	taskExitWait       = 60 * time.Second
 	taskPostWait       = 60 * time.Second
 	taskRecapRead      = 64 << 10
 	taskRecapFile      = "RECAP.md"
@@ -45,7 +49,7 @@ func (e *taskPostError) Error() string { return e.msg }
 
 // taskPost sends one event to the hub, three tries for one it did not answer. A refusal is not tried again.
 func (d *Daemon) taskPost(body map[string]any) (json.RawMessage, error) {
-	ha, _ := d.relay().(HubAsker)
+	ha, _ := d.Relay().(hublink.HubAsker)
 	if ha == nil {
 		return nil, &taskPostError{msg: "this room has no link to a hub"}
 	}
@@ -100,7 +104,10 @@ func (d *Daemon) captureTask(task *store.Task, in FinishRequest, cancelled bool)
 	if err != nil || !ok || row.State != store.CardHomeLive {
 		return
 	}
-	d.waitRunnerGone(task.ID, taskExitWait)
+	if !d.waitRunnerGone(task.ID, d.hk.taskExitWait) {
+		d.captureFailed(task, row, "the worker's runner was still alive after "+d.hk.taskExitWait.String(), cancelled)
+		return
+	}
 	line := ""
 	if _, after, found := strings.Cut(strings.TrimSpace(in.Recap), ": "); found {
 		line = after
@@ -244,7 +251,11 @@ func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missi
 }
 
 func (d *Daemon) reapTaskFolder(row store.CardHome) {
-	if err := removeTree(filepath.FromSlash(row.Path)); err != nil {
+	path, err := d.HomeGuard(row)
+	if err == nil {
+		err = home.RemoveTree(path)
+	}
+	if err != nil {
 		_ = d.st.CardHomeSet(row.Path, store.CardHomeKept, "captured, and the folder could not be removed: "+err.Error(), "")
 		log.Printf("[atrium] task %s/%s was captured but %s could not be removed: %v", row.BacklogID, row.TaskID, row.Path, err)
 		return
@@ -253,7 +264,7 @@ func (d *Daemon) reapTaskFolder(row store.CardHome) {
 	older, _ := d.st.CardHomesOf(row.BacklogID, row.TaskID)
 	for _, o := range older {
 		if o.Attempt < row.Attempt && o.State == store.CardHomeKept {
-			if removeTree(filepath.FromSlash(o.Path)) == nil {
+			if p, err := d.HomeGuard(o); err == nil && home.RemoveTree(p) == nil {
 				_ = d.st.CardHomeSet(o.Path, store.CardHomeRemoved, "a later attempt took its place", "")
 			}
 		}
@@ -324,7 +335,7 @@ func (d *Daemon) taskRunnerEnded(x runExit) {
 	}
 	reason := fmt.Sprintf("the worker ended with no done (exit code %d)", x.code)
 	if x.tail != "" {
-		reason += ": " + firstLine(x.tail)
+		reason += ": " + small.FirstLine(x.tail)
 	}
 	d.owePost(row, store.CardHomeKept, reason, d.taskEvent(row, "failed", map[string]any{"reason": reason}))
 }

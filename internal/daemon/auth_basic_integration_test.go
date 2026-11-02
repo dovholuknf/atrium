@@ -3,16 +3,17 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func basicConfig(t *testing.T, user, pass string) AuthConfig {
+func basicConfig(t *testing.T, user, pass string) publish.AuthConfig {
 	t.Helper()
-	c := AuthConfig{Enabled: true, Basic: true, User: user}
-	if err := setBasicPassword(&c, pass); err != nil {
+	c := publish.AuthConfig{Enabled: true, Basic: true, User: user}
+	if err := publish.SetBasicPassword(&c, pass); err != nil {
 		t.Fatal(err)
 	}
 	return c
@@ -59,7 +60,7 @@ func TestTheRightPasswordIsAccepted(t *testing.T) {
 	}
 	t.Parallel()
 	c := basicConfig(t, "clint", "hunter2")
-	if !c.checks("clint", "hunter2") {
+	if !c.Checks("clint", "hunter2") {
 		t.Fatal("the configured password was refused")
 	}
 }
@@ -77,7 +78,7 @@ func TestAWrongPasswordOrNameIsRefused(t *testing.T) {
 		{"", "hunter2"},
 		{"", ""},
 	} {
-		if c.checks(try.user, try.pass) {
+		if c.Checks(try.user, try.pass) {
 			t.Fatalf("accepted %q with %q", try.user, try.pass)
 		}
 	}
@@ -89,7 +90,7 @@ func TestAPasswordIsNotCheckedWhenBasicIsOff(t *testing.T) {
 	t.Parallel()
 	c := basicConfig(t, "clint", "hunter2")
 	c.Basic = false
-	if c.checks("clint", "hunter2") {
+	if c.Checks("clint", "hunter2") {
 		t.Fatal("the password worked with the password login switched off")
 	}
 }
@@ -99,7 +100,7 @@ func TestAPasswordIsNotCheckedWhenBasicIsOff(t *testing.T) {
 // complicated one.
 func TestAPasswordAloneIsAReadyConfiguration(t *testing.T) {
 	t.Parallel()
-	if err := basicConfig(t, "clint", "hunter2").ready(); err != nil {
+	if err := basicConfig(t, "clint", "hunter2").Ready(); err != nil {
 		t.Fatalf("refused a password-only login: %v", err)
 	}
 }
@@ -110,19 +111,19 @@ func TestAnIncompletePasswordLoginIsRefused(t *testing.T) {
 		t.Skip("slow: real ptys, processes and timers")
 	}
 	t.Parallel()
-	var noUser AuthConfig
-	noUser = AuthConfig{Enabled: true, Basic: true}
-	if err := setBasicPassword(&noUser, "hunter2"); err != nil {
+	var noUser publish.AuthConfig
+	noUser = publish.AuthConfig{Enabled: true, Basic: true}
+	if err := publish.SetBasicPassword(&noUser, "hunter2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := noUser.ready(); err == nil {
+	if err := noUser.Ready(); err == nil {
 		t.Fatal("a password with no name was accepted")
 	}
-	noPass := AuthConfig{Enabled: true, Basic: true, User: "clint"}
-	if err := noPass.ready(); err == nil {
+	noPass := publish.AuthConfig{Enabled: true, Basic: true, User: "clint"}
+	if err := noPass.Ready(); err == nil {
 		t.Fatal("a name with no password was accepted")
 	}
-	if err := setBasicPassword(&noPass, "   "); err == nil {
+	if err := publish.SetBasicPassword(&noPass, "   "); err == nil {
 		t.Fatal("a password of spaces was accepted")
 	}
 }
@@ -137,7 +138,7 @@ func TestTheGuardAsksForAPasswordAndThenLetsYouIn(t *testing.T) {
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
 	}
-	guarded := d.authGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	guarded := d.AuthGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("the board"))
 	}))
 
@@ -188,7 +189,7 @@ func TestTheGuardAsksForAPasswordAndThenLetsYouIn(t *testing.T) {
 func TestAnUnconfiguredLoginLetsEverythingThrough(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	guarded := d.authGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	guarded := d.AuthGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("the board"))
 	}))
 	rec := httptest.NewRecorder()

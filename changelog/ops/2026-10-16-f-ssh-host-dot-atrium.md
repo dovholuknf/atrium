@@ -1,1 +1,0 @@
-`atrium ssh config` now writes `Host sg3.atrium` (was `Host sg3`), matching its HostKeyAlias, so `ssh sg3.atrium` reaches the room and a LAN `sg3` stays separate. Re-run `atrium ssh config add` to rewrite old blocks. Item f-ssh-host-dot-atrium.

@@ -355,6 +355,22 @@ function machineBand(key, m, d, s) {
 
 // ── the tiles ───────────────────────────────────────────────────────────────
 
+// roomAlertBadge is the room alert, f-room-cpu-alert: hot with no agents, or an enabled runner not found. The
+// growler carries the detail and the kill, so the badge only says which.
+function roomAlertBadge(al) {
+  if (!al) return "";
+  const what = [], tip = [];
+  if (al.hot_since) {
+    what.push("hot");
+    tip.push(`cpu at ${Math.round(al.cpu_pct)}% since ${hhmm(al.hot_since)} with no agents running`);
+  }
+  if (al.runners_missing && al.runners_missing.length) {
+    what.push("runner missing");
+    tip.push("enabled runner not found: " + al.runners_missing.join(", "));
+  }
+  return what.length ? `<span class="chip bad rd-alert" data-tip="${esc(tip.join(". "))}">${what.join(", ")}</span>` : "";
+}
+
 // roomTileHTML is one room as a tile.
 //
 // KNOWS NOTHING ABOUT THE MENU. It takes the room record and its snapshot and
@@ -390,7 +406,7 @@ function roomTileHTML(room, snap, on) {
     <div class="rt-head">
       <span class="dot live"></span><strong>${name}</strong>
       <span class="rt-meta" data-tip="${meta.join(" &middot; ")}">${meta.join(" &middot; ")}</span>
-      ${notHub}${typeof transportBadge === "function" ? transportBadge(room.via || room.transport, room.fallback) : ""}
+      ${roomAlertBadge(s.alert)}${notHub}${typeof transportBadge === "function" ? transportBadge(room.via || room.transport, room.fallback) : ""}
       ${typeof sshBadge === "function" ? sshBadge(room) : ""}
       ${typeof loginBadge === "function" ? loginBadge(room) : ""}
       <span class="grow"></span>

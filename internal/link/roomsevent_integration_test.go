@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // stock is an Inventory whose answers a test can change under a running hub. The
@@ -103,7 +105,7 @@ func (b *bench) attach(name string, h http.Handler) {
 }
 
 // roomsEvent waits for the next `rooms` event and returns its fields.
-func roomsEvent(t *testing.T, ch <-chan Event, within time.Duration) map[string]any {
+func roomsEvent(t *testing.T, ch <-chan wire.Event, within time.Duration) map[string]any {
 	t.Helper()
 	deadline := time.After(within)
 	for {
@@ -370,7 +372,7 @@ func TestAutoApprovesFromTheEventWithNoBoardAndNoPolling(t *testing.T) {
 
 	// The turn-on sweep and the pump's connect sweep are the reads allowed.
 	waitFor(t, 5*time.Second, func() bool { return b.proxy.feeds.count() == 1 })
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond) // wait: a settle, the connect sweeps have no event to wait on
 	base, _ := l.counts()
 
 	l.raise("p9")
@@ -403,7 +405,8 @@ func TestASweepAndAnEventForOneRequestDecideOnce(t *testing.T) {
 	l.pending["p1"] = true
 	l.mu.Unlock()
 	l.say <- sse("permission", `{"id":"p1","tool":"Bash"}`)
-	time.Sleep(600 * time.Millisecond)
+	l.raise("p1b")
+	waitFor(t, 5*time.Second, func() bool { _, d := l.counts(); return d["p1b"] == 1 })
 	if _, d := l.counts(); d["p1"] != 1 {
 		t.Fatalf("p1 was decided %d times", d["p1"])
 	}
@@ -424,7 +427,7 @@ func TestAnEventInFlightWhenAutoIsSwitchedOffIsNotApproved(t *testing.T) {
 	// approval.
 	s.set(false, nil)
 	l.raise("p2")
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond) // wait: a negative check, nothing must be approved
 	if _, d := l.counts(); d["p2"] != 0 {
 		t.Fatalf("a request was approved after the switch went off")
 	}
@@ -445,9 +448,9 @@ func TestAnEventPastTheDeadlineIsNotApproved(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return b.proxy.feeds.count() == 1 })
 
 	// The deadline passes between the approver subscribing and the event.
-	time.Sleep(time.Until(until) + 100*time.Millisecond)
+	time.Sleep(time.Until(until) + 100*time.Millisecond) // wait: the deadline passing is what is under test
 	l.raise("p3")
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond) // wait: a negative check, nothing must be approved
 	if _, d := l.counts(); d["p3"] != 0 {
 		t.Fatalf("a request was approved after the deadline")
 	}
@@ -459,7 +462,7 @@ func TestNoPumpRunsWithAutoOffAndNoBoard(t *testing.T) {
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
 	b.proxy.SetInventory(newStock("alpha"))
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond) // wait: a negative check, no pump must start
 	if n := b.proxy.feeds.count(); n != 0 {
 		t.Fatalf("%d pump(s) ran with auto off and no board", n)
 	}

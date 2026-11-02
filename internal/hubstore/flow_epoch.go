@@ -6,8 +6,7 @@ import (
 	"fmt"
 )
 
-// An epoch is one round of clint fetching claude/main, re-signing and pushing. See migration 0016 and
-// docs/design/merge-flow.md, "Between clint's fetch and clint's push".
+// An epoch is one round of clint fetching claude/main, re-signing and pushing. See migration 0016.
 //
 //   - ONE EPOCH IS OPEN AT A TIME. Opening records the sha clint fetched. claude/main keeps moving while it is open:
 //     nothing is frozen, and nothing that lands is lost, because closing replays what is not in main.

@@ -1,1 +1,0 @@
-scripts/test-touched.sh and .ps1 now run `gofmt -l` over the changed Go files and fail, naming the files, when it lists any, so a misformatted change no longer passes test-touched and turns CI red. Item t-test-touched-gofmt.

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /stop body",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "integer",
+      "description": "contract version the sender speaks, absent means 1"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "name_source": {
+      "type": "string"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "resume": {
+      "type": "string"
+    },
+    "runner": {
+      "type": "string"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "resumable": {
+      "type": "boolean"
+    },
+    "questions": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "questions_block": {
+      "type": "boolean"
+    },
+    "questions_known": {
+      "type": "boolean"
+    },
+    "own_turn": {
+      "type": "boolean"
+    },
+    "stop_hook_active": {
+      "type": "boolean"
+    },
+    "subagents_running": {
+      "type": "integer"
+    },
+    "background_running": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "agent"
+  ]
+}

@@ -131,7 +131,7 @@ func TestAGuestCannotAskForTheWholeHistory(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := sharedCard(t, d, "lent")
-	rec := guestGet(d.guestHandler(task.ID), "/v1/tasks/"+task.ID+"/attach?carry=all")
+	rec := guestGet(d.GuestHandler(task.ID), "/v1/tasks/"+task.ID+"/attach?carry=all")
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("a guest asking for carry=all got %d, wanted 403", rec.Code)
 	}
@@ -141,7 +141,7 @@ func TestAGuestGetsTheNoticeWithoutLinks(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
-	got := attachUntil(t, d.guestHandler("cut"), "/v1/tasks/cut/attach?link=n0nce", "not replayed here")
+	got := attachUntil(t, d.GuestHandler("cut"), "/v1/tasks/cut/attach?link=n0nce", "not replayed here")
 	if !strings.Contains(got, "not replayed here") {
 		t.Fatal("the guest's attach has no notice")
 	}

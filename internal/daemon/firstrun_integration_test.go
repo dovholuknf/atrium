@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -45,7 +47,6 @@ func TestALaunchedClaudeStartsOnTheClassicRenderer(t *testing.T) {
 	if err := os.WriteFile(bash, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("CLAUDE_CODE_GIT_BASH_PATH", bash)
 	t.Setenv("ATRIUM_TEST_ENV_DUMP", "1")
 	// An inherited choice is not the operator's for this runner: the room's own
 	// CLAUDE_CODE_ variables are stripped, and the default goes on anyway.
@@ -56,25 +57,19 @@ func TestALaunchedClaudeStartsOnTheClassicRenderer(t *testing.T) {
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "claude", Label: "claude code", Enabled: true, LaunchMode: store.LaunchPTY,
 		Cmd: os.Args[0], Args: []string{"-test.run=^TestHelperEnvDump$"},
+		Env: map[string]string{"CLAUDE_CODE_GIT_BASH_PATH": bash},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	_, _ = d.Launch(LaunchRequest{Harness: "claude", Cwd: dir, SpawnedBy: store.HumanLauncher})
+	_, _ = d.Launch(shared.LaunchRequest{Harness: "claude", Cwd: dir, SpawnedBy: store.HumanLauncher})
 
 	var raw []byte
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testwait.Eventually(t, 10*time.Second, "the runner to write its environment", func() bool {
 		b, err := os.ReadFile(filepath.Join(dir, "env.txt"))
-		if err == nil {
-			raw = b
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the runner never wrote its environment: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		raw = b
+		return err == nil
+	})
 	seen := map[string]string{}
 	for _, kv := range strings.Split(string(raw), "\n") {
 		if i := strings.Index(kv, "="); i > 0 {

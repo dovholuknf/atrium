@@ -42,7 +42,7 @@ func TestHubLaunchSendsSuperleanAndRefusesItWithLeanOff(t *testing.T) {
 		want sent
 	}{
 		{"default", launchInput{Item: "f-test", Cwd: "/w"}, sent{Lean: true}},
-		{"superlean", launchInput{Item: "f-test", Cwd: "/w", Superlean: true}, sent{Lean: true, Superlean: true}},
+		{"superlean", launchInput{Item: "f-test", Cwd: "/w", Superlean: relaySuperlean(true)}, sent{Lean: true, Superlean: true}},
 	} {
 		_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"), tc.in)
 		if err != nil {
@@ -58,7 +58,7 @@ func TestHubLaunchSendsSuperleanAndRefusesItWithLeanOff(t *testing.T) {
 
 	before := posts
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Item: "f-test", Cwd: "/w", Superlean: true, Lean: &off})
+		launchInput{Item: "f-test", Cwd: "/w", Superlean: relaySuperlean(true), Lean: &off})
 	if err == nil || !strings.Contains(err.Error(), "lean: false") {
 		t.Fatalf("superlean with lean: false: err %v", err)
 	}
@@ -68,7 +68,7 @@ func TestHubLaunchSendsSuperleanAndRefusesItWithLeanOff(t *testing.T) {
 
 	applied = false
 	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Item: "f-test", Cwd: "/w", Superlean: true})
+		launchInput{Item: "f-test", Cwd: "/w", Superlean: relaySuperlean(true)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +90,31 @@ func TestSuperleanDropped(t *testing.T) {
 }
 
 func TestLaunchInputSchemaOffersSuperlean(t *testing.T) {
-	raw, _ := json.Marshal(launchInput{Superlean: true})
+	raw, _ := json.Marshal(launchInput{Superlean: relaySuperlean(true)})
 	if !strings.Contains(string(raw), `"superlean":true`) {
 		t.Fatalf("launchInput marshals as %s", raw)
+	}
+}
+
+func TestSuperleanLaunchDefaultsOnForItemWorkersOnly(t *testing.T) {
+	off, on := false, true
+	for _, tc := range []struct {
+		name string
+		in   launchInput
+		want bool
+	}{
+		{"plain launch", launchInput{}, false},
+		{"item worker", launchInput{Isolated: true}, true},
+		{"item worker, superlean false", launchInput{Isolated: true, Superlean: &off}, false},
+		{"item worker, lean false", launchInput{Isolated: true, Lean: &off}, false},
+		{"item review", launchInput{Isolated: true, Kind: KindReview}, false},
+		{"plain, superlean true", launchInput{Superlean: &on}, true},
+	} {
+		if got := superleanLaunch(tc.in, "claude"); got != tc.want {
+			t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+	}
+	if superleanLaunch(launchInput{Isolated: true}, "codex") {
+		t.Error("a codex item worker went superlean")
 	}
 }

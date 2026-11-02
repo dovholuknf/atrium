@@ -103,7 +103,7 @@ func (d *Daemon) reapOrphans() error {
 		}
 		d.act.forget(t.ID)
 		log.Printf("[atrium] %s went away while waiting to be answered", t.DisplayTitle())
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 		byTask[p.TaskID]++
 	}
 	return nil

@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 )
 
 // isProfile is whether a response is the profiler answering, rather than the
@@ -66,7 +68,7 @@ func TestTheProfilerRefusesAnythingNotPlainlyLocal(t *testing.T) {
 	board := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "the board")
 	})
-	loop := withProfiling(board, fakeLn{addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7781}})
+	loop := roomconf.WithProfiling(board, fakeLn{addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7781}})
 	serve := func(h http.Handler, host, remote string, hdr map[string]string) (int, string) {
 		req := httptest.NewRequest("GET", "http://"+host+"/debug/pprof/heap?debug=1", nil)
 		req.RemoteAddr = remote
@@ -101,7 +103,7 @@ func TestTheProfilerRefusesAnythingNotPlainlyLocal(t *testing.T) {
 
 	// A human listener on every interface gets no profiler at all: the board
 	// answers the path, as it would any other.
-	wide := withProfiling(board, fakeLn{addr: &net.TCPAddr{IP: net.IPv4zero, Port: 7778}})
+	wide := roomconf.WithProfiling(board, fakeLn{addr: &net.TCPAddr{IP: net.IPv4zero, Port: 7778}})
 	if code, body := serve(wide, "127.0.0.1:7778", "127.0.0.1:5555", nil); isProfile(code, body) || body != "the board" {
 		t.Fatalf("a listener on every interface profiled: %d %.200q", code, body)
 	}

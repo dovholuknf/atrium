@@ -22,10 +22,12 @@ import (
 
 // PermissionRequest is the JSON shape POST'd by the claude PreToolUse hook.
 type PermissionRequest struct {
-	Runner  string `json:"runner,omitempty"`
-	Agent   string `json:"agent"`
-	TaskID  string `json:"task_id,omitempty"`
-	Command string `json:"command"`
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int    `json:"contract,omitempty"`
+	Runner   string `json:"runner,omitempty"`
+	Agent    string `json:"agent"`
+	TaskID   string `json:"task_id,omitempty"`
+	Command  string `json:"command"`
 	// NameSource is "dir" when Agent was made up from the directory, so
 	// Register will not match it to a finished card. Absent is a told name.
 	NameSource string `json:"name_source,omitempty"`
@@ -162,6 +164,9 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 
 	// Only the caller owns the deadline because a human may take minutes.
 	w.Header().Set("Content-Type", "application/json")
+	// The headers go now so the hook can tell a parked request from a room that does not answer.
+	w.WriteHeader(http.StatusOK)
+	_ = http.NewResponseController(w).Flush()
 	select {
 	case dec := <-pp.reply:
 		_ = json.NewEncoder(w).Encode(PermissionResponse{

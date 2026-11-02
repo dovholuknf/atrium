@@ -432,8 +432,12 @@ func (c *client) handle(q *Request) {
 		list := make([]PtyInfo, 0, len(ps))
 		for _, p := range ps {
 			p.mu.Lock()
-			list = append(list, p.infoLocked())
+			info := p.infoLocked()
 			p.mu.Unlock()
+			if !info.Exited {
+				info.Mem = p.tree.mem()
+			}
+			list = append(list, info)
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].RunID < list[j].RunID })
 		c.reply(q, Reply{OK: true, List: list})
@@ -546,8 +550,9 @@ func (c *client) spawn(q *Request) {
 	if err := rz.apply(cmd.Process.Pid); err != nil {
 		h.logf("could not raise a runner's priority: %v", err)
 	}
-	p := &hpty{runID: newRunID(), id: q.ID, kind: q.Kind, pid: cmd.Process.Pid, started: time.Now(),
-		p: pt, cmd: cmd, tree: newTree(cmd.Process.Pid), drained: make(chan struct{}), rg: newRing(ringN, cols, rows), subs: map[*client]struct{}{}}
+	runID := newRunID()
+	p := &hpty{runID: runID, id: q.ID, kind: q.Kind, pid: cmd.Process.Pid, started: time.Now(),
+		p: pt, cmd: cmd, tree: newTree(cmd.Process.Pid, q.Label, runID), drained: make(chan struct{}), rg: newRing(ringN, cols, rows), subs: map[*client]struct{}{}}
 	p.closer = newCloser(pt.Close)
 	p.lastWrite.Store(time.Now().UnixNano())
 	h.mu.Lock()

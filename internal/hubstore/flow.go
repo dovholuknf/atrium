@@ -10,7 +10,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
-// The merge flow's rows. See migration 0015 and docs/design/merge-flow.md.
+// The merge flow's rows. See migration 0015.
 //
 //   - A ROLE HAS ONE HOLDER, except the tester. Setting it again replaces the holder, and the caller is told who was
 //     replaced. Atrium never elects one: a role is set by a person or by the holder handing it on.

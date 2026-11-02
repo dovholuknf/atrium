@@ -3,12 +3,15 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -16,7 +19,7 @@ import (
 // dropping it, as its exit would.
 func quickPark(t *testing.T, d *Daemon) {
 	t.Helper()
-	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
+	d.hk.idleLeave = func(r *runner, id string, _ [][]byte, _ time.Duration) { endRunner(d, id) }
 	d.hk.idleGoneWait = 200 * time.Millisecond
 	// Parking is off until set, so a test that wants it says so, at the old two hours.
 	if err := d.st.SetSetting(store.SettingIdleParkAfter, "7200"); err != nil {
@@ -48,20 +51,13 @@ func parkedNow(t *testing.T, d *Daemon, id string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return isParked(got)
+	return small.IsParked(got)
 }
 
 // settles waits for a park in flight, or for it to have not happened.
 func settles(t *testing.T, d *Daemon, id string) bool {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if parkedNow(t, d, id) {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
+	return testwait.Poll(2*time.Second, func() bool { return parkedNow(t, d, id) })
 }
 
 // settlesTo is settles for a card that should NOT park: it looks after a short
@@ -71,7 +67,7 @@ func settlesTo(t *testing.T, d *Daemon, id string, want bool) bool {
 	if want {
 		return settles(t, d, id)
 	}
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond) // wait: the card must not park
 	return parkedNow(t, d, id)
 }
 
@@ -124,7 +120,7 @@ func TestIdleParkRule(t *testing.T) {
 			d.act.setBackground(c.ID, 2)
 		}, false},
 		{"mid new-context", store.StatusNeedsInput, func(d *Daemon, c *store.Task) {
-			d.nctx.begin(c.ID, "HANDOFF.x.md", "")
+			beginCycle(d.Nctx, c.ID, "HANDOFF.x.md", "")
 		}, false},
 	}
 	for i, c := range cases {
@@ -163,7 +159,7 @@ func TestIdleClockIgnoresHandoffTurn(t *testing.T) {
 		t.Fatalf("the finished capture moved the idle clock: %v -> %v", before, got)
 	}
 	// Real activity after it restarts the clock and the cycle.
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	d.idle.put(card.ID, &handoffMark{base: before, end: time.Now().Add(-time.Minute), written: true})
 	if err := d.st.AppendEvent(card.ID, store.EventPrompted, map[string]any{"text": "real", "via": "terminal"}); err != nil {
 		t.Fatal(err)
@@ -229,7 +225,7 @@ func TestIdleParkWorkersFirst(t *testing.T) {
 // Nothing is parked on a clock until the operator sets one, agent card or not.
 func TestIdleParkDoesNothingUntilSet(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
+	d.hk.idleLeave = func(r *runner, id string, _ [][]byte, _ time.Duration) { endRunner(d, id) }
 	card := idleAgent(t, d, "unset", store.StatusNeedsInput)
 	d.parkIdle(idleAfter(100 * time.Hour))
 	if parkedNow(t, d, card.ID) {
@@ -317,17 +313,17 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 	quickPark(t, d)
 	card := idleAgent(t, d, "donecard", store.StatusDone)
 	// The wind-down would file it dead. It must come back as done.
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		_ = d.st.SetStatus(card.ID, store.StatusDead)
-	}()
+	d.hk.idleLeave = func(r *runner, id string, _ [][]byte, _ time.Duration) {
+		_ = d.st.SetStatus(id, store.StatusDead)
+		endRunner(d, id)
+	}
 	d.parkIdle(idleAfter(3 * time.Hour))
 	if !settles(t, d, card.ID) {
 		t.Fatal("not parked")
 	}
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: the wind-down must not file it dead
 	got, _ := d.st.Get(card.ID)
-	if got.Status == store.StatusDead && !isParked(got) {
+	if got.Status == store.StatusDead && !small.IsParked(got) {
 		t.Fatal("filed dead")
 	}
 }
@@ -351,19 +347,19 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 
 	// Under 50 minutes: nothing.
 	d.parkIdle(idleAfter(40 * time.Minute))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: no handoff may be asked for
 	if strings.Contains(f.written(), "HANDOFF.") {
 		t.Fatal("a handoff was asked for before 50 minutes")
 	}
 
 	// At 55 minutes: the capture prompt.
 	d.parkIdle(idleAfter(55 * time.Minute))
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), HandoffName(task)) })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), cycle.HandoffName(task)) })
 	if parkedNow(t, d, task.ID) {
 		t.Fatal("parked at the handoff mark")
 	}
 	d.act.set(task.ID, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, cycle.HandoffName(task)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ncTurnEnds(d, task.ID)
@@ -379,7 +375,7 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 	// Still in the window: another tick asks for nothing more.
 	written := f.written()
 	d.parkIdle(idleAfter(60 * time.Minute))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: no second capture may be asked for
 	if f.written() != written {
 		t.Fatal("a second capture was asked for")
 	}
@@ -392,10 +388,10 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 	if !settles(t, d, task.ID) {
 		t.Fatal("not parked at two hours")
 	}
-	if strings.Count(f.written(), HandoffName(task)+" in the current") != 1 {
+	if strings.Count(f.written(), cycle.HandoffName(task)+" in the current") != 1 {
 		t.Fatalf("more than one capture prompt: %q", f.written())
 	}
-	if v, _ := d.st.Setting(store.SettingParkHandoffPrefix + task.ID); !strings.HasPrefix(v, HandoffName(task)) {
+	if v, _ := d.st.Setting(store.SettingParkHandoffPrefix + task.ID); !strings.HasPrefix(v, cycle.HandoffName(task)) {
 		t.Fatalf("the handoff was not recorded for the wake: %q", v)
 	}
 }
@@ -407,7 +403,7 @@ func TestIdleHandoffTimeoutStillParks(t *testing.T) {
 	d := testDaemon(t)
 	quickPark(t, d)
 	fastNewContext(t, d)
-	d.hk.ncTiming.captureBegin = 100 * time.Millisecond
+	d.hk.NcTiming.CaptureBegin = 100 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	if err := d.st.SetTags(task.ID, []string{OriginAgentTag, DirectorTag}); err != nil {
 		t.Fatal(err)

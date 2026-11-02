@@ -23,8 +23,7 @@ if ($dirty) {
   exit 1
 }
 $commit = git -C $Repo rev-parse HEAD
-$ver = git -C $Repo describe --tags --exact-match 2>$null
-if (-not $ver) { $ver = 'dev' }
+$ver = (& "$Repo/scripts/version.ps1")
 $pkg = 'github.com/dovholuknf/atrium/internal/cli'
 $codeId = (& go -C $Repo run ./tools/codeid)
 $ldflags = "-X github.com/dovholuknf/atrium/internal/api.CodeID=$codeId -X $pkg.Version=$ver -X $pkg.Commit=$commit -X $pkg.Tree=clean"

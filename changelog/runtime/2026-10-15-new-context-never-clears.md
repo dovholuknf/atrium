@@ -1,1 +1,0 @@
-New context now types `/clear` once the card has posted no activity for 20 seconds after `atrium ready`, even when its Stop hook was lost and a background shell keeps the screen redrawing. While `/clear` waits, the card's chip says what it waits on. The sg4-control start keeps the old `room.err` as `room.err.<timestamp>`. r-new-context-never-clears.

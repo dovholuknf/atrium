@@ -22,13 +22,23 @@ func EventuallyHTTP(t testing.TB, limit time.Duration, what string, cond func() 
 
 func EventuallyEvery(t testing.TB, step, limit time.Duration, what string, cond func() bool) {
 	t.Helper()
+	if !PollEvery(step, limit, cond) {
+		t.Fatalf("timed out waiting for %s", what)
+	}
+}
+
+func Poll(limit time.Duration, cond func() bool) bool {
+	return PollEvery(Local, limit, cond)
+}
+
+func PollEvery(step, limit time.Duration, cond func() bool) bool {
 	deadline := time.Now().Add(limit)
 	for {
 		if cond() {
-			return
+			return true
 		}
 		if !time.Now().Before(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
+			return false
 		}
 		time.Sleep(step)
 	}

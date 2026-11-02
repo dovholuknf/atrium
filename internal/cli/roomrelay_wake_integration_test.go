@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type tcpDial struct{ addr string }
@@ -27,14 +30,14 @@ func (p tcpDial) Describe() string { return p.addr }
 // against a real hub and reads `wake` off the request the hub received.
 func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	var mu sync.Mutex
-	var got []link.RelayRequest
-	tm := link.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1, Backoff: 50 * time.Millisecond}
+	var got []wire.RelayRequest
+	tm := wire.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1, Backoff: 50 * time.Millisecond}
 	hub := link.NewHub(tm)
-	hub.Relay = func(_ context.Context, _ string, req link.RelayRequest) link.RelayAnswer {
+	hub.Relay = func(_ context.Context, _ string, req wire.RelayRequest) conn.RelayAnswer {
 		mu.Lock()
 		got = append(got, req)
 		mu.Unlock()
-		return link.RelayAnswer{OK: true, Delivered: "queued"}
+		return conn.RelayAnswer{OK: true, Delivered: "queued"}
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -43,16 +46,10 @@ func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = hub.Serve(ctx, ln) }()
-	room := &link.Room{Name: "m1mini", Version: "b", Dial: tcpDial{ln.Addr().String()},
+	room := &conn.Room{Name: "m1mini", Version: "b", Dial: tcpDial{ln.Addr().String()},
 		Handler: http.NotFoundHandler(), T: tm}
 	go func() { _ = room.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for !room.State().Up {
-		if time.Now().After(deadline) {
-			t.Fatal("the room never attached")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testwait.EventuallyEvery(t, 20*time.Millisecond, 5*time.Second, "the room to attach", func() bool { return room.State().Up })
 
 	rctx, rcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer rcancel()

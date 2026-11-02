@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 const cliSpec = "version: 1\nname: sg3\nos: windows\naccount: localai\n"
@@ -88,7 +88,7 @@ func TestRoomsAddWithASpecStoresIt(t *testing.T) {
 	db := filepath.Join(dir, "hub.db")
 	file := filepath.Join(dir, "room.yaml")
 	os.WriteFile(file, []byte(cliSpec), 0o600)
-	if err := (link.Keys{Dir: dir}).EnsureCA([]string{"127.0.0.1"}); err != nil {
+	if err := (transport.Keys{Dir: dir}).EnsureCA([]string{"127.0.0.1"}); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := runRooms(t, "add", "sg3", "--spec", file, "--atrium-db", db, "--atrium-dir", dir,

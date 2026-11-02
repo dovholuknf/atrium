@@ -5,6 +5,7 @@ package link
 import (
 	"context"
 	"errors"
+	forgepkg "github.com/dovholuknf/atrium/internal/link/forge"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -88,7 +89,7 @@ func newTransportRig(t *testing.T, seeds map[string]TransportSeed) *transportRig
 	x.p = NewProxy(x.hub, nil, "", nil)
 	x.tr = &HubTransports{
 		Store: x.st, Hub: x.hub, IdentityFallback: "C:/ids/hub.json",
-		Wait: func(ctx context.Context, d time.Duration) bool { return waitTimer(ctx, time.Millisecond) },
+		Wait: func(ctx context.Context, d time.Duration) bool { return forgepkg.WaitTimer(ctx, time.Millisecond) },
 		CloseIdentity: func(id string) {
 			x.mu.Lock()
 			x.closed = append(x.closed, id)
@@ -215,7 +216,7 @@ func TestAFlagSeedsAndTheStoredSettingAppliesWithNone(t *testing.T) {
 	stored := &transportRig{t: t, st: &fakeSettings{m: map[string]string{
 		"hub_transport.board-ziti.on": "on", "hub_transport.board-ziti.service": "stored-board",
 	}}, board: &fakeBinds{}}
-	tr := &HubTransports{Store: stored.st, Wait: func(ctx context.Context, d time.Duration) bool { return waitTimer(ctx, time.Millisecond) }}
+	tr := &HubTransports{Store: stored.st, Wait: func(ctx context.Context, d time.Duration) bool { return forgepkg.WaitTimer(ctx, time.Millisecond) }}
 	tr.Add(TransportItem{Name: TransportBoardZiti, Kind: "board-ziti", DefaultService: "atrium-board",
 		Listen: stored.board.listen, Handler: http.NotFoundHandler()}, TransportSeed{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -237,7 +238,7 @@ func TestARefusingControllerShowsFailingAndBacksOffToACap(t *testing.T) {
 			mu.Lock()
 			waits = append(waits, d)
 			mu.Unlock()
-			return waitTimer(ctx, time.Millisecond)
+			return forgepkg.WaitTimer(ctx, time.Millisecond)
 		}}
 	tr.Add(TransportItem{Name: TransportBoardZiti, Kind: "board-ziti", DefaultService: "atrium-board",
 		Listen: f.listen, Handler: http.NotFoundHandler()}, TransportSeed{})
@@ -268,7 +269,7 @@ func TestTurningOffTheRoomLinksZitiIsRefusedWhileARoomIsOnlyOnIt(t *testing.T) {
 	f := &fakeBinds{}
 	tr := &HubTransports{Store: &fakeSettings{m: map[string]string{}}, Hub: NewHub(Timings{}), IdentityFallback: "C:/ids/hub.json",
 		CloseIdentity: func(string) {},
-		Wait:          func(ctx context.Context, d time.Duration) bool { return waitTimer(ctx, time.Millisecond) }}
+		Wait:          func(ctx context.Context, d time.Duration) bool { return forgepkg.WaitTimer(ctx, time.Millisecond) }}
 	tr.Add(TransportItem{Name: TransportRoomZiti, Kind: "ziti", DefaultService: "atrium-hub", Listen: f.listen,
 		Serve: func(ctx context.Context, ln net.Listener) error { <-ctx.Done(); return ln.Close() },
 		Refuse: func() string {

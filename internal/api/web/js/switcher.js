@@ -30,6 +30,8 @@ const SWITCH_RECENT_STORE = "atrium.switch.recent";
 // two or three sessions being worked between are all there, short enough that
 // the list is still read at a glance rather than searched.
 const SWITCH_RECENT_KEEP = 8;
+// Dead cards drawn under the live ones, so one typed letter on a board of hundreds stays a short list.
+const SWITCH_DEAD_KEEP = 20;
 
 // Keys no browser hands over, whatever the page asks. Refused at the point of
 // binding rather than accepted and then found not to work, which is the exact
@@ -105,6 +107,8 @@ addEventListener("keydown", e => {
 // re-derived so the arrow keys and Enter agree with what is on the screen even
 // if a poll lands between the two.
 let swTasks = [], swRows = [], swQuery = "", swSel = 0;
+// Archived cards matching what is typed, read from `/v1/history`: the card map holds no archived card.
+let swGone = [], swGoneSeq = 0, swGoneTimer = 0;
 let swCapturing = false, swSaidTaken = "";
 // Whether the list has ever been answered. Only the empty state reads it, and
 // only so the first open in a window says "looking" rather than announcing
@@ -112,6 +116,15 @@ let swCapturing = false, swSaidTaken = "";
 let swLoaded = false;
 
 function switcherDlg() { return document.getElementById("switcher"); }
+
+// The field on show: the query, or the worktree name on the name step.
+function swField() { return document.getElementById(repoNaming ? "sw-nm" : "sw-q"); }
+
+// Whether closing would lose something typed. A name step still on its default has lost nothing.
+function swDirty() {
+  const v = swField().value.trim();
+  return repoNaming ? v !== repoWorkBranch().slice("claude/".length) : v !== "";
+}
 
 function toggleSwitcher() {
   const dlg = switcherDlg();
@@ -138,7 +151,7 @@ async function openSwitcher(opts) {
   // Painted from the card map (js/cards.js), which the event stream keeps
   // current, so the list is there in the frame the dialog opens. Only a board
   // that has never read its cards waits on the one read below.
-  if (cardsLoaded) { swTasks = cardList().filter(t => t.supervised); swLoaded = true; }
+  if (cardsLoaded) { swTasks = cardList(); swLoaded = true; }
   // Painted from what was last fetched, THEN again when the fresh answer
   // lands. The whole promise here is key, letters, Enter, and a list that
   // appears after a round trip is a list you have already typed into.
@@ -149,10 +162,8 @@ async function openSwitcher(opts) {
   swWatchForTheft();
   let all = null;
   try { all = await boardCards(); } catch (e) {}
-  // Terminals only. This list is a place to GO, and a card with nothing
-  // running is not one: the board and the stack restart a stopped session,
-  // with the whole card in front of you, which is where that belongs.
-  if (all) { swTasks = all.filter(t => t.supervised); swLoaded = true; }
+  if (all) { swTasks = all; swLoaded = true; }
+  swFindGone();
   if (dlg.open) paintSwitcher();
 }
 
@@ -197,6 +208,7 @@ function swScore(t, q) {
   const name = (String(t.display_title || t.title || "") + " " + String(terminalLabel(t) || "")).trim().toLowerCase();
   const dir = String(t.worktree || "").toLowerCase().replace(/\\/g, "/");
   const tags = (t.tags || []).join(" ").toLowerCase();
+  const other = [t.runner, t.branch, t.room].join(" ").toLowerCase();
   let total = 0;
   for (const term of terms) {
     let s = -1;
@@ -205,7 +217,8 @@ function swScore(t, q) {
     else if (at > 0) s = 70;
     else if (tags.includes(term)) s = 50;
     else if (dir.includes(term)) s = 40;
-    else if (swSubseq(name, term)) s = 10;
+    else if (other.includes(term)) s = 30;
+    else if (swFuzzy(name, term)) s = 10;
     if (s < 0) return -1;
     total += s;
   }
@@ -217,9 +230,45 @@ function swScore(t, q) {
 function swReal(t, q) {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return false;
-  const hay = [t.display_title, t.title, terminalLabel(t), (t.tags || []).join(" "), String(t.worktree || "").replace(/\\/g, "/")]
+  const hay = [t.display_title, t.title, terminalLabel(t), (t.tags || []).join(" "), String(t.worktree || "").replace(/\\/g, "/"), t.runner, t.branch, t.room]
     .join(" ").toLowerCase();
   return terms.every(term => hay.includes(term));
+}
+
+// The title with what was typed marked, so a row says why it matched.
+function swHighlight(text, q) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const low = text.toLowerCase();
+  const on = new Array(text.length).fill(false);
+  terms.forEach(term => {
+    const at = low.indexOf(term);
+    if (at >= 0) for (let i = at; i < at + term.length; i++) on[i] = true;
+  });
+  let out = "";
+  for (let i = 0; i < text.length;) {
+    let j = i;
+    while (j < text.length && on[j] === on[i]) j++;
+    const part = esc(text.slice(i, j));
+    out += on[i] ? `<mark class="swhit">${part}</mark>` : part;
+    i = j;
+  }
+  return out;
+}
+
+// The enabled runners whose name holds every term. Only when something is typed: with nothing typed the list is places to go.
+function swRunnerRows(q) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length || typeof allHarnesses === "undefined") return [];
+  return allHarnesses.filter(h => {
+    const hay = (String(h.label || "") + " " + h.id).toLowerCase();
+    return h.enabled && terms.every(term => hay.includes(term));
+  }).map(h => ({ harness: h.id, label: h.label || h.id }));
+}
+
+// A scattered match is for abbreviations like `atsw`. A long term or one with a separator is a name typed in full, and
+// letters scattered across an unrelated title are not what it asked for.
+function swFuzzy(hay, needle) {
+  return needle.length <= 6 && !/[-_./:]/.test(needle) && swSubseq(hay, needle);
 }
 
 function swSubseq(hay, needle) {
@@ -264,15 +313,21 @@ function switcherRows() {
   const recent = swRecent();
   const here = swHere();
   const scored = [];
-  swTasks.forEach(t => {
+  // A card with nothing running is listed only once something is typed, unless a failure killed it: that one is
+  // somewhere to go back to.
+  const known = new Set(swTasks.map(t => bareId(t.id)));
+  const pool = swQuery ? swTasks.concat(swGone.filter(t => !known.has(bareId(t.id))))
+    : swTasks.filter(t => t.supervised || t.revive);
+  pool.forEach(t => {
     const s = swScore(t, swQuery);
     if (s < 0) return;
     const r = recent.indexOf(t.id);
-    scored.push({ t, s, r: r < 0 ? recent.length + 1 : r, real: !swQuery || swReal(t, swQuery) });
+    scored.push({ t, s, r: r < 0 ? recent.length + 1 : r, real: !swQuery || swReal(t, swQuery), dead: !t.supervised });
   });
   // A real match anywhere means the subsequence-only ones are not wanted. With no real match they are all there is.
   if (scored.some(x => x.real)) for (let i = scored.length - 1; i >= 0; i--) if (!scored[i].real) scored.splice(i, 1);
   scored.sort((a, b) => {
+    if (a.dead !== b.dead) return a.dead ? 1 : -1;
     if (swQuery && b.s !== a.s) return b.s - a.s;
     if (a.r !== b.r) return a.r - b.r;
     const w = (isWaiting(b.t) ? 1 : 0) - (isWaiting(a.t) ? 1 : 0);
@@ -282,7 +337,24 @@ function switcherRows() {
   // Where you already are, last. It is still listed, because a switcher that
   // hides a session makes you wonder whether it is gone.
   scored.sort((a, b) => (a.t.id === here ? 1 : 0) - (b.t.id === here ? 1 : 0));
-  return scored.map(x => x.t);
+  const live = scored.filter(x => !x.dead).length;
+  return scored.slice(0, live + SWITCH_DEAD_KEEP).map(x => x.t);
+}
+
+// The archived cards matching the longest typed term, read once typing pauses. `switcherRows` filters on every term.
+function swFindGone() {
+  clearTimeout(swGoneTimer);
+  const seq = ++swGoneSeq;
+  const term = swQuery.split(/\s+/).sort((a, b) => b.length - a.length)[0] || "";
+  if (!term || swLinkOf(swQuery)) { swGone = []; return; }
+  swGoneTimer = setTimeout(async () => {
+    let res = null;
+    try { res = await api("/v1/history?limit=100&q=" + encodeURIComponent(term)); } catch (e) {}
+    if (seq !== swGoneSeq || !res) return;
+    swGone = (res.tasks || []).filter(t => t.archived_at);
+    const dlg = switcherDlg();
+    if (dlg && dlg.open) paintSwitcher();
+  }, 150);
 }
 
 // A link in the field. It is the first row, so Enter on a pasted link opens it, and it is not a session.
@@ -298,14 +370,21 @@ function swSetQuery(text) {
   document.getElementById("sw-q").value = text;
   swQuery = text.trim();
   swSel = 0;
+  swFindGone();
   paintSwitcher();
 }
 
 function paintSwitcher() {
   const host = document.getElementById("sw-list");
   if (!host) return;
+  if (repoNaming) { repoNamePaint(host); return; }
   const link = swLinkOf(swQuery);
-  swRows = (link ? [{ link }] : []).concat(switcherRows());
+  const rows = switcherRows();
+  // Every killed card, not only the ones drawn: SWITCH_DEAD_KEEP cuts the list and revive all must not.
+  const killed = swTasks.filter(t => !t.supervised && t.revive);
+  const at = rows.findIndex(t => !t.supervised && t.revive);
+  if (at >= 0) rows.splice(at, 0, { reviveAll: killed.map(t => t.id) });
+  swRows = (link ? [{ link }] : []).concat(rows, swRunnerRows(swQuery));
   if (swSel >= swRows.length) swSel = Math.max(0, swRows.length - 1);
   const here = swHere();
   setHTML(host, swRows.length
@@ -316,14 +395,31 @@ function paintSwitcher() {
       <div class="swrow swopen ${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
         id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}">${r.html}</div>`;
       }
+      if (t.reviveAll) {
+        return `
+      <div class="swrow swrevive ${i === swSel ? "on" : ""}" data-revive="1">
+        <span class="swname">revive all ${t.reviveAll.length}</span>
+        <span class="swdir">killed by a reboot, a crash or a lost link, not closed by anybody</span>
+      </div>`;
+      }
+      if (t.harness) {
+        return `
+      <div class="swrow ${i === swSel ? "on" : ""}" data-harness="${esc(t.harness)}">
+        ${runnerMark(t.harness)}
+        <span class="swname">${swHighlight(t.label, swQuery)}</span>
+        <span class="swdir">new agent</span>
+      </div>`;
+      }
       return `
       <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
         ${runnerMark(t.runner)}
-        <span class="swname">${esc(t.display_title || t.title || terminalLabel(t))}</span>
+        <span class="swname">${swHighlight(String(t.display_title || t.title || terminalLabel(t) || ""), swQuery)}</span>
         ${sameCard(t.id, here) ? `<span class="chip">here</span>` : ""}
         ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
+        ${t.supervised ? "" : `<span class="chip ${t.revive ? "warn" : ""}">${t.archived_at ? "archived" : t.revive ? "killed" : "ended"}</span>`}
+        ${!t.supervised && roomOf(t.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(t.id))}">${esc(roomOf(t.id))}</span>` : ""}
         <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(terminalLabel(t) || t.worktree || "")}</span>
       </div>`;
     }).join("")
@@ -332,10 +428,31 @@ function paintSwitcher() {
   // The id travels in a data attribute and comes back through the DOM, never
   // through an inline handler. The house rule, and it costs nothing here.
   host.querySelectorAll(".swrow").forEach(el => {
-    el.onclick = e => el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey) : switchTo(el.dataset.id);
+    el.onclick = e => el.dataset.revive ? swReviveAll()
+      : el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey)
+      : el.dataset.harness ? swLaunch(el.dataset.harness) : switchTo(el.dataset.id);
   });
   const on = host.querySelector(".swrow.on");
   if (on) on.scrollIntoView({ block: "nearest" });
+}
+
+// Every card a failure killed, resumed on its own room. One that fails is reported and the rest still go.
+async function swReviveAll() {
+  const row = swRows.find(t => t.reviveAll);
+  if (!row) return;
+  closeSwitcher();
+  const failed = [];
+  for (const id of row.reviveAll) {
+    try { await api(`/v1/tasks/${encodeURIComponent(id)}/resume`, { method: "POST" }); }
+    catch (e) { failed.push(id); }
+  }
+  if (failed.length) toast("could not revive " + failed.length + " of " + row.reviveAll.length, failed.join(", "));
+  else toast("revived " + row.reviveAll.length, "each card resumes its conversation on its own room.");
+}
+
+function swLaunch(harness) {
+  closeSwitcher();
+  openLaunch(harness);
 }
 
 function swMove(d) {
@@ -352,6 +469,9 @@ function swMove(d) {
 // window has no pane to attach in, so it MOVES. See `soloSwitch`.
 async function switchTo(id) {
   if (!id) return;
+  const row = swRows.find(t => t.id === id);
+  // A dead card lands the way an alert does: on its card, to resume or to read, never a fresh launch.
+  if (row && !row.supervised) { closeSwitcher(); landOnAlert(id, "", ""); return; }
   swRemember(id);
   closeSwitcher();
   if (termOnly()) await soloSwitch(id);
@@ -428,6 +548,7 @@ async function soloSwitch(id) {
     // the highlighted row jumps to whatever is now in that position, which is
     // a different session and one keystroke from being opened.
     swSel = 0;
+    swFindGone();
     // A link is read as it is typed or pasted, so Enter has the answer already.
     const link = swLinkOf(swQuery);
     if (link) quickPasteWatch(link, e.inputType === "insertFromPaste");
@@ -440,7 +561,9 @@ async function soloSwitch(id) {
       e.preventDefault();
       const t = swRows[swSel];
       // Shift-Enter on a link stops at the launch dialog. On a session it is Enter.
-      if (t && t.link) quickPasteGo(t.link, e.shiftKey);
+      if (t && t.reviveAll) swReviveAll();
+      else if (t && t.link) quickPasteGo(t.link, e.shiftKey);
+      else if (t && t.harness) swLaunch(t.harness);
       else if (t) switchTo(t.id);
     }
     // Escape is the dialog's own and needs nothing here.

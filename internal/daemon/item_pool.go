@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -60,7 +61,7 @@ func (d *Daemon) poolCards(pool string) []*store.Task {
 	}
 	var out []*store.Task
 	for _, t := range all {
-		if poolOf(t) == pool && t.Status != store.StatusDead && !isParked(t) {
+		if poolOf(t) == pool && t.Status != store.StatusDead && !small.IsParked(t) {
 			out = append(out, t)
 		}
 	}
@@ -134,7 +135,7 @@ func (d *Daemon) feedPool(pool string) {
 		if _, changed, err := d.st.ItemAssign(it.ID, card.ID, gen); err != nil {
 			log.Printf("[atrium] item %s was handed to %s and could not be recorded: %v", it.ID, card.DisplayTitle(), err)
 		} else if changed {
-			d.publishTask(card.ID)
+			d.Publish(card.ID)
 			d.kickItems()
 		}
 	}
@@ -190,12 +191,12 @@ func (d *Daemon) handlePoolSubmit(w http.ResponseWriter, r *http.Request) {
 		By    string `json:"by"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	it, code, err := d.submitPoolItem(r.PathValue("pool"), in.Brief, in.Owner, in.By)
 	if err != nil {
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

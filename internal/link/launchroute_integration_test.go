@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // fakeRoom is a room on a machine that has some directories. It answers the
@@ -196,7 +198,7 @@ func TestThePickAfterTwoMatchesIsHonouredAsNamed(t *testing.T) {
 	front, done := rooms(t, "sg4", a, b)
 	defer done()
 
-	got := launch(t, front, inDir(dotagents), RoomHeader, "claude-sg4")
+	got := launch(t, front, inDir(dotagents), wire.RoomHeader, "claude-sg4")
 	if got.Code != http.StatusOK || got.By != "claude-sg4" {
 		t.Fatalf("the pick landed on %q (%d %s)", got.By, got.Code, got.Error)
 	}
@@ -339,7 +341,7 @@ func TestALaunchThatNamesARoomIsNotChecked(t *testing.T) {
 	front, done := rooms(t, "sg4", a, b)
 	defer done()
 
-	got := launch(t, front, inDir(dotagents), RoomHeader, "claude-sg4")
+	got := launch(t, front, inDir(dotagents), wire.RoomHeader, "claude-sg4")
 	if got.Code != http.StatusOK || got.By != "claude-sg4" {
 		t.Fatalf("a named room was overridden: %q (%d %s)", got.By, got.Code, got.Error)
 	}

@@ -28,8 +28,7 @@ $here = Split-Path -Parent $PSScriptRoot
 Set-Location $here
 
 if (-not $Version) {
-    $Version = (git describe --tags --exact-match 2>$null)
-    if (-not $Version) { $Version = 'dev' }
+    $Version = (& "$PSScriptRoot/version.ps1")
 }
 
 # THE NUMERIC MSI VERSION, and why it is not the tag. Windows Installer stores
@@ -45,6 +44,8 @@ $msiVersion = ($msiVersion -split '-')[0]
 if ($msiVersion -notmatch '^[0-9]+(\.[0-9]+){1,3}$') {
     if ($Version -eq 'dev' -or $Version -like 'dev*') {
         $msiVersion = '0.0.0'
+    } elseif ($Version -match '^([0-9]+\.[0-9]+\.[0-9]+)\+') {
+        $msiVersion = $Matches[1]
     } else {
         throw "cannot turn '$Version' into a numeric MSI version. want vMAJOR.MINOR.PATCH."
     }

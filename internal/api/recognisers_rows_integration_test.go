@@ -68,8 +68,8 @@ func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, r
 func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 	t.Parallel()
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "github.json"); n != 7 {
-		t.Fatalf("github.json holds %d rows, wanted 7", n)
+	if n := loadShippedRows(t, s, "github.json"); n != 8 {
+		t.Fatalf("github.json holds %d rows, wanted 8", n)
 	}
 
 	cases := []struct {
@@ -78,6 +78,7 @@ func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 		{"https://github.com/openziti/ziti/pull/4211", "github-pull-request", "openziti", "ziti", "4211"},
 		{"https://github.com/openziti/ziti/pull/4211/files", "github-pull-request", "openziti", "ziti", "4211"},
 		{"https://github.com/openziti/ziti/issues/12", "github-issue", "openziti", "ziti", "12"},
+		{"git@github.com:openziti/ziti.git", "github-repo-ssh", "openziti", "ziti", ""},
 	}
 	for _, c := range cases {
 		code, got := recogniseOver(t, s, st, c.url)
@@ -109,8 +110,8 @@ func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 	t.Parallel()
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "bitbucket.json"); n != 4 {
-		t.Fatalf("bitbucket.json holds %d rows, wanted 4", n)
+	if n := loadShippedRows(t, s, "bitbucket.json"); n != 5 {
+		t.Fatalf("bitbucket.json holds %d rows, wanted 5", n)
 	}
 	code, got := recogniseOver(t, s, st, "https://bitbucket.org/acme/widgets/pull-requests/77")
 	if code != http.StatusOK {
@@ -127,6 +128,10 @@ func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 	}
 	if _, again := recogniseOver(t, s, st, "https://bitbucket.org/acme/widgets/pull-requests/77/diff"); again.Vars["num"] != "77" {
 		t.Fatalf("a trailing path should still be the same pull request: %+v", again)
+	}
+	if _, ssh := recogniseOver(t, s, st, "git@bitbucket.org:acme/widgets.git"); ssh.Recogniser != "bitbucket-repo-ssh" ||
+		ssh.Org != "acme" || ssh.Repo != "widgets" || ssh.Cwd != "D:/git/bitbucket/acme/widgets" {
+		t.Fatalf("an ssh clone url: %+v", ssh)
 	}
 }
 

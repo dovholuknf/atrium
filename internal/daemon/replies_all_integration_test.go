@@ -21,6 +21,7 @@ func TestRepliesAllHoldsTheWholeTranscriptAndThePriorOnes(t *testing.T) {
 		transcriptReply(t, f.path, fmt.Sprintf("m%d", i), f.base.Add(time.Duration(i)*time.Second), false, textBlock(fmt.Sprintf("reply %d", i)))
 	}
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 
 	v, err := d.repliesAll(f.task.ID)
 	if err != nil {
@@ -56,6 +57,7 @@ func TestRepliesAllIsBounded(t *testing.T) {
 	hk := testHooks()
 	hk.repliesAllBudget = 4 << 10
 	d := &Daemon{hk: *hk, st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	v, err := d.repliesAll(f.task.ID)
 	if err != nil {
 		t.Fatal(err)

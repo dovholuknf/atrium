@@ -41,18 +41,25 @@ async function chatterSection(browser, base) {
   let releaseUsage;
   const usageGate = new Promise(r => { releaseUsage = r; });
   await ctx.route("**/v1/tasks/*/usage*", async route => { await usageGate; await route.fallback(); });
+  // Every refresh replaces lastTasks, so the two cards come in the list the board reads, not as a patch to it.
+  await ctx.route("**/v1/tasks", async route => {
+    const res = await route.fetch();
+    const body = await res.json();
+    body.tasks = (body.tasks || []).concat([{ id: "me-1", title: "me", wire_name: "me", status: "running", resume_id: "r-me-1" },
+      { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
+    await route.fulfill({ response: res, json: body });
+  });
   await dp.addInitScript(() => {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   });
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForTimeout(900);
+    await dp.waitForSelector('.tab[data-view="terms"]', { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    await dp.waitForFunction(() => lastTasks.some(t => t.id === "other-2"), null, { timeout: slow(15000) });
     await dp.evaluate(() => {
       for (let n = document.getElementById("t-expando"); n; n = n.parentElement) n.hidden = false;
-      lastTasks = lastTasks.concat([{ id: "me-1", title: "me", wire_name: "me", status: "running", resume_id: "r-me-1" },
-        { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
       document.getElementById("t-drawer").classList.add("open");
       termDrawerOpen = true;
       peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
@@ -98,7 +105,8 @@ async function chatterSection(browser, base) {
         window.__chat = peekChatter; peekChatter = () => {};
         peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
       });
-      await dp.waitForTimeout(600);
+      await dp.waitForFunction(() => !document.querySelector("#t-drawer-body .chat-row"), null, { timeout: slow(8000) });
+      await settleStyle(dp);
       await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, "say-log-view-before.png") });
       await dp.evaluate(() => {
         peekChatter = window.__chat;
@@ -115,7 +123,8 @@ async function chatterSection(browser, base) {
     await ctx.unroute("**/v1/tasks/*/says*");
     await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"says":[],"more":false}' }));
     await dp.evaluate(() => peekFill(document.getElementById("t-drawer-body"), "me-1", () => true));
-    await dp.waitForTimeout(600);
+    await dp.waitForFunction(() => { const e = document.querySelector("#t-drawer-body .peek-sec.chatter"); return e && e.hidden; }, null, { timeout: slow(8000) })
+      .catch(() => {});
     if (!(await dp.$eval("#t-drawer-body .peek-sec.chatter", e => e.hidden))) fail("an empty chatter section is showing.");
     if (errors.length) fail("the chatter page threw uncaught errors: " + errors.join(" | "));
   } finally {
@@ -160,7 +169,7 @@ async function chatterTabSection(browser, base) {
   };
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForTimeout(900);
+    await dp.waitForSelector('.tab[data-view="chatter"]', { state: "attached", timeout: slow(15000) });
     // The tab starts in the ... menu whatever the width, and the arrange dialog can put it in the bar and back.
     const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, menu: t.classList.contains("umenu") }));
     if (tab.text !== "messages between agents" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
@@ -172,7 +181,7 @@ async function chatterTabSection(browser, base) {
     if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter stays in the menu after being put in the bar");
     await dp.reload({ waitUntil: "domcontentloaded" });
     await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await dp.waitForTimeout(1500);
+    await dp.waitForSelector('.tab[data-view="chatter"]:not(.umenu)', { state: "attached", timeout: slow(8000) });
     if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter is back in the menu after a reload");
     await dp.evaluate(() => window.openTabsArrange());
     await dp.waitForSelector("#tabsdlg[open]");
@@ -182,15 +191,14 @@ async function chatterTabSection(browser, base) {
     if (process.env.CHATTER_SHOTS) {
       // Before: the same menu with no chatter in it.
       await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = true; });
-      await dp.waitForTimeout(300);
       await dp.click("#tabmore");
-      await dp.waitForTimeout(300);
+      await dp.waitForSelector('#tabmore[aria-expanded="true"]', { timeout: slow(8000) });
       await shot("say-log-all-before.png");
       await dp.keyboard.press("Escape");
+      await dp.waitForSelector('#tabmore[aria-expanded="false"]', { timeout: slow(8000) });
       await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = false; });
-      await dp.waitForTimeout(300);
       await dp.click("#tabmore");
-      await dp.waitForTimeout(300);
+      await dp.waitForSelector('#tabmore[aria-expanded="true"]', { timeout: slow(8000) });
       await shot("say-log-all-menu.png");
       await dp.keyboard.press("Escape");
     }
@@ -230,20 +238,24 @@ async function chatterTabSection(browser, base) {
     await dp.waitForFunction(() => document.querySelectorAll("#chatter-list .chatter-row").length === 20, null, { timeout: slow(8000) });
     const q = new URLSearchParams(asked[asked.length - 1]);
     if (q.get("from") !== "me" || q.has("agent") || q.has("before")) fail("sent by an agent asked " + asked[asked.length - 1]);
+    const saysRead = () => dp.waitForResponse(res => /\/v1\/says/.test(res.url()), { timeout: slow(8000) });
+    let read = saysRead();
     await dp.selectOption("#chatter-dir", "");
-    await dp.waitForTimeout(300);
+    await read;
     if (new URLSearchParams(asked[asked.length - 1]).get("agent") !== "me") fail("either side asked " + asked[asked.length - 1]);
+    read = saysRead();
     await dp.selectOption("#chatter-since", "86400");
-    await dp.waitForTimeout(300);
+    await read;
     const since = new URLSearchParams(asked[asked.length - 1]).get("since");
     if (!since || Math.abs(Date.parse(since) - (Date.now() - 86400000)) > 60000) fail("the time window asked since " + since);
     // The room filter lists the rooms the hub reports.
     await dp.evaluate(() => { hubRooms = [{ name: "alpha" }, { name: "beta" }]; chatterDrawChoices(); });
+    read = saysRead();
     await dp.selectOption("#chatter-room", "beta");
-    await dp.waitForTimeout(300);
+    await read;
     if (new URLSearchParams(asked[asked.length - 1]).get("room") !== "beta") fail("the room filter asked " + asked[asked.length - 1]);
     const before = asked.length;
-    await dp.waitForTimeout(1500);
+    await dp.waitForTimeout(1500); // wait: nothing must poll
     if (asked.length !== before) fail("the chatter polled: " + (asked.length - before) + " reads with nothing touched.");
     if (errors.length) fail("the chatter tab threw uncaught errors: " + errors.join(" | "));
   } finally {

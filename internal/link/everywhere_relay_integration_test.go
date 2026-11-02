@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // FE1, the hub's half: a room asks `find` and is told the one card.
@@ -15,7 +17,7 @@ func TestFindAnswersTheOneCardOnAnotherRoom(t *testing.T) {
 	defer x.stop()
 	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "@Orchestrator"})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "@Orchestrator"})
 	if err != nil || !ans.OK {
 		t.Fatalf("find = %+v, %v", ans, err)
 	}
@@ -30,11 +32,11 @@ func TestFindExcludesTheAskingRoomAndNeverMatchesAnId(t *testing.T) {
 	defer x.stop()
 	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 
-	ans, err := x.sg4R.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "orchestrator"})
+	ans, err := x.sg4R.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
 	if err != nil || ans.OK || ans.Code != http.StatusNotFound {
 		t.Fatalf("find from its own room = %+v, %v", ans, err)
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "s1"})
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "s1"})
 	if ans.OK || ans.Code != http.StatusNotFound {
 		t.Fatalf("find by card id = %+v", ans)
 	}
@@ -47,7 +49,7 @@ func TestFindRefusesWhenTwoRoomsMatchAndNamesBoth(t *testing.T) {
 	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 	x.hub.IndexEverywhere("sg3", []CardState{everyRow("t1", "running", "atrium-5120", "orchestrator", EverywhereTag)})
 
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "orchestrator"})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
 	if err != nil || ans.OK || ans.Code != http.StatusConflict {
 		t.Fatalf("find = %+v, %v", ans, err)
 	}
@@ -64,7 +66,7 @@ func TestFindMissCarriesTheEverywhereList(t *testing.T) {
 	defer x.stop()
 	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "nobody"})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "nobody"})
 	if err != nil || ans.OK || ans.Code != http.StatusNotFound {
 		t.Fatalf("find = %+v, %v", ans, err)
 	}
@@ -206,7 +208,7 @@ func TestRelayPeersEverywhereAnswersOnlyTheTaggedCards(t *testing.T) {
 	defer x.stop()
 	indexSG4(x)
 
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayPeers, Everywhere: true})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayPeers, Everywhere: true})
 	if err != nil || !ans.OK || len(ans.Peers) != 1 || !ans.Peers[0].Everywhere ||
 		ans.Peers[0].Handle != "atrium-87300@sg4" || ans.Peers[0].Alias != "orchestrator" ||
 		ans.Peers[0].Card != "sg4~s1" {
@@ -231,7 +233,7 @@ func TestARoomTheStoreNoLongerHoldsLeavesTheIndex(t *testing.T) {
 	if got := everyOf(x.hub).find("m1mini", "orchestrator"); len(got) != 0 {
 		t.Fatalf("after the store dropped the room: %+v", got)
 	}
-	ans, _ := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "orchestrator"})
+	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
 	if ans.OK || ans.Code != http.StatusNotFound {
 		t.Fatalf("find answered with a room the hub no longer has: %+v", ans)
 	}

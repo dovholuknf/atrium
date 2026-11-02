@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 const recSHA = "cccccccccccccccccccccccccccccccccccccccc"
@@ -102,7 +103,7 @@ func TestTheReviewRouteRefusesACardAndAnotherOrigin(t *testing.T) {
 		r.RemoteAddr, r.Host = addr, "127.0.0.1"
 		r.Header.Set("Content-Type", "application/json")
 		if agent != "" {
-			r.Header.Set(AgentHeader, agent)
+			r.Header.Set(ctl.AgentHeader, agent)
 		}
 		rec := httptest.NewRecorder()
 		x.p.ServeHTTP(rec, r)

@@ -15,7 +15,7 @@ func measure(d time.Duration) (p99 time.Duration, n int, ok bool) {
 	p := &Drift{}
 	stop := make(chan struct{})
 	go p.Run(stop)
-	time.Sleep(d)
+	time.Sleep(d) // wait: the probe running for d is what is measured
 	close(stop)
 	return p.Drain()
 }

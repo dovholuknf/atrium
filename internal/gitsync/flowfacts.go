@@ -8,7 +8,7 @@ import (
 
 var shaPrefixRe = regexp.MustCompile(`^[0-9a-f]{7,39}$`)
 
-// What the hub's repository says of a backlog item's work, for the merge flow. See docs/design/merge-flow.md.
+// What the hub's repository says of a backlog item's work, for the merge flow.
 //
 // A COMMIT COUNTS AS IN A BRANCH WHEN IT IS AN ANCESTOR OR HAS A PATCH-EQUIVALENT THERE. Re-signing, a rebase and a
 // conflict fix all rewrite shas and keep the change, and `git cherry` is the test that sees through that: it lists

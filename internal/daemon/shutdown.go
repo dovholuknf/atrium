@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // Stopping the daemon from somewhere other than its own terminal.
@@ -67,7 +68,7 @@ const launchRefusedStopping = "this room is stopping: nothing was launched. retr
 // answered `running` for a runner the restart takes with its first prompt.
 func (d *Daemon) launchWhileStopping() error {
 	if d.stop.stopping() {
-		return errString(launchRefusedStopping)
+		return small.ErrString(launchRefusedStopping)
 	}
 	return nil
 }
@@ -104,7 +105,7 @@ func (d *Daemon) shutdownAllowed(w http.ResponseWriter, r *http.Request) bool {
 		// rule was "only someone at this keyboard"; with a share running it
 		// would silently become "anyone the overlay admits", and a kill switch
 		// is the worst thing to hand out by accident.
-		if d.sharing() {
+		if d.Sharing() {
 			http.Error(w,
 				"a share is running, so loopback no longer means this machine. "+
 					"restart with --shutdown-token to allow this, or stop the share.",
@@ -178,7 +179,7 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	reason := "a shutdown request from " + from
 	if now {
 		log.Printf("[atrium] shutdown requested by %s, now: no wrap-up", from)
-		d.wrap.cancelRunning()
+		d.Wrap.CancelRunning()
 		go d.stop.request(reason)
 		return
 	}
@@ -193,7 +194,7 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Off the request goroutine, so the response is written and the connection
 	// free before the listener starts closing. The wrap-up is bounded by the wait.
 	go func() {
-		d.wrapUpForRestart(context.Background(), wait, reason)
+		d.WrapUpForRestart(context.Background(), wait, reason)
 		d.stop.request(reason)
 	}()
 }

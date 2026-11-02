@@ -14,6 +14,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -41,7 +42,7 @@ type taskSpec struct {
 }
 
 type taskLaunchBody struct {
-	LaunchRequest
+	shared.LaunchRequest
 	Task *taskSpec `json:"task"`
 }
 
@@ -79,7 +80,7 @@ func (d *Daemon) taskLaunchFromJSON(body []byte) (*store.Task, error) {
 	if err := d.launchWhileStopping(); err != nil {
 		return nil, err
 	}
-	if err := d.launchHeld(req); err != nil {
+	if err := d.LaunchHeld(req); err != nil {
 		return nil, err
 	}
 	if err := d.launchNeedsLogin(req); err != nil {
@@ -130,7 +131,7 @@ func (d *Daemon) taskFolder(spec *taskSpec) (string, error) {
 			}
 		}
 	}
-	root, err := d.cardRoot()
+	root, err := d.CardRoot()
 	if err != nil {
 		return "", err
 	}

@@ -25,7 +25,7 @@ import (
 // The hub's half: accept what rooms dial, and lend those connections out as if
 // the hub had dialled them.
 //
-// THE HUB HOLDS NOTHING DURABLE. No database, no card, no scrollback. Kill it
+// THE HUB CONNECTIONS HOLD NOTHING DURABLE. No card, no scrollback. Kill it
 // mid-sentence and the only thing lost is the socket. That is not tidiness, it
 // is the entire point: the hub is the part being restarted every few minutes
 // while somebody changes CSS, so it must never be the part that owns anything
@@ -109,7 +109,7 @@ type Hub struct {
 	// a message, or the list of who is there. `from` is the asking room, from
 	// its certificate. Nil refuses, which is right for a hub with no board to
 	// reach the other rooms through. See relay.go.
-	Relay func(ctx context.Context, from string, req RelayRequest) RelayAnswer
+	Relay func(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer
 
 	// Git serves the hub's repositories, as plain HTTP, to a room that dialled the `git`
 	// kind. Nil means this hub does not say Git in its welcome and refuses the kind. It is
@@ -220,6 +220,8 @@ type attached struct {
 	// os and arch are what the room said it runs on, in its hello. Observed, and
 	// they ride the `rooms` event so the board can say which build a machine wants.
 	os, arch string
+	// tools is where the room said each toolchain is, in its hello. Observed.
+	tools map[string]string
 	// unproven is the overlay a room attached over WITHOUT a certificate, so its
 	// name is only what it said. Empty for a room the hub's certificate names.
 	unproven string
@@ -378,7 +380,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 	// correct there and nowhere else.
 	name := hi.Room
 	if who := identify(conn); who != "" {
-		if name != "" && !equalFold(who, name) {
+		if name != "" && !wire.EqualFold(who, name) {
 			log.Printf("[hub] %q presented a certificate for %q, using the certificate", name, who)
 		}
 		name = who
@@ -471,7 +473,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	session := newSession()
 	a := &attached{
 		name: name, version: hi.Version, host: hi.Host, commit: hi.Commit, session: session,
-		os: hi.OS, arch: hi.Arch, git: hi.Git,
+		os: hi.OS, arch: hi.Arch, git: hi.Git, tools: hi.Tools,
 		since: time.Now(), control: conn,
 		unproven: unprovenOver(conn),
 		local:    localConn(conn, hi.Host),
@@ -508,7 +510,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		}
 	}()
 	h.mu.Lock()
-	old, taken := h.rooms[keyOf(name)]
+	old, taken := h.rooms[wire.KeyOf(name)]
 	// A KEYLESS DIAL CANNOT REPLACE A KEYED ROOM either: it has nothing to show
 	// that it is the same room. Before f-026 an empty key slipped past this.
 	if taken && old.key != "" && old.key != a.key {
@@ -522,7 +524,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	if taken {
 		old.close("replaced by a newer connection from the same room")
 	}
-	h.rooms[keyOf(name)] = a
+	h.rooms[wire.KeyOf(name)] = a
 	h.mu.Unlock()
 	// A RECONNECT WITH A NEW VERSION COMES THROUGH HERE TOO, which is why this is
 	// the one place attach fires from: the fingerprint downstream decides whether
@@ -711,7 +713,7 @@ func (h *Hub) starved(a *attached, now time.Time) bool {
 // data files a fresh connection into a room's pool.
 func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader, via string) {
 	h.mu.Lock()
-	a := h.rooms[keyOf(name)]
+	a := h.rooms[wire.KeyOf(name)]
 	h.mu.Unlock()
 
 	// A DATA CONNECTION WITHOUT ITS CONTROL CONNECTION IS REFUSED, and the
@@ -748,8 +750,8 @@ func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader, via s
 func (h *Hub) forget(name string, a *attached, why string) {
 	h.mu.Lock()
 	removed := false
-	if cur, ok := h.rooms[keyOf(name)]; ok && cur == a {
-		delete(h.rooms, keyOf(name))
+	if cur, ok := h.rooms[wire.KeyOf(name)]; ok && cur == a {
+		delete(h.rooms, wire.KeyOf(name))
 		removed = true
 	}
 	h.mu.Unlock()
@@ -800,7 +802,7 @@ var ErrNoRoom = errors.New("no room is attached")
 // connection was dialled from the other end.
 func (h *Hub) Dial(ctx context.Context, room string) (net.Conn, error) {
 	h.mu.Lock()
-	a := h.rooms[keyOf(room)]
+	a := h.rooms[wire.KeyOf(room)]
 	h.mu.Unlock()
 	if a == nil {
 		return nil, ErrNoRoom
@@ -853,7 +855,7 @@ func (h *Hub) Dial(ctx context.Context, room string) (net.Conn, error) {
 // heard from.
 func (h *Hub) AskRestart(room string, ask RestartAsk) error {
 	h.mu.Lock()
-	a := h.rooms[keyOf(room)]
+	a := h.rooms[wire.KeyOf(room)]
 	h.mu.Unlock()
 	if a == nil {
 		return ErrNoRoom
@@ -917,50 +919,6 @@ func (h *Hub) dialer(room string) func(context.Context, string, string) (net.Con
 	}
 }
 
-// Room reports what is attached under a name.
-type Attached struct {
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
-	Host    string `json:"host,omitempty"`
-	// Commit is the commit the room said it runs. Empty for a room that does not say.
-	Commit string    `json:"commit,omitempty"`
-	Since  time.Time `json:"since"`
-	Idle   int       `json:"idle"`
-	Beat   time.Time `json:"last_beat"`
-	OS     string    `json:"os,omitempty"`
-	Arch   string    `json:"arch,omitempty"`
-	// Proven is false for a room that attached over an overlay WITHOUT a
-	// certificate, so what it is called is only what it said. That is how an
-	// operator finds who must re-join before the old path is refused.
-	Proven bool `json:"proven"`
-	// Git is whether the room said it takes git syncs.
-	Git bool `json:"git,omitempty"`
-	// Local is a room on the hub's own machine, which the merge queue tests on when no merge room is set.
-	Local bool `json:"local,omitempty"`
-	// IdleCPU is the idle percent the room last reported on a beat. Nil for a room that does not send one.
-	IdleCPU *float64 `json:"idle_cpu,omitempty"`
-	// Setup is what the hub last read of this room's setup, nil before the first read. Filled by the proxy, never by
-	// the room. See setupwatch.go.
-	Setup *RoomSetup `json:"setup,omitempty"`
-	// Via is the transport this room is attached over, from the listener that took
-	// it. Empty from a hub serving one unnamed listener. Fallback is the room saying
-	// it is not on its first choice. See docs/rnd/room-transport-order.md.
-	Via      string `json:"via,omitempty"`
-	Fallback bool   `json:"fallback,omitempty"`
-	// Starved is a room whose control connection is up while no data connection
-	// has arrived for Timings.Starve: attached in name, unreachable from the
-	// board. Its data dials are going somewhere the hub is not.
-	Starved bool `json:"starved,omitempty"`
-	// RemoteAccess is what the room said about its ssh switch. Nil is a room that never says, which reads as unknown.
-	// Observed, never trusted for granting, and the hub cannot change it. See stream.go.
-	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
-	// LoginNeeded is why the room says its claude login needs doing, empty when it does not say or it is fine.
-	// Observed from the beat and never acted on here. See internal/daemon/loginneeded.go.
-	LoginNeeded string `json:"login_needed,omitempty"`
-	// Paths is how each of the room's rungs looked from the room on its last beat, nil from a room that does not say.
-	Paths []PathState `json:"paths,omitempty"`
-}
-
 // unprovenOver names the overlay a connection took the old path on, or "".
 func unprovenOver(c net.Conn) string {
 	t, _ := transport.LegacyTransport(c)
@@ -975,7 +933,7 @@ const refusedEvery = 10 * time.Minute
 // provenName says why a name cannot be used without a certificate, or nothing.
 func (h *Hub) provenName(name string) string {
 	h.mu.Lock()
-	a := h.rooms[keyOf(name)]
+	a := h.rooms[wire.KeyOf(name)]
 	h.mu.Unlock()
 	if a != nil && a.key != "" {
 		return "a room with a certificate is attached under that name"
@@ -988,7 +946,7 @@ func (h *Hub) provenName(name string) string {
 
 // refuseUnproven logs and reports a refused old-path claim, rate limited.
 func (h *Hub) refuseUnproven(name, over, why string) {
-	k := keyOf(name)
+	k := wire.KeyOf(name)
 	h.mu.Lock()
 	if h.refused == nil {
 		h.refused = map[string]time.Time{}
@@ -1009,10 +967,10 @@ func (h *Hub) refuseUnproven(name, over, why string) {
 }
 
 // Rooms lists what is attached, for the hub's own status endpoint.
-func (h *Hub) Rooms() []Attached {
+func (h *Hub) Rooms() []wire.Attached {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	out := make([]Attached, 0, len(h.rooms))
+	out := make([]wire.Attached, 0, len(h.rooms))
 	now := time.Now()
 	for _, a := range h.rooms {
 		starved := h.starved(a, now)
@@ -1031,13 +989,14 @@ func (h *Hub) Rooms() []Attached {
 		login := a.login
 		paths := append([]PathState(nil), a.paths...)
 		a.mu.Unlock()
-		out = append(out, Attached{
+		out = append(out, wire.Attached{
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, Local: a.local, IdleCPU: idle,
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 			LoginNeeded: login,
 			Paths:       paths,
+			Tools:       a.tools,
 		})
 	}
 	return out
@@ -1047,7 +1006,7 @@ func (h *Hub) Rooms() []Attached {
 func (h *Hub) Has(room string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	_, ok := h.rooms[keyOf(room)]
+	_, ok := h.rooms[wire.KeyOf(room)]
 	return ok
 }
 
@@ -1093,9 +1052,6 @@ func newSession() string {
 
 // keyOf folds a room name, because a room typed with different capitals on two
 // machines is one room.
-func keyOf(s string) string { return lowerASCII(s) }
-
-func equalFold(a, b string) bool { return wire.EqualFold(a, b) }
 
 func lowerASCII(s string) string { return wire.LowerASCII(s) }
 
@@ -1144,37 +1100,6 @@ func (h *Hub) OnlyVia(kind string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// RoomSetup is what the hub last learned about one room's setup.
-type RoomSetup struct {
-	// Answering is false when the room did not answer the check. Nothing else is meaningful then.
-	Answering bool      `json:"answering"`
-	Checked   time.Time `json:"checked"`
-	// HooksMissing is the report's `missing` count, which includes stale hooks. HooksStale counts those alone.
-	HooksMissing int `json:"hooks_missing"`
-	HooksStale   int `json:"hooks_stale"`
-	// HooksUnreadable is the parse error when settings.json cannot be read. Nothing is written then, so no fix.
-	HooksUnreadable string `json:"hooks_unreadable,omitempty"`
-	// HooksTwoGates is true when the dotfiles gate and atrium's own are both registered. It is one of HooksMissing.
-	HooksTwoGates bool   `json:"hooks_two_gates,omitempty"`
-	Build         string `json:"build,omitempty"`
-	// Code is the room's code fingerprint and Commit the commit it was built from. Both are empty on an old room.
-	Code    string   `json:"code,omitempty"`
-	Commit  string   `json:"commit,omitempty"`
-	Go      string   `json:"go,omitempty"`
-	Runners []string `json:"runners,omitempty"`
-	// Issues is what is wrong, named once here so the pill and the row cannot disagree.
-	Issues []SetupIssue `json:"issues"`
-
-	Since time.Time `json:"-"`
-}
-
-// SetupIssue is one thing wrong with a room, in a line a person can read.
-type SetupIssue struct {
-	// Kind is `hooks` or `build`. Only `hooks` has a fix on the board.
-	Kind string `json:"kind"`
-	Text string `json:"text"`
 }
 
 // IndexEverywhere replaces one room's cards in the everywhere index. Called

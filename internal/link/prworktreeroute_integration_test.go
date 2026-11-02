@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func (x *claimHub) worktreeVia(t *testing.T, room, body string) (*http.Response, string) {
@@ -13,7 +15,7 @@ func (x *claimHub) worktreeVia(t *testing.T, room, body string) (*http.Response,
 	req, _ := http.NewRequest(http.MethodPost, x.front.URL+"/v1/providers/gh/pr-worktree", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if room != "" {
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

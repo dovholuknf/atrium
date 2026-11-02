@@ -45,7 +45,7 @@ func (d *Daemon) endThrowaway(taskID string) {
 	// Somebody decided this mattered while it was running. The directory moves
 	// instead of going, which is the whole reason it is safe to start work in
 	// a throwaway before knowing whether the work matters.
-	if row, ok := d.homeOf(t.ID); ok && row.Kind == store.CardHomeThrowaway {
+	if row, ok := d.HomeOf(t.ID); ok && row.Kind == store.CardHomeThrowaway {
 		d.endHomeThrowaway(t, row)
 		return
 	}
@@ -69,7 +69,7 @@ func (d *Daemon) promoteThrowaway(taskID, from, to string) {
 			"could not be moved to "+to+", so it stays in "+from); err != nil {
 			log.Printf("[atrium] note the failed promote on %s: %v", taskID, err)
 		}
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		return
 	}
 	if err := d.st.Promoted(taskID, filepath.ToSlash(to)); err != nil {
@@ -79,7 +79,7 @@ func (d *Daemon) promoteThrowaway(taskID, from, to string) {
 		log.Printf("[atrium] clear the throwaway note on %s: %v", taskID, err)
 	}
 	log.Printf("[atrium] promoted %s to %s", taskID, to)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // discardThrowaway removes the directory, transcripts, then card. Stop if
@@ -138,7 +138,7 @@ func (d *Daemon) sweepThrowaways() {
 		return
 	}
 	for _, t := range tasks {
-		if !t.Throwaway || d.sup.get(t.ID) != nil {
+		if !t.Throwaway || d.sup.Get(t.ID) != nil {
 			continue
 		}
 		d.endThrowaway(t.ID)
@@ -156,14 +156,14 @@ func (d *Daemon) endHomeThrowaway(t *store.Task, row store.CardHome) {
 		if err := d.st.SetWhy(t.ID, ""); err != nil {
 			log.Printf("[atrium] clear the throwaway note on %s: %v", t.ID, err)
 		}
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 		return
 	}
 	d.CloseShell(t.ID)
 	if err := api.ForgetTranscripts(t.Worktree); err != nil {
 		log.Printf("[atrium] could not delete the conversations for %s: %v", t.ID, err)
 	}
-	if removed, kept, _ := d.reclaimHome(t, row, true); !removed {
+	if removed, kept, _ := d.ReclaimHome(t, row, true); !removed {
 		log.Printf("[atrium] could not delete the home of throwaway %s: %s", t.ID, kept)
 		return
 	}

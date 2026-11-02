@@ -32,7 +32,7 @@ func TestAGuestReachesItsCardByNameAndNoOther(t *testing.T) {
 	}
 	lent := mk("ui-director", "ui")
 	mk("rnd-director", "rnd")
-	guest := d.guestHandler(lent.ID)
+	guest := d.GuestHandler(lent.ID)
 	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		guest.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -68,11 +68,11 @@ func TestAGuestReachesItsCardByNameAndNoOther(t *testing.T) {
 		t.Errorf("the handle stopped opening the lent card after a rename: %d", rec.Code)
 	}
 	// And the address handed out is the handle.
-	if got := d.guestPath(lent.ID); got != "/room/claude-sg4/ui-director" {
+	if got := d.GuestPath(lent.ID); got != "/room/claude-sg4/ui-director" {
 		t.Errorf("the lent address is %q, want the handle", got)
 	}
 	d.opts.Room = ""
-	if got := d.guestPath(lent.ID); got != "/#term="+lent.ID {
+	if got := d.GuestPath(lent.ID); got != "/#term="+lent.ID {
 		t.Errorf("with no room name the lent address is %q, want #term=", got)
 	}
 }

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"time"
@@ -77,7 +78,7 @@ func (d *Daemon) endSayDropped(from, text string) bool {
 
 // writeEndSayDropped answers a say that endSayDropped refused.
 func writeEndSayDropped(w http.ResponseWriter) {
-	writeJSONCode(w, http.StatusOK, map[string]any{
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{
 		"ok": true, "delivered": "dropped", "typed": false, "queued": false,
 		"note": "not sent: you already ended with atrium_done or atrium_blocked, so your launcher has it. " +
 			"Nothing more is needed. Stop.",

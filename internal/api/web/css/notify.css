@@ -61,6 +61,7 @@
   .tlrow.blocker.resolved, .tlrow.blocker.resolved.fresh { background: none; box-shadow: none; opacity: .6; }
   .tlrow.blocker.resolved .tlwhen, .tlrow.blocker.resolved .tlwhat b { color: var(--dim); }
   .tlrow .tlresolved { color: var(--dim); font-style: italic; }
+  .tlrow.agent:not(.pinned) { opacity: .55; }
   .tlrow.pinned { position: sticky; top: 0; z-index: 1; background: var(--lift); }
   .tlrow.pinned.blocker { background-image: linear-gradient(rgba(var(--danger-rgb),.14), rgba(var(--danger-rgb),.14)); }
   :is(#toastlog-open, #t-bell).blocked-now { color: var(--danger); }
@@ -170,9 +171,9 @@
      cold without reading anything, and the colour is drained as well as dimmed, since opacity alone over a
      light background still leaves a saturated mark. The left edge keeps a trace of its theme colour so the row
      is still that session, and hover brings it most of the way back. */
-  .term-list .card.tab.cold { opacity: .3; filter: grayscale(.65); }
-  .term-list .card.tab.cold:hover { opacity: .8; filter: grayscale(.2); }
-  .term-list .card.tab.cold::before { opacity: .25; }
+  .term-list .card.tab.cold, .board .card.cold { opacity: .3; filter: grayscale(.65); }
+  .term-list .card.tab.cold:hover, .board .card.cold:hover { opacity: .8; filter: grayscale(.2); }
+  .term-list .card.tab.cold::before, .board .card.cold::before { opacity: .25; }
   /* The one row in this strip that is a real drag. `grab` rather than `move`, because the row is being picked
      up rather than pushed around. */
   .termbucket .card.tab { cursor: grab; }
@@ -279,9 +280,10 @@
     border: 1px solid transparent;
   }
   #switcher .swrow .swname {
-    color: var(--head); font-size: var(--fs-md); white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto;
+    color: var(--head); font-size: var(--fs-md); white-space: normal;
+    overflow-wrap: anywhere; flex: 0 1 auto;
   }
+  #switcher .swhit { background: none; color: var(--teal); font-weight: 600; }
   /* The directory, truncated from the left. What tells two sessions apart is the end of the path, and every one
      of these opens with the same three segments. */
   #switcher .swdir {
@@ -292,6 +294,8 @@
   #switcher .swrow.on { background: var(--lift-strong); border-color: var(--stroke-dim); }
   #switcher .swrow.on .swname { color: var(--teal); }
   #switcher .swrow .rmark, #switcher .swrow .chip { flex: none; }
+  #switcher .swrow.swrevive { margin-top: 6px; border-top: 1px solid var(--stroke-dim); border-radius: 0 0 8px 8px; }
+  #switcher .swrow.swrevive .swname { font-weight: 600; }
   #switcher .swfoot {
     display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     padding: 8px 12px; border-top: 1px solid var(--stroke-dim);
@@ -323,6 +327,25 @@
     flex: 1 1 auto; min-width: 0; color: var(--label); font-size: var(--fs-xs); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
   }
+  #switcher [hidden] { display: none; }
+  /* The worktree name a pasted repo starts on (js/repolink.js), asked in place of the field. */
+  #switcher .swnm {
+    padding: 8px 14px 0; background: var(--bg-2); border-bottom: 1px solid var(--stroke-dim);
+    color: var(--label); font-size: var(--fs-xs);
+  }
+  #switcher .swnmq { display: flex; align-items: baseline; font-size: var(--fs-lg); color: var(--dim); }
+  #switcher .swnmq input {
+    flex: 1 1 auto; min-width: 0; padding: 4px 0 12px; font: inherit; background: none; color: var(--head);
+    border: 0; border-radius: 0; outline: none; box-shadow: none;
+  }
+  #switcher .swnmq input::-webkit-search-cancel-button { display: none; }
+  #switcher .swnmhint {
+    display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; padding: 6px 12px 8px;
+    font-size: var(--fs-xs); color: var(--label);
+  }
+  #switcher .swnmhint b { font-weight: 600; color: var(--dim); }
+  #switcher .swnmhint code { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #switcher .swnmhint code.swnmdir { direction: rtl; text-align: left; }
   #switcher .swpaste { padding: 2px 10px; font-size: var(--fs-xs); font-weight: 500; }
   #switcher .swpaste:hover { transform: none; }
   /* One terminal in its own window: the same page with everything that is not the terminal hidden.
@@ -390,3 +413,8 @@
 .alerts-table td { padding: 5px 8px; border-top: 1px solid var(--hairline); text-align: center; vertical-align: top; }
 .alerts-table td:first-child { text-align: left; }
 .alerts-table .hintline { display: block; }
+
+.seenqs { margin-top: 4px; font-size: var(--fs-xs); }
+.seenq { display: flex; gap: 8px; justify-content: space-between; color: var(--dim); }
+.seenq span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seenq time { flex: none; }

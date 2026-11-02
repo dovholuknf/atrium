@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // roomsBoard stands in for the hub's board with several rooms behind it. A
@@ -42,7 +44,7 @@ func workers(n int) []map[string]any {
 func (b *roomsBoard) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		room := r.Header.Get(RoomHeader)
+		room := r.Header.Get(wire.RoomHeader)
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		switch {

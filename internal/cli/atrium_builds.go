@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 )
 
 // The binaries a hub can hand out, one per platform.
@@ -38,12 +38,12 @@ import (
 // releases win over whatever happens to be running.
 
 // buildsIn reads a directory of per-platform binaries.
-func buildsIn(dir, version string) ([]link.Build, error) {
+func buildsIn(dir, version string) ([]conn.Build, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	var out []link.Build
+	var out []conn.Build
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -53,7 +53,7 @@ func buildsIn(dir, version string) ([]link.Build, error) {
 			log.Printf("[hub] skipping %s: a build is named atrium_<os>_<arch>", e.Name())
 			continue
 		}
-		b, err := link.Describe(filepath.Join(dir, e.Name()), version, goos, arch)
+		b, err := conn.Describe(filepath.Join(dir, e.Name()), version, goos, arch)
 		if err != nil {
 			log.Printf("[hub] skipping %s: %v", e.Name(), err)
 			continue
@@ -77,8 +77,8 @@ func platformOf(name string) (goos, arch string, ok bool) {
 
 // hubBuilds is everything this hub can offer: the directory it was pointed at,
 // plus its own binary for any platform that directory did not cover.
-func hubBuilds(dir, version string) []link.Build {
-	var out []link.Build
+func hubBuilds(dir, version string) []conn.Build {
+	var out []conn.Build
 	if strings.TrimSpace(dir) != "" {
 		got, err := buildsIn(dir, version)
 		if err != nil {
@@ -93,7 +93,7 @@ func hubBuilds(dir, version string) []link.Build {
 			return out
 		}
 	}
-	self, err := link.Offered(version)
+	self, err := conn.Offered(version)
 	if err != nil {
 		log.Printf("[hub] cannot describe this binary, so rooms like this one are offered nothing: %v", err)
 		return out
@@ -103,7 +103,7 @@ func hubBuilds(dir, version string) []link.Build {
 
 // saysWhatItHas is the startup line, because "upgrades are configured" is a
 // thing to be able to see rather than infer from a room's behaviour later.
-func saysWhatItHas(builds []link.Build) string {
+func saysWhatItHas(builds []conn.Build) string {
 	if len(builds) == 0 {
 		return ""
 	}

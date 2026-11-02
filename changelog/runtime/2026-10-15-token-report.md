@@ -1,1 +1,0 @@
-- Added scripts/token-report/ (fetch, build, run) to build the overnight token-efficiency report for any window, with the 2026-10-15 numbers committed under docs/reports/ as the baseline.

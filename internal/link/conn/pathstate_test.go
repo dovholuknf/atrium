@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func TestProbePathsSaysOnUpDownAndNone(t *testing.T) {
@@ -38,6 +40,16 @@ func TestProbePathsSaysOnUpDownAndNone(t *testing.T) {
 	ziti.fail.Store(false)
 	if s := l.ProbePaths(context.Background(), time.Second)[1]; s.State != PathUp {
 		t.Fatalf("a rung that answers is up, got %s", s.State)
+	}
+}
+
+func TestZrokPathShowsItsShareMaskedNeverWhole(t *testing.T) {
+	got := pathAddr(Path{Transport: "zrok", Share: "abcd1234wxyz"})
+	if got != "share abcd..." {
+		t.Fatalf("a zrok rung's addr is %q, want the first four of its share", got)
+	}
+	if got := pathAddr(Path{Transport: "zrok"}); got != "" {
+		t.Fatalf("a zrok rung with no share says %q", got)
 	}
 }
 
@@ -187,9 +199,9 @@ func TestMutualIsReportedOnlyWhenTheRungSaysSo(t *testing.T) {
 
 func TestOnlyViaSkipsARoomWithAnotherPathUp(t *testing.T) {
 	h := NewHub(Timings{})
-	h.rooms[keyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
+	h.rooms[wire.KeyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
 		paths: []PathState{{Kind: "direct", State: PathDown}, {Kind: "ziti", State: PathOn}}}
-	h.rooms[keyOf("sg3")] = &attached{name: "sg3", via: "ziti",
+	h.rooms[wire.KeyOf("sg3")] = &attached{name: "sg3", via: "ziti",
 		paths: []PathState{{Kind: "direct", State: PathUp}, {Kind: "ziti", State: PathOn}}}
 	got := h.OnlyVia("ziti")
 	if len(got) != 1 || got[0] != "m1mini" {

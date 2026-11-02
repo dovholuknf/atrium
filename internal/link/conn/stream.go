@@ -201,7 +201,7 @@ func (h *Hub) OpenStream(ctx context.Context, room, caller, claim string) (*Stre
 
 func (h *Hub) openStream(ctx context.Context, id, room, caller, claim string) (*Stream, error) {
 	h.mu.Lock()
-	a := h.rooms[keyOf(room)]
+	a := h.rooms[wire.KeyOf(room)]
 	h.mu.Unlock()
 	if a == nil {
 		return nil, streamErr(http.StatusServiceUnavailable, "%s", h.offlineSentence(room))

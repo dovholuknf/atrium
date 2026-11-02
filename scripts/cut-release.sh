@@ -160,6 +160,11 @@ if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)
   refuse 2 "'$version' is not a version. want vMAJOR.MINOR.PATCH, optionally -something."
 fi
 
+tagbase="${version#v}"
+if [ -f internal/cli/VERSION ] && [ "${tagbase%%-*}" != "$(tr -d '[:space:]' <internal/cli/VERSION)" ]; then
+  refuse 2 "'$version' is not the number in internal/cli/VERSION ($(tr -d '[:space:]' <internal/cli/VERSION)). scripts/bump-version.sh moves it."
+fi
+
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   refuse 1 "this is not a git repository, so there is no commit to release."
 fi

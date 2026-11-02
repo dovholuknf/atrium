@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // A room's transports, best first, and which one it is on.
@@ -58,7 +60,7 @@ func NewLadder(rungs []Rung) *Ladder {
 
 // samePath is whether two paths are the one rung.
 func samePath(a, b Path) bool {
-	return a.Transport == b.Transport && equalFold(a.Addr, b.Addr) && a.Service == b.Service &&
+	return a.Transport == b.Transport && wire.EqualFold(a.Addr, b.Addr) && a.Service == b.Service &&
 		a.Share == b.Share && a.Identity == b.Identity
 }
 

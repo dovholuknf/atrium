@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -303,7 +304,7 @@ func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
 	stays := func(s step) {
 		t.Helper()
 		fire(s)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond) // wait: a negative check, the card must not move
 		assertCard(t, humanAddr, name, r.target.ID, s)
 	}
 	bg := func(ids ...string) []map[string]any {
@@ -534,22 +535,20 @@ func runHookLine(t *testing.T, line, payload string) int {
 func assertCard(t *testing.T, humanAddr, name, runner string, s step) {
 	t.Helper()
 	var last string
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	if testwait.Poll(3*time.Second, func() bool {
 		card, ok := findCard(t, humanAddr, name)
-		if ok {
-			what, tool := "-", ""
-			if card.Activity != nil {
-				what, tool = card.Activity.What, card.Activity.Tool
-			}
-			last = fmt.Sprintf("status %s, activity %s/%s, runner %s", card.Status, what, tool, card.Runner)
-			if card.Status == s.status && what == s.activity && tool == s.tool && card.Runner == runner {
-				return
-			}
-		} else {
+		if !ok {
 			last = "no card"
+			return false
 		}
-		time.Sleep(10 * time.Millisecond)
+		what, tool := "-", ""
+		if card.Activity != nil {
+			what, tool = card.Activity.What, card.Activity.Tool
+		}
+		last = fmt.Sprintf("status %s, activity %s/%s, runner %s", card.Status, what, tool, card.Runner)
+		return card.Status == s.status && what == s.activity && tool == s.tool && card.Runner == runner
+	}) {
+		return
 	}
 	t.Fatalf("after %s the card shows %s, wanted status %s, activity %s/%s, runner %s",
 		s.hook, last, s.status, s.activity, s.tool, runner)
@@ -617,27 +616,31 @@ func startTestDaemon(t *testing.T) (agentAddr, humanAddr string) {
 			<-done
 			d.Close()
 		}
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
+		up, died := false, false
+		testwait.Poll(5*time.Second, func() bool {
 			select {
 			case <-done:
-				lastErr = runErr
-				d.Close()
-				goto retry
+				died = true
+				return true
 			default:
 			}
 			if resp, err := http.Get("http://" + humanAddr + "/v1/tasks"); err == nil {
 				resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					t.Cleanup(stop)
-					return agentAddr, humanAddr
-				}
+				up = resp.StatusCode == http.StatusOK
 			}
-			time.Sleep(10 * time.Millisecond)
+			return up
+		})
+		if died {
+			lastErr = runErr
+			d.Close()
+			continue
 		}
-		stop()
-		t.Fatal("test daemon never answered")
-	retry:
+		if !up {
+			stop()
+			t.Fatal("test daemon never answered")
+		}
+		t.Cleanup(stop)
+		return agentAddr, humanAddr
 	}
 	t.Fatalf("test daemon never bound its ports: %v", lastErr)
 	return "", ""

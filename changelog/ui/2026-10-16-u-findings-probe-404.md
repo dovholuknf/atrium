@@ -1,1 +1,0 @@
-Attaching a terminal asks a card for its findings folder once per session, not on every attach, so a card with no findings folder logs one 404 instead of one per attach. A card that holds findings is probed and walked as before. (u-findings-probe-404)

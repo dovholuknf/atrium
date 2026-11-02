@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -75,7 +76,7 @@ func TestOutputJustUnderTheLimitIsFine(t *testing.T) {
 func TestTheBoundedWriterDoesNotFailTheChild(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	w := &limitedWriter{w: &buf, left: 10}
+	w := &shared.LimitedWriter{W: &buf, Left: 10}
 
 	n, err := w.Write([]byte("0123456789abcdef"))
 	if err != nil {

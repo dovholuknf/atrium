@@ -73,7 +73,8 @@ type SpawnArgs struct {
 	Env        []string
 	Cwd        string
 	Cols, Rows int
-	Ring       int // bytes of output the host retains
+	Ring       int    // bytes of output the host retains
+	Label      string // names the runner's job, scope or cgroup
 }
 
 // Spawned is what spawn answers.
@@ -265,7 +266,7 @@ func (c *Client) Hello(build string, takeover bool) (Probe, error) {
 // Spawn starts a pty.
 func (c *Client) Spawn(a SpawnArgs) (Spawned, error) {
 	r, err := c.call(Request{V: VSpawn, ID: a.ID, Kind: a.Kind, Argv: a.Argv, Env: a.Env, Cwd: a.Cwd,
-		Cols: a.Cols, Rows: a.Rows, Ring: a.Ring})
+		Cols: a.Cols, Rows: a.Rows, Ring: a.Ring, Label: a.Label})
 	return Spawned{Pid: r.Pid, RunID: r.RunID}, err
 }
 

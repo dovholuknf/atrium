@@ -52,6 +52,21 @@ function seenChips(t) {
   return out;
 }
 
+// How long the open questions have waited, "" when unknown.
+function seenWaited(s) {
+  const at = s && s.questions_at ? Date.parse(s.questions_at) : NaN;
+  return isNaN(at) ? "" : ago(Math.max(0, (Date.now() - at) / 1000));
+}
+
+// Each open question as one line under a terminal row, with how long it has waited.
+function seenQuestionLines(t) {
+  const s = t && t.seen;
+  const qs = s && s.answered === false && s.open_questions || [];
+  if (!qs.length) return "";
+  const w = seenWaited(s);
+  return `<div class="seenqs">${qs.map(q => `<div class="seenq"><span>${esc(q)}</span>${w ? `<time>${esc(w)}</time>` : ""}</div>`).join("")}</div>`;
+}
+
 // The card the pane is showing, as the last list drew it. The pane's own copy
 // is from when it attached, and a turn that ended since is only on the list.
 function seenCardShown() {

@@ -5,6 +5,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,7 +258,7 @@ func TestUsageResumeFlagWaitsForASpendingTurn(t *testing.T) {
 func TestUsageCauseOfBanner(t *testing.T) {
 	t.Parallel()
 	for banner, want := range map[string]string{
-		wakeLabel: store.UsageRestartWake, exitLabel: store.UsageRestartWake,
+		cycle.WakeLabel: store.UsageRestartWake, exitLabel: store.UsageRestartWake,
 		peerBanner("worker"): store.UsageSay,
 	} {
 		if got := causeOfBanner(banner); got != want {
@@ -343,7 +344,7 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 			t.Fatal(err)
 		}
 		seen := map[string]bool{}
-		scanReplies(fh, func(r *mainReply) {
+		cycle.ScanReplies(fh, func(r *cycle.MainReply) {
 			if seen[r.MessageID] || (p == a2 && r.MessageID == "m2") {
 				return
 			}
@@ -414,8 +415,8 @@ func TestUsagePricesEveryCurrentModel(t *testing.T) {
 			t.Fatalf("%s priced %+v", model, p)
 		}
 	}
-	for _, model := range []string{"claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"} {
-		if _, ok := keepalivePriceFor(model); ok {
+	for _, model := range []string{"claude-sonnet-5", "claude-haiku-4-5-20251001"} {
+		if _, ok := cycle.KeepalivePriceFor(model); ok {
 			t.Fatalf("%s is in keep-alive's table, so keep-alive would refresh it", model)
 		}
 	}

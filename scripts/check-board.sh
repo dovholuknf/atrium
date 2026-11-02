@@ -196,6 +196,11 @@ if ! node "$here/scripts/test-term-nesting.js"; then
   fail=1
 fi
 
+if ! node "$here/scripts/test-launcher-same-room.js"; then
+  echo "a worker launched on its launcher's room does not nest under it. see above." >&2
+  fail=1
+fi
+
 # Run sorting checks with tied cards and different input orders to catch
 # rows that would otherwise move between unchanged polls.
 if ! node "$here/scripts/test-sort-order.js"; then

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Two rooms, so the aggregate view has something to aggregate.
@@ -121,7 +123,7 @@ func TestAHeaderScopesToOneRoom(t *testing.T) {
 	defer done()
 
 	req, _ := http.NewRequest(http.MethodGet, front.URL+"/v1/tasks", nil)
-	req.Header.Set(RoomHeader, "beta")
+	req.Header.Set(wire.RoomHeader, "beta")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -421,7 +423,7 @@ func TestScopedRequestsNeverReuseAnotherRoomsConnection(t *testing.T) {
 
 	ask := func(room string) string {
 		req, _ := http.NewRequest(http.MethodGet, front.URL+"/v1/whoami", nil)
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

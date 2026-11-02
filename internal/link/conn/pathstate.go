@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Per path state: what a room can say about each way it has to reach its hub, and what a hub can say about each way it
@@ -161,6 +163,9 @@ func (l *Ladder) probeRung(ctx context.Context, rg Rung, wait time.Duration) (rt
 }
 
 func pathAddr(p Path) string {
+	if p.Transport == "zrok" && p.Share != "" {
+		return "share " + wire.MaskShare(p.Share)
+	}
 	if p.Addr != "" {
 		return p.Addr
 	}

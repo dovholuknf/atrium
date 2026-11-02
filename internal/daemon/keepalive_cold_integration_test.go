@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ import (
 
 func (f *kaFix) coldCounter() *atomic.Int32 {
 	var n atomic.Int32
-	f.k.cold = func(*store.Task) error { n.Add(1); return nil }
+	f.k.Cold = func(*store.Task) error { n.Add(1); return nil }
 	return &n
 }
 
@@ -26,7 +27,7 @@ func (f *kaFix) coldEvents() []map[string]any {
 	var out []map[string]any
 	for _, e := range evs {
 		var p map[string]any
-		if json.Unmarshal(e.Payload, &p) == nil && p["by"] == coldHandoffBy {
+		if json.Unmarshal(e.Payload, &p) == nil && p["by"] == cycle.ColdHandoffBy {
 			out = append(out, p)
 		}
 	}
@@ -47,7 +48,7 @@ func TestColdHandoffFiresOnTheBreakEvenStop(t *testing.T) {
 		t.Fatalf("cycles = %d, want 1", n.Load())
 	}
 	evs := f.coldEvents()
-	if len(evs) != 1 || evs[0]["reason"] != coldHandoffReason || evs[0]["started"] != true {
+	if len(evs) != 1 || evs[0]["reason"] != cycle.ColdHandoffReason || evs[0]["started"] != true {
 		t.Fatalf("events = %v", evs)
 	}
 	f.tick()
@@ -129,7 +130,7 @@ func TestColdHandoffGuards(t *testing.T) {
 		"card switch off": func(f *kaFix) {
 			f.st.SetOverrides(f.task.ID, map[string]string{api.OverrideColdHandoff: "off"})
 		},
-		"cycle under way": func(f *kaFix) { f.k.holding = func(string) bool { return true } },
+		"cycle under way": func(f *kaFix) { f.k.Holding = func(string) bool { return true } },
 		"5m cache": func(f *kaFix) {
 			f.reply(f.now.Add(-4*time.Minute), replyOpt{ttl5m: true})
 		},
@@ -164,7 +165,7 @@ func TestColdHandoffOncePerColdEvent(t *testing.T) {
 	if n.Load() != 1 {
 		t.Fatalf("cycles = %d, want 1 with no new turn", n.Load())
 	}
-	f.k.cooled = map[string]time.Time{}
+	f.k.Cooled = map[string]time.Time{}
 	f.tick()
 	if n.Load() != 1 {
 		t.Fatalf("cycles = %d after the memory was lost, want 1: the card's events should say", n.Load())
@@ -175,7 +176,7 @@ func TestColdHandoffOncePerColdEvent(t *testing.T) {
 	if n.Load() != 1 {
 		t.Fatalf("cycles = %d, want 1: a turn atrium started does not re-arm", n.Load())
 	}
-	f.k.coldRearm(f.task.ID)
+	f.k.ColdRearm(f.task.ID)
 	f.tick()
 	if n.Load() != 2 {
 		t.Fatalf("cycles = %d, want 2 after a typed turn went cold", n.Load())
@@ -186,9 +187,9 @@ func TestColdHandoffBusyCycleIsRetried(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	var calls atomic.Int32
-	f.k.cold = func(*store.Task) error {
+	f.k.Cold = func(*store.Task) error {
 		if calls.Add(1) == 1 {
-			return errNewContextBusy
+			return cycle.ErrNewContextBusy
 		}
 		return nil
 	}
@@ -212,7 +213,7 @@ func TestColdHandoffSurvivesARoomRestartAndWaitsForAPerson(t *testing.T) {
 	if n.Load() != 1 {
 		t.Fatalf("cycles = %d, want 1", n.Load())
 	}
-	f.k.cooled = map[string]time.Time{}
+	f.k.Cooled = map[string]time.Time{}
 	for i := 0; i < 3; i++ {
 		f.now = f.now.Add(3 * time.Hour)
 		f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
@@ -221,7 +222,7 @@ func TestColdHandoffSurvivesARoomRestartAndWaitsForAPerson(t *testing.T) {
 	if n.Load() != 1 {
 		t.Fatalf("cycles = %d, want 1: the continuation grew context and idled out, which is not a person", n.Load())
 	}
-	f.k.coldRearm(f.task.ID)
+	f.k.ColdRearm(f.task.ID)
 	f.now = f.now.Add(3 * time.Hour)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
 	f.tick()

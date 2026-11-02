@@ -1,1 +1,0 @@
-A card that was waiting when a deploy, restart or reopen took it down keeps its earlier waiting time when it comes back, so the phone and the board no longer ring "waiting for you" again. resume-keeps-waiting.

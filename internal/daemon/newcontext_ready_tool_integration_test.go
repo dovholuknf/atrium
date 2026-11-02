@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,7 +24,7 @@ func TestReadyWithTextWritesTheHandoffAndCompletesTheCycle(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 
 	text := string(handoffBody) + "\nwritten by the tool"
-	out, code, err := d.readyHandoff(task, &text)
+	out, code, err := d.ReadyHandoff(task, &text)
 	if err != nil {
 		t.Fatalf("refused with %d: %v", code, err)
 	}
@@ -53,11 +54,11 @@ func TestReadyWithTextIsRefusedWithNoCycle(t *testing.T) {
 	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	text := string(handoffBody)
-	_, code, err := d.readyHandoff(task, &text)
+	_, code, err := d.ReadyHandoff(task, &text)
 	if err == nil || code != http.StatusConflict || !strings.Contains(err.Error(), "no context cycle") {
 		t.Fatalf("got %d, %v", code, err)
 	}
-	if _, statErr := os.Stat(d.handoffPath(task)); statErr == nil {
+	if _, statErr := os.Stat(d.HandoffPath(task)); statErr == nil {
 		t.Fatal("a handoff was written for a card with no cycle")
 	}
 }
@@ -71,16 +72,17 @@ func TestReadyWithEmptyTextIsRefused(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	empty := "  \n"
-	_, code, err := d.readyHandoff(task, &empty)
+	_, code, err := d.ReadyHandoff(task, &empty)
 	if err == nil || code != http.StatusConflict || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("got %d, %v", code, err)
 	}
-	if !d.nctx.waitingForAck(task.ID) {
+	if !d.Nctx.WaitingForAck(task.ID) {
 		t.Fatal("an empty handoff acked the cycle")
 	}
 }
 
-func TestTheLimitPromptNamesTheToolAndAShellessRunnerGetsOnlyTheTool(t *testing.T) {
+// The tool is not on every card's list, so a runner with a shell is told only the CLI.
+func TestTheLimitPromptNamesOnlyTheCLIAndAShellessRunnerGetsOnlyTheTool(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
@@ -88,7 +90,7 @@ func TestTheLimitPromptNamesTheToolAndAShellessRunnerGetsOnlyTheTool(t *testing.
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	if w := f.written(); !strings.Contains(w, "atrium_ready") || !strings.Contains(w, "/opt/atrium/atrium ready") {
+	if w := f.written(); strings.Contains(w, "atrium_ready") || !strings.Contains(w, "/opt/atrium/atrium ready") {
 		t.Fatalf("an ordinary runner was told %q", w)
 	}
 
@@ -111,25 +113,25 @@ func TestTheLimitPromptNamesTheToolAndAShellessRunnerGetsOnlyTheTool(t *testing.
 func TestTheCycleStopsAskingAfterThreeAsks(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = 40 * time.Millisecond
+	d.hk.NcTiming.PromptLost = 40 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "three asks", func() bool { return strings.Count(f.written(), limitPrompt) >= maxLimitAsks })
+	until(t, "three asks", func() bool { return strings.Count(f.written(), limitPrompt) >= cycle.MaxLimitAsks })
 	time.Sleep(400 * time.Millisecond) // wait: proving a fourth ask never comes, so there is no condition to spin on
-	if n := strings.Count(f.written(), limitPrompt); n != maxLimitAsks {
+	if n := strings.Count(f.written(), limitPrompt); n != cycle.MaxLimitAsks {
 		t.Fatalf("asked %d times", n)
 	}
-	v, _ := d.newContextFor(task.ID).(map[string]any)
+	v, _ := d.NewContextFor(task.ID).(map[string]any)
 	if v == nil || v["label"] != "new context waiting: the session did not call ready after 3 asks" {
 		t.Fatalf("the card says %v", v)
 	}
-	if !d.nctx.waitingForAck(task.ID) {
+	if !d.Nctx.WaitingForAck(task.ID) {
 		t.Fatal("the cycle gave up the card instead of leaving it waiting")
 	}
 	text := string(handoffBody)
-	if _, code, err := d.readyHandoff(task, &text); err != nil {
+	if _, code, err := d.ReadyHandoff(task, &text); err != nil {
 		t.Fatalf("a late ready was refused with %d: %v", code, err)
 	}
 }
@@ -144,7 +146,7 @@ func TestReadyNamesWhatItLookedUpAndFindsACardByAliasOrID(t *testing.T) {
 		}
 	}
 	rec := httptest.NewRecorder()
-	d.handleReady(rec, httptest.NewRequest(http.MethodPost, "/ready", strings.NewReader(`{"agent":"nobody-here"}`)))
+	d.HandleReady(rec, httptest.NewRequest(http.MethodPost, "/ready", strings.NewReader(`{"agent":"nobody-here"}`)))
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "nobody-here") {
 		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}

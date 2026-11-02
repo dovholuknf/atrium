@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ func TestOverlayBackendDefaultsToTheBoard(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	if got := d.zrokConfig().Backend; !strings.Contains(got, d.opts.HumanAddr) {
+	if got := d.ZrokConfig().Backend; !strings.Contains(got, d.opts.HumanAddr) {
 		t.Fatalf("zrok would name %q, not the board at %q", got, d.opts.HumanAddr)
 	}
 }
@@ -31,7 +32,7 @@ func TestZrokDefaultsToPrivate(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	if got := d.zrokConfig().Mode; got != "private" {
+	if got := d.ZrokConfig().Mode; got != "private" {
 		t.Fatalf("the default share mode is %q, wanted private", got)
 	}
 }
@@ -44,11 +45,11 @@ func TestOverlayConfigIsRemembered(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	if err := d.saveOverlay("ziti", []byte(
+	if err := d.SaveOverlay("ziti", []byte(
 		`{"identity":"C:/id.json","service":"atrium-board","extra":"--verbose"}`)); err != nil {
 		t.Fatal(err)
 	}
-	got := d.zitiConfig()
+	got := d.ZitiConfig()
 	if got.Identity != "C:/id.json" || got.Service != "atrium-board" {
 		t.Fatalf("what came back is not what was saved: %+v", got)
 	}
@@ -63,10 +64,10 @@ func TestUnknownOverlayIsRefused(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	if err := d.saveOverlay("tailscale", []byte(`{}`)); err == nil {
+	if err := d.SaveOverlay("tailscale", []byte(`{}`)); err == nil {
 		t.Fatal("an overlay atrium does not have was saved")
 	}
-	if err := d.startOverlay("tailscale"); err == nil {
+	if err := d.StartOverlay("tailscale"); err == nil {
 		t.Fatal("an overlay atrium does not have was started")
 	}
 }
@@ -80,11 +81,11 @@ func TestZitiRefusesWithoutWhatItNeeds(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	err := d.startZitiNative(ZitiConfig{Service: "atrium-board"})
+	err := d.StartZitiNative(publish.ZitiConfig{Service: "atrium-board"})
 	if err == nil || !strings.Contains(err.Error(), "identity") {
 		t.Fatalf("a missing identity gave %v", err)
 	}
-	err = d.startZitiNative(ZitiConfig{Identity: "C:/id.json"})
+	err = d.StartZitiNative(publish.ZitiConfig{Identity: "C:/id.json"})
 	if err == nil || !strings.Contains(err.Error(), "service") {
 		t.Fatalf("a missing service gave %v", err)
 	}
@@ -99,7 +100,7 @@ func TestZrokRefusesAModeItDoesNotKnow(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	err := d.startZrokNative(ZrokConfig{Mode: "publik", Backend: "localhost:7778"})
+	err := d.StartZrokNative(publish.ZrokConfig{Mode: "publik", Backend: "localhost:7778"})
 	if err == nil {
 		t.Fatal("a misspelled mode was accepted")
 	}
@@ -121,16 +122,16 @@ func TestZrokPublicRefusedWithoutLogin(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	err := d.saveOverlay("zrok", []byte(`{"public":true}`))
+	err := d.SaveOverlay("zrok", []byte(`{"public":true}`))
 	if err == nil || !strings.Contains(err.Error(), "needs a login") {
 		t.Fatalf("a public share saved with no login gave %v", err)
 	}
 	// And starting one, in case a config predates the rule, is refused for the
 	// same reason before it ever reaches the share command.
-	if err := d.st.SetSetting(SettingOverlayZrok, `{"mode":"public","public":true}`); err != nil {
+	if err := d.st.SetSetting(publish.SettingOverlayZrok, `{"mode":"public","public":true}`); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.startOverlay("zrok"); err == nil || !strings.Contains(err.Error(), "needs a login") {
+	if err := d.StartOverlay("zrok"); err == nil || !strings.Contains(err.Error(), "needs a login") {
 		t.Fatalf("a public share started with no login gave %v", err)
 	}
 }
@@ -144,7 +145,7 @@ func TestZrokPrivateSavesWithoutLogin(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	if err := d.saveOverlay("zrok", []byte(`{"private":true}`)); err != nil {
+	if err := d.SaveOverlay("zrok", []byte(`{"private":true}`)); err != nil {
 		t.Fatalf("a private share was refused for lacking a login it does not need: %v", err)
 	}
 }
@@ -158,13 +159,13 @@ func TestZrokPublicSavesWithALogin(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x", ClientID: "atrium",
 		Redirect: "https://atrium-abc.share.zrok.io/auth/callback", Allow: []string{"me@example.com"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.saveOverlay("zrok", []byte(`{"public":true}`)); err != nil {
+	if err := d.SaveOverlay("zrok", []byte(`{"public":true}`)); err != nil {
 		t.Fatalf("a public share with a login configured was still refused: %v", err)
 	}
 }
@@ -178,11 +179,11 @@ func TestStoppingAnOverlayThatIsNotRunning(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	d.nat(OverlayZrok).stop(nil)
-	if d.nat(OverlayZrok).running() {
+	d.Nat(publish.OverlayZrok).Stop(nil)
+	if d.Nat(publish.OverlayZrok).Running() {
 		t.Fatal("an overlay that never started reports as running")
 	}
-	if st := d.nat(OverlayZrok).state(""); st.Running || st.Address != "" {
+	if st := d.Nat(publish.OverlayZrok).State(""); st.Running || st.Address != "" {
 		t.Fatalf("a stopped overlay still offers %+v", st)
 	}
 }
@@ -197,12 +198,12 @@ func TestOnlyOneListenerPerOverlay(t *testing.T) {
 	defer cancel()
 
 	// Held directly, since binding one needs a network this test does not have.
-	n := d.nat(OverlayZiti)
-	n.mu.Lock()
-	n.srv = &http.Server{}
-	n.mu.Unlock()
+	n := d.Nat(publish.OverlayZiti)
+	n.Mu.Lock()
+	n.Srv = &http.Server{}
+	n.Mu.Unlock()
 
-	if err := d.startOverlay("ziti"); err == nil {
+	if err := d.StartOverlay("ziti"); err == nil {
 		t.Fatal("a second listener was started while one was already up")
 	}
 }

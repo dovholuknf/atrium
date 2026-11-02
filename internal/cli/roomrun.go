@@ -19,7 +19,9 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
+	"github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/roomstats"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
@@ -61,7 +63,7 @@ func joinCmd() *cobra.Command {
 			"arguments at all.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			j, err := link.ParseToken(args[0])
+			j, err := transport.ParseToken(args[0])
 			if err != nil {
 				return err
 			}
@@ -74,7 +76,7 @@ func joinCmd() *cobra.Command {
 				return err
 			}
 			identity = ident
-			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			keys := transport.Keys{Dir: orDefault(dir, roomDir())}
 
 			// A PATH TO A .jwt IS READ, so a provisioner can hand the token over
 			// as a file rather than as an argument anything on the machine can
@@ -116,7 +118,7 @@ func joinCmd() *cobra.Command {
 			// its overlay. An old-form overlay string has nothing to enrol: joining
 			// is writing down where the hub is and starting.
 			if j.Transport == "direct" {
-				d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
+				d := transport.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
 				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 				// THE NAME COMES BACK OUT OF THE SIGNED CERTIFICATE rather than
 				// out of the string that was pasted. They are the same name
@@ -138,7 +140,7 @@ func joinCmd() *cobra.Command {
 						return err
 					}
 					ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-					name, err = link.EnrolOver(ctx, raw, keys, j.Pin, self, j.Secret)
+					name, err = transport.EnrolOver(ctx, raw, keys, j.Pin, self, j.Secret)
 					cancel()
 					if err != nil {
 						return err
@@ -163,7 +165,7 @@ func joinCmd() *cobra.Command {
 			}
 			fmt.Println("  starting the room. `" + atriumCmd("room") + "` is all it takes from now on.")
 			fmt.Println()
-			return runRoom(keys, db, human, agent, 0, isolated, "")
+			return runRoom(keys, db, human, agent, 0, isolated, "", roomLayout{})
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
@@ -223,7 +225,7 @@ func startedByFlag(c *cobra.Command, v *string) {
 }
 
 func roomCmd() *cobra.Command {
-	var dir, db, human, agent, startedBy string
+	var dir, db, human, agent, startedBy, root, name string
 	var isolated, detach bool
 	c := &cobra.Command{
 		Use:   "room",
@@ -234,14 +236,24 @@ func roomCmd() *cobra.Command {
 			"working atrium at its own address and your agents never noticed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			lay, err := newRoomLayout(root, name)
+			if err != nil {
+				return err
+			}
+			if lay.on() {
+				dir, db = orDefault(dir, lay.config()), orDefault(db, lay.db())
+			}
+			keys := transport.Keys{Dir: orDefault(dir, roomDir())}
+			if err := lay.checkJoined(keys); err != nil {
+				return err
+			}
 			if detach {
 				return detachRoom(roomLaunch{
 					dir: keys.Dir, db: db, human: human, agent: agent,
-					isolated: isolated, upgrades: acceptUpgrades,
+					isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
 				})
 			}
-			err := runRoom(keys, db, human, agent, restartAfter, isolated, startedBy)
+			err = runRoom(keys, db, human, agent, restartAfter, isolated, startedBy, lay)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
 			if err != nil && restartAfter > 0 {
@@ -252,6 +264,9 @@ func roomCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
+	c.Flags().StringVar(&name, "name", "",
+		"this room's name: --dir and --db default to <root>/<name>/config, card_root to <root>/<name>/cards")
+	c.Flags().StringVar(&root, "root", "", "the folder every room on this machine lives under (default $"+rootEnv+")")
 	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report")
 	isolatedFlag(c, &isolated)
@@ -274,6 +289,7 @@ func roomCmd() *cobra.Command {
 	c.AddCommand(roomHubCmd())
 	c.AddCommand(roomRemoteAccessCmd())
 	c.AddCommand(roomSSHCmd())
+	c.AddCommand(roomMoveCmd())
 	return c
 }
 
@@ -295,7 +311,8 @@ func askToStop() {
 }
 
 // runRoom starts the daemon and attaches it to the hub.
-func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string) error {
+func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string,
+	lay roomLayout) error {
 	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
 	// the ports. Wait for it to let go before anything tries to bind, or the new
 	// room fails to listen and exits, which looks like the restart doing nothing.
@@ -319,7 +336,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	tr, err := keys.Transports()
 	if err != nil {
 		log.Printf("[link] %v. using the join alone", err)
-		tr = link.RoomTransports{}
+		tr = transport.RoomTransports{}
 	}
 	dial, skipped, err := roomLadder(keys, saved, tr)
 	for _, s := range skipped {
@@ -338,6 +355,9 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	}
 	if strings.TrimSpace(db) == "" {
 		db = defaultRoomDB()
+	}
+	if lay.on() {
+		cardroot.SetRoomDefault(lay.cards())
 	}
 
 	// BEFORE ANYTHING OPENS. These are the lines that stop a room hijacking the
@@ -395,11 +415,11 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// fails open, a source that fails is reported on its own row. A room whose
 	// hub is down is a room with nobody watching it, which is exactly what it
 	// was before anybody built a hub.
-	room := &link.Room{
+	room := &conn.Room{
 		Name: saved.Room,
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
-		OnPaths: func(ps []link.Path) {
+		OnPaths: func(ps []wire.Path) {
 			// room.json read again, so a hub address changed since the start is not put back.
 			now, err := keys.Joined()
 			if err != nil {
@@ -423,6 +443,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Host:    hostname(),
 		// SAYS GIT in the hello, so the hub will ask this room to sync. See internal/gitsync.
 		Git: true,
+		// WHERE THIS ROOM'S TOOLCHAINS ARE, for atrium_resources.
+		Tools: daemon.ToolLocations(),
 		// IDLE CPU rides on the heartbeat, so the hub can break a tie between rooms with the same session count.
 		IdleCPU: roomstats.NewIdleMeter().Idle,
 		// WHETHER CLAUDE'S LOGIN HERE IS REVOKED, on the beat, so the hub can show it and ring once.
@@ -431,7 +453,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See
 		// `internal/link/upgrade.go`.
-		Upgrades: &link.Upgrades{
+		Upgrades: &conn.Upgrades{
 			Accept:  acceptUpgrades,
 			Version: Version,
 			// WHAT THIS ROOM IS RUNNING, so it cannot be talked into
@@ -445,7 +467,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		// down. The hub only forwards the ask. See restart.go.
 		OnRestart: onHubRestart("http://"+human, roomLaunch{
 			dir: keys.Dir, db: db, human: human, agent: agent,
-			isolated: isolated, upgrades: acceptUpgrades,
+			isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
 		}, stop),
 	}
 	// MESSAGES TO OTHER ROOMS go through this link, and what is owed goes the
@@ -480,7 +502,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// The room's stable hub remote forwards over the same link's git kind.
 	d.SetHubGit(func() (http.RoundTripper, error) {
 		if !room.HubServesGit() {
-			return nil, link.ErrNoGit
+			return nil, conn.ErrNoGit
 		}
 		return room.GitTransport(), nil
 	})
@@ -518,7 +540,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 // d.BoardHandler() directly and have no /v1/git/ at all. The hub's board proxy refuses the
 // path as well, so the hub's own sync and collect are the only way in. And only a repository
 // the hub has synced since this room started is served (gitsync.Syncer.Served).
-func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
+func roomHandler(d *daemon.Daemon, room *conn.Room) http.Handler {
 	sy := &gitsync.Syncer{Root: func() string {
 		if v, err := d.Store().Setting(gitsync.SettingGitRoot); err == nil && strings.TrimSpace(v) != "" {
 			return strings.TrimSpace(v)
@@ -527,7 +549,7 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 	}, HubRemote: func(canonical string) string { return d.HubRemoteURL(canonical) }}
 	gh := &gitsync.RoomHandler{Syncer: sy, Hub: func() (http.RoundTripper, error) {
 		if !room.HubServesGit() {
-			return nil, link.ErrNoGit
+			return nil, conn.ErrNoGit
 		}
 		return room.GitTransport(), nil
 	}, Live: func(name string) []string { return liveBranches(d, name) }}

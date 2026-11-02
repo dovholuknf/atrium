@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +33,7 @@ import (
 // nobody can script.
 
 func hubRoomsCmd(use, prefix string) *cobra.Command {
+	var hub string
 	c := &cobra.Command{
 		Use:   use,
 		Short: "The rooms this hub knows about: add, list, and remove",
@@ -41,7 +42,12 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 			"THE HUB NAMES THE ROOM. `add` gives it a name and mints that name into the\n" +
 			"join string, so the string authorises exactly one name and the machine that\n" +
 			"pastes it does not choose what it is called.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return roomsTable(cmd, hub)
+		},
 	}
+	c.Flags().StringVar(&hub, "hub", "", "the hub's board address, when it is not the default")
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
 		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix),
 		roomSpecCmd(prefix), roomLockCmd(prefix), roomTransportsCmd(prefix), roomRetireShareCmd(prefix))
@@ -203,7 +209,7 @@ func (f *hubStoreFlags) nudge() {
 	resp.Body.Close()
 }
 
-func (f *hubStoreFlags) keys() link.Keys { return link.Keys{Dir: orDefault(f.dir, hubDir())} }
+func (f *hubStoreFlags) keys() transport.Keys { return transport.Keys{Dir: orDefault(f.dir, hubDir())} }
 
 func (f *hubStoreFlags) open() (*hubstore.Store, error) {
 	return hubstore.OpenShared(f.path())
@@ -366,7 +372,7 @@ func roomRetireShareCmd(prefix string) *cobra.Command {
 // command that only meant to print a line would stand up a second way in and
 // then tear it down. What that costs is worth avoiding for a `token` command
 // somebody might run twice by accident.
-func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
+func joinStringFor(keys transport.Keys, store *hubstore.Store, r *hubstore.Room,
 	port, advertise, transport, service string) (string, error) {
 	if strings.TrimSpace(transport) == "" {
 		transport = r.Transport

@@ -1,1 +1,0 @@
-Clicking pop-out on a card that is already in a window brings that window to the front again, with no dialog. A window that cannot be found by name, such as one opened from a pasted url, is asked to close and a fresh pop-out takes its place. (popout-raise)

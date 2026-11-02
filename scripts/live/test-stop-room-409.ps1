@@ -45,6 +45,7 @@ $KillRunners = $true
 $r = Stop-Room
 Check 'with -KillRunners it goes on and returns true' ($r -eq $true)
 Check 'with -KillRunners the second post carries runners:true' ($posts.Count -eq 2 -and $posts[1] -eq '{"runners":true}')
+Check 'with -KillRunners it says it is waiting for the room' (($said -join "`n") -match 'waiting up to \d+s for room pid')
 
 if ($fail) { Write-Host "$fail FAILED"; exit 1 }
 Write-Host 'all passed'

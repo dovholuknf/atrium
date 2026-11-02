@@ -1,1 +1,0 @@
-- **An interviewer numbers its questions.** The interview rules now tell it to start every question with "Question N of M", M being its current count of questions to ask, and to say so when M changes ("Question 4 of 7, up from 5"). (f-interview-count)

@@ -121,7 +121,14 @@ func (s *Store) Root() string {
 }
 
 func (s *Store) dir(ref Ref) string {
-	return filepath.Join(s.Root(), ref.Host, ref.Owner, ref.Repo+".git")
+	root := s.Root()
+	p := filepath.Clean(filepath.Join(root, ref.Host, ref.Owner, ref.Repo+".git"))
+	// A ref that was not made by ParseName lands on a path that holds nothing, never outside the store.
+	if !strings.HasPrefix(p, root+string(filepath.Separator)) || strings.Contains(ref.Host+ref.Owner+ref.Repo, "..") ||
+		ref.Host == "" || ref.Owner == "" || ref.Repo == "" {
+		return filepath.Join(root, "refused.git")
+	}
+	return p
 }
 
 // Path is the bare repository's directory for a name, whether or not it exists. It is for the
@@ -384,6 +391,23 @@ func (s *Store) Init(ctx context.Context, rawURL string) (InitResult, error) {
 	return res, nil
 }
 
+// InitFromForge makes a repository the store lacks, as Init does, when its forge answers. A repository or a
+// directory already there, and a forge that does not answer, change nothing and are left to the caller's own refusal.
+func (s *Store) InitFromForge(ctx context.Context, ref Ref) error {
+	dir := filepath.Clean(s.dir(ref))
+	if !strings.HasPrefix(dir, filepath.Clean(s.Root())+string(filepath.Separator)) {
+		return refuse("%s is not under the store", ref.Name())
+	}
+	if _, err := os.Stat(dir); err == nil {
+		return nil
+	}
+	if _, err := s.HasForgeBranch(ctx, ref, "main"); err != nil {
+		return err
+	}
+	_, err := s.Init(ctx, "https://"+forgeHost(ref)+"/"+ref.Owner+"/"+ref.Repo)
+	return err
+}
+
 // mirrorLock is the lock the mirror pass takes on a repository, when `dir` is a configured
 // git_repos mirror, so a store step and a mirror pass never run in one repository at once.
 func (s *Store) mirrorLock(dir string) *sync.Mutex {
@@ -511,6 +535,9 @@ func writeMarker(dir, kind string) error {
 // create makes the bare repository, with HEAD on main, no hook and no template, and removes what it
 // made if any step fails.
 func (s *Store) create(ctx context.Context, dir string) (err error) {
+	if !pathArgRe.MatchString(dir) {
+		return refuse("that is not a store path")
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return fmt.Errorf("could not make the store's directory: %w", err)
 	}

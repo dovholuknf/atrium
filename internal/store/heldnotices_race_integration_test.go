@@ -65,6 +65,7 @@ func TestMarkNoticesReadTakesAnAtFromAJSONRoundTrip(t *testing.T) {
 // nothing.
 func TestMarkNoticesReadStopsAtWhatWasRead(t *testing.T) {
 	s := openTestStore(t)
+	tickingClock(s)
 	card, _, err := s.Register(Observed{WireName: "orch", Worktree: "D:/tmp/orch", Runner: "claude"})
 	if err != nil {
 		t.Fatal(err)
@@ -72,9 +73,7 @@ func TestMarkNoticesReadStopsAtWhatWasRead(t *testing.T) {
 	if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("fyi", "w", "w1", "one")); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
 	through := ts(s.now())
-	time.Sleep(5 * time.Millisecond)
 	if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("fyi", "w", "w1", "two")); err != nil {
 		t.Fatal(err)
 	}

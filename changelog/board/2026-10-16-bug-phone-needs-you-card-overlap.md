@@ -1,1 +1,0 @@
-On the phone, a stack of growlers (a hub notice and several "asked a question" blocks) no longer prints over itself. Each growler keeps its own height and the strip scrolls. (bug-phone-needs-you-card-overlap)

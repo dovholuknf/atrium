@@ -1,6 +1,5 @@
-// Package gitsync moves code between a hub and its rooms by FETCH, and by nothing else.
-// See docs/fabric/git-sync-design.md. Nobody here ever receives a push: no receive-pack runs
-// on either side, so no ref can be moved by what the other end sends.
+// Package gitsync moves code between a hub and its rooms. The git_repos mirror and sync move it by FETCH only,
+// see docs/fabric/git-sync-design.md. The hub's own store takes pushes, checked before git sees them (receive.go).
 //
 // This package is git plumbing. It knows nothing about the link, which carries its bytes.
 package gitsync
@@ -11,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -176,11 +176,21 @@ func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, args ..
 	return r.gitWith(ctx, dir, nil, stdin, 0, args...)
 }
 
+var argRe = regexp.MustCompile(`^[^\x00]*$`)
+
 func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
 	return r.gitWith(ctx, dir, extraEnv, nil, 0, args...)
 }
 
 func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, maxOut int, args ...string) (string, error) {
+	checked := make([]string, 0, len(args))
+	for _, a := range args {
+		if !argRe.MatchString(a) {
+			return "", &Error{Args: args, Err: errors.New("a git argument holds a NUL")}
+		}
+		checked = append(checked, a)
+	}
+	args = checked
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()

@@ -1,1 +1,0 @@
-The items now have `tested` and `reviewed` steps. A card records a test with `atrium_record` and the room stamps the commit and whether the tree was dirty, so a test followed by a commit reads "1 commit ago". Reviews come from verdict trailers or the hub, never a card, and a reported test never makes an item ready. f-item-lifecycle-l4.

@@ -30,7 +30,7 @@ A new agent: `docs/agents.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-
 | `room-accounts.md` | an operator | running a room as its own account, and what atrium warns about |
 | `decisions-log.md` | anyone about to re-argue something | clint's decisions and why |
 | `fabric/hub-decisions.md` | the same, for the hub | the hub and room decisions, 1 to 19 |
-| `test-plan.md`, `changes/` | the merger | the test plan, and the sections waiting to be folded into it |
+| `changes/` | a worker | one `Docs:` line per change, read by the hub's landed check |
 | `troubleshooting-tests.md` | an agent on a flaky or slow test | worked cases: a board unit that flakes, a Go test slow only on CI, a timing assertion under load, a test that fails only beside others, a log after a test ended |
 | `qa/lessons-learned.md` | an agent or director on flaky tests and CI | the rules that held, the CI shape, how to read a run |
 | `backlog/<dept>/` | the directors, and `atrium backlog import` | one file per backlog item. The live backlog is on the hub |
@@ -72,5 +72,4 @@ built, the director of the area that owns the code moves it into that area's fol
 line, and fixes every path that names it (`git grep docs/rnd/<name>`). A reference for code that exists goes straight
 into its area. A design that a later doc replaces moves to `archive/` with a `superseded by` line.
 
-`test-plan.md` and `changes/` stay at the top because every brief, `DIRECTOR.md` and `CLAUDE.md` name them there, and
-`scripts/fold-changes.ps1` reads them there.
+`changes/` stays at the top because every brief, `DIRECTOR.md` and `CLAUDE.md` name it there.

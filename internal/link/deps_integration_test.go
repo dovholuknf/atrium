@@ -17,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 const depsRepo = "github/dovholuknf/atrium"
@@ -282,7 +283,7 @@ func TestOnlyAHumanWithAReasonClearsAGate(t *testing.T) {
 	f := newDepsFix(t)
 	id := f.add(t, "r-038", "f-006 migration on m1mini")[0]["id"].(string)
 	if code, _ := f.do(t, http.MethodPost, "/_hub/deps/clear", map[string]any{"id": id, "why": "done by hand"},
-		map[string]string{AgentHeader: "sa1"}); code != 403 {
+		map[string]string{ctl.AgentHeader: "sa1"}); code != 403 {
 		t.Fatalf("an agent cleared a gate: %d", code)
 	}
 	if code, _ := f.do(t, http.MethodPost, "/_hub/deps/clear", map[string]any{"id": id}, nil); code != 400 {
@@ -322,8 +323,8 @@ func TestALaunchForAGatedItemIsRefused(t *testing.T) {
 	}
 	// Through the tool, before anything reaches a room.
 	_, _, err := f.x.proxy.ctl.launchHandler(ctx, nil, launchInput{Item: "f-test", Cwd: "C:/w", Title: "r-039: the third"})
-	var re *refusedError
-	if !errors.As(err, &re) || !strings.Contains(re.msg, "r-039 waits on") {
+	var re *ctl.RefusedError
+	if !errors.As(err, &re) || !strings.Contains(re.Msg, "r-039 waits on") {
 		t.Fatalf("tool = %v", err)
 	}
 	f.commit(t, "changelog/runtime/2026-09-30-r-050.md", "r-050")
@@ -399,7 +400,7 @@ func TestReadyListsWhatHasNotLandedAndIsNotGated(t *testing.T) {
 }
 
 func TestTheDepsToolHasNoClearAndIsNotAWorkers(t *testing.T) {
-	if inClass("atrium_deps", classWorker) {
+	if inClass("atrium_deps", ctl.ClassWorker) {
 		t.Fatal("a worker is served atrium_deps")
 	}
 	f := newDepsFix(t)

@@ -1,12 +1,14 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"log"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -23,12 +25,9 @@ import (
 // Checked on the reaper's tick and on every statusline update (onTelemetry). A cycle already on the card is
 // poked instead, so a prompt that is due goes at once.
 
-// cycleBy is the `by` on the events the context cycle writes.
-const cycleBy = "context-cycle"
-
 // cycleSubject is whether the trigger reaches a card at all.
 func (d *Daemon) cycleSubject(t *store.Task) bool {
-	if t == nil || d.sup.get(t.ID) == nil || isParked(t) || !api.ContextCycleOn(t) {
+	if t == nil || d.sup.Get(t.ID) == nil || small.IsParked(t) || !api.ContextCycleOn(t) {
 		return false
 	}
 	switch t.Status {
@@ -36,7 +35,7 @@ func (d *Daemon) cycleSubject(t *store.Task) bool {
 	default:
 		return false
 	}
-	if d.guests.get(t.ID) != nil || d.frozenForMove(t.ID) {
+	if d.Guests.Get(t.ID) != nil || d.FrozenForMove(t.ID) {
 		return false
 	}
 	return true
@@ -53,9 +52,9 @@ func (d *Daemon) cycleLimit(t *store.Task) int64 {
 // every tick. A part-written line or a key in the last few seconds holds the start off, the same gate a peer's message
 // waits on, and the next tick asks again.
 func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
-	if cur := d.nctx.get(t.ID); cur != nil {
-		if cur.step != NewContextFailed {
-			d.nctx.kick(t.ID)
+	if cur := d.Nctx.Get(t.ID); cur != nil {
+		if cur.Step != cycle.NewContextFailed {
+			d.Nctx.Kick(t.ID)
 		}
 		return
 	}
@@ -66,7 +65,7 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	if limit <= 0 || tokens < limit {
 		return
 	}
-	if run := d.sup.get(t.ID); run != nil && !run.peerGateOpen() {
+	if run := d.sup.Get(t.ID); run != nil && !run.PeerGateOpen() {
 		return
 	}
 	d.startCycle(t, tokens, limit)
@@ -96,13 +95,13 @@ func cycleStartEvent(tokens, limit int64, path string, l api.ContextLimit) map[s
 // startCycle claims the card for an automatic cycle and runs it. The claim is the same one a button press
 // makes, so a tick and a press cannot both run.
 func (d *Daemon) startCycle(t *store.Task, tokens, limit int64) {
-	path, err := d.prepareHandoff(t)
+	path, err := d.PrepareHandoff(t)
 	if err != nil {
 		log.Printf("[atrium] context cycle on %s not started: %v", t.DisplayTitle(), err)
 		return
 	}
-	gen, ok := d.nctx.claim(t.ID, &newContext{step: NewContextLimit, file: path, conv: d.conversationOf(t),
-		auto: true, tokens: tokens, limit: limit})
+	gen, ok := d.Nctx.Claim(t.ID, &cycle.NewContext{Step: cycle.NewContextLimit, File: path, Conv: d.ConversationOf(t),
+		Auto: true, Tokens: tokens, Limit: limit})
 	if !ok {
 		return
 	}
@@ -112,8 +111,8 @@ func (d *Daemon) startCycle(t *store.Task, tokens, limit int64) {
 	if err := d.st.AppendEvent(t.ID, store.EventNotified, cycleStartEvent(tokens, limit, path, l)); err != nil {
 		log.Printf("[atrium] could not record the context cycle start on %s: %v", t.ID, err)
 	}
-	d.publishTask(t.ID)
-	go d.runNewContext(t.ID, gen)
+	d.Publish(t.ID)
+	go d.RunNewContext(t.ID, gen)
 }
 
 // cardLimit is the size atrium holds a card to, in tokens, for the runner's compaction window. A card with no

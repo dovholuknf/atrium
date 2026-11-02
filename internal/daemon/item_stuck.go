@@ -90,7 +90,7 @@ func (d *Daemon) sweepOwnerSilent(it *store.ItemRow, now time.Time) {
 // itemOwnerGone: the owning session's card is gone or dead. A launcher in another room cannot be asked from here, so
 // it is not gone, and only the timer applies to it. A role owner is the same, and has only the timer.
 func (d *Daemon) itemOwnerGone(worker *store.Task) bool {
-	if _, _, remote := d.remoteLauncher(worker); remote {
+	if _, _, remote := d.RemoteLauncher(worker); remote {
 		return false
 	}
 	owner := d.launcherOf(worker)
@@ -141,7 +141,7 @@ func (d *Daemon) itemAlert(task *store.Task, it *store.ItemRow, why string) {
 		log.Printf("[atrium] could not record the stuck alert for item %s: %v", it.ID, err)
 	}
 	log.Printf("[atrium] %s", text)
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 }
 
 func itemStuckText(it *store.ItemRow, why string) string {
@@ -182,20 +182,20 @@ func (d *Daemon) itemStuckEscalation(t *store.Task) *Escalation {
 func (d *Daemon) itemMissed(taskID string, carried []deliveredSay) []deliveredSay {
 	var out []deliveredSay
 	for _, s := range carried {
-		if s.from != store.ReservedHandle {
+		if s.From != store.ReservedHandle {
 			out = append(out, s)
 			continue
 		}
-		body := strings.TrimPrefix(s.text, itemRetypeNote)
+		body := strings.TrimPrefix(s.Text, itemRetypeNote)
 		switch {
 		case strings.HasPrefix(body, itemAnswerPrefix):
 			if d.itemAnswerPending(taskID) {
-				s.text = itemMissedNote + body
+				s.Text = itemMissedNote + body
 				out = append(out, s)
 			}
 		case strings.HasPrefix(body, "item it-"):
 			if d.itemNoticePending(taskID, body) {
-				s.text = itemMissedNote + body
+				s.Text = itemMissedNote + body
 				out = append(out, s)
 			}
 		default:

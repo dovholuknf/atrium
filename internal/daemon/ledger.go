@@ -26,7 +26,7 @@ import (
 // with no pid that atrium does not own, or a window-mode session whose process
 // atrium never held. Nothing is moved on a guess.
 func (d *Daemon) liveness(t *store.Task) store.Liveness {
-	if d.sup.get(t.ID) != nil {
+	if d.sup.Get(t.ID) != nil {
 		return store.Live
 	}
 	if t.PID > 0 {
@@ -91,7 +91,7 @@ func (d *Daemon) ledgerChanged(taskID string) {
 	default:
 	}
 	if taskID != "" {
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 }
 
@@ -102,11 +102,11 @@ func (d *Daemon) ledgerNotice(n store.LedgerNotice) {
 	if n.Held {
 		d.ringHeld(n.ArbiterID, n.TaskID, n.Source, n.Text)
 	} else {
-		d.publishTask(n.ArbiterID)
+		d.Publish(n.ArbiterID)
 		d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, "", n.Source == NoticeReport || d.waitsForTurn(n.ArbiterID, WhenImmediate))
 	}
 	if n.Source == store.NoticeEnded {
-		d.emitLifecycle("work-ended", n.Text)
+		d.EmitLifecycle("work-ended", n.Text)
 	}
 	log.Printf("[atrium] work ledger: queued a %s notice about %s for %s", n.Source, n.From, n.ArbiterID)
 }

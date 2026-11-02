@@ -1,1 +1,0 @@
-The hub-health gate waits one second before its first probe again. de685878 made the first probe fire at once, which broke the resumeSpinner headless unit (the pane lost its opening line and first output did not end the spinner) from 2026-10-14. Why is not found. The change can come back with a fix and that unit passing.

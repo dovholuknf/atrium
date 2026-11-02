@@ -2,8 +2,13 @@ package daemon
 
 import (
 	"context"
-	"io"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -13,75 +18,68 @@ import (
 // never this test's. Nothing here is a package variable a test assigns: scripts/check-test-globals.go fails
 // the build when one does.
 type hooks struct {
-	// Exit on report.
-	exitOnReportDelay time.Duration
-	stopAfterReport   func(d *Daemon, taskID string) error
+	exitHooks
+	cycle.NewContextHooks
+	keptHooks
+	modelHooks
+	leanHooks
+	preflightHooks
+	hostHooks
+	finishHooks
+	roomconf.HealthHooks
+	runnerHooks
+	idleHooks
+	windDownHooks
+	opencodeHooks
+	procHooks
+	finishLimitHooks
+	repliesHooks
+	updateRegistry string
+}
 
-	// The new-context and restart-wrap sequences.
-	ncTiming       ncTimings
-	wrapTiming     wrapTimings
-	wrapJoinMargin time.Duration
-	atriumBinary   func() string
+type runnerHooks struct {
+	helpRunner  func(exe string) (string, error)
+	runnerFound func(h *store.Harness) string
+	agentSpawn  func(exe string, args []string) (string, []string)
+	agentFork   func(exe string, args []string) (string, []string)
+}
 
-	// Waking a kept card.
-	keptTick, keptSettle, keptGiveUp time.Duration
-	settleWindow                     time.Duration
+type idleHooks struct {
+	idleLeave    func(r *runner, id string, keys [][]byte, keyGap time.Duration)
+	idleGoneWait time.Duration
+}
 
-	// Model switches.
-	modelRetryEvery, modelWaitMax time.Duration
+type windDownHooks struct {
+	windDownKeyGap  time.Duration
+	shelveGrace     time.Duration
+	restartAskGrace time.Duration
+	taskExitWait    time.Duration
+}
 
-	// Lean cards.
-	readUserSettings func() []byte
-	userAgentsDir    func() string
-	userSkillsDir    func() string
-	// leanPluginRoot is where the plugin directories are written: in atrium's own state, set from the database's
-	// directory when a daemon starts. Never a worktree, which has to stay clean for the cull.
-	leanPluginRoot        string
-	leanAgentsHookCommand func(agents []string) string
-	noPollHookCommand     func() string
-	nowHookCommand        func() string
-	stopHookCommand       func() string
-
-	// Preflight.
-	preflightLook     func(string) (string, error)
-	preflightRun      func(ctx context.Context, exe string, args []string, out io.Writer) error
-	preflightEachFor  time.Duration
-	preflightTotalFor time.Duration
-
-	// The pty host at startup. See waitForHost.
-	hostStartWait, hostStartPoll time.Duration
-	// endHost ends the host process for a pty host restart. See RestartPtyHost.
-	endHost func(pid int, addr string) error
-
-	// Runners.
-	helpRunner        func(exe string) (string, error)
-	runnerFound       func(h *store.Harness) string
-	agentSpawn        func(exe string, args []string) (string, []string)
-	agentFork         func(exe string, args []string) (string, []string)
-	windDownKeyGap    time.Duration
-	idleLeave         func(d *Daemon, r *runner, id string)
-	idleGoneWait      time.Duration
-	shelveGrace       time.Duration
-	restartAskGrace   time.Duration
+type opencodeHooks struct {
 	opencodeTTL       time.Duration
 	opencodeWaitDelay time.Duration
 	opencodeExec      func(ctx context.Context, bin string, args []string, max int64, waitDelay time.Duration) ([]byte, error)
 	opencodeLookPath  func(string) (string, error)
-	updateRegistry    string
+}
+
+type procHooks struct {
 	// setPriorityClass raises a process. Windows only, see priority_windows.go.
 	setPriorityClass func(h uintptr, class uint32) error
 	pidAlive         func(pid int) bool
+	procAncestors    func(pid, max int) []cardproc.Proc
+}
 
-	// Finish, health, relay, orphans and the rest.
-	commitExists  func(dir, sha string) bool
-	commitInDir   func(dir, sha string) bool
-	commitOnHub   func(d *Daemon, task *store.Task, sha string) bool
-	healthHalted  func(d *Daemon) (bool, error)
-	backoffSteps  []time.Duration
-	stuckAfter    time.Duration
-	OrphanGrace   time.Duration
-	RelayKeep     time.Duration
-	listMax       int
+type finishLimitHooks struct {
+	backoffSteps []time.Duration
+	stuckAfter   time.Duration
+	silentNudges int
+	OrphanGrace  time.Duration
+	RelayKeep    time.Duration
+	listMax      int
+}
+
+type repliesHooks struct {
 	repliesWindow int64
 	repliesReach  int64
 	repliesCap    int64
@@ -92,60 +90,50 @@ type hooks struct {
 // defaultHooks is what production runs with. The package level values it copies are never assigned.
 func defaultHooks() hooks {
 	hk := hooks{
-		exitOnReportDelay:     exitOnReportDelay,
-		stopAfterReport:       stopAfterReport,
-		ncTiming:              defaultNCTiming(),
-		wrapTiming:            wrapTimings{poll: 250 * time.Millisecond},
-		wrapJoinMargin:        wrapJoinMargin,
-		atriumBinary:          atriumBinary,
-		keptTick:              keptTick,
-		keptSettle:            keptSettle,
-		keptGiveUp:            keptGiveUp,
-		settleWindow:          settleWindow,
-		modelRetryEvery:       modelRetryEvery,
-		modelWaitMax:          modelWaitMax,
-		readUserSettings:      readUserSettings,
-		userAgentsDir:         userAgentsDir,
-		userSkillsDir:         userSkillsDir,
-		leanAgentsHookCommand: leanAgentsHookCommand,
-		noPollHookCommand:     noPollHookCommand,
-		nowHookCommand:        nowHookCommand,
-		stopHookCommand:       stopHookCommand,
-		preflightLook:         preflightLook,
-		preflightRun:          preflightRun,
-		preflightEachFor:      preflightEachFor,
-		preflightTotalFor:     preflightTotalFor,
-		hostStartWait:         hostStartWait,
-		hostStartPoll:         hostStartPoll,
-		endHost:               endHost,
-		helpRunner:            helpRunner,
-		runnerFound:           runnerFound,
-		agentSpawn:            agentSpawn,
-		agentFork:             agentFork,
-		windDownKeyGap:        windDownKeyGap,
-		idleLeave:             idleLeave,
-		idleGoneWait:          idleGoneWait,
-		shelveGrace:           shelveGrace,
-		restartAskGrace:       restartAskGrace,
-		opencodeTTL:           opencodeTTL,
-		opencodeWaitDelay:     opencodeWaitDelay,
-		opencodeExec:          opencodeExec,
-		opencodeLookPath:      opencodeLookPath,
-		updateRegistry:        updateRegistry,
-		pidAlive:              pidAlive,
-		commitExists:          commitExists,
-		commitInDir:           commitInDir,
-		commitOnHub:           commitOnHub,
-		healthHalted:          healthHalted,
-		backoffSteps:          append([]time.Duration(nil), backoffSteps...),
-		stuckAfter:            heldStuckAfter,
-		OrphanGrace:           OrphanGrace,
-		RelayKeep:             RelayKeep,
-		listMax:               listMax,
-		repliesWindow:         repliesWindow,
-		repliesReach:          repliesReach,
-		repliesCap:            repliesCap,
-		repliesAllBudget:      repliesAllBudget,
+		exitHooks:       defaultExitHooks(),
+		NewContextHooks: cycle.DefaultNewContextHooks(),
+		keptHooks:       defaultKeptHooks(),
+		modelHooks:      defaultModelHooks(),
+		leanHooks:       defaultLeanHooks(),
+		preflightHooks:  defaultPreflightHooks(),
+		hostHooks:       defaultHostHooks(),
+		finishHooks:     defaultFinishHooks(),
+		HealthHooks:     roomconf.DefaultHealthHooks(),
+		runnerHooks: runnerHooks{
+			helpRunner:  helpRunner,
+			runnerFound: runnerFound,
+			agentSpawn:  agentSpawn,
+			agentFork:   cycle.AgentFork,
+		},
+		idleHooks: idleHooks{idleLeave: idleLeave, idleGoneWait: idleGoneWait},
+		windDownHooks: windDownHooks{
+			windDownKeyGap:  windDownKeyGap,
+			shelveGrace:     shelveGrace,
+			restartAskGrace: restartAskGrace,
+			taskExitWait:    taskExitWait,
+		},
+		opencodeHooks: opencodeHooks{
+			opencodeTTL:       opencodeTTL,
+			opencodeWaitDelay: opencodeWaitDelay,
+			opencodeExec:      opencodeExec,
+			opencodeLookPath:  opencodeLookPath,
+		},
+		procHooks: procHooks{pidAlive: processAlive, procAncestors: cardproc.Ancestors},
+		finishLimitHooks: finishLimitHooks{
+			backoffSteps: append([]time.Duration(nil), backoffSteps...),
+			stuckAfter:   heldStuckAfter,
+			silentNudges: silentNudges,
+			OrphanGrace:  OrphanGrace,
+			RelayKeep:    hublink.RelayKeep,
+			listMax:      pulls.ListMax,
+		},
+		repliesHooks: repliesHooks{
+			repliesWindow:    repliesWindow,
+			repliesReach:     repliesReach,
+			repliesCap:       repliesCap,
+			repliesAllBudget: repliesAllBudget,
+		},
+		updateRegistry: updateRegistry,
 	}
 	platformHooks(&hk)
 	return hk

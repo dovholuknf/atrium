@@ -1,1 +1,0 @@
-Opening a terminal card whose runner is not running now shows a centered "this session is not running" dialog at once, with Relaunch (resume the same conversation) and Launch new (a fresh session in the same directory), instead of a "reconnecting" spinner that never ended. "Reconnecting" stays for a live runner whose socket dropped. bug-dead-card-says-reconnecting.

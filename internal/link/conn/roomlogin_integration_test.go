@@ -52,7 +52,7 @@ func TestARoomsLoginNeededRidesTheBeatAndRingsOnce(t *testing.T) {
 
 	reason.Store("claude needs a login")
 	waitFor(t, 5*time.Second, func() bool { return attachedLogin() == "claude needs a login" })
-	time.Sleep(300 * time.Millisecond) // several beats repeating the same reason
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, several beats repeating the same reason must not ring again
 	if n := rang.Load(); n != 1 {
 		t.Fatalf("rang %d times for one spell, wanted 1", n)
 	}

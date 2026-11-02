@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_flow, the control tool over /_hub/flow. Full class only: `workerTools` does not name it. The HTTP half, and
@@ -64,7 +65,7 @@ type flowOutput struct {
 	Note     string                `json:"note,omitempty"`
 }
 
-func (c *controlMCP) registerFlow(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerFlow(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_flow", Description: flowToolDesc}, c.flowHandler)
 }
 
@@ -82,21 +83,21 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	switch strings.TrimSpace(in.Action) {
 	case "roles":
-		err := c.ask(ctx, http.MethodGet, "/_hub/flow/roles"+q("role", in.Role), "", nil, &out)
+		err := c.Ask(ctx, http.MethodGet, "/_hub/flow/roles"+q("role", in.Role), "", nil, &out)
 		if err == nil && len(out.Roles) == 0 {
 			out.Note = "no role is held"
 		}
 		return nil, out, err
 	case "role_set", "role_clear":
 		if in.Role == "" || strings.TrimSpace(in.Room) == "" || strings.TrimSpace(in.Card) == "" {
-			return nil, out, &refusedError{"role_set and role_clear need role, room and card"}
+			return nil, out, &ctl.RefusedError{Msg: "role_set and role_clear need role, room and card"}
 		}
 		do := strings.TrimPrefix(in.Action, "role_")
 		var body struct {
 			Holder   *hubstore.RoleHolder  `json:"holder"`
 			Replaced []hubstore.RoleHolder `json:"replaced"`
 		}
-		err := c.ask(ctx, http.MethodPost, "/_hub/flow/roles", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/flow/roles", "", map[string]any{
 			"do": do, "role": in.Role, "room": strings.TrimSpace(in.Room), "card": strings.TrimSpace(in.Card), "by": by}, &body)
 		if err != nil {
 			return nil, out, err
@@ -107,17 +108,17 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Replaced = body.Replaced
 		return nil, out, nil
 	case "items":
-		err := c.ask(ctx, http.MethodGet, "/_hub/flow/items"+q("stage", in.Stage), "", nil, &out)
+		err := c.Ask(ctx, http.MethodGet, "/_hub/flow/items"+q("stage", in.Stage), "", nil, &out)
 		if err == nil && len(out.Items) == 0 {
 			out.Note = "no items are in the flow"
 		}
 		return nil, out, err
 	case "item":
 		if id == "" {
-			return nil, out, &refusedError{"item needs id"}
+			return nil, out, &ctl.RefusedError{Msg: "item needs id"}
 		}
 		var f FlowView
-		if err := c.ask(ctx, http.MethodGet, "/_hub/flow/items/"+url.PathEscape(id), "", nil, &f); err != nil {
+		if err := c.Ask(ctx, http.MethodGet, "/_hub/flow/items/"+url.PathEscape(id), "", nil, &f); err != nil {
 			return nil, out, err
 		}
 		out.Item = &f.FlowItem
@@ -125,10 +126,10 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, out, nil
 	case "stage":
 		if id == "" || in.Stage == "" {
-			return nil, out, &refusedError{"stage needs id and stage"}
+			return nil, out, &ctl.RefusedError{Msg: "stage needs id and stage"}
 		}
 		var f hubstore.FlowItem
-		err := c.ask(ctx, http.MethodPost, "/_hub/flow/items/"+url.PathEscape(id), "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/flow/items/"+url.PathEscape(id), "", map[string]any{
 			"stage": in.Stage, "branch": in.Branch, "sha": in.SHA, "note": in.Note, "by": by}, &f)
 		if err != nil {
 			return nil, out, err
@@ -136,17 +137,17 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Item = &f
 		return nil, out, nil
 	case "checks":
-		err := c.ask(ctx, http.MethodGet, "/_hub/flow/checks"+q("sha", in.SHA), "", nil, &out)
+		err := c.Ask(ctx, http.MethodGet, "/_hub/flow/checks"+q("sha", in.SHA), "", nil, &out)
 		if err == nil && len(out.Checks) == 0 {
 			out.Note = "no checks are recorded"
 		}
 		return nil, out, err
 	case "check":
 		if in.SHA == "" || in.Name == "" || in.Result == "" {
-			return nil, out, &refusedError{"check needs sha, name and result"}
+			return nil, out, &ctl.RefusedError{Msg: "check needs sha, name and result"}
 		}
 		var ck hubstore.FlowCheck
-		err := c.ask(ctx, http.MethodPost, "/_hub/flow/checks", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/flow/checks", "", map[string]any{
 			"sha": in.SHA, "name": in.Name, "result": in.Result, "by": by}, &ck)
 		if err != nil {
 			return nil, out, err
@@ -155,14 +156,14 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, out, nil
 	case "epoch":
 		var raw json.RawMessage
-		if err := c.ask(ctx, http.MethodGet, "/_hub/flow/epoch", "", nil, &raw); err != nil {
+		if err := c.Ask(ctx, http.MethodGet, "/_hub/flow/epoch", "", nil, &raw); err != nil {
 			return nil, out, err
 		}
 		out.Epoch = raw
 		return nil, out, nil
 	case "epoch_open":
 		var raw json.RawMessage
-		if err := c.ask(ctx, http.MethodPost, "/_hub/flow/epoch", "", map[string]any{"do": "open", "sha": in.SHA, "by": by}, &raw); err != nil {
+		if err := c.Ask(ctx, http.MethodPost, "/_hub/flow/epoch", "", map[string]any{"do": "open", "sha": in.SHA, "by": by}, &raw); err != nil {
 			return nil, out, err
 		}
 		out.Epoch = raw
@@ -172,7 +173,7 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			return nil, out, err
 		}
 		var raw json.RawMessage
-		if err := c.ask(ctx, http.MethodPost, "/_hub/flow/epoch", "", map[string]any{"do": "close", "branch": in.Branch,
+		if err := c.Ask(ctx, http.MethodPost, "/_hub/flow/epoch", "", map[string]any{"do": "close", "branch": in.Branch,
 			"expect": in.Expect, "by": by}, &raw); err != nil {
 			return nil, out, err
 		}
@@ -184,24 +185,24 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 		var err error
 		if strings.TrimSpace(in.Repo) == "" {
-			err = c.ask(ctx, http.MethodGet, "/_hub/flow/repo", "", nil, &body)
+			err = c.Ask(ctx, http.MethodGet, "/_hub/flow/repo", "", nil, &body)
 		} else {
-			err = c.ask(ctx, http.MethodPost, "/_hub/flow/repo", "", map[string]any{"repo": in.Repo, "by": by}, &body)
+			err = c.Ask(ctx, http.MethodPost, "/_hub/flow/repo", "", map[string]any{"repo": in.Repo, "by": by}, &body)
 		}
 		out.Repo = &body.Repo
 		return nil, out, err
 	case "deploys":
-		err := c.ask(ctx, http.MethodGet, "/_hub/flow/deploys", "", nil, &out)
+		err := c.Ask(ctx, http.MethodGet, "/_hub/flow/deploys", "", nil, &out)
 		if err == nil && len(out.Deploys) == 0 {
 			out.Note = "no room has reported a deploy"
 		}
 		return nil, out, err
 	case "deploy":
 		if strings.TrimSpace(in.Room) == "" || in.SHA == "" {
-			return nil, out, &refusedError{"deploy needs room and sha"}
+			return nil, out, &ctl.RefusedError{Msg: "deploy needs room and sha"}
 		}
 		var d hubstore.FlowDeploy
-		err := c.ask(ctx, http.MethodPost, "/_hub/flow/deploys", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/flow/deploys", "", map[string]any{
 			"room": strings.TrimSpace(in.Room), "sha": in.SHA, "by": by}, &d)
 		if err != nil {
 			return nil, out, err
@@ -209,15 +210,15 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Deploys = []hubstore.FlowDeploy{d}
 		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys, deploy", in.Action)}
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys, deploy", in.Action)}
 }
 
 // requireOrchestrator refuses unless the caller is the card the hub has recorded as the orchestrator. THE CALLER IS A CLAIM, as for
 // every tool here (see ctlaudit.go): the claim is the X-Atrium-Agent name, resolved to a card on the caller's room.
 func (c *controlMCP) requireOrchestrator(ctx context.Context, req *mcp.CallToolRequest) error {
-	agent, room := agentOf(req), roomOf(req)
+	agent, room := ctl.AgentOf(req), ctl.RoomOf(req)
 	if agent == "" {
-		return &refusedError{"only the orchestrator closes an epoch, and this call carries no session name"}
+		return &ctl.RefusedError{Msg: "only the orchestrator closes an epoch, and this call carries no session name"}
 	}
 	card, err := c.callerCard(ctx, room, agent)
 	if err != nil {
@@ -226,7 +227,7 @@ func (c *controlMCP) requireOrchestrator(ctx context.Context, req *mcp.CallToolR
 	var held struct {
 		Roles []hubstore.RoleHolder `json:"roles"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/_hub/flow/roles?role="+hubstore.RoleOrchestrator, "", nil, &held); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/_hub/flow/roles?role="+hubstore.RoleOrchestrator, "", nil, &held); err != nil {
 		return err
 	}
 	for _, h := range held.Roles {
@@ -234,5 +235,5 @@ func (c *controlMCP) requireOrchestrator(ctx context.Context, req *mcp.CallToolR
 			return nil
 		}
 	}
-	return &refusedError{"only the orchestrator closes an epoch, and the hub has recorded another card (or none) as the orchestrator"}
+	return &ctl.RefusedError{Msg: "only the orchestrator closes an epoch, and the hub has recorded another card (or none) as the orchestrator"}
 }

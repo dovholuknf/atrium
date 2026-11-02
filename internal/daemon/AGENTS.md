@@ -13,6 +13,9 @@ from the daemon and holds no daemon state, so a change there runs only its own t
 `launch/` (the Git Bash lookup) and `publish/` (the ziti SDK enrol, the login provider key fetch) are the same: they
 import nothing from the daemon, and the daemon calls their exported names.
 
+`pulls/` (the pulls view: the PR review runner and the changes answer) and `promptline/` (reading a prompt from a transcript line)
+take what they need from the daemon as a `Config` or a `Changes` and import nothing from it.
+
 ## The permission chain: order is critical
 
 `onPermRequest` in `daemon.go`. Each step can answer and stop. **Reordering changes what the tool means**, so
@@ -60,8 +63,9 @@ do not do it without reading why each one sits where it does.
 `supervisor` holds `runners` and `shells`, both keyed by card.
 
 `runners` is the process doing the work. The reaper asks the operating system about it, the park tells it to
-stop, shelving refuses on its behalf, and its exit files the card as `dead`. **Every existing `sup.get(taskID)`
-means the runner.**
+stop, shelving refuses on its behalf, and its exit files the card as `dead`. **Every existing `sup.Get(taskID)`
+means the runner.** Consumers reach it as a `Runner` through the `Registry` that `supervisor` implements
+(`registry.go`), and the supervision internals still hold `*runner` through `sup.get`.
 
 `shells` is the plain shell an operator may open beside a wedged agent. It has no card status, writes no event,
 is never resumed or retried, and does not survive its card. Folding it into `runners` is the obvious

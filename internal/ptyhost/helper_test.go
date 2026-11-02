@@ -75,7 +75,7 @@ func runnerMain(args []string) {
 		go echoLoop(out)
 		for i := 1; ; i++ {
 			out(fmt.Sprintf("T%06d\r\n", i))
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) // wait: a runner that keeps writing is what is under test
 		}
 	default:
 		echoLoop(out)

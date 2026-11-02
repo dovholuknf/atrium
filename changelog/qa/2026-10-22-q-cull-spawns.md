@@ -1,1 +1,0 @@
-A cull and the close preflight read each git ref once instead of over and over, so a cull runs about 20 fewer git processes and a close about 16 fewer, with every safety check unchanged (q-cull-spawns).

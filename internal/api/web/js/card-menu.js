@@ -614,12 +614,18 @@ async function createGroupFor(id, t) {
   if (raw === null || !name) return;
   const p = groupingPrefs();
   const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
-  if (!groups.includes(name)) {
+  const made = !groups.includes(name);
+  if (made) {
     groups.push(name);
     setGrouping({ groups, made: Object.assign({}, p.made, { [name]: Date.now() }) });
   }
   const tags = t.tags || [];
-  if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
+  // patchTask toasts a failure and answers undefined. A group made for a card that never got in is taken back.
+  if (!tags.includes(name) && await patchTask(id, { tags: tags.concat(name) }) === undefined && made) {
+    const now = groupingPrefs(), stamps = Object.assign({}, now.made);
+    delete stamps[name];
+    setGrouping({ groups: (now.groups || []).filter(n => n !== name), made: stamps });
+  }
   refresh();
 }
 
@@ -747,6 +753,7 @@ async function cardMenu(e, id) {
         : document.querySelector(`.card[data-id="${CSS.escape(id)}"], .stackrow[data-id="${CSS.escape(id)}"]`) ||
           { x: e.clientX, y: e.clientY }, "menu")
     },
+    { label: "copy id", act: () => { if (navigator.clipboard) navigator.clipboard.writeText(id).catch(() => {}); toast(id, "id copied"); } },
     { sep: true },
     // One entry, two ways to open it. Attaching and popping out are the same
     // intention with a different destination, so they are one row that says
@@ -998,6 +1005,7 @@ async function cardMenu(e, id) {
     } : null,
     // The name to mention this card by. See js/alias.js.
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
+    typeof parentMenuItem === "function" ? parentMenuItem(t) : null,
     // ANSWERED IN THE TERMINAL, which atrium cannot see.
     //
     // Every other way a question comes off a card delivers text to the

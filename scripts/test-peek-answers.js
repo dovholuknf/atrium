@@ -74,7 +74,12 @@ const server = http.createServer((req, res) => {
   p.on("pageerror", e => fail("page error: " + e));
   const shots = process.env.PEEK_SHOTS || "";
   const shoot = async name => { if (shots) { await p.waitForTimeout(350); await p.screenshot({ path: `${shots}/${name}.png` }); } };
-  const refresh = async () => { await p.evaluate(() => runRefresh()); await p.waitForTimeout(250); };
+  const refresh = async () => {
+    const from = await p.evaluate(() => { const s = refreshSeq; runRefresh(); return s; });
+    await p.waitForFunction(s => refreshSeq > s && !refreshInFlight, from, { timeout: 10000 });
+  };
+  const until = async (ok, ms = 5000) => { const t0 = Date.now(); while (!ok() && Date.now() - t0 < ms) await new Promise(r => setTimeout(r, 50)); };
+  const settle = (fn, arg) => p.waitForFunction(fn, arg, { timeout: 5000 }).catch(() => {});
   const open = () => p.evaluate(() => { const c = document.querySelector('.card[data-id="t~q1"], .stackrow[data-id="t~q1"]'); openPeek("t~q1", c, "menu"); });
 
   try {
@@ -99,7 +104,8 @@ const server = http.createServer((req, res) => {
 
     // Blur: click away. The peek closes, the drafts do not.
     await p.mouse.click(5, 790);
-    await p.waitForTimeout(500);
+    await settle(() => !document.querySelector(".peek.on"));
+    await until(() => /no, drop it/.test(card.answer_drafts || ""));
     if (await p.locator(".peek.on").count()) fail("a click away should close the peek");
     if (!card.answer_drafts) fail("the drafts were not saved on the card");
     else {
@@ -121,7 +127,7 @@ const server = http.createServer((req, res) => {
     if (!await p.locator(".qa-fly .qa-b.send:visible").count()) fail("every question answered, the flyout should offer to send now");
     await shoot("peek-answers-complete");
     await p.click(".qa-fly .qa-b.send");
-    await p.waitForTimeout(500);
+    await until(() => messages.length >= 1 && !card.answer_drafts);
     if (messages.length !== 1) fail("one message should have gone, got " + messages.length);
     else {
       const want = "Q1 (Where does the autocompact): use the hub value\nQ2 (Keep the old flag): no, drop it\nQ3 (Ship it today): yes";
@@ -138,7 +144,7 @@ const server = http.createServer((req, res) => {
     await p.click('.peek-qa .qa-q[data-gi="1"]');
     await p.fill(".qa-fly textarea", "main");
     await p.click(".qa-fly .qa-b.send");
-    await p.waitForTimeout(500);
+    await until(() => messages.length >= 2);
     const m2 = messages[1] && messages[1].text;
     const clock = new Date(QAT1).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     if (m2 !== `re ${clock} Q2 (Keep the old flag): keep it\nQ1 (Which branch): main`) fail("the second message was: " + JSON.stringify(m2));
@@ -154,19 +160,21 @@ const server = http.createServer((req, res) => {
     await p.click('.peek-qa .qa-q[data-qi="2"]');
     await p.fill(".qa-fly textarea", "c");
     await p.keyboard.press("Control+Enter");
-    await p.waitForTimeout(200);
+    await settle(() => { const q = document.querySelector(".qa-fly.on .qa-fq"); return q && /One|Two/.test(q.innerText); });
     if (!await p.locator(".qa-fly.on").count()) fail("ctrl+enter on the last question must not close the flyout");
     if (!/Two/.test(await p.innerText(".qa-fly .qa-fq")) && !/One/.test(await p.innerText(".qa-fly .qa-fq"))) fail("ctrl+enter on the last should jump to an unanswered question");
     if (!/for the next one/.test(await p.innerText(".qa-fly .qa-hint"))) fail("the hint should say next while some are unanswered");
     const before = messages.length;
     await p.fill(".qa-fly textarea", "a");
+    const asked = await p.innerText(".qa-fly .qa-fq");
     await p.keyboard.press("Control+Enter");
-    await p.waitForTimeout(200);
+    await settle(q => { const e = document.querySelector(".qa-fly .qa-fq"); return e && e.innerText !== q; }, asked);
     await p.fill(".qa-fly textarea", "b");
     if (!/to send to the agent/.test(await p.innerText(".qa-fly .qa-hint"))) fail("the hint should say send once all are answered");
     await p.click('.qa-fly .qa-dot[data-dot="0"]');
     await p.keyboard.press("Control+Enter");
-    await p.waitForTimeout(500);
+    await until(() => messages.length >= before + 1);
+    await settle(() => !document.querySelector(".qa-fly.on"));
     if (messages.length !== before + 1) fail("ctrl+enter with everything answered should send, from any question");
     if (await p.locator(".qa-fly.on").count()) fail("the flyout should close after the send");
 

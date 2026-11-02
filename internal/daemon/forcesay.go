@@ -2,10 +2,13 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -42,9 +45,9 @@ const forcedHow = "typed anyway, past the typing gate"
 // read the line and let-through refuses. A dialog or a new-context cycle refuses it, as for a forced say.
 func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if d.pending == nil || run == nil {
-		writeJSONCode(w, http.StatusNotFound, errBody("no supervised terminal on this card"))
+		hublink.WriteJSONCode(w, http.StatusNotFound, hublink.ErrBody("no supervised terminal on this card"))
 		return
 	}
 	d.pending.mu.Lock()
@@ -54,22 +57,22 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	}
 	d.pending.mu.Unlock()
 	if len(entries) == 0 {
-		writeJSONCode(w, http.StatusConflict, errBody("nothing is waiting"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("nothing is waiting"))
 		return
 	}
 	switch {
-	case d.holdingMessages(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("a new-context cycle owns that terminal, so nothing was typed"))
+	case d.HoldingMessages(taskID):
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("a new-context cycle owns that terminal, so nothing was typed"))
 		return
 	case d.act.dialogOpen(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("a dialog is on that terminal, and the Enter would answer it"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("a dialog is on that terminal, and the Enter would answer it"))
 		return
 	}
 	delivered := 0
 	for _, e := range entries {
-		wrote, err := run.injectForced(e.banner, e.body, nil)
+		wrote, err := run.InjectForced(e.banner, e.body, nil)
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if !wrote {
@@ -81,27 +84,27 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 		d.notePeerTyped(taskID, e.from, e.text, e.kind, forcedHow)
 		delivered++
 	}
-	d.publishTask(taskID)
-	writeJSONCode(w, http.StatusOK, map[string]any{"delivered": delivered})
+	d.Publish(taskID)
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"delivered": delivered})
 }
 
 // forceSay answers true when it has written the response, a delivery or a refusal, and false when the ordinary path
 // should carry on (no terminal of ours to type into).
 func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKind string, reply, holding, waitTurn bool,
 	rec *store.Say, target *store.Task) bool {
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run == nil {
 		return false
 	}
 	switch {
-	case d.holdingMessages(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: a new-context cycle owns that terminal. "+newContextHoldNote))
+	case d.HoldingMessages(taskID):
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a new-context cycle owns that terminal. "+cycle.NewContextHoldNote))
 		return true
 	case holding:
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: "+d.deployHoldNote()))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: "+d.DeployHoldNote()))
 		return true
 	case d.act.dialogOpen(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: a dialog is on that terminal, and the Enter would answer it"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a dialog is on that terminal, and the Enter would answer it"))
 		return true
 	}
 	banner := ""
@@ -109,14 +112,14 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	if from != "" {
 		// A PEER is not that human. Only the target's launcher may force, and only past a line atrium cannot read.
 		if !d.isLauncherOf(from, target) {
-			writeJSONCode(w, http.StatusForbidden, errBody("force refused: only the operator or the launcher of that session may force a say"))
+			hublink.WriteJSONCode(w, http.StatusForbidden, hublink.ErrBody("force refused: only the operator or the launcher of that session may force a say"))
 			return true
 		}
-		if why := run.forceRefusal(); why != "" {
-			writeJSONCode(w, http.StatusConflict, errBody("force refused: "+why+". force only types past a line atrium cannot read"))
+		if why := run.ForceRefusal(); why != "" {
+			hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: "+why+". force only types past a line atrium cannot read"))
 			return true
 		}
-		banner, ok = peerBanner(from), run.peerForceOK
+		banner, ok = peerBanner(from), run.PeerForceOK
 	}
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
@@ -124,13 +127,13 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	}
 	// Read before the write: whether it lands in a queued box depends on the state the line is typed into.
 	inBox := d.typedWouldQueue(taskID)
-	wrote, err := run.injectForced(banner, payload, ok)
+	wrote, err := run.InjectForced(banner, payload, ok)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return true
 	}
 	if !wrote {
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: the line changed under it, so nothing was typed"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: the line changed under it, so nothing was typed"))
 		return true
 	}
 	ev := map[string]any{"text": text, "via": "terminal", "how": forcedHow, "forced": true}
@@ -141,7 +144,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 		ev["kind"] = kind
 	}
 	if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return true
 	}
 	if from != "" {
@@ -155,7 +158,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	if from == "" {
 		d.seenAnswered(taskID, store.SeenMessage)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	out := map[string]any{"delivered": "terminal", "forced": true, "when": whenWord(waitTurn)}
 	if inBox {
 		// Typed past the turn rule into a runner that queues it: in its box, not read. See typedQueued.

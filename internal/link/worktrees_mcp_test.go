@@ -4,13 +4,15 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 func TestWorktreesToolIsFullSetOnlyAndShort(t *testing.T) {
 	if workerTools["atrium_worktrees"] {
 		t.Error("atrium_worktrees is in the worker set")
 	}
-	if inClass("atrium_worktrees", classWorker) || !inClass("atrium_worktrees", classFull) {
+	if inClass("atrium_worktrees", ctl.ClassWorker) || !inClass("atrium_worktrees", ctl.ClassFull) {
 		t.Error("atrium_worktrees is served to the wrong class")
 	}
 	if n := len(strings.Fields(worktreesToolDesc)); n >= 120 {

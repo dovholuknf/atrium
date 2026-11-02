@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // ancestry is a LandGit that knows one fact: `newer` holds `older`.
@@ -16,7 +18,7 @@ func (a ancestry) Contains(_ context.Context, build, sha string) (bool, bool, er
 	return build == a.newer && sha == a.older, true, nil
 }
 
-func buildIssueOf(p *Proxy, f *RoomSetup) string {
+func buildIssueOf(p *Proxy, f *wire.RoomSetup) string {
 	f.Answering = true
 	for _, i := range p.setupIssues(context.Background(), f) {
 		if i.Kind == "build" {
@@ -28,7 +30,7 @@ func buildIssueOf(p *Proxy, f *RoomSetup) string {
 
 func TestAnEqualCodeFingerprintRaisesNoBuildIssueWhateverTheBoard(t *testing.T) {
 	p := &Proxy{boardID: "bbbbbbbbbbbb", hubCode: "c0de"}
-	if got := buildIssueOf(p, &RoomSetup{Build: "aaaaaaaaaaaa", Code: "c0de"}); got != "" {
+	if got := buildIssueOf(p, &wire.RoomSetup{Build: "aaaaaaaaaaaa", Code: "c0de"}); got != "" {
 		t.Fatalf("a board-only difference raised %q", got)
 	}
 }
@@ -36,7 +38,7 @@ func TestAnEqualCodeFingerprintRaisesNoBuildIssueWhateverTheBoard(t *testing.T) 
 func TestADifferentCodeFingerprintIsNamedWithBothCommitsAndTheNewer(t *testing.T) {
 	room, hub := strings.Repeat("1", 40), strings.Repeat("2", 40)
 	p := &Proxy{boardID: "bbbbbbbbbbbb", hubCode: "c0de", hubBuild: hub, landGit: ancestry{newer: hub, older: room}}
-	got := buildIssueOf(p, &RoomSetup{Build: "bbbbbbbbbbbb", Code: "beef", Commit: room})
+	got := buildIssueOf(p, &wire.RoomSetup{Build: "bbbbbbbbbbbb", Code: "beef", Commit: room})
 	for _, want := range []string{"different atrium code", "11111111", "22222222", "the hub is newer"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("issue %q lacks %q", got, want)
@@ -46,10 +48,10 @@ func TestADifferentCodeFingerprintIsNamedWithBothCommitsAndTheNewer(t *testing.T
 
 func TestARoomWithoutAFingerprintKeepsTheBoardCompare(t *testing.T) {
 	p := &Proxy{boardID: "bbbbbbbbbbbb", hubCode: "c0de"}
-	if got := buildIssueOf(p, &RoomSetup{Build: "aaaaaaaaaaaa"}); !strings.Contains(got, "different atrium build") {
+	if got := buildIssueOf(p, &wire.RoomSetup{Build: "aaaaaaaaaaaa"}); !strings.Contains(got, "different atrium build") {
 		t.Fatalf("an old room's board difference said %q", got)
 	}
-	if got := buildIssueOf(p, &RoomSetup{Build: "bbbbbbbbbbbb"}); got != "" {
+	if got := buildIssueOf(p, &wire.RoomSetup{Build: "bbbbbbbbbbbb"}); got != "" {
 		t.Fatalf("an old room with the same board said %q", got)
 	}
 }

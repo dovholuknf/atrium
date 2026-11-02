@@ -333,7 +333,6 @@ func TestStopCancelsAndWaitsForGitChildren(t *testing.T) {
 }
 
 func TestBackendMissingNamesTheCause(t *testing.T) {
-	t.Parallel()
 	bin := t.TempDir()
 	exe, script := filepath.Join(bin, "git"), "#!/bin/sh\necho "+bin+"\n"
 	if runtime.GOOS == "windows" {

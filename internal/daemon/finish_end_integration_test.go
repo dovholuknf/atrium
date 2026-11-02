@@ -12,7 +12,7 @@ import (
 func stubCommits(t *testing.T, d *Daemon, inDir, onHub bool) {
 	t.Helper()
 	d.hk.commitInDir = func(string, string) bool { return inDir }
-	d.hk.commitOnHub = func(*Daemon, *store.Task, string) bool { return onHub }
+	d.hk.commitOnHub = func(hubAsker, *store.Task, string) bool { return onHub }
 }
 
 func TestAnEndingDoneWithAnUnknownCommitIsRefusedAndRecordsNothing(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // detachWait is how long `atrium room --detach` waits for the room it started
@@ -22,7 +22,7 @@ var detachWait = 30 * time.Second
 //
 // A ROOM ALREADY ANSWERING IS LEFT ALONE, so running this twice starts one room.
 func detachRoom(l roomLaunch) error {
-	if _, err := (link.Keys{Dir: l.dir}).Joined(); err != nil {
+	if _, err := (transport.Keys{Dir: l.dir}).Joined(); err != nil {
 		return err
 	}
 	health := "http://" + l.human + "/v1/health"

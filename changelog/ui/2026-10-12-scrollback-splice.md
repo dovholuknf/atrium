@@ -1,1 +1,0 @@
-Scrolling up in an agent terminal no longer shows an old page spliced into the middle of a reply. A clear kept the old page once, then a second clear caught the repaint half drawn and kept the old rows again after the new text. (u-scrollback-stale-page-spliced)

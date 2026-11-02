@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // serve stands a Backend behind a forwarder over a plain transport, which is what the
@@ -64,18 +66,14 @@ func TestTheForwarderClosesWhenTheCommandExits(t *testing.T) {
 	f := forwarded(t, s)
 	addr := strings.TrimPrefix(strings.SplitN(f.URL, "/", 4)[2], "")
 	f.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	testwait.Eventually(t, 2*time.Second, "the forwarder to stop listening after Close", func() bool {
 		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 		if err != nil {
-			return
+			return true
 		}
 		c.Close()
-		if time.Now().After(deadline) {
-			t.Fatal("the forwarder is still listening after Close")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return false
+	})
 }
 
 // A fetch of many distinct tips, so the want list is far past git's post buffer floor and

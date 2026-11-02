@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -256,7 +257,7 @@ func (d *Daemon) landedPass(grace time.Duration, now time.Time) {
 			d.landedSet(t.ID, "")
 			continue
 		}
-		if !d.landed.due(t.ID, now, every) || d.nctx.holding(t.ID) {
+		if !d.landed.due(t.ID, now, every) || d.Nctx.Holding(t.ID) {
 			continue
 		}
 		d.landedOne(t, grace, now)
@@ -265,7 +266,7 @@ func (d *Daemon) landedPass(grace time.Duration, now time.Time) {
 
 func (d *Daemon) landedSet(id, why string) {
 	if d.landed.set(id, why) {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 }
 
@@ -290,7 +291,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 	case why != "":
 		d.keepLanded(t, "landed, kept: "+why)
 		return
-	case now.Sub(idleSince) < grace || d.deployHeld(t.ID):
+	case now.Sub(idleSince) < grace || d.DeployHeld(t.ID):
 		d.landedSet(t.ID, "")
 		return
 	}
@@ -307,7 +308,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 		line += ", kept: " + res.Kept
 	}
 	d.noteOnCard(t.ID, line)
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	d.ap.Broadcast("task-removed", nil)
 	log.Printf("[atrium] %s (%s) after %s idle", line, t.DisplayTitle(), grace)
 }
@@ -316,7 +317,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 func (d *Daemon) keepLanded(t *store.Task, why string) {
 	if d.landed.set(t.ID, why) {
 		d.noteOnCard(t.ID, why)
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 }
 
@@ -329,9 +330,9 @@ func (d *Daemon) noteOnCard(id, line string) {
 // landedHeld is why a landed worker is kept, or "".
 func (d *Daemon) landedHeld(t *store.Task, plan *cullPlan) string {
 	switch {
-	case hasTag(t.Tags, KeepOpenTag):
+	case small.HasTag(t.Tags, KeepOpenTag):
 		return "tagged " + KeepOpenTag
-	case hasTag(t.Tags, InvestigationTag):
+	case small.HasTag(t.Tags, InvestigationTag):
 		return "tagged " + InvestigationTag
 	case staysOpen(t):
 		return "tagged to stay open"

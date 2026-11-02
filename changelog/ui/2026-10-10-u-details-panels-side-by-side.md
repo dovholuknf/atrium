@@ -1,1 +1,0 @@
-The terminal's details popover now lays the card panel and DEBUG side by side, card panel on the left, when stacked they would not fit above the button, and each panel scrolls inside itself when still too tall. It re-decides on resize and when the content changes while open. (u-details-panels-side-by-side)

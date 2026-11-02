@@ -11,10 +11,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// atrium_backlog and atrium_reports, the control tools over /_hub/backlog and /_hub/reports. Full class only:
-// `workerTools` does not name them. Both go through the hub, so a director on any room reads and writes the same rows.
+// atrium_backlog and atrium_reports, the control tools over /_hub/backlog and /_hub/reports. Full class has both,
+// and `workerTools` names atrium_reports. Both go through the hub, so a director on any room reads and writes the same rows.
 // The HTTP half, and who may write, is in backlog.go. The audit lines are written there, so these tools write none.
 
 const backlogToolDesc = "The backlog, kept on the hub, so a director on any room sees an item filed on any other. " +
@@ -32,14 +34,17 @@ const backlogToolDesc = "The backlog, kept on the hub, so a director on any room
 	"branch tip, `new:` one line per verb, flag, endpoint, setting or tab, `stale:` `<path>  <what it says " +
 	"wrong>` per page left wrong, `updated:` the pages the branch already fixed. No stale page, no item.\n" +
 	"- `status {id, status}`: change the status.\n" +
-	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`."
+	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`.\n" +
+	"- `edit {id, title?, body?}`: replace the title, the body, or both.\n" +
+	"- `append {id, text}`: add a paragraph to the body, headed with who and the day."
 
 type backlogInput struct {
-	Action   string `json:"action" jsonschema:"list, get, file, status or priority"`
+	Action   string `json:"action" jsonschema:"list, get, file, status, priority, edit or append"`
 	ID       string `json:"id,omitempty" jsonschema:"the item id, for get and status, and for file when you choose it"`
 	Dept     string `json:"dept,omitempty" jsonschema:"the department, for file, and to narrow a list"`
-	Title    string `json:"title,omitempty" jsonschema:"for file: one line"`
-	Body     string `json:"body,omitempty" jsonschema:"for file: the item, markdown"`
+	Title    string `json:"title,omitempty" jsonschema:"for file and edit: one line"`
+	Body     string `json:"body,omitempty" jsonschema:"for file and edit: the item, markdown"`
+	Text     string `json:"text,omitempty" jsonschema:"for append: the paragraph to add, markdown"`
 	Priority string `json:"priority,omitempty" jsonschema:"high, medium or low (unset for none). for file, priority, and to narrow a list"`
 	Status   string `json:"status,omitempty" jsonschema:"for status: open, held, in-progress, done or dropped. for list: only that status"`
 	Open     bool   `json:"open,omitempty" jsonschema:"for list: leave out done and dropped"`
@@ -94,13 +99,13 @@ func (b backlogTools) ask(ctx context.Context, method, path, _ string, body, out
 func (c *controlMCP) tools() backlogTools {
 	return backlogTools{
 		call: func(ctx context.Context, method, path string, body, out any) error {
-			return c.ask(ctx, method, path, "", body, out)
+			return c.Ask(ctx, method, path, "", body, out)
 		},
 		by: callerName, room: backlogRoom,
 	}
 }
 
-func (c *controlMCP) registerBacklog(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerBacklog(s *mcp.Server, class ctl.Class) {
 	t := c.tools()
 	addTool(s, class, &mcp.Tool{Name: "atrium_backlog", Description: backlogToolDesc}, t.backlogHandler)
 	addTool(s, class, &mcp.Tool{Name: "atrium_reports", Description: reportsToolDesc}, t.reportsHandler)
@@ -133,7 +138,7 @@ func AddRoomBacklogTools(s *mcp.Server, call func(ctx context.Context, method, p
 
 // backlogRoom is the room a call is from, for the row's filed_room. Empty when the caller is not one of atrium's sessions.
 func backlogRoom(req *mcp.CallToolRequest) string {
-	if r := roomOf(req); validRoomName(r) {
+	if r := ctl.RoomOf(req); validRoomName(r) {
 		return r
 	}
 	return ""
@@ -166,7 +171,7 @@ func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolReque
 		return nil, out, err
 	case "get":
 		if id == "" {
-			return nil, out, &refusedError{"get needs id"}
+			return nil, out, &ctl.RefusedError{Msg: "get needs id"}
 		}
 		var b hubstore.BacklogItem
 		if err := c.ask(ctx, http.MethodGet, "/_hub/backlog/"+url.PathEscape(id), "", nil, &b); err != nil {
@@ -176,7 +181,7 @@ func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolReque
 		return nil, out, nil
 	case "file":
 		if strings.TrimSpace(in.Dept) == "" || strings.TrimSpace(in.Title) == "" {
-			return nil, out, &refusedError{"file needs dept and title"}
+			return nil, out, &ctl.RefusedError{Msg: "file needs dept and title"}
 		}
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog", "", map[string]any{
@@ -189,7 +194,7 @@ func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolReque
 		return nil, out, nil
 	case "status":
 		if id == "" || in.Status == "" {
-			return nil, out, &refusedError{"status needs id and status"}
+			return nil, out, &ctl.RefusedError{Msg: "status needs id and status"}
 		}
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
@@ -201,7 +206,7 @@ func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolReque
 		return nil, out, nil
 	case "priority":
 		if id == "" || strings.TrimSpace(in.Priority) == "" {
-			return nil, out, &refusedError{"priority needs id and priority (" + hubstore.PriorityWords + ", say unset for none)"}
+			return nil, out, &ctl.RefusedError{Msg: "priority needs id and priority (" + hubstore.PriorityWords + ", say unset for none)"}
 		}
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
@@ -211,8 +216,37 @@ func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolReque
 		}
 		out.Item = &b
 		return nil, out, nil
+	case "edit":
+		if id == "" || (in.Title == "" && in.Body == "") {
+			return nil, out, &ctl.RefusedError{Msg: "edit needs id and a title or a body"}
+		}
+		ask := map[string]any{"by": c.by(req)}
+		if in.Title != "" {
+			ask["title"] = in.Title
+		}
+		if in.Body != "" {
+			ask["body"] = in.Body
+		}
+		var b hubstore.BacklogItem
+		if err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", ask, &b); err != nil {
+			return nil, out, err
+		}
+		out.Item = &b
+		return nil, out, nil
+	case "append":
+		if id == "" || strings.TrimSpace(in.Text) == "" {
+			return nil, out, &ctl.RefusedError{Msg: "append needs id and text"}
+		}
+		var b hubstore.BacklogItem
+		err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "",
+			map[string]any{"append": in.Text, "by": c.by(req)}, &b)
+		if err != nil {
+			return nil, out, err
+		}
+		out.Item = &b
+		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, file, status, priority", in.Action)}
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of list, get, file, status, priority, edit, append", in.Action)}
 }
 
 func (c backlogTools) reportsHandler(ctx context.Context, req *mcp.CallToolRequest, in reportsInput) (
@@ -222,7 +256,7 @@ func (c backlogTools) reportsHandler(ctx context.Context, req *mcp.CallToolReque
 	switch strings.TrimSpace(in.Action) {
 	case "add":
 		if strings.TrimSpace(in.Subject) == "" {
-			return nil, out, &refusedError{"add needs subject"}
+			return nil, out, &ctl.RefusedError{Msg: "add needs subject"}
 		}
 		var r hubstore.DirectorReport
 		err := c.ask(ctx, http.MethodPost, "/_hub/reports", "", map[string]any{
@@ -251,7 +285,7 @@ func (c backlogTools) reportsHandler(ctx context.Context, req *mcp.CallToolReque
 		return nil, out, err
 	case "read":
 		if strings.TrimSpace(in.ID) == "" {
-			return nil, out, &refusedError{"read needs id"}
+			return nil, out, &ctl.RefusedError{Msg: "read needs id"}
 		}
 		var r hubstore.DirectorReport
 		err := c.ask(ctx, http.MethodPost, "/_hub/reports/"+url.PathEscape(strings.TrimSpace(in.ID)), "",
@@ -262,7 +296,7 @@ func (c backlogTools) reportsHandler(ctx context.Context, req *mcp.CallToolReque
 		out.Report = &r
 		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of add, list, read", in.Action)}
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of add, list, read", in.Action)}
 }
 
 // ItemTagPrefix is what a launch tag starts with to name the backlog item the card works on: `item:f-new-thing`.
@@ -287,8 +321,8 @@ func (c *controlMCP) linkItemToCard(ctx context.Context, tags []string, room, ca
 		return ""
 	}
 	var b hubstore.BacklogItem
-	err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
-		"card": tagFor(room, card), "by": by}, &b)
+	err := c.Ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
+		"card": wire.TagFor(room, card), "by": by}, &b)
 	if err != nil {
 		return "the item " + id + " was not moved to in-progress: " + err.Error() + ". "
 	}
@@ -304,6 +338,6 @@ func (c *controlMCP) followItem(ctx context.Context, room, card, status, by stri
 	var out struct {
 		Followed bool `json:"followed"`
 	}
-	_ = c.ask(ctx, http.MethodPost, "/_hub/backlog/follow", "", map[string]any{
-		"card": tagFor(room, card), "status": strings.TrimSpace(status), "by": by}, &out)
+	_ = c.Ask(ctx, http.MethodPost, "/_hub/backlog/follow", "", map[string]any{
+		"card": wire.TagFor(room, card), "status": strings.TrimSpace(status), "by": by}, &out)
 }

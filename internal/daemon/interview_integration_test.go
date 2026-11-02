@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -59,7 +60,7 @@ func TestAnInterviewerGetsItsOwnSystemPrompt(t *testing.T) {
 	if got := get(leanKit{}); got != leanSystemPrompt {
 		t.Errorf("a worker's prompt changed: %q", got)
 	}
-	lean, _, kit, _ := leanOptions(LaunchRequest{Tags: []string{InterviewTag}}, nil, "")
+	lean, _, kit, _ := leanOptions(shared.LaunchRequest{Tags: []string{InterviewTag}}, nil, "")
 	if lean || !kit.Interview {
 		t.Errorf("leanOptions: lean %v kit %+v", lean, kit)
 	}
@@ -69,7 +70,7 @@ func TestAnInterviewDefaultsToOpusFromTheSetting(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	h := &store.Harness{ID: "claude", Label: "Claude"}
-	req := LaunchRequest{Tags: []string{OriginAgentTag, InterviewTag}}
+	req := shared.LaunchRequest{Tags: []string{OriginAgentTag, InterviewTag}}
 	if got := d.workerDefaultModel(h, req, nil, ""); got != "opus" {
 		t.Fatalf("default = %q, want opus", got)
 	}
@@ -83,7 +84,7 @@ func TestAnInterviewDefaultsToOpusFromTheSetting(t *testing.T) {
 	if got := d.workerDefaultModel(h, req, nil, ""); got != "sonnet" {
 		t.Fatalf("with interview_model sonnet got %q", got)
 	}
-	if got := d.workerDefaultModel(h, LaunchRequest{Tags: []string{OriginAgentTag}}, nil, ""); got != "" {
+	if got := d.workerDefaultModel(h, shared.LaunchRequest{Tags: []string{OriginAgentTag}}, nil, ""); got != "" {
 		t.Fatalf("an ordinary worker got %q from the interview setting", got)
 	}
 }
@@ -128,7 +129,7 @@ func TestAnAgentLaunchOutsideGitIsRefusedUnlessScratch(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
-	_, err := d.launchLocked(LaunchRequest{Harness: "claude", Cwd: dir, Tags: []string{OriginAgentTag}})
+	_, err := d.launchLocked(shared.LaunchRequest{Harness: "claude", Cwd: dir, Tags: []string{OriginAgentTag}})
 	if err == nil || !strings.Contains(err.Error(), "scratch: true") || !strings.Contains(err.Error(), "not a git checkout") {
 		t.Fatalf("err = %v, want a refusal that says why and how out", err)
 	}

@@ -122,7 +122,7 @@ func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 	// carrying a stale session is from a link that has since gone, and a certificate that is not
 	// attached right now could be anything.
 	h.mu.Lock()
-	a := h.rooms[keyOf(name)]
+	a := h.rooms[wire.KeyOf(name)]
 	h.mu.Unlock()
 	if a == nil || session == "" || session != a.session {
 		_ = writeJSON(conn, welcome{OK: false, Error: "that session is not current. reconnect"})
@@ -247,7 +247,7 @@ func (h *Hub) Transport(room string) http.RoundTripper {
 func (h *Hub) RoomSaysGit(room string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	a := h.rooms[keyOf(room)]
+	a := h.rooms[wire.KeyOf(room)]
 	return a != nil && a.git
 }
 
@@ -326,7 +326,7 @@ func (r *Room) ClaimPR(ctx context.Context, ask any) (PRClaimAnswer, error) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
-		return ans, errStatus(res.StatusCode)
+		return ans, wire.ErrStatus(res.StatusCode)
 	}
 	err = json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&ans)
 	return ans, err
@@ -348,10 +348,6 @@ type PRClaimAnswer struct {
 	// say where to go. Live is the Take's answer, which launches nothing. Holder only decorates a refusal.
 	Holder string `json:"holder,omitempty"`
 }
-
-type errStatus int
-
-func (e errStatus) Error() string { return "the room answered " + http.StatusText(int(e)) }
 
 // ForgePrefix is where a room's forge questions are served on the git kind. ForgeRoomHeader carries the room the
 // hello named.

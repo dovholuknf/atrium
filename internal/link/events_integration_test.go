@@ -13,6 +13,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // streamer is a room that answers `/v1/events` and says what it is told to.
@@ -49,7 +52,7 @@ func streamer(say <-chan string) http.Handler {
 func sse(kind, data string) string { return "event: " + kind + "\ndata: " + data + "\n\n" }
 
 // listen opens a stream and reads events off it.
-func listen(t *testing.T, url string) (<-chan Event, func()) {
+func listen(t *testing.T, url string) (<-chan wire.Event, func()) {
 	t.Helper()
 	// The wait for the stream's headers is bounded: with none the request would
 	// block until the whole run timed out. The bound is off once they arrive.
@@ -73,8 +76,8 @@ func listen(t *testing.T, url string) (<-chan Event, func()) {
 }
 
 // readSSE reads events off a stream already open.
-func readSSE(res *http.Response) <-chan Event {
-	out := make(chan Event, 16)
+func readSSE(res *http.Response) <-chan wire.Event {
+	out := make(chan wire.Event, 16)
 	go func() {
 		defer close(out)
 		br := bufio.NewReader(res.Body)
@@ -88,7 +91,7 @@ func readSSE(res *http.Response) <-chan Event {
 			switch {
 			case line == "":
 				if data != "" {
-					out <- Event{Kind: kind, Data: []byte(data)}
+					out <- wire.Event{Kind: kind, Data: []byte(data)}
 				}
 				kind, data = "", ""
 			case strings.HasPrefix(line, "event: "):
@@ -101,7 +104,7 @@ func readSSE(res *http.Response) <-chan Event {
 	return out
 }
 
-func waitEvent(t *testing.T, ch <-chan Event, kind string) Event {
+func waitEvent(t *testing.T, ch <-chan wire.Event, kind string) wire.Event {
 	t.Helper()
 	// An upper bound, not a wait: it returns the moment the event arrives. Some callers start a PowerShell script first,
 	// and on a loaded runner that alone takes longer than 5s.
@@ -118,6 +121,47 @@ func waitEvent(t *testing.T, ch <-chan Event, kind string) Event {
 		case <-deadline:
 			t.Fatalf("no %q event arrived", kind)
 		}
+	}
+}
+
+// sayUntil says again every poll until got takes an event off the stream, since a pump takes a moment to attach.
+func sayUntil(t *testing.T, ch <-chan wire.Event, limit time.Duration, what string, say func(), got func(wire.Event) bool) {
+	t.Helper()
+	tick := time.NewTicker(testwait.HTTP)
+	defer tick.Stop()
+	deadline := time.After(limit)
+	for say(); ; {
+		select {
+		case e, ok := <-ch:
+			if !ok {
+				t.Fatalf("the stream ended before %s", what)
+			}
+			if got(e) {
+				return
+			}
+		case <-tick.C:
+			say()
+		case <-deadline:
+			t.Fatal(what)
+		}
+	}
+}
+
+func waitEventSaying(t *testing.T, ch <-chan wire.Event, kind string, say func()) wire.Event {
+	t.Helper()
+	var out wire.Event
+	sayUntil(t, ch, 30*time.Second, fmt.Sprintf("no %q event arrived", kind), say, func(e wire.Event) bool {
+		out = e
+		return e.Kind == kind
+	})
+	return out
+}
+
+// offer sends unless the room's buffer is full, which a resend never needs to wait on.
+func offer(say chan<- string, line string) {
+	select {
+	case say <- line:
+	default:
 	}
 }
 
@@ -140,35 +184,23 @@ func TestTheHubStreamCarriesEveryRoomTagged(t *testing.T) {
 	ch, shut := listen(t, front.URL+"/v1/events/hub")
 	defer shut()
 
-	// Both rooms speak. The pump takes a moment to attach, so this is sent
-	// until it lands rather than once.
-	go func() {
-		for i := 0; i < 40; i++ {
-			a <- sse("task", `{"id":"card1","title":"from alpha"}`)
-			b <- sse("task", `{"id":"card2","title":"from beta"}`)
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-
 	seen := map[string]string{}
-	deadline := time.After(8 * time.Second)
-	for len(seen) < 2 {
-		select {
-		case e := <-ch:
-			if e.Kind != "task" {
-				continue
-			}
-			obj := fields(t, e.Data)
-			room, _ := obj["room"].(string)
-			id, _ := obj["id"].(string)
-			if room == "" {
-				t.Fatalf("an event lost its room: %s", e.Data)
-			}
-			seen[room] = id
-		case <-deadline:
-			t.Fatalf("only saw %v", seen)
+	sayUntil(t, ch, 8*time.Second, "both rooms to be seen", func() {
+		offer(a, sse("task", `{"id":"card1","title":"from alpha"}`))
+		offer(b, sse("task", `{"id":"card2","title":"from beta"}`))
+	}, func(e wire.Event) bool {
+		if e.Kind != "task" {
+			return false
 		}
-	}
+		obj := fields(t, e.Data)
+		room, _ := obj["room"].(string)
+		id, _ := obj["id"].(string)
+		if room == "" {
+			t.Fatalf("an event lost its room: %s", e.Data)
+		}
+		seen[room] = id
+		return len(seen) == 2
+	})
 	// THE ID IS TAGGED, matching what `/v1/tasks` handed the board, or the
 	// board would be told about a card it has never heard of.
 	if seen["alpha"] != "alpha~card1" {
@@ -189,15 +221,10 @@ func TestARoomStreamArrivesUntouched(t *testing.T) {
 	ch, shut := listen(t, front.URL+"/v1/events/room/beta")
 	defer shut()
 
-	go func() {
-		for i := 0; i < 40; i++ {
-			a <- sse("task", `{"id":"card1"}`)
-			b <- sse("task", `{"id":"card2"}`)
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-
-	e := waitEvent(t, ch, "task")
+	e := waitEventSaying(t, ch, "task", func() {
+		offer(a, sse("task", `{"id":"card1"}`))
+		offer(b, sse("task", `{"id":"card2"}`))
+	})
 	obj := fields(t, e.Data)
 	if obj["id"] != "card2" {
 		t.Fatalf("a scoped stream carried %v, so it was either tagged or crossed", obj["id"])
@@ -235,14 +262,7 @@ func TestOneRoomStreamsUntagged(t *testing.T) {
 	ch, shut := listen(t, front.URL+"/v1/events/hub")
 	defer shut()
 
-	go func() {
-		for i := 0; i < 40; i++ {
-			say <- sse("task", `{"id":"card1"}`)
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-
-	e := waitEvent(t, ch, "task")
+	e := waitEventSaying(t, ch, "task", func() { offer(say, sse("task", `{"id":"card1"}`)) })
 	obj := fields(t, e.Data)
 	if obj["id"] != "card1" {
 		t.Fatalf("a single room's event was tagged: %s", e.Data)
@@ -267,19 +287,7 @@ func TestOneRoomLiveAndOneRememberedStreamsTagged(t *testing.T) {
 
 	for _, path := range []string{"/v1/events", "/v1/events/hub"} {
 		ch, shut := listen(t, front.URL+path)
-		stopSaying := make(chan struct{})
-		go func() {
-			for i := 0; i < 40; i++ {
-				select {
-				case <-stopSaying:
-					return
-				case say <- sse("task", `{"id":"card1"}`):
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-		}()
-		e := waitEvent(t, ch, "task")
-		close(stopSaying)
+		e := waitEventSaying(t, ch, "task", func() { offer(say, sse("task", `{"id":"card1"}`)) })
 		shut()
 		obj := fields(t, e.Data)
 		if obj["id"] != "testroom~card1" {
@@ -298,13 +306,7 @@ func TestThePlainEventsPathStillAnswers(t *testing.T) {
 	ch, shut := listen(t, front.URL+"/v1/events")
 	defer shut()
 
-	go func() {
-		for i := 0; i < 40; i++ {
-			say <- sse("task", `{"id":"card1"}`)
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-	waitEvent(t, ch, "task")
+	waitEventSaying(t, ch, "task", func() { offer(say, sse("task", `{"id":"card1"}`)) })
 }
 
 // A room that is not there is said so, rather than hanging a stream that will
@@ -373,13 +375,8 @@ func TestTaggingFollowsMembershipOnAnOpenStream(t *testing.T) {
 	defer shut()
 
 	// One room: untagged, matching what the lists answer.
-	go func() {
-		for i := 0; i < 30; i++ {
-			first <- sse("task", `{"id":"card1"}`)
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-	if id := fields(t, waitEvent(t, ch, "task").Data)["id"]; id != "card1" {
+	sayFirst := func() { offer(first, sse("task", `{"id":"card1"}`)) }
+	if id := fields(t, waitEventSaying(t, ch, "task", sayFirst).Data)["id"]; id != "card1" {
 		t.Fatalf("one room tagged its events: %v", id)
 	}
 
@@ -390,20 +387,8 @@ func TestTaggingFollowsMembershipOnAnOpenStream(t *testing.T) {
 	go func() { _ = two.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("beta") })
 
-	deadline := time.After(8 * time.Second)
-	for {
-		select {
-		case e := <-ch:
-			if e.Kind != "task" {
-				continue
-			}
-			if fields(t, e.Data)["id"] == "alpha~card1" {
-				return
-			}
-		case <-deadline:
-			t.Fatal("the stream never started tagging after a second room attached")
-		}
-	}
+	sayUntil(t, ch, 8*time.Second, "the stream never started tagging after a second room attached", sayFirst,
+		func(e wire.Event) bool { return e.Kind == "task" && fields(t, e.Data)["id"] == "alpha~card1" })
 }
 
 // A ROOM WHOSE LISTENER STOPS IS GONE, not frozen in the list.
@@ -446,13 +431,13 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 	// Registered directly rather than through `add`, which would start the
 	// reconciler and reach for an upstream this test does not stand up.
 	f := newFeeds(nil)
-	merged := &sub{room: "", ch: make(chan Event, 4)}
-	scoped := &sub{room: "sg4", ch: make(chan Event, 4)}
+	merged := &sub{room: "", ch: make(chan wire.Event, 4)}
+	scoped := &sub{room: "sg4", ch: make(chan wire.Event, 4)}
 	f.subs[merged] = struct{}{}
 	f.subs[scoped] = struct{}{}
 
-	f.emit(Event{Room: "sg4", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
-	f.emit(Event{Room: "sg4", Kind: "task", Data: []byte(`{"id":"c1"}`)})
+	f.emit(wire.Event{Room: "sg4", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
+	f.emit(wire.Event{Room: "sg4", Kind: "task", Data: []byte(`{"id":"c1"}`)})
 
 	// The scoped board hears both, in order.
 	if e := <-scoped.ch; e.Kind != "going-down" {
@@ -483,8 +468,8 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 // lists do, so two rooms' cards with one id are two cards.
 func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
 	data := []byte(`{"task_id":"c1","output":5}`)
-	a := fields(t, tagEvent(Event{Room: "sg4", Kind: "usage", Data: data}))
-	b := fields(t, tagEvent(Event{Room: "sg5", Kind: "usage", Data: data}))
+	a := fields(t, tagEvent(wire.Event{Room: "sg4", Kind: "usage", Data: data}))
+	b := fields(t, tagEvent(wire.Event{Room: "sg5", Kind: "usage", Data: data}))
 	if a["task_id"] != "sg4~c1" || a["room"] != "sg4" || b["task_id"] != "sg5~c1" || b["room"] != "sg5" {
 		t.Fatalf("usage events came out %v and %v", a, b)
 	}
@@ -493,7 +478,7 @@ func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
 // A room's own tagging table has to agree with the list one, because the board
 // builds a url from whichever it saw last.
 func TestEventTaggingMatchesTheListTagging(t *testing.T) {
-	e := Event{Room: "sg4", Kind: "permission", Data: []byte(`{"id":"p1","task_id":"c1"}`)}
+	e := wire.Event{Room: "sg4", Kind: "permission", Data: []byte(`{"id":"p1","task_id":"c1"}`)}
 	obj := fields(t, tagEvent(e))
 	if obj["id"] != "sg4~p1" || obj["task_id"] != "sg4~c1" {
 		t.Fatalf("a permission came out %v", obj)
@@ -503,7 +488,7 @@ func TestEventTaggingMatchesTheListTagging(t *testing.T) {
 	}
 
 	// An event with no ids still says where it came from.
-	plain := fields(t, tagEvent(Event{Room: "sg4", Kind: "settings", Data: []byte(`{"auto":true}`)}))
+	plain := fields(t, tagEvent(wire.Event{Room: "sg4", Kind: "settings", Data: []byte(`{"auto":true}`)}))
 	if plain["room"] != "sg4" || plain["auto"] != true {
 		t.Fatalf("a payload with no ids was mangled: %v", plain)
 	}
@@ -512,7 +497,7 @@ func TestEventTaggingMatchesTheListTagging(t *testing.T) {
 // A `null` payload decodes into a nil map without an error. Writing the room
 // onto it panicked the stream, eleven times on the live hub.
 func TestANullEventPassesThroughUntagged(t *testing.T) {
-	e := Event{Room: "sg4", Kind: "settings", Data: []byte(`null`)}
+	e := wire.Event{Room: "sg4", Kind: "settings", Data: []byte(`null`)}
 	if got := string(tagEvent(e)); got != "null" {
 		t.Fatalf("a null payload came out %q", got)
 	}
@@ -526,22 +511,9 @@ func TestAStreamReopenedRightAfterACloseStillStreams(t *testing.T) {
 	front, _, done := pair(t, streamer(say))
 	defer done()
 
-	stopSaying := make(chan struct{})
-	defer close(stopSaying)
-	go func() {
-		for {
-			select {
-			case <-stopSaying:
-				return
-			case say <- sse("task", `{"id":"card1"}`):
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-	}()
-
 	for i := 0; i < 25; i++ {
 		ch, shut := listen(t, front.URL+"/v1/events/hub")
-		waitEvent(t, ch, "task")
+		waitEventSaying(t, ch, "task", func() { offer(say, sse("task", `{"id":"card1"}`)) })
 		shut()
 	}
 }

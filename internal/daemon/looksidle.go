@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ import (
 // LooksIdleAfter is how long a pty must be silent before the frame is looked at.
 // Twenty-odd missed spinner redraws. The check rides the reaper's tick, so a
 // firing lands this long after the turn ended, plus up to one tick.
-var LooksIdleAfter = envDuration("ATRIUM_LOOKS_IDLE", 25*time.Second)
+var LooksIdleAfter = shared.LooksIdleAfter
 
 // idleMark is one flagged card.
 type idleMark struct {
@@ -143,6 +144,47 @@ var (
 func (d *Daemon) trustReattachedLines(now time.Time) {
 	for _, run := range d.sup.all() {
 		d.trustReattachedLine(run, now)
+		d.trustEmptyPrompt(run, now)
+	}
+}
+
+// trustEmptyPrompt clears a tracked line the screen contradicts. Keystroke bookkeeping drifts by whatever path atrium
+// never saw (the compose bar, a submit, a recall), and a claude prompt that is visibly empty and quiet holds nothing
+// to protect, so a line atrium still counts there is a phantom that would hold every say until the next turn.
+func (d *Daemon) trustEmptyPrompt(run *runner, now time.Time) {
+	if run.buf == nil || d.act.dialogOpen(run.taskID) || d.act.onSubagents(run.taskID) {
+		return
+	}
+	run.typeMu.Lock()
+	run.line.settle()
+	phantom := !run.line.empty()
+	seq := run.keySeq
+	quiet := run.lastTyped.IsZero() || now.Sub(run.lastTyped) >= reattachQuiet
+	run.typeMu.Unlock()
+	if !phantom || !quiet || now.Sub(run.lastOutputAt()) < reattachQuiet {
+		return
+	}
+	t, err := d.st.Get(run.taskID)
+	if err != nil || !strings.EqualFold(t.Runner, "claude") {
+		return
+	}
+	cols, rows := run.buf.CurrentSize()
+	tail := run.buf.Tail(screen.FrameTailBytes)
+	if !screen.FramePromptEmpty(tail, cols, rows) && !screen.FrameLineEmpty(tail, cols, rows) {
+		return
+	}
+	run.typeMu.Lock()
+	if run.keySeq != seq || run.line.empty() {
+		run.typeMu.Unlock()
+		return
+	}
+	n := run.line.count()
+	run.line.clear()
+	run.typeMu.Unlock()
+	log.Printf("[atrium] %s: %d char(s) tracked on the line but the prompt on screen is empty, so the line is taken as empty",
+		run.taskID, n)
+	if d.pending != nil {
+		d.pending.reset(run.taskID)
 	}
 }
 
@@ -216,7 +258,7 @@ func (d *Daemon) flagLooksIdle(t *store.Task, run *runner, silent time.Duration,
 	if d.pending != nil {
 		d.pending.reset(t.ID)
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	d.ap.Broadcast("activity", map[string]any{"task_id": t.ID, "activity": d.act.get(t.ID)})
 }
 
@@ -229,7 +271,7 @@ func (d *Daemon) looksIdleGone(taskID, wire, cause string) {
 	}
 	log.Printf("[atrium] looks idle cleared: %s (%s) by %s after %s", wire, taskID, cause,
 		time.Since(m.at).Truncate(time.Second))
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	if a := d.act.get(taskID); a != nil {
 		d.ap.Broadcast("activity", map[string]any{"task_id": taskID, "activity": a})
 	}

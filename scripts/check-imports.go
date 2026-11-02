@@ -1,8 +1,7 @@
 //go:build ignore
 
-// check-imports pins the import graph of every package but the root to the layer table below, which is the graph in
-// docs/design/go-modules.md section 1. It fails when a package imports one its row does not list, and when a
-// package has no row, so the table stays complete.
+// check-imports pins the import graph of every package but the root to the layer table below. It fails when a package
+// imports one its row does not list, and when a package has no row, so the table stays complete.
 //
 // Usage: go run scripts/check-imports.go
 // Exit 1 when any is found.
@@ -29,6 +28,7 @@ type row struct {
 // Layer is one above the highest layer a package imports, so a new edge to the same layer or above is a cycle risk.
 var table = []row{
 	{0, "cmd/ptyhost-spike", nil},
+	{0, "docs/runtime/contract", nil},
 	{0, "internal/base/address", nil},
 	{0, "internal/base/cardcolors", nil},
 	{0, "internal/base/cardroot", nil},
@@ -64,17 +64,17 @@ var table = []row{
 	{0, "internal/base/userenv", nil},
 	{0, "internal/base/webasset", nil},
 	{0, "internal/daemon/launch", nil},
-	{0, "internal/daemon/publish", nil},
-	{0, "internal/daemon/screen", nil},
+	{0, "internal/daemon/promptline", nil},
 	{0, "internal/link/wire", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
 	{1, "internal/base/claudeconf", []string{"internal/base/mcprule", "internal/base/rolebin"}},
 	{1, "internal/base/detach", []string{"internal/base/nowindow"}},
-	{1, "internal/link/transport", []string{"internal/link/wire", "internal/zitictx"}},
+	{1, "internal/link/ctl", []string{"internal/link/wire"}},
+	{1, "internal/link/transport", []string{"internal/base/testwait", "internal/link/wire", "internal/zitictx"}},
 	{1, "internal/guard", []string{"internal/base/nowindow"}},
-	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/rolebin"}},
+	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/nowindow", "internal/base/rolebin"}},
 	{1, "internal/sshwizard", []string{
 		"internal/base/nowindow", "internal/base/remoteaccess", "internal/base/sshcfg", "internal/base/sshkey",
 	}},
@@ -84,9 +84,12 @@ var table = []row{
 	{2, "internal/cardreview", []string{"internal/base/nowindow", "internal/base/safepath", "internal/store"}},
 	{2, "internal/gitsync", []string{
 		"internal/base/claudeconf", "internal/base/nowindow", "internal/base/safepath", "internal/base/testguard",
+		"internal/base/testwait",
 	}},
+	{2, "internal/daemon/screen", []string{"internal/store"}},
 	{2, "internal/roomstats", []string{"internal/store", "internal/zitictx"}},
 	{2, "internal/runnerprofile", []string{"internal/store"}},
+	{2, "internal/small", []string{"internal/store"}},
 	{2, "scripts/recognisers", []string{"internal/base/rules", "internal/store"}},
 	{3, "internal/hubstore", []string{
 		"internal/base/cardcolors", "internal/base/dblock", "internal/base/docshare", "internal/gitsync", "internal/base/itemgate",
@@ -106,18 +109,59 @@ var table = []row{
 		"internal/base/rules", "internal/base/safepath", "internal/base/scratch", "internal/base/shellpick", "internal/store",
 		"internal/base/testguard", "internal/base/webasset", "internal/wtfree",
 	}},
+	{4, "internal/link/deploy", []string{
+		"internal/base/address", "internal/base/edge", "internal/base/nowindow", "internal/deployready", "internal/gitsync", "internal/link/ctl",
+		"internal/link/wire",
+	}},
+	{4, "internal/link/docs", []string{
+		"internal/base/docshare", "internal/base/edge", "internal/hubstore", "internal/link/ctl", "internal/link/wire",
+	}},
+	{4, "internal/link/notify", []string{
+		"internal/base/edge", "internal/base/nowindow", "internal/base/testguard", "internal/base/testwait", "internal/hubstore",
+		"internal/link/conn", "internal/link/ctl", "internal/link/wire",
+	}},
+	{4, "internal/link/jsonio", []string{"internal/hubstore"}},
+	{4, "internal/link/forge", []string{
+		"internal/base/edge", "internal/base/forge", "internal/base/land", "internal/base/linkfetch", "internal/base/nowindow", "internal/base/rules",
+		"internal/base/testguard", "internal/base/testwait", "internal/gitsync", "internal/hubstore", "internal/link/conn", "internal/link/ctl",
+		"internal/link/jsonio", "internal/link/notify", "internal/link/wire", "scripts/recognisers",
+	}},
+	{4, "internal/link/settings", []string{
+		"internal/base/inputlag", "internal/base/rules", "internal/link/wire",
+	}},
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/conn", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
+	{3, "internal/daemon/shared", []string{"internal/base/nowindow", "internal/daemon/screen", "internal/store"}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
+	{5, "internal/daemon/pulls", []string{
+		"internal/api", "internal/base/forge", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
+		"internal/daemon/promptline", "internal/gitsync", "internal/small", "internal/store",
+	}},
+	{5, "internal/daemon/publish", []string{
+		"internal/api", "internal/base/docshare", "internal/base/edge", "internal/base/nowindow", "internal/base/safepath",
+		"internal/store", "internal/zitictx",
+	}},
+	{5, "internal/daemon/roomconf", []string{
+		"internal/api", "internal/base/rules", "internal/daemon/publish", "internal/small", "internal/store",
+	}},
+	{5, "internal/daemon/hublink", []string{
+		"internal/base/address", "internal/daemon/publish", "internal/daemon/shared", "internal/roomstats", "internal/small", "internal/store",
+	}},
+	{5, "internal/daemon/home", []string{
+		"internal/api", "internal/base/cardroot", "internal/base/forge", "internal/base/safepath", "internal/daemon/shared", "internal/gitsync", "internal/roomstats", "internal/small", "internal/store", "internal/wtfree",
+	}},
+	{5, "internal/daemon/cycle", []string{
+		"internal/api", "internal/base/cardroot", "internal/base/nowindow", "internal/daemon/home", "internal/daemon/shared", "internal/small", "internal/store",
+	}},
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
-		"internal/daemon/launch", "internal/daemon/publish",
-		"internal/daemon/screen",
+		"internal/daemon/cycle", "internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
+		"internal/daemon/roomconf", "internal/daemon/screen", "internal/daemon/shared", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",
 		"internal/base/rules", "internal/runnerprofile", "internal/runnersetup", "internal/base/safepath",
@@ -125,10 +169,11 @@ var table = []row{
 		"internal/zitictx",
 	}},
 	{6, "internal/cli", []string{
+		"docs/runtime/contract", "internal/base/dblock", "internal/base/testwait", "internal/worktrees",
 		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/daemon", "internal/daemon/screen", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/gitsync",
-		"internal/guard", "internal/hubstore", "internal/link", "internal/base/nowindow", "internal/ptyhost",
-		"internal/base/remoteaccess", "internal/base/requirements", "internal/base/resources", "internal/roomspec",
+		"internal/guard", "internal/hubstore", "internal/link", "internal/link/conn", "internal/link/transport", "internal/link/wire",
+		"internal/base/nowindow", "internal/ptyhost", "internal/base/remoteaccess", "internal/base/requirements", "internal/base/resources", "internal/roomspec",
 		"internal/roomstats", "internal/shepherd", "internal/base/sshcfg", "internal/base/sshtarget", "internal/sshwizard",
 		"internal/store", "internal/base/testguard", "internal/zitictx",
 	}},

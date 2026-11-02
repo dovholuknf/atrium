@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // rig is a hub on a mixed listener, with the direct transport's enrolment.
@@ -159,13 +161,13 @@ func (r *rig) rawHello(overTLS bool, kind, name string) (welcome, error) {
 	return w, readJSON(bufio.NewReader(conn), &w)
 }
 
-func (r *rig) attachedAs(name string) (Attached, bool) {
+func (r *rig) attachedAs(name string) (wire.Attached, bool) {
 	for _, a := range r.hub.Rooms() {
 		if strings.EqualFold(a.Name, name) {
 			return a, true
 		}
 	}
-	return Attached{}, false
+	return wire.Attached{}, false
 }
 
 // A room with a certificate for alpha that says beta in its hello attaches as alpha.

@@ -135,7 +135,7 @@ function Assert-NotSupervised([string[]]$Targets) {
 function Test-ControlOptIn([switch]$Control, [switch]$IKnowItKillsMyShell, [switch]$Named) {
   if ($Control -and $IKnowItKillsMyShell) { return $null }
   if ($Control -or $IKnowItKillsMyShell -or $Named) {
-    return ('sg4-control is opt-in, because stopping it kills the shell of the orchestrator that holds its terminal. ' +
+    return ('sg4-control is opt-in, because the orchestrator works in it. ' +
       'Include it with both -Control and -IKnowItKillsMyShell, or with neither.')
   }
   return $null
@@ -153,7 +153,7 @@ function Assert-ControlOptIn([switch]$Control, [switch]$IKnowItKillsMyShell, [sw
 # out. It is in only with both switches, or named in -Rooms alongside both. Throws on an unknown room, and on
 # sg4-control asked for without both switches.
 function Resolve-DeployRooms([string[]]$Rooms = @('local'), [switch]$Control, [switch]$IKnowItKillsMyShell) {
-  $remote = 'sg3', 'm1mini', 'sgg'
+  $remote = 'sg3', 'm1mini', 'sgg', 'sgg-zrok'
   $known = @('hub', 'claude-sg4', 'sg4-control') + $remote
   $want = @()
   foreach ($r in ($Rooms -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {

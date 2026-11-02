@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -106,7 +108,7 @@ func checkLeanGateway(st *store.Store, name string, readFile func(string) ([]byt
 	have := map[string]bool{}
 	checked := false
 	for _, h := range hs {
-		if !h.Enabled || !isClaude(h) {
+		if !h.Enabled || !shared.IsClaude(h) {
 			continue
 		}
 		args, _, err := runnerArgsWith(h, "", "", launchOptions{})
@@ -221,7 +223,7 @@ func hasToolsFlag(args []string) bool {
 // gateway is the lean_worker_gateway setting. With it set, `mercurius` named in
 // the request or carried by a tag is the WIDE-server override and is kept, where
 // with it empty `mercurius` is a default server and is dropped as it always was.
-func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
+func leanOptions(req shared.LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
 	if req.Lean != nil && !*req.Lean {
 		return false, nil, leanKit{}, false
 	}
@@ -230,11 +232,11 @@ func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool
 	kit = leanKit{Agents: cleanKitNames(req.LeanAgents), Skills: cleanKitNames(req.LeanSkills)}
 	superlean = req.Superlean != nil && *req.Superlean
 	lean = lean || !kit.empty() || superlean
-	kit.Interview = hasTag(req.Tags, InterviewTag) || (task != nil && hasTag(task.Tags, InterviewTag))
-	if task != nil && hasTag(task.Tags, LeanTag) {
+	kit.Interview = small.HasTag(req.Tags, InterviewTag) || (task != nil && small.HasTag(task.Tags, InterviewTag))
+	if task != nil && small.HasTag(task.Tags, LeanTag) {
 		lean = true
 		// The request says `superlean: false` to bring a superlean card back lean. Absent leaves it to the card.
-		superlean = superlean || (req.Superlean == nil && hasTag(task.Tags, SuperleanTag))
+		superlean = superlean || (req.Superlean == nil && small.HasTag(task.Tags, SuperleanTag))
 		var agents, skills []string
 		for _, t := range task.Tags {
 			t = strings.TrimSpace(t)
@@ -308,7 +310,7 @@ func withoutSuperleanTag(tags []string) []string {
 func mergeTags(base, add []string) []string {
 	out := append([]string{}, base...)
 	for _, t := range add {
-		if !hasTag(out, t) {
+		if !small.HasTag(out, t) {
 			out = append(out, t)
 		}
 	}
@@ -713,4 +715,30 @@ var readUserSettings = func() []byte {
 	}
 	b, _ := os.ReadFile(p)
 	return b
+}
+
+// leanHooks are the seams of lean cards.
+type leanHooks struct {
+	readUserSettings func() []byte
+	userAgentsDir    func() string
+	userSkillsDir    func() string
+	// leanPluginRoot is where the plugin directories are written: in atrium's own state, set from the database's
+	// directory when a daemon starts. Never a worktree, which has to stay clean for the cull.
+	leanPluginRoot        string
+	leanAgentsHookCommand func(agents []string) string
+	noPollHookCommand     func() string
+	nowHookCommand        func() string
+	stopHookCommand       func() string
+}
+
+func defaultLeanHooks() leanHooks {
+	return leanHooks{
+		readUserSettings:      readUserSettings,
+		userAgentsDir:         userAgentsDir,
+		userSkillsDir:         userSkillsDir,
+		leanAgentsHookCommand: leanAgentsHookCommand,
+		noPollHookCommand:     noPollHookCommand,
+		nowHookCommand:        nowHookCommand,
+		stopHookCommand:       stopHookCommand,
+	}
 }

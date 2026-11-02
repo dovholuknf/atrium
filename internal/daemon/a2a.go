@@ -3,14 +3,15 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"strconv"
 )
@@ -84,24 +85,6 @@ var EscalationBackoff = []time.Duration{
 	time.Hour, 2 * time.Hour, 4 * time.Hour, 8 * time.Hour, 24 * time.Hour,
 }
 
-func envDuration(name string, def time.Duration) time.Duration {
-	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			return d
-		}
-	}
-	return def
-}
-
-func hasTag(tags []string, want string) bool {
-	for _, t := range tags {
-		if strings.EqualFold(strings.TrimSpace(t), want) {
-			return true
-		}
-	}
-	return false
-}
-
 // DirectorTag marks a resident session that launches workers and waits on them.
 const DirectorTag = "atrium:director"
 
@@ -125,56 +108,36 @@ func (d *Daemon) hasOutstandingWorker(launcherID string) bool {
 // being around. A parked worker counts: it is idle, not finished, and its
 // launcher is still waiting on it.
 func (d *Daemon) workerOutstanding(id string) bool {
-	if d.sup.get(id) != nil {
+	if d.sup.Get(id) != nil {
 		return true
 	}
 	t, err := d.st.Get(id)
-	return err == nil && isParked(t)
+	return err == nil && small.IsParked(t)
 }
 
 // agentLaunched reports whether a card was started by `atrium_launch`.
-func agentLaunched(t *store.Task) bool { return t != nil && hasTag(t.Tags, OriginAgentTag) }
+func agentLaunched(t *store.Task) bool { return t != nil && small.HasTag(t.Tags, OriginAgentTag) }
 
 // launcherFor is who to record as a launch's parent. A launch through the
 // board's endpoint with no launcher named and no agent marker is the board's
 // own dialog, so the human is the parent. An agent launch carries the marker,
 // and one that lost its sender stays unnamed rather than being filed as the
 // human's.
-func launcherFor(req LaunchRequest) string {
+func launcherFor(req shared.LaunchRequest) string {
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
 		return by
 	}
-	if hasTag(req.Tags, OriginAgentTag) {
+	if small.HasTag(req.Tags, OriginAgentTag) {
 		return ""
 	}
 	return store.HumanLauncher
 }
 
-// ── the Stop hook for launched sessions ─────────────────────────────────────────
-
-// isClaude reports whether a runner row runs Claude Code, which is the one
-// runner `--settings` means anything to.
-func isClaude(h *store.Harness) bool {
-	return runsAs(h, "claude")
-}
+// â”€â”€ the Stop hook for launched sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // isCodex reports whether a runner row runs the codex CLI.
 func isCodex(h *store.Harness) bool {
-	return runsAs(h, "codex")
-}
-
-func runsAs(h *store.Harness, name string) bool {
-	if h == nil {
-		return false
-	}
-	if strings.EqualFold(h.ID, name) {
-		return true
-	}
-	leaf := strings.ToLower(filepath.Base(filepath.FromSlash(strings.TrimSpace(h.Cmd))))
-	for _, ext := range []string{".exe", ".cmd", ".bat", ".ps1"} {
-		leaf = strings.TrimSuffix(leaf, ext)
-	}
-	return leaf == name
+	return shared.RunsAs(h, "codex")
 }
 
 // stopHookCommand is the Stop hook an agent-launched claude session should
@@ -190,7 +153,7 @@ func runsAs(h *store.Harness, name string) bool {
 // no `turn` subcommand, and a working hook's program is still the surer one.
 // A variable so a test can say what it wants without a settings file.
 var stopHookCommand = func() string {
-	rep, err := claudeconf.Inspect(daemonBinary())
+	rep, err := claudeconf.Inspect(roomconf.DaemonBinary())
 	if err != nil {
 		return ""
 	}
@@ -250,13 +213,13 @@ func stopHookSettings(command string) string {
 //
 // In front of the rest, so it can never land after the positional prompt.
 func withStopHook(h *store.Harness, args []string, stopCmd string) []string {
-	if !isClaude(h) {
+	if !shared.IsClaude(h) {
 		return args
 	}
 	return append([]string{"--settings", stopHookSettings(stopCmd)}, args...)
 }
 
-// ── telling the launcher ────────────────────────────────────────────────────────
+// â”€â”€ telling the launcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // launcherOf is the card that launched this one, or nil.
 func (d *Daemon) launcherOf(worker *store.Task) *store.Task {
@@ -337,14 +300,14 @@ const HoldNoticesTag = "atrium:hold-notices"
 // they go on the launcher's card, on the worker's work item and on the board's
 // bell, and `atrium_task` with `notices` reads them back in one call.
 func holdsNotices(launcher *store.Task) bool {
-	return launcher != nil && (hasTag(launcher.Tags, OrchestratorTag) || hasTag(launcher.Tags, HoldNoticesTag))
+	return launcher != nil && (small.HasTag(launcher.Tags, OrchestratorTag) || small.HasTag(launcher.Tags, HoldNoticesTag))
 }
 
 // holdsReports reports whether a launcher's workers' reports are held the same
 // way. Only HoldNoticesTag does it: a card that asked for its terminal to be left
 // alone meant reports too, but OrchestratorTag alone keeps today's delivery.
 func holdsReports(launcher *store.Task) bool {
-	return launcher != nil && hasTag(launcher.Tags, HoldNoticesTag)
+	return launcher != nil && small.HasTag(launcher.Tags, HoldNoticesTag)
 }
 
 // holdNotice records one automatic notice where a launcher that holds them reads
@@ -369,7 +332,7 @@ func (d *Daemon) holdNotice(launcher, worker *store.Task, source, text string) {
 // words the board shows. See docs/changes/r-hold-notices.md for what the board
 // does with it.
 func (d *Daemon) ringHeld(launcherID, workerID, source, text string) {
-	d.publishTask(launcherID)
+	d.Publish(launcherID)
 	d.ap.Broadcast("notice", map[string]any{
 		"task_id": launcherID, "about_card": workerID, "source": source, "toast": text,
 	})
@@ -380,7 +343,7 @@ func (d *Daemon) ringHeld(launcherID, workerID, source, text string) {
 // there, so a launcher whose room is offline hears it when it is back. See
 // relay.go.
 func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body string) bool {
-	spec := d.launcherRelay(worker, body)
+	spec := d.LauncherRelay(worker, body)
 	if spec == nil {
 		return false
 	}
@@ -392,7 +355,7 @@ func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body stri
 	if !fresh {
 		return false
 	}
-	if _, err := d.holdRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", KindFYI,
+	if _, err := d.HoldRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", KindFYI,
 		store.RelaySourceNotice); err != nil {
 		log.Printf("[atrium] could not hold a notice to %s@%s about %s: %v", spec.ToName, spec.ToRoom,
 			worker.DisplayTitle(), err)
@@ -439,15 +402,25 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 	d.doneBySay(sender, text)
 }
 
-// ── silent stops ────────────────────────────────────────────────────────────────
+// â”€â”€ silent stops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// silentNudgeText is what atrium says to a worker whose turn ended silently.
+const silentNudgeText = "Your turn ended without a report. Continue with your brief. If something blocks it, say what with " +
+	"atrium_blocked, and if the work is finished, atrium_done."
+
+// NoticeSilentNudge is the claim that the worker was nudged, once per launcher prompt and nudge number.
+const NoticeSilentNudge = "silent-nudge"
+
+// silentNudges is how many times a silent stop is nudged before the launcher hears.
+const silentNudges = 2
 
 // silentStop deals with a worker that ended its turn without saying anything.
 // Called as the turn ends, and by the watchdog for a session that has no Stop
 // hook. Returns whether the launcher was told.
 //
-// NOTHING IS EVER TYPED INTO THE WORKER. A nudge cost the worker a full model turn, and it fired
-// on cards that were only waiting. The launcher is told once per prompt, on the first silent stop,
-// and that is a message to the launcher and a turn for nobody else.
+// THE FIRST TWO SILENT STOPS GO TO THE WORKER, not the launcher: atrium types a fixed line into it, so the
+// launcher spends no turn on it. Only a turn that ends silently after both nudges reaches the launcher. The
+// count is per launcher prompt, so a launcher's say or a report clears it.
 func (d *Daemon) silentStop(taskID string) bool {
 	t, err := d.st.Get(taskID)
 	if err != nil || !d.reportsToLauncher(t) {
@@ -465,9 +438,47 @@ func (d *Daemon) silentStop(taskID string) bool {
 	if t.OwedAt != nil && d.st.ReportedSince(t.ID, *t.OwedAt) {
 		return false
 	}
-	body := fmt.Sprintf("fyi: %s ended its turn without reporting. It has been waiting since %s with nothing to "+
-		"say about the work. card %s", t.WireName, ended.Local().Format("15:04:05"), t.ID)
+	key := t.PromptKey()
+	var lastNudge time.Time
+	for n := 1; n <= d.hk.silentNudges; n++ {
+		at, nudged := d.st.NoticeAt(t.ID, NoticeSilentNudge, fmt.Sprintf("%s#%d", key, n))
+		if nudged {
+			lastNudge = at
+			continue
+		}
+		// The stop seen is the one the last nudge answers, or older: wait for a new turn.
+		if !lastNudge.IsZero() && !ended.After(lastNudge) {
+			return false
+		}
+		d.nudgeSilent(t, fmt.Sprintf("%s#%d", key, n), n)
+		return false
+	}
+	if !ended.After(lastNudge) {
+		return false
+	}
+	body := fmt.Sprintf("fyi: %s ended its turn without reporting after %d nudges. It has been waiting since %s with "+
+		"nothing to say about the work. card %s", t.WireName, d.hk.silentNudges, ended.Local().Format("15:04:05"), t.ID)
 	return d.notifyLauncher(t, NoticeSilentStop, t.PromptKey(), body)
+}
+
+// nudgeSilent types the continuation into a silently stopped worker and records it on the card.
+func (d *Daemon) nudgeSilent(t *store.Task, key string, n int) {
+	fresh, err := d.st.RecordNotice(t.ID, NoticeSilentNudge, key)
+	if err != nil {
+		log.Printf("[atrium] could not record a nudge for %s: %v", t.DisplayTitle(), err)
+		return
+	}
+	if !fresh {
+		return
+	}
+	if _, err := d.deliverPeer(t, "atrium", silentNudgeText); err != nil {
+		log.Printf("[atrium] could not nudge %s: %v", t.DisplayTitle(), err)
+		return
+	}
+	if err := d.st.LogWorkAtrium(t.ID, fmt.Sprintf("nudged to continue after a silent stop (%d of %d)", n, d.hk.silentNudges)); err != nil {
+		log.Printf("[atrium] could not log the nudge on %s: %v", t.DisplayTitle(), err)
+	}
+	log.Printf("[atrium] nudged %s: its turn ended without a report (%d of %d)", t.DisplayTitle(), n, d.hk.silentNudges)
 }
 
 // stoppedSilently reports whether a card is waiting after a turn that ran
@@ -498,14 +509,14 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	}
 	// A PARKED CARD IS NEVER SILENT: it was put down on purpose, with no process
 	// to have stopped.
-	if isParked(t) {
+	if small.IsParked(t) {
 		return time.Time{}, false
 	}
 	// A DIRECTOR IS NOT A WORKER OWING A REPORT. It is resident: it ends a turn
 	// waiting for work or for its workers, and its launcher prompting it created
 	// the debt this checks. The tag is what atrium_launch sets for it. Its real
 	// blockers (a menu, a stuck tool) have their own escalations.
-	if hasTag(t.Tags, DirectorTag) || hasTag(t.Tags, InterviewTag) || hasTag(t.Tags, ReviewTag) || hasTag(t.Tags, ResidentTag) {
+	if small.HasTag(t.Tags, DirectorTag) || small.HasTag(t.Tags, InterviewTag) || small.HasTag(t.Tags, ReviewTag) || small.HasTag(t.Tags, ResidentTag) {
 		return time.Time{}, false
 	}
 	// A PERSON TYPED AT THE CARD'S TERMINAL after the launcher's prompt: the turn is theirs, as for a board
@@ -537,7 +548,7 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	return *ended, true
 }
 
-// ── reachability (F15) ──────────────────────────────────────────────────────────
+// â”€â”€ reachability (F15) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // How a message can reach a card.
 const (
@@ -565,7 +576,7 @@ func runnerDelivers(runner string) bool {
 // reachability says whether a message queued to a card will ever arrive, and
 // if not why not.
 func (d *Daemon) reachability(t *store.Task) (string, string) {
-	if t.PeerTyping && d.sup.get(t.ID) != nil {
+	if t.PeerTyping && d.sup.Get(t.ID) != nil {
 		return ReachTyped, ""
 	}
 	if t.ToolHookSeenAt != nil || t.StopHookSeenAt != nil {
@@ -597,7 +608,7 @@ func deliveredWord(reach string) string {
 	return "queued"
 }
 
-// ── the watchdog and the board ──────────────────────────────────────────────────
+// â”€â”€ the watchdog and the board â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Escalation is a worker the board should hear about, served on the card. The
 // board rings each time Count goes up.
@@ -688,8 +699,9 @@ func (d *Daemon) escalationFor(taskID string) any {
 }
 
 // watchWorkers is the watchdog. One pass over the live agent-launched cards,
-// on the reaper's tick. It reads the store and the in-memory activity, never
-// touches a runner, and only ever tells the launcher or the board.
+// on the reaper's tick. It reads the store and the in-memory activity, touches a
+// runner only to retype a launch prompt it dropped, and otherwise only tells the
+// launcher or the board.
 //
 // Two conditions in stage 1:
 //
@@ -710,6 +722,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	for _, t := range tasks {
 		var x *Escalation
 		if d.reportsToLauncher(t) {
+			d.retypeLaunchPrompt(t, now)
 			x = d.stuckNow(t, now)
 			d.wakeLauncher(t, x)
 		} else {
@@ -725,12 +738,12 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 		}
 		live[t.ID] = true
 		if d.esc.put(t.ID, x) {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 	}
 	d.scans.forgetExcept(live)
 	for _, id := range d.esc.forgetExcept(live) {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 	return nil
 }
@@ -759,7 +772,7 @@ func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
 	if err != nil || !fresh {
 		return
 	}
-	text := truncatePeer(fmt.Sprintf("%s has been stuck for %d minutes (%s). card %s", t.WireName, x.Minutes,
+	text := shared.TruncatePeer(fmt.Sprintf("%s has been stuck for %d minutes (%s). card %s", t.WireName, x.Minutes,
 		x.Source, t.ID))
 	if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, text); err != nil {
 		log.Printf("[atrium] could not wake %s for stuck %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)

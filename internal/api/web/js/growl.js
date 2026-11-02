@@ -28,9 +28,10 @@ const growlUndo = new Map();
 
 const GROWL_NAME = {
   permission: ["permission", "permissions"], halt: ["halt", "halts"], blocked: ["blocked", "blocked"],
-  question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"], ci: ["CI notice", "CI notices"]
+  question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"], ci: ["CI notice", "CI notices"],
+  "room-cpu": ["hot room", "hot rooms"], "runner-missing": ["missing runner", "missing runners"]
 };
-const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5, ci: 6 };
+const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5, ci: 6, "room-cpu": 7, "runner-missing": 8 };
 const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["tomorrow 9am", 0]];
 
 function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
@@ -219,6 +220,8 @@ function growlPrimary(g) {
   switch (g.reason) {
     case "permission": return `<button data-do="approve"${g.subject ? "" : " disabled"}>approve once</button>`;
     case "halt": return `<button data-do="room">open the room</button>`;
+    case "room-cpu": return g.subject ? `<button data-do="kill">kill orphans</button>` : `<button data-do="room">open the room</button>`;
+    case "runner-missing": return `<button data-do="room">open the room</button>`;
     case "deploy-hold": return `<button data-do="lift">lift</button>`;
     case "ci": return "";
     default: return `<button data-do="open">open</button>`;
@@ -243,10 +246,11 @@ function growlFull(g) {
   const perm = g.reason === "permission";
   // A question is read whole, in a box that scrolls. Anything else keeps its one line.
   const asks = g.reason === "blocked" || g.reason === "question";
+  const room = g.reason === "room-cpu" || g.reason === "runner-missing";
   const split = asks ? replies.split(g.body) : { text: g.body, choices: [] };
   const text = perm
     ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
-    : asks ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
+    : asks || room ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
       : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
   const offered = asks ? replies.of({ replies: g.replies, ask: g.body, fixed: g.fixed }) : [];
   const choices = offered.length
@@ -255,7 +259,8 @@ function growlFull(g) {
   const dead = perm && !g.subject ? " disabled" : "";
   let acts = "";
   if (perm) acts += `<button data-do="approve"${dead}>approve once</button><button data-do="block"${dead}>block</button>`;
-  else if (g.reason === "halt") acts += `<button data-do="room">open the room</button>`;
+  else if (g.reason === "halt" || room) acts += `<button data-do="room">open the room</button>`;
+  if (g.reason === "room-cpu" && g.subject) acts += `<button data-do="kill" data-tip="ends each process left behind by a closed card">kill orphans</button>`;
   else if (g.reason === "deploy-hold") acts += `<button data-do="lift">lift</button>`;
   let reply = "";
   if (asks) {
@@ -514,6 +519,7 @@ async function growlAct(row, what) {
     case "open": return growlOpenIt(g);
     case "room": if (await closeOpenDialogs()) openRooms(); return;
     case "lift": return growlLift(g);
+    case "kill": return growlKill(g);
     case "reply": return growlReply(g, row);
     case "compose": {
       // The text is the draft either way, and the box is rebuilt from it at the other size.
@@ -572,6 +578,22 @@ async function growlLift(g) {
     });
   } catch (e) {
     toast("could not lift the hold", e.message);
+  }
+}
+
+// The room looks at each pid again and kills only one still under a closed card's home. The growler ends when the
+// room cools, not here.
+async function growlKill(g) {
+  const pids = String(g.subject || "").split(",").filter(Boolean);
+  if (!pids.length) return;
+  if (!await confirmUser("kill the orphans?",
+    `Ends <b>${esc(pids.join(", "))}</b> on <b>${esc(g.room)}</b>, left behind by a closed card.`, "kill")) return;
+  for (const pid of pids) {
+    try {
+      await api("/v1/room/procs/kill", { method: "POST", headers: growlHeaders(g), body: JSON.stringify({ pid: Number(pid) }) });
+    } catch (e) {
+      toast("could not kill " + pid, e.message);
+    }
   }
 }
 

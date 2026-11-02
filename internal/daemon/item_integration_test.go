@@ -27,7 +27,7 @@ func postSay(t *testing.T, d *Daemon, from, to, text string) (map[string]any, in
 	t.Helper()
 	raw, _ := json.Marshal(map[string]string{"from": from, "to": to, "text": text})
 	w := httptest.NewRecorder()
-	d.handleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
+	d.HandleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
 	var out map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &out)
 	return out, w.Code

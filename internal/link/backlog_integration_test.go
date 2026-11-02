@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type backlogRig struct {
@@ -29,7 +31,7 @@ func newBacklogRig(t *testing.T) *backlogRig {
 	t.Cleanup(func() { st.Close() })
 	t.Cleanup(func() { p.WaitWork(10 * time.Second) })
 	p.SetBacklog(st)
-	x := &backlogRig{p: p, feed: &sub{ch: make(chan Event, 16)}}
+	x := &backlogRig{p: p, feed: &sub{ch: make(chan wire.Event, 16)}}
 	p.feeds.mu.Lock()
 	p.feeds.subs[x.feed] = struct{}{}
 	p.feeds.mu.Unlock()
@@ -71,6 +73,18 @@ func TestBacklogFiledOnOneRoomIsListedAndReadFromAnother(t *testing.T) {
 	code, body = x.send("GET", "/_hub/backlog?dept=fabric&open=1", "", "203.0.113.9:4000")
 	if code != 200 || !strings.Contains(body, `"f-new-x"`) || strings.Contains(body, "the whole item") {
 		t.Fatalf("list: %d %s", code, body)
+	}
+	code, body = x.send("GET", "/_hub/backlog?dept=fabric&bodies=1", "", "203.0.113.9:4000")
+	if code != 200 || !strings.Contains(body, "the whole item") {
+		t.Fatalf("list with bodies: %d %s", code, body)
+	}
+	if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-long", "dept": "rnd", "title": "long",
+		"body": strings.Repeat("é", backlogExcerptMax), "by": "orch@sg4"}), loopAddr); code != http.StatusCreated {
+		t.Fatalf("file long: %d %s", code, body)
+	}
+	_, body = x.send("GET", "/_hub/backlog?dept=rnd&bodies=1", "", loopAddr)
+	if got := strings.Count(body, "é"); got != backlogExcerptMax/2 {
+		t.Fatalf("a long body is not cut to an excerpt: %d runes", got)
 	}
 	code, body = x.send("GET", "/_hub/backlog/f-new-x", "", loopAddr)
 	if code != 200 || str(obj(t, body), "body") != "the whole item" || str(obj(t, body), "filed_room") != "sg4" {
@@ -194,10 +208,10 @@ func TestBacklogAndReportsToolsReachTheHub(t *testing.T) {
 
 // The backlog is the full class's. Reports are filed by workers too, for the work ledger.
 func TestBacklogToolsAreForTheFullClassOnly(t *testing.T) {
-	if inClass("atrium_backlog", classWorker) || !inClass("atrium_backlog", classFull) {
+	if inClass("atrium_backlog", ctl.ClassWorker) || !inClass("atrium_backlog", ctl.ClassFull) {
 		t.Errorf("atrium_backlog is in the wrong classes")
 	}
-	if !inClass("atrium_reports", classWorker) || !inClass("atrium_reports", classFull) {
+	if !inClass("atrium_reports", ctl.ClassWorker) || !inClass("atrium_reports", ctl.ClassFull) {
 		t.Errorf("atrium_reports is in the wrong classes")
 	}
 }
@@ -317,5 +331,62 @@ func TestBacklogPriorityOverHTTPAndTool(t *testing.T) {
 	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "z", Dept: "fabric", Title: "t",
 		Priority: "urgent"}); err == nil || !strings.Contains(err.Error(), "high, medium, low") {
 		t.Fatalf("tool file bad priority: %v", err)
+	}
+}
+
+func TestBacklogEditOverHTTPAndTool(t *testing.T) {
+	x := newBacklogRig(t)
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	ctx := context.Background()
+
+	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "a", "dept": "fabric", "title": "old", "body": "b0",
+		"priority": "high"}), loopAddr)
+	code, body := x.send("POST", "/_hub/backlog/a", `{"body":"b1","by":"o@sg4"}`, loopAddr)
+	if m := obj(t, body); code != 200 || str(m, "body") != "b1" || str(m, "title") != "old" ||
+		str(m, "priority") != "high" || str(m, "status") != "open" || str(m, "changed_by") != "o@sg4" {
+		t.Fatalf("edit body: %d %s", code, body)
+	}
+	x.sawEvent(t, "backlog")
+	if code, body = x.send("POST", "/_hub/backlog/a", `{"title":" "}`, loopAddr); code != http.StatusBadRequest {
+		t.Fatalf("blank title: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/nope", `{"title":"t"}`, loopAddr); code != http.StatusNotFound {
+		t.Fatalf("edit a missing item: %d", code)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/a", `{"title":"t"}`, "203.0.113.9:4000"); code != http.StatusForbidden {
+		t.Fatalf("an edit from another machine: %d", code)
+	}
+
+	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", ID: "a", Title: "new"})
+	if err != nil || out.Item == nil || out.Item.Title != "new" || out.Item.Body != "b1" {
+		t.Fatalf("tool title: %+v %v", out, err)
+	}
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", ID: "a", Title: "t2", Body: "b2"})
+	if err != nil || out.Item == nil || out.Item.Title != "t2" || out.Item.Body != "b2" {
+		t.Fatalf("tool both: %+v %v", out, err)
+	}
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", ID: "a"}); err == nil ||
+		!strings.Contains(err.Error(), "title or a body") {
+		t.Fatalf("tool edit with nothing: %v", err)
+	}
+
+	code, body = x.send("POST", "/_hub/backlog/a", `{"append":"more","by":"qa@sg4"}`, loopAddr)
+	if m := obj(t, body); code != 200 || !strings.HasPrefix(str(m, "body"), "b2\n\nqa@sg4 ") ||
+		!strings.HasSuffix(str(m, "body"), ": more") || str(m, "title") != "t2" || str(m, "changed_by") != "qa@sg4" {
+		t.Fatalf("append: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/nope", `{"append":"t"}`, loopAddr); code != http.StatusNotFound {
+		t.Fatalf("append to a missing item: %d", code)
+	}
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "append", ID: "a", Text: "again"})
+	if err != nil || out.Item == nil || !strings.Contains(out.Item.Body, ": more\n\n") ||
+		!strings.HasSuffix(out.Item.Body, out.Item.ChangedAt[:10]+": again") {
+		t.Fatalf("tool append: %+v %v", out, err)
+	}
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "append", ID: "a", Text: " "}); err == nil ||
+		!strings.Contains(err.Error(), "append needs id and text") {
+		t.Fatalf("tool append with nothing: %v", err)
 	}
 }

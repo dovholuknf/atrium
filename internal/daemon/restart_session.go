@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -34,33 +35,33 @@ var restartAskGrace = 8 * time.Second
 // when the runner ignores the keys it stays up, marked as no longer leaving, and
 // the error names the card and how long it was given.
 func (d *Daemon) askExit(taskID string, grace time.Duration) error {
-	r := d.sup.get(taskID)
-	if r == nil || r.tm() == nil {
+	r := d.sup.Get(taskID)
+	if r == nil || !r.HasTerm() {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is nothing here to exit",
-			d.taskTitle(taskID))
+			d.TaskTitle(taskID))
 	}
 	// ATRIUM TYPED THIS EXIT, so the hook's /exit rule skips it. See windDown.
-	r.leaving.Store(true)
+	r.SetLeaving(true)
 	for _, k := range d.exitKeysFor(taskID) {
 		_ = r.Write(k)
 		select {
-		case <-r.done:
+		case <-r.Done():
 			log.Printf("[atrium] runner for %s exited when asked", taskID)
 			return nil
 		case <-time.After(d.hk.windDownKeyGap):
 		}
 	}
 	select {
-	case <-r.done:
+	case <-r.Done():
 		log.Printf("[atrium] runner for %s exited cleanly", taskID)
 		return nil
 	case <-time.After(grace):
 	}
-	r.leaving.Store(false)
+	r.SetLeaving(false)
 	log.Printf("[atrium] runner for %s ignored its exit keys for %s, leaving it running", taskID, grace)
 	return fmt.Errorf("%s did not exit when asked, even after %s. it is still running and was not "+
 		"restarted. it may be mid-turn or waiting on a prompt. finish or answer that and try again, "+
-		"or terminate it from the card", d.taskTitle(taskID), grace)
+		"or terminate it from the card", d.TaskTitle(taskID), grace)
 }
 
 // RestartRunner asks a card's runner to exit, waits for it to be gone, and
@@ -88,13 +89,13 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	// holds it may be mid stop-then-start, when this card momentarily owns no
 	// runner, and checking before the lock would read that gap as "nothing to
 	// restart" and refuse a card that is about to have a runner again.
-	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 
 	// Only a session atrium owns can be restarted from here. A window-mode
 	// launch owns itself and a session that joined by hand belongs to whoever
 	// started it, so there is no terminal here to exit and nothing to relaunch.
-	if d.sup.get(taskID) == nil {
+	if d.sup.Get(taskID) == nil {
 		return nil, fmt.Errorf("atrium does not own a terminal for %s, so there is nothing "+
 			"here to restart. it may be a window-mode session, which owns itself", t.DisplayTitle())
 	}
@@ -147,11 +148,11 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 func (d *Daemon) waitRunnerGone(taskID string, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for {
-		if d.sup.get(taskID) == nil {
+		if d.sup.Get(taskID) == nil {
 			return true
 		}
 		if time.Now().After(deadline) {
-			return d.sup.get(taskID) == nil
+			return d.sup.Get(taskID) == nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

@@ -98,10 +98,13 @@
   .md pre code { background: none; padding: 0; }
   .md blockquote { margin-top: 1em; margin-bottom: 1em; padding: 0 1em; border-left: 3px solid var(--stroke-dim); color: var(--dim); }
   .md table { border-collapse: collapse; } .md th, .md td { border: 1px solid var(--stroke-dim); padding: 4px 10px; }
-  .md img { max-width: 100%; }
+  .md img { max-width: 100%; position: relative; z-index: 1; }
   .oops { padding: 18px; color: var(--warn); }
   .oops a { color: var(--head); }
   .pic { display: block; max-width: calc(100% - 36px); margin: 18px auto; background: var(--shell-0); }
+  :root.plain body { background: #1c1c1c; }
+  :root.plain body::before, :root.plain .zoom, :root.plain #skin { display: none; }
+  :root.plain header, :root.plain .pic { background: none; }
   .pdf { display: block; width: 100%; height: calc(100vh - 56px); border: 0; }
   /* A page with no background of its own is drawn on white, as a browser would draw it, above the grid on body::before. */
   .page { position: relative; z-index: 1; background: #fff; }
@@ -135,9 +138,7 @@
   </span>
   <select id="skin" aria-label="skin for this page only"></select>
   <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button>
-  <button id="html-mode" type="button" class="sharebtn" hidden>Show it rendered</button>
-  <button id="open-ext" type="button" class="sharebtn" hidden>Open externally</button></header>
-<div id="ext-note" class="sharebox" hidden></div>
+  <button id="html-mode" type="button" class="sharebtn" hidden>Show it rendered</button></header>
 <div id="share-box" class="sharebox" hidden>
   <input id="share-url" type="text" readonly aria-label="public address">
   <button id="share-copy" type="button">Copy</button>

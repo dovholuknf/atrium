@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -25,17 +26,15 @@ func (f *usageFix) replies() int {
 // settled waits for the background record to land n replies in all.
 func (f *usageFix) settled(n int) {
 	f.t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if f.replies() == n {
-			time.Sleep(50 * time.Millisecond)
-			if f.replies() == n {
-				return
-			}
+	if !testwait.Poll(3*time.Second, func() bool {
+		if f.replies() != n {
+			return false
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond) // wait: a negative check, the count must hold at n
+		return f.replies() == n
+	}) {
+		f.t.Fatalf("replies on record %d, want %d", f.replies(), n)
 	}
-	f.t.Fatalf("replies on record %d, want %d", f.replies(), n)
 }
 
 func TestFlushedRecordsWithoutAStop(t *testing.T) {
@@ -119,7 +118,7 @@ func TestFlushedWithoutATranscriptIsQuiet(t *testing.T) {
 	f.u.flushed(&none)
 	var nilTracker *usageTracker
 	nilTracker.flushed(f.task)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: a negative check, no flush may record a reply
 	if n := f.replies(); n != 0 {
 		t.Fatalf("%d replies recorded, want none", n)
 	}

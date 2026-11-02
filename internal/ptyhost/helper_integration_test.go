@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 func testHost(t *testing.T, o Options) (*Host, string) {
@@ -52,17 +54,14 @@ func dialT(t *testing.T, addr string) *Client {
 func daemonT(t *testing.T, addr string) *Client {
 	t.Helper()
 	c := dialT(t, addr)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, err := c.Hello("test", false)
-		if err == nil {
-			return c
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("hello: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
+	var err error
+	if !testwait.PollEvery(20*time.Millisecond, 5*time.Second, func() bool {
+		_, err = c.Hello("test", false)
+		return err == nil
+	}) {
+		t.Fatalf("hello: %v", err)
 	}
+	return c
 }
 
 func runnerArgv(mode string, args ...string) []string {
@@ -139,13 +138,7 @@ func contains(b []byte, s string) bool { return bytes.Contains(b, []byte(s)) }
 // waitFor polls f for up to d.
 func waitFor(t *testing.T, d time.Duration, what string, f func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(d)
-	for !f() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, d, what, f)
 }
 
 func infoOf(t *testing.T, c *Client, runID string) PtyInfo {

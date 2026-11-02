@@ -257,7 +257,13 @@ document.addEventListener("click", e => {
   const r = dlg.getBoundingClientRect();
   const inside = e.clientX >= r.left && e.clientX <= r.right &&
     e.clientY >= r.top && e.clientY <= r.bottom;
-  if (!inside) dlg.close();
+  if (inside) return;
+  if (dlg.id === "switcher" && swDirty()) {
+    confirmUser("discard what you typed?", "Clicking outside closes the bar and what is in its field goes with it.", "discard")
+      .then(yes => { if (yes) dlg.close(); else if (dlg.open) swField().focus(); });
+    return;
+  }
+  dlg.close();
 });
 
 // Closes every open dialog, for a click that is leaving whatever is on screen.

@@ -120,7 +120,7 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, waitTurn bool) {
 	// A card a wake is delivering to gets everything pending in one turn once its runner is ready: a message queued
 	// meanwhile is carried by that, not typed alone onto a startup screen. See injectKept.
-	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.frozenForMove(taskID) {
+	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.FrozenForMove(taskID) {
 		// A frozen card's message is in the freeze queue, not in message. It is
 		// replayed with its id when the move is undone.
 		return
@@ -185,7 +185,7 @@ func (d *Daemon) reholdPending(taskID string) {
 // terminal to type into, so there is nothing to retry. The message is still
 // safe in the store.
 func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
-	run := pi.d.sup.get(taskID)
+	run := pi.d.sup.Get(taskID)
 	if run == nil {
 		return
 	}
@@ -209,7 +209,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		// A keystroke on this terminal re-arms the backoff to the front, so an
 		// operator who is back gets an early retry. Cleared in drop.
 		reset := func() { pi.reset(taskID) }
-		run.onKey.Store(&reset)
+		run.SetOnKey(reset)
 		ht.timer = time.AfterFunc(pi.d.hk.backoffSteps[0], func() { pi.attempt(taskID) })
 		ht.stuck = time.AfterFunc(pi.d.hk.stuckAfter, func() { pi.flagStuck(taskID) })
 	}
@@ -230,16 +230,16 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 // no reason named rather than blaming a line that is empty.
 func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	switch {
-	case pi.d.holdingMessages(taskID):
+	case pi.d.HoldingMessages(taskID):
 		return HeldForNewContext
-	case pi.d.holdingFrom(taskID, m.from):
+	case pi.d.HoldingFrom(taskID, m.from):
 		return HeldForDeploy
 	case pi.d.act.dialogOpen(taskID):
 		return HeldForDialog
 	case pi.d.turnHoldsAged(taskID, m.waitTurn, m.at):
 		return HeldForTurn
 	}
-	if run := pi.d.sup.get(taskID); run != nil && !run.peerGateOpen() {
+	if run := pi.d.sup.Get(taskID); run != nil && !run.PeerGateOpen() {
 		return HeldForLine
 	}
 	return ""
@@ -281,7 +281,7 @@ func (pi *pendingInjector) noteHeld(taskID string, why string) {
 	changed := pi.d.act.setHeld(taskID, r)
 	pi.mu.Unlock()
 	if changed {
-		pi.d.publishTask(taskID)
+		pi.d.Publish(taskID)
 	}
 }
 
@@ -353,7 +353,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 
 // try is the body of an attempt.
 func (pi *pendingInjector) try(taskID string) {
-	run := pi.d.sup.get(taskID)
+	run := pi.d.sup.Get(taskID)
 	if run == nil {
 		// The terminal went away. The hooks still deliver from the queue, so the
 		// message is not lost, but there is nothing here to type into.
@@ -423,9 +423,9 @@ func (pi *pendingInjector) try(taskID string) {
 	// A card in a new-context cycle holds everything until its wake prompt has
 	// been typed. Reschedule quietly at the same interval: releaseHeld re-arms
 	// the retry to the front when the cycle ends.
-	holding := pi.d.holdingMessages(taskID)
+	holding := pi.d.HoldingMessages(taskID)
 	if holding {
-		if !pi.d.frozenForMove(taskID) {
+		if !pi.d.FrozenForMove(taskID) {
 			kept := entries[:0:0]
 			for _, e := range entries {
 				if e.from == "" {
@@ -439,7 +439,7 @@ func (pi *pendingInjector) try(taskID string) {
 		pi.betweenHoldChecks()
 	}
 	// One read of the hold: a second that saw it lift would drain the emptied list and widen the backoff past the release.
-	if holding && len(entries) == 0 || pi.d.frozenForMove(taskID) {
+	if holding && len(entries) == 0 || pi.d.FrozenForMove(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
 			ht.timer.Reset(pi.d.hk.backoffSteps[step])
@@ -451,7 +451,7 @@ func (pi *pendingInjector) try(taskID string) {
 	// A card held for a room deploy holds everything retried here the same way,
 	// the operator's own text included, which the hooks still carry. The
 	// retry is re-armed when the hold lifts.
-	if pi.d.deployHeld(taskID) {
+	if pi.d.DeployHeld(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
 			ht.timer.Reset(pi.d.hk.backoffSteps[step])
@@ -502,7 +502,7 @@ func (pi *pendingInjector) try(taskID string) {
 		if escalated {
 			body = pi.d.escalatedBody(taskID, e)
 		}
-		wrote, err := run.injectPeer(e.banner, body)
+		wrote, err := run.InjectPeer(e.banner, body)
 		if err != nil {
 			log.Printf("[atrium] retrying a held message into %s failed: %v", taskID, err)
 			break
@@ -538,7 +538,7 @@ func (pi *pendingInjector) try(taskID string) {
 	if len(ht.entries) == 0 {
 		pi.mu.Unlock()
 		pi.drop(taskID)
-		pi.d.publishTask(taskID)
+		pi.d.Publish(taskID)
 		return
 	}
 	if turnWait {
@@ -605,10 +605,10 @@ func (pi *pendingInjector) drop(taskID string) {
 	}
 	pi.d.act.clearHeld(taskID)
 	pi.mu.Unlock()
-	if run := pi.d.sup.get(taskID); run != nil {
-		run.onKey.Store(nil)
+	if run := pi.d.sup.Get(taskID); run != nil {
+		run.SetOnKey(nil)
 	}
-	pi.d.publishTask(taskID)
+	pi.d.Publish(taskID)
 }
 
 // withoutHeldPeers drops from a hook's batch the peer messages this card is
@@ -683,10 +683,17 @@ func (pi *pendingInjector) deliveredElsewhere(taskID string, ids []string) {
 	}
 	ht.entries = kept
 	empty := len(ht.entries) == 0
+	var oldest pendingMsg
+	if !empty {
+		oldest = ht.entries[0]
+	}
 	pi.mu.Unlock()
 	if empty {
 		pi.drop(taskID)
+		return
 	}
+	// A partial delivery leaves the count on the chip stale until the next retry.
+	pi.noteHeld(taskID, pi.heldFor(taskID, oldest))
 }
 
 // stopAll halts every backoff timer, for shutdown. The held messages stay in
@@ -729,7 +736,7 @@ func (pi *pendingInjector) flagStuck(taskID string) {
 		log.Printf("[atrium] could not record a stuck hold on %s: %v", taskID, err)
 	}
 	log.Printf("[atrium] %s: a say has been held over %s, held for %q", who, pi.d.hk.stuckAfter, why)
-	pi.d.publishTask(taskID)
+	pi.d.Publish(taskID)
 	told := map[string]bool{}
 	for _, e := range entries {
 		if e.from == "" || told[e.from] || strings.Contains(e.from, "@") {
@@ -776,5 +783,5 @@ func (pi *pendingInjector) warn(taskID, from string, waited time.Duration, final
 		"final":   final,
 	})
 	// Refresh the held badge so its age advances even between board polls.
-	pi.d.publishTask(taskID)
+	pi.d.Publish(taskID)
 }

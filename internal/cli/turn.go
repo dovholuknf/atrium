@@ -36,7 +36,8 @@ import (
 //   - Every failure prints `{"continue":true}` and exits 0. Unreachable
 //     daemon, timeout, garbage response, unparseable stdin: all of them end
 //     the turn normally. Silence or a non-zero exit is the failure mode that
-//     hangs a session.
+//     hangs a session. An unreachable daemon also says so in a systemMessage,
+//     which never blocks.
 //   - `stop_hook_active` is honored. Claude Code sets it when the turn is
 //     already running because a Stop hook blocked it. Blocking again on that
 //     pass is an infinite loop, so this refuses to. That Stop is still
@@ -44,12 +45,6 @@ import (
 //   - The daemon's answer is passed through only when it parses and only when
 //     it is one of the two shapes a Stop hook may return. Anything else is
 //     treated as nothing to say.
-
-// turnTimeout is the budget. Longer than the activity hook, which runs before
-// every tool call, and shorter than the session hook, which is allowed to be
-// slow because it fires twice in a session's life. This one fires at the end
-// of every turn and the human is sitting there waiting for the answer.
-const turnTimeout = 2 * time.Second
 
 // turnInput is the part of Claude Code's Stop payload this reads.
 type turnInput struct {
@@ -181,6 +176,7 @@ func newTurn() *cobra.Command {
 // stdout. It has no error return on purpose: there is no failure this may
 // report, only one it must absorb.
 func turnEnded(hubURL, event, name, runner string) string {
+	start := time.Now()
 	if strings.EqualFold(os.Getenv("ATRIUM_PERM_GATE"), "off") {
 		return keepGoing
 	}
@@ -257,10 +253,12 @@ func turnEnded(hubURL, event, name, runner string) string {
 		return keepGoing
 	}
 
-	client := hookClient(turnTimeout)
-	resp, err := client.Post(hubAddress(hubURL)+"/stop", "application/json", bytes.NewReader(body))
+	client := hookClient(hookLeft(start))
+	addr := hubAddress(hubURL)
+	resp, err := client.Post(addr+"/stop", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return keepGoing
+		// A systemMessage alone never blocks, so the turn still ends.
+		return string(hookWarning("Stop", runner, unreachable("turn --event end", addr, err)))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

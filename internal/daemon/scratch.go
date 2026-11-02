@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io/fs"
 	"log"
 	"os"
@@ -81,7 +82,7 @@ func (d *Daemon) removeScratch(t *store.Task) bool {
 		log.Printf("[atrium] the scratch folder %s is a link, so it was kept", row.Path)
 		return false
 	}
-	if err := removeTree(path); err != nil {
+	if err := home.RemoveTree(path); err != nil {
 		log.Printf("[atrium] could not remove the scratch folder %s: %v", row.Path, err)
 		return false
 	}

@@ -1,1 +1,0 @@
-A merge worker lands `claude/main` itself with `git push hub HEAD:claude/main`, which the hub takes only as a fast-forward, and the orchestrator's checkout follows it. A diverged or dirty checkout is left alone and reported. (bug-merge-worker-cannot-land-claude-main)

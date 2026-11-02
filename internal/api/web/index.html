@@ -597,6 +597,8 @@ Exports honor whatever filter is applied.">?</span>
             aria-label="match case" data-tip="match case">Aa</button>
           <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
             aria-label="regular expression" data-tip="regular expression">.*</button>
+          <button id="t-find-who" class="findtog" onclick="toggleFind('who')"
+            aria-label="whose text: all, mine or the agent's" data-tip="whose text: all, mine or the agent's">all</button>
           <button onclick="closeFind()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
         </div>
         <!-- The paste that needs no permission.
@@ -616,24 +618,18 @@ Exports honor whatever filter is applied.">?</span>
             <button onclick="closePasteBox()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
           </div>
         </div>
-        <!-- The compose box: atrium is typing into this card for a new context, so a key typed now would be
-             dropped. It opens on the first one, seeded with it, and the text is queued on the card and typed when
-             the cycle ends. The button is the way out: it stops the cycle and gives the terminal back. See
-             js/compose.js. -->
-        <div class="term-nodev" id="t-nodev" role="status" hidden>
-          <div class="nodev-line"><span class="nodev-sign" aria-hidden="true">&#9940;</span><span>typing is held for the new context</span></div>
-          <div class="nodev-line" id="t-nodev-say"></div>
-          <button type="button" tabindex="-1" onclick="composeStop()"
-            data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
-        </div>
-        <div class="pastebox" id="t-ctxbox" hidden role="dialog" aria-label="message to send when the new context is ready">
+        <!-- The compose panel: atrium is typing into this card for a new context. It shows the step, and what is
+             typed here is queued on the card and typed when the cycle ends. It never blocks the terminal: a key
+             typed there releases the hold. The x and Escape release it too. See js/compose.js. -->
+        <div class="pastebox" id="t-ctxbox" hidden role="dialog" aria-label="starting a new context">
           <div class="pastebox-say">starting a new context, this is sent when it is ready</div>
+          <div class="pastebox-say" id="t-nodev-say" role="status"></div>
           <textarea id="t-ctxbox-in" spellcheck="false" autocomplete="off"></textarea>
           <div class="pastebox-row">
             <button id="t-ctxbox-free" onclick="composeFree()"
               data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
             <button onclick="composeSend()" data-tip="queue it (enter)">queue</button>
-            <button onclick="composeClose()" aria-label="discard (escape)" data-tip="discard (escape)">&times;</button>
+            <button onclick="composeDismiss()" aria-label="dismiss (escape)" data-tip="dismiss and type (escape)">&times;</button>
           </div>
         </div>
         <!-- The walk drawer sits BESIDE the one terminal and never replaces it: a second xterm on a card is the
@@ -645,6 +641,7 @@ Exports honor whatever filter is applied.">?</span>
               <span class="by" id="walk-note"></span>
               <span class="walk-bar" id="walk-bar"></span>
               <span class="by" id="walk-count"></span>
+              <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
               <button type="button" class="go" onclick="walkDone()"
                 data-tip="type walk done into the walker and submit it">walk done</button>
@@ -871,10 +868,21 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
   <!-- The hub's backlog and director reports, drawn by js/backlog.js. Hub only. -->
   <div id="backlog" hidden>
     <div id="fd-backlog"></div>
+    <button type="button" id="newitem-open" class="go" onclick="newItemOpen()"
+      data-tip="file, edit or remove an item with a small throwaway agent">new item</button>
     <p class="pane-lead" id="backlog-note" role="status"></p>
     <div id="backlog-items"></div>
     <div class="col-head" style="margin:16px 0 10px"><span>director reports</span></div>
     <div id="backlog-reports"></div>
+  </div>
+
+  <!-- The new item agent's conversation, drawn by js/newitem.js. Floats over every tab until closed. -->
+  <div id="newitem-panel" hidden>
+    <div class="chat-bar"><strong>new item</strong><span class="grow"></span>
+      <button type="button" class="ghost" id="newitem-close" onclick="newItemClose()"
+        aria-label="close and end the item agent">&times;</button></div>
+    <p class="pane-lead" id="newitem-note" role="status" hidden></p>
+    <div class="chat-frame" id="newitem-frame"></div>
   </div>
 
   <div id="audit" hidden>
@@ -1323,6 +1331,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <span id="toastlog-scope" class="hintline" hidden></span>
+    <button id="toastlog-mine" onclick="trayMineToggle()" aria-pressed="false" data-tip="rows about cards another session launched: dimmed, or hidden">all</button>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
     <button id="toastlog-window" onclick="windowToggle()" aria-pressed="false">mute this window</button>
     <button id="toastlog-sound" onclick="document.getElementById('sound').click()">sound on</button>
@@ -1344,8 +1353,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
        own autofill since 2015. A search field is skipped outright. -->
   <input type="search" id="sw-q" class="swq" spellcheck="false" autocomplete="off"
     placeholder="go to a session, or paste a link: name, directory, tag or url">
+  <div id="sw-name" class="swnm" hidden>
+    <label for="sw-nm">worktree name</label>
+    <div class="swnmq"><span>claude/</span><input type="search" id="sw-nm" spellcheck="false" autocomplete="off"></div>
+  </div>
   <div id="sw-list" class="swlist"></div>
-  <div class="swfoot">
+  <div id="sw-nmfoot" class="swfoot" hidden>
+    <span><kbd>enter</kbd> start</span>
+    <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
+    <span><kbd>esc</kbd> back</span>
+    <span class="grow"></span>
+    <span id="sw-nmkey"></span>
+  </div>
+  <div id="sw-foot" class="swfoot">
     <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> pick</span>
     <span><kbd>enter</kbd> go</span>
     <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
@@ -2362,6 +2382,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         one of these. Everything else is refused.</span>
     </div>
 
+    <div class="field">
+      <label class="eyebrow" for="s-openext-anywhere">open externally, anywhere on this machine</label>
+      <div class="picker">
+        <label><input id="s-openext-anywhere" type="checkbox" data-saves="saveOpenExtAnywhere">
+          let a terminal link outside those folders open with this machine's default app</label>
+      </div>
+      <span class="hintline">Off by default. On, any picture, pdf or text document path an agent prints can be
+        handed to this room's default app on this machine, wherever it is. The board still never reads or shows the
+        file. A program, a script or a shortcut is refused whatever this says. Switched only from this machine.</span>
+    </div>
+
     <!-- Where to leave the address for somebody else.
          The daemon already writes where it is listening, into this account's
          own state directory, which is the right place and unreadable to
@@ -2386,7 +2417,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="s-handoffdir">handoff directory</label>
       <div class="picker">
         <input id="s-handoffdir" spellcheck="false" data-saves="saveHandoffDir"
-          placeholder="empty means $TEMP/atrium/handoffs">
+          placeholder="empty means the card's folder, else handoffs beside the room's database">
       </div>
       <span class="hintline">Where a card writes its handoff when atrium cycles its context, as
         <code>&lt;card id&gt;.md</code>. The limit prompt names the full path. A copy of each handoff is kept on
@@ -3459,6 +3490,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          both. -->
     <div class="field span" id="l-prompt-field">
       <label class="eyebrow" for="l-prompt">first instruction</label>
+      <select id="l-preset" aria-label="start from a named prompt" hidden></select>
       <textarea id="l-prompt" rows="3" spellcheck="false"
         placeholder="what it should start on. leave empty to start at a bare prompt"></textarea>
     </div>
@@ -3901,6 +3933,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/review.js"></script>
 <script src="/js/hubrepos.js"></script>
 <script src="/js/backlog.js"></script>
+<script src="/js/newitem.js"></script>
 <script src="/js/items-mock.js"></script>
 <script src="/js/items-data.js"></script>
 <script src="/js/efficacy.js"></script>
@@ -3927,6 +3960,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/growl.js"></script>
 <script src="/js/keepalive.js"></script>
 <script src="/js/alias.js"></script>
+<script src="/js/parent.js"></script>
 <script src="/js/heldline.js"></script>
 <script src="/js/phone-bell.js"></script>
 <script src="/js/settings.js"></script>

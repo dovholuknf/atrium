@@ -8,21 +8,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // waitForTelemetry polls, because /telemetry answers before it records.
 func waitForTelemetry(t *testing.T, d *Daemon, taskID string) *Telemetry {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if c := d.act.telemetry(taskID); c != nil {
-			return c
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("no telemetry ever arrived for %s", taskID)
-	return nil
+	var c *Telemetry
+	testwait.Eventually(t, 3*time.Second, "telemetry for "+taskID, func() bool {
+		c = d.act.telemetry(taskID)
+		return c != nil
+	})
+	return c
 }
 
 // The join the whole feature rests on. A statusline is handed the harness's

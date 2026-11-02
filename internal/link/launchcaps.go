@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The launch cap, PER ROOM.
@@ -51,7 +52,7 @@ type LaunchCaps struct {
 // For is the cap for one room.
 func (lc LaunchCaps) For(room string) int {
 	for name, n := range lc.Rooms {
-		if room != "" && equalFold(name, room) {
+		if room != "" && wire.EqualFold(name, room) {
 			return n
 		}
 	}

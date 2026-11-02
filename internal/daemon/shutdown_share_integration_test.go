@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,10 +26,10 @@ func probeShutdown(t *testing.T, d *Daemon, from, token string) *httptest.Respon
 // startSharing puts an overlay into the state the shutdown rule cares about,
 // without needing a zrok environment to do it.
 func startSharing(d *Daemon) {
-	n := d.nat(OverlayZrok)
-	n.mu.Lock()
-	n.srv = &http.Server{}
-	n.mu.Unlock()
+	n := d.Nat(publish.OverlayZrok)
+	n.Mu.Lock()
+	n.Srv = &http.Server{}
+	n.Mu.Unlock()
 }
 
 // The rule being protected: at this keyboard, no share, no token, allowed.

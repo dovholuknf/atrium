@@ -1,1 +1,0 @@
-﻿New context: a card with no shell can finish the cycle with the atrium_ready tool, the limit prompt names it, the cycle stops re-asking after 3 asks, and trium ready --name finds a card by alias or id and says what it looked up. bug-new-context-needs-shell

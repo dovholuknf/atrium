@@ -144,8 +144,8 @@ func TestALiveCardBeatsADoneOneForAnAlias(t *testing.T) {
 	t.Parallel()
 	for _, liveIsNewer := range []bool{true, false} {
 		s := openTestStore(t)
+		tickingClock(s)
 		older := aliasCard(t, s, "sa89-old")
-		time.Sleep(5 * time.Millisecond)
 		newer := aliasCard(t, s, "sa89-new")
 		// The older card takes the alias and finishes, so the newer can take it.
 		if err := s.SetAlias(older.ID, "sa89"); err != nil {

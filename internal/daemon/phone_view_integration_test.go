@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 type sizeWatcher struct {
@@ -64,16 +66,12 @@ func attachWithoutResize(t *testing.T, d *Daemon, taskID string) *sizeWatcher {
 
 func waitSize(t *testing.T, w *sizeWatcher, cols, rows int) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if s, ok := w.last(); ok && s.Cols == cols && s.Rows == rows {
-			return
-		}
-		if time.Now().After(deadline) {
-			s, _ := w.last()
-			t.Fatalf("want a size frame %dx%d, last was %+v", cols, rows, s)
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !testwait.Poll(3*time.Second, func() bool {
+		s, ok := w.last()
+		return ok && s.Cols == cols && s.Rows == rows
+	}) {
+		s, _ := w.last()
+		t.Fatalf("want a size frame %dx%d, last was %+v", cols, rows, s)
 	}
 }
 

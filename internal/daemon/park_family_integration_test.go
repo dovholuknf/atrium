@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -37,7 +40,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if out["delivered"] == "parked" {
 			t.Fatalf("answer %v", out)
 		}
-		if got, _ := d.st.Get(worker.ID); isParked(got) {
+		if got, _ := d.st.Get(worker.ID); small.IsParked(got) {
 			t.Fatal("the launcher's say left the worker parked")
 		}
 	})
@@ -52,7 +55,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if out["delivered"] == "parked" {
 			t.Fatalf("answer %v", out)
 		}
-		if got, _ := d.st.Get(launcher.ID); isParked(got) {
+		if got, _ := d.st.Get(launcher.ID); small.IsParked(got) {
 			t.Fatal("the worker's say left the launcher parked")
 		}
 	})
@@ -69,7 +72,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("answered %d: %s", w.Code, w.Body.String())
 		}
-		if got, _ := d.st.Get(worker.ID); isParked(got) {
+		if got, _ := d.st.Get(worker.ID); small.IsParked(got) {
 			t.Fatal("the launcher's tell left the worker parked")
 		}
 	})
@@ -85,7 +88,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if out["delivered"] != "queued" || out["reachable"] != "kept" {
 			t.Fatalf("answer %v", out)
 		}
-		if got, _ := d.st.Get(worker.ID); !isParked(got) {
+		if got, _ := d.st.Get(worker.ID); !small.IsParked(got) {
 			t.Fatal("a stranger's say woke it")
 		}
 		if n := len(pendingFrom(t, d, worker.ID)); n != 1 {
@@ -115,7 +118,7 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 		d, launcher, worker := finished(t)
 		var f *fakePTY
 		launched := 0
-		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 			launched++
 			_, f = typedRunner(t, d, worker.ID)
 			return d.st.Get(worker.ID)
@@ -127,19 +130,15 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 		if launched != 1 {
 			t.Fatalf("launched %d times, want 1 (%v)", launched, out)
 		}
-		d.wakeSawSession(worker.ID, "conv-1")
-		deadline := time.Now().Add(5 * time.Second)
-		for (f == nil || !strings.Contains(f.written(), "FAMILYWORDS")) && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-		if f == nil || !strings.Contains(f.written(), "FAMILYWORDS") {
-			t.Fatal("the launcher's words never reached the resumed worker")
-		}
+		d.WakeSawSession(worker.ID, "conv-1")
+		testwait.Eventually(t, 5*time.Second, "the launcher's words to reach the resumed worker", func() bool {
+			return f != nil && strings.Contains(f.written(), "FAMILYWORDS")
+		})
 	})
 	t.Run("the launcher's fyi is kept and does not wake it", func(t *testing.T) {
 		d, launcher, worker := finished(t)
 		launched := 0
-		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 			launched++
 			return d.st.Get(worker.ID)
 		}
@@ -160,7 +159,7 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 		d, _, worker := finished(t)
 		peerCard(t, d, "stranger")
 		launched := 0
-		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 			launched++
 			return d.st.Get(worker.ID)
 		}
@@ -188,7 +187,7 @@ func TestKeepaliveNeverRefreshesAParkedCard(t *testing.T) {
 	if f.forks() != 0 {
 		t.Fatalf("forks = %d, a parked card was refreshed", f.forks())
 	}
-	if got := f.k.why[f.task.ID]; got != "parked" {
+	if got := f.k.Why[f.task.ID]; got != "parked" {
 		t.Fatalf("why = %q, want parked", got)
 	}
 }

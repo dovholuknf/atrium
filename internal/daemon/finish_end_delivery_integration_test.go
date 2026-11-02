@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,7 +29,9 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 			d, f := roomDaemon(t)
 			w := remoteWorker(t, d)
 			stubCommits(t, d, true, false)
-			f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+			f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+				return hublink.RelayResult{}, hublink.ErrRelayDown
+			})
 
 			rec, out := finishWith(t, d, c.in)
 			if rec.Code != http.StatusOK || out["launcher_told"] != "relayed" {
@@ -43,7 +46,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 			}
 			// Then the hub answers, and the report goes once, to the card, from the worker.
 			f.set(nil)
-			d.drainRelays()
+			d.DrainRelays()
 			sent := f.says()
 			if len(sent) == 0 {
 				t.Fatal("nothing reached the hub")
@@ -159,7 +162,7 @@ func TestARepeatDoneAfterALauncherStopIsSilent(t *testing.T) {
 		t.Fatalf("%d pending after draining", n)
 	}
 
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	if rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true}); rec.Code != http.StatusOK {
 		t.Fatalf("code %d: %v", rec.Code, out)
@@ -199,7 +202,7 @@ func TestAResidentDoneNeitherExitsNorRingsOnSilence(t *testing.T) {
 	if err := d.st.MarkDelivered(launcher.ID, "terminal", ids); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	stopSilently(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {

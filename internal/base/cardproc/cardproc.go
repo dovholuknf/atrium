@@ -9,12 +9,95 @@ package cardproc
 import (
 	"bufio"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ErrGone is a pid with no process behind it.
 var ErrGone = errors.New("no such process")
+
+// WaitGone waits up to within for every process of tree, pid to start time as Tree reads it, to exit, and answers the
+// pids still running.
+func WaitGone(tree map[int]string, within time.Duration) []int {
+	deadline := time.Now().Add(within)
+	for {
+		var left []int
+		for pid, at := range tree {
+			if now, err := StartTime(pid); err == nil && now == at {
+				left = append(left, pid)
+			}
+		}
+		if len(left) == 0 || time.Now().After(deadline) {
+			sort.Ints(left)
+			return left
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// treeOf is root and every pid under it in a parent table, with start times. A child whose after check fails is a
+// stranger on a recycled parent pid, not a child.
+func treeOf(root int, kids map[int][]int, after func(child, parent string) bool) map[int]string {
+	out := map[int]string{}
+	at, err := StartTime(root)
+	if err != nil {
+		return out
+	}
+	out[root] = at
+	for todo := []int{root}; len(todo) > 0; todo = todo[1:] {
+		p := todo[0]
+		for _, c := range kids[p] {
+			if _, seen := out[c]; seen {
+				continue
+			}
+			cat, err := StartTime(c)
+			if err != nil || (after != nil && !after(cat, out[p])) {
+				continue
+			}
+			out[c] = cat
+			todo = append(todo, c)
+		}
+	}
+	return out
+}
+
+// Proc is one process: its pid and its executable's base name, lowercased and without an extension.
+type Proc struct {
+	PID  int
+	Name string
+}
+
+// ancestorsOf walks up from pid through look, which answers a pid's executable and parent. A cyclic or corrupt parent
+// chain stops at hops.
+func ancestorsOf(pid, hops int, look func(int) (string, int, bool)) []Proc {
+	_, at, ok := look(pid)
+	if !ok {
+		return nil
+	}
+	var out []Proc
+	for i := 0; i < hops && at > 0; i++ {
+		name, parent, ok := look(at)
+		if !ok {
+			break
+		}
+		out = append(out, Proc{PID: at, Name: baseName(name)})
+		at = parent
+	}
+	return out
+}
+
+func baseName(exe string) string {
+	n := strings.ToLower(exe)
+	if i := strings.LastIndexAny(n, `/\`); i >= 0 {
+		n = n[i+1:]
+	}
+	if i := strings.LastIndex(n, "."); i > 0 {
+		n = n[:i]
+	}
+	return n
+}
 
 // Range is a closed range of ports.
 type Range struct{ Lo, Hi int }

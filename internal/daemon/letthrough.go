@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // "Let it through": the operator hovers the held messages chip and chooses to have what is waiting delivered NOW,
@@ -59,17 +61,17 @@ func (d *Daemon) handleLetThrough(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	var body letThroughBody
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	n, err := d.letThrough(taskID, body.Line)
 	if err != nil {
 		var le *errLetThrough
 		if errors.As(err, &le) {
-			writeJSONErr(w, le.code, err)
+			small.WriteJSONErr(w, le.code, err)
 			return
 		}
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

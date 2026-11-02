@@ -1,1 +1,0 @@
-Hovering a terminal no longer sends a storm of file probes. A word that is not a file is asked about once per change to its own row, not once every three seconds per row, so sweeping the pointer over a terminal asks nothing, even with a spinner redrawing elsewhere. A path hovered before its file was written becomes a link once its row changes. (bug-terminal-probe-storm)

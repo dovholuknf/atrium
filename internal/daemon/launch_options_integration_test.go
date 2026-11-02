@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -151,7 +152,7 @@ func TestALaunchCarriesItsOptionsOntoTheCard(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	task, err := d.Launch(LaunchRequest{
+	task, err := d.Launch(shared.LaunchRequest{
 		Harness: "opttest", Cwd: t.TempDir(), Effort: "low",
 		Args: []string{"extra"}, Env: map[string]string{"OPT_TOKEN": "s3cret"},
 	})

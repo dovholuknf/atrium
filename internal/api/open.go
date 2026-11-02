@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -64,6 +65,8 @@ type openRequest struct {
 	// Pick says the room this lands on was picked by name in the launch dialog. A link another room holds then goes on
 	// here and its claim moves here, unless that room has a live card on it. See the claim's Take.
 	Pick bool `json:"pick"`
+	// Review asks for the review row and walker even for a pull request the forge's login wrote.
+	Review bool `json:"review"`
 }
 
 // openTakeKey marks the review row's claim as a pick, for postPR.
@@ -183,6 +186,10 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	}
 	ans.Worktree = wt.Path
 	wt.BriefFile = writePRBriefFile(ctx, wt, in.URL)
+	if !in.Review && s.ownPR(ctx, host, org, repo, num, wt.PR) {
+		s.openOwn(w, in, got, wt, key, org, repo, num, ans)
+		return
+	}
 
 	// THE INVENTORY, held under a pending owner until the card exists, then handed to it. A worktree that was already
 	// there is somebody else's and is not recorded. See resources.go.
@@ -294,6 +301,53 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ans)
 }
 
+// ownPR is whether the forge's login wrote the pull request. A forge that cannot say answers false, so the review is
+// made as it always was.
+func (s *Server) ownPR(ctx context.Context, host, org, repo string, num int, pr *forge.PR) bool {
+	if pr == nil || pr.Author == "" || s.PRForge == nil {
+		return false
+	}
+	f, err := s.PRForge(host)
+	if err != nil {
+		return false
+	}
+	vr, ok := f.(forge.ViewerReader)
+	if !ok {
+		return false
+	}
+	me, err := vr.Viewer(ctx, forge.Ref{Host: host, Org: org, Repo: repo, Number: num})
+	return err == nil && me != "" && strings.EqualFold(me, pr.Author)
+}
+
+// openOwn launches a plain card in the worktree of a pull request its own login wrote: no review row, no walker.
+func (s *Server) openOwn(w http.ResponseWriter, in openRequest, got *rules.Resolved, wt prWorktreeResult, key, org, repo string,
+	num int, ans openAnswer) {
+	task, err := s.Launch(s.openLaunchBody(in, got, wt, key, org, repo, num))
+	if err != nil {
+		undoPRWorktree(wt)
+		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
+		return
+	}
+	s.PublishTask(task)
+	if !wt.Existed {
+		for _, r := range []struct{ kind, ref, detail string }{{store.ResWorktree, wt.Path, wt.Repo},
+			{store.ResRef, prWorktreeRef(num), wt.Repo}} {
+			if _, err := s.st.AddResource(task.ID, r.kind, r.ref, r.detail); err != nil {
+				log.Printf("[atrium api] open %s: the inventory did not take %s %s: %v", key, r.kind, r.ref, err)
+			}
+		}
+		if wt.CreatedBranch {
+			_, _ = s.st.AddResource(task.ID, store.ResBranch, wt.Branch, wt.Repo)
+		}
+	}
+	if wt.Cloned {
+		_, _ = s.st.AddResource(task.ID, store.ResClone, wt.Repo, "")
+	}
+	ans.Card, ans.Created = task.ID, true
+	s.measureAfterOpen(task)
+	writeJSON(w, http.StatusCreated, ans)
+}
+
 // openMeasureWait is how long the measure after an open may take.
 const openMeasureWait = 5 * time.Second
 
@@ -365,12 +419,19 @@ func (s *Server) openRow(r *http.Request, in openRequest, got *rules.Resolved) (
 	return out.PR, out.Created, rec.Code, nil
 }
 
+// runnerStartable is whether this room has the runner enabled and its command found, as /v1/harnesses reports it.
+func (s *Server) runnerStartable(id string) bool {
+	h, err := s.st.Harness(id)
+	return err == nil && h != nil && h.Enabled && RunnerFound(h) != ""
+}
+
 // openLaunchBody is the card's launch: the worktree, what the recogniser filled in, and the tags that tie it to the
-// link. The harness is the caller's, else the review recipe's for the repo.
+// link. The harness is the caller's, else the review recipe's for the repo, which also stands in for a caller's this
+// room cannot start while the recipe's can be.
 func (s *Server) openLaunchBody(in openRequest, got *rules.Resolved, wt prWorktreeResult, key, org, repo string, num int) []byte {
 	harness := strings.TrimSpace(in.Harness)
-	if harness == "" {
-		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil {
+	if harness == "" || !s.runnerStartable(harness) {
+		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil && (harness == "" || s.runnerStartable(rec.Harness)) {
 			harness = rec.Harness
 		}
 	}
@@ -387,7 +448,7 @@ func (s *Server) openLaunchBody(in openRequest, got *rules.Resolved, wt prWorktr
 		title = fmt.Sprintf("%s/%s#%d", org, repo, num)
 	}
 	body, _ := json.Marshal(map[string]any{
-		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "prompt": or(in.Prompt, got.Prompt) + prBrief(wt.PR, wt.BriefFile),
+		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "brief": or(in.Prompt, got.Prompt) + prBrief(wt.PR, wt.BriefFile),
 		"tags": tags, "model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"repo": repo, "org": org, "host": got.Host, "branch": wt.Branch, "window": got.Window, "theme": got.Theme,
 		"source_kind": got.Kind, "source_url": in.URL,

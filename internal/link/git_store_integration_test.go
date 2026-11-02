@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -240,17 +241,16 @@ func reposOnly(t *testing.T, out string) string {
 // settledRepos asks for the list until the snapshot says it is no longer building, so an init's rebuild has landed.
 func (x *storeProxy) settledRepos(t *testing.T, remote string) (int, string) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		code, out := x.call("GET", "/_hub/git/repos", "", remote)
+	var code int
+	var out string
+	testwait.EventuallyHTTP(t, 15*time.Second, "the repos list to stop building", func() bool {
+		code, out = x.call("GET", "/_hub/git/repos", "", remote)
 		var ans struct {
 			Building bool `json:"building"`
 		}
-		if json.Unmarshal([]byte(out), &ans) == nil && !ans.Building || time.Now().After(deadline) {
-			return code, reposOnly(t, out)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return json.Unmarshal([]byte(out), &ans) == nil && !ans.Building
+	})
+	return code, reposOnly(t, out)
 }
 
 func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {

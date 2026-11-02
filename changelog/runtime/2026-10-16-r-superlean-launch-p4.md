@@ -1,1 +1,0 @@
-Superlean measured: 14.5k tokens on the first request against lean's 18.7k (-23%) in the same worktree, 12.8k in the minion shape. The design doc now has a Numbers section and settles two decisions: no no-MCP mode, and per-item minions and workers should default to superlean once the idle-CPU run is done. Doc only. (r-superlean-launch, phase 4)

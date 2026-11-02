@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"log"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -65,8 +68,8 @@ func resolveItemOwner(spec, creator string) (kind, owner string, err error) {
 }
 
 // checkItemLaunch refuses an item launch whose owner cannot be, BEFORE a card exists. Nothing else is its business.
-func checkItemLaunch(req LaunchRequest) error {
-	if !req.Item && !hasTag(req.Tags, ItemTag) && workOfTags(req.Tags) == "" {
+func checkItemLaunch(req shared.LaunchRequest) error {
+	if !req.Item && !small.HasTag(req.Tags, ItemTag) && workOfTags(req.Tags) == "" {
 		return nil
 	}
 	_, _, err := resolveItemOwner(itemOwnerSpec(req.Tags), req.SpawnedBy)
@@ -132,12 +135,12 @@ func (d *Daemon) flushItems() {
 	if len(rows) == 0 {
 		return
 	}
-	ha, _ := d.relay().(HubAsker)
+	ha, _ := d.Relay().(hublink.HubAsker)
 	if ha == nil {
 		return
 	}
 	for _, r := range rows {
-		ctx, cancel := context.WithTimeout(context.Background(), relayWait)
+		ctx, cancel := context.WithTimeout(context.Background(), hublink.RelayWait)
 		res, err := ha.Hub(ctx, "", http.MethodPost, "/_hub/items/sync", json.RawMessage(r.Body))
 		cancel()
 		switch {
@@ -166,7 +169,7 @@ func (d *Daemon) moveItem(id, state, note string) (*store.ItemRow, bool) {
 	}
 	if changed {
 		if it.TaskID != "" {
-			d.publishTask(it.TaskID)
+			d.Publish(it.TaskID)
 		}
 		d.kickItems()
 		// A pool card that finished an item is idle: the next one is typed. See item_pool.go.
@@ -283,8 +286,8 @@ func (d *Daemon) itemNotifyKeyed(task *store.Task, it *store.ItemRow, key, text 
 		d.itemQueue(task, launcher.ID, key, text)
 		return
 	}
-	if spec := d.launcherRelay(task, text); spec != nil {
-		if _, err := d.holdRelay(task, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", "",
+	if spec := d.LauncherRelay(task, text); spec != nil {
+		if _, err := d.HoldRelay(task, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", "",
 			store.RelaySourceNotice); err != nil {
 			log.Printf("[atrium] could not hold item %s's notice for %s: %v", it.ID, spec.ToRoom, err)
 			d.orphanReport(task, text)
@@ -306,25 +309,25 @@ func (d *Daemon) itemUnreached(task *store.Task, it *store.ItemRow) {
 
 // itemQueue queues the notice on a card here, and resumes it when it is parked: the owner is the one who has to act.
 func (d *Daemon) itemQueue(worker *store.Task, toID, key, text string) {
-	if _, err := d.st.ItemNotice(worker.ID, toID, key, truncatePeer(text)); err != nil {
+	if _, err := d.st.ItemNotice(worker.ID, toID, key, shared.TruncatePeer(text)); err != nil {
 		log.Printf("[atrium] could not queue item notice %s: %v", key, err)
 		return
 	}
-	if to, err := d.st.Get(toID); err == nil && isParked(to) {
+	if to, err := d.st.Get(toID); err == nil && small.IsParked(to) {
 		if err := d.unpark(to.ID, "report"); err != nil {
 			log.Printf("[atrium] could not resume %s for an item notice: %v", to.DisplayTitle(), err)
 		}
 	}
-	d.publishTask(toID)
+	d.Publish(toID)
 }
 
 // itemNotifyHolder asks the hub who holds a role owner's role, and says whether anybody was told.
 func (d *Daemon) itemNotifyHolder(task *store.Task, it *store.ItemRow, key, text string) bool {
-	ha, _ := d.relay().(HubAsker)
+	ha, _ := d.Relay().(hublink.HubAsker)
 	if ha == nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), relayWait)
+	ctx, cancel := context.WithTimeout(context.Background(), hublink.RelayWait)
 	defer cancel()
 	res, err := ha.Hub(ctx, "", http.MethodGet, "/_hub/items/"+it.ID, nil)
 	if err != nil || !res.OK {
@@ -340,7 +343,7 @@ func (d *Daemon) itemNotifyHolder(task *store.Task, it *store.ItemRow, key, text
 		return false
 	}
 	if room := d.otherRoom(got.Holder.Room); room != "" {
-		_, err := d.holdRelay(task, task.WireName, "", room, got.Holder.Card, truncatePeer(text), "", "", store.RelaySourceNotice)
+		_, err := d.HoldRelay(task, task.WireName, "", room, got.Holder.Card, shared.TruncatePeer(text), "", "", store.RelaySourceNotice)
 		return err == nil
 	}
 	if _, err := d.st.Get(got.Holder.Card); err != nil {
@@ -510,7 +513,7 @@ func (d *Daemon) handleItemAct(w http.ResponseWriter, r *http.Request) {
 		By     string `json:"by"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	var out map[string]any
@@ -524,11 +527,11 @@ func (d *Daemon) handleItemAct(w http.ResponseWriter, r *http.Request) {
 	case "sendback":
 		out, code, err = d.itemSendBack(r.PathValue("id"), in.Answer, in.By)
 	default:
-		writeJSONErr(w, http.StatusNotFound, errors.New("an item is unblocked, cancelled or sent back"))
+		small.WriteJSONErr(w, http.StatusNotFound, errors.New("an item is unblocked, cancelled or sent back"))
 		return
 	}
 	if err != nil {
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

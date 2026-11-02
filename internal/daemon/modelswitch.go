@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -86,29 +88,29 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	model, ok := validModel(body.Model)
 	if !ok {
-		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("a model is sonnet, opus, haiku, fable or an id "+
+		small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("a model is sonnet, opus, haiku, fable or an id "+
 			"like claude-opus-4-7, got %q", body.Model))
 		return
 	}
 	taskID := r.PathValue("id")
 	t, err := d.st.Get(taskID)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	if !d.runsClaude(t) {
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s runs %q and only a claude card takes /model",
+		small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("%s runs %q and only a claude card takes /model",
 			t.WireName, t.Runner))
 		return
 	}
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run == nil || d.sessionGone(t) {
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf("atrium does not own a terminal for %s, so there is "+
+		small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nowhere to type /model. relaunch it under atrium first", t.WireName))
 		return
 	}
@@ -135,7 +137,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Unlock()
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	state := "waiting"
@@ -150,7 +152,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	if mw != nil {
 		d.waitForModel(taskID, mw)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 
 	out := map[string]any{"card": taskID, "model": model, "from": t.Model, "typed": typed,
 		"when": whenWord(waitTurn), "delivered": "terminal"}
@@ -200,19 +202,19 @@ func (d *Daemon) noteTypedModel(taskID, line string) {
 	}); err != nil {
 		log.Printf("[atrium] switched %s to %s by hand but could not record it: %v", taskID, model, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // typeModel types `/model <model>` and Enter through the say gate. False and no
 // error when the gate was shut and nothing was written.
 func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
-	run := d.sup.get(taskID)
-	if run == nil || d.holdingFrom(taskID, "") || d.act.dialogOpen(taskID) || d.turnHolds(taskID, waitTurn) {
+	run := d.sup.Get(taskID)
+	if run == nil || d.HoldingFrom(taskID, "") || d.act.dialogOpen(taskID) || d.turnHolds(taskID, waitTurn) {
 		return false, nil
 	}
 	// No paste markers: it is one short line, and a slash command is read as one
 	// from keystrokes without depending on how the runner treats a paste.
-	return run.injectPeer("", "/model "+model)
+	return run.InjectPeer("", "/model "+model)
 }
 
 // modelLock is the card's switch lock. The handler holds it across replacing a wait,
@@ -232,7 +234,7 @@ func (d *Daemon) runsClaude(t *store.Task) bool {
 		return false
 	}
 	if h, err := d.st.Harness(t.Runner); err == nil && h != nil {
-		return isClaude(h)
+		return shared.IsClaude(h)
 	}
 	return strings.EqualFold(t.Runner, "claude")
 }
@@ -262,11 +264,11 @@ func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
 				mu.Unlock()
 				return
 			}
-			run := d.sup.get(taskID)
+			run := d.sup.Get(taskID)
 			gone := run == nil
 			if !gone {
 				select {
-				case <-run.done:
+				case <-run.Done():
 					gone = true
 				default:
 				}
@@ -297,7 +299,7 @@ func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
 			}); err != nil {
 				log.Printf("[atrium] typed /model into %s but could not record it: %v", taskID, err)
 			}
-			d.publishTask(taskID)
+			d.Publish(taskID)
 			return
 		}
 	}()
@@ -320,5 +322,14 @@ func (d *Daemon) giveUpOnModel(taskID string, mw *modelWait) {
 	}); err != nil {
 		log.Printf("[atrium] could not record the give-up on %s: %v", taskID, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
+}
+
+// modelHooks are the seams of model switches.
+type modelHooks struct {
+	modelRetryEvery, modelWaitMax time.Duration
+}
+
+func defaultModelHooks() modelHooks {
+	return modelHooks{modelRetryEvery: modelRetryEvery, modelWaitMax: modelWaitMax}
 }

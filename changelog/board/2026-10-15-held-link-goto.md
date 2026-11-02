@@ -1,1 +1,0 @@
-- Opening a link a live card already holds now says which card: a refusal carries the holder's card, the dialog's failed card leads with a `go to card` button, and `atrium open` prints its address and goes there with `--attach` (backlog g-held-link-goto).

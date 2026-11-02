@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 	"strings"
 	"testing"
@@ -42,7 +43,7 @@ func TestAFrozenCardHoldsItsSays(t *testing.T) {
 	if _, err := d.st.Freeze(c.ID, "mv1", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if !d.holdingMessages(c.ID) {
+	if !d.HoldingMessages(c.ID) {
 		t.Fatal("a frozen card is not held")
 	}
 	if code, out := say(t, d, map[string]string{"from": "sa1", "to": "sa2", "text": "hold"}); code != 200 {
@@ -58,7 +59,7 @@ func TestAFrozenCardHoldsItsSays(t *testing.T) {
 	if _, err := d.st.Unfreeze(c.ID, "mv1", true); err != nil {
 		t.Fatal(err)
 	}
-	if d.holdingMessages(c.ID) {
+	if d.HoldingMessages(c.ID) {
 		t.Fatal("still held after the undo")
 	}
 	if msgs, _ := d.takeMessages(c.ID, "hook"); len(msgs) != 1 {
@@ -139,7 +140,7 @@ func TestARepeatLaunchForOneMoveAnswersTheSameCard(t *testing.T) {
 		<-errCh
 	}()
 	h := slowHarness(t, d)
-	req := LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "sg3~OLD1", Pinned: true, PinOrder: 3}
+	req := shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "sg3~OLD1", Pinned: true, PinOrder: 3}
 	a, err := d.Launch(req)
 	if err != nil {
 		t.Skipf("could not spawn a slow test runner on this machine: %v", err)

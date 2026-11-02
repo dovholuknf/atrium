@@ -10,7 +10,8 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // See docs/rnd/room-transport-order.md.
@@ -55,9 +56,9 @@ func TestRoomsTransportsSetsTheHubOrder(t *testing.T) {
 // The hub tells rooms only what it listens on, in its order, and never a credential.
 func TestHubPathsFollowTheOrderAndSayNoSecret(t *testing.T) {
 	set := hubSet{sides: []*hubSide{
-		{kind: "direct", path: link.Path{Transport: "direct", Addr: "sg4:7779"}},
-		{kind: "ziti", path: link.Path{Transport: "ziti", Service: "atrium-hub"}},
-		{kind: "zrok", path: link.Path{Transport: "zrok", Share: "secret-share"}},
+		{kind: "direct", path: wire.Path{Transport: "direct", Addr: "sg4:7779"}},
+		{kind: "ziti", path: wire.Path{Transport: "ziti", Service: "atrium-hub"}},
+		{kind: "zrok", path: wire.Path{Transport: "zrok", Share: "secret-share"}},
 	}}
 	ps := set.paths([]string{"ziti", "direct"})
 	if len(ps) != 2 || ps[0].Transport != "ziti" || ps[1].Transport != "direct" {
@@ -74,10 +75,10 @@ func TestHubPathsFollowTheOrderAndSayNoSecret(t *testing.T) {
 // a ziti rung wrapped in its certificate, so the hub still knows its name. Ziti
 // comes first, the default order.
 func TestRoomLadderWrapsTheZitiFallbackInTheRoomCertificate(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	writeStrayRoomCert(t, keys)
-	saved := link.Saved{Transport: "direct", Hub: "sg4:7779", Room: "m1mini"}
-	tr := link.RoomTransports{Paths: []link.Path{{Transport: "ziti", Identity: "m1mini.json"}}}
+	saved := transport.Saved{Transport: "direct", Hub: "sg4:7779", Room: "m1mini"}
+	tr := transport.RoomTransports{Paths: []wire.Path{{Transport: "ziti", Identity: "m1mini.json"}}}
 	l, skipped, err := roomLadder(keys, saved, tr)
 	if err != nil || len(skipped) != 0 {
 		t.Fatalf("%v %v", err, skipped)
@@ -86,20 +87,20 @@ func TestRoomLadderWrapsTheZitiFallbackInTheRoomCertificate(t *testing.T) {
 	if len(rs) != 2 || rs[0].Path.Transport != "ziti" || rs[1].Path.Transport != "direct" {
 		t.Fatalf("rungs %+v, want ziti then direct, the default", rs)
 	}
-	if _, ok := rs[1].Dial.(link.Direct); !ok {
+	if _, ok := rs[1].Dial.(transport.Direct); !ok {
 		t.Fatalf("direct rung is %T", rs[1].Dial)
 	}
-	if _, ok := rs[0].Dial.(link.Proven); !ok {
+	if _, ok := rs[0].Dial.(transport.Proven); !ok {
 		t.Fatalf("the ziti rung is %T, want it inside the room's certificate", rs[0].Dial)
 	}
 }
 
 // An old-form overlay join keeps its old path on its own rung.
 func TestRoomLadderLeavesAnOldFormOverlayJoinUnwrapped(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	writeStrayRoomCert(t, keys)
-	saved := link.Saved{Transport: "ziti", Service: "atrium-hub", Identity: "vm1.json", Room: "vm1"}
-	l, _, err := roomLadder(keys, saved, link.RoomTransports{})
+	saved := transport.Saved{Transport: "ziti", Service: "atrium-hub", Identity: "vm1.json", Room: "vm1"}
+	l, _, err := roomLadder(keys, saved, transport.RoomTransports{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,18 +108,18 @@ func TestRoomLadderLeavesAnOldFormOverlayJoinUnwrapped(t *testing.T) {
 	if len(rs) != 1 {
 		t.Fatalf("rungs %+v", rs)
 	}
-	if _, ok := rs[0].Dial.(link.Proven); ok {
+	if _, ok := rs[0].Dial.(transport.Proven); ok {
 		t.Fatal("an old-form ziti join was wrapped")
 	}
 	saved.Proven = true
-	l, _, _ = roomLadder(keys, saved, link.RoomTransports{})
-	if _, ok := l.Rungs()[0].Dial.(link.Proven); !ok {
+	l, _, _ = roomLadder(keys, saved, transport.RoomTransports{})
+	if _, ok := l.Rungs()[0].Dial.(transport.Proven); !ok {
 		t.Fatal("a proven ziti join was not wrapped when the room started from what it saved")
 	}
 }
 
 func TestSavedOverlayJoinRemembersItWasProven(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	j := provenZitiJoin(t)
 	if err := keys.SaveOverlayRoom(j, "vm1", "vm1.json"); err != nil {
 		t.Fatal(err)
@@ -142,7 +143,7 @@ func runRoomTransports(t *testing.T, dir string, args ...string) (string, error)
 
 func TestRoomTransportsVerbWritesTheLocalSettings(t *testing.T) {
 	dir := t.TempDir()
-	keys := link.Keys{Dir: dir}
+	keys := transport.Keys{Dir: dir}
 	if err := os.WriteFile(filepath.Join(dir, "room.json"),
 		[]byte(`{"hub":"sg4:7779","room":"m1mini"}`), 0o600); err != nil {
 		t.Fatal(err)

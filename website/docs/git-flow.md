@@ -111,6 +111,14 @@ somewhere else, use the `agent` address from its `daemon.json`, or the hook will
 Then a card can `git fetch hub` and `git push -u hub <branch>` from that clone. A clone shared by cards in two rooms
 needs a remote per room, and each card must use its own.
 
+## Landing on claude/main
+
+A card cannot push `claude/main`, and a push to it is refused. It pushes its branch with `git push hub <branch>` and
+runs `atrium merge` (or `atrium_merge`). The hub merges the branch onto `claude/main`, runs the tests and answers
+merged with the sha, red with the failing tests, a conflict, or refused with the reason. `atrium merge --list` shows
+the queue. Landing `claude/main` on `main` is the operator's `atrium merge land` or **Land now** on the Terminals tab,
+and the hub never pushes to the forge.
+
 ## What you see when git is refused
 
 A card that runs `git push origin main`, `git pull` or `git fetch origin` is stopped before git starts, and sees this

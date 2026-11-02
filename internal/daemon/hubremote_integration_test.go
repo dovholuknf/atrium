@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"net"
 	"net/http"
@@ -12,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // launchDump launches the env-dump helper as a runner and answers its environment, upper-cased by name.
-func launchDump(t *testing.T, d *Daemon, req LaunchRequest) map[string]string {
+func launchDump(t *testing.T, d *Daemon, req shared.LaunchRequest) map[string]string {
 	t.Helper()
 	t.Setenv("ATRIUM_TEST_ENV_DUMP", "1")
 	if _, err := d.st.SaveHarness(store.Harness{
@@ -29,23 +32,19 @@ func launchDump(t *testing.T, d *Daemon, req LaunchRequest) map[string]string {
 	dir := t.TempDir()
 	req.Harness, req.Cwd, req.SpawnedBy, req.Env = "envdump", dir, store.HumanLauncher, nil
 	_, _ = d.Launch(req)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		raw, err := os.ReadFile(filepath.Join(dir, "env.txt"))
-		if err == nil {
-			seen := map[string]string{}
-			for _, kv := range strings.Split(string(raw), "\n") {
-				if i := strings.Index(kv, "="); i > 0 {
-					seen[strings.ToUpper(kv[:i])] = kv[i+1:]
-				}
-			}
-			return seen
+	var raw []byte
+	testwait.Eventually(t, 10*time.Second, "the runner to write its environment", func() bool {
+		b, err := os.ReadFile(filepath.Join(dir, "env.txt"))
+		raw = b
+		return err == nil
+	})
+	seen := map[string]string{}
+	for _, kv := range strings.Split(string(raw), "\n") {
+		if i := strings.Index(kv, "="); i > 0 {
+			seen[strings.ToUpper(kv[:i])] = kv[i+1:]
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the runner never wrote its environment: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
+	return seen
 }
 
 // testGitIsolation is a GIT_CONFIG_ variable that internal/testguard sets for every test, and not one of the
@@ -67,13 +66,13 @@ func gitEnvOf(seen map[string]string) map[string]string {
 
 func TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder(t *testing.T) {
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	// A room started from inside another card: its token must not be passed on to this one.
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "http.http://127.0.0.1:7777/git/.extraHeader")
 	t.Setenv("GIT_CONFIG_VALUE_0", gitsync.HeaderCardToken+": other-card.deadbeef")
 
-	seen := launchDump(t, d, LaunchRequest{})
+	seen := launchDump(t, d, shared.LaunchRequest{})
 	id := seen["ATRIUM_TASK_ID"]
 	g := gitEnvOf(seen)
 	if g["GIT_CONFIG_COUNT"] != "1" ||
@@ -93,20 +92,13 @@ func TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder(t *testing.T) {
 	// The helper exits at once, and a card that exits loses its token: the room forgets it and the forwarder
 	// stops accepting it. (Revoked when the card exits.)
 	tok := strings.TrimPrefix(v, gitsync.HeaderCardToken+": ")
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		d.hubGit.mu.Lock()
-		_, held := d.hubGit.issued[id]
-		d.hubGit.mu.Unlock()
-		if !held {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the card exited and the room still holds its git token")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if _, ok := d.hubGit.cards.Check(tok); ok {
+	testwait.Eventually(t, 10*time.Second, "the room to let go of the exited card's git token", func() bool {
+		d.HubGit.Mu.Lock()
+		defer d.HubGit.Mu.Unlock()
+		_, held := d.HubGit.Issued[id]
+		return !held
+	})
+	if _, ok := d.HubGit.Cards.Check(tok); ok {
 		t.Fatal("an exited card's token is still accepted by the forwarder")
 	}
 	// the room never keeps a copy where the board shows card details
@@ -117,18 +109,18 @@ func TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder(t *testing.T) {
 
 func TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv(t *testing.T) {
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
-	for name, req := range map[string]LaunchRequest{
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	for name, req := range map[string]shared.LaunchRequest{
 		"flag": {OutsideCode: true},
-		"tag":  {Tags: []string{OutsideCodeTag}},
+		"tag":  {Tags: []string{home.OutsideCodeTag}},
 	} {
 		seen := launchDump(t, d, req)
 		if g := gitEnvOf(seen); len(g) != 0 {
 			t.Errorf("%s: a card that runs outside code has a git env: %v", name, g)
 		}
-		d.hubGit.mu.Lock()
-		n := len(d.hubGit.issued)
-		d.hubGit.mu.Unlock()
+		d.HubGit.Mu.Lock()
+		n := len(d.HubGit.Issued)
+		d.HubGit.Mu.Unlock()
 		if n != 0 {
 			t.Errorf("%s: the room minted a token for it", name)
 		}
@@ -137,8 +129,8 @@ func TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv(t *testing.T) {
 
 func TestAHarnessGitConfigIsContinuedNotReplaced(t *testing.T) {
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
-	seen := launchDump(t, d, LaunchRequest{Env: map[string]string{
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	seen := launchDump(t, d, shared.LaunchRequest{Env: map[string]string{
 		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "Worker"}})
 	g := gitEnvOf(seen)
 	if g["GIT_CONFIG_COUNT"] != "2" || g["GIT_CONFIG_KEY_0"] != "user.name" || g["GIT_CONFIG_VALUE_0"] != "Worker" ||
@@ -153,9 +145,8 @@ func TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "http.http://127.0.0.1:7777/git/.extraHeader")
 	t.Setenv("GIT_CONFIG_VALUE_0", gitsync.HeaderCardToken+": C1.abc")
-	r := newPRRunner(nil, func(string) {})
 	for _, env := range [][]string{
-		childEnvFrom(r.baseEnv(), nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}),
+		childEnvFrom(os.Environ(), nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}),
 		childEnvFrom(os.Environ(), nil, map[string]string{"ATRIUM_PERM_GATE": "off"}),
 	} {
 		for _, kv := range env {
@@ -169,7 +160,7 @@ func TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv(t *testing.T) {
 func TestGitPushIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "pusher")
 	if _, err := d.GitPush("no-such-card", "fix/x"); err == nil {
 		t.Fatal("pushed for a card that is not there")
@@ -183,7 +174,7 @@ func TestGitPushIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingGitPush, "hub"); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetTags(task.ID, []string{OutsideCodeTag}); err != nil {
+	if err := d.st.SetTags(task.ID, []string{home.OutsideCodeTag}); err != nil {
 		t.Skipf("no way to tag a card here: %v", err)
 	}
 	if _, err := d.GitPush(task.ID, "fix/x"); err == nil || !strings.Contains(err.Error(), "not the room's own") {
@@ -198,38 +189,38 @@ func TestACardLosesItsTokenWhenItIsNoLongerRunning(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "finisher")
-	tok, err := d.hubGit.cards.Mint(task.ID)
+	tok, err := d.HubGit.Cards.Mint(task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id, ok := d.hubGit.cards.Check(tok); !ok || id != task.ID {
+	if id, ok := d.HubGit.Cards.Check(tok); !ok || id != task.ID {
 		t.Fatal("a running card's token was refused")
 	}
 	if err := d.st.SetStatus(task.ID, store.StatusDead); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := d.hubGit.cards.Check(tok); ok {
+	if _, ok := d.HubGit.Cards.Check(tok); ok {
 		t.Fatal("a dead card's token was accepted")
 	}
-	d.revokeHubGit(task.ID, time.Time{})
+	d.RevokeHubGit(task.ID, time.Time{})
 }
 
 func TestAResumedDoneCardKeepsItsTokenWhileItsRunnerIsUp(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "woken")
-	tok, err := d.hubGit.cards.Mint(task.ID)
+	tok, err := d.HubGit.Cards.Mint(task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := d.hubGit.cards.Check(tok); ok {
+	if _, ok := d.HubGit.Cards.Check(tok); ok {
 		t.Fatal("a done card with no runner kept its token")
 	}
 	typedRunner(t, d, task.ID)
-	if id, ok := d.hubGit.cards.Check(tok); !ok || id != task.ID {
+	if id, ok := d.HubGit.Cards.Check(tok); !ok || id != task.ID {
 		t.Fatal("a resumed card's token was refused while its runner is up")
 	}
 }
@@ -242,7 +233,7 @@ func TestTheForwarderRouteIsOnTheAgentListenerAndTheTokenOpensNothingElse(t *tes
 	defer cancel()
 	base := "http://" + d.opts.AgentAddr
 	task := plainTask(t, d, "walker")
-	tok, _ := d.hubGit.cards.Mint(task.ID)
+	tok, _ := d.HubGit.Cards.Mint(task.ID)
 	do := func(path string, withToken bool) (int, string) {
 		req, _ := http.NewRequest("GET", base+path, nil)
 		if withToken {
@@ -294,20 +285,20 @@ func TestInheritedGitConfigIsTaintedForLaunchedRunners(t *testing.T) {
 func TestAnOldRunsExitDoesNotRevokeTheTokenOfAResume(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "resumer")
 	oldStarted := time.Now()
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	into := map[string]string{}
-	d.hubGitEnv(task.ID, false, nil, into) // the resume's launch
+	d.HubGitEnv(task.ID, false, nil, into) // the resume's launch
 	tok := strings.TrimPrefix(into["GIT_CONFIG_VALUE_0"], gitsync.HeaderCardToken+": ")
-	d.revokeHubGit(task.ID, oldStarted) // the old runner's awaitExit
-	if id, ok := d.hubGit.cards.Check(tok); !ok || id != task.ID {
+	d.RevokeHubGit(task.ID, oldStarted) // the old runner's awaitExit
+	if id, ok := d.HubGit.Cards.Check(tok); !ok || id != task.ID {
 		t.Fatal("the old run's exit revoked the resumed card's new token")
 	}
 	// The new run's own exit does revoke it.
-	d.revokeHubGit(task.ID, time.Now())
-	if _, ok := d.hubGit.cards.Check(tok); ok {
+	d.RevokeHubGit(task.ID, time.Now())
+	if _, ok := d.HubGit.Cards.Check(tok); ok {
 		t.Fatal("the token survived its own run's exit")
 	}
 }
@@ -325,8 +316,8 @@ func TestAgentAddrIsKeptForASpecificBindAndMappedForAWildcard(t *testing.T) {
 		{&net.TCPAddr{IP: net.IPv4zero, Port: 7777}, "127.0.0.1:7777"},
 		{&net.TCPAddr{IP: net.IPv6unspecified, Port: 7777}, "127.0.0.1:7777"},
 	} {
-		d.setAgentAddr(c.in)
-		if got := d.agentAddr(); got != c.want {
+		d.SetAgentAddr(c.in)
+		if got := d.AgentAddr(); got != c.want {
 			t.Errorf("%v: %s, want %s", c.in, got, c.want)
 		}
 	}
@@ -335,10 +326,10 @@ func TestAgentAddrIsKeptForASpecificBindAndMappedForAWildcard(t *testing.T) {
 func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "reattached")
 	env := map[string]string{}
-	d.hubGitEnv(task.ID, false, nil, env)
+	d.HubGitEnv(task.ID, false, nil, env)
 	header := env["GIT_CONFIG_VALUE_0"]
 	tok := strings.TrimPrefix(header, gitsync.HeaderCardToken+": ")
 	if tok == header || tok == "" {
@@ -346,12 +337,14 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 	}
 
 	again := &Daemon{hk: *testHooks(), st: d.st}
-	again.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
-	again.restoreHubGit()
-	if id, ok := again.hubGit.cards.Check(tok); !ok || id != task.ID {
+
+	again.initServices()
+	again.HubGit.Cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
+	again.RestoreHubGit()
+	if id, ok := again.HubGit.Cards.Check(tok); !ok || id != task.ID {
 		t.Fatal("the restarted room refused the token the runner was launched with")
 	}
-	if again.hubGit.issued[task.ID].tok != "" {
+	if again.HubGit.Issued[task.ID].Tok != "" {
 		t.Fatal("the clear token was restored from the store")
 	}
 	toks, err := d.st.GitTokens()
@@ -362,11 +355,12 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 		t.Fatal("the table holds the secret")
 	}
 
-	again.revokeHubGit(task.ID, time.Time{})
+	again.RevokeHubGit(task.ID, time.Time{})
 	third := &Daemon{hk: *testHooks(), st: d.st}
-	third.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
-	third.restoreHubGit()
-	if _, ok := third.hubGit.cards.Check(tok); ok {
+	third.initServices()
+	third.HubGit.Cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
+	third.RestoreHubGit()
+	if _, ok := third.HubGit.Cards.Check(tok); ok {
 		t.Fatal("a revoked token came back after a restart")
 	}
 }
@@ -374,16 +368,18 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 func TestTheRoomPushesForAReattachedCardWithoutReplacingItsToken(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "reattached-pusher")
 	env := map[string]string{}
-	d.hubGitEnv(task.ID, false, nil, env)
+	d.HubGitEnv(task.ID, false, nil, env)
 	runner := strings.TrimPrefix(env["GIT_CONFIG_VALUE_0"], gitsync.HeaderCardToken+": ")
 
 	again := &Daemon{hk: *testHooks(), st: d.st}
-	again.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
-	again.restoreHubGit()
-	ct := again.hubGit.cards.(*gitsync.CardTokens)
+
+	again.initServices()
+	again.HubGit.Cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
+	again.RestoreHubGit()
+	ct := again.HubGit.Cards.(*gitsync.CardTokens)
 	room, err := ct.RoomToken(task.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -410,7 +406,7 @@ func TestTheRoomPushesForAReattachedCardWithoutReplacingItsToken(t *testing.T) {
 func TestADoneCardWhoseRunnerStillRunsMayPush(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	gone, _, err := d.st.Register(store.Observed{WireName: "gone", Worktree: "/tmp/atrium-test", Runner: "claude"})
 	if err != nil {
 		t.Fatal(err)
@@ -438,12 +434,12 @@ func TestADoneCardWhoseRunnerStillRunsMayPush(t *testing.T) {
 // launches them with, ahead of that file.
 func TestARunnerIsLaunchedWithItsOwnRoomsAgentAddress(t *testing.T) {
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7787})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7787})
 	t.Setenv("ATRIUM_HUB_URL", "http://127.0.0.1:7777")
-	if got := launchDump(t, d, LaunchRequest{})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:7787" {
+	if got := launchDump(t, d, shared.LaunchRequest{})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:7787" {
 		t.Fatalf("the runner's hooks are aimed at %q, want this room's http://127.0.0.1:7787", got)
 	}
-	if got := launchDump(t, d, LaunchRequest{Env: map[string]string{"ATRIUM_HUB_URL": "http://127.0.0.1:1"}})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:1" {
+	if got := launchDump(t, d, shared.LaunchRequest{Env: map[string]string{"ATRIUM_HUB_URL": "http://127.0.0.1:1"}})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:1" {
 		t.Fatalf("a harness that names ATRIUM_HUB_URL was overridden: %q", got)
 	}
 }

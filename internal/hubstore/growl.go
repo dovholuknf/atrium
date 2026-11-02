@@ -42,6 +42,8 @@ const (
 	GrowlBlocked    = "blocked"
 	GrowlQuestion   = "question"
 	GrowlDeployHold = "deploy-hold"
+	GrowlRoomCPU    = "room-cpu"
+	GrowlRunnerGone = "runner-missing"
 )
 
 // Growl states.

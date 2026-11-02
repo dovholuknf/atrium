@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func (c *claimRoom) opened() []string {
@@ -23,7 +25,7 @@ func (x *claimHub) openVia(t *testing.T, room, url string) (int, string, map[str
 	req, _ := http.NewRequest(http.MethodPost, x.front.URL+"/v1/open", strings.NewReader(`{"url":"`+url+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	if room != "" {
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

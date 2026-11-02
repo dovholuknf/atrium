@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -35,14 +36,14 @@ func TestItemEndingLineNeverNamesTheLauncher(t *testing.T) {
 func TestOpeningSender(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		req  LaunchRequest
+		req  shared.LaunchRequest
 		want string
 	}{
-		{"ordinary", LaunchRequest{SpawnedBy: "boss"}, "boss"},
-		{"operator", LaunchRequest{}, ""},
-		{"human", LaunchRequest{SpawnedBy: store.HumanLauncher}, ""},
-		{"item flag", LaunchRequest{SpawnedBy: "boss", Item: true}, store.ReservedHandle},
-		{"item tag", LaunchRequest{SpawnedBy: "boss", Tags: []string{ItemTag}}, store.ReservedHandle},
+		{"ordinary", shared.LaunchRequest{SpawnedBy: "boss"}, "boss"},
+		{"operator", shared.LaunchRequest{}, ""},
+		{"human", shared.LaunchRequest{SpawnedBy: store.HumanLauncher}, ""},
+		{"item flag", shared.LaunchRequest{SpawnedBy: "boss", Item: true}, store.ReservedHandle},
+		{"item tag", shared.LaunchRequest{SpawnedBy: "boss", Tags: []string{ItemTag}}, store.ReservedHandle},
 	} {
 		if got := openingSender(c.req); got != c.want {
 			t.Errorf("%s: sender %q, want %q", c.name, got, c.want)

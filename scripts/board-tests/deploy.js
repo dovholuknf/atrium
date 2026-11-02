@@ -43,13 +43,8 @@ async function landSection(browser, base) {
   // Settles on a place, rather than asserting at a fixed moment: the race case
   // lands after a wait, and a place asserted early is the wrong place.
   const settle = async (p, want, ms) => {
-    const until = Date.now() + (ms || 6000);
     let at;
-    do {
-      at = await landedAt(p);
-      if (want(at)) return at;
-      await new Promise(r => setTimeout(r, 50));
-    } while (Date.now() < until);
+    await until(async () => want(at = await landedAt(p)), ms || 6000, "a landing", 50).catch(() => {});
     return at;
   };
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
@@ -292,7 +287,8 @@ async function landThePlaneSection(browser, base) {
       box.value = "5"; saveLandK(); out.junk = localStorage.getItem("atrium.landThePlaneK");
       const before = document.querySelector('#term-list [data-id="lp-170"] .ctxline.over') ? "badge" : "none";
       box.value = "160"; saveLandK(); out.saved = localStorage.getItem("atrium.landThePlaneK");
-      await new Promise(r => setTimeout(r, 400));
+      const over = () => document.querySelector('#term-list [data-id="lp-170"] .ctxline.over');
+      for (const end = Date.now() + 5000; !over() && Date.now() < end;) await new Promise(r => requestAnimationFrame(r));
       out.rowBefore = before;
       out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxline.over') ? "badge" : "none";
       box.value = ""; saveLandK(); out.cleared = localStorage.getItem("atrium.landThePlaneK");

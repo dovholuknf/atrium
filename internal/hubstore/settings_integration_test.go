@@ -180,3 +180,19 @@ func TestStashRetentionDefaultsToThirtyAndRoundTrips(t *testing.T) {
 		t.Error("a negative retention was taken")
 	}
 }
+
+func TestTheOperatorProfileIsAtriumsOwnUntilWrittenThenWhatWasWritten(t *testing.T) {
+	s := open(t)
+	if p, err := s.OperatorProfile(); err != nil || p.Email != DefaultOperatorProfile().Email {
+		t.Fatalf("default: %+v %v", p, err)
+	}
+	if err := s.SetOperatorProfile(OperatorProfile{Name: "Ann"}); err == nil {
+		t.Fatal("a profile with no email was kept")
+	}
+	if err := s.SetOperatorProfile(OperatorProfile{Name: "Ann", Email: "a@x", Reviewers: []string{"r1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := s.OperatorProfile(); err != nil || p.Name != "Ann" || p.Shown() != "Ann" || len(p.Reviewers) != 1 {
+		t.Fatalf("written: %+v %v", p, err)
+	}
+}

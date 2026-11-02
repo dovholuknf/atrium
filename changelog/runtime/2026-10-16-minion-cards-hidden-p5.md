@@ -1,1 +1,0 @@
-A new `minions` chip in the Terminals filter drawer lists the item minions the board hides, for debugging. It is off by default, the board and stack follow the same switch, and the phone has `show minions` in its view panel. (u-minion-cards-hidden, phase 5)

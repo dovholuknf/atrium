@@ -5,12 +5,16 @@
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms sg3,m1mini,sgg   # remote rooms only
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms all -WhatIf      # say every step, change nothing
 #
-# -Rooms takes any of hub, claude-sg4, sg3, m1mini, sgg, or `local` (hub, claude-sg4, the default) or `all`. The order
-# is fixed whatever order they are given in: remote rooms first, because they touch no terminal here, then the hub and
-# claude-sg4 (deploy-batch.ps1, or deploy-hub-only.ps1 when claude-sg4 is not named), then sg4-control.
+# -Rooms takes any of hub, claude-sg4, sg3, m1mini, sgg, sgg-zrok, or `local` (hub, claude-sg4, the default) or `all`.
+# The order is fixed whatever order they are given in: remote rooms first, because they touch no terminal here, then the
+# hub and claude-sg4 (deploy-batch.ps1, or deploy-hub-only.ps1 when claude-sg4 is not named), then sg4-control.
 #
-# sg4-control is OPT-IN. It is in no default and not in `all`, and takes both -Control and -IKnowItKillsMyShell,
-# because stopping it kills the shell of the orchestrator that holds its terminal. One without the other is refused.
+# sgg-zrok is a second, --isolated room on sgg, as localai, in ~/.atrium-zrok, on 7787 and 7791, linking over zrok. It
+# is reached over sgg's ssh route, never its own name.
+#
+# sg4-control is OPT-IN. It is in no default and not in `all`, and takes both -Control and -IKnowItKillsMyShell, because
+# the orchestrator works in it. Its claude.exe runs under the pty host (atrium-pty.exe), not the room, so a stop keeps
+# it (2026-10-26 22:44). One switch without the other is refused.
 #
 # THE RESULT is one line per room, printed last and logged:
 #
@@ -32,14 +36,44 @@
 #
 # Remote rooms are built for their platform with the same stamp, copied over with scp, stopped with `atrium stop`, and
 # swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude.
+#
+# THE SKEW CHECK ends every deploy: the hub is asked for every room it knows and the commit each runs, one line per room
+# (`<room>  <commit>  ok`, `<room>  <commit>  STALE (hub <commit>)`, `<room>  offline`). Any stale or offline room exits 1
+# and the exact command to deploy it is printed, so a room the -Rooms list left out is reported, never skipped silently.
+# -CheckOnly runs just that check, from any shell, changing nothing.
 param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]$Immediate, [switch]$KillRunners, [switch]$Detached,
-  [string]$ReportTo, [switch]$Control, [switch]$IKnowItKillsMyShell)
+  [string]$ReportTo, [switch]$Control, [switch]$IKnowItKillsMyShell, [switch]$CheckOnly)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'DEPLOY'
 . "$PSScriptRoot\refuse-supervised.ps1"
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = if ($env:ATRIUM_LIVE_LOG) { $env:ATRIUM_LIVE_LOG } else { Join-Path $Base 'atrium-deploy.log' }
+
+# Test-RoomSkew says the check's lines and the next commands, and answers whether every room runs the hub's commit.
+# Rooms are given a minute to reattach after a deploy, since the hub may just have restarted.
+function Test-RoomSkew([string]$Fallback, [int]$WaitSeconds = 0) {
+  $until = (Get-Date).AddSeconds($WaitSeconds)
+  do {
+    $rep = Get-RoomSkewReport $Fallback
+    if ($rep.Ok -or (Get-Date) -ge $until) { break }
+    Start-Sleep -Seconds 10
+  } while ($true)
+  $rep.Lines | ForEach-Object { Say $_ }
+  if (-not $rep.Ok -and $rep.Bad.Count) {
+    Say 'rooms not on the hub''s commit. deploy them next with:'
+    Get-DeployNext $rep.Bad $PSCommandPath | ForEach-Object { Say "  $_" }
+  }
+  return $rep.Ok
+}
+
+if ($CheckOnly) {
+  if (-not (Test-RoomSkew (git -C $Repo rev-parse HEAD))) { exit 1 }
+  exit 0
+}
+if (-not $PSBoundParameters.ContainsKey('Rooms')) {
+  Say 'warning: -Rooms not given, so only hub and claude-sg4 are deployed. rooms the hub knows and this leaves out are checked at the end and reported STALE or offline, not skipped silently'
+}
 
 if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
   $ReportTo = if ($env:ATRIUM_ROOM) { "$env:ATRIUM_TASK_ID@$env:ATRIUM_ROOM" } else { $env:ATRIUM_TASK_ID }
@@ -61,11 +95,11 @@ if ($why) { Stop-Early "refusing: $why" }
 $noGo = Find-Go
 if ($noGo) { Stop-Early $noGo }
 
-$remoteNames = 'sg3', 'm1mini', 'sgg'
+$remoteNames = 'sg3', 'm1mini', 'sgg', 'sgg-zrok'
 try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
 catch { Stop-Early "FATAL: $($_.Exception.Message)" }
 $local = @($want | Where-Object { $_ -in 'hub', 'claude-sg4', 'sg4-control' })
-# Only a deploy that stops something on this machine can end the shell it runs in. A deploy of only sg3, m1mini or sgg
+# Only a deploy that stops something on this machine can end the shell it runs in. A deploy of only remote rooms
 # stops nothing here, so it runs from any shell, a room's included.
 # The hub holds no shell, so stopping it ends none: only the local ROOMS named here are checked against this shell's.
 $localRooms = @($local | Where-Object { $_ -ne 'hub' })
@@ -134,8 +168,7 @@ if (-not $NoBuild) {
   }
 }
 $commit = git -C $Repo rev-parse HEAD
-$ver = git -C $Repo describe --tags --exact-match 2>$null
-if (-not $ver) { $ver = 'dev' }
+$ver = (& "$Repo/scripts/version.ps1")
 $pkg = 'github.com/dovholuknf/atrium/internal/cli'
 $codeId = (& go -C $Repo run ./tools/codeid)
 $ldflags = "-X github.com/dovholuknf/atrium/internal/api.CodeID=$codeId -X $pkg.Version=$ver -X $pkg.Commit=$commit -X $pkg.Tree=clean"
@@ -199,18 +232,14 @@ $waitFree = '$n = 0 ; while ($n -lt ' + $portWait + ') { $c = New-Object Net.Soc
 $winWaitStore = New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium\atrium.db'')'
 $sg3WaitStore = New-StoreWaitScript 'windows' '''C:/Users/claude/.atrium/atrium.db'''
 $macWaitStore = New-StoreWaitScript 'mac' '~/.atrium/atrium.db'
-$winEnv ='$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
-  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
 $winSwap = $winEnv + '& $b stop ; ' +
   $waitFree + $winWaitStore +
   'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
   'Move-Item -Force (Join-Path $HOME ''atrium.new.exe'') $b ; & $b room --detach'
-$sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
-  '--db C:/Users/claude/.atrium/atrium.db'
 $macWait = 'for i in {1..' + $portWait + '}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
   'if lsof -iTCP:7781 -sTCP:LISTEN >/dev/null ; then echo ' + $portTimeout + ' ; exit 3 ; fi ; '
-$macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
-  '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
+# sgg-zrok keeps its address beside its own --dir (--isolated), so a bare `atrium stop` would reach sgg: it names its board.
+$zrokWait = $waitFree.Replace('7781', '7791') + (New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium-zrok\atrium.db'')')
 # Retry is run when the detach after the swap found the old room still answering. It waits for the port again, then detaches.
 # Log is how to read the room's own log over ssh, for Get-RoomLink.
 $remote = @{
@@ -223,6 +252,12 @@ $remote = @{
   'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap
     Retry = $winEnv + $waitFree + $winWaitStore + '& $b room --detach'
     Log = 'Get-Content (Join-Path $HOME ''.atrium\room\room.log'') -Tail 300' }
+  'sgg-zrok' = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium-zrok.new.exe'; SshName = 'sgg'
+    Swap = $zrokEnv + '& $b stop --url http://127.0.0.1:7791 ; ' + $zrokWait +
+      'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
+      'Move-Item -Force (Join-Path $HOME ''atrium-zrok.new.exe'') $b ; ' + $zrokDetach
+    Retry = $zrokEnv + $zrokWait + $zrokDetach
+    Log = 'Get-Content (Join-Path $HOME ''.atrium-zrok\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
     Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait + $macWaitStore +
       'mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
@@ -252,8 +287,9 @@ foreach ($name in $remoteNames) {
   if ($want -notcontains $name) { continue }
   $r = $remote[$name]
   $hubRoom = try { (Invoke-RestMethod $HubRooms -TimeoutSec 3).rooms | Where-Object { $_.name -eq $name } | Select-Object -First 1 } catch { $null }
-  $sshUser = Get-RoomSshUser $name $hubRoom
-  $route = Resolve-SshRoute $name {
+  $sshName = if ($r.SshName) { $r.SshName } else { $name }
+  $sshUser = Get-RoomSshUser $sshName $hubRoom
+  $route = Resolve-SshRoute $sshName {
     param($h)
     if (-not $h.EndsWith('.atrium')) { return Invoke-Capped $ssh ($bareOpts + @($h, 'echo ok')) $bareCap }
     Invoke-Ssh "ssh $h probe" @($h, 'echo ok') $probeCap
@@ -380,11 +416,13 @@ if ($want -contains 'sg4-control') {
   }
   & "$PSScriptRoot\start-atrium-control.ps1" -WhatIf:$WhatIf
   $results['sg4-control'] = if ($WhatIf) { 'success (WhatIf)' }
-    elseif (-not (Test-Up $CtlHealth)) { 'failed - not answering after start, see ctl\room.err' }
+    elseif (-not (Test-Up $CtlHealth)) { "failed - not answering after start, see $CtlLogs\room.err" }
     elseif (-not (Test-Unheld 'http://127.0.0.1:7791/v1/hold')) { $heldMsg }
     else { 'success' }
 }
 
 Say "commit $($commit.Substring(0, 8))"
 Report
+$skewOk = $WhatIf -or (Test-RoomSkew $commit 60)
 if ($results.Values | Where-Object { $_ -like 'failed*' }) { exit 1 }
+if (-not $skewOk) { exit 1 }

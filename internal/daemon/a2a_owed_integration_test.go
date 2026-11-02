@@ -15,11 +15,11 @@ func reportedWorker(t *testing.T) (*Daemon, *store.Task, *store.Task) {
 	t.Helper()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	if err := d.st.MarkReported(worker.ID); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	return d, launcher, worker
 }
 

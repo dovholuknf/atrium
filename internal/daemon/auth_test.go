@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"testing"
 )
 
@@ -15,7 +16,7 @@ import (
 // know which.
 func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
 	t.Parallel()
-	c := AuthConfig{Allow: []string{"Someone@Example.com", "sub-123"}}
+	c := publish.AuthConfig{Allow: []string{"Someone@Example.com", "sub-123"}}
 	for _, tc := range []struct {
 		sub, mail string
 		want      bool
@@ -26,7 +27,7 @@ func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
 		{"nobody", "else@example.com", false},
 		{"", "", false},
 	} {
-		if got := c.allows(tc.sub, tc.mail); got != tc.want {
+		if got := c.Allows(tc.sub, tc.mail); got != tc.want {
 			t.Fatalf("allows(%q,%q) = %v", tc.sub, tc.mail, got)
 		}
 	}
@@ -35,18 +36,18 @@ func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
 // A state is single use, or a callback can be replayed.
 func TestALoginStateCannotBeReplayed(t *testing.T) {
 	t.Parallel()
-	var logins loginStates
-	s, _, err := logins.startLogin("/", false)
+	var logins publish.LoginStates
+	s, _, err := logins.StartLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := logins.takeLogin(s); !ok {
+	if _, ok := logins.TakeLogin(s); !ok {
 		t.Fatal("a fresh state was not accepted")
 	}
-	if _, ok := logins.takeLogin(s); ok {
+	if _, ok := logins.TakeLogin(s); ok {
 		t.Fatal("a state was accepted twice, so a callback can be replayed")
 	}
-	if _, ok := logins.takeLogin("never issued"); ok {
+	if _, ok := logins.TakeLogin("never issued"); ok {
 		t.Fatal("a state nobody issued was accepted")
 	}
 }
@@ -55,24 +56,24 @@ func TestALoginStateCannotBeReplayed(t *testing.T) {
 // that board ever starts.
 func TestEveryLoginGetsItsOwnVerifier(t *testing.T) {
 	t.Parallel()
-	var logins loginStates
-	a, first, err := logins.startLogin("/", false)
+	var logins publish.LoginStates
+	a, first, err := logins.StartLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, second, err := logins.startLogin("/", false)
+	b, second, err := logins.StartLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.verifier == "" || first.verifier == second.verifier {
-		t.Fatalf("two logins shared a verifier (%q)", first.verifier)
+	if first.Verifier == "" || first.Verifier == second.Verifier {
+		t.Fatalf("two logins shared a verifier (%q)", first.Verifier)
 	}
 	if a == b {
 		t.Fatal("two logins shared a state")
 	}
 	// The challenge is a hash and not the verifier itself. `plain` would send
 	// the secret in the same redirect an attacker would be watching anyway.
-	if pkceChallenge(first.verifier) == first.verifier {
+	if publish.PkceChallenge(first.Verifier) == first.Verifier {
 		t.Fatal("the challenge is the verifier, so pkce buys nothing")
 	}
 }

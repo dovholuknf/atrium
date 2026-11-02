@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -65,13 +66,13 @@ func (d *Daemon) mergedGrace() (time.Duration, bool) {
 // or launched by an agent with a recorded launcher and not asked to be a
 // director. A director is never a worker, tag or no tag.
 func (d *Daemon) isWorker(t *store.Task) bool {
-	if t == nil || hasTag(t.Tags, DirectorTag) {
+	if t == nil || small.HasTag(t.Tags, DirectorTag) {
 		return false
 	}
-	if hasTag(t.Tags, SubagentTag) || t.Lifetime == store.LifetimeWork || isItem(t) {
+	if small.HasTag(t.Tags, SubagentTag) || t.Lifetime == store.LifetimeWork || isItem(t) {
 		return true
 	}
-	if !hasTag(t.Tags, OriginAgentTag) {
+	if !small.HasTag(t.Tags, OriginAgentTag) {
 		return false
 	}
 	w, err := d.st.WorkItem(t.ID)
@@ -143,7 +144,7 @@ func (d *Daemon) exitMergedWork(items []*store.WorkItem, into string, branches [
 		if err != nil || t.Lifetime != store.LifetimeWork || !d.isWorker(t) || w.HeldBy != "" {
 			continue
 		}
-		if d.sup.get(t.ID) == nil || strings.TrimSpace(t.Worktree) == "" {
+		if d.sup.Get(t.ID) == nil || strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
 		if into != DefaultCullInto && !d.launcherOn(w, into) {
@@ -221,7 +222,7 @@ func (d *Daemon) markIfMerged(w *store.WorkItem, into string, branches []string,
 	if !marked {
 		return fail("not markable")
 	}
-	d.publishTask(w.TaskID)
+	d.Publish(w.TaskID)
 	d.tellLauncherMerged(t, w, into, sha, at)
 	return at, ""
 }
@@ -290,13 +291,6 @@ func (d *Daemon) tellLauncherMerged(t *store.Task, w *store.WorkItem, into, sha 
 	}
 }
 
-func orDefault(s, def string) string {
-	if strings.TrimSpace(s) == "" {
-		return def
-	}
-	return s
-}
-
 // HoldCull is the hold: `atrium_cull hold=true` and the chip's keep. The mark
 // goes and nothing marks the card again.
 func (d *Daemon) HoldCull(taskID, by string) error {
@@ -307,7 +301,7 @@ func (d *Daemon) HoldCull(taskID, by string) error {
 	if err := d.st.HoldCull(taskID, by); err != nil {
 		return fmt.Errorf("%s has no work item to hold: %w", t.DisplayTitle(), err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 
@@ -328,7 +322,7 @@ func (d *Daemon) sweepMergedCulls() {
 		defer d.mergedCulling.Store(false)
 		for _, w := range due {
 			// A deploy is not what culls a worker. Its mark stays for after the wake.
-			if d.deployHeld(w.TaskID) {
+			if d.DeployHeld(w.TaskID) {
 				continue
 			}
 			d.cullDue(w)
@@ -347,7 +341,7 @@ func (d *Daemon) cullDue(w *store.WorkItem) {
 	drop := func(why string) {
 		log.Printf("[atrium] not culling %s at its time: %s", t.DisplayTitle(), why)
 		_, _ = d.st.ClearCullMark(w.TaskID)
-		d.publishTask(w.TaskID)
+		d.Publish(w.TaskID)
 	}
 	if !d.isWorker(t) {
 		drop("it is not a worker")
@@ -366,6 +360,6 @@ func (d *Daemon) cullDue(w *store.WorkItem) {
 		drop(err.Error())
 		return
 	}
-	d.publishTask(w.TaskID)
+	d.Publish(w.TaskID)
 	d.ap.Broadcast("task-removed", nil)
 }

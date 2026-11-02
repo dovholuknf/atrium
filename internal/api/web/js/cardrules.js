@@ -154,7 +154,8 @@ function nestsUnderLauncher(t) { return isSubagent(t) && !isInterview(t); }
 // function (terminals `termNest`, stack and board `subagentRollup`, reveal, the usage groups), so a child on another room
 // nests exactly like a same-room one. A launcher on the same room is named by `spawned_by_id`, matched on the bare id.
 // One on ANOTHER room is only known by its handle, `spawned_by` = "name@room" (the hub qualifies it), so that is read as
-// the launcher's wire name (or alias) on the card whose id is tagged `room~`. `byBare` is an optional prebuilt
+// the launcher's wire name (or alias) on the card whose id is tagged `room~`. A bare `spawned_by` is a launcher on the child's
+// own room, which the room did not resolve to an id. `byBare` is an optional prebuilt
 // bare-id index, so a list does not rescan itself for every child.
 function launcherOf(t, cards, byBare) {
   if (!t) return null;
@@ -165,9 +166,9 @@ function launcherOf(t, cards, byBare) {
   }
   if (!p && t.spawned_by) {
     const at = String(t.spawned_by).lastIndexOf("@");
-    const name = at > 0 ? t.spawned_by.slice(0, at) : "";
-    const room = at > 0 ? t.spawned_by.slice(at + 1) : "";
-    if (name && room) {
+    const name = at > 0 ? t.spawned_by.slice(0, at) : String(t.spawned_by);
+    const room = at > 0 ? t.spawned_by.slice(at + 1) : roomOf(t.id);
+    if (name && (room || at <= 0)) {
       const local = s => { const i = String(s).lastIndexOf("/"); return i >= 0 ? String(s).slice(i + 1) : String(s); };
       p = (cards || []).find(x => x !== t && roomOf(x.id) === room &&
         (x.wire_name === name || (x.wire_name && local(x.wire_name) === local(name)) || (x.alias && x.alias === name)));

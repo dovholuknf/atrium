@@ -266,6 +266,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   The room fans keystrokes out to other attached panes for display. The commit that added it marks it parked.
   Docs: `docs/terminal/multi-pane-input-design.md`. Landed 2026-09-20 (`c1f541e`).
 
+- **A merge strip on the Terminals tab shows what the merge queue needs a person for.**
+  A conflict, a red or refused request, a queue held for want of a merge room, and **Land now** with the count of
+  requests not yet on `main`. `atrium merge` and `atrium_merge` land a pushed branch on `claude/main`, and `atrium
+  merge land` is the operator's. Docs: `website/docs/terminals.md`, `website/docs/git-flow.md`. Landed 2026-10-23.
+
 ### Terminals: removed, and why
 
 - **The collapsing tree renderer.** It folded a chain of only children, and later a level holding one row, into a

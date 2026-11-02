@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Installing a build a room took from its hub.
@@ -34,7 +35,7 @@ import (
 // itself because a hub said so.
 
 // installUpgrade puts the fetched binary in place of the running one.
-func installUpgrade(path string, o link.Offer) error {
+func installUpgrade(path string, o wire.Offer) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -99,7 +100,7 @@ var acceptUpgrades bool
 // blocking every upgrade: the hash the ROOM checks after downloading is what
 // makes this safe, and this one only saves a pointless round trip.
 func selfSHA(version string) string {
-	b, err := link.Offered(version)
+	b, err := conn.Offered(version)
 	if err != nil {
 		log.Printf("[link] cannot hash this binary, so an offer of it looks new: %v", err)
 		return ""

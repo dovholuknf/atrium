@@ -15,7 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -54,6 +57,8 @@ const (
 
 // FinishRequest is a session declaring its work over, or reporting on it.
 type FinishRequest struct {
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int `json:"contract,omitempty"`
 	// Agent is the wire name, the same one every hook uses.
 	Agent string `json:"agent"`
 	// TaskID is used when the session was launched by atrium and told which
@@ -93,12 +98,12 @@ type FinishRequest struct {
 func (d *Daemon) handleFinish(w http.ResponseWriter, r *http.Request) {
 	var in FinishRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if strings.TrimSpace(in.Agent) == "" && in.TaskID == "" {
-		writeJSONErr(w, http.StatusBadRequest,
-			errString("say which session this is, with agent or task_id"))
+		small.WriteJSONErr(w, http.StatusBadRequest,
+			small.ErrString("say which session this is, with agent or task_id"))
 		return
 	}
 
@@ -121,12 +126,12 @@ func (d *Daemon) handleFinish(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) handleReport(w http.ResponseWriter, r *http.Request) {
 	var in FinishRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	task, err := d.st.Get(r.PathValue("id"))
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	d.answerFinish(w, task, in)
@@ -135,7 +140,7 @@ func (d *Daemon) handleReport(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) answerFinish(w http.ResponseWriter, task *store.Task, in FinishRequest) {
 	out, code, err := d.finish(task, in)
 	if err != nil {
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -164,7 +169,7 @@ func validReport(task *store.Task, in FinishRequest) error {
 	// A human's recap may be a paragraph. A launched worker's is one line, the detail goes in REPORT.md.
 	if agentLaunched(task) {
 		if why := store.CheckReportSummary(in.Recap); why != "" {
-			return errString(why)
+			return small.ErrString(why)
 		}
 	}
 	if sha := strings.TrimSpace(in.SHA); sha != "" && !shaShape.MatchString(sha) {
@@ -173,7 +178,7 @@ func validReport(task *store.Task, in FinishRequest) error {
 	isDone := in.Status == "" || in.Status == ReportDone
 	if isDone && agentLaunched(task) && strings.TrimSpace(in.SHA) == "" && strings.TrimSpace(in.NoCommit) == "" &&
 		strings.TrimSpace(in.Artifact) == "" {
-		return errString("a done report needs sha, the commit the work landed as, or no_commit saying " +
+		return small.ErrString("a done report needs sha, the commit the work landed as, or no_commit saying " +
 			"why there is none")
 	}
 	return nil
@@ -188,7 +193,7 @@ var commitExists = func(dir, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "cat-file", "-e", sha+"^{commit}")
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	return cmd.Run() == nil
 }
 
@@ -201,18 +206,18 @@ var commitInDir = func(dir, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "rev-parse", "--verify", "--quiet", sha+"^{commit}")
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	return cmd.Run() == nil
 }
 
 // commitOnHub says whether the hub has a commit, asked as atrium_git_url asks: for every branch of the card's
 // repository, whose tips are listed with their shas. A variable so a test does not need a hub.
-var commitOnHub = func(d *Daemon, task *store.Task, sha string) bool {
+var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), gitsync.LookupRoomWait)
 	defer cancel()
 	// ANY BRANCH OF ANY REPOSITORY THE HUB HAS, whatever the worker's directory is. Naming the repository from the
 	// directory missed every worker whose directory is not a clone the room can name. See gitsync/lookup_commit.go.
-	if rt, err := d.hubTransport(); err == nil {
+	if rt, err := d.HubTransport(); err == nil {
 		if ans, err := gitsync.AskHubLookup(ctx, rt, gitsync.URLQuery{Commit: sha}); err == nil {
 			if ans.State == gitsync.URLFound {
 				return true
@@ -220,11 +225,11 @@ var commitOnHub = func(d *Daemon, task *store.Task, sha string) bool {
 		}
 	}
 	dir := filepath.FromSlash(task.Worktree)
-	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
+	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.CloneRoots()...)
 	if repo == "" {
 		return false
 	}
-	rt, err := d.hubTransport()
+	rt, err := d.HubTransport()
 	if err != nil {
 		return false
 	}
@@ -250,7 +255,7 @@ func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 	case ReportDone:
 		sha, artifact := strings.TrimSpace(in.SHA), strings.TrimSpace(in.Artifact)
 		if sha != "" && artifact != "" {
-			return errString("give sha or artifact, not both")
+			return small.ErrString("give sha or artifact, not both")
 		}
 		if artifact != "" {
 			return checkArtifact(task, artifact)
@@ -263,7 +268,7 @@ func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 		}
 	case ReportBlocked:
 		if why := CheckBlockedReason(in.Ask); why != "" {
-			return errString(why)
+			return small.ErrString(why)
 		}
 	default:
 		return fmt.Errorf("an ending is done or blocked, not %q", in.Status)
@@ -450,19 +455,19 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		write.Notice = &store.NoticeSpec{
 			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
 			Key:  key,
-			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
+			Text: shared.TruncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
 	} else if !in.viaSay && itemEnd == nil {
 		// A launcher on another room hears it the same way, held in the relay
 		// outbox inside the same transaction. See relay.go.
-		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
+		write.Relay = d.LauncherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
 	// A REPORT TO A PARKED LAUNCHER RESUMES IT, as if wake=true: the launcher is
 	// the one who has to act on it, and a report nobody reads is the failure
 	// parking must not cause. The notice itself is queued by the ledger and typed
 	// or carried by a hook like any other, so it is never typed here. See park.go.
 	if write.Notice != nil {
-		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) {
+		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && small.IsParked(launcher) {
 			if err := d.unpark(launcher.ID, "report"); err != nil {
 				log.Printf("[atrium] could not resume %s for a report: %v", launcher.DisplayTitle(), err)
 			}
@@ -473,7 +478,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		return nil, http.StatusInternalServerError, err
 	}
 	if res.Relayed {
-		d.kickRelays()
+		d.KickRelays()
 	}
 	if itemEnd != nil && itemEnd.changed && in.Status == ReportDone && itemEnd.item.Pool != "" && strings.TrimSpace(in.Learned) != "" {
 		d.appendLearned(task, itemEnd.item, in.Learned)
@@ -503,7 +508,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		// report mid-work, which is still doing it.
 		d.act.forget(task.ID)
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	// A worker with no Stop hook never records its spend otherwise. See usage.go.
 	d.recordUsage(task.ID)
 	// A report kept on the launcher's card is not a report delivered: the worker is told so, and says so.
@@ -531,7 +536,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		if recap != "" {
 			finishLine += " with a recap"
 		}
-		d.emitLifecycle("session-finish", finishLine)
+		d.EmitLifecycle("session-finish", finishLine)
 	}
 
 	log.Printf("[atrium] %s reports %s%s", task.DisplayTitle(), map[bool]string{true: in.Status, false: "done"}[in.Status != ""],
@@ -550,14 +555,6 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		out["work_state"] = res.Item.State
 	}
 	return out, http.StatusOK, nil
-}
-
-// truncatePeer bounds a notice to what a peer message may carry.
-func truncatePeer(text string) string {
-	if len(text) > maxPeerMessage {
-		return text[:maxPeerMessage]
-	}
-	return text
 }
 
 // reportBody is what a launcher reads when a worker reports.
@@ -631,7 +628,19 @@ func (d *Daemon) ownCard(id string) *store.Task {
 	return t
 }
 
-// errString is an error from a literal, without reaching for fmt.
-type errString string
+// finishHooks are the seams of finishing a card.
+type finishHooks struct {
+	commitExists func(dir, sha string) bool
+	commitInDir  func(dir, sha string) bool
+	commitOnHub  func(h hubAsker, task *store.Task, sha string) bool
+}
 
-func (e errString) Error() string { return string(e) }
+// hubAsker is the part of the daemon commitOnHub asks the hub through.
+type hubAsker interface {
+	HubTransport() (http.RoundTripper, error)
+	CloneRoots() []string
+}
+
+func defaultFinishHooks() finishHooks {
+	return finishHooks{commitExists: commitExists, commitInDir: commitInDir, commitOnHub: commitOnHub}
+}

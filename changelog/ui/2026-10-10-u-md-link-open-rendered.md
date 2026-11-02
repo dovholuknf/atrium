@@ -1,1 +1,0 @@
-A markdown path clicked in a terminal now offers "open rendered" first, with an open-in-new-tab icon, since only the tab renders it and the editor shows source. "open in a tab" on other files carries the icon too. (u-md-link-open-rendered)

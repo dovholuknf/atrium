@@ -1,1 +1,0 @@
-﻿A path in the terminal that was not a file when first hovered now becomes a link once the file is written. A click on an image (or any binary) opens it in a tab at once instead of offering the editor. Item bug-term-file-links.

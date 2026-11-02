@@ -1,1 +1,0 @@
-A pull request row no longer says "failed" because its review panel found no reviewer. The panel is one stage with its own outcome: the row keeps the review's real state and shows one short muted line, such as "panel skipped: no reviewer applies" or "panel: missing agent files a, b". (u-pulls-panel-stage)

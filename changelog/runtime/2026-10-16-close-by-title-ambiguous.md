@@ -1,1 +1,0 @@
-`atrium_close`, `atrium_exit` and `atrium_cull` now refuse a name that more than one live card answers to, listing each candidate's id, room, status and age, instead of acting on the newest. An id or a wire name always works. Item bug-close-by-title-ambiguous.

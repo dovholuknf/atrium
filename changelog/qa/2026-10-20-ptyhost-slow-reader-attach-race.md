@@ -1,1 +1,0 @@
-`TestSlowReaderIsClosedAndTheDrainCarriesOn` no longer races its attach: the runner prints READY, waits for one byte and only then bursts, so the burst is always live output counted against the client queue. The test leaves the flaky suite (ptyhost-slow-reader-attach-race).

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -37,6 +38,25 @@ func StartTime(pid int) (string, error) {
 		return "", err
 	}
 	return strconv.FormatInt(c.Nanoseconds(), 10), nil
+}
+
+// Tree is pid and every process under it, each with its start time, read now. Read it before StopTree, which leaves
+// no parent to walk from.
+func Tree(pid int) map[int]string {
+	kids := map[int][]int{}
+	if snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0); err == nil {
+		var e windows.ProcessEntry32
+		e.Size = uint32(unsafe.Sizeof(e))
+		for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+			kids[int(e.ParentProcessID)] = append(kids[int(e.ParentProcessID)], int(e.ProcessID))
+		}
+		_ = windows.CloseHandle(snap)
+	}
+	return treeOf(pid, kids, func(child, parent string) bool {
+		c, cerr := strconv.ParseInt(child, 10, 64)
+		p, perr := strconv.ParseInt(parent, 10, 64)
+		return cerr != nil || perr != nil || c >= p
+	})
 }
 
 // OwnGroup starts cmd in a process group of its own, so a Ctrl+C to atrium's console does not reach it. StopTree
@@ -73,4 +93,28 @@ func Excluded() []Range {
 		return nil
 	}
 	return parseExcluded(string(out))
+}
+
+// Ancestors is pid's parent, its parent's parent and so on, up to hops of them, each with its executable's name.
+// Empty when pid is not running.
+func Ancestors(pid, hops int) []Proc {
+	type entry struct {
+		name   string
+		parent int
+	}
+	procs := map[int]entry{}
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil
+	}
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		procs[int(e.ProcessID)] = entry{name: windows.UTF16ToString(e.ExeFile[:]), parent: int(e.ParentProcessID)}
+	}
+	_ = windows.CloseHandle(snap)
+	return ancestorsOf(pid, hops, func(p int) (string, int, bool) {
+		en, ok := procs[p]
+		return en.name, en.parent, ok
+	})
 }

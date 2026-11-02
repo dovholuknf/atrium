@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -17,7 +19,7 @@ import (
 // waits for it to fail (no new session starts after /clear).
 func failedCycle(t *testing.T, d *Daemon, id string) {
 	t.Helper()
-	d.wakeSawSession(id, "conv-A")
+	d.WakeSawSession(id, "conv-A")
 	task, err := d.st.Get(id)
 	if err != nil {
 		t.Fatal(err)
@@ -39,18 +41,18 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 	failedCycle(t, d, id)
 
 	// The same conversation starting again is not proof.
-	d.wakeSawSession(id, "conv-A")
+	d.WakeSawSession(id, "conv-A")
 	if failedWith(d, id) == "" {
 		t.Fatal("the chip cleared on a SessionStart in the same conversation")
 	}
-	d.wakeSawSession(id, "")
+	d.WakeSawSession(id, "")
 	if failedWith(d, id) == "" {
 		t.Fatal("the chip cleared on a SessionStart with no conversation id")
 	}
 	// A new conversation is.
-	d.wakeSawSession(id, "conv-B")
-	if d.newContextFor(id) != nil {
-		t.Fatalf("the chip stayed after a new conversation began: %v", d.newContextFor(id))
+	d.WakeSawSession(id, "conv-B")
+	if d.NewContextFor(id) != nil {
+		t.Fatalf("the chip stayed after a new conversation began: %v", d.NewContextFor(id))
 	}
 
 	// The reason stays in the card's history. The run records it just after it
@@ -61,7 +63,7 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, e := range evs {
-			if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), newContextBy) &&
+			if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), cycle.NewContextBy) &&
 				strings.Contains(string(e.Payload), "failed") {
 				return true
 			}
@@ -88,7 +90,7 @@ func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
 	}
 	// It failed after /clear, so the rerun is the wake alone.
 	until(t, "the wake", func() bool { return strings.Contains(f.written(), ncWakeMark) })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 
 	before := strings.Count(f.written(), limitPrompt)
 	if err := d.StartNewContext(id); err != nil {
@@ -99,8 +101,8 @@ func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
 	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
-	d.handleNewContext(rec, req)
-	if rec.Code != http.StatusOK || d.newContextFor(id) != nil {
+	d.HandleNewContext(rec, req)
+	if rec.Code != http.StatusOK || d.NewContextFor(id) != nil {
 		t.Fatalf("dismiss left the chip: %d %s", rec.Code, rec.Body)
 	}
 }
@@ -120,7 +122,7 @@ func TestFailedChipSurvivesATurnStart(t *testing.T) {
 	d.act.promptSeen(id)
 	d.turnResumed(id)
 	ncTurnEnds(d, id)
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond) // wait: the failed chip must stay
 	if failedWith(d, id) == "" {
 		t.Fatal("a turn start cleared the failed chip")
 	}
@@ -143,10 +145,10 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
 	d.act.set(id, ActivityThinking, "")
-	d.wakeSawSession(id, "conv-B")
+	d.WakeSawSession(id, "conv-B")
 
 	// Longer than typeWait, which is what used to give up.
-	time.Sleep(d.hk.ncTiming.typeWait + 200*time.Millisecond)
+	time.Sleep(d.hk.NcTiming.TypeWait + 200*time.Millisecond) // wait: the cycle must not fail while a turn runs
 	if failedWith(d, id) != "" {
 		t.Fatalf("the cycle failed while a turn ran: %s", failedWith(d, id))
 	}
@@ -155,7 +157,7 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	}
 	ncTurnEnds(d, id)
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 }
 
 func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
@@ -172,9 +174,9 @@ func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
-	d.hk.ncTiming.captureEnd = 500 * time.Millisecond
+	d.hk.NcTiming.CaptureEnd = 500 * time.Millisecond
 	d.act.set(id, ActivityThinking, "")
-	d.wakeSawSession(id, "conv-B")
+	d.WakeSawSession(id, "conv-B")
 
 	until(t, "the chip to fail", func() bool { return failedWith(d, id) != "" })
 	if r := failedWith(d, id); !strings.Contains(r, "wake") {
@@ -194,7 +196,7 @@ func os_WriteHandoff(d *Daemon, id, dir string) error {
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		return err
 	}
-	_, _, err = d.ready(task)
+	_, _, err = d.Ready(task)
 	return err
 }
 
@@ -205,19 +207,19 @@ func TestNcTypeWaitsTurnSettleAfterAPromptEvent(t *testing.T) {
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.turnSettle = 300 * time.Millisecond
-	d.hk.ncTiming.typeWait = 3 * time.Second
+	d.hk.NcTiming.TurnSettle = 300 * time.Millisecond
+	d.hk.NcTiming.TypeWait = 3 * time.Second
 	task, f, _ := ncCard(t, d)
 	id := task.ID
-	gen, ok := d.nctx.begin(id, HandoffName(task), "")
+	gen, ok := beginCycle(d.Nctx, id, cycle.HandoffName(task), "")
 	if !ok {
 		t.Fatal("could not begin")
 	}
 
 	d.act.promptSeen(id)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: the prompt must settle before the type, no event marks it
 	start := time.Now()
-	if err := d.ncType(id, gen, "", "/clear", d.hk.ncTiming.typeWait); err != nil {
+	if err := d.NcType(id, gen, "", "/clear", d.hk.NcTiming.TypeWait); err != nil {
 		t.Fatal(err)
 	}
 	if got := time.Since(start); got < 150*time.Millisecond {
@@ -235,7 +237,7 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.turnSettle = 300 * time.Millisecond
+	d.hk.NcTiming.TurnSettle = 300 * time.Millisecond
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
@@ -249,21 +251,24 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 	if err := os_WriteHandoff(d, id, dir); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: the handoff must settle before the turn ends, no event marks it
 	ncTurnEnds(d, id)
 
 	// Inside the settle gap the injector is kicked repeatedly.
 	sayViaMessage(t, d, "alice", id, heldSay)
-	for i := 0; i < 10 && !strings.Contains(f.written(), "/clear"); i++ {
+	testwait.PollEvery(20*time.Millisecond, 200*time.Millisecond, func() bool {
+		if strings.Contains(f.written(), "/clear") {
+			return true
+		}
 		d.pending.reset(id)
-		time.Sleep(20 * time.Millisecond)
-	}
+		return false
+	})
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatalf("the message was typed ahead of /clear or with it: %q", f.written())
 	}
 
-	d.wakeSawSession(id, "conv-B")
+	d.WakeSawSession(id, "conv-B")
 	until(t, "the held say", func() bool { return strings.Contains(f.written(), heldSay) })
 	got := f.written()
 	if strings.Index(got, "/clear") > strings.Index(got, ncWakeMark) || strings.Index(got, ncWakeMark) > strings.Index(got, heldSay) {
@@ -281,7 +286,7 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
-	d.wakeSawSession(id, "conv-A")
+	d.WakeSawSession(id, "conv-A")
 
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
@@ -291,7 +296,7 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	if err := os_WriteHandoff(d, id, dir); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: the handoff must settle before the say, no event marks it
 	// At the same moment.
 	sayViaMessage(t, d, "alice", id, heldSay)
 	ncTurnEnds(d, id)
@@ -301,12 +306,12 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatalf("the message went in with /clear: %q", f.written())
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: the message must not be typed before the new session
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatalf("the message was typed before the new session: %q", f.written())
 	}
 	// A new session starts.
-	d.wakeSawSession(id, "conv-B")
+	d.WakeSawSession(id, "conv-B")
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 }

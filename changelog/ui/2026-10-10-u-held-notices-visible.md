@@ -1,1 +1,0 @@
-A card that holds its notices now shows a mailbox icon and the count on its row, its terminal bar and its details, on every tab. Click it to read who said what and when, and reading them clears the count. A worker's atrium_done to a launcher that holds reports now answers `launcher_told: held` instead of `true`. (u-held-notices-visible)

@@ -1,1 +1,0 @@
-A Terminals row's chips (the unread dot, the question chip, the room, the context cycle chip) now take their own space, and the title ellipsizes before them instead of being drawn over. Item bug-card-row-chips-over-title, also covers bug-terminals-chip-overlaps-title.

@@ -1,1 +1,0 @@
-A chattiness tool measures the turns, tokens and wall time that atrium messages start in a session, from the Claude transcripts: `scripts/chattiness/collect.sh`, `docs/runtime/chattiness.md` (r-chattiness).

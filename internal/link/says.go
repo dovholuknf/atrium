@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"sort"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // `GET /v1/says` across every room: what every session said to another, newest first.
@@ -78,8 +80,8 @@ func (p *Proxy) says(w http.ResponseWriter, r *http.Request) {
 		if v == "" {
 			continue
 		}
-		if room, bare := splitTag(v); room != "" {
-			if only != "" && keyOf(only) != keyOf(room) {
+		if room, bare := wire.SplitTag(v); room != "" {
+			if only != "" && wire.KeyOf(only) != wire.KeyOf(room) {
 				only = "\x00" // two different rooms named: nothing can match
 			} else {
 				only = room
@@ -97,7 +99,7 @@ func (p *Proxy) says(w http.ResponseWriter, r *http.Request) {
 	}
 	var asked []string
 	for _, room := range rooms {
-		if only != "" && keyOf(room.Name) != keyOf(only) {
+		if only != "" && wire.KeyOf(room.Name) != wire.KeyOf(only) {
 			continue
 		}
 		if pos[room.Name] == saysDone {
@@ -185,11 +187,11 @@ func (p *Proxy) says(w http.ResponseWriter, r *http.Request) {
 		rw.obj["room"] = rw.room
 		for _, k := range []string{"from_task", "to_task"} {
 			if v, ok := rw.obj[k].(string); ok {
-				rw.obj[k] = tagFor(rw.room, v)
+				rw.obj[k] = wire.TagFor(rw.room, v)
 			}
 		}
 		// The row's own id is the room's, so two rooms can mint the same one. Tagged like a card's.
-		rw.obj["id"] = tagFor(rw.room, id)
+		rw.obj["id"] = wire.TagFor(rw.room, id)
 	}
 	more := false
 	for _, a := range out {

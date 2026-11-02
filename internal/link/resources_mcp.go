@@ -10,6 +10,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/base/resources"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // atrium_resources, the control tool that lists the machines and environments an agent may use. See
@@ -24,7 +26,7 @@ const resourcesToolDesc = "List the machines and environments you may use: build
 	"look for a machine on your own or ask for one.\n\n" +
 	"Answers `file`, the inventory clint keeps by hand in resources.md (one `## <name>` entry each, free prose), " +
 	"and `rooms`, the machines running atrium that the hub knows, with their OS and arch and whether they are " +
-	"online. A room is itself an entry.\n\n" +
+	"online, and where each toolchain (go, node, python, git, gh) is on an online room. A room is itself an entry.\n\n" +
 	"READ-ONLY. No agent writes the file: if you find something that belongs in it, tell your director. It names " +
 	"hosts and commands and never holds a credential. Where an entry names a working directory rule, build there, " +
 	"so two cards do not collide."
@@ -39,6 +41,8 @@ type resourceRoom struct {
 	Host    string `json:"host,omitempty"`
 	Version string `json:"version,omitempty"`
 	Seen    string `json:"last_seen,omitempty"`
+	// Tools is where each toolchain is on the room, from its hello. Online rooms only.
+	Tools map[string]string `json:"tools,omitempty"`
 }
 
 type resourcesOutput struct {
@@ -66,7 +70,7 @@ func (p *Proxy) resourcesStateDir() string {
 // one, and the connections alone when it does not.
 func (p *Proxy) roomsForResources() []resourceRoom {
 	var out []resourceRoom
-	live := map[string]Attached{}
+	live := map[string]wire.Attached{}
 	for _, a := range p.attachedView() {
 		live[a.Name] = a
 	}
@@ -78,7 +82,7 @@ func (p *Proxy) roomsForResources() []resourceRoom {
 					r.Seen = k.LastSeen.UTC().Format(time.RFC3339)
 				}
 				if a, ok := live[k.Name]; ok {
-					r.OS, r.Arch, r.Version = a.OS, a.Arch, a.Version
+					r.OS, r.Arch, r.Version, r.Tools = a.OS, a.Arch, a.Version, a.Tools
 					delete(live, k.Name)
 				}
 				out = append(out, r)
@@ -86,7 +90,8 @@ func (p *Proxy) roomsForResources() []resourceRoom {
 		}
 	}
 	for _, a := range live {
-		out = append(out, resourceRoom{Name: a.Name, Online: true, OS: a.OS, Arch: a.Arch, Host: a.Host, Version: a.Version})
+		out = append(out, resourceRoom{Name: a.Name, Online: true, OS: a.OS, Arch: a.Arch, Host: a.Host, Version: a.Version,
+			Tools: a.Tools})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -134,11 +139,19 @@ func (c *controlMCP) resourcesHandler(ctx context.Context, req *mcp.CallToolRequ
 			state = "online"
 		}
 		fmt.Fprintf(&b, "- %s, %s, %s/%s %s\n", r.Name, state, r.OS, r.Arch, r.Version)
+		names := make([]string, 0, len(r.Tools))
+		for n := range r.Tools {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			fmt.Fprintf(&b, "  - %s: %s\n", n, r.Tools[n])
+		}
 	}
 	out.Text = b.String()
 	return nil, out, nil
 }
 
-func (c *controlMCP) registerResources(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerResources(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_resources", Description: resourcesToolDesc}, c.resourcesHandler)
 }

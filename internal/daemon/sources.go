@@ -6,13 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,7 +126,7 @@ func (d *Daemon) runSource(ctx context.Context, s *store.Source) (created int, e
 				runErr = fmt.Errorf("could not offer %s: %w", item.ExternalID, err)
 				break
 			}
-			d.publishTask(task.ID)
+			d.Publish(task.ID)
 		}
 	}
 
@@ -143,36 +145,6 @@ func (d *Daemon) runSource(ctx context.Context, s *store.Source) (created int, e
 			s.ID, created, len(items))
 	}
 	return created, runErr
-}
-
-// limitedWriter passes bytes through until a budget runs out, then discards
-// the rest.
-//
-// Not an error on overflow: returning one makes the child's next write fail,
-// which for a shell script means a broken pipe and a confusing exit status
-// instead of the clear "printed too much" the caller wants to report. The
-// caller checks how much arrived and decides.
-type limitedWriter struct {
-	w    io.Writer
-	left int
-}
-
-func (l *limitedWriter) Write(p []byte) (int, error) {
-	if l.left <= 0 {
-		return len(p), nil
-	}
-	take := p
-	if len(take) > l.left {
-		take = take[:l.left]
-	}
-	n, err := l.w.Write(take)
-	l.left -= n
-	if err != nil {
-		return n, err
-	}
-	// The child is told everything landed, so it is not the one that finds out
-	// about the limit.
-	return len(p), nil
 }
 
 // RunSourceNow runs one source outside its interval.
@@ -196,7 +168,7 @@ func (d *Daemon) RunSourceNow(id string) (int, error) {
 // left its children running and holding stdout, so Run never returned.
 func stopTreeOnCancel(cmd *exec.Cmd) {
 	cardproc.OwnGroup(cmd)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	cmd.Cancel = func() error {
 		killTree(cmd.Process.Pid)
 		return cmd.Process.Kill()
@@ -214,7 +186,7 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 
 	cmd := exec.CommandContext(runCtx, s.Cmd, s.Args...)
 	cmd.Dir = s.Cwd
-	// A source runs on a timer and nobody asked to watch it. See hideWindow.
+	// A source runs on a timer and nobody asked to watch it. See nowindow.Hide.
 	stopTreeOnCancel(cmd)
 	// The daemon's own environment, minus the markers that would make a child
 	// think it is inside the session atrium was started from. Exactly what a
@@ -232,10 +204,10 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 	// One byte over the limit is enough to know: the read stops there and the
 	// child is left to be killed by the context.
 	var out, errOut bytes.Buffer
-	cmd.Stdout = &limitedWriter{w: &out, left: sourceOutputLimit + 1}
+	cmd.Stdout = &shared.LimitedWriter{W: &out, Left: sourceOutputLimit + 1}
 	// Stderr is bounded too, and much smaller. It exists to put a readable
 	// reason on the row, and a row is one line.
-	cmd.Stderr = &limitedWriter{w: &errOut, left: 8 << 10}
+	cmd.Stderr = &shared.LimitedWriter{W: &errOut, Left: 8 << 10}
 
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
@@ -249,7 +221,7 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 		// A source that fails is usually a source whose command said why on
 		// stderr, and the exit status alone is not worth reading.
 		if errOut.Len() > 0 {
-			return nil, fmt.Errorf("%v: %s", err, firstLine(errOut.String()))
+			return nil, fmt.Errorf("%v: %s", err, small.FirstLine(errOut.String()))
 		}
 		return nil, err
 	}

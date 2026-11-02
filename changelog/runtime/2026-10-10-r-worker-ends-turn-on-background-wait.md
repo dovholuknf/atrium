@@ -1,1 +1,0 @@
-A launched worker is now told in every ending text (launch line, lean prompt, done and blocked tool descriptions, interview rules) to run tests in the foreground and never end a turn while a command it started is still running. Also fixes a typo in the blocked tool description (r-worker-ends-turn-on-background-wait, r-agent-loop-tools-followups).

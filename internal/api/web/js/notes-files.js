@@ -720,20 +720,6 @@ async function openOnDaemon(id, path) {
   toast("opening", path.split(/[\\/]/).pop() + " on the machine running this session");
 }
 
-// Opens a file with the default app of the ROOM's machine, which over a share is not the one in front of you.
-async function launchOnRoom(id, path, where) {
-  try {
-    await api(`/v1/tasks/${id}/files/launch`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path })
-    });
-  } catch (e) {
-    toast("could not open it", e.message);
-    return;
-  }
-  toast("opened externally", path.split(/[\\/]/).pop() + " on " + (where || "the room's machine") + ", not in this browser");
-}
-
 function filesUp() {
   if (filesPos.dialog.parent) loadFiles(filesPos.dialog.parent, dialogFilesCtx());
 }
@@ -1055,6 +1041,8 @@ function fillMachineFields(s) {
   if (roots) roots.value = s.browse_roots || "";
   const openPaths = document.getElementById("s-openpaths");
   if (openPaths) openPaths.value = s.open_paths || "";
+  const openAnywhere = document.getElementById("s-openext-anywhere");
+  if (openAnywhere) openAnywhere.checked = s.open_external_anywhere === true;
   const shared = document.getElementById("s-shared-loc");
   if (shared) shared.value = s.shared_location || "";
   const handoff = document.getElementById("s-handoffdir");
@@ -1634,6 +1622,25 @@ async function saveOpenPaths() {
   toast("saved", "terminal links open from " + (el.value.trim() ? "those folders too" : "atrium's own folders only"));
 }
 
+async function saveOpenExtAnywhere() {
+  const el = document.getElementById("s-openext-anywhere");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ open_external_anywhere: !!el.checked })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    afterMachineSave();
+    return;
+  }
+  afterMachineSave();
+  toast("saved", el.checked
+    ? "a document or picture path anywhere on this machine may open with its default app"
+    : "open externally reaches only atrium's folders and the ones listed");
+}
+
 async function saveSharedLocation() {
   const el = document.getElementById("s-shared-loc");
   if (!el) return;
@@ -1743,7 +1750,7 @@ async function saveIdlePark() {
     toast("that did not save", e.message);
     return;
   }
-  afterMachineSave();
+  await afterMachineSave();
   toast("saved", v === "off" ? "idle cards are not parked" : "an idle card is parked after " + (Number(v) / 60) + " minutes");
 }
 
@@ -1934,7 +1941,7 @@ async function saveHandoffDir() {
   afterMachineSave();
   toast("saved", el.value.trim()
     ? "the next context cycle writes its handoff there"
-    : "handoffs go to $TEMP/atrium/handoffs");
+    : "handoffs go to the card's folder, else to handoffs beside the room's database");
 }
 
 // The land-the-plane line's box. A per-browser pref (landThePlaneK, js/peek.js), so no daemon call: write it,

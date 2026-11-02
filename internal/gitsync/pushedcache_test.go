@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 const (
@@ -22,17 +24,16 @@ func pushedTestStore(t *testing.T, fn func(context.Context, string, string, stri
 
 func waitPushed(t *testing.T, s *Store, want string) PushedView {
 	t.Helper()
-	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
-		v, err := s.PushedSnapshot("github/o/r", "main", pushedTestHead)
+	var v PushedView
+	testwait.Eventually(t, 5*time.Second, "the snapshot to say "+want, func() bool {
+		var err error
+		v, err = s.PushedSnapshot("github/o/r", "main", pushedTestHead)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !v.Building && v.State == want {
-			return v
-		}
-	}
-	t.Fatalf("the snapshot never said %q", want)
-	return PushedView{}
+		return !v.Building && v.State == want
+	})
+	return v
 }
 
 // A request answers from memory however slow git is: the first one says it is building with an empty answer, and
@@ -60,7 +61,7 @@ func TestPushedSnapshotAnswersAtOnceWhileGitIsSlow(t *testing.T) {
 			t.Fatalf("before the first build: %+v", v)
 		}
 	}
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // wait: a negative check, no second build must start
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("20 requests started %d builds, want 1", n)
 	}

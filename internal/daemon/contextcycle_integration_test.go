@@ -5,6 +5,8 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,12 +49,12 @@ func prompts(f *fakePTY) int { return strings.Count(f.written(), limitPrompt) }
 func statuslines(d *Daemon, id string, n int) {
 	for i := 0; i < n; i++ {
 		d.cycleOnStatusline(id)
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the burst like real statusline updates, which have no event
 	}
 }
 
 func step(d *Daemon, id string) string {
-	v, _ := d.newContextFor(id).(map[string]any)
+	v, _ := d.NewContextFor(id).(map[string]any)
 	if v == nil {
 		return ""
 	}
@@ -60,52 +62,46 @@ func step(d *Daemon, id string) string {
 	return s
 }
 
-// Plan 5 and 7: past the limit mid-turn, the prompt is typed at once, and then again
-// once per turn however many statusline updates arrive inside one. Never cleared
-// without the ack.
-func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
+// Plan 5 and 7, f-new-context-nudge-repeats: past the limit mid-turn, the prompt is
+// typed at once and not again, across statusline bursts, the turn it ends and the
+// turn it starts when read. Never cleared without the ack.
+func TestTheLimitMidTurnTypesThePromptOncePerCycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = time.Hour
+	d.hk.NcTiming.PromptLost = time.Hour
 	task, f, _ := cycleCard(t, d, 250_000)
 	id := task.ID
 	midTurn(d, id)
 
 	statuslines(d, id, 1)
 	until(t, "the limit prompt mid-turn", func() bool { return prompts(f) == 1 && strings.HasSuffix(f.written(), "\r") })
-	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["auto"] != true || v["step"] != NewContextLimit {
-		t.Fatalf("no automatic cycle on the limit step: %v", d.newContextFor(id))
+	if v, _ := d.NewContextFor(id).(map[string]any); v == nil || v["auto"] != true || v["step"] != cycle.NewContextLimit {
+		t.Fatalf("no automatic cycle on the limit step: %v", d.NewContextFor(id))
 	}
 
-	for turn := 1; turn < maxLimitAsks; turn++ {
-		// A burst inside the turn types nothing more.
+	for turn := 1; turn <= cycle.MaxLimitAsks; turn++ {
 		statuslines(d, id, 20)
-		if got := prompts(f); got != turn {
-			t.Fatalf("turn %d: %d prompts after a burst of statusline updates, want %d", turn, got, turn)
+		if got := prompts(f); got != 1 {
+			t.Fatalf("turn %d: %d prompts mid-turn, want 1", turn, got)
 		}
-		// The turn ends with no ack: it is typed again, once.
 		ncTurnEnds(d, id)
-		until(t, "the prompt again after the turn", func() bool {
-			return prompts(f) == turn+1 && strings.HasSuffix(f.written(), "\r")
-		})
 		statuslines(d, id, 20)
-		if got := prompts(f); got != turn+1 {
-			t.Fatalf("turn %d: %d prompts between turns, want %d", turn, got, turn+1)
+		if got := prompts(f); got != 1 {
+			t.Fatalf("turn %d: %d prompts between turns, want 1", turn, got)
 		}
-		// The prompt starts the next turn.
 		midTurn(d, id)
 	}
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("cleared with no ack: %q", f.written())
 	}
-	if step(d, id) != NewContextLimit {
-		t.Fatalf("the cycle left the limit step with no ack: %v", d.newContextFor(id))
+	if step(d, id) != cycle.NewContextLimit {
+		t.Fatalf("the cycle left the limit step with no ack: %v", d.NewContextFor(id))
 	}
-	if v, _ := d.newContextFor(id).(map[string]any); v["prompted"] != maxLimitAsks {
-		t.Fatalf("the chip counts %v prompts, want %d", v["prompted"], maxLimitAsks)
+	if v, _ := d.NewContextFor(id).(map[string]any); v["prompted"] != 1 {
+		t.Fatalf("the chip counts %v prompts, want 1", v["prompted"])
 	}
 }
 
@@ -123,7 +119,7 @@ func TestNoAckNeverClears(t *testing.T) {
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(d.hk.ncTiming.captureEnd + d.hk.ncTiming.clearWait)
+	deadline := time.Now().Add(d.hk.NcTiming.CaptureEnd + d.hk.NcTiming.ClearWait)
 	for time.Now().Before(deadline) {
 		midTurn(d, id)
 		statuslines(d, id, 3)
@@ -133,8 +129,8 @@ func TestNoAckNeverClears(t *testing.T) {
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("cleared with a handoff on disk and no ack: %q", f.written())
 	}
-	if step(d, id) != NewContextLimit {
-		t.Fatalf("the cycle gave up or moved on with no ack: %v", d.newContextFor(id))
+	if step(d, id) != cycle.NewContextLimit {
+		t.Fatalf("the cycle gave up or moved on with no ack: %v", d.NewContextFor(id))
 	}
 }
 
@@ -157,22 +153,22 @@ func TestAckThenClearThenWake(t *testing.T) {
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := d.ready(task)
+	out, _, err := d.Ready(task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out["message"] != ReadyLine || out["path"] != path || out["stored"] != true {
+	if out["message"] != roomconf.ReadyLine || out["path"] != path || out["stored"] != true {
 		t.Fatalf("ready answered %v", out)
 	}
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(80 * time.Millisecond) // wait: a negative check, /clear must not be typed inside the turn
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("/clear was typed into the turn that ran atrium ready: %q", f.written())
 	}
 	ncTurnEnds(d, id)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "the wake", func() bool { return strings.Contains(f.written(), "read "+path+" and continue.") })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 	got := f.written()
 	if !(strings.Index(got, limitPrompt) < strings.Index(got, "/clear") &&
 		strings.Index(got, "/clear") < strings.Index(got, "read "+path)) {
@@ -208,9 +204,9 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 	}
 	statuslines(d, id, 3)
 	watch(t, d)
-	time.Sleep(50 * time.Millisecond)
-	if d.newContextFor(id) != nil || prompts(f) != 0 {
-		t.Fatalf("a card switched off was cycled: %v %q", d.newContextFor(id), f.written())
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the card must not be cycled
+	if d.NewContextFor(id) != nil || prompts(f) != 0 {
+		t.Fatalf("a card switched off was cycled: %v %q", d.NewContextFor(id), f.written())
 	}
 	if cs, _ := d.contextSizeFor(id).(*ContextSize); cs == nil || cs.Cycle || !cs.Warn {
 		t.Fatalf("a switched-off card reads %+v, want warned and not cycling", cs)
@@ -221,9 +217,9 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	statuslines(d, id, 3)
-	time.Sleep(50 * time.Millisecond)
-	if d.newContextFor(id) != nil {
-		t.Fatalf("a card under its own limit was cycled: %v", d.newContextFor(id))
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the card must not be cycled
+	if d.NewContextFor(id) != nil {
+		t.Fatalf("a card under its own limit was cycled: %v", d.NewContextFor(id))
 	}
 	if cs, _ := d.contextSizeFor(id).(*ContextSize); cs == nil || !cs.Cycle || cs.Warn || cs.Source != "card" {
 		t.Fatalf("the card reads %+v, want cycling, under its own 300k", cs)
@@ -235,7 +231,7 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 	}
 	statuslines(d, id, 1)
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
-	if v, _ := d.newContextFor(id).(map[string]any); v["limit"] != int64(240_000) {
+	if v, _ := d.NewContextFor(id).(map[string]any); v["limit"] != int64(240_000) {
 		t.Fatalf("the cycle started on %v, want the card's 240k", v["limit"])
 	}
 }
@@ -246,7 +242,7 @@ func TestTheHubLimitStartsTheCycle(t *testing.T) {
 	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 150_000)
 	statuslines(d, task.ID, 2)
-	if d.newContextFor(task.ID) != nil {
+	if d.NewContextFor(task.ID) != nil {
 		t.Fatal("cycled under the default 200k")
 	}
 	if err := d.st.SetSetting(rules.SettingContextLimits, `{"claude":120}`); err != nil {
@@ -267,8 +263,8 @@ func TestACardBackUnderItsLimitDropsTheCycle(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
 	reply(90_000)
 	statuslines(d, id, 1)
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
-	if d.holdingMessages(id) || strings.Contains(f.written(), "/clear") {
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
+	if d.HoldingMessages(id) || strings.Contains(f.written(), "/clear") {
 		t.Fatalf("a dropped cycle still holds or cleared: %q", f.written())
 	}
 	if !historyHas(t, d, id, "fell back under its limit") {
@@ -287,7 +283,7 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	post := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/ready", strings.NewReader(`{"agent":"x","task_id":"`+id+`"}`))
 		rec := httptest.NewRecorder()
-		d.handleReady(rec, req)
+		d.HandleReady(rec, req)
 		return rec
 	}
 	if rec := post(); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "no context cycle") {
@@ -310,14 +306,14 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	if rec := post(); rec.Code != http.StatusConflict {
 		t.Fatalf("ready with an empty file answered %d %s", rec.Code, rec.Body)
 	}
-	time.Sleep(50 * time.Millisecond)
-	if step(d, id) != NewContextLimit || strings.Contains(f.written(), "/clear") {
-		t.Fatalf("a refused ack moved the cycle: %v", d.newContextFor(id))
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, a refused ack must not move the cycle
+	if step(d, id) != cycle.NewContextLimit || strings.Contains(f.written(), "/clear") {
+		t.Fatalf("a refused ack moved the cycle: %v", d.NewContextFor(id))
 	}
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rec := post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), ReadyLine) {
+	if rec := post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), roomconf.ReadyLine) {
 		t.Fatalf("ready answered %d %s", rec.Code, rec.Body)
 	}
 	if rec := post(); rec.Code != http.StatusConflict {
@@ -345,18 +341,29 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 	}
 }
 
-// The limit prompt names the binary and the path, in clint's words.
+// The limit prompt names atrium's limit with both numbers, the binary and the path, in clint's words.
 func TestTheLimitPromptWording(t *testing.T) {
 	t.Parallel()
-	got := newContextLimitPrompt("/tmp/atrium/handoffs/c1.md", "/usr/local/bin/atrium", false)
-	want := "you are at context limit. wrap what is in flight, then either write your handoff to " +
-		"/tmp/atrium/handoffs/c1.md and run /usr/local/bin/atrium ready, or call the atrium_ready tool with the handoff text."
+	got := cycle.NewContextLimitPrompt("/data/handoffs/c1.md", "/usr/local/bin/atrium", false, 157_400, 150_000)
+	want := "This card is over its configured atrium context limit (157k of 150k). Pause your work now. Write a " +
+		"handoff to /data/handoffs/c1.md that says what is complete, what is in flight, and what's still to be done. " +
+		"Then run /usr/local/bin/atrium ready. Atrium clears your context when this turn ends and starts a new one " +
+		"from your handoff."
 	if got != want {
 		t.Fatalf("got %q", got)
 	}
-	if got := newContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true); strings.Contains(got, "/tmp/c1.md") ||
-		!strings.Contains(got, "atrium_ready") {
+	if strings.Contains(got, "atrium_ready") {
+		t.Fatalf("a runner with a shell was offered the tool: %q", got)
+	}
+	got = cycle.NewContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true, 157_400, 150_000)
+	if strings.Contains(got, "/tmp/c1.md") || strings.Contains(got, " ready.") || !strings.Contains(got, "atrium_ready") ||
+		!strings.Contains(got, "(157k of 150k)") {
 		t.Fatalf("a runner with no shell was told %q", got)
+	}
+	// A cycle started by hand has no limit to name.
+	if got := cycle.NewContextLimitPrompt("/tmp/c1.md", "atrium", false, 0, 0); !strings.HasPrefix(got,
+		"Atrium is starting a new context on this card. Pause your work now.") {
+		t.Fatalf("a manual cycle was told %q", got)
 	}
 }
 
@@ -365,7 +372,7 @@ func TestTheLimitPromptWording(t *testing.T) {
 func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = time.Hour
+	d.hk.NcTiming.PromptLost = time.Hour
 	task, f, _ := ncCard(t, d)
 	reply := withTranscript(t, d, task)
 	reply(250_000)
@@ -390,7 +397,7 @@ func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
 func TestAFixtureCardCycles(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = time.Hour
+	d.hk.NcTiming.PromptLost = time.Hour
 	task, f, _ := cycleCard(t, d, 250_000)
 	fx, err := d.st.SaveFixture(&store.Fixture{Harness: "claude", Cwd: task.Worktree, Enabled: true})
 	if err != nil {
@@ -418,18 +425,18 @@ func TestTheCycleWaitsForTheHumansLineAndQuiet(t *testing.T) {
 	run.noteOperatorTyped([]byte("i thought rooms w"))
 
 	statuslines(d, id, 10)
-	if d.newContextFor(id) != nil || prompts(f) != 0 {
-		t.Fatalf("the cycle started over a part-written line: %v", d.newContextFor(id))
+	if d.NewContextFor(id) != nil || prompts(f) != 0 {
+		t.Fatalf("the cycle started over a part-written line: %v", d.NewContextFor(id))
 	}
 
 	run.noteOperatorTyped(bytes.Repeat([]byte{0x7f}, 17))
 	statuslines(d, id, 3)
-	if d.newContextFor(id) != nil {
-		t.Fatalf("the cycle started a moment after the last key: %v", d.newContextFor(id))
+	if d.NewContextFor(id) != nil {
+		t.Fatalf("the cycle started a moment after the last key: %v", d.NewContextFor(id))
 	}
 
 	until(t, "the cycle once the line is empty and quiet", func() bool {
 		d.cycleOnStatusline(id)
-		return d.newContextFor(id) != nil
+		return d.NewContextFor(id) != nil
 	})
 }

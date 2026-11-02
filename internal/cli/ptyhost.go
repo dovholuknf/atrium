@@ -13,7 +13,7 @@ import (
 // of the binary.
 // See docs/terminal/ptyhost-protocol.md.
 func newPtyHost() *cobra.Command {
-	var stateDir, build string
+	var stateDir, build, logPath string
 	var idle time.Duration
 	cmd := &cobra.Command{
 		Use:    "ptyhost",
@@ -21,11 +21,12 @@ func newPtyHost() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return ptyhost.Run(ptyhost.RunOptions{StateDir: stateDir, Build: build, IdleExit: idle})
+			return ptyhost.Run(ptyhost.RunOptions{StateDir: stateDir, Build: build, IdleExit: idle, Log: logPath})
 		},
 	}
 	cmd.Flags().StringVar(&stateDir, "state-dir", "", "the state dir this host belongs to, which names its channel")
 	cmd.Flags().StringVar(&build, "build", "", "the build string reported to a daemon")
+	cmd.Flags().StringVar(&logPath, "log", "", "append the host's log and any crash to this file")
 	cmd.Flags().DurationVar(&idle, "idle-exit", ptyhost.DefaultIdleExit,
 		"exit after this long with no pty and no daemon connected")
 	_ = cmd.MarkFlagRequired("state-dir")

@@ -140,18 +140,25 @@
   const sigs = new WeakMap();
   function reconcile(parts) {
     const made = [];
-    parts.forEach((html, i) => {
-      const old = el.children[i];
-      if (old && sigs.get(old) === html) return;
-      const t = document.createElement("template");
-      t.innerHTML = html;
-      const n = t.content.firstElementChild;
-      sigs.set(n, html);
-      if (old) el.replaceChild(n, old);
-      else el.appendChild(n);
-      made.push(n);
+    // A note leaving shifts every part up, so a kept node is found by its markup and not by its place.
+    const want = new Map();
+    parts.forEach(h => want.set(h, (want.get(h) || 0) + 1));
+    const kept = new Map();
+    [...el.children].forEach(c => {
+      const h = sigs.get(c), have = kept.get(h) || [];
+      if (have.length < (want.get(h) || 0)) { have.push(c); kept.set(h, have); } else c.remove();
     });
-    while (el.children.length > parts.length) el.lastElementChild.remove();
+    parts.forEach((html, i) => {
+      let n = (kept.get(html) || []).shift();
+      if (!n) {
+        const t = document.createElement("template");
+        t.innerHTML = html;
+        n = t.content.firstElementChild;
+        sigs.set(n, html);
+        made.push(n);
+      }
+      if (el.children[i] !== n) el.insertBefore(n, el.children[i] || null);
+    });
     return made;
   }
   let caret = [0, 0];

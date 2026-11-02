@@ -4,10 +4,13 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -165,7 +168,7 @@ func TestADoneReportOwesOnlyWhenItCarriesAnAsk(t *testing.T) {
 		want int
 	}{"no ask": {"", 0}, "an ask": {"which table, from the launcher", 1}} {
 		d := testDaemon(t)
-		d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+		d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 		launcher, _ := launchedPair(t, d)
 		rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research",
 			Recap: "written up", Ask: c.ask})
@@ -223,7 +226,7 @@ func TestExitingTheWorkerClosesItsItem(t *testing.T) {
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
 	h := slowHarness(t, d)
-	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
+	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
 		SpawnedBy: "orchestrator"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
@@ -293,23 +296,18 @@ func TestAnOrphanKeepsItsItemOnTheOrchestratorOrOnItsOwnRow(t *testing.T) {
 func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4-control", Tags: []string{OrchestratorTag}}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "sg4-control", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
 	worker := orphanWorker(t, d, "worker", "ghost")
 	endWorker(t, d, worker)
 	now := time.Now()
 	d.owedPass(now)
 	d.owedPass(now.Add(owedPushAfter + time.Second))
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	testwait.Poll(3*time.Second, func() bool {
 		rl.mu.Lock()
-		n := len(rl.got)
-		rl.mu.Unlock()
-		if n > 0 {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		defer rl.mu.Unlock()
+		return len(rl.got) > 0
+	})
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	if len(rl.got) != 1 || rl.got[0].To != "chief" || rl.got[0].Room != "sg4-control" ||
@@ -350,7 +348,7 @@ func TestAPermissionItemClosesWithoutAPushWhenApprovedInTime(t *testing.T) {
 
 func TestAReportThatReachesNobodyIsNotStampedAndTheOrchestratorHearsOfIt(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	worker := orphanWorker(t, d, "worker", store.HumanLauncher)
 	orch := orchCard(t, d, "chief")
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research",
@@ -393,7 +391,7 @@ func TestAnAnsweredQuestionBeforeTheWorkerStopsOwesNothing(t *testing.T) {
 
 func TestAReportWithNoAskWithdrawsAnEarlierQuestion(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done anyway"})
@@ -459,7 +457,7 @@ func TestNoListingLineWhenNothingIsOwedOrWhenTheItemIsTheWorkersOwn(t *testing.T
 
 func TestAnOrchestratorsOwnWorkNeverReachesTheOrchestratorsRow(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	other := orchCard(t, d, "chief")
 	w := orphanWorker(t, d, "second-chief", "ghost")
 	if err := d.st.SetTags(w.ID, []string{OriginAgentTag, OrchestratorTag}); err != nil {
@@ -483,8 +481,8 @@ func TestAnOrchestratorsOwnWorkNeverReachesTheOrchestratorsRow(t *testing.T) {
 // peersDown is a relay whose hub does not answer a peers call.
 type peersDown struct{ *fakeRelay }
 
-func (peersDown) Peers(context.Context, bool, bool) ([]RemotePeer, string, error) {
-	return nil, "", ErrRelayDown
+func (peersDown) Peers(context.Context, bool, bool) ([]hublink.RemotePeer, string, error) {
+	return nil, "", hublink.ErrRelayDown
 }
 
 func orphanEndedAndPushed(t *testing.T, d *Daemon) {
@@ -496,19 +494,16 @@ func orphanEndedAndPushed(t *testing.T, d *Daemon) {
 	d.owedPass(now.Add(owedPushAfter + time.Second))
 }
 
-func waitSays(rl *fakeRelay, want int) []RelaySay {
-	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+func waitSays(rl *fakeRelay, want int) []hublink.RelaySay {
+	testwait.Poll(2*time.Second, func() bool {
 		rl.mu.Lock()
-		n := len(rl.got)
-		rl.mu.Unlock()
-		if n >= want {
-			break
-		}
-	}
-	time.Sleep(100 * time.Millisecond)
+		defer rl.mu.Unlock()
+		return len(rl.got) >= want
+	})
+	time.Sleep(100 * time.Millisecond) // wait: a negative check, no further say may come
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	return append([]RelaySay(nil), rl.got...)
+	return append([]hublink.RelaySay(nil), rl.got...)
 }
 
 func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testing.T) {
@@ -517,7 +512,7 @@ func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testin
 	}
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
 	d.SetRelay(rl)
 	orphanEndedAndPushed(t, d)
 	if got := waitSays(rl, 1); len(got) != 0 {
@@ -533,7 +528,7 @@ func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testin
 func TestTheRememberedOrchestratorIsUsedOnlyWhenTheHubIsAway(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
 	if n, r := d.remoteOrchestrator(); n != "chief" || r != "sg4" {
 		t.Fatalf("found %s@%s", n, r)
@@ -584,7 +579,7 @@ func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
 	}
 	d.owedPass(time.Now())
 	d.closeOwed(worker.ID, "dismissed")
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond) // wait: spaces the new question's stamp after the close, no event marks it
 	d.peerSaid(worker.WireName, launcher, askColumn, KindNeeds)
 	d.owedPass(time.Now().Add(time.Second))
 	if n, _, _ := d.owedFor(launcher); n != 1 {
@@ -594,7 +589,7 @@ func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
 
 func TestAnOrphansDoneReportIsTheOnlyNoticeTheOrchestratorGets(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	w := orphanWorker(t, d, "worker", "ghost")
 	if got, _ := d.st.Get(w.ID); !got.OwesReport() {
 		t.Fatal("the fixture does not owe a report, so it proves nothing")
@@ -672,7 +667,7 @@ func TestAnOrphanWithNoOrchestratorHoldsNothingOnItsOwnCard(t *testing.T) {
 
 func TestACardTheOperatorLaunchedStillStampsItsReport(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	w := peerCard(t, d, "worker")
 	if err := d.st.SetLineage(w.ID, store.HumanLauncher, ""); err != nil {
 		t.Fatal(err)
@@ -725,7 +720,7 @@ func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
 		if n, _, _ := d.owedFor(launcher); n != 1 {
 			t.Fatalf("typed %v: the first ending opened %d", typed, n)
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the retask's stamp after the first ending, no event marks it
 		retask := func() {
 			if err := d.st.SetStatus(worker.ID, store.StatusRunning); err != nil {
 				t.Fatal(err)
@@ -744,13 +739,13 @@ func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
 			say()
 		} else {
 			say()
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond) // wait: spaces the retask's stamp after the say, no event marks it
 			retask()
 		}
 		if n, _, _ := d.owedFor(launcher); n != 0 {
 			t.Fatalf("typed %v: the say left %d open", typed, n)
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the second ending's stamp after the retask, no event marks it
 		endWorker(t, d, worker)
 		d.owedPass(time.Now().Add(time.Second))
 		if n, _, _ := d.owedFor(launcher); n != 1 {
@@ -769,9 +764,9 @@ func TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.owedPass(time.Now())
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the second question's stamp after the pass, no event marks it
 	d.peerSaid(worker.WireName, launcher, askColumn, KindNeeds)
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the close's stamp after the second question, no event marks it
 	d.closeOwed(worker.ID, "dismissed")
 	d.owedPass(time.Now().Add(time.Minute))
 	if n, _, _ := d.owedFor(launcher); n != 0 {
@@ -794,7 +789,7 @@ func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
 	if it == nil || it.Reason != owedPermission {
 		t.Fatalf("item = %+v", it)
 	}
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the close's stamp after the item opened, no event marks it
 	d.closeOwed(worker.ID, "dismissed")
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
@@ -808,7 +803,7 @@ func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
 // An orphan's report was its one notice. Re-tasked, and ending silent again, it owes again.
 func TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	w := orphanWorker(t, d, "worker", "ghost")
 	orch := orchCard(t, d, "chief")
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done"})
@@ -816,7 +811,7 @@ func TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain(t *testing.T) {
 	if n := len(heldOn(t, d, orch.ID)); n != 1 {
 		t.Fatalf("the report made %d notices", n)
 	}
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the prompt's stamp after the report, no event marks it
 	prompt(t, d, w.ID)
 	endWorker(t, d, w)
 	d.owedPass(time.Now().Add(time.Second))

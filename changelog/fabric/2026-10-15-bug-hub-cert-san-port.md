@@ -1,1 +1,0 @@
-The hub's certificate no longer puts the `--link-advertise` port into a DNS name, so a room that dials the hub by IP now verifies. An IP becomes an IP SAN, a name a DNS SAN, and a certificate whose names no longer match is minted again. bug-hub-cert-san-port.

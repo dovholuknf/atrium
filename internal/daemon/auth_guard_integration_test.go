@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func guardedBoard(d *Daemon) http.Handler {
-	return d.authGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return d.AuthGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("the board"))
 	}))
 }
@@ -26,7 +27,7 @@ func basicRequest(user, pass, remote string) *http.Request {
 
 func sessionCookieOf(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == authCookie && c.Value != "" {
+		if c.Name == publish.AuthCookie && c.Value != "" {
 			return c
 		}
 	}
@@ -36,17 +37,17 @@ func sessionCookieOf(rec *httptest.ResponseRecorder) *http.Cookie {
 // markPublicShareRunning pretends a public zrok share is up.
 func markPublicShareRunning(t *testing.T, d *Daemon) {
 	t.Helper()
-	if err := d.saveOverlayConfig(SettingOverlayZrok, ZrokConfig{Mode: "public"}); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, publish.ZrokConfig{Mode: "public"}); err != nil {
 		t.Fatal(err)
 	}
-	n := d.nat(OverlayZrok)
-	n.mu.Lock()
-	n.srv = &http.Server{}
-	n.mu.Unlock()
+	n := d.Nat(publish.OverlayZrok)
+	n.Mu.Lock()
+	n.Srv = &http.Server{}
+	n.Mu.Unlock()
 	t.Cleanup(func() {
-		n.mu.Lock()
-		n.srv = nil
-		n.mu.Unlock()
+		n.Mu.Lock()
+		n.Srv = nil
+		n.Mu.Unlock()
 	})
 }
 
@@ -62,7 +63,7 @@ func TestTheLoginCannotBeTurnedOffUnderAPublicShare(t *testing.T) {
 	}
 	markPublicShareRunning(t, d)
 
-	if err := d.SaveAuth(AuthConfig{}); err == nil {
+	if err := d.SaveAuth(publish.AuthConfig{}); err == nil {
 		t.Fatal("the login was turned off under a running public share")
 	}
 	off := basicConfig(t, "clint", "hunter2")
@@ -70,7 +71,7 @@ func TestTheLoginCannotBeTurnedOffUnderAPublicShare(t *testing.T) {
 	if err := d.SaveAuth(off); err == nil {
 		t.Fatal("the login was disabled under a running public share")
 	}
-	if !d.authConfig().Enabled {
+	if !d.AuthConfig().Enabled {
 		t.Fatal("a refused save still changed the stored login")
 	}
 	// Changing it to another working login is not weakening it.
@@ -85,7 +86,7 @@ func TestTheLoginCanBeTurnedOffWhenNoPublicShareRuns(t *testing.T) {
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.SaveAuth(AuthConfig{}); err != nil {
+	if err := d.SaveAuth(publish.AuthConfig{}); err != nil {
 		t.Fatalf("turning the login off with no share was refused: %v", err)
 	}
 }
@@ -102,10 +103,10 @@ func TestRepeatedWrongPasswordsMakeASourceWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	d.authLim.now = func() time.Time { return now }
+	d.AuthLim.Now = func() time.Time { return now }
 	h := guardedBoard(d)
 
-	for i := 0; i < authFreeFails; i++ {
+	for i := 0; i < publish.AuthFreeFails; i++ {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, basicRequest("clint", "wrong", "198.51.100.7:4000"))
 		if rec.Code != http.StatusUnauthorized {
@@ -116,7 +117,7 @@ func TestRepeatedWrongPasswordsMakeASourceWait(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, basicRequest("clint", "hunter2", "198.51.100.7:4001"))
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("a source that guessed %d times answered %d, wanted 429", authFreeFails, rec.Code)
+		t.Fatalf("a source that guessed %d times answered %d, wanted 429", publish.AuthFreeFails, rec.Code)
 	}
 	if rec.Header().Get("Retry-After") == "" {
 		t.Fatal("no Retry-After on a refusal for waiting")
@@ -128,7 +129,7 @@ func TestRepeatedWrongPasswordsMakeASourceWait(t *testing.T) {
 		t.Fatalf("an innocent source answered %d", rec.Code)
 	}
 	// And the wait ends.
-	now = now.Add(authLockBase + time.Second)
+	now = now.Add(publish.AuthLockBase + time.Second)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, basicRequest("clint", "hunter2", "198.51.100.7:4002"))
 	if rec.Code != http.StatusOK {
@@ -143,11 +144,11 @@ func TestTheSourceBehindAProxyIsTheLastForwardedAddress(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:5000"
 	r.Header.Set("X-Forwarded-For", "1.1.1.1, 203.0.113.9")
-	if got := authSource(r); got != "203.0.113.9" {
+	if got := publish.AuthSource(r); got != "203.0.113.9" {
 		t.Fatalf("source %q", got)
 	}
 	r.RemoteAddr = "198.51.100.1:5000"
-	if got := authSource(r); got != "198.51.100.1" {
+	if got := publish.AuthSource(r); got != "198.51.100.1" {
 		t.Fatalf("a header from a non-proxy was believed: %q", got)
 	}
 }
@@ -155,17 +156,17 @@ func TestTheSourceBehindAProxyIsTheLastForwardedAddress(t *testing.T) {
 // Only so many password checks run at once.
 func TestPasswordChecksAreBounded(t *testing.T) {
 	t.Parallel()
-	var l authLimiter
-	for i := 0; i < authScryptSlots; i++ {
-		if !l.acquire() {
+	var l publish.AuthLimiter
+	for i := 0; i < publish.AuthScryptSlots; i++ {
+		if !l.Acquire() {
 			t.Fatalf("slot %d was refused", i)
 		}
 	}
-	if l.acquire() {
+	if l.Acquire() {
 		t.Fatal("more checks ran at once than the bound")
 	}
-	l.release()
-	if !l.acquire() {
+	l.Release()
+	if !l.Acquire() {
 		t.Fatal("a released slot was not reusable")
 	}
 }
@@ -176,8 +177,8 @@ func TestAFullBoardRefusesRatherThanQueues(t *testing.T) {
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < authScryptSlots; i++ {
-		d.authLim.acquire()
+	for i := 0; i < publish.AuthScryptSlots; i++ {
+		d.AuthLim.Acquire()
 	}
 	rec := httptest.NewRecorder()
 	guardedBoard(d).ServeHTTP(rec, basicRequest("clint", "hunter2", "198.51.100.7:4000"))
@@ -188,34 +189,34 @@ func TestAFullBoardRefusesRatherThanQueues(t *testing.T) {
 
 func TestTheFailureTableIsBounded(t *testing.T) {
 	t.Parallel()
-	var l authLimiter
-	for i := 0; i < authFailsMost+50; i++ {
-		l.fail("src-" + strings.Repeat("x", i%7) + string(rune('a'+i%26)) + time.Duration(i).String())
+	var l publish.AuthLimiter
+	for i := 0; i < publish.AuthFailsMost+50; i++ {
+		l.Fail("src-" + strings.Repeat("x", i%7) + string(rune('a'+i%26)) + time.Duration(i).String())
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if len(l.fails) > authFailsMost {
-		t.Fatalf("the table grew to %d", len(l.fails))
+	l.Mu.Lock()
+	defer l.Mu.Unlock()
+	if len(l.Fails) > publish.AuthFailsMost {
+		t.Fatalf("the table grew to %d", len(l.Fails))
 	}
 }
 
 func TestTheWaitDoublesAndIsCapped(t *testing.T) {
 	t.Parallel()
-	var l authLimiter
+	var l publish.AuthLimiter
 	now := time.Now()
-	l.now = func() time.Time { return now }
-	for i := 0; i < authFreeFails; i++ {
-		l.fail("a")
+	l.Now = func() time.Time { return now }
+	for i := 0; i < publish.AuthFreeFails; i++ {
+		l.Fail("a")
 	}
-	first := l.blocked("a")
-	l.fail("a")
-	if second := l.blocked("a"); second <= first {
+	first := l.Blocked("a")
+	l.Fail("a")
+	if second := l.Blocked("a"); second <= first {
 		t.Fatalf("the wait did not grow: %v then %v", first, second)
 	}
 	for i := 0; i < 40; i++ {
-		l.fail("a")
+		l.Fail("a")
 	}
-	if got := l.blocked("a"); got > authLockMax {
+	if got := l.Blocked("a"); got > publish.AuthLockMax {
 		t.Fatalf("the wait %v passed the cap", got)
 	}
 }
@@ -263,11 +264,11 @@ func TestSavingTheSameLoginKeepsSessions(t *testing.T) {
 	if err := d.SaveAuth(cfg); err != nil {
 		t.Fatal(err)
 	}
-	before := d.sessionGen()
+	before := d.SessionGen()
 	if err := d.SaveAuth(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if d.sessionGen() != before {
+	if d.SessionGen() != before {
 		t.Fatal("an unchanged save bumped the generation")
 	}
 }
@@ -277,8 +278,8 @@ func TestSavingTheSameLoginKeepsSessions(t *testing.T) {
 func TestAnAllowlistRemovalEndsThatSession(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	oidc := func(allow ...string) AuthConfig {
-		return AuthConfig{
+	oidc := func(allow ...string) publish.AuthConfig {
+		return publish.AuthConfig{
 			Enabled: true, Issuer: "https://idp.example/realms/x", ClientID: "atrium",
 			Redirect: "https://board.example/auth/callback", Allow: allow,
 		}
@@ -286,11 +287,11 @@ func TestAnAllowlistRemovalEndsThatSession(t *testing.T) {
 	if err := d.SaveAuth(oidc("a@example.com", "b@example.com")); err != nil {
 		t.Fatal(err)
 	}
-	key, _ := d.cookieKey()
+	key, _ := d.CookieKey()
 	mine := func(sub, mail string) *http.Request {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.AddCookie(&http.Cookie{Name: authCookie, Value: signSession(key,
-			session{Subject: sub, Email: mail, Gen: d.sessionGen()}, time.Now().Add(time.Hour))})
+		r.AddCookie(&http.Cookie{Name: publish.AuthCookie, Value: publish.SignSession(key,
+			publish.Session{Subject: sub, Email: mail, Gen: d.SessionGen()}, time.Now().Add(time.Hour))})
 		return r
 	}
 	h := guardedBoard(d)
@@ -335,7 +336,7 @@ func TestLogoutIsAPostAndASignedOutBrowserIsNotSignedBackIn(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := basicRequest("clint", "hunter2", "198.51.100.7:4000")
-	req.URL.Path = authPrefix + "logout"
+	req.URL.Path = publish.AuthPrefix + "logout"
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("a GET logout answered %d", rec.Code)
@@ -343,14 +344,14 @@ func TestLogoutIsAPostAndASignedOutBrowserIsNotSignedBackIn(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	req = basicRequest("clint", "hunter2", "198.51.100.7:4000")
-	req.Method, req.URL.Path = http.MethodPost, authPrefix+"logout"
+	req.Method, req.URL.Path = http.MethodPost, publish.AuthPrefix+"logout"
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("logout answered %d", rec.Code)
 	}
 	var out *http.Cookie
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == authOutCookie {
+		if c.Name == publish.AuthOutCookie {
 			out = c
 		}
 	}

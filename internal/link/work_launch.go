@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // EVERY LAUNCH NAMES AN ITEM. Item lifecycle L1: work is named in the backlog, and a card launched on it is attached to
@@ -29,7 +30,7 @@ const StepTagPrefix = "atrium:step:"
 func WithStepTag(tags []string, step string) ([]string, error) {
 	step = strings.ToLower(strings.TrimSpace(step))
 	if !hubstore.ValidStep(step) {
-		return nil, &refusedError{fmt.Sprintf("--step %q is not a step: %s", step, strings.Join(hubstore.Steps, ", "))}
+		return nil, &ctl.RefusedError{Msg: fmt.Sprintf("--step %q is not a step: %s", step, strings.Join(hubstore.Steps, ", "))}
 	}
 	out := make([]string, 0, len(tags)+1)
 	for _, t := range tags {
@@ -77,15 +78,15 @@ func ParseItemSpec(spec string) (ItemSpec, error) {
 	spec = strings.TrimSpace(spec)
 	switch {
 	case spec == "":
-		return ItemSpec{}, &refusedError{ItemRequired}
+		return ItemSpec{}, &ctl.RefusedError{Msg: ItemRequired}
 	case strings.HasPrefix(strings.ToLower(spec), NewItemPrefix):
 		title := strings.TrimSpace(spec[len(NewItemPrefix):])
 		if title == "" {
-			return ItemSpec{}, &refusedError{"--item new: needs a title: --item new:\"what the work is\""}
+			return ItemSpec{}, &ctl.RefusedError{Msg: "--item new: needs a title: --item new:\"what the work is\""}
 		}
 		return ItemSpec{Title: title}, nil
 	case !backlogIDRe.MatchString(spec):
-		return ItemSpec{}, &refusedError{fmt.Sprintf("--item %q is not a backlog id: lower case letters, digits, dot, dash "+
+		return ItemSpec{}, &ctl.RefusedError{Msg: fmt.Sprintf("--item %q is not a backlog id: lower case letters, digits, dot, dash "+
 			"and underscore, like f-new-thing or r-037. to file a new one say --item new:\"a title\"", spec)}
 	}
 	return ItemSpec{ID: spec}, nil
@@ -126,19 +127,19 @@ func ResolveItem(ctx context.Context, call HubCall, spec, dept, by, room string)
 		err := call(ctx, http.MethodGet, "/_hub/backlog/"+url.PathEscape(s.ID), nil, &b)
 		var se statusErr
 		if err != nil && errors.As(err, &se) && se.HTTPStatus() == http.StatusNotFound && !se.Bare() {
-			return "", false, &refusedError{fmt.Sprintf("there is no backlog item %q. file it first with atrium_backlog, "+
+			return "", false, &ctl.RefusedError{Msg: fmt.Sprintf("there is no backlog item %q. file it first with atrium_backlog, "+
 				"or say --item new:\"a title\" to file one as you launch", s.ID)}
 		}
 		return s.ID, false, nil
 	}
 	if strings.TrimSpace(dept) == "" {
-		return "", false, &refusedError{"--item new: files the item under your department, and there is none to read: " +
+		return "", false, &ctl.RefusedError{Msg: "--item new: files the item under your department, and there is none to read: " +
 			"launch from a card tagged dept:<name>, or file it with atrium_backlog first and pass its id"}
 	}
 	var b hubstore.BacklogItem
 	if err := call(ctx, http.MethodPost, "/_hub/backlog", map[string]any{
 		"dept": dept, "title": s.Title, "by": by, "room": room}, &b); err != nil {
-		return "", false, &refusedError{"could not file the backlog item for --item new: " + err.Error()}
+		return "", false, &ctl.RefusedError{Msg: "could not file the backlog item for --item new: " + err.Error()}
 	}
 	return b.ID, true, nil
 }

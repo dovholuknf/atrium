@@ -295,6 +295,87 @@ func (s *Store) ItemSetPriority(id, priority, by string) (BacklogItem, error) {
 	return out, err
 }
 
+// ItemEdit replaces an item's title, its body, or both, and says who did. A nil field is left as it is.
+func (s *Store) ItemEdit(id string, title, body *string, by string) (BacklogItem, error) {
+	switch {
+	case title == nil && body == nil:
+		return BacklogItem{}, refuse(errors.New("an edit needs a title or a body"))
+	case title != nil && strings.TrimSpace(*title) == "":
+		return BacklogItem{}, refuse(errors.New("an item needs a title"))
+	}
+	if title != nil {
+		if why := CRText("title", *title, ItemTitleMax, false); why != "" {
+			return BacklogItem{}, refuse(errors.New(why))
+		}
+	}
+	if body != nil {
+		if why := CRText("body", *body, ItemBodyMax, true); why != "" {
+			return BacklogItem{}, refuse(errors.New(why))
+		}
+	}
+	if why := CRText("changer", by, backlogByMax, false); why != "" {
+		return BacklogItem{}, refuse(errors.New(why))
+	}
+	var out BacklogItem
+	err := s.tx(func(t *sql.Tx) error {
+		res, err := t.Exec(`UPDATE backlog_item SET title = COALESCE(?, title), body = COALESCE(?, body),
+			changed_at = ?, changed_by = ? WHERE id = ?`, title, body, ts(s.now()), by, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return refuse(ErrItemNotFound)
+		}
+		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
+		return err
+	})
+	if errors.Is(err, ErrItemNotFound) {
+		return BacklogItem{}, ErrItemNotFound
+	}
+	return out, err
+}
+
+// ItemAppend adds a paragraph to an item's body, headed with who added it and the day, and says who did.
+func (s *Store) ItemAppend(id, text, by string) (BacklogItem, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return BacklogItem{}, refuse(errors.New("an append needs text"))
+	}
+	if why := CRText("changer", by, backlogByMax, false); why != "" {
+		return BacklogItem{}, refuse(errors.New(why))
+	}
+	now := s.now()
+	para := strings.TrimSpace(by+" "+now.UTC().Format("2006-01-02")) + ": " + text
+	var out BacklogItem
+	err := s.tx(func(t *sql.Tx) error {
+		var body string
+		err := t.QueryRow(`SELECT body FROM backlog_item WHERE id = ?`, id).Scan(&body)
+		if errors.Is(err, sql.ErrNoRows) {
+			return refuse(ErrItemNotFound)
+		}
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(body) != "" {
+			body = strings.TrimRight(body, "\n") + "\n\n"
+		}
+		body += para
+		if why := CRText("body", body, ItemBodyMax, true); why != "" {
+			return refuse(errors.New(why))
+		}
+		if _, err = t.Exec(`UPDATE backlog_item SET body = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
+			body, ts(now), by, id); err != nil {
+			return err
+		}
+		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
+		return err
+	})
+	if errors.Is(err, ErrItemNotFound) {
+		return BacklogItem{}, ErrItemNotFound
+	}
+	return out, err
+}
+
 // ── reports ─────────────────────────────────────────────
 
 // DirectorReport is one report, as the API carries it.
