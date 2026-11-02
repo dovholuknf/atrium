@@ -574,6 +574,8 @@ function showMenu(e, items, opened) {
         // than against the thing it explains, and it is the one part of a menu
         // that cannot be styled at all.
         it.help ? `<span class="help" tabindex="0" data-tip="${esc(it.help)}">?</span>` : ""}${
+        it.tag ? `<span class="rowtag">${esc(it.tag)}<span class="copybit" data-tip="copy ${esc(it.tag)}"
+          onclick="event.stopPropagation();copyAliasHandle(this,'','${esc(it.tag)}')">${copyIcon()}</span></span>` : ""}${
         // A toggle says what it IS. The label stays put and a lamp beside it
         // carries the state, rather than the label flipping between "auto
         // mode" and "stop auto mode", which asks you to work out which of

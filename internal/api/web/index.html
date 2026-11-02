@@ -1417,6 +1417,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <button class="lab-step" onclick="stepLab(-1)" aria-label="the one before" data-tip="the one before">&#8249;</button>
       <select id="skinlab-pick" onchange="previewLab(this.value)"></select>
       <button class="lab-step" onclick="stepLab(1)" aria-label="the next one" data-tip="the next one">&#8250;</button>
+      <button type="button" class="copybit" id="skinlab-copy" onclick="copyLabName(this)" aria-label="copy the name" data-tip="copy the name"></button>
     </div>
     <div class="tshow" id="skinlab-show" hidden></div>
     <div class="lab-row lab-answers wrap" id="skinlab-mine" hidden></div>
@@ -1478,21 +1479,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         small panel you can move anywhere, so you can walk every tab and open a card while you
         decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal
         keeps its own.</span>
-    </div>
-    <!-- The OTHER theme system, reachable from here because the terminal bar's
-         edit button needs a terminal and somebody bringing their colours at
-         nine in the morning has not started one yet. -->
-    <div class="field">
-      <label class="eyebrow">the terminal's colours</label>
-      <div class="picker">
-        <button onclick="document.getElementById('settings').close(); openThemeEditor('')"
-          >bring or edit a theme</button>
-      </div>
-      <span class="hintline">Not the board. This is the sixteen ANSI colours a session is drawn in,
-        and each card keeps its own choice. Import a <b>Windows Terminal</b> scheme, or edit any of
-        them. Themes are kept on the daemon, so one brought here is there in every browser and on
-        your phone. <b>Which</b> theme a card wears is picked on that terminal's own bar, against
-        real output.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
@@ -1752,6 +1738,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
       <span class="hintline">The body of a comparator over two group names. Broken code falls back
         to the default and says so rather than blanking the board.</span>
+    </div>
+    <!-- The OTHER theme system, reachable from here because the terminal bar's
+         edit button needs a terminal and somebody bringing their colours at
+         nine in the morning has not started one yet. -->
+    <h3 class="s-section">terminal themes</h3>
+    <div class="field">
+      <label class="eyebrow">the terminal's colours</label>
+      <div class="picker">
+        <button onclick="document.getElementById('settings').close(); openThemeEditor('')"
+          >bring or edit a theme</button>
+      </div>
+      <span class="hintline">Not the board. This is the sixteen ANSI colours a session is drawn in,
+        and each card keeps its own choice. Import a <b>Windows Terminal</b> scheme, or edit any of
+        them. Themes are kept on the daemon, so one brought here is there in every browser and on
+        your phone. <b>Which</b> theme a card wears is picked on that terminal's own bar, against
+        real output.</span>
     </div>
     <h3 class="s-section">card colours</h3>
     <div class="field">
