@@ -202,6 +202,20 @@ func TestOpenOwnPullRequestIsAPlainCardUnlessReview(t *testing.T) {
 	}
 }
 
+func TestOpenOwnPullRequestAnswersTheCardAlreadyInItsWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{me: "lee", pr: forge.PR{HeadRef: "feat/x", Author: "lee"}})
+	oh.checkout(t, "o", "r")
+	_, first := oh.open(t, openURL)
+	code, again := oh.open(t, openURL)
+	if code != 200 || again["card"] != first["card"] || again["worktree"] == "" || len(oh.launched) != 1 {
+		t.Fatalf("%d %v, first %v, launched %d", code, again, first, len(oh.launched))
+	}
+}
+
 func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")
