@@ -190,6 +190,8 @@
     background: var(--shell-0); color: var(--head);
     border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 5px 6px;
   }
+  /* Sits over the select's right end, left of its arrow. The margin gives back the room the offset borrowed. */
+  #skinlab-copy { flex: none; position: relative; left: -80px; margin-right: -24px; }
   .lab-step { flex: none; padding: 5px 10px; font-size: var(--fs-lg); line-height: 1; }
   .lab-answers button { flex: 1 1 auto; padding: 7px 6px; font-size: var(--fs-xs); }
   #skinlab-more[hidden] { display: none; }

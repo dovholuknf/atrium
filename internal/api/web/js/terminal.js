@@ -483,7 +483,7 @@ async function termSettings(e) {
     // something you decide while looking at it.
     shareItem(t),
     actionsFor(t).length ? { sep: true } : null,
-    { label: "try a theme", note: t.theme || "from the project",
+    { label: "try a theme", tag: t.theme || repoColorName(t),
       help: "Opens the same floating panel the board's colours use. Arrow " +
         "through them and the terminal you are looking at changes as you go, " +
         "against the output already on screen. Escape puts back what was " +
