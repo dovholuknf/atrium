@@ -51,7 +51,8 @@ import (
 const RealPathHeader = "X-Atrium-Real-Path"
 
 const publishToolDesc = "Publish a document on the hub: a report, a summary, notes. It gets a stable link, " +
-	"`/d/<slug>`, that opens on the board and on the phone, and it outlives this card.\n\n" +
+	"`/d/<slug>`, that opens on the board and on the phone, and it outlives this card. " +
+	"Print the `url` exactly as answered: a click on `/d/<slug>` in a card's terminal opens it rendered.\n\n" +
 	"Give `title`, and either `content` (text, markdown is rendered) or `path` (a file in YOUR OWN card's " +
 	"directory, read on your room). Give `slug` to add a NEW VERSION to a document that already exists, " +
 	"and the older versions keep their bytes. Answers `{url, slug, version}`.\n\n" +
