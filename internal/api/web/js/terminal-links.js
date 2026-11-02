@@ -114,6 +114,7 @@ async function provideFileLinks(t, id, y, done) {
     const hit = probeHit(probeKnown(id), s.token);
     // The room decides what outside the card it will open. A path it does not find stays refused.
     if (hit) links.push(fileLink(id, s.range, hit));
+    else if (docLinkPath(s.token)) links.push(docLink(s.range, s.token));
     else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token));
   }
   done(links.length ? links : undefined);
@@ -164,6 +165,24 @@ function fileLink(id, range, hit) {
       if (hit.dir) openFromTerminal(id, hit);
       else if (viewAtOnce(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
+    }
+  };
+}
+
+// `/d/<slug>` and `/d/<slug>@<n>`, a published document. The hub serves it rendered, so it is never a path of the card.
+function docLinkPath(tok) {
+  return /^\/d\/[a-z0-9-]{1,60}(@[1-9][0-9]*)?$/.test(tok) ? tok : "";
+}
+
+function docLink(range, tok) {
+  return {
+    range,
+    text: tok,
+    activate: (ev) => {
+      if (ev && ev.button) return;
+      if (term && term.hasSelection && term.hasSelection()) return;
+      ev.preventDefault();
+      openLinkReused(location.origin + tok);
     }
   };
 }

@@ -106,6 +106,8 @@
     s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, url) => {
       const u = unesc(url);
       if (inside(u, ctx) && IMG.test(u)) return stash(fileNode(u, ctx, unesc(alt), true));
+      if (DOC.test(u)) return stash('<button type="button" class="md-img" data-card="" data-path="' + esc(u) + '" aria-label="' + esc(unesc(alt) || "image") +
+        '"><span class="md-img-note">' + esc(unesc(alt) || "image") + "</span></button>");
       const ok = safeURL(u);
       if (ok) return stash('<a href="' + esc(ok) + '" target="_blank" rel="noopener noreferrer">' + (alt || "image") + " (image, not loaded)</a>");
       return alt;
@@ -281,6 +283,19 @@
   }
   function release() { [...cache.keys()].forEach(cacheDrop); }
 
+  // A published image, typed by its first bytes because the hub serves it as octet-stream.
+  function docPicture(path) {
+    const at = path.indexOf("@");
+    const raw = "/_hub/docs/" + (at < 0 ? path.slice(3) : path.slice(3, at)) + "/raw" + (at < 0 ? "" : "?v=" + path.slice(at + 1));
+    return fetch(raw).then(r => { if (!r.ok) throw new Error("status " + r.status); return r.arrayBuffer(); }).then(buf => {
+      const b = new Uint8Array(buf);
+      const type = b[0] === 0x89 && b[1] === 0x50 ? "image/png" : b[0] === 0xff && b[1] === 0xd8 ? "image/jpeg" :
+        b[0] === 0x47 && b[1] === 0x49 ? "image/gif" : b[0] === 0x52 && b[1] === 0x49 ? "image/webp" : "";
+      if (!type) throw new Error("not an image");
+      return new Blob([b], { type });
+    });
+  }
+
   // The picture of a card file, once. Resolves { url } or { url: "" } when it is not available.
   function picture(card, path) {
     const key = card + "\u0000" + path;
@@ -288,8 +303,8 @@
     if (v) { cache.delete(key); cache.set(key, v); return v.ready; }
     const ext = (/\.(\w+)$/.exec(path) || [])[1] || "";
     v = { url: "", ready: null, settled: false };
-    v.ready = getFile(card, path).then(blob => {
-      v.url = URL.createObjectURL(new Blob([blob], { type: TYPE[ext.toLowerCase()] || "application/octet-stream" }));
+    v.ready = (DOC.test(path) ? docPicture(path) : getFile(card, path).then(blob => new Blob([blob], { type: TYPE[ext.toLowerCase()] || "application/octet-stream" }))).then(blob => {
+      v.url = URL.createObjectURL(blob);
       v.settled = true;
       return v;
     }).catch(() => { v.settled = true; return v; });
