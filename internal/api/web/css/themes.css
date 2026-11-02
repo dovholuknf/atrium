@@ -47,6 +47,7 @@
     padding: var(--sp-3) var(--sp-4); border-radius: 8px;
     border: 1px solid var(--stroke-dim); overflow-x: auto; white-space: pre;
   }
+  .thsample ::selection, .thsample::selection { background: var(--sel-bg); color: var(--sel-fg); }
   .thsample .sw { display: inline-block; width: 1.6em; text-align: center; }
   /* The shared preview: a card row over a terminal sample. The card is the board's own and does nothing when pressed. */
   .tshow { display: flex; flex-direction: column; gap: var(--vs-2); min-width: 0; }
