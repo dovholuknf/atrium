@@ -221,6 +221,7 @@
   "restartStays": 16960,
   "resumeSpinner": 3240,
   "revealFolds": 900,
+  "revealKeepsCollapse": 800,
   "roomsDash": 10559,
   "roomsMachine": 3924,
   "roomsSetup": 1184,
