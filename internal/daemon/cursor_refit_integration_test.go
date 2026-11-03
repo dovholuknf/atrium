@@ -69,12 +69,11 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 	})
 
 	large := attachKeptOpen(t, wsURL, 200, 30)
-	hostWait(t, 10*time.Second, "both viewers to be told 200x20", func() bool {
-		return strings.Contains(large.seen(), sizeFrame(200, 20)) && strings.Contains(small.seen(), sizeFrame(200, 20))
+	// The size frame is written before the replay, so the cursor move is awaited too.
+	hostWait(t, 10*time.Second, "both viewers to be told 200x20 and the large one to get the replay's cursor move", func() bool {
+		return strings.Contains(large.seen(), sizeFrame(200, 20)) && strings.Contains(small.seen(), sizeFrame(200, 20)) &&
+			hasCursorMove(large.seen())
 	})
-	if !hasCursorMove(large.seen()) {
-		t.Fatalf("the initial attach did not restore the cursor: %q", large.seen())
-	}
 	before := len(small.seen())
 	ptyMovesBefore := len(f.resized())
 
