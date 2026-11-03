@@ -457,9 +457,9 @@ function termHeadPlace() {
   if (!head || !lay || !q || !match || !label) return;
   const on = !termNarrow() && termListMode === "full" && !(typeof chatLent !== "undefined" && chatLent);
   if (on && q.parentNode !== head) {
-    termHeadHome = { line: q.parentNode, row: label.parentNode, hint: q.placeholder };
+    termHeadHome = { line: q.parentNode, row: label.parentNode, at: label.parentNode.previousSibling, hint: q.placeholder };
     head.append(q, match, label);
-    termHeadHome.row.style.display = "none";
+    termHeadHome.row.remove();
     q.placeholder = "filter";
     q.title = termHeadHome.hint;
   } else if (!on && q.parentNode === head && termHeadHome) {
@@ -467,11 +467,12 @@ function termHeadPlace() {
     q.removeAttribute("title");
     termHeadHome.line.append(q, match);
     termHeadHome.row.append(label);
-    termHeadHome.row.style.display = "";
+    termHeadHome.at.after(termHeadHome.row);
   }
   head.hidden = !on;
   lay.classList.toggle("tl-headed", on);
 }
+addEventListener("resize", () => termHeadPlace());
 
 const FUNNEL_FLARE = 7;
 
