@@ -736,6 +736,9 @@ async function cardMenu(e, id) {
   const autoOn = !!t.auto_approve || !!globalAuto;
 
   const items = [
+    t.supervised ? { label: "attach", act: () => attachTask(id) } : null,
+    t.supervised ? { label: "pop out", icon: popIcon(), act: () => popOutTask(id) } : null,
+    t.supervised ? { sep: true } : null,
     // The compact details: context now and the token totals. The same view a
     // one-second hover opens. See js/peek.js.
     {
@@ -746,18 +749,6 @@ async function cardMenu(e, id) {
     },
     { label: "copy id", act: () => { if (navigator.clipboard) navigator.clipboard.writeText(id).catch(() => {}); toast(id, "id copied"); } },
     { sep: true },
-    t.supervised ? { label: "attach", act: () => attachTask(id) } : null,
-    t.supervised ? { label: "pop out", icon: popIcon(), act: () => popOutTask(id) } : null,
-    // Beside attach rather than under it, because it is a different terminal
-    // and not a different way of opening the same one. The wording changes on
-    // whether there is one already: opening and returning are different
-    // promises, and offering "open" for something already open is how you end
-    // up believing you have two.
-    t.supervised ? {
-      more: true,
-      label: t.shell ? "go to its shell" : "open a shell here",
-      act: () => openShellFor(id)
-    } : null,
     // Offered only when there is one to close. `exit` in the shell does the
     // same thing, and this is for the case where it is open on a card you are
     // not looking at: a shell holds a process and a working directory, and the
@@ -782,7 +773,6 @@ async function cardMenu(e, id) {
     // them. That is occasionally what you want and never what you want by
     // accident, so the label says NEW and the tip says the rest.
     t.worktree ? {
-      more: true,
       label: "new agent here",
       help: t.supervised
         ? "One is already running here. This starts a SECOND runner in the same " +

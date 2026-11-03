@@ -563,7 +563,7 @@ function showMenu(e, items, opened) {
       </div>`
     : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}${
         it.on === undefined ? "" : " toggle" + (it.on ? " on" : "")}"
-        data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>${esc(it.label)}${
+        data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>${it.icon || ""}${esc(it.label)}${
         // A box with an arrow out of its corner: this row opens somewhere else.
         it.out ? `<svg class="out" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
           style="margin-left:6px;vertical-align:-1px" fill="none" stroke="currentColor" stroke-width="1.5"
