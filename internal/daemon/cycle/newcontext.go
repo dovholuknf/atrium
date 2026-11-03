@@ -403,6 +403,8 @@ type NewContexts struct {
 	Mu   sync.Mutex
 	By   map[string]*NewContext
 	Gens uint64
+	// dropped is a cleared auto run per card. See Clear.
+	Dropped map[string]ncDropped
 	// stop ends every run in flight, at shutdown.
 	Stop     chan struct{}
 	StopOnce sync.Once
@@ -460,6 +462,9 @@ func (n *NewContexts) SessionStarted(taskID, conv string) bool {
 	}
 	n.Mu.Lock()
 	defer n.Mu.Unlock()
+	if m, ok := n.Dropped[taskID]; ok && m.conv != conv {
+		delete(n.Dropped, taskID)
+	}
 	cur := n.By[taskID]
 	if cur == nil || cur.Step != NewContextFailed || cur.Abandoned || cur.Conv == "" || cur.Conv == conv {
 		return false
@@ -590,14 +595,64 @@ func (n *NewContexts) FinishRecorded(taskID string, gen uint64, record func()) b
 	return true
 }
 
-// clear removes a card's chip whatever it says and stops its run.
+// clear removes a card's chip whatever it says and stops its run. An auto run that had already asked leaves a
+// marker, so the next tick does not ask the same card again over the same limit.
 func (n *NewContexts) Clear(taskID string) bool {
 	n.Mu.Lock()
-	_, had := n.By[taskID]
+	cur, had := n.By[taskID]
 	delete(n.By, taskID)
+	if had && cur.Auto && cur.Prompted > 0 {
+		if n.Dropped == nil {
+			n.Dropped = map[string]ncDropped{}
+		}
+		n.Dropped[taskID] = ncDropped{conv: cur.Conv, file: cur.File, tokens: cur.Tokens, limit: cur.Limit,
+			prompted: cur.Prompted, at: time.Now()}
+	}
 	n.Mu.Unlock()
 	n.Save()
 	return had
+}
+
+// droppedHold is how long a cleared auto run holds the trigger off and may still be acked.
+const droppedHold = 10 * time.Minute
+
+// ncDropped is an auto run that was cleared after it asked.
+type ncDropped struct {
+	conv, file    string
+	tokens, limit int64
+	prompted      int
+	at            time.Time
+}
+
+// DroppedHolds is whether the card's cleared run still holds the trigger off: same conversation, under droppedHold.
+func (n *NewContexts) DroppedHolds(taskID, conv string) bool {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	m, ok := n.Dropped[taskID]
+	return ok && m.conv == conv && time.Since(m.at) < droppedHold
+}
+
+// DropMarker forgets the card's cleared run.
+func (n *NewContexts) DropMarker(taskID string) {
+	n.Mu.Lock()
+	delete(n.Dropped, taskID)
+	n.Mu.Unlock()
+}
+
+// Revive puts a cleared auto run back, for an `atrium ready` that arrives after the clear.
+func (n *NewContexts) Revive(taskID string) (uint64, bool) {
+	n.Mu.Lock()
+	m, ok := n.Dropped[taskID]
+	n.Mu.Unlock()
+	if !ok || time.Since(m.at) >= droppedHold {
+		return 0, false
+	}
+	gen, ok := n.Claim(taskID, &NewContext{Step: NewContextLimit, File: m.file, Conv: m.conv, Auto: true,
+		Tokens: m.tokens, Limit: m.limit, Prompted: m.prompted, LastPrompt: time.Now()})
+	if ok {
+		n.DropMarker(taskID)
+	}
+	return gen, ok
 }
 
 // holding reports whether a card is inside a new-context cycle that has not
@@ -1409,6 +1464,12 @@ func (d *Service) HandleNewContext(w http.ResponseWriter, r *http.Request) {
 		NcJSON(w, http.StatusOK, map[string]any{"card": id, "new_context": d.NewContextFor(id)})
 	case http.MethodDelete:
 		gone := d.Nctx.Clear(id)
+		log.Printf("[atrium] new context on %s cleared from the board (had a run: %v)", id, gone)
+		if gone {
+			if err := d.St.AppendEvent(id, store.EventNotified, map[string]any{"by": shared.CycleBy, "cleared": "board"}); err != nil {
+				log.Printf("[atrium] could not record the new context clear on %s: %v", id, err)
+			}
+		}
 		d.Publish(id)
 		d.ReleaseHeld(id)
 		NcJSON(w, http.StatusOK, map[string]any{"card": id, "cleared": gone})

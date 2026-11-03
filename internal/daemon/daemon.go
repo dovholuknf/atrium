@@ -1654,6 +1654,13 @@ func (d *Daemon) initServices() {
 			TaskFor:           d.taskFor,
 			Cycle: func(id string) (string, bool, bool) {
 				cur := d.Nctx.Get(id)
+				if cur == nil {
+					if gen, ok := d.Nctx.Revive(id); ok {
+						cur = d.Nctx.Get(id)
+						go d.RunNewContext(id, gen)
+						log.Printf("[atrium] atrium ready from %s after its cycle was cleared, taking it as the ack", id)
+					}
+				}
 				if cur == nil || cur.Step != cycle.NewContextLimit {
 					return "", false, false
 				}
