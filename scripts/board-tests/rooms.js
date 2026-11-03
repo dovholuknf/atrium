@@ -1642,15 +1642,18 @@ async function restartMenuSection(browser, base) {
       fail("restartMenu: new context is not called handoff / clear context: " + JSON.stringify(labels));
     }
     // The never-used entries sit behind "more...", which opens them in place and keeps the menu open.
-    if (labels.some(l => /^(attach terminal|open a shell here)/.test(l)) || !labels.some(l => /^more\.\.\./.test(l))) {
-      fail("restartMenu: attach and shell are not behind more...: " + JSON.stringify(labels));
+    if (!labels.some(l => /^attach$/.test(l)) || !labels.some(l => /pop out$/.test(l))) {
+      fail("restartMenu: attach and pop out are not in the menu: " + JSON.stringify(labels));
+    }
+    if (labels.some(l => /^open a shell here/.test(l)) || !labels.some(l => /^more\.\.\./.test(l))) {
+      fail("restartMenu: shell is not behind more...: " + JSON.stringify(labels));
     }
     await p.locator("#cardmenu button", { hasText: /^more\.\.\./ }).click();
     if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/more.png" });
     const opened = await p.evaluate(() => ({ on: document.getElementById("cardmenu").classList.contains("on"),
       labels: [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent) }));
     if (!opened.on || opened.labels.some(l => /^more\.\.\./.test(l)) ||
-        !opened.labels.some(l => /^attach terminal/.test(l)) || !opened.labels.some(l => /^open a shell here/.test(l))) {
+        !opened.labels.some(l => /^open a shell here/.test(l))) {
       fail("restartMenu: more... did not open the hidden entries in place: " + JSON.stringify(opened));
     }
     await p.keyboard.press("Escape");
