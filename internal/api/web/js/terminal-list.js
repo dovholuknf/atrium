@@ -473,16 +473,6 @@ function termHeadPlace() {
   lay.classList.toggle("tl-headed", on);
 }
 
-// The pane's top drops to the first row's top. Measured with the scroll undone, so scrolling does not move the pane.
-function termLeadPlace() {
-  const lay = document.getElementById("term-layout");
-  const scroll = document.querySelector("#term-list .termscroll");
-  if (!lay || !lay.offsetHeight) return;
-  const card = scroll && termListMode !== "off" && !termNarrow() && scroll.querySelector(".card.tab");
-  const lead = card ? Math.max(0, card.getBoundingClientRect().top + scroll.scrollTop - lay.getBoundingClientRect().top) : 0;
-  if (lay.style.getPropertyValue("--tl-lead") !== lead + "px") lay.style.setProperty("--tl-lead", lead + "px");
-}
-
 const FUNNEL_FLARE = 7;
 
 function placeOneBridge(bridge, card, side) {
@@ -2071,7 +2061,7 @@ async function renderTermList() {
   // later, so the measurement happens on the layout that was just written
   // rather than on the one being replaced.
   termHeadPlace();
-  requestAnimationFrame(() => { termLeadPlace(); placeTabBridge(); });
+  requestAnimationFrame(placeTabBridge);
   // Scrolling the rows moves the attached card under a bridge that is not
   // moving with it, and so does the tray rolling up or down. A capturing
   // listener on the host hears the scroll of `.termscroll` inside it, and

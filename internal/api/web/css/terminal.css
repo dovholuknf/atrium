@@ -54,8 +54,6 @@
   .term-head .seg { flex: none; flex-wrap: nowrap; }
   .term-head .seg button { padding: 4px 7px; }
   .tl-headed .term-list { padding-top: 40px; }
-  /* Level with the first row, so the attached row, its bridge and the pane share one top edge. Set by `termLeadPlace`. */
-  .term-layout > .term-pane { margin-top: var(--tl-lead, 0px); }
   /* The rows. Side and bottom padding keep a card's focus ring from being clipped by this scroll box. */
   .termscroll {
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
