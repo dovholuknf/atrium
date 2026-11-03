@@ -323,6 +323,10 @@ func (s *Server) ownPR(ctx context.Context, host, org, repo string, num int, pr 
 // openOwn launches a plain card in the worktree of a pull request its own login wrote: no review row, no walker.
 func (s *Server) openOwn(w http.ResponseWriter, in openRequest, got *rules.Resolved, wt prWorktreeResult, key, org, repo string,
 	num int, ans openAnswer) {
+	// the same directory under one name every time: a later open finds it resolved (/private/var, long Windows names)
+	if real, err := filepath.EvalSymlinks(wt.Path); err == nil {
+		wt.Path = real
+	}
 	if id, err := s.st.AdoptableTask(filepath.ToSlash(wt.Path)); err == nil && id != "" {
 		ans.Card, ans.Worktree = id, wt.Path
 		writeJSON(w, http.StatusOK, ans)
