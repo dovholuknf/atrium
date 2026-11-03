@@ -469,6 +469,7 @@ async function termSettings(e) {
   const own = readSize("atrium.popout." + t.id);
   const ctxMax = (t.context_size && t.context_size.ceiling_k) || 2000;
   let ctxK = peekThresholdK(t);
+  const say = actionItems(t), share = shareItem(t);
   const items = [
     { step: true, label: "text size",
       min: TERM_FONT_MIN, max: TERM_FONT_MAX,
@@ -504,19 +505,21 @@ async function termSettings(e) {
       tip: "The mark this card wears on a desktop notification.",
       act: () => pickIcon(t.id, t.icon) },
     { sep: true },
-    actionItems(t),
-    shareItem(t),
-    { label: "history from before the restart…", note: "opens in a tab",
-      help: "What this card's terminal held when atrium was last stopped, as " +
-        "plain text. Written at a clean stop, so there is none if the daemon " +
-        "was killed. Not shown in the terminal because a terminal can only " +
-        "add to the bottom.",
-      act: () => openOlderScrollback(t.id) },
-    { label: "save terminal trace", note: "downloads the last 64KB",
-      help: "Downloads the raw bytes this terminal sent and received most " +
-        "recently, with timestamps, plus what is on screen right now. Save it " +
-        "the moment the terminal draws something wrong and attach it to the bug.",
-      act: () => saveTermTrace() },
+    // One flyout, so the rows used every day stay short. Flyouts do not nest, so each group is a heading.
+    { label: "more", sub: [
+      ...(say ? [{ head: "say something" }, ...say.sub] : []),
+      ...(share ? [{ head: share.label }, ...share.sub] : []),
+      { head: "this terminal" },
+      { label: "history from before the restart…",
+        help: "What this card's terminal held when atrium was last stopped, as " +
+          "plain text. Written at a clean stop, so there is none if the daemon " +
+          "was killed. Opens in a tab, because a terminal can only add to the bottom.",
+        act: () => openOlderScrollback(t.id) },
+      { label: "save terminal trace",
+        help: "Downloads the last 64KB of raw bytes this terminal sent and received, " +
+          "with timestamps, plus what is on screen right now. Save it " +
+          "the moment the terminal draws something wrong and attach it to the bug.",
+        act: () => saveTermTrace() }] },
     // A window-mode or hand-joined session has no atrium terminal to exit and relaunch.
     t.supervised ? {
       label: "restart this session",
