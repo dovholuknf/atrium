@@ -459,48 +459,18 @@ async function setTermContextLimit(t, k) {
 }
 
 async function termSettings(e) {
-  // Without this the menu opens and closes in the same event: `showMenu` draws
-  // it, the click keeps bubbling to the document listener that dismisses any
-  // open menu, and the cog reads as a dead button. `cardMenu` stops the same
-  // event for the same reason.
+  // The click would bubble to the document listener that dismisses any open menu.
   e.preventDefault();
   e.stopPropagation();
   const t = termTask;
   if (!t) return;
-  // AWAITED. This used to start the fetch and build the menu without it, so
-  // the first open of the session was missing `say something` and the second
-  // had it: a menu whose contents depend on when you last opened it. One
-  // request, once per page, and only the first click waits for it.
+  // Awaited, or the first open of a page is missing `say something`.
   if (!allActions.length) await loadActions();
   const own = readSize("atrium.popout." + t.id);
   const ctxMax = (t.context_size && t.context_size.ceiling_k) || 2000;
   let ctxK = peekThresholdK(t);
+  const say = actionItems(t), share = shareItem(t);
   const items = [
-    // Reachable from the terminal you are looking at, which is where saying
-    // something to a session is a thing you want to do.
-    actionItems(t),
-    // Here as well as on the card, because handing somebody a session is
-    // something you decide while looking at it.
-    shareItem(t),
-    actionsFor(t).length ? { sep: true } : null,
-    { label: "try a theme", tag: t.theme || repoColorName(t),
-      help: "Opens the same floating panel the board's colours use. Arrow " +
-        "through them and the terminal you are looking at changes as you go, " +
-        "against the output already on screen. Escape puts back what was " +
-        "there. Keep it for this card or for every card in its repo.",
-      act: () => pickTheme() },
-    { label: "notification icon…", note: t.icon || "the atrium mark",
-      tip: "The mark this card wears on a desktop notification.",
-      act: () => pickIcon(t.id, t.icon) },
-    { label: "copy on select", on: copyOnSelect,
-      tip: "Selecting text copies it, the way a terminal does.",
-      act: () => toggleCopyOnSelect() },
-    // The text in the terminal, and nothing else on the page. Browser zoom
-    // takes the tabs, the strip and the chrome with it, which is the thing
-    // this exists instead of.
-    //
-    // The current size is on the row rather than in the tip, because the one
-    // question somebody opening this has is how big it is now.
     { step: true, label: "text size",
       min: TERM_FONT_MIN, max: TERM_FONT_MAX,
       help: "Scales the text in this terminal only, unlike browser zoom, " +
@@ -509,14 +479,10 @@ async function termSettings(e) {
         "remembered: it answers `I cannot read this right now`.",
       get: () => termFontSize,
       set: (n) => setTermFont(n) },
-    // Only when it is not already there, since a reset that resets nothing is
-    // a row you read and skip every time you open this.
     termFontSize !== TERM_FONT_DEFAULT ? {
       label: "reset text size", note: `back to ${TERM_FONT_DEFAULT}px`,
       act: () => setTermFont(TERM_FONT_DEFAULT)
     } : null,
-    // The card's own context limit, in thousands of tokens. Unlike text size it is saved on the card, and the row
-    // opens on the limit in force, so an unset card shows the hub's default.
     { step: true, label: "context limit (k)",
       min: 10, max: ctxMax,
       help: "In thousands of tokens. Past it atrium cycles this card's context. Saved on the card and wins " +
@@ -526,34 +492,35 @@ async function termSettings(e) {
     t.overrides && t.overrides.context_limit_k ? {
       label: "use the default context limit", note: "the hub's, for its harness",
       act: () => setTermContextLimit(t, "") } : null,
+    { label: "try a theme", tag: t.theme || repoColorName(t),
+      help: "Opens the same floating panel the board's colours use. Arrow " +
+        "through them and the terminal you are looking at changes as you go, " +
+        "against the output already on screen. Escape puts back what was " +
+        "there. Keep it for this card or for every card in its repo.",
+      act: () => pickTheme() },
+    { label: "copy on select", on: copyOnSelect,
+      tip: "Selecting text copies it, the way a terminal does.",
+      act: () => toggleCopyOnSelect() },
+    { label: "notification icon…", note: t.icon || "the atrium mark",
+      tip: "The mark this card wears on a desktop notification.",
+      act: () => pickIcon(t.id, t.icon) },
     { sep: true },
-    // WHAT THIS TERMINAL SAID BEFORE THE LAST RESTART.
-    //
-    // In a tab and not in the terminal, because xterm can only append. There
-    // is no way to put bytes above what is already in its buffer, so "load
-    // more at the top" would have to clear the pane and redraw it, which
-    // throws away the live session's screen to show you history.
-    //
-    // It used to be joined onto the front of every attach and that was worse
-    // than either: a resumed session reprints its own recent history, so you
-    // got the last hour twice with nothing saying why.
-    { label: "history from before the restart…", note: "opens in a tab",
-      help: "What this card's terminal held when atrium was last stopped, as " +
-        "plain text. Written at a clean stop, so there is none if the daemon " +
-        "was killed. Not shown in the terminal because a terminal can only " +
-        "add to the bottom.",
-      act: () => openOlderScrollback(t.id) },
-    // For the garble that will not happen on demand: click it the moment the
-    // pane looks wrong. See js/termtrace.js.
-    { label: "save terminal trace", note: "downloads the last 64KB",
-      help: "Downloads the raw bytes this terminal sent and received most " +
-        "recently, with timestamps, plus what is on screen right now. Save it " +
-        "the moment the terminal draws something wrong and attach it to the bug.",
-      act: () => saveTermTrace() },
-    // Only for a session atrium owns a terminal for. A window-mode session owns
-    // itself and one joined by hand belongs to whoever started it, so there is
-    // no terminal here to exit and relaunch. The daemon refuses either way, but
-    // an item that can only toast a refusal is one the operator should not see.
+    // One flyout, so the rows used every day stay short. Flyouts do not nest, so each group is a heading.
+    { label: "more", sub: [
+      ...(say ? [{ head: "say something" }, ...say.sub] : []),
+      ...(share && share.sub.some(s => s.act) ? [{ head: share.label }, ...share.sub.filter(s => !s.quiet)] : []),
+      { head: "this terminal" },
+      { label: "history from before the restart…",
+        help: "What this card's terminal held when atrium was last stopped, as " +
+          "plain text. Written at a clean stop, so there is none if the daemon " +
+          "was killed. Opens in a tab, because a terminal can only add to the bottom.",
+        act: () => openOlderScrollback(t.id) },
+      { label: "save terminal trace",
+        help: "Downloads the last 64KB of raw bytes this terminal sent and received, " +
+          "with timestamps, plus what is on screen right now. Save it " +
+          "the moment the terminal draws something wrong and attach it to the bug.",
+        act: () => saveTermTrace() }] },
+    // A window-mode or hand-joined session has no atrium terminal to exit and relaunch.
     t.supervised ? {
       label: "restart this session",
       note: isLeanCard(t) ? "comes back lean" : "resumes the same conversation",
@@ -562,9 +529,6 @@ async function termSettings(e) {
         "`restart to update` nag. The terminal drops for a few seconds while " +
         "it comes back. Nothing is lost: it picks up where it left off.",
       act: () => restartTerm() } : null,
-    // A lean card restarts lean, because the tag is on the card. This takes the
-    // lean tags off first, so the restart and every reopen after it get the
-    // operator's whole setup. See backlog-2 item 64.
     t.supervised && isLeanCard(t) ? {
       label: "restart with my full setup", note: "stops being lean",
       help: "This card was launched lean: no user CLAUDE.md, memory, skills or " +
@@ -572,8 +536,6 @@ async function termSettings(e) {
         "them, and the card stops being lean.",
       act: () => restartTerm(true) } : null,
     { sep: true },
-    // Only meaningful from the window whose size is being remembered. From the
-    // board there is no popped-out window to measure.
     termOnly() ? {
       label: "remember this size", note: "for this card",
       tip: "This card's window opens at whatever size it is right now.",

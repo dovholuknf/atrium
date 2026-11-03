@@ -668,12 +668,12 @@ function showMenu(e, items, opened) {
 // Clipping outside for a single frame closed the menu, and the only way to
 // work was to trace an L with the pointer.
 //
-// So closing is DELAYED and opening is not. Two thirds of a second is long
+// So closing is DELAYED and opening is not. A third of a second is long
 // enough to cross a corner and short enough that a flyout does not follow you
 // around the menu. The flyout is drawn INSIDE the row it belongs to, so the
 // pointer moving onto it never leaves the row and never starts the timer at
 // all: the delay is only for the case where you actually left.
-const flyoutGrace = 650;
+const flyoutGrace = 325;
 let flyoutTimer = 0;
 
 function wireFlyouts() {
