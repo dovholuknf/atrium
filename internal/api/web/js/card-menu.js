@@ -735,15 +735,6 @@ async function cardMenu(e, id) {
   // card's own setting, which is the only one it owns.
   const autoOn = !!t.auto_approve || !!globalAuto;
 
-  // Where a terminal opens. The same two destinations whether it is one that
-  // already exists or one this menu is about to start, so they are written
-  // once: two entries offering different words for the same pair is how they
-  // drift.
-  const openIn = (go) => [
-    { label: "in terminals", act: () => go("here") },
-    { label: "in its own window", icon: popIcon(), act: () => go("window") }
-  ];
-
   const items = [
     // The compact details: context now and the token totals. The same view a
     // one-second hover opens. See js/peek.js.
@@ -755,14 +746,8 @@ async function cardMenu(e, id) {
     },
     { label: "copy id", act: () => { if (navigator.clipboard) navigator.clipboard.writeText(id).catch(() => {}); toast(id, "id copied"); } },
     { sep: true },
-    // One entry, two ways to open it. Attaching and popping out are the same
-    // intention with a different destination, so they are one row that says
-    // where rather than two rows that both say attach.
-    t.supervised ? {
-      more: true,
-      label: "attach terminal",
-      sub: openIn(where => where === "window" ? popOutTask(id) : attachTask(id))
-    } : null,
+    t.supervised ? { label: "attach", act: () => attachTask(id) } : null,
+    t.supervised ? { label: "pop out", icon: popIcon(), act: () => popOutTask(id) } : null,
     // Beside attach rather than under it, because it is a different terminal
     // and not a different way of opening the same one. The wording changes on
     // whether there is one already: opening and returning are different

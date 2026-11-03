@@ -922,11 +922,6 @@ function cardHTML(t, wearAs) {
       ${t.offline ? `<span class="chip nocontact"
         data-tip="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
         >&#128683;</span>` : ""}
-      ${t.supervised && !t.offline ? `<span class="chip attach hoveronly"
-        onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
-      <span class="chip attach icon hoveronly"
-        aria-label="open this terminal in its own window" data-tip="open this terminal in its own window"
-        onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
       </div>
     </div>
     ${askLine(t)}
