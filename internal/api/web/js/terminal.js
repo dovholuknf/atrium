@@ -508,7 +508,7 @@ async function termSettings(e) {
     // One flyout, so the rows used every day stay short. Flyouts do not nest, so each group is a heading.
     { label: "more", sub: [
       ...(say ? [{ head: "say something" }, ...say.sub] : []),
-      ...(share ? [{ head: share.label }, ...share.sub] : []),
+      ...(share && share.sub.some(s => s.act) ? [{ head: share.label }, ...share.sub.filter(s => !s.quiet)] : []),
       { head: "this terminal" },
       { label: "history from before the restart…",
         help: "What this card's terminal held when atrium was last stopped, as " +
