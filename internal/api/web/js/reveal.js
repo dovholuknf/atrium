@@ -39,7 +39,9 @@ function revealFolds(t) {
   // The rows of the cards that launched it.
   // A parent's fold means the opposite on each side of the terminals' subagents chip (see `termKidsShut`).
   const subsOn = typeof termSubsOn === "function" ? termSubsOn() : true;
-  chain.slice(1).forEach(up => (subsOn ? open : openInverted)(termKidsKey(up)));
+  // A row already drawn in the list was clicked there, so a collapse the user made on its launcher stays.
+  const drawn = document.querySelector(`#term-list [data-id="${CSS.escape(t.id)}"]`);
+  if (!drawn) chain.slice(1).forEach(up => (subsOn ? open : openInverted)(termKidsKey(up)));
 
   const col = COLUMNS.find(c => c.statuses.includes(t.status));
   const bcol = boardColumnOf(t);
