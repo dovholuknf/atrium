@@ -587,13 +587,18 @@
   /* A group inside a flyout, and a line saying what a group cannot do. Neither is a target, because a heading
      that lights up under the pointer is a heading somebody will click. */
   #cardmenu .subhead {
-    display: block; padding: 8px 11px 4px; white-space: nowrap;
+    display: block; margin: 0; padding: 12px 11px 4px; white-space: nowrap;
     font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase;
     color: var(--dimmest);
   }
   /* The first one needs no gap above it. The flyout's own padding is enough, and a heading floating below the
      top edge reads as a dropped row. */
   #cardmenu .subhead:first-child { padding-top: 3px; }
+  /* Every later group opens on the same line as the menu's own `.sep`, 8px in from the flyout's edge. */
+  #cardmenu .subhead:not(:first-child) { margin-top: 5px; padding-top: 0; }
+  #cardmenu .subhead:not(:first-child)::before {
+    content: ""; display: block; height: 1px; margin: 0 -8px 10px; background: var(--stroke-dim);
+  }
   #cardmenu .subnote {
     display: block; padding: 5px 11px 7px; white-space: nowrap;
     font-size: var(--fs-sm); color: var(--dimmest); font-style: italic;
