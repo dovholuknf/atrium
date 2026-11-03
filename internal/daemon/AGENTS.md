@@ -100,6 +100,7 @@ the hazard it did not catch on its own is a route that grows a parameter: `<id>/
 | `session.go` | join, leave, start, end, and the gate question |
 | `launch.go` | spawning a runner from a harness row |
 | `shutdown.go` | stopping without killing |
+| `restartpty.go` | restarting the pty host and reopening its cards with the room staying up |
 | `reaper.go` | free liveness: ask the OS, not the agent |
 | `orphans.go` | a question asked for a session that has since gone |
 | `drain.go` | turning auto mode on empties the queue it was turned on because of |

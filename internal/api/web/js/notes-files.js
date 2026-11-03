@@ -1173,6 +1173,7 @@ function openLab(spec) {
   document.getElementById("skinlab-title").textContent = spec.title;
   sel.innerHTML = spec.options;
   sel.value = spec.value;
+  document.getElementById("skinlab-copy").innerHTML = copyIcon();
   const own = !!spec.answers;
   document.getElementById("skinlab").classList.toggle("showing", !!spec.show);
   document.getElementById("skinlab-std").hidden = own;
@@ -1223,6 +1224,12 @@ function previewLab(value) {
   if (!labNow) return;
   labNow.preview(value);
   paintLabShow(value);
+}
+
+// The name in the picker to the clipboard, so a theme can be named without retyping it.
+function copyLabName(btn) {
+  const name = document.getElementById("skinlab-pick").value;
+  if (name) copyAliasHandle(btn, "", name);
 }
 
 // The panel's card and terminal sample, for owners that have one to show.

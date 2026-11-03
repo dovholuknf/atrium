@@ -131,6 +131,14 @@ func describeRestart(req *mcp.CallToolRequest, in restartInput, _ restartOutput)
 	return ctl.RoomOf(req), what, true
 }
 
+func describeRestartPtyHost(req *mcp.CallToolRequest, in restartPtyHostInput, _ restartOutput) (string, string, bool) {
+	room := strings.TrimSpace(in.Room)
+	if room == "" {
+		room = ctl.RoomOf(req)
+	}
+	return room, "restart pty host", true
+}
+
 func describeWake(req *mcp.CallToolRequest, in wakeInput, out wakeOutput) (string, string, bool) {
 	what := "wake queued for own card"
 	if in.Clear {

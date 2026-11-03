@@ -222,10 +222,9 @@
   .card .card-line {
     display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   }
-  /* A card hovers in its group's color. With a single blue, the card you were pointing at stopped saying which
+  /* A terminals row hovers in its group's color. A board card does not change on hover. With a single blue, the card you were pointing at stopped saying which
      project it was in. --ghue is inherited from the group, so a card outside one falls back to blue. */
-  .card:hover {
-    transform: translateY(-1px);
+  .term-list .card:hover {
     border-color: var(--hover, var(--blue));
     box-shadow: var(--shadow-lift);
   }
@@ -235,7 +234,7 @@
     background: linear-gradient(180deg, var(--teal), var(--blue)); opacity: 0;
     transition: opacity .16s;
   }
-  .card:hover::before { opacity: 1; }
+  .term-list .card:hover::before { opacity: 1; }
   .card.waiting::before { opacity: 1; background: var(--wait); }
   /* A card inherits the board's size. Everything on it is a fraction of that. */
   .card .title {
@@ -257,9 +256,6 @@
     flex-wrap: wrap; justify-content: flex-end; overflow: visible;
   }
   .card .card-line > .chips .chip { flex: none; }
-  /* Actions show on hover and in the card menu, and take no chip width at rest. */
-  .card .chip.hoveronly { display: none; }
-  .card:hover .chip.hoveronly { display: inline-block; }
   /* Three pulses and then still, like the sound button: an infinite loop holds the compositor at 60 fps for as long
      as one waiting card is on screen, which was most of an idle board's GPU. */
   .pulse {
@@ -423,7 +419,7 @@
   .card.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }
   /* GREY MEANS NOT RUNNING AND NOTHING ELSE: a card with no runner is grey, whole. */
   .card.s-off { filter: grayscale(1); opacity: .55; }
-  .card.s-off:hover { opacity: 1; }
+  .term-list .card.s-off:hover { opacity: 1; }
   .card.s-unreachable { outline: 1px dashed var(--stroke); outline-offset: -1px; }
   .board .col.fixed { flex: 0 0 300px; min-width: 268px; }
   .board .col.fixed.folded { flex: 0 0 auto; min-width: 0; }
@@ -456,7 +452,7 @@
      working. */
   .chip.nocontact { background: var(--hairline); color: var(--dimmest); }
   .card.nocontact { opacity: .68; }
-  .card.nocontact:hover { opacity: 1; }
+  .term-list .card.nocontact:hover { opacity: 1; }
   /* Every forever-repeating animation stopped in one place. Scattered per-rule opt-outs let two of these
      animate through reduced motion for months, because the block only named the chips somebody thought of.
      Naming the animations here covers a new one as soon as it is written. */
@@ -550,6 +546,10 @@
 
   /* A row that opens a flyout rather than doing something. The caret says so, since a row that ignores a click
      and has no other sign is a broken row. */
+  #cardmenu button .rowtag {
+    margin-left: auto; padding-left: 12px; color: var(--dimmest); font: var(--fs-xs) var(--mono);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
   #cardmenu button .more {
     margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs);
   }
@@ -587,13 +587,18 @@
   /* A group inside a flyout, and a line saying what a group cannot do. Neither is a target, because a heading
      that lights up under the pointer is a heading somebody will click. */
   #cardmenu .subhead {
-    display: block; padding: 8px 11px 4px; white-space: nowrap;
+    display: block; margin: 0; padding: 12px 11px 4px; white-space: nowrap;
     font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase;
     color: var(--dimmest);
   }
   /* The first one needs no gap above it. The flyout's own padding is enough, and a heading floating below the
      top edge reads as a dropped row. */
   #cardmenu .subhead:first-child { padding-top: 3px; }
+  /* Every later group opens on the same line as the menu's own `.sep`, 8px in from the flyout's edge. */
+  #cardmenu .subhead:not(:first-child) { margin-top: 5px; padding-top: 0; }
+  #cardmenu .subhead:not(:first-child)::before {
+    content: ""; display: block; height: 1px; margin: 0 -8px 10px; background: var(--stroke-dim);
+  }
   #cardmenu .subnote {
     display: block; padding: 5px 11px 7px; white-space: nowrap;
     font-size: var(--fs-sm); color: var(--dimmest); font-style: italic;

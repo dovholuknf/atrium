@@ -437,6 +437,18 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	}, audited(c, "ctl-restart", describeRestart, c.restartHandler))
 
 	addTool(s, class, &mcp.Tool{
+		Name: "restart_pty_host",
+		Description: "Restart a room's pty host and bring its cards back, WITHOUT restarting the room. Use it after a " +
+			"claude update, so every runner starts on the new binary.\n\n" +
+			"FORWARDED TO THE ROOM. The room asks its working sessions to wrap up and queues a restart wake on " +
+			"each, ends the runners the host holds, replaces the host from its installed binary, and reopens every " +
+			"card that had a runner. The room process, its hub link and the ssh route that rides it stay up.\n\n" +
+			"Names a room with `room`, else your own. It returns at once and the restart happens a moment later. " +
+			"If your session is on that room it is restarted too: say nothing further this turn and expect to be " +
+			"resumed. Pass `immediate` to skip the wrap-up.",
+	}, audited(c, "ctl-restart-pty-host", describeRestartPtyHost, c.restartPtyHostHandler))
+
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_wake_after_restart",
 		Description: "Queue one prompt for YOUR OWN card, typed into your terminal once after a restart " +
 			"brings your session back.\n\n" +
@@ -2312,6 +2324,40 @@ func (c *controlMCP) restartHandler(_ context.Context, req *mcp.CallToolRequest,
 	out.Note = "asked " + room + " to restart. it asks its working agents to wrap up and queues a wake on each, then winds down and " +
 		"comes back on the same database. if this session is on that room it goes down too: say " +
 		"nothing further this turn and expect to be resumed."
+	return nil, out, nil
+}
+
+type restartPtyHostInput struct {
+	Room        string `json:"room,omitempty" jsonschema:"the room whose pty host to restart. default is your own"`
+	Why         string `json:"why,omitempty" jsonschema:"what this restart is for"`
+	WaitSeconds int    `json:"wait_seconds,omitempty" jsonschema:"how long to wait for working sessions to wrap up, in seconds"`
+	Immediate   bool   `json:"immediate,omitempty" jsonschema:"skip the wrap-up: do not ask working sessions to finish their step and be woken after"`
+}
+
+// restartPtyHostHandler forwards a pty host restart to the named room, or the caller's. The room does the work, so the
+// answer is "instructed". See RestartAsk.PtyHost and the room's OnRestart.
+func (c *controlMCP) restartPtyHostHandler(_ context.Context, req *mcp.CallToolRequest, in restartPtyHostInput) (
+	*mcp.CallToolResult, restartOutput, error) {
+
+	room := strings.TrimSpace(in.Room)
+	if room == "" {
+		room = ctl.RoomOf(req)
+	}
+	out := restartOutput{Room: room}
+	if room == "" {
+		return nil, out, fmt.Errorf("no room named. pass room, or call from a session that has one")
+	}
+	if c.hub == nil {
+		return nil, out, fmt.Errorf("this hub cannot forward a restart")
+	}
+	if err := c.hub.AskRestart(room, RestartAsk{
+		Why: strings.TrimSpace(in.Why), WaitSeconds: in.WaitSeconds, Immediate: in.Immediate, PtyHost: true,
+	}); err != nil {
+		return nil, out, fmt.Errorf("could not ask %s to restart its pty host: %w", room, err)
+	}
+	out.Scheduled = true
+	out.Note = "asked " + room + " to restart its pty host. it asks its working agents to wrap up and queues a wake on " +
+		"each, ends the host's runners, starts a new host and reopens the cards. the room itself stays up."
 	return nil, out, nil
 }
 

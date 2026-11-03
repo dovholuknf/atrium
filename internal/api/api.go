@@ -282,6 +282,9 @@ type Server struct {
 	// RestartWrap asks the working sessions to wrap up before a restart, and answers when they have or the wait
 	// is out. Supplied by the daemon, with Shutdown's access rules.
 	RestartWrap http.HandlerFunc
+	// RestartPtyHost restarts the room's pty host and reopens its cards, with the room staying up. Supplied by the
+	// daemon, with Shutdown's access rules.
+	RestartPtyHost http.HandlerFunc
 	// Shelve stops the runner behind a card being put down. The card and its
 	// resume id stay, so the work is paused rather than ended.
 	Shelve func(taskID string) error
@@ -773,6 +776,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.RestartWrap != nil {
 		mux.HandleFunc("POST /v1/restart-wrap", s.RestartWrap)
+	}
+	if s.RestartPtyHost != nil {
+		mux.HandleFunc("POST /v1/restart-pty-host", s.RestartPtyHost)
 	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
 	mux.HandleFunc("GET /v1/tasks/{id}/notices", s.noticesUnread)

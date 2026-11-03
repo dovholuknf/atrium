@@ -151,7 +151,14 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 		t.Skipf("could not start a runner here: %v", err)
 	}
 	r := d.sup.get(task.ID)
-	t.Cleanup(func() { r.closePTY() })
+	// Waits for the runner to be gone: on Windows its directory cannot be removed while it holds it.
+	t.Cleanup(func() {
+		r.closePTY()
+		select {
+		case <-r.done:
+		case <-time.After(20 * time.Second):
+		}
+	})
 	if err := d.EnsureShell(task.ID); err != nil {
 		t.Skipf("could not open a shell here: %v", err)
 	}

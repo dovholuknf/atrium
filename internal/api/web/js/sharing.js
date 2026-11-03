@@ -563,7 +563,7 @@ function showMenu(e, items, opened) {
       </div>`
     : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}${
         it.on === undefined ? "" : " toggle" + (it.on ? " on" : "")}"
-        data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>${esc(it.label)}${
+        data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>${it.icon ? `<span style="margin-right:6px">${it.icon}</span>` : ""}${esc(it.label)}${
         // A box with an arrow out of its corner: this row opens somewhere else.
         it.out ? `<svg class="out" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
           style="margin-left:6px;vertical-align:-1px" fill="none" stroke="currentColor" stroke-width="1.5"
@@ -574,6 +574,8 @@ function showMenu(e, items, opened) {
         // than against the thing it explains, and it is the one part of a menu
         // that cannot be styled at all.
         it.help ? `<span class="help" tabindex="0" data-tip="${esc(it.help)}">?</span>` : ""}${
+        it.tag ? `<span class="rowtag">${esc(it.tag)}<span class="copybit" data-tip="copy ${esc(it.tag)}"
+          onclick="event.stopPropagation();copyAliasHandle(this,'','${esc(it.tag)}')">${copyIcon()}</span></span>` : ""}${
         // A toggle says what it IS. The label stays put and a lamp beside it
         // carries the state, rather than the label flipping between "auto
         // mode" and "stop auto mode", which asks you to work out which of
@@ -666,12 +668,12 @@ function showMenu(e, items, opened) {
 // Clipping outside for a single frame closed the menu, and the only way to
 // work was to trace an L with the pointer.
 //
-// So closing is DELAYED and opening is not. Two thirds of a second is long
+// So closing is DELAYED and opening is not. A third of a second is long
 // enough to cross a corner and short enough that a flyout does not follow you
 // around the menu. The flyout is drawn INSIDE the row it belongs to, so the
 // pointer moving onto it never leaves the row and never starts the timer at
 // all: the delay is only for the case where you actually left.
-const flyoutGrace = 650;
+const flyoutGrace = 325;
 let flyoutTimer = 0;
 
 function wireFlyouts() {
