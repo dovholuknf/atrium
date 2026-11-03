@@ -22178,6 +22178,43 @@ async function groupBridgeSection(browser, base) {
   if (!bad) console.log("groupBridge ok");
 }
 
+// A COLLAPSE THE USER MADE STAYS WHEN A DRAWN CHILD IS CLICKED. Going to a child whose row is already in the list leaves its
+// launcher's fold alone, and going to one whose row is not drawn still opens it.
+async function revealKeepsCollapseSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof revealFolds === "function" && typeof termKidsKey === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const card = (id, extra) => ({ id, status: "running", tags: [], display_title: id, spawned_by_id: "", ...extra });
+      const par = card("par"), kid = card("kid", { spawned_by_id: "par", tags: ["atrium:subagent"] });
+      lastTasks = [par, kid];
+      const key = termKidsKey(par);
+      const shutList = () => (termSubsOn() ? [key] : []);
+      const state = () => termKidsShut(par);
+      localStorage.setItem("atrium.folded", JSON.stringify(shutList()));
+      const out = { before: state() };
+      const row = document.createElement("div");
+      row.dataset.id = "kid";
+      document.getElementById("term-list").appendChild(row);
+      revealFolds(kid);
+      out.drawn = state();
+      row.remove();
+      revealFolds(kid);
+      out.hidden = state();
+      return out;
+    });
+    if (!got.before) fail("revealKeepsCollapse: the parent did not start collapsed");
+    if (!got.drawn) fail("revealKeepsCollapse: going to a drawn child opened its collapsed launcher");
+    if (got.hidden) fail("revealKeepsCollapse: going to a hidden child left its launcher collapsed");
+    if (errors.length) fail("revealKeepsCollapse: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("revealKeepsCollapse ok");
+}
+
 // THE BRIDGE RUNS FROM A COLLAPSED PARENT. The attached card is a hidden child of a folded row, one level down and two:
 // the folded row carries a funnel in the attached card's frame and nothing is opened. Expanded, the child's own row
 // carries the ordinary bridge. COLLAPSED_BRIDGE_SHOTS and COLLAPSED_BRIDGE_TAG write the pictures.
@@ -25589,7 +25626,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection,revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -27709,6 +27746,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
+    await unit("revealKeepsCollapse", () => revealKeepsCollapseSection(browser, base));
     await unit("revealChip", () => revealChipSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
