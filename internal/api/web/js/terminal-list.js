@@ -457,10 +457,14 @@ function termHeadPlace() {
   if (!head || !lay || !q || !match || !label) return;
   const on = !termNarrow() && termListMode === "full" && !(typeof chatLent !== "undefined" && chatLent);
   if (on && q.parentNode !== head) {
-    termHeadHome = { line: q.parentNode, row: label.parentNode };
+    termHeadHome = { line: q.parentNode, row: label.parentNode, hint: q.placeholder };
     head.append(q, match, label);
     termHeadHome.row.style.display = "none";
+    q.placeholder = "filter";
+    q.title = termHeadHome.hint;
   } else if (!on && q.parentNode === head && termHeadHome) {
+    q.placeholder = termHeadHome.hint;
+    q.removeAttribute("title");
     termHeadHome.line.append(q, match);
     termHeadHome.row.append(label);
     termHeadHome.row.style.display = "";
@@ -475,8 +479,7 @@ function termLeadPlace() {
   const scroll = document.querySelector("#term-list .termscroll");
   if (!lay || !lay.offsetHeight) return;
   const card = scroll && termListMode !== "off" && !termNarrow() && scroll.querySelector(".card.tab");
-  const lead = card ? Math.max(0, Math.round(card.getBoundingClientRect().top + scroll.scrollTop -
-    scroll.getBoundingClientRect().top + scroll.offsetTop)) : 0;
+  const lead = card ? Math.max(0, card.getBoundingClientRect().top + scroll.scrollTop - lay.getBoundingClientRect().top) : 0;
   if (lay.style.getPropertyValue("--tl-lead") !== lead + "px") lay.style.setProperty("--tl-lead", lead + "px");
 }
 
