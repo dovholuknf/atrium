@@ -587,7 +587,7 @@
   /* A group inside a flyout, and a line saying what a group cannot do. Neither is a target, because a heading
      that lights up under the pointer is a heading somebody will click. */
   #cardmenu .subhead {
-    display: block; padding: 8px 11px 4px; white-space: nowrap;
+    display: block; margin: 0; padding: 12px 11px 4px; white-space: nowrap;
     font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase;
     color: var(--dimmest);
   }
