@@ -813,6 +813,10 @@
   #linkopen-dock .card { flex: none; box-shadow: var(--shadow-pop); }
   .card.linkopen { border-style: dashed; cursor: default; }
   .card.linkopen.failed { border-color: var(--warn); border-style: solid; }
+  /* Not a card you can open yet, so a hover changes nothing. */
+  #linkopen-dock .card.linkopen:hover { transform: none; border-color: var(--stroke); box-shadow: var(--shadow-pop); }
+  #linkopen-dock .card.linkopen.failed:hover { border-color: var(--warn); }
+  #linkopen-dock .card.linkopen:hover::before { opacity: 0; }
   .linkopen-url { color: var(--dimmest); font: var(--fs-xs)/1.3 var(--mono); overflow-wrap: anywhere; margin-top: 2px; }
   .linkopen-say { display: flex; align-items: center; gap: 8px; color: var(--dim); font: 500 var(--fs-sm)/1.35 var(--sans); margin-top: 6px; }
   .linkopen-say.warn { color: var(--warn); overflow-wrap: anywhere; }
