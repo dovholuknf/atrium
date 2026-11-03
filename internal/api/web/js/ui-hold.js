@@ -31,9 +31,10 @@ async function uiHoldCogMenu() {
   switchView("terms");
   openTerm(card);
   const cog = await uiHoldUntil(() => termTask && termTask.id === card.id && document.getElementById("t-cog"));
-  cog.click();
-  await uiHoldUntil(() => cardMenuEl.classList.contains("on"));
+  document.removeEventListener("click", closeCardMenu);
   closeCardMenu = () => {};
+  const r = cog.getBoundingClientRect();
+  termSettings({ preventDefault() {}, stopPropagation() {}, clientX: r.left, clientY: r.bottom });
 }
 
 // After load, so boot.js has routed the page and cannot switch the view out from under the held state.
