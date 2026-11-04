@@ -226,7 +226,7 @@ function fdStatus(tab, s) {
   st.status = s;
   const sum = host.querySelector(".fsum");
   if (sum.textContent !== s.summary) sum.textContent = s.summary || "";
-  const m = host.querySelector(".matchcount");
+  const m = document.getElementById(FD_TABS[tab].match);
   const mt = s.match || "";
   if (m.textContent !== mt) m.textContent = mt;
   fdFitSummary(host);

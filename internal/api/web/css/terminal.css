@@ -37,6 +37,23 @@
        gaps, and gaps are where it came through. */
     background: var(--shell-0); border-radius: var(--r-md);
   }
+  /* Over the list's top rather than in it: `renderTermList` rewrites the list, and the search box would lose focus. */
+  .term-head {
+    position: absolute; left: 0; top: 0; z-index: 2; width: var(--termw, 260px); box-sizing: border-box;
+    display: flex; align-items: center; gap: 6px; padding: 6px 6px 0;
+  }
+  .term-head[hidden] { display: none; }
+  .term-head .fq {
+    flex: 1 1 0; min-width: 0; height: 28px; box-sizing: border-box; padding: 3px 8px;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--head); cursor: text;
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
+  }
+  .term-head .fq:focus { outline: none; border-color: var(--blue); }
+  .term-head .matchcount { flex: none; }
+  .term-head .matchcount:empty { display: none; }
+  .term-head .seg { flex: none; flex-wrap: nowrap; }
+  .term-head .seg button { padding: 4px 7px; }
+  .tl-headed .term-list { padding-top: 40px; }
   /* The rows. Side and bottom padding keep a card's focus ring from being clipped by this scroll box. */
   .termscroll {
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;

@@ -18473,7 +18473,8 @@ async function controlsCompactSection(browser, base) {
         }, tab);
         if (got.hidden) continue;
         if (process.env.DRAWER_SHOTS && tab === "stack") await p.screenshot({ path: process.env.DRAWER_SHOTS + "/drawer-" + v.w + ".png", clip: { x: 0, y: 0, width: v.w, height: Math.min(v.h, 260) } });
-        if (got.labels !== { stack: "show|sort by|group|label", board: "show|sort|group|label", terms: "show|sort by|group|label" }[tab]) fail(tag + "rows changed: " + got.labels);
+        // over 900px the terms label pills sit over the list with the search box, see termHeadPlace
+        if (got.labels !== { stack: "show|sort by|group|label", board: "show|sort|group|label", terms: v.w > 900 ? "show|sort by|group" : "show|sort by|group|label" }[tab]) fail(tag + "rows changed: " + got.labels);
         if (got.overflowX > 0) fail(tag + "the drawer scrolls sideways: " + JSON.stringify(got));
         if (!v.phone && got.handleH > 14) fail(tag + "the drag handle is " + got.handleH + "px, not a few: " + JSON.stringify(got));
         if (!v.phone && got.band > 6) fail(tag + "an empty band of " + got.band + "px sits above the handle: " + JSON.stringify(got));
@@ -18740,6 +18741,11 @@ async function termsDrawerPushSection(browser, base) {
       const orig = window.onTermResize;
       window.onTermResize = function () { calls.push(1); return orig.apply(this, arguments); };
       const paneH = () => Math.round(document.getElementById("term-layout").getBoundingClientRect().height);
+      const drawer = document.getElementById("fd-terms");
+      const mm = window.matchMedia.bind(window);
+      window.matchMedia = q => q === FD_NARROW ? { matches: true, media: q, addEventListener() {}, removeEventListener() {} } : mm(q);   // a font that fits the rows on the line leaves no drawer to open
+      drawer.classList.remove("inline");
+      drawer.querySelector(".fwrap").appendChild(drawer.querySelector(".fpanel"));
       const run = async push => {
         window.FD_TERMS_PUSH = push;
         fdSet("terms", true);
@@ -18758,6 +18764,7 @@ async function termsDrawerPushSection(browser, base) {
       };
       const push = await run(true), fixed = await run(false);
       window.FD_TERMS_PUSH = true;
+      window.matchMedia = mm;
       return { push, fixed };
     });
     const a = got.push, b = got.fixed;
@@ -21748,10 +21755,10 @@ async function cardViewBarInlineSection(browser, base) {
   });
   const search = () => p.evaluate(() => {
     const h = document.getElementById("fd-terms");
-    const q = h.querySelector(".fq").getBoundingClientRect();
+    const qe = document.getElementById("term-q"), q = qe.getBoundingClientRect();
     const rows = [...h.querySelectorAll(".fpanel .frow")].filter(r => r.getClientRects().length);
     const label = rows.length ? rows[rows.length - 1].getBoundingClientRect() : null;
-    return { left: Math.round(q.left), width: Math.round(q.width), gap: label ? Math.round(q.left - label.right) : null,
+    return { inHead: !!qe.closest("#term-head"), left: Math.round(q.left), width: Math.round(q.width), gap: label ? Math.round(q.left - label.right) : null,
       lineRight: Math.round(h.querySelector(".fline").getBoundingClientRect().right) };
   });
   const shot = async name => {
@@ -21765,11 +21772,12 @@ async function cardViewBarInlineSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const wide = await state();
-    if (!wide.inline || !wide.onLine || wide.caret || wide.summary || wide.inert || wide.rows < 4 || !wide.oneLine || !wide.inside) {
+    if (!wide.inline || !wide.onLine || wide.caret || wide.summary || wide.inert || wide.rows < 3 || !wide.oneLine || !wide.inside) {
       fail("viewbar wide: the controls are not on the line with no caret: " + JSON.stringify(wide));
     }
     const qWide = await search();
-    if (qWide.width < 290 || qWide.gap < 0 || qWide.gap > 40) fail("viewbar wide: the search box is not wide and right after the last row: " + JSON.stringify(qWide));
+    // over 900px the search box sits over the list rather than on the line, see termHeadPlace
+    if (!qWide.inHead || qWide.width < 120) fail("viewbar wide: the search box is not over the list: " + JSON.stringify(qWide));
     await shot("wide");
     await p.evaluate(() => document.querySelector("#term-show button").click());
     await p.evaluate(() => document.querySelector("#fd-terms .fline").click());
@@ -26538,7 +26546,8 @@ async function main() {
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
         widthBtns: list.querySelectorAll(".tlcorner .tlcycle").length,
         line: !!line, sum: ((document.querySelector("#fd-terms .fsum") || {}).textContent || ""),
-        search: !!document.getElementById("term-q"),
+        search: !!document.getElementById("term-q"), headed: !document.getElementById("term-head").hidden,
+        inline: document.getElementById("fd-terms").classList.contains("inline"),
         panelShut: !!panel && panel.inert && getComputedStyle(panel).visibility === "hidden",
         rows: [...document.querySelectorAll("#fd-terms .frow .barlabel")].map(l => l.textContent.trim()).join("|")
       };
@@ -26546,10 +26555,11 @@ async function main() {
     if (!trayShut.scroll || trayShut.tray || trayShut.listOverflow !== "hidden" || trayShut.scrollOverflow !== "auto") {
       fail("the list is not one scrolling box of rows with nothing above it: " + JSON.stringify(trayShut));
     }
-    if (!trayShut.line || !/^\d+ shown · /.test(trayShut.sum) || !trayShut.search || !trayShut.panelShut) {
+    if (!trayShut.line || !/^\d+ shown · /.test(trayShut.sum) || !trayShut.search || !(trayShut.panelShut || trayShut.inline)) {
       fail("the line under the title bar does not say what the strip is set to, with a search box and a shut drawer: " + JSON.stringify(trayShut));
     }
-    if (trayShut.rows !== "show|sort by|group|label") {
+    // with the head over the list shown, the label pills sit there beside the search box, see termHeadPlace
+    if (trayShut.rows !== (trayShut.headed ? "show|sort by|group" : "show|sort by|group|label")) {
       fail("the terminals drawer does not have show, sort by and group rows: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {

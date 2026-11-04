@@ -447,6 +447,34 @@ function placeTabBridge() {
   });
 }
 
+// The terminals tab's search box and label pills move out of the strip into `#term-head` while the list is full and beside
+// the pane, and back to the strip otherwise. Moved only when the place changes, so typing in it keeps its focus.
+let termHeadHome = null;
+function termHeadPlace() {
+  const head = document.getElementById("term-head"), lay = document.getElementById("term-layout");
+  const q = document.getElementById("term-q"), match = document.getElementById("term-match");
+  const label = document.getElementById("term-label");
+  if (!head || !lay || !q || !match || !label) return;
+  const on = !termNarrow() && termListMode === "full" && !(typeof chatLent !== "undefined" && chatLent)
+    && !document.body.classList.contains("solo");
+  if (on && q.parentNode !== head) {
+    termHeadHome = { line: q.parentNode, row: label.parentNode, at: label.parentNode.previousSibling, hint: q.placeholder };
+    head.append(q, match, label);
+    termHeadHome.row.remove();
+    q.placeholder = "filter";
+    q.dataset.tip = termHeadHome.hint;
+  } else if (!on && q.parentNode === head && termHeadHome) {
+    q.placeholder = termHeadHome.hint;
+    delete q.dataset.tip;
+    termHeadHome.line.append(q, match);
+    termHeadHome.row.append(label);
+    termHeadHome.at.after(termHeadHome.row);
+  }
+  head.hidden = !on;
+  lay.classList.toggle("tl-headed", on);
+}
+addEventListener("resize", () => termHeadPlace());
+
 const FUNNEL_FLARE = 7;
 
 function placeOneBridge(bridge, card, side) {
@@ -489,15 +517,18 @@ function placeOneBridge(bridge, card, side) {
   const pw = pane ? parseFloat(getComputedStyle(pane).borderLeftWidth) || 1 : 1;
   const from = c.right - 2, to = p.left + pw;
   if (to <= from) { bridge.hidden = true; return; }
+  // A row scrolled up past the pane's top has nothing to meet there.
+  const ceil = pane ? Math.max(lr.top, p.top) : lr.top;
+  if (c.bottom <= ceil + 2) { bridge.hidden = true; return; }
 
   bridge.hidden = false;
   bridge.style.left = (from - l.left) + "px";
   bridge.style.width = (to - from) + "px";
   // A shut group's bridge is a funnel: the heading's height at the heading, FLARE taller each side where it meets the pane.
   const funnel = card.classList.contains("tgroup") || card.classList.contains("carries");
-  const up = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, c.top - lr.top)) : 0;
+  const up = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, c.top - ceil)) : 0;
   const down = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, lr.bottom - c.bottom)) : 0;
-  const top = Math.max(c.top - up, lr.top), bottom = Math.min(c.bottom + down, lr.bottom);
+  const top = Math.max(c.top - up, ceil), bottom = Math.min(c.bottom + down, lr.bottom);
   bridge.style.top = (top - l.top) + "px";
   bridge.style.height = (bottom - top) + "px";
   bridge.classList.toggle("funnel", funnel);
@@ -2031,6 +2062,7 @@ async function renderTermList() {
   // After the cards exist, since it is placed against one of them. A frame
   // later, so the measurement happens on the layout that was just written
   // rather than on the one being replaced.
+  termHeadPlace();
   requestAnimationFrame(placeTabBridge);
   // Scrolling the rows moves the attached card under a bridge that is not
   // moving with it, and so does the tray rolling up or down. A capturing
