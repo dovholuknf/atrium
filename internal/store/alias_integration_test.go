@@ -48,8 +48,8 @@ func TestAnAliasResolvesToItsCard(t *testing.T) {
 	}
 }
 
-// UNIQUE AMONG LIVE CARDS, and the refusal names the holder.
-func TestATakenAliasIsRefusedNamingTheHolder(t *testing.T) {
+// An alias names one card: the newest to take it wins and the holder loses it.
+func TestTheNewestCardToTakeAnAliasWins(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
 	a := aliasCard(t, s, "sa89-typing-gate")
@@ -57,21 +57,74 @@ func TestATakenAliasIsRefusedNamingTheHolder(t *testing.T) {
 	if err := s.SetAlias(a.ID, "sa89"); err != nil {
 		t.Fatal(err)
 	}
-	err := s.SetAlias(b.ID, "sa89")
-	var taken *AliasTakenError
-	if !errors.As(err, &taken) || !errors.Is(err, ErrAliasTaken) {
-		t.Fatalf("a taken alias was not refused as taken: %v", err)
+	if err := s.SetAlias(b.ID, "sa89"); err != nil {
+		t.Fatalf("a held alias was refused: %v", err)
 	}
-	if taken.Holder.ID != a.ID || !strings.Contains(err.Error(), "sa89-typing-gate") {
-		t.Fatalf("the refusal does not name the holder: %v", err)
+	if got, _ := s.Get(a.ID); got.Alias != "" {
+		t.Fatalf("the old holder kept %q", got.Alias)
 	}
-	// Refusing is an answer, not a storage failure.
-	if h, _ := s.Halted(); h {
-		t.Fatal("a refused alias halted the store")
+	if found, err := s.GetByAlias("sa89"); err != nil || found.ID != b.ID {
+		t.Fatalf("resolved to %v, %v", found, err)
 	}
-	// Setting a card's own alias again is not a clash with itself.
-	if err := s.SetAlias(a.ID, "sa89"); err != nil {
-		t.Fatalf("re-setting a card's own alias was refused: %v", err)
+	if err := s.SetAlias(b.ID, "sa89"); err != nil {
+		t.Fatalf("re-setting a card's own alias failed: %v", err)
+	}
+}
+
+// A done card does not keep an alias a later card takes.
+func TestADoneCardLosesItsAliasToANewerCard(t *testing.T) {
+	t.Parallel()
+	s := openTestStore(t)
+	first := aliasCard(t, s, "ziti-fips-1")
+	second := aliasCard(t, s, "ziti-fips-2")
+	if err := s.SetAlias(first.ID, "ziti-fips"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetStatus(first.ID, StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAlias(second.ID, "ziti-fips"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(first.ID); got.Alias != "" {
+		t.Fatalf("the done card kept %q", got.Alias)
+	}
+	if got, _ := s.Get(second.ID); got.Alias != "ziti-fips" {
+		t.Fatalf("the new card has %q", got.Alias)
+	}
+}
+
+// Cards that already share an alias keep it on the newest one only.
+func TestTheAliasMigrationKeepsTheNewestHolder(t *testing.T) {
+	t.Parallel()
+	s := openTestStore(t)
+	old := aliasCard(t, s, "dup-1")
+	mid := aliasCard(t, s, "dup-2")
+	newest := aliasCard(t, s, "dup-3")
+	lone := aliasCard(t, s, "dup-4")
+	for i, c := range []*Task{old, mid, newest, lone} {
+		alias := "dup"
+		if c == lone {
+			alias = "solo"
+		}
+		if _, err := s.db.Exec(`UPDATE task SET alias = ?, created_at = ? WHERE id = ?`,
+			alias, "2026-01-0"+string(rune('1'+i))+"T00:00:00.000Z", c.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, stmt := range migrations[len(migrations)-1].stmts {
+		if _, err := s.db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for c, want := range map[*Task]string{old: "", mid: "", newest: "dup", lone: "solo"} {
+		got, err := s.Get(c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Alias != want {
+			t.Fatalf("%s has alias %q, want %q", c.WireName, got.Alias, want)
+		}
 	}
 }
 
@@ -132,47 +185,6 @@ func TestADoneCardStillAnswersToItsAlias(t *testing.T) {
 	}
 	if _, err := s.GetByAlias("sa90"); err == nil {
 		t.Fatal("a dead card's alias resolved")
-	}
-}
-
-// LIVE FIRST. A done card and a live one sharing an alias resolve to the live
-// one, whichever was created first.
-func TestALiveCardBeatsADoneOneForAnAlias(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow: a real sqlite database on disk")
-	}
-	t.Parallel()
-	for _, liveIsNewer := range []bool{true, false} {
-		s := openTestStore(t)
-		tickingClock(s)
-		older := aliasCard(t, s, "sa89-old")
-		newer := aliasCard(t, s, "sa89-new")
-		// The older card takes the alias and finishes, so the newer can take it.
-		if err := s.SetAlias(older.ID, "sa89"); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.SetStatus(older.ID, StatusDone); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.SetAlias(newer.ID, "sa89"); err != nil {
-			t.Fatalf("a done card kept a live card from taking its alias: %v", err)
-		}
-		live, done := newer, older
-		if !liveIsNewer {
-			// The newer one finishes and the older is reopened.
-			if err := s.SetStatus(newer.ID, StatusDone); err != nil {
-				t.Fatal(err)
-			}
-			if err := s.SetStatus(older.ID, StatusRunning); err != nil {
-				t.Fatal(err)
-			}
-			live, done = older, newer
-		}
-		found, err := s.GetByAlias("sa89")
-		if err != nil || found.ID != live.ID {
-			t.Fatalf("liveIsNewer=%v: resolved to %v, %v; want the live card, not %s",
-				liveIsNewer, found, err, done.ID)
-		}
 	}
 }
 
