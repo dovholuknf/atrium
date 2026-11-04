@@ -18741,6 +18741,9 @@ async function termsDrawerPushSection(browser, base) {
       const orig = window.onTermResize;
       window.onTermResize = function () { calls.push(1); return orig.apply(this, arguments); };
       const paneH = () => Math.round(document.getElementById("term-layout").getBoundingClientRect().height);
+      const drawer = document.getElementById("fd-terms");
+      drawer.classList.remove("inline");
+      drawer.querySelector(".fwrap").appendChild(drawer.querySelector(".fpanel"));   // a font that fits the rows on the line leaves no drawer to open
       const run = async push => {
         window.FD_TERMS_PUSH = push;
         fdSet("terms", true);
