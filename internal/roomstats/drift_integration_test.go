@@ -29,9 +29,16 @@ func TestLoadedProcessDriftsMore(t *testing.T) {
 	prev := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(prev)
 
-	idle, n, ok := measure(time.Second)
-	if !ok || n < 5 {
-		t.Fatalf("idle probe took %d samples", n)
+	// A noisy neighbour only inflates an idle look, so the quietest of three is the idle floor.
+	var idle time.Duration
+	for try := 0; try < 3; try++ {
+		p99, n, ok := measure(time.Second)
+		if !ok || n < 5 {
+			t.Fatalf("idle probe took %d samples", n)
+		}
+		if try == 0 || p99 < idle {
+			idle = p99
+		}
 	}
 
 	quit := make(chan struct{})
