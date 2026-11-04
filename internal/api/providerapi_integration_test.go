@@ -316,6 +316,30 @@ func TestMakeWorktreeRefusesToCloneAnything(t *testing.T) {
 	}
 }
 
+func TestMakeWorktreeRefusesEscapingNamesAndOptionBranches(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	root := filepath.Join(base, "git")
+	mkDir(t, root)
+	_, st, h := serverFor(t)
+	if _, err := st.SaveProvider(store.Provider{
+		Name: "github", Root: filepath.ToSlash(root), Enabled: true,
+		Worktrees: true, WorktreeRoot: filepath.ToSlash(filepath.Join(base, "wt")),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []map[string]any{
+		{"org": "..", "repo": "r", "branch": "wip"},
+		{"org": "o", "repo": "..", "branch": "wip"},
+		{"org": "o", "repo": "r", "branch": "-wip"},
+	} {
+		if rec := post(t, h, "/v1/providers/github/worktree", c); rec.Code != http.StatusBadRequest ||
+			strings.Contains(rec.Body.String(), "not a git checkout") {
+			t.Errorf("%v: got %d %s", c, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 // The destination is worked out from the declared layout, and a branch with a
 // slash in it is flattened so it cannot leave an empty parent behind, which
 // would block the feature's own toggle.

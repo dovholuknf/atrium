@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -334,6 +335,18 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	repoPath := store.ProviderPath(p.Root, req.Org, req.Repo)
 	if repoPath == "" {
 		writeErr(w, http.StatusBadRequest, errors.New("which repository"))
+		return
+	}
+	slug := strings.Trim(strings.TrimSpace(req.Repo), "/")
+	if org := strings.Trim(strings.TrimSpace(req.Org), "/"); org != "" {
+		slug = org + "/" + slug
+	}
+	if !gitsync.ValidName(slug) {
+		writeErr(w, http.StatusBadRequest, errors.New(slug+" is not a repository name"))
+		return
+	}
+	if err := checkBranchName(r.Context(), branch); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
 	// ATRIUM DOES NOT CLONE. A repository that is not there is a sentence, not
