@@ -107,7 +107,9 @@ type controlMCP struct {
 	// resourcesDir and rooms feed atrium_resources. Nil in a test that does not read it. See resources_mcp.go.
 	resourcesDir func() string
 	rooms        func() []resourceRoom
-	deployMu     sync.Mutex
+	// growler is the hub's growler, read at each call. Nil on a hub without one. See tellNeed.
+	growler  func() *Growler
+	deployMu sync.Mutex
 
 	// classMu guards classes, the per-caller class cache. See ctlclass.go.
 	classMu sync.Mutex
@@ -147,6 +149,9 @@ func (c *controlMCP) handler() http.Handler {
 	servers := map[ctl.Class]*mcp.Server{}
 	for _, class := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassFullResident, ctl.ClassWorkerResident, ctl.ClassWorkerItem, ctl.ClassWorkerReview} {
 		servers[class] = c.server(class)
+		if class != ctl.ClassFull && class != ctl.ClassFullResident {
+			servers[class|ctl.Elevated] = c.server(class | ctl.Elevated)
+		}
 	}
 	return mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return servers[c.classOf(r)] },
@@ -252,7 +257,7 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	if residentClass(class) {
 		doneDesc, blockedDesc = residentDoneToolDesc, residentBlockedToolDesc
 	}
-	if class == ctl.ClassWorkerItem {
+	if class.Base() == ctl.ClassWorkerItem {
 		doneDesc, blockedDesc = itemDoneToolDesc, itemBlockedToolDesc
 	}
 	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneDesc}, end.Done)
@@ -462,11 +467,8 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
 	addTool(s, class, &mcp.Tool{
-		Name: "atrium_need",
-		Description: "Say what a lean worker lacks: `mcp:<name>`, `agent:<name>` or `skill:<name>`.\n\n" +
-			"Atrium adds it to your card, restarts you on this conversation and types `continue` once you are back. " +
-			"End your turn after calling this. Anything else, such as a tool or a program on PATH, is logged and " +
-			"refused: ask your launcher with `atrium_say`. Every call is logged on your card.",
+		Name:        "atrium_need",
+		Description: NeedToolDesc,
 	}, c.needHandler)
 
 	c.registerGit(s, class)
@@ -1403,6 +1405,9 @@ const SubagentTag = "atrium:subagent"
 // DirectorTag is what a launch asks for to be left alone by the merged-cull and
 // not to count against the launch cap: an orchestrator, not a worker.
 const DirectorTag = "atrium:director"
+
+// ElevatedTag gives a worker card the launch tools. atrium_need with tool:atrium_launch puts it on.
+const ElevatedTag = "atrium:elevated"
 
 // ResidentTag marks a long-lived card: atrium_done and atrium_blocked report a task and leave it open.
 const ResidentTag = "atrium:resident"
@@ -2425,10 +2430,12 @@ func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, 
 }
 
 type needInput struct {
-	Needs []string `json:"needs" jsonschema:"what you lack, each as mcp:<name>, agent:<name> or skill:<name>"`
+	Needs []string `json:"needs" jsonschema:"what you lack, each as mcp:<name>, agent:<name>, skill:<name>, tool:Skill, tool:Agent or tool:atrium_launch"`
+	Why   string   `json:"why" jsonschema:"one line: why you need it, which the human is shown"`
 }
 
-// needHandler files the caller's own need with its room, which adds it and restarts the card.
+// needHandler files the caller's own need with its room, which adds it and restarts the card. A grant is put in front
+// of the human as a growler, the channel a change request uses, and the caller's class is looked up afresh.
 func (c *controlMCP) needHandler(ctx context.Context, req *mcp.CallToolRequest, in needInput) (
 	*mcp.CallToolResult, map[string]any, error) {
 
@@ -2437,14 +2444,54 @@ func (c *controlMCP) needHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	if me == "" {
 		return nil, out, fmt.Errorf("atrium_need is for a session atrium knows. this call did not say which one it is")
 	}
+	if strings.TrimSpace(in.Why) == "" {
+		return nil, out, fmt.Errorf("say why you need it, in one line")
+	}
 	room := ctl.RoomOf(req)
 	id, _, err := c.ResolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err
 	}
 	err = c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/need", room,
-		map[string]any{"needs": in.Needs, "by": me}, &out)
+		map[string]any{"needs": in.Needs, "why": in.Why, "by": me}, &out)
+	if err == nil && out["restarting"] == true {
+		c.forgetClass(room, me)
+		c.tellNeed(room, id, me, out, in.Why)
+	}
 	return nil, out, err
+}
+
+// forgetClass drops a caller's remembered class, so the restarted session is served what it was just given.
+func (c *controlMCP) forgetClass(room, agent string) {
+	c.classMu.Lock()
+	defer c.classMu.Unlock()
+	delete(c.classes, strings.ToLower(strings.TrimSpace(room))+"\x00"+strings.TrimSpace(agent))
+}
+
+// tellNeed raises one growler naming the card, what it was given and why. A hub without growlers says nothing, and
+// the need event on the card is still there.
+func (c *controlMCP) tellNeed(room, id, me string, out map[string]any, why string) {
+	if c.growler == nil {
+		return
+	}
+	g := c.growler()
+	if g == nil {
+		return
+	}
+	var given []string
+	if l, ok := out["granted"].([]any); ok {
+		for _, v := range l {
+			if s, ok := v.(string); ok {
+				given = append(given, s)
+			}
+		}
+	}
+	name, _ := out["title"].(string)
+	if name == "" {
+		name = me
+	}
+	g.Ask(room, GrowlRow{ID: fmt.Sprintf("need|%s|%s|%d", room, id, time.Now().UnixNano()), Reason: ReasonQuestion,
+		Subject: id, Title: name + " was given " + strings.Join(given, ", "), Body: "why: " + why})
 }
 
 // ── mounting ──────────────────────────────────────────────────────────────────────
@@ -2466,3 +2513,10 @@ func loopbackBase(addr string) string {
 	}
 	return "http://" + net.JoinHostPort(host, port)
 }
+
+// NeedToolDesc is atrium_need's description, shared with a room's stdio server.
+const NeedToolDesc = "Say what you lack and why: `mcp:<name>`, `agent:<name>`, `skill:<name>`, `tool:Skill`, " +
+	"`tool:Agent` or `tool:atrium_launch`. `why` is one line, shown to the human with what you were given.\n\n" +
+	"Atrium adds it to your card, restarts you on this conversation and types `continue` once you are back. " +
+	"End your turn after calling this. Anything else, such as another tool or a program on PATH, is logged and " +
+	"refused: ask your launcher with `atrium_say`. Every call is logged on your card."

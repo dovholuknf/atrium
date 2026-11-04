@@ -79,6 +79,12 @@ const (
 	ClassWorkerReview
 )
 
+// Elevated is a flag on a worker class: the same set plus LaunchTools, for a card tagged ElevatedTag.
+const Elevated Class = 1 << 8
+
+// Base is the class without Elevated.
+func (c Class) Base() Class { return c &^ Elevated }
+
 // LaunchInput is the parameters of atrium_launch.
 type LaunchInput struct {
 	Cwd    string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and name repo (or home) so atrium makes the card's own folder under the room's card root. not together with repo"`
