@@ -895,7 +895,7 @@ async function openReview() {
   const rev = await api(`/v1/tasks/${current.id}/review`);
   const title = current.display_title;
   if (!rev.total) {
-    tellUser("nothing to review", `${title} has not been asked about anything yet.`);
+    tellText("nothing to review", `${title} has not been asked about anything yet.`);
     return;
   }
 

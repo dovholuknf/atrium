@@ -884,7 +884,7 @@ async function runCardActionNow(id, task) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: id })
     });
-  } catch (e) { tellUser("that did not go", e.message); return; }
+  } catch (e) { tellText("that did not go", e.message); return; }
 
   // Which of the two routes it took, said out loud, because they are different
   // promises: typed means it has already landed, queued means it has not and
@@ -2136,7 +2136,7 @@ async function saveHousekeeping(field, value) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-  } catch (e) { tellUser("that did not stick", e.message); }
+  } catch (e) { tellText("that did not stick", e.message); }
 }
 
 

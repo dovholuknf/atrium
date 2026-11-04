@@ -20174,6 +20174,11 @@ async function joinedClickSection(browser, base) {
     await p.click("#ask-actions button:has-text('send')");
     await p.waitForTimeout(300);
     if (sent.length !== 1 || sent[0].text !== "hello there") fail("joinedClick: message was " + JSON.stringify(sent));
+    await p.evaluate(() => { tellText("atrium", "<img src=x onerror=window.__xss=1>"); });
+    await p.waitForSelector("#ask[open]");
+    const told = await p.evaluate(() => ({ text: document.getElementById("ask-body").textContent,
+      kids: document.getElementById("ask-body").children.length, xss: window.__xss === 1 }));
+    if (told.text !== "<img src=x onerror=window.__xss=1>" || told.kids || told.xss) fail("tellText: body was read as html: " + JSON.stringify(told));
     if (errors.length) fail("joinedClick: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("joinedClick ok");

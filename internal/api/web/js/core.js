@@ -655,7 +655,7 @@ async function busyNow(btn, work, label) {
       // Gone when the dialog closes, so the next open does not wear the last failure.
       dlg.addEventListener("close", () => line.remove(), { once: true });
     } else if (typeof tellUser === "function") {
-      tellUser("that did not work", msg);
+      tellText("that did not work", msg);
     }
     return undefined;
   }

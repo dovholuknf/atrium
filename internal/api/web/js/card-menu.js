@@ -379,7 +379,7 @@ async function resumeStart(id, t, where, pick, full) {
     const busy = e.body && e.body.kind === "resume-busy" ? e.body : null;
     if (!busy) {
       openingSlow(id, resumeFailText(e));
-      tellUser("could not start it", e.message);
+      tellText("could not start it", e.message);
       return;
     }
     // The conversation id is the thing the operator would search for and the
@@ -402,7 +402,7 @@ async function resumeStart(id, t, where, pick, full) {
       task = await start("");
     } catch (e2) {
       openingSlow(id, resumeFailText(e2));
-      tellUser("could not start it", e2.message);
+      tellText("could not start it", e2.message);
       return;
     }
   }

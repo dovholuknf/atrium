@@ -1097,7 +1097,7 @@ async function saveTheme() {
   } catch (e) {
     // The daemon's refusal names the slot and the value, which is the whole
     // use of it. Shown rather than summarised.
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   await loadThemes();
@@ -1126,7 +1126,7 @@ async function removeTheme() {
   try {
     await api("/v1/themes/" + encodeURIComponent(name), { method: "DELETE" });
   } catch (e) {
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   await loadThemes();
@@ -1164,7 +1164,7 @@ async function bringThemes() {
       method: "POST", headers: { "Content-Type": "application/json" }, body: text
     });
   } catch (e) {
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   await loadThemes();
@@ -1179,13 +1179,13 @@ async function bringThemes() {
   }
   const lines = kept.map(k => k.name + ": " + k.why).join("\n");
   if (!got.length) {
-    tellUser("atrium", "nothing was brought in.\n\n" + (lines || "no scheme in that was usable."));
+    tellText("atrium", "nothing was brought in.\n\n" + (lines || "no scheme in that was usable."));
     return;
   }
   toast(got.length + " theme" + (got.length === 1 ? "" : "s") + " brought in",
     got.slice(0, 4).join(", ") + (got.length > 4 ? " and more" : "") +
     (kept.length ? ". " + kept.length + " skipped" : ""));
-  if (kept.length) tellUser("atrium", "brought in: " + got.join(", ") + "\n\nskipped:\n" + lines);
+  if (kept.length) tellText("atrium", "brought in: " + got.join(", ") + "\n\nskipped:\n" + lines);
 }
 
 // CLOSING WITHOUT SAVING PUTS THE TERMINAL BACK.

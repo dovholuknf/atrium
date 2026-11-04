@@ -717,7 +717,7 @@ async function prMove(row, to, from, walker) {
     });
   } catch (e) {
     pullsSay(pullsErr(e));
-    tellUser("the review was not moved", pullsErr(e));
+    tellText("the review was not moved", pullsErr(e));
     return;
   }
   const pr = { host: row.host, org: row.org, repo: row.repo, number: row.number };

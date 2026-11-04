@@ -165,7 +165,7 @@ async function flipSwitch(btn) {
   } catch (e) {
     paintSwitch(btn, was);
     delete btn.dataset.busy;
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   delete btn.dataset.busy;
@@ -285,7 +285,7 @@ async function saveFixture() {
       body: JSON.stringify(body)
     });
   } catch (e) {
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   dlg.close();
@@ -318,7 +318,7 @@ async function deleteFixture() {
   try {
     await api(`/v1/fixtures/${id}`, { method: "DELETE" });
   } catch (e) {
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   document.getElementById("fixture").close();
@@ -484,7 +484,7 @@ async function fixRunnerSetup(check, target) {
       body: JSON.stringify({ check, target: target || "" })
     });
   } catch (e) {
-    tellUser("could not fix it", e.message);
+    tellText("could not fix it", e.message);
     return;
   }
   h.setup = got.report;
@@ -944,7 +944,7 @@ async function saveHarness() {
     await api(`/v1/harnesses/${encodeURIComponent(h.id)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(h)
     });
-  } catch (e) { tellUser("atrium", e.message); return; }
+  } catch (e) { tellText("atrium", e.message); return; }
   document.getElementById("harness").close();
   refresh();
 }
@@ -956,7 +956,7 @@ async function deleteHarness() {
     `<b>${esc(id)}</b> is removed from the list. Anything it already started keeps running.`,
     "delete it")) return;
   try { await api(`/v1/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" }); }
-  catch (e) { tellUser("atrium", e.message); return; }
+  catch (e) { tellText("atrium", e.message); return; }
   document.getElementById("harness").close();
   refresh();
 }
@@ -1394,7 +1394,7 @@ async function launchRunnerHereNow(harnessID, cwd, ontoTask, room) {
       // way into the room. See docs/fabric/card-room-routing.md.
       body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
     });
-  } catch (e) { tellUser("could not start it", e.message); return; }
+  } catch (e) { tellText("could not start it", e.message); return; }
   // The answer is the daemon's word on the card, ahead of its own event. See `cardLaunched` in js/cards.js.
   cardLaunched(task);
   if (task && task.supervised) {

@@ -599,7 +599,7 @@ async function bootTerminalOnly() {
     // is the one case the dead-end message is still right about.
     document.title = "atrium: no such card";
     termWait("");
-    tellUser("nothing to attach to", e.message);
+    tellText("nothing to attach to", e.message);
     return;
   }
   // Reconnected, or answered first time. Any reconnecting line comes down.
