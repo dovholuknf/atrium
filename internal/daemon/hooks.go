@@ -35,6 +35,8 @@ type hooks struct {
 	finishLimitHooks
 	repliesHooks
 	updateRegistry string
+	// needRestartGap is the wait before each restart for a need. Zero is needRestartGap.
+	needRestartGap time.Duration
 }
 
 type runnerHooks struct {

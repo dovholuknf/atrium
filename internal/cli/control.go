@@ -129,6 +129,7 @@ func controlServer() *mcp.Server {
 	addOpenTool(s)
 	addCloseTool(s)
 	addOwnTools(s)
+	addNeedTool(s)
 	addSubscribeTool(s)
 
 	return s

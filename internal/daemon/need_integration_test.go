@@ -42,10 +42,8 @@ func TestANeedWithNoWhyIsRefusedAndNothingIsAdded(t *testing.T) {
 }
 
 func TestANeedIsGrantedAtOnceAndSaysWhatToTellTheHuman(t *testing.T) {
-	gap := needRestartGap
-	needRestartGap = time.Hour
-	t.Cleanup(func() { needRestartGap = gap })
 	d := testDaemon(t)
+	d.hk.needRestartGap = time.Hour
 	_, w := launchedPair(t, d)
 	if err := d.st.SetTags(w.ID, []string{LeanTag, SuperleanTag}); err != nil {
 		t.Fatal(err)
@@ -81,10 +79,8 @@ func TestANeedIsGrantedAtOnceAndSaysWhatToTellTheHuman(t *testing.T) {
 }
 
 func TestALaunchGrantNeedsNoLeanCard(t *testing.T) {
-	gap := needRestartGap
-	needRestartGap = time.Hour
-	t.Cleanup(func() { needRestartGap = gap })
 	d := testDaemon(t)
+	d.hk.needRestartGap = time.Hour
 	w := peerCard(t, d, "worker")
 	code, out := postNeed(t, d, w.ID, map[string]any{"needs": []string{"tool:atrium_launch", "skill:x"}, "why": "fan out reviewers"})
 	if code != http.StatusOK || out["restarting"] != true {

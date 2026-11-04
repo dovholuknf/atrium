@@ -12,10 +12,10 @@ import (
 )
 
 // needRestartTries is how many times a need's restart is tried, because the asking worker is mid-turn when it asks
-// and a runner mid-turn ignores its exit keys. A variable only so tests can shorten the gap.
+// and a runner mid-turn ignores its exit keys.
 const needRestartTries = 6
 
-var needRestartGap = 10 * time.Second
+const needRestartGap = 10 * time.Second
 
 // ElevatedTag gives a worker card atrium_launch and atrium_launch_worker. The hub's class lookup reads it.
 const ElevatedTag = "atrium:elevated"
@@ -141,7 +141,11 @@ func onlyTag(in []string, keep string) []string {
 // restartForNeed restarts the card until its runner leaves when asked.
 func (d *Daemon) restartForNeed(taskID string) {
 	for i := 0; i < needRestartTries; i++ {
-		time.Sleep(needRestartGap)
+		gap := d.hk.needRestartGap
+		if gap == 0 {
+			gap = needRestartGap
+		}
+		time.Sleep(gap)
 		_, err := d.RestartRunner(taskID)
 		if err == nil {
 			return

@@ -467,12 +467,8 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
 	addTool(s, class, &mcp.Tool{
-		Name: "atrium_need",
-		Description: "Say what you lack and why: `mcp:<name>`, `agent:<name>`, `skill:<name>`, `tool:Skill`, " +
-			"`tool:Agent` or `tool:atrium_launch`. `why` is one line, shown to the human with what you were given.\n\n" +
-			"Atrium adds it to your card, restarts you on this conversation and types `continue` once you are back. " +
-			"End your turn after calling this. Anything else, such as another tool or a program on PATH, is logged and " +
-			"refused: ask your launcher with `atrium_say`. Every call is logged on your card.",
+		Name:        "atrium_need",
+		Description: NeedToolDesc,
 	}, c.needHandler)
 
 	c.registerGit(s, class)
@@ -2517,3 +2513,10 @@ func loopbackBase(addr string) string {
 	}
 	return "http://" + net.JoinHostPort(host, port)
 }
+
+// NeedToolDesc is atrium_need's description, shared with a room's stdio server.
+const NeedToolDesc = "Say what you lack and why: `mcp:<name>`, `agent:<name>`, `skill:<name>`, `tool:Skill`, " +
+	"`tool:Agent` or `tool:atrium_launch`. `why` is one line, shown to the human with what you were given.\n\n" +
+	"Atrium adds it to your card, restarts you on this conversation and types `continue` once you are back. " +
+	"End your turn after calling this. Anything else, such as another tool or a program on PATH, is logged and " +
+	"refused: ask your launcher with `atrium_say`. Every call is logged on your card."
