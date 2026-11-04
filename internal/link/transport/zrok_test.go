@@ -14,6 +14,7 @@ import (
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/sdk-golang/ziti/edge"
 	"github.com/openziti/zrok/v2/rest_client_zrok/share"
+	"github.com/openziti/zrok/v2/rest_model_zrok"
 )
 
 type fakeZrok struct {
@@ -195,5 +196,19 @@ func TestTheZrokBackoffSaysWhatFailed(t *testing.T) {
 				t.Fatalf("access kept %v, want %v", got, c.accessd)
 			}
 		})
+	}
+}
+
+func TestAccessAlreadyOnTheEnvironmentIsReused(t *testing.T) {
+	acc := []*rest_model_zrok.AccessSummary{
+		{FrontendToken: "other", EnvZID: "envA", ShareToken: "shareB"},
+		{FrontendToken: "theirs", EnvZID: "envB", ShareToken: "shareA"},
+		{FrontendToken: "mine", EnvZID: "envA", ShareToken: "shareA"},
+	}
+	if !hasAccess(acc, "envA", "shareA") {
+		t.Fatal("an access this environment already holds was not found, so every start makes another")
+	}
+	if hasAccess(acc, "envA", "shareC") || hasAccess(acc[:2], "envA", "shareA") || hasAccess(nil, "envA", "shareA") {
+		t.Fatal("an access to another share, from another environment, or none, counted as this one")
 	}
 }

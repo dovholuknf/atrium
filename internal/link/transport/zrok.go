@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/zitictx"
+	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	"github.com/openziti/zrok/v2/rest_client_zrok/metadata"
 	"github.com/openziti/zrok/v2/rest_client_zrok/share"
+	"github.com/openziti/zrok/v2/rest_model_zrok"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 )
 
@@ -120,9 +122,43 @@ func (s sdkZrok) Create() (string, error) {
 	return shr.Token, nil
 }
 
+// Access reuses this environment's access to the share when it has one, since each start making its own left one
+// behind per start. A lookup that fails creates one, as before.
 func (s sdkZrok) Access(token string) error {
+	if acc, err := s.accesses(token); err == nil && hasAccess(acc, s.root.Environment().ZitiIdentity, token) {
+		return nil
+	}
 	_, err := zroksdk.CreateAccess(s.root, &zroksdk.AccessRequest{ShareToken: token})
 	return err
+}
+
+func (s sdkZrok) accesses(token string) ([]*rest_model_zrok.AccessSummary, error) {
+	zrok, err := s.root.Client()
+	if err != nil {
+		return nil, err
+	}
+	env := s.root.Environment().ZitiIdentity
+	params := metadata.NewListAccessesParams()
+	params.EnvZID = &env
+	params.ShareToken = &token
+	auth := httptransport.APIKeyAuth("X-TOKEN", "header", s.root.Environment().AccountToken)
+	resp, err := zrok.Metadata.ListAccesses(params, auth)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Payload == nil {
+		return nil, nil
+	}
+	return resp.Payload.Accesses, nil
+}
+
+func hasAccess(acc []*rest_model_zrok.AccessSummary, env, token string) bool {
+	for _, a := range acc {
+		if a != nil && a.EnvZID == env && a.ShareToken == token {
+			return true
+		}
+	}
+	return false
 }
 
 func (s sdkZrok) Delete(token string) error {
