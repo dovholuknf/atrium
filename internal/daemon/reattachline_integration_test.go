@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"strings"
 	"testing"
 	"time"
 )
@@ -84,5 +85,37 @@ func TestAControlPLineQuietAtAnEmptyPromptOpensItsGateAndOneWithTextDoesNot(t *t
 	}
 	if w.peerGateOpen() {
 		t.Fatal("the gate opened over a recalled line")
+	}
+}
+
+const ghostFrame = "\x1b[H\x1b[2J✻ Crunched for 1m 0s\r\n\r\n" + frameRule + "\r\n❯ \x1b[7mr\x1b[0m\x1b[38;2;136;136;136mun the tests\x1b[0m\r\n" +
+	frameRule + "\r\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents\r\n"
+
+func TestAReattachedRunnerShowingOnlyASuggestionDeliversAHeldSayWithNoKey(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	t.Cleanup(func() { d.pending.stopAll() })
+	alice := peerCard(t, d, "alice")
+	task, r := runningCard(t, d, ghostFrame, time.Minute)
+	d.act.set(task.ID, ActivityIdle, "")
+	r.reattached.Store(true)
+	r.line.lost(reattachLineKey)
+	f := r.pty.(*fakePTY)
+
+	if code := message(t, d, task.ID, map[string]string{"text": "GHOSTWORDS", "from": alice.WireName}); code != 200 {
+		t.Fatalf("the say answered %d", code)
+	}
+	if strings.Contains(f.written(), "GHOSTWORDS") {
+		t.Fatal("typed before the screen was read")
+	}
+	if err := d.watchLooksIdle(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(f.written(), "GHOSTWORDS") {
+		time.Sleep(20 * time.Millisecond) // wait: poll step under the 10 s deadline
+	}
+	if !strings.Contains(f.written(), "GHOSTWORDS") {
+		t.Fatalf("the held say was not delivered: %q", f.written())
 	}
 }

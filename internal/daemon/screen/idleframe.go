@@ -1,6 +1,7 @@
 package screen
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -81,7 +82,7 @@ func FrameLineEmpty(tail []byte, cols, rows int) bool {
 	var lines []row
 	for _, cells := range sc.cells {
 		var b strings.Builder
-		after, dim := false, true
+		after, dim, first := false, true, true
 		for _, c := range cells {
 			if c.ch == contCh {
 				continue
@@ -90,8 +91,11 @@ func FrameLineEmpty(tail []byte, cols, rows int) bool {
 			if ch == 0 {
 				ch = ' '
 			}
-			if after && ch != ' ' && !sgrIsDim(c.sgr) {
-				dim = false
+			if after && ch != ' ' {
+				if !sgrIsDim(c.sgr) && !(first && sgrIsInverse(c.sgr)) {
+					dim = false
+				}
+				first = false
 			}
 			if ch == []rune(framePrompt)[0] {
 				after = true
@@ -128,12 +132,37 @@ func sgrIsDim(sgr string) bool {
 		switch toks[i] {
 		case "2", "90":
 			return true
-		case "38", "48":
+		case "38":
+			if i+4 < len(toks) && toks[i+1] == "2" && toks[i+2] == toks[i+3] && toks[i+3] == toks[i+4] {
+				return true
+			}
+			if i+2 < len(toks) && toks[i+1] == "5" && greyIndex(toks[i+2]) {
+				return true
+			}
+			fallthrough
+		case "48":
 			if i+1 < len(toks) && toks[i+1] == "5" {
 				i += 2
 			} else {
 				i += 4
 			}
+		}
+	}
+	return false
+}
+
+// greyIndex is whether a 256 colour index is bright black or on the grey ramp, where Claude draws a suggestion.
+func greyIndex(s string) bool {
+	n, err := strconv.Atoi(s)
+	return err == nil && (n == 8 || n >= 232)
+}
+
+// sgrIsInverse is whether a cell is drawn inverse, the way the cursor sits on the first letter of a suggestion.
+func sgrIsInverse(sgr string) bool {
+	s := strings.TrimSuffix(strings.TrimPrefix(sgr, "\x1b["), "m")
+	for _, t := range strings.Split(s, ";") {
+		if t == "7" {
+			return true
 		}
 	}
 	return false
