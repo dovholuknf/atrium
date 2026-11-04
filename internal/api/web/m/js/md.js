@@ -14,8 +14,8 @@
 
   const ENT = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   const esc = s => String(s).replace(/[&<>"']/g, c => ENT[c]);
-  const unesc = s => String(s).replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  const unesc = s => String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 
   // The JS side of intake's SafeURL. An allow list, because the set of schemes a browser acts on is not one to enumerate.
   function safeURL(raw) {

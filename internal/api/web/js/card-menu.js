@@ -386,7 +386,7 @@ async function resumeStart(id, t, where, pick, full) {
     // one thing the old dialog never showed.
     const pick = await askUser({
       title: "already open somewhere else",
-      body: e.message + "\n\nconversation " + (busy.resume || "unknown"),
+      bodyText: e.message + "\n\nconversation " + (busy.resume || "unknown"),
       buttons: [
         { label: "cancel", value: null },
         { label: "attach to " + (busy.holder_title || "it"), value: "attach" },

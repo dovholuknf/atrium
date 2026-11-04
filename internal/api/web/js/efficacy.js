@@ -133,7 +133,7 @@ function effTiles(d) {
     effTile("went wrong after landing", w.total, w.red + " red CI &middot; " + w.bugs + " " + (w.bugs === 1 ? "bug" : "bugs") + " &middot; " + w.reverts + " " + (w.reverts === 1 ? "revert" : "reverts"),
       wrongTrend, w.total > 0, w.source === "reported" ? " " + effTag({ source: "reported" }) : "") +
     effTile("cost per landed item", effValue(cost), cost.value == null ? "" : "+ " + effUsd((cost.parts || {}).coord) + " coordination",
-      effTrend("cost", tr.cost, cost).replace("ef-tr n", "ef-tr n").replace(/^<span class="ef-tr (\w)">/, '<span class="ef-tr $1">estimated, list price &middot; ')) + "</div>";
+      effTrend("cost", tr.cost, cost).replace(/^<span class="ef-tr (\w)">/, '<span class="ef-tr $1">estimated, list price &middot; ')) + "</div>";
 }
 
 function effStepsPanel(d) {

@@ -213,7 +213,9 @@ function askUser(opts) {
       resolve(v);
     };
     document.getElementById("ask-title").textContent = opts.title || "";
-    document.getElementById("ask-body").innerHTML = opts.body || "";
+    const askBody = document.getElementById("ask-body");
+    if (opts.bodyText != null) askBody.textContent = opts.bodyText;
+    else askBody.innerHTML = opts.body || "";
 
     const field = document.getElementById("ask-field");
     const input = document.getElementById("ask-input");
