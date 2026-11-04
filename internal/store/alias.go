@@ -82,12 +82,15 @@ func ValidAlias(a string) error {
 // archived.
 const liveClause = `status NOT IN ('` + StatusDone + `', '` + StatusDead + `') AND archived_at = ''`
 
-// SetAlias gives card id the alias, or clears it with "". A live card already
-// holding it, or whose handle it is, refuses it with an *AliasTakenError.
+// SetAlias gives card id the alias, or clears it with "". Any other card holding
+// it loses it. A live card whose handle it is refuses it with an *AliasTakenError.
 //
 // The check and the write are one transaction, so two cards asking for the
 // same alias at once cannot both get it.
-func (s *Store) SetAlias(id, alias string) error {
+func (s *Store) SetAlias(id, alias string) error { return s.setAlias(id, alias, false) }
+
+// setAlias is SetAlias. A derived default passes spare, so it never takes an alias from a live card.
+func (s *Store) setAlias(id, alias string, spare bool) error {
 	alias = NormalizeAlias(alias)
 	if err := ValidAlias(alias); err != nil {
 		return err
@@ -110,15 +113,20 @@ func (s *Store) SetAlias(id, alias string) error {
 		}
 		defer tx.Rollback()
 		if alias != "" {
-			holder, err := getByOn(tx, `alias = ? AND id != ? AND `+liveClause, alias, id)
-			switch {
-			case err == nil:
-				taken = &AliasTakenError{Alias: alias, Holder: holder}
-				return nil
-			case !errors.Is(err, sql.ErrNoRows):
+			if spare {
+				holder, err := getByOn(tx, `alias = ? AND id != ? AND `+liveClause, alias, id)
+				switch {
+				case err == nil:
+					taken = &AliasTakenError{Alias: alias, Holder: holder}
+					return nil
+				case !errors.Is(err, sql.ErrNoRows):
+					return err
+				}
+			}
+			if _, err := tx.Exec(`UPDATE task SET alias = '' WHERE alias = ? AND id != ?`, alias, id); err != nil {
 				return err
 			}
-			holder, err = getByOn(tx, `wire_name = ? AND id != ? AND `+liveClause, handle, id)
+			holder, err := getByOn(tx, `wire_name = ? AND id != ? AND `+liveClause, handle, id)
 			switch {
 			case err == nil:
 				taken = &AliasTakenError{Alias: alias, Holder: holder, ByHandle: true}
@@ -238,7 +246,7 @@ func (s *Store) GiveDefaultAlias(id, title string) (string, error) {
 	if t.Alias != "" {
 		return "", nil
 	}
-	err = s.SetAlias(id, a)
+	err = s.setAlias(id, a, true)
 	var taken *AliasTakenError
 	switch {
 	case err == nil:
@@ -315,7 +323,7 @@ func (s *Store) GiveDefaultAliasFor(id, title, branch string) (string, error) {
 			}
 			a += suffix
 		}
-		err := s.SetAlias(id, a)
+		err := s.setAlias(id, a, true)
 		var taken *AliasTakenError
 		switch {
 		case err == nil:

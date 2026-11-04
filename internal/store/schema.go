@@ -2512,6 +2512,15 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN live_at TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// An alias names one card on a room, live or not. Keeps it on the newest card and clears it from the rest.
+		name: "0116_alias_one_card",
+		stmts: []string{
+			`UPDATE task SET alias = '' WHERE alias != '' AND EXISTS (
+				SELECT 1 FROM task n WHERE n.alias = task.alias AND
+					(n.created_at > task.created_at OR (n.created_at = task.created_at AND n.id > task.id)))`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

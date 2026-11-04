@@ -174,8 +174,11 @@ func TestTheBoardSetsAnAliasAndHearsWhoHoldsIt(t *testing.T) {
 		t.Fatalf("setting an alias answered %d: %s", w.Code, w.Body)
 	}
 	w := patch(b.ID, `{"alias":"dotfiles"}`)
-	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "dotfiles-41800") {
-		t.Fatalf("a clash answered %d, not naming the holder: %s", w.Code, w.Body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("taking a held alias answered %d: %s", w.Code, w.Body)
+	}
+	if got, _ := d.st.Get(a.ID); got.Alias != "" {
+		t.Fatalf("the old holder kept %q", got.Alias)
 	}
 	if w := patch(b.ID, `{"alias":"has space"}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("a malformed alias answered %d", w.Code)
