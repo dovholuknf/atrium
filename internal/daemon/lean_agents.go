@@ -26,6 +26,8 @@ import (
 const (
 	leanAgentTagPrefix = "atrium:agent:"
 	leanSkillTagPrefix = "atrium:skill:"
+	// leanToolTagPrefix is the Skill or Agent tool granted by atrium_need with no file named, as `atrium:tool:Skill`.
+	leanToolTagPrefix = "atrium:tool:"
 )
 
 // leanPluginName is the session-only plugin the named files ride in. Claude Code
@@ -41,6 +43,8 @@ type leanKit struct {
 	Interview bool
 	// Superlean cuts the tool list, mercurius and the worker prompt further. Not a kit: empty() ignores it.
 	Superlean bool
+	// Tools is the Skill or Agent tool granted with no file named. Not a kit: empty() ignores it.
+	Tools []string
 }
 
 func (k leanKit) empty() bool { return len(k.Agents) == 0 && len(k.Skills) == 0 }
@@ -129,10 +133,10 @@ func (k leanKit) needsPlugin() bool { return len(k.fileAgents()) > 0 || len(k.Sk
 func leanDisallowedFor(k leanKit) []string {
 	var out []string
 	for _, t := range leanDisallowed {
-		if (t == "Agent" || t == "Task") && len(k.Agents) > 0 {
+		if (t == "Agent" || t == "Task") && (len(k.Agents) > 0 || small.HasTag(k.Tools, "Agent")) {
 			continue
 		}
-		if t == "Skill" && len(k.Skills) > 0 {
+		if t == "Skill" && (len(k.Skills) > 0 || small.HasTag(k.Tools, "Skill")) {
 			continue
 		}
 		out = append(out, t)

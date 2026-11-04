@@ -173,21 +173,22 @@ const leanSystemPrompt = `You are a worker launched by another agent through atr
 - Known failing, not yours, do not chase: TestReposIsOpenLikeGrowlsAndExactlyShaped, TestRealSessionsKeepTheirText (docs/known-failing-tests.md).
 - Do not edit CLAUDE.md files.
 - Ask with atrium_say rather than guessing on anything consequential.
+- If you lack a skill, agent, tool or MCP server you need, call atrium_need with what and why, then end your turn.
 Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's "stop" is a valid end: answer it with atrium_done, or with nothing.`
 
 // superleanSystemPrompt is appended in place of leanSystemPrompt for a superlean worker.
-const superleanSystemPrompt = `You are a worker launched through atrium. BRIEF.md is your whole task. End with atrium_done (a sha or an artifact) when you finish, or atrium_blocked when something stops you: that is the one message your launcher gets. Ask with atrium_say. Commit on your own branch, never on claude/main or main, with a one-line subject and no trailer. Never restart atrium or deploy unless the brief says to. Run tests in one foreground call, scoped to what you touched.`
+const superleanSystemPrompt = `You are a worker launched through atrium. BRIEF.md is your whole task. End with atrium_done (a sha or an artifact) when you finish, or atrium_blocked when something stops you: that is the one message your launcher gets. Ask with atrium_say. Commit on your own branch, never on claude/main or main, with a one-line subject and no trailer. Never restart atrium or deploy unless the brief says to. Run tests in one foreground call, scoped to what you touched. If you lack a skill, agent, tool or MCP server you need, call atrium_need with what and why, then end your turn.`
 
 // superlean tools: the built-ins a superlean worker keeps. ToolSearch stays, or every MCP tool loads its full schema.
 var superleanBase = []string{"Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell", "ToolSearch"}
 
-// superleanTools is the `--tools` list: the base, plus Agent with lean_agents and Skill with lean_skills.
+// superleanTools is the `--tools` list: the base, plus Agent with lean_agents or a granted tool:Agent, and Skill with lean_skills or tool:Skill.
 func superleanTools(k leanKit) []string {
 	out := append([]string{}, superleanBase...)
-	if len(k.Agents) > 0 {
+	if len(k.Agents) > 0 || small.HasTag(k.Tools, "Agent") {
 		out = append(out, "Agent")
 	}
-	if len(k.Skills) > 0 {
+	if len(k.Skills) > 0 || small.HasTag(k.Tools, "Skill") {
 		out = append(out, "Skill")
 	}
 	return out
@@ -249,6 +250,9 @@ func leanOptions(req shared.LaunchRequest, task *store.Task, gateway string) (le
 			if name, ok := strings.CutPrefix(t, leanSkillTagPrefix); ok {
 				skills = append(skills, name)
 			}
+			if name, ok := strings.CutPrefix(t, leanToolTagPrefix); ok {
+				kit.Tools = append(kit.Tools, name)
+			}
 		}
 		if len(kit.Agents) == 0 {
 			kit.Agents = cleanKitNames(agents)
@@ -287,7 +291,7 @@ func withoutLeanTags(tags []string) ([]string, bool) {
 	for _, t := range tags {
 		c := strings.TrimSpace(t)
 		if c == LeanTag || c == SuperleanTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) ||
-			strings.HasPrefix(c, leanSkillTagPrefix) {
+			strings.HasPrefix(c, leanSkillTagPrefix) || strings.HasPrefix(c, leanToolTagPrefix) {
 			continue
 		}
 		out = append(out, t)

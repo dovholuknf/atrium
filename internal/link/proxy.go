@@ -1529,6 +1529,7 @@ func (p *Proxy) SetControl(boardAddr string) {
 	c.docs = p.docStore
 	c.resourcesDir = p.resourcesStateDir
 	c.rooms = p.roomsForResources
+	c.growler = p.growler
 	p.control = c.handler()
 	p.mu.Lock()
 	p.ctl = c

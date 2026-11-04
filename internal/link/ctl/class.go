@@ -51,8 +51,15 @@ var ItemWithheld = map[string]bool{
 	"atrium_say": true, "atrium_peers": true, "atrium_task": true, "atrium_report": true,
 }
 
+// LaunchTools are what Elevated adds to a worker class.
+var LaunchTools = map[string]bool{"atrium_launch": true, "atrium_launch_worker": true}
+
 // InClass reports whether a tool is served to a class.
 func InClass(name string, class Class) bool {
+	if class&Elevated != 0 && LaunchTools[name] {
+		return true
+	}
+	class = class.Base()
 	if name == "atrium_review" {
 		return class == ClassWorkerReview
 	}

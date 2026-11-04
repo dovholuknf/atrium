@@ -36,6 +36,7 @@ func inClass(name string, class ctl.Class) bool { return ctl.InClass(name, class
 
 // residentClass is whether a class hears the resident words for atrium_done and atrium_blocked.
 func residentClass(c ctl.Class) bool {
+	c = c.Base()
 	return c == ctl.ClassWorkerResident || c == ctl.ClassFullResident
 }
 
@@ -123,7 +124,8 @@ func (c *controlMCP) classNow() time.Time {
 // A WORKER is tagged SubagentTag and not DirectorTag. Everything else is full:
 // directors, the resident merger, and a session a human started, which carries no
 // tags at all.
-func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctl.Class, bool) {
+// A worker tagged ElevatedTag also gets the launch tools. See atrium_need.
+func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (class ctl.Class, found bool) {
 	ctx, cancel := context.WithTimeout(ctx, controlTimeout)
 	defer cancel()
 	var body struct {
@@ -135,6 +137,13 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctl.C
 	best := pickCard(body.Tasks, agent)
 	if best == nil {
 		return ctl.ClassFull, false
+	}
+	if hasTag(best.Tags, ElevatedTag) {
+		defer func() {
+			if class != ctl.ClassFull && class != ctl.ClassFullResident {
+				class |= ctl.Elevated
+			}
+		}()
 	}
 	if hasTag(best.Tags, ItemTag) && hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
 		return ctl.ClassWorkerItem, true
