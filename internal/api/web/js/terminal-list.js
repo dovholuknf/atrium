@@ -455,16 +455,17 @@ function termHeadPlace() {
   const q = document.getElementById("term-q"), match = document.getElementById("term-match");
   const label = document.getElementById("term-label");
   if (!head || !lay || !q || !match || !label) return;
-  const on = !termNarrow() && termListMode === "full" && !(typeof chatLent !== "undefined" && chatLent);
+  const on = !termNarrow() && termListMode === "full" && !(typeof chatLent !== "undefined" && chatLent)
+    && !document.body.classList.contains("solo");
   if (on && q.parentNode !== head) {
     termHeadHome = { line: q.parentNode, row: label.parentNode, at: label.parentNode.previousSibling, hint: q.placeholder };
     head.append(q, match, label);
     termHeadHome.row.remove();
     q.placeholder = "filter";
-    q.title = termHeadHome.hint;
+    q.dataset.tip = termHeadHome.hint;
   } else if (!on && q.parentNode === head && termHeadHome) {
     q.placeholder = termHeadHome.hint;
-    q.removeAttribute("title");
+    delete q.dataset.tip;
     termHeadHome.line.append(q, match);
     termHeadHome.row.append(label);
     termHeadHome.at.after(termHeadHome.row);
