@@ -63,6 +63,10 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	}
 	limit := d.cycleLimit(t)
 	if limit <= 0 || tokens < limit {
+		d.Nctx.DropMarker(t.ID)
+		return
+	}
+	if d.Nctx.DroppedHolds(t.ID, d.ConversationOf(t)) {
 		return
 	}
 	if run := d.sup.Get(t.ID); run != nil && !run.PeerGateOpen() {
