@@ -65,6 +65,8 @@ type Location struct {
 	//
 	// See `internal/base/claudeconf/whichexe.go`, which reads it.
 	Exe string `json:"exe,omitempty"`
+	// HubDialToken lets a command of this user use the room's hub door. Never in the shared file.
+	HubDialToken string `json:"hubdial_token,omitempty"`
 }
 
 // LocationPath is the file, in whatever this operating system calls the place
@@ -284,6 +286,11 @@ func (d *Service) WriteLocation() {
 		}
 	}
 
+	shareable, err := json.MarshalIndent(loc, "", "  ")
+	if err != nil {
+		return
+	}
+	loc.HubDialToken = d.Opts().HubDialToken
 	body, err := json.MarshalIndent(loc, "", "  ")
 	if err != nil {
 		return
@@ -308,7 +315,7 @@ func (d *Service) WriteLocation() {
 	// is mostly advisory and the directory's own permissions decide, which is
 	// why the shared root is the operator's choice rather than a path atrium
 	// invents.
-	if err := PutLocation(shared, body, 0o644); err != nil {
+	if err := PutLocation(shared, shareable, 0o644); err != nil {
 		log.Printf("[atrium] could not record my address where others can read it: %v", err)
 		return
 	}

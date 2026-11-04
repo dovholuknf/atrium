@@ -1640,7 +1640,7 @@ func (d *Daemon) initServices() {
 		Opts: func() roomconf.Options {
 			o := d.opts
 			return roomconf.Options{AgentAddr: o.AgentAddr, HumanAddr: o.HumanAddr, DBPath: o.DBPath, Room: o.Room,
-				RoomDir: o.RoomDir, LocationFile: o.LocationFile}
+				RoomDir: o.RoomDir, LocationFile: o.LocationFile, HubDialToken: d.hublinkService.HubDialToken()}
 		},
 		Calls: roomconf.Calls{
 			PidAlive:          func(pid int) bool { return d.hk.pidAlive(pid) },
