@@ -72,7 +72,15 @@ func (d *Daemon) worktreesRepo(repo, caller string) (string, error) {
 		repo = t.Worktree
 	}
 	if fi, err := os.Stat(filepath.FromSlash(repo)); err == nil && fi.IsDir() {
-		return repo, nil
+		card := ""
+		if t, terr := d.st.GetByWireName(caller); terr == nil && t != nil {
+			card = filepath.FromSlash(t.Worktree)
+		}
+		real, cerr := d.ap.ContainedOrOpen(card, filepath.FromSlash(repo))
+		if cerr != nil {
+			return "", errors.New("repo " + repo + " is outside your directory and the paths atrium opens")
+		}
+		return real, nil
 	}
 	if !rules.RepoSlug(repo) {
 		return "", errors.New("repo is a path inside a checkout that exists, or host/org/repo, like github.com/openziti/ziti")

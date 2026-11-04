@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -258,7 +259,7 @@ func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 			return small.ErrString("give sha or artifact, not both")
 		}
 		if artifact != "" {
-			return checkArtifact(task, artifact)
+			return checkArtifact(d.ap, task, artifact)
 		}
 		if !shaShape.MatchString(sha) {
 			return fmt.Errorf("sha %q is not a commit id: 7 to 40 hex characters", sha)
@@ -290,14 +291,18 @@ func artifactPath(task *store.Task, artifact string) string {
 
 // checkArtifact refuses an artifact that is not there. A path is looked for on this room only, which is the worker's
 // own, and a URL is taken as given: nothing here can say what a remote address holds.
-func checkArtifact(task *store.Task, artifact string) error {
+func checkArtifact(ap *api.Server, task *store.Task, artifact string) error {
 	if strings.Contains(artifact, "://") {
 		if u, err := url.Parse(artifact); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return fmt.Errorf("artifact %q is not a path or an http(s) URL", artifact)
 		}
 		return nil
 	}
-	if _, err := os.Stat(artifactPath(task, artifact)); err != nil {
+	real, err := ap.ContainedOrOpen(filepath.FromSlash(task.Worktree), artifactPath(task, artifact))
+	if err != nil {
+		return fmt.Errorf("artifact %s is outside your directory and the paths atrium opens", artifact)
+	}
+	if _, err := os.Stat(real); err != nil {
 		return fmt.Errorf("artifact %s does not exist on this room. write it first, then call again", artifact)
 	}
 	return nil
