@@ -1864,7 +1864,8 @@ var _ = time.Time{}
 //
 // Same rules as Prune about what may be taken, for the same reason: shelving
 // says the work is coming back. A card a failure killed is coming back too, so a
-// live card nobody closed stays (see LiveCards), and so does a pinned card, one with a queued restart wake and one with\n// a resume id.
+// live card nobody closed stays (see LiveCards), and so does a pinned card, one with a queued restart wake and one with
+// a resume id.
 func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error) {
 	want := statuses
 	if len(want) == 0 {
