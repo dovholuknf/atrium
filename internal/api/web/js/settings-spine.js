@@ -1947,6 +1947,12 @@ function connect() {
   es.addEventListener("task-removed", onTaskRemovedEvent);
   es.addEventListener("permission", permsSoon);
   es.addEventListener("halted", healthSoon);
+  // A hook that found this room through daemon.json, said once per card by the room.
+  es.addEventListener("hook-via-location", e => {
+    let d;
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    if (d.toast) toast("a session found this room by daemon.json", d.toast, "", "", d.task_id || "");
+  });
   es.addEventListener("health", onHealthEvent);
   // A card that has gone takes its remembered placement with it. See
   // `rememberPlace`.

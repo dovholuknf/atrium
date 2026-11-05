@@ -203,3 +203,38 @@ func TestPermissionEndpointRefusals(t *testing.T) {
 		t.Fatalf("/submit answered %d", resp.StatusCode)
 	}
 }
+
+// A request from a session the room had no card for makes the card and is answered 204 at once, with nothing parked
+// and no row left for the board to offer. The next request from that card is gated as usual.
+func TestUnseenSessionIsNotGated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	body := `{"agent":"perm-unseen","command":"ls","tool_use_id":"toolu_u1","via_location":true}`
+	resp, err := http.Post("http://"+d.opts.AgentAddr+"/permission", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("an unseen session was answered %s, want 204", resp.Status)
+	}
+	task, err := d.st.GetByWireName("perm-unseen")
+	if err != nil {
+		t.Fatalf("no card was made for the unseen session: %v", err)
+	}
+	if pend, err := d.st.PendingForTask(task.ID); err != nil || len(pend) != 0 {
+		t.Fatalf("an unseen session left %d pending request(s), err %v", len(pend), err)
+	}
+	if _, said := d.viaLocationSaid.Load(task.ID); !said {
+		t.Fatal("a request that came through daemon.json was not said on the board")
+	}
+
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	postPermission(ctx, d, `{"agent":"perm-unseen","command":"rm x","tool_use_id":"toolu_u2"}`)
+	parkedID(t, d, task.ID)
+}

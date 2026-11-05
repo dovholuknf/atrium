@@ -223,7 +223,18 @@ function termCold(t) {
   if (t && t.supervised) return false;
   // A parked card keeps its status but its process is gone.
   if (t && t.parked_at) return true;
+  // A held permission is live with no runner atrium holds: the orphan reaper, not the list, decides it went away.
+  if (t && t.status === "needs-permission") return false;
   return !(t && TERM_LIVE_STATUS.includes(t.status)) || runnerGone(t);
+}
+
+// The request a card is held on, drawn under its row so it is answered from where the card is seen.
+function termHeldLine(t) {
+  if (!t || t.status !== "needs-permission" || typeof permsLocal === "undefined") return "";
+  const p = permsLocal.find(x => x.task_id === t.id);
+  if (!p) return "";
+  return `<div class="theld" data-tip="held on this request. answer it on the permissions tab or the card"
+    ><b>${esc(p.tool || "")}</b> ${esc(p.command || "")}</div>`;
 }
 // Live but not attachable: joined from a terminal atrium does not hold.
 function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
@@ -1195,7 +1206,7 @@ function termRow(t, deep, kid) {
             }</span>
         </div>
         ${termRowChips(t, keptChip)}${termKidsToggle(t, termKidTotal(t), termKidTotal(t) - shown.length, shut)}
-      </div>
+      </div>${termHeldLine(t)}
     </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
 

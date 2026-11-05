@@ -125,10 +125,13 @@ func hubAddressFrom(override string) (addr, source string) {
 		return strings.TrimRight(v, "/"), "$ATRIUM_HUB_URL"
 	}
 	if v := recordedAgentAddr(); v != "" {
-		return v, "a running daemon"
+		return v, fromLocation
 	}
 	return "http://127.0.0.1:7777", "the default, since no daemon has recorded one"
 }
+
+// fromLocation is hubAddressFrom's source for an address read from daemon.json.
+const fromLocation = "a running daemon"
 
 // recordedAgentAddr reads the address the running daemon wrote down. Any
 // failure returns empty, so the caller falls back to the default.

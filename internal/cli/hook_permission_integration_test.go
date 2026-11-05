@@ -317,7 +317,8 @@ func TestPermFailuresFailOpen(t *testing.T) {
 
 func TestPermPostTimeoutEnv(t *testing.T) {
 	for in, want := range map[string]time.Duration{
-		"": 0, "30": 30 * time.Second, "2m": 2 * time.Minute, "00:01:30": 90 * time.Second, "junk": 0,
+		"": time.Minute, "30": 30 * time.Second, "2m": 2 * time.Minute, "00:01:30": 90 * time.Second,
+		"junk": time.Minute, "0": time.Minute,
 	} {
 		t.Setenv("ATRIUM_PERM_TIMEOUT", in)
 		if got := permPostTimeout(); got != want {
@@ -494,5 +495,17 @@ func TestPermissionHookSaysWhichCardItsRunnerIs(t *testing.T) {
 	permissionHook(h.srv.URL, []byte(bashPayload), func() int { return 4242 })
 	if len(h.posts) != 1 || h.posts[0]["task_id"] != "card-1" {
 		t.Fatalf("posted %v, want task_id card-1", h.posts)
+	}
+}
+
+// A room's 204 is no decision and is not asked again, so the runner's own prompt runs at once.
+func TestPermUngatedIsNotRetried(t *testing.T) {
+	h := newFakeHub(t, true, http.StatusNoContent, "")
+	permEnv(t, "")
+	if out := runPermissionHook(h.srv.URL, []byte(bashPayload), 1); out != nil {
+		t.Fatalf("a 204 must give no decision and no warning, got %q", out)
+	}
+	if len(h.posts) != 1 {
+		t.Fatalf("a 204 was posted %d times, want once", len(h.posts))
 	}
 }

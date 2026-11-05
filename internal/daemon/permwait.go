@@ -67,6 +67,8 @@ type PermissionRequest struct {
 	// because there is nothing to guard against. A hook that sends only a hash
 	// keeps the old behavior.
 	ToolUseID string `json:"tool_use_id,omitempty"`
+	// ViaLocation is set when the hook found this room through daemon.json, with no address in its environment.
+	ViaLocation bool `json:"via_location,omitempty"`
 }
 
 // PermissionResponse is what the daemon returns to the hook.
@@ -86,6 +88,9 @@ type AutoDecision struct {
 	Decision string
 	Reason   string
 }
+
+// ungated is the chain declining a request: the room answers 204 and the runner asks on its own.
+var ungated = &AutoDecision{}
 
 // pendingPermission is one hook connection parked on an answer.
 type pendingPermission struct {
@@ -148,6 +153,10 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("[atrium] record permission from %s: %v", in.Agent, err)
 		storeID, auto = "", nil
+	}
+	if auto == ungated {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	if auto != nil {
 		w.Header().Set("Content-Type", "application/json")
