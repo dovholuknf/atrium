@@ -360,6 +360,9 @@ func unpackRunFiles(tr *tar.Reader, dir string, limit int64) error {
 		if err != nil {
 			return badArchive("%s", err.Error())
 		}
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+			return badArchive("%q leaves the folder", hdr.Name)
+		}
 		dest, err := safepath.Contained(dir, filepath.FromSlash(rel))
 		if err != nil {
 			return badArchive("%q leaves the folder", hdr.Name)

@@ -411,6 +411,9 @@ func unzipBounded(zipPath, dir string, maxBytes int64) error {
 			return fmt.Errorf("the artifact has an entry named %q, outside its own folder, so it was refused", e.Name)
 		}
 		name := filepath.FromSlash(e.Name)
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("the artifact has an entry named %q, outside its own folder, so it was refused", e.Name)
+		}
 		target := filepath.Join(dir, name)
 		switch {
 		case e.FileInfo().IsDir():
