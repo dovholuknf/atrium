@@ -41,6 +41,16 @@
       "reason": "go build must write to build.claude. Add -o build.claude/ (directory form works for ./... too)."
     },
     {
+      "id": "no-gui-app-launch",
+      "check": "phrase",
+      "tools": ["shell"],
+      "params": {
+        "phrase": "shell:appsfolder",
+        "except": ["grep", "egrep", "fgrep", "rg", "ag", "ack", "select-string", "sls", "findstr", "git grep", "git log"]
+      },
+      "reason": "Do not start a desktop app from this shell. It inherits this card's ATRIUM_TASK_ID and ATRIUM_AGENT_NAME, so its own sessions fire hooks as this card. Ask the user to start it."
+    },
+    {
       "id": "git-alias-config",
       "check": "git-alias-config",
       "tools": ["shell"],

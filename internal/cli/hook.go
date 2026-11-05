@@ -486,6 +486,7 @@ func reportActivity(hubURL, event, name string) string {
 	body, err := json.Marshal(map[string]any{
 		"agent":   agent,
 		"task_id": os.Getenv("ATRIUM_TASK_ID"),
+		"pid":     runnerPID(),
 		// "dir" when the name was made up from the directory. Absent otherwise.
 		"name_source": nameSource,
 		"event":       kind,

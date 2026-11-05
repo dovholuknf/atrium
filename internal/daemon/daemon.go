@@ -455,6 +455,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Launch = d.launchFromJSON
 	d.ap.TaskLaunch = d.taskLaunchFromJSON
 	d.ap.Kill = d.Kill
+	d.ap.Closed = d.releaseSentBy
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
 	d.prr = pulls.NewPRRunner(st, d.ap.PublishPR, d.prConfig())

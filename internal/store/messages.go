@@ -199,6 +199,36 @@ func (s *Store) MarkDelivered(taskID, via string, ids []string) error {
 	})
 }
 
+// ReleaseFromPeer settles every undelivered message a session sent, for a sender that is gone, and returns the cards
+// that held one. Marked delivered with via "sender-closed" and nothing typed: no one is left to answer it.
+func (s *Store) ReleaseFromPeer(peer string) ([]string, error) {
+	var tasks []string
+	err := s.guard(func() error {
+		tasks = nil
+		rows, err := s.db.Query(
+			`SELECT DISTINCT task_id FROM message WHERE from_peer = ? AND delivered_at IS NULL`, peer)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			tasks = append(tasks, id)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		_, err = s.db.Exec(
+			`UPDATE message SET delivered_at = ?, via = 'sender-closed' WHERE from_peer = ? AND delivered_at IS NULL`,
+			ts(s.now()), peer)
+		return err
+	})
+	return tasks, err
+}
+
 // UndeliveredCounts returns how many messages are waiting per task, so the
 // board can show which sessions have something pending for them.
 func (s *Store) UndeliveredCounts() (map[string]int, error) {

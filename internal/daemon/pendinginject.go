@@ -696,6 +696,25 @@ func (pi *pendingInjector) deliveredElsewhere(taskID string, ids []string) {
 	pi.noteHeld(taskID, pi.heldFor(taskID, oldest))
 }
 
+// releaseSentBy settles what a closed card sent that is still held for another card, which no one is left to answer
+// and which would otherwise stay held for as long as that card runs.
+func (d *Daemon) releaseSentBy(t *store.Task) {
+	if t.WireName == "" {
+		return
+	}
+	tasks, err := d.st.ReleaseFromPeer(t.WireName)
+	if err != nil {
+		log.Printf("[atrium] could not release what %s sent: %v", t.ID, err)
+		return
+	}
+	if d.pending == nil {
+		return
+	}
+	for _, id := range tasks {
+		d.pending.reconcile(id)
+	}
+}
+
 // stopAll halts every backoff timer, for shutdown. The held messages stay in
 // the store and the next daemon's hooks deliver them, so nothing is lost by
 // giving up the on-screen retry here.

@@ -761,6 +761,8 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	if t.Status != store.StatusPaused {
 		if err := s.st.SetStatusBecause(t.ID, store.StatusDone, "closed"); err != nil {
 			warn("the card did not move to done: %v", err)
+		} else if s.Closed != nil {
+			s.Closed(t)
 		}
 	}
 	// A notified event with its own by, as a deploy hold's lift is: the event table takes a fixed set of kinds.
