@@ -401,3 +401,17 @@ func TestLeanAgentsLiftTheOnlySubagentsGuardForTheNamedAgents(t *testing.T) {
 		t.Fatalf("no lean_agents leaves the guard: %s %v", raw, err)
 	}
 }
+
+func TestLeanAndSuperleanArgsKeepTheResumeFlag(t *testing.T) {
+	hk, _, _, _ := kitDirs(t)
+	in := []string{"--resume", "fd65d47f-aaaa", "--strict-mcp-config"}
+	for name, kit := range map[string]leanKit{"lean": {}, "superlean": {Superlean: true}} {
+		got, err := leanArgs(in, nil, "", nil, kit, "", os.ReadFile, hk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if flagValue(t, got, "--resume") != "fd65d47f-aaaa" {
+			t.Fatalf("%s drops the resume id: %q", name, got)
+		}
+	}
+}

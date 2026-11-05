@@ -2562,6 +2562,9 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		if err := d.st.SetWhy(x.taskID, ""); err != nil {
 			log.Printf("[atrium] clear why for %s: %v", x.taskID, err)
 		}
+		if t, err := d.st.Get(x.taskID); err == nil {
+			d.startedFresh(t, "the runner could not resume it: "+small.FirstLine(tail))
+		}
 		if _, err := d.spawnPTY(x.taskID, x.spec.cmd, x.spec.args, x.spec.cwd, x.spec.env); err != nil {
 			log.Printf("[atrium] fresh start for %s failed too: %v", x.taskID, err)
 		} else {
