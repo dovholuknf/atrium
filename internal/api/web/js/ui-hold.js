@@ -40,6 +40,6 @@ async function uiHoldCogMenu() {
 // After load, so boot.js has routed the page and cannot switch the view out from under the held state.
 addEventListener("load", () => {
   const name = new URLSearchParams(location.search).get("ui");
-  const open = name && UI_HOLD_STATES[name];
+  const open = name && Object.hasOwn(UI_HOLD_STATES, name) && UI_HOLD_STATES[name];
   if (open) open().catch(e => toast("ui hold " + name, e.message));
 });

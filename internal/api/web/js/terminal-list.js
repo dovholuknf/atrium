@@ -2161,13 +2161,14 @@ function termEndedHTML(ended) {
     list.sort((a, b) => termEndedAt(b) - termEndedAt(a));
     const isOpen = open.has(room);
     const all = termEndedMore.has(room);
+    const jsRoom = esc(room.replace(/\\/g, "\\\\").replace(/'/g, "\\'"));
     const rows = isOpen ? list.slice(0, all ? list.length : TERM_ENDED_MAX).map(termEndedRow).join("") : "";
     const more = isOpen && !all && list.length > TERM_ENDED_MAX
-      ? `<button class="endedmore" onclick="termEndedMore.add('${esc(room)}');renderTermList()">show older (${list.length - TERM_ENDED_MAX})</button>`
+      ? `<button class="endedmore" onclick="termEndedMore.add('${jsRoom}');renderTermList()">show older (${list.length - TERM_ENDED_MAX})</button>`
       : "";
     const name = rooms.size > 1 || room ? "ended · " + (room || "this room") : "ended";
     return `<div class="termended${isOpen ? " open" : ""}" data-ended-room="${esc(room)}">
-      <button class="tgroup endedhead" onclick="toggleTermEnded('${esc(room.replace(/'/g, "\\'"))}')"
+      <button class="tgroup endedhead" onclick="toggleTermEnded('${jsRoom}')"
         data-tip="${isOpen ? "hide" : "show"} the cards whose session ended"
         ><span class="tcaret">${isOpen ? "&#9662;" : "&#9656;"}</span
         ><span class="tgname">${esc(name)}</span

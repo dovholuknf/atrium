@@ -648,6 +648,17 @@ if (/\btermReplayed\b/.test(html)) {
     "full-scrollback replay doubles the history. See termReplayed.");
 }
 
+// Rule: a room name in an inline handler is backslash-escaped before the quote, and `?ui=` reads own keys only.
+//
+// A room named `\'` turned `\\'` into a quote that closed the handler's string, and `?ui=constructor` reached
+// Object's own function.
+if (/(?:toggleTermEnded|termEndedMore\.add)\('\$\{esc\(room/.test(html) || !/jsRoom = esc\(room\.replace\(\/\\\\\/g/.test(html)) {
+  fail("the ended group's room name reaches an onclick without its backslashes escaped first. See jsRoom.");
+}
+if (!/Object\.hasOwn\(UI_HOLD_STATES, name\)/.test(html)) {
+  fail("?ui= looks a name up in UI_HOLD_STATES without hasOwn, so `constructor` or `__proto__` is called.");
+}
+
 if (bad) {
   console.error(`\n${bad} terminal invariant(s) broken. Each one is a bug somebody has ` +
     `already hit, not a style preference.`);
