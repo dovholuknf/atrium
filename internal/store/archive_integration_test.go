@@ -176,3 +176,28 @@ func TestArchiveRespectsTheAge(t *testing.T) {
 		t.Fatalf("archived %d cards that were too recent", n)
 	}
 }
+
+func TestArchiveKeepsPinnedWakeAndResumableCards(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	pin, _, _ := s.Register(Observed{WireName: "pin", Worktree: "/w1", Runner: "claude"})
+	wake, _, _ := s.Register(Observed{WireName: "wake", Worktree: "/w2", Runner: "claude"})
+	res, _, _ := s.Register(Observed{WireName: "res", Worktree: "/w3", Runner: "claude"})
+	if err := s.SetPinned(pin.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.SetRestartWake(wake.ID, "go on", "me"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE task SET resume_id = 'abc' WHERE id = ?`, res.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{pin.ID, wake.ID, res.ID} {
+		if err := s.SetStatus(id, StatusDead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.Archive(0, StatusDead); err != nil || n != 0 {
+		t.Fatalf("archived %d (%v), wanted 0", n, err)
+	}
+}
