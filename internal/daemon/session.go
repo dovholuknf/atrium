@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/dovholuknf/atrium/internal/base/logline"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"log"
@@ -577,7 +578,7 @@ func endedAs(task *store.Task) string {
 	}
 	// A stat, and nothing cleverer. The question is "is this still a place",
 	// and a directory that cannot be read is not one.
-	fi, err := os.Stat(filepath.FromSlash(dir))
+	fi, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dir)))
 	if err != nil || !fi.IsDir() {
 		return store.StatusDead
 	}

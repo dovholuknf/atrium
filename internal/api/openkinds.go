@@ -375,7 +375,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 	if dest == "" {
 		return res, http.StatusBadRequest, errors.New("which repository")
 	}
-	if _, err := os.Stat(filepath.FromSlash(dest)); err == nil {
+	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		return res, http.StatusConflict, errors.New(
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
 	}
@@ -437,10 +437,10 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		}
 		res.CreatedBranch = true
 	}
-	if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(dest)), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		return res, http.StatusInternalServerError, err
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {

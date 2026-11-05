@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
 	"os"
@@ -942,7 +943,7 @@ func commandFound(argv []string) error {
 		return errors.New("the command's first element is empty")
 	}
 	if filepath.IsAbs(first) {
-		if st, err := os.Stat(first); err != nil || st.IsDir() {
+		if st, err := os.Stat(safepath.NoNUL(first)); err != nil || st.IsDir() {
 			return fmt.Errorf("%s does not exist or is a directory", first)
 		}
 		return nil

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"io/fs"
 	"net/http"
@@ -90,11 +91,11 @@ func promoteTarget(raw string) (string, error) {
 		return "", errors.New("give the whole path, starting from the drive or the root")
 	}
 	to = filepath.Clean(to)
-	if _, err := os.Stat(to); err == nil {
+	if _, err := os.Stat(safepath.NoNUL(to)); err == nil {
 		return "", fmt.Errorf("%s already exists", to)
 	}
 	parent := filepath.Dir(to)
-	if fi, err := os.Stat(parent); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(safepath.NoNUL(parent)); err != nil || !fi.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", parent)
 	}
 	return to, nil
@@ -108,10 +109,10 @@ func MoveWorktree(from, to string) error {
 	if from == "" {
 		return errors.New("that card has no directory to move")
 	}
-	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(to)), 0o755); err != nil {
 		return err
 	}
-	if err := os.Rename(from, to); err != nil {
+	if err := os.Rename(from, safepath.NoNUL(to)); err != nil {
 		if err := copyTree(from, to); err != nil {
 			return err
 		}
@@ -151,10 +152,10 @@ func moveTranscripts(from, to string) {
 	if _, err := os.Stat(src); err != nil {
 		return
 	}
-	if _, err := os.Stat(dst); err == nil {
+	if _, err := os.Stat(safepath.NoNUL(dst)); err == nil {
 		return
 	}
-	if err := os.Rename(src, dst); err != nil {
+	if err := os.Rename(src, safepath.NoNUL(dst)); err != nil {
 		if err := copyTree(src, dst); err == nil {
 			_ = os.RemoveAll(src)
 		}
@@ -173,7 +174,7 @@ func copyTree(from, to string) error {
 		}
 		target := filepath.Join(to, rel)
 		if e.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return os.MkdirAll(safepath.NoNUL(target), 0o755)
 		}
 		if !e.Type().IsRegular() {
 			return nil
@@ -187,7 +188,7 @@ func copyTree(from, to string) error {
 		if err != nil {
 			return err
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
+		out, err := os.OpenFile(safepath.NoNUL(target), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
 		if err != nil {
 			return err
 		}

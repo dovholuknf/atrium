@@ -198,7 +198,7 @@ func walkLinks(path string) (string, error) {
 			continue
 		}
 		next := filepath.Join(cur, name)
-		fi, err := os.Lstat(next)
+		fi, err := os.Lstat(NoNUL(next))
 		if err != nil {
 			return "", err
 		}
@@ -210,7 +210,7 @@ func walkLinks(path string) (string, error) {
 		if links++; links > maxLinks {
 			return "", errors.New("too many links")
 		}
-		target, err := os.Readlink(next)
+		target, err := os.Readlink(NoNUL(next))
 		if err != nil {
 			return "", err
 		}

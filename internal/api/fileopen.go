@@ -97,7 +97,7 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name, args := editorCommand(tmpl, full)
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(safepath.NoNUL(name), args...)
 	// Started from the card's directory, so an editor that opens a workspace
 	// from its working directory opens the right one.
 	cmd.Dir = filepath.FromSlash(task.Worktree)
