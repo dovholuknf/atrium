@@ -185,7 +185,7 @@ function answerOf(opts, btnValue, input, choices) {
   return btnValue;
 }
 
-// opts: { title, body (html), buttons: [{label, value, style}], input, value }
+// opts: { title, body (html) or bodyText (text), buttons: [{label, value, style}], input, value }
 function askUser(opts) {
   return new Promise(resolve => {
     // A question asked while another one is up.
@@ -213,7 +213,9 @@ function askUser(opts) {
       resolve(v);
     };
     document.getElementById("ask-title").textContent = opts.title || "";
-    document.getElementById("ask-body").innerHTML = opts.body || "";
+    const askBody = document.getElementById("ask-body");
+    if (opts.bodyText != null) askBody.textContent = opts.bodyText;
+    else askBody.innerHTML = opts.body || "";
 
     const field = document.getElementById("ask-field");
     const input = document.getElementById("ask-input");
@@ -406,6 +408,10 @@ const confirmUser = (title, body, okLabel, rememberKey) => {
 
 const tellUser = (title, body) => askUser({
   title, body, buttons: [{ label: "ok", value: true, style: "go" }]
+});
+
+const tellText = (title, bodyText) => askUser({
+  title, bodyText, buttons: [{ label: "ok", value: true, style: "go" }]
 });
 
 const askText = (title, body, value, placeholder) => askUser({

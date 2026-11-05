@@ -428,7 +428,7 @@ async function allowFolderNow() {
 function dropRule(id) { return oneAtATime("rule:" + id, () => dropRuleNow(id)); }
 
 async function dropRuleNow(id) {
-  try { await api(`/v1/rules/${id}`, { method: "DELETE" }); } catch (e) { tellUser("atrium", e.message); }
+  try { await api(`/v1/rules/${id}`, { method: "DELETE" }); } catch (e) { tellText("atrium", e.message); }
   refresh();
 }
 
@@ -436,12 +436,12 @@ async function dropRuleNow(id) {
 // something to take on trust.
 async function importClaude() {
   let preview;
-  try { preview = await api("/v1/rules/preview-claude"); } catch (e) { tellUser("atrium", e.message); return; }
+  try { preview = await api("/v1/rules/preview-claude"); } catch (e) { tellText("atrium", e.message); return; }
   const rules = preview.rules || [], skipped = preview.skipped || [];
   const broad = rules.filter(r => r.broad);
   const normal = rules.length - broad.length;
   if (!rules.length) {
-    tellUser("nothing to import", "looked in:\n" + (preview.sources || []).join("\n"));
+    tellText("nothing to import", "looked in:\n" + (preview.sources || []).join("\n"));
     return;
   }
   let body = `Read from:<code>${esc((preview.sources || []).join("\n"))}</code>`
@@ -470,7 +470,7 @@ async function importFile(input) {
   input.value = "";
   if (!file) return;
   let parsed;
-  try { parsed = JSON.parse(await file.text()); } catch (e) { tellUser("not valid json", e.message); return; }
+  try { parsed = JSON.parse(await file.text()); } catch (e) { tellText("not valid json", e.message); return; }
   const rules = parsed.rules || parsed;
   if (!Array.isArray(rules)) { tellUser("atrium", "expected a rules array"); return; }
   if (!await confirmUser("import from a file",

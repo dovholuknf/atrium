@@ -133,10 +133,10 @@ async function discoverProvider(name) {
   let d;
   try {
     d = await api("/v1/providers/" + encodeURIComponent(name) + "/discover", { method: "POST" });
-  } catch (e) { tellUser("could not look", e.message); return; }
+  } catch (e) { tellText("could not look", e.message); return; }
   // A run that could not read the root is not a failure of the request, so it
   // arrives here as an ordinary answer carrying its problem.
-  if (d.error) tellUser("nothing adopted", d.error);
+  if (d.error) tellText("nothing adopted", d.error);
   else toast(name, d.summary);
   delete providerRepos[name];
   if (providerOpen === name) await loadProviderRepos(name);
@@ -148,7 +148,7 @@ async function hideRepo(name, org, repo, on) {
     "&hide=" + (on ? "1" : "0");
   try {
     await api("/v1/providers/" + encodeURIComponent(name) + "/repos" + q, { method: "DELETE" });
-  } catch (e) { tellUser("could not do that", e.message); return; }
+  } catch (e) { tellText("could not do that", e.message); return; }
   await loadProviderRepos(name);
   renderProviders();
 }
@@ -161,7 +161,7 @@ async function forgetRepo(name, org, repo) {
   const q = "?org=" + encodeURIComponent(org) + "&repo=" + encodeURIComponent(repo);
   try {
     await api("/v1/providers/" + encodeURIComponent(name) + "/repos" + q, { method: "DELETE" });
-  } catch (e) { tellUser("could not forget it", e.message); return; }
+  } catch (e) { tellText("could not forget it", e.message); return; }
   await loadProviderRepos(name);
   renderProviders();
 }
@@ -250,7 +250,7 @@ async function saveProvider() {
       showBlockers(e.body.error, e.body.blockers);
       return;
     }
-    tellUser("could not save it", e.message);
+    tellText("could not save it", e.message);
     return;
   }
   dlg.close();
@@ -281,7 +281,7 @@ async function checkWorktreeRoot() {
   try {
     out = await api("/v1/providers/" + encodeURIComponent(name) + "/check-worktrees",
       { method: "POST" });
-  } catch (e) { tellUser("could not check", e.message); return; }
+  } catch (e) { tellText("could not check", e.message); return; }
   const box = document.getElementById("pv-blockers");
   box.hidden = false;
   box.textContent = out.clear
@@ -303,7 +303,7 @@ async function deleteProvider() {
       showBlockers(e.body.error, e.body.blockers);
       return;
     }
-    tellUser("could not delete it", e.message);
+    tellText("could not delete it", e.message);
     return;
   }
   document.getElementById("provider").close();

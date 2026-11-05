@@ -994,7 +994,7 @@ async function markRoom(name, marked) {
       const why = await got.json().catch(() => ({}));
       throw new Error(why.error || "the hub refused that");
     }
-  } catch (e) { tellUser("rooms", e.message); return; }
+  } catch (e) { tellText("rooms", e.message); return; }
   hubRead = 0;
   await loadHubRooms();
   renderRooms();
@@ -1026,7 +1026,7 @@ async function rejectRoom(name) {
       const why = await got.json().catch(() => ({}));
       throw new Error(why.error || "the hub refused that");
     }
-  } catch (e) { tellUser("rooms", e.message); return; }
+  } catch (e) { tellText("rooms", e.message); return; }
   hubRead = 0;
   await loadHubRooms();
   refreshRoomsMenu();

@@ -361,11 +361,11 @@ async function doDispatch() {
       body: JSON.stringify(body),
     });
   } catch (e) {
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
     return;
   }
   document.getElementById("dispatch").close();
-  tellUser("atrium", `queued for ${body.room}. it starts there the next time that machine
+  tellText("atrium", `queued for ${body.room}. it starts there the next time that machine
     checks in, which is within twenty seconds if it is up.`);
   renderDispatch();
 }
@@ -378,7 +378,7 @@ async function cancelDispatchNow(id) {
     await api("/v1/dispatch/" + encodeURIComponent(id), { method: "DELETE" });
   } catch (e) {
     // The refusal says to stop it on that machine, which is the useful half.
-    tellUser("atrium", e.message);
+    tellText("atrium", e.message);
   }
   renderDispatch();
 }
@@ -398,7 +398,7 @@ async function forgetRoom(name) {
     "forget it")) return;
   try {
     await api("/v1/rooms/" + encodeURIComponent(name), { method: "DELETE" });
-  } catch (e) { tellUser("could not forget it", e.message); return; }
+  } catch (e) { tellText("could not forget it", e.message); return; }
   renderRooms();
 }
 
@@ -435,7 +435,7 @@ async function openRoomJoin() {
   const dlg = document.getElementById("roomjoin");
   try {
     roomJoinInfo = await api("/v1/rooms/join");
-  } catch (e) { tellUser("could not work out the command", e.message); return; }
+  } catch (e) { tellText("could not work out the command", e.message); return; }
 
   // The ways in, best first. Ziti leads when it is configured because it is
   // the only one where neither machine has to be reachable from the other,
@@ -758,7 +758,7 @@ async function saveAction() {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-  } catch (e) { tellUser("could not save it", e.message); return; }
+  } catch (e) { tellText("could not save it", e.message); return; }
   dlg.close();
   renderActions();
 }
@@ -771,7 +771,7 @@ async function deleteAction() {
     "delete it")) return;
   try {
     await api("/v1/actions/" + encodeURIComponent(id), { method: "DELETE" });
-  } catch (e) { tellUser("could not delete it", e.message); return; }
+  } catch (e) { tellText("could not delete it", e.message); return; }
   document.getElementById("action").close();
   renderActions();
 }
@@ -904,7 +904,7 @@ async function saveSource() {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-  } catch (e) { tellUser("could not save it", e.message); return; }
+  } catch (e) { tellText("could not save it", e.message); return; }
   document.getElementById("source").close();
   renderSources();
 }
@@ -921,17 +921,17 @@ async function runSourceNow() {
   try {
     res = await api("/v1/sources/" + encodeURIComponent(id) + "/run", { method: "POST" });
   } catch (e) {
-    tellUser("could not run it", e.message);
+    tellText("could not run it", e.message);
     return;
   }
   await renderSources();
   const fresh = allSources.find(x => x.id === id);
   if (fresh) showSourceStatus(fresh);
   if (res.error) {
-    tellUser("the source failed", res.error);
+    tellText("the source failed", res.error);
     return;
   }
-  tellUser("atrium", res.created
+  tellText("atrium", res.created
     ? res.created + " new item(s) are in the inbox."
     : "it ran and there was nothing new.");
 }
@@ -947,7 +947,7 @@ async function deleteSource() {
     "delete it")) return;
   try {
     await api("/v1/sources/" + encodeURIComponent(id), { method: "DELETE" });
-  } catch (e) { tellUser("could not delete it", e.message); return; }
+  } catch (e) { tellText("could not delete it", e.message); return; }
   document.getElementById("source").close();
   renderSources();
 }
@@ -1089,7 +1089,7 @@ async function saveRecogniser() {
     // A pattern that does not compile comes back here, naming the position in
     // the expression. That is the whole reason it is checked on save rather
     // than at the moment somebody pastes a url.
-    tellUser("could not save it", e.message);
+    tellText("could not save it", e.message);
     return;
   }
   document.getElementById("recogniser").close();
@@ -1105,7 +1105,7 @@ async function deleteRecogniser() {
     "delete it")) return;
   try {
     await api("/v1/recognisers/" + encodeURIComponent(id), { method: "DELETE" });
-  } catch (e) { tellUser("could not delete it", e.message); return; }
+  } catch (e) { tellText("could not delete it", e.message); return; }
   document.getElementById("recogniser").close();
   renderRecognisers();
 }

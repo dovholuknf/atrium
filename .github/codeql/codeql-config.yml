@@ -1,0 +1,4 @@
+name: atrium
+paths-ignore:
+  - internal/api/web/vendor
+  - scripts
