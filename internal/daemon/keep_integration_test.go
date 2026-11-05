@@ -241,6 +241,10 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 	}
 	d.WakeSawSession(target.ID, "conv-1")
 	testwait.Poll(5*time.Second, func() bool { return strings.Contains(f.written(), "\r") })
+	testwait.Eventually(t, 5*time.Second, "the typed rows to be marked delivered", func() bool {
+		n, _ := d.st.UndeliveredCount(target.ID)
+		return n == 0
+	})
 	time.Sleep(10 * d.hk.keptTick) // wait: no second turn may be typed
 	got := f.written()
 	for _, want := range []string{"HELDONE", "WAKEONE", "WAKETWO"} {
