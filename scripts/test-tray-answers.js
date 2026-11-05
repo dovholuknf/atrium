@@ -142,6 +142,14 @@ const server = http.createServer((req, res) => {
     if (messages.length !== 1) fail("nothing else should have been sent");
 
     await p.evaluate(() => document.getElementById("toastlog").close());
+    cards.push(mk("t~three", "peeked", ["Ship it now?"]));
+    await refresh();
+    await p.evaluate(() => openPeek("t~three", null, "menu"));
+    await p.waitForSelector(".peek.on .peek-qa .qa-q");
+    byId("t~three").seen = { unseen: false, answered: true, questions_at: AT };
+    await refresh();
+    if (await p.locator(".peek.on .peek-qa").count()) fail("an open peek must stop asking once its question is answered");
+    await p.evaluate(() => closePeek());
     await p.evaluate(() => newContext("t~one"));
     await p.evaluate(() => {
       window.landed = [];
