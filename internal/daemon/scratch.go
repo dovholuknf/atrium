@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io/fs"
 	"log"
@@ -39,10 +40,10 @@ func (d *Daemon) scratchFor(t *store.Task, home string) string {
 	}
 	dir := scratch.Dir(root, t.DisplayTitle(), t.WireName, t.ID)
 	path := filepath.FromSlash(dir)
-	if _, err := os.Lstat(path); err == nil {
+	if _, err := os.Lstat(safepath.NoNUL(path)); err == nil {
 		return dir
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(path)), 0o755); err != nil {
 		log.Printf("[atrium] could not make the scratch root for %s: %v", t.ID, err)
 		return home
 	}
@@ -50,7 +51,7 @@ func (d *Daemon) scratchFor(t *store.Task, home string) string {
 		log.Printf("[atrium] could not record the scratch folder of %s: %v", t.ID, err)
 		return home
 	}
-	if err := os.Mkdir(path, 0o755); err != nil && !os.IsExist(err) {
+	if err := os.Mkdir(safepath.NoNUL(path), 0o755); err != nil && !os.IsExist(err) {
 		_ = d.st.CardScratchRemoved(dir)
 		log.Printf("[atrium] could not make the scratch folder of %s: %v", t.ID, err)
 		return home

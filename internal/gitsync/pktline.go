@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"html"
 	"strconv"
 	"strings"
 )
@@ -28,7 +29,7 @@ func readPkt(b []byte) (data []byte, flush bool, rest []byte, err error) {
 		return nil, true, b[4:], nil
 	case n < 4:
 		return nil, true, b[4:], errPkt
-	case int(n) > len(b) || n > 65520:
+	case n > 65520 || int(n) > len(b):
 		return nil, false, nil, errPkt
 	}
 	return b[4:n], false, b[n:], nil
@@ -205,7 +206,7 @@ func oneLine(s string) string {
 // For a refusal that comes before any push, where there is no report-status to put it in.
 func refusedAdvert(service, why string) []byte {
 	var out bytes.Buffer
-	out.Write(pktLine("# service=" + service + "\n"))
+	out.Write(pktLine("# service=" + html.EscapeString(service) + "\n"))
 	out.Write(flushPkt)
 	out.Write(pktLine("ERR atrium: " + oneLine(why) + "\n"))
 	return out.Bytes()

@@ -369,7 +369,7 @@ func (s *Store) SetGitStore(dir string) error {
 	if clean == filepath.Dir(clean) {
 		return errors.New("git.store cannot be the root of a disk")
 	}
-	if st, err := os.Stat(clean); err == nil && !st.IsDir() {
+	if st, err := os.Stat(noNUL(clean)); err == nil && !st.IsDir() {
 		return errors.New("git.store is a file, and it has to be a directory")
 	}
 	return s.SetHubSetting(SettingGitStore, filepath.ToSlash(clean))

@@ -170,7 +170,7 @@ func (s *Server) postCardsArchive(w http.ResponseWriter, r *http.Request) {
 		for _, t := range cards {
 			cr, err := s.closeUnasked(t, in.Work)
 			if err != nil {
-				log.Printf("[atrium api] archive %s: %s: %v", in.Cwd, t.ID, err)
+				log.Printf("[atrium api] archive %s: %s: %v", logLine(in.Cwd), t.ID, err)
 				if res.Failed == nil {
 					res.Failed = map[string]string{}
 				}

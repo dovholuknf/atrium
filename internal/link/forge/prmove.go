@@ -102,13 +102,13 @@ func (p *Service) MovePRClaimWith(ctx context.Context, key, to, walker string) (
 	}
 	out.Review, out.PRID = "moved", newID
 	if err := p.roomJSON(ctx, old.Room, http.MethodPost, "/v1/prs/"+oldID+"/archive", nil, nil); err != nil {
-		log.Printf("[hub] pr %s moved to %s but %s did not archive its row %s: %v", key, to, old.Room, oldID, err)
+		log.Printf("[hub] pr %s moved to %s but %s did not archive its row %s: %v", logLine(key), logLine(to), old.Room, oldID, err)
 		p.RecordAudit(old.Room, "pr-review-archive-failed", key+" row "+oldID+": "+err.Error())
 	}
 	if walker != "" {
 		body := map[string]string{"action": "set", "task": walker}
 		if err := p.roomJSON(ctx, to, http.MethodPost, "/v1/prs/"+newID+"/walker", body, nil); err != nil {
-			log.Printf("[hub] pr %s: %s did not take walker %s: %v", key, to, walker, err)
+			log.Printf("[hub] pr %s: %s did not take walker %s: %v", logLine(key), logLine(to), logLine(walker), logLine(err))
 		}
 	}
 	return out, nil

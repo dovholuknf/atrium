@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"net/http"
 	"os"
@@ -370,7 +371,7 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dest := worktreeDest(p.WorktreeRoot, req.Org, req.Repo, branch)
-	if _, err := os.Stat(filepath.FromSlash(dest)); err == nil {
+	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		// A directory already standing where the worktree would go, which git
 		// itself would refuse with a less useful sentence. Reported rather than
 		// overwritten: see `flattenBranch` for how two branch names can land
@@ -384,7 +385,7 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	// because a typo would become a directory and discovery would then report
 	// success over an empty tree. This is somewhere atrium is about to put
 	// something, which is a different act.
-	if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(dest)), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -401,7 +402,7 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	if made {
 		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest)}
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
 	// Nothing on stdin, so a command that decides to ask a question fails

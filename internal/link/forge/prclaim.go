@@ -314,7 +314,7 @@ func (p *Service) claimPR(ctx context.Context, st *hubstore.Store, asker string,
 	}
 	status, body, ferr := p.forwardPR(ctx, c.Room, ask)
 	if ferr != nil {
-		log.Printf("[hub] pr %s placed on %s but it did not take it (%v), so %s keeps it", ask.Key, c.Room, ferr, asker)
+		log.Printf("[hub] pr %s placed on %s but it did not take it (%v), so %s keeps it", logLine(ask.Key), c.Room, ferr, logLine(asker))
 		if mv, err := st.MovePRClaim(ask.Key, asker); err == nil {
 			ans.Owner = mv.Room
 		}

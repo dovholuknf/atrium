@@ -1025,7 +1025,10 @@ function themeShowcaseHTML(palette, task) {
   const wear = palette ? wearOf(palette) : null;
   let card = "";
   try { card = cardHTML(task || SHOWCASE_TASK, wear); } catch (e) { card = ""; }
-  card = card.replace(/\s(?:onclick|oncontextmenu|data-id|data-rank)="[^"]*"/g, "");
+  for (let prev = null; prev !== card;) {
+    prev = card;
+    card = card.replace(/\s(?:onclick|oncontextmenu|data-id|data-rank)="[^"]*"/g, "");
+  }
   const term = palette || plainTheme();
   return `<div class="tshow-card">${card}</div>` +
     `<div class="thsample tshow-term" style="background:${okColour(term.background, "#000000")};` +

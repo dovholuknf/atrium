@@ -186,7 +186,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	pending := "pending:" + key + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	own := func(kind, ref, detail string) {
 		if _, err := s.st.AddResource(pending, kind, ref, detail); err != nil {
-			log.Printf("[atrium api] open %s: the inventory did not take %s %s: %v", key, kind, ref, err)
+			log.Printf("[atrium api] open %s: the inventory did not take %s %s: %v", key, kind, logLine(ref), err)
 		}
 	}
 	undo := func() {
@@ -356,7 +356,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		// operator's checked-out branch is never touched.
 		if out, err := gitIn(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
 			res.FetchError = strings.TrimSpace(tailLines(out + " " + err.Error()))
-			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", repoPath, res.FetchError)
+			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", logLine(repoPath), res.FetchError)
 		}
 	}
 	if opts.twig != "" {
@@ -374,7 +374,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 	if dest == "" {
 		return res, http.StatusBadRequest, errors.New("which repository")
 	}
-	if _, err := os.Stat(filepath.FromSlash(dest)); err == nil {
+	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		return res, http.StatusConflict, errors.New(
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
 	}
@@ -436,10 +436,10 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		}
 		res.CreatedBranch = true
 	}
-	if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(dest)), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		return res, http.StatusInternalServerError, err
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {

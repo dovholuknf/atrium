@@ -65,6 +65,9 @@ func Follow(ctx context.Context, link string, args []string) (map[string]string,
 
 // land is the address one request ended on, after every redirect. A 4xx or 5xx is a failure.
 func land(ctx context.Context, method, link string) (string, error) {
+	if ok, _ := regexp.MatchString(`^https?://[^\s]+$`, link); !ok {
+		return "", errors.New("the redirect fetch follows only an http or https link")
+	}
 	req, err := http.NewRequestWithContext(ctx, method, link, nil)
 	if err != nil {
 		return "", err

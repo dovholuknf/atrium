@@ -238,7 +238,7 @@ func (a *announcer) send(ctx context.Context) {
 		a.mu.Lock()
 		a.owed = true
 		a.mu.Unlock()
-		log.Printf("[link] could not read this room's own state: %v", err)
+		log.Printf("[link] could not read this room's own state: %v", logLine(err))
 		return
 	}
 	a.mu.Lock()

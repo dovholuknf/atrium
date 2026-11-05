@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"log"
@@ -105,7 +106,7 @@ func (d *Daemon) defaultAlias(id, title string) {
 		return
 	}
 	if _, err := d.st.GiveDefaultAliasFor(id, title, t.Branch); err != nil {
-		log.Printf("[atrium] %s starts with no alias: %v", id, err)
+		log.Printf("[atrium] %s starts with no alias: %v", id, logLine(err))
 	}
 }
 
@@ -146,7 +147,7 @@ func (d *Daemon) handleSession(w http.ResponseWriter, r *http.Request) {
 	if err := d.onSession(in); err != nil {
 		// Registration is best effort. A session must never fail to start
 		// because atrium could not record it.
-		log.Printf("[atrium] session %s from %s: %v", in.Event, in.Agent, err)
+		log.Printf("[atrium] session %s from %s: %v", logLine(in.Event), logLine(in.Agent), err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -232,8 +233,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// would hand the parent somebody else's session. An operator's own
 		// join or leave carries no pid and no task id, so it is unaffected.
 		if !d.ownsSession(task, in.PID) {
-			log.Printf("[atrium] dropped a session %s for %s from pid %d, which is not its runner "+
-				"(a nested session?), resume %s", orWord(in.Event, "start"), task.ID, in.PID, in.Resume)
+			log.Printf("[atrium] dropped a session %s for %s from pid %s, which is not its runner "+
+				"(a nested session?), resume %s", logLine(orWord(in.Event, "start")), task.ID, logLine(in.PID), logLine(in.Resume))
 			return nil
 		}
 		// A name the hook guessed from its directory says nothing about which
@@ -249,13 +250,13 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			// A directory name that only a finished card holds says nothing about which session this is, so a start
 			// gets a card of its own. Dropped, a session started by hand ran with no card on the board at all.
 			if in.Event != "" && in.Event != "start" {
-				log.Printf("[atrium] session %s from %q dropped: %v", in.Event, in.Agent, err)
+				log.Printf("[atrium] session %s from %q dropped: %v", logLine(in.Event), in.Agent, err)
 				return nil
 			}
 			obs.WireName, obs.NameSource = obs.WireName+"-"+outsideSuffix(in), ""
 			if t, made, err = d.st.Register(obs); err == nil {
-				log.Printf("[atrium] a session started outside atrium in %s is on its own card %s", obs.Worktree,
-					t.WireName)
+				log.Printf("[atrium] a session started outside atrium in %s is on its own card %s", logLine(obs.Worktree),
+					logLine(t.WireName))
 			}
 		}
 		if err != nil {
@@ -327,7 +328,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			}
 		} else {
 			log.Printf("[atrium] %s offered a resume id with nothing written behind it, keeping %s",
-				in.Agent, task.ResumeID)
+				logLine(in.Agent), task.ResumeID)
 		}
 	}
 
@@ -374,7 +375,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 				return err
 			}
 		}
-		log.Printf("[atrium] %s joined", in.Agent)
+		log.Printf("[atrium] %s joined", logLine(in.Agent))
 
 	case "leave":
 		// Handing the session back to itself. The card is kept, because the
@@ -396,7 +397,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 				return err
 			}
 		}
-		log.Printf("[atrium] %s left", in.Agent)
+		log.Printf("[atrium] %s left", logLine(in.Agent))
 
 	case "compact":
 		// A moment, not a state. The card records that this session forgot
@@ -435,7 +436,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		if a := d.act.get(task.ID); a != nil {
 			d.ap.Broadcast("activity", map[string]any{"task_id": task.ID, "activity": a})
 		}
-		log.Printf("[atrium] %s compacted its context (%s)", in.Agent, orWord(in.Trigger, "unsaid"))
+		log.Printf("[atrium] %s compacted its context (%s)", logLine(in.Agent), logLine(orWord(in.Trigger, "unsaid")))
 
 	case "end":
 		// A clear or a resume is not an ending. Another session starts in the
@@ -449,7 +450,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 				d.sayReset(task.ID, "clear")
 			}
 			log.Printf("[atrium] %s is %sing rather than ending, so its card stays",
-				in.Agent, in.Reason)
+				logLine(in.Agent), logLine(in.Reason))
 			break
 		}
 		// Left behind, the last activity would have the card claiming to run a
@@ -576,7 +577,7 @@ func endedAs(task *store.Task) string {
 	}
 	// A stat, and nothing cleverer. The question is "is this still a place",
 	// and a directory that cannot be read is not one.
-	fi, err := os.Stat(filepath.FromSlash(dir))
+	fi, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dir)))
 	if err != nil || !fi.IsDir() {
 		return store.StatusDead
 	}
@@ -591,7 +592,7 @@ func (d *Daemon) heldConversation(in SessionEvent) *store.Task {
 	if err != nil || t.ArchivedAt != nil || t.MovedTo != "" || d.sup.Get(t.ID) != nil {
 		return nil
 	}
-	log.Printf("[atrium] a session started outside atrium resumed %s, adopted onto its card %s", in.Resume, t.ID)
+	log.Printf("[atrium] a session started outside atrium resumed %s, adopted onto its card %s", logLine(in.Resume), t.ID)
 	return t
 }
 

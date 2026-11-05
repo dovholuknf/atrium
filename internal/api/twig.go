@@ -86,7 +86,7 @@ func carryTwig(ctx context.Context, src, dest string) (patch, failed string) {
 	if len(diff) > 0 {
 		if _, err := gitOut(ctx, dest, diff, "apply", "--binary", "--whitespace=nowarn"); err != nil {
 			patch = filepath.ToSlash(filepath.FromSlash(dest)) + ".twig.patch"
-			if werr := os.WriteFile(filepath.FromSlash(patch), diff, 0o644); werr != nil {
+			if werr := os.WriteFile(safepath.NoNUL(filepath.FromSlash(patch)), diff, 0o644); werr != nil {
 				return "", "the patch did not apply (" + err.Error() + ") and was not saved: " + werr.Error()
 			}
 			failed = "the patch did not apply: " + err.Error()
@@ -135,7 +135,7 @@ func copyUntracked(from, to string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(to)), 0o755); err != nil {
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
@@ -143,7 +143,7 @@ func copyUntracked(from, to string) error {
 		if err != nil {
 			return err
 		}
-		return os.Symlink(target, to)
+		return os.Symlink(target, safepath.NoNUL(to))
 	}
 	if info.IsDir() {
 		return copyTree(from, to)
@@ -155,5 +155,5 @@ func copyUntracked(from, to string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(to, b, info.Mode().Perm())
+	return os.WriteFile(safepath.NoNUL(to), b, info.Mode().Perm())
 }

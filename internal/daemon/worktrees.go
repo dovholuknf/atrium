@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"net/http"
 	"os"
@@ -71,7 +72,7 @@ func (d *Daemon) worktreesRepo(repo, caller string) (string, error) {
 		}
 		repo = t.Worktree
 	}
-	if fi, err := os.Stat(filepath.FromSlash(repo)); err == nil && fi.IsDir() {
+	if fi, err := os.Stat(safepath.NoNUL(filepath.FromSlash(repo))); err == nil && fi.IsDir() {
 		card := ""
 		if t, terr := d.st.GetByWireName(caller); terr == nil && t != nil {
 			card = filepath.FromSlash(t.Worktree)

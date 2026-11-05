@@ -53,7 +53,7 @@ func (d *Daemon) toolNotFound(taskID, tool string) {
 	if tool == "" || !d.toolchain.heardNotFound(taskID, tool) {
 		return
 	}
-	log.Printf("[atrium] room misconfigured: %s found no %s on its PATH", taskID, tool)
+	log.Printf("[atrium] room misconfigured: %s found no %s on its PATH", taskID, logLine(tool))
 	d.PublishHealth()
 }
 

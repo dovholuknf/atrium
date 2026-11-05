@@ -149,7 +149,7 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 	// Automatic answers still need durable history without showing a human prompt.
 	storeID, auto, err := d.onPermRequest(in)
 	if err != nil {
-		log.Printf("[atrium] record permission from %s: %v", in.Agent, err)
+		log.Printf("[atrium] record permission from %s: %v", logLine(in.Agent), err)
 		storeID, auto = "", nil
 	}
 	if auto == ungated {

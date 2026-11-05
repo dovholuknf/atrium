@@ -222,16 +222,16 @@ func (g *github) Download(ctx context.Context, ref Ref, runID int64, name, dest 
 	if d, err := scanDir(dir, maxBytes); err == nil && len(d.Files) > 0 {
 		// A hit is a use: it keeps the folder from aging out.
 		now := time.Now()
-		_ = os.Chtimes(dir, now, now)
+		_ = os.Chtimes(noNUL(dir), now, now)
 		d.Name = name
 		d.release, kept = release, true
 		return d, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+	if err := os.MkdirAll(noNUL(filepath.Dir(dir)), 0o755); err != nil {
 		return nil, fmt.Errorf("the hub could not make %s: %w", filepath.Dir(dir), err)
 	}
 	// Unpacked into a folder of its own and renamed into place, so a failure leaves nothing half there.
-	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+tmpMark)
+	tmp, err := os.MkdirTemp(noNUL(filepath.Dir(dir)), noNUL(filepath.Base(dir)+tmpMark))
 	if err != nil {
 		return nil, fmt.Errorf("the hub could not make a folder under %s: %w", filepath.Dir(dir), err)
 	}
@@ -258,12 +258,12 @@ func (g *github) Download(ctx context.Context, ref Ref, runID int64, name, dest 
 		return nil, err
 	}
 	_ = os.Remove(zipPath)
-	_ = os.RemoveAll(dir)
-	if err := os.Rename(tmp, dir); err != nil {
+	_ = os.RemoveAll(noNUL(dir))
+	if err := os.Rename(tmp, noNUL(dir)); err != nil {
 		return nil, fmt.Errorf("the hub could not put the artifact in place: %w", err)
 	}
 	now := time.Now()
-	_ = os.Chtimes(dir, now, now)
+	_ = os.Chtimes(noNUL(dir), now, now)
 	d, err := scanDir(dir, maxBytes)
 	if err != nil {
 		return nil, err
@@ -309,7 +309,7 @@ func ReadFile(d *CIDownload, rel string, lines int) error {
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("%q is not a file inside the artifact", rel)
 	}
-	f, err := os.Open(filepath.Join(d.Dir, clean))
+	f, err := os.Open(noNUL(filepath.Join(d.Dir, clean)))
 	if err != nil {
 		return fmt.Errorf("the artifact has no file %q. its files are listed in `files`", rel)
 	}
@@ -411,6 +411,9 @@ func unzipBounded(zipPath, dir string, maxBytes int64) error {
 			return fmt.Errorf("the artifact has an entry named %q, outside its own folder, so it was refused", e.Name)
 		}
 		name := filepath.FromSlash(e.Name)
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("the artifact has an entry named %q, outside its own folder, so it was refused", e.Name)
+		}
 		target := filepath.Join(dir, name)
 		switch {
 		case e.FileInfo().IsDir():

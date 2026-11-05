@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
 	"net/http"
@@ -163,7 +164,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	if !wt.Existed {
 		own := func(kind, ref, detail string) {
 			if _, err := s.st.AddResource(pending, kind, ref, detail); err != nil {
-				log.Printf("[atrium api] new %s: the inventory did not take %s %s: %v", pick, kind, ref, err)
+				log.Printf("[atrium api] new %s: the inventory did not take %s %s: %v", logLine(pick), kind, logLine(ref), err)
 			}
 		}
 		own(store.ResWorktree, wt.Path, wt.Repo)
@@ -200,7 +201,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	s.PublishTask(task)
 	ans.Card, ans.Created = task.ID, true
 	if err := s.st.MoveResources(pending, task.ID); err != nil {
-		log.Printf("[atrium api] new %s: the inventory was not handed to %s: %v", pick, task.ID, err)
+		log.Printf("[atrium api] new %s: the inventory was not handed to %s: %v", logLine(pick), task.ID, err)
 	}
 	s.measureAfterOpen(task)
 	writeJSON(w, http.StatusCreated, ans)
@@ -295,7 +296,7 @@ func (s *Server) worktreeHookFile(host, org, repo string) string {
 	for _, h := range hosts {
 		for _, f := range []string{"worktree.ps1", "worktree.sh"} {
 			p := filepath.Join(dir, h, org, repo, f)
-			if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			if st, err := os.Stat(safepath.NoNUL(p)); err == nil && !st.IsDir() {
 				return p
 			}
 		}
@@ -364,10 +365,10 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		if _, err := exec.LookPath(shell); err != nil {
 			shell = "powershell"
 		}
-		cmd = exec.CommandContext(ctx, shell, "-NoProfile", "-File", file,
-			"-WorktreePath", filepath.FromSlash(path), "-Org", org, "-Repo", repo, "-RemoteHost", host)
+		cmd = exec.CommandContext(ctx, shell, "-NoProfile", "-File", safepath.NoNUL(file),
+			"-WorktreePath", safepath.NoNUL(filepath.FromSlash(path)), "-Org", safepath.NoNUL(org), "-Repo", safepath.NoNUL(repo), "-RemoteHost", safepath.NoNUL(host))
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", file, filepath.FromSlash(path), org, repo, host)
+		cmd = exec.CommandContext(ctx, "sh", safepath.NoNUL(file), safepath.NoNUL(filepath.FromSlash(path)), safepath.NoNUL(org), safepath.NoNUL(repo), safepath.NoNUL(host))
 	}
 	cmd.Dir = filepath.FromSlash(path)
 	cmd.Env = append(userenv.Refresh(os.Environ()), "ATRIUM_WORKTREE="+filepath.FromSlash(path), "ATRIUM_ORG="+org,
@@ -379,7 +380,7 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		if msg == "" {
 			msg = err.Error()
 		}
-		log.Printf("[atrium api] new %s/%s/%s: hook %s failed: %v", host, org, repo, file, err)
+		log.Printf("[atrium api] new %s/%s/%s: hook %s failed: %v", logLine(host), logLine(org), logLine(repo), logLine(file), err)
 		return file, msg
 	}
 	return file, ""

@@ -96,7 +96,7 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name, args := editorCommand(tmpl, full)
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(safepath.NoNUL(name), args...)
 	// Started from the card's directory, so an editor that opens a workspace
 	// from its working directory opens the right one.
 	cmd.Dir = filepath.FromSlash(task.Worktree)
@@ -116,7 +116,7 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.AppendEvent(task.ID, store.EventNotified, map[string]any{
 		"what": "opened a file in the editor", "path": body.Path, "with": name,
 	}); err != nil {
-		log.Printf("[atrium api] could not record the open of %s: %v", body.Path, err)
+		log.Printf("[atrium api] could not record the open of %s: %v", logLine(body.Path), err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "opened": body.Path})
 }

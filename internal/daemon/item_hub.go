@@ -429,7 +429,7 @@ func (d *Daemon) itemUnblock(id, answer, by string) (map[string]any, int, error)
 	if typed {
 		_, _ = d.st.ItemUnblockDelivered(mid)
 	}
-	log.Printf("[atrium] item %s unblocked by %s: the answer is %s", id, by, map[bool]string{true: "typed", false: "queued"}[typed])
+	log.Printf("[atrium] item %s unblocked by %s: the answer is %s", id, logLine(by), map[bool]string{true: "typed", false: "queued"}[typed])
 	return map[string]any{"ok": true, "item_id": id, "state": it.State, "typed": typed}, http.StatusOK, nil
 }
 
@@ -454,7 +454,7 @@ func (d *Daemon) itemCancel(id, by string) (map[string]any, int, error) {
 		if card, err := d.st.Get(it.TaskID); err == nil {
 			text := "item " + id + " was cancelled. stop work on it and wait for the next item."
 			if _, _, err := d.deliverPeerCaused(card, store.ReservedHandle, text, "", "", d.waitsForTurn(card.ID, WhenImmediate)); err != nil {
-				log.Printf("[atrium] item %s cancelled by %s, and its card was not told: %v", id, by, err)
+				log.Printf("[atrium] item %s cancelled by %s, and its card was not told: %v", id, logLine(by), err)
 			}
 		}
 	default:
@@ -463,7 +463,7 @@ func (d *Daemon) itemCancel(id, by string) (map[string]any, int, error) {
 		}
 		go func() {
 			if err := d.askExit(it.TaskID, 10*time.Second); err != nil {
-				log.Printf("[atrium] item %s cancelled by %s, and its worker was not asked to leave: %v", id, by, err)
+				log.Printf("[atrium] item %s cancelled by %s, and its worker was not asked to leave: %v", id, logLine(by), err)
 			}
 		}()
 	}
@@ -502,7 +502,7 @@ func (d *Daemon) itemSendBack(id, note, by string) (map[string]any, int, error) 
 	if moved == nil {
 		return nil, http.StatusInternalServerError, errors.New("could not send item " + id + " back")
 	}
-	log.Printf("[atrium] item %s sent back by %s: the note is %s", id, by, map[bool]string{true: "typed", false: "queued"}[typed])
+	log.Printf("[atrium] item %s sent back by %s: the note is %s", id, logLine(by), map[bool]string{true: "typed", false: "queued"}[typed])
 	return map[string]any{"ok": true, "item_id": id, "state": moved.State, "typed": typed}, http.StatusOK, nil
 }
 

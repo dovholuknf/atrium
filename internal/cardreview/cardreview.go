@@ -81,7 +81,7 @@ type Service struct {
 func git(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitBound)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = dir
 	nowindow.Hide(cmd)
 	var out, errb bytes.Buffer

@@ -123,12 +123,12 @@ func examinable(path string) error {
 		cur := pending[0]
 		pending = pending[1:]
 		for p := cur; ; {
-			fi, err := os.Lstat(p)
+			fi, err := os.Lstat(noNUL(p))
 			if errors.Is(err, fs.ErrPermission) {
 				return fmt.Errorf("%s is not readable", p)
 			}
 			if err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
-				if to, err := os.Readlink(p); err == nil {
+				if to, err := os.Readlink(noNUL(p)); err == nil {
 					if !filepath.IsAbs(to) {
 						to = filepath.Join(filepath.Dir(p), to)
 					}

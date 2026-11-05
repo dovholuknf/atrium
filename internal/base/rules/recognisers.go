@@ -343,7 +343,7 @@ func (r *Recogniser) FillPrompt(captures map[string]string, fetched map[string]b
 // name the pattern did not capture, and never overwrites one it did.
 func (r *Recogniser) Resolve(vars, facts map[string]string, fetchErr error) *Resolved {
 	captures := make(map[string]string, len(vars))
-	all := make(map[string]string, len(vars)+len(facts))
+	all := make(map[string]string, len(vars))
 	for k, v := range vars {
 		captures[k], all[k] = v, v
 	}

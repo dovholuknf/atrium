@@ -435,7 +435,7 @@ func worktreeWork(ctx context.Context, dir string) (dirty, unpushed int, branch 
 
 // gitIn runs git in dir and answers its output, and its last lines as the error when it fails.
 func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(dir)
 	nowindow.Hide(cmd)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
@@ -482,14 +482,14 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		warn("the inventory did not read: %v", err)
 	}
 	failed := func(r *store.CardResource, err error) {
-		log.Printf("[atrium api] close %s: %s %s: %v", t.ID, r.Kind, r.Ref, err)
+		log.Printf("[atrium api] close %s: %s %s: %v", logLine(t.ID), r.Kind, r.Ref, err)
 		if e := s.st.ResourceFailed(r.Card, r.Seq, err.Error()); e != nil {
-			log.Printf("[atrium api] close %s: %v", t.ID, e)
+			log.Printf("[atrium api] close %s: %v", logLine(t.ID), e)
 		}
 	}
 	freed := func(r *store.CardResource) {
 		if e := s.st.FreeResource(r.Card, r.Seq, ""); e != nil {
-			log.Printf("[atrium api] close %s: %v", t.ID, e)
+			log.Printf("[atrium api] close %s: %v", logLine(t.ID), e)
 		}
 	}
 	of := func(kind string) []*store.CardResource {
@@ -768,7 +768,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	// A notified event with its own by, as a deploy hold's lift is: the event table takes a fixed set of kinds.
 	if err := s.st.AppendEvent(t.ID, store.EventNotified, map[string]any{"by": closedBy, "left": res.Left,
 		"stashes": res.Stashes, "warnings": res.Warnings, "log": res.Log}); err != nil {
-		log.Printf("[atrium api] close %s: the event: %v", t.ID, err)
+		log.Printf("[atrium api] close %s: the event: %v", logLine(t.ID), err)
 	}
 	if nt, err := s.st.Get(t.ID); err == nil {
 		s.PublishTask(nt)
@@ -944,9 +944,9 @@ func (s *Server) retryLeftovers(card string, rows map[*store.CardResource]string
 				continue
 			}
 			if err := s.st.FreeResource(r.Card, r.Seq, "removed on a later try"); err != nil {
-				log.Printf("[atrium api] close %s: %v", card, err)
+				log.Printf("[atrium api] close %s: %v", logLine(card), err)
 			}
-			log.Printf("[atrium api] close %s: %s removed on a later try", card, r.Ref)
+			log.Printf("[atrium api] close %s: %s removed on a later try", logLine(card), r.Ref)
 			for _, b := range now {
 				if branch == "" || b.Kind != store.ResBranch || !b.Live() || b.Detail != r.Detail || b.Ref != branch {
 					continue

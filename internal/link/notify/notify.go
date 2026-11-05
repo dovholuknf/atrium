@@ -942,7 +942,7 @@ func commandFound(argv []string) error {
 		return errors.New("the command's first element is empty")
 	}
 	if filepath.IsAbs(first) {
-		if st, err := os.Stat(first); err != nil || st.IsDir() {
+		if st, err := os.Stat(noNUL(first)); err != nil || st.IsDir() {
 			return fmt.Errorf("%s does not exist or is a directory", first)
 		}
 		return nil

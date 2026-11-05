@@ -200,7 +200,7 @@ func (d *Service) QueueWake(taskID, text, by string) (*store.RestartWake, *store
 		return nil, nil, err
 	}
 	d.Wake.Put(w)
-	log.Printf("[atrium] after-restart wake queued for %s by %s", taskID, shared.OrWord(w.By, "an unnamed caller"))
+	log.Printf("[atrium] after-restart wake queued for %s by %s", taskID, logLine(shared.OrWord(w.By, "an unnamed caller")))
 	d.Publish(taskID)
 	return w, old, nil
 }

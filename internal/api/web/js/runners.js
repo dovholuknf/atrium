@@ -519,7 +519,7 @@ function roomCommand() {
 // as a template rather than as something to run. Double quotes work in both a
 // POSIX shell and PowerShell, which is what the two ends of this can be.
 function quoteArg(v) {
-  return /[\s"']/.test(v) ? '"' + v.replace(/"/g, '\\"') + '"' : v;
+  return /[\s"']/.test(v) ? '"' + v.split('"').join('\\"') + '"' : v;
 }
 
 // A timestamp as something short enough to sit in a chip.

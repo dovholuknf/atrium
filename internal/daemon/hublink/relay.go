@@ -360,7 +360,7 @@ func (d *Service) SayAcross(ctx context.Context, from, name, room, text, when, k
 				") and could not hold the message either: " + herr.Error())
 		}
 		d.ReportedAcross(sender, to, "", text)
-		log.Printf("[atrium] %s's message to %s is held: %s", wire, to, why)
+		log.Printf("[atrium] %s's message to %s is held: %s", logLine(wire), logLine(to), why)
 		// Held on this room, and moved on by the drain. See docs/runtime/say-lifecycle-design.md.
 		rec.State, rec.RelayID, rec.Note = store.SayHeld, held.ID, "not answering: "+why
 		return http.StatusOK, map[string]any{
@@ -374,7 +374,7 @@ func (d *Service) SayAcross(ctx context.Context, from, name, room, text, when, k
 		if err != nil {
 			why = err.Error()
 		}
-		log.Printf("[atrium] %s's message to %s is unconfirmed: %s", wire, to, why)
+		log.Printf("[atrium] %s's message to %s is unconfirmed: %s", logLine(wire), logLine(to), why)
 		rec.State, rec.Note = store.SayUnconfirmed, why
 		return http.StatusOK, map[string]any{
 			"delivered": "unconfirmed", "to": to, "say": d.RecordSay(rec, text), "via": "remote",
@@ -394,7 +394,7 @@ func (d *Service) SayAcross(ctx context.Context, from, name, room, text, when, k
 		// THE HUB DROPPED THE WAKE. An older hub ignores the field, and the target answered as it
 		// does to any say without one. Sending again with wake=true would loop. A 424 for the
 		// reason given at the refusal above.
-		log.Printf("[atrium] %s's wake say to %s came back parked: the hub is older than cross-room wake", wire, to)
+		log.Printf("[atrium] %s's wake say to %s came back parked: the hub is older than cross-room wake", logLine(wire), logLine(to))
 		rec.State, rec.Note = store.SayRefused, "parked: the hub is older than cross-room wake"
 		d.RecordSay(rec, text)
 		return http.StatusFailedDependency, ErrBody("not delivered: " + to + " is parked, and the hub is older than " +
@@ -404,7 +404,7 @@ func (d *Service) SayAcross(ctx context.Context, from, name, room, text, when, k
 		to = res.To
 	}
 	d.ReportedAcross(sender, to, res.Card, text)
-	log.Printf("[atrium] %s told %s something across rooms (%d chars, %s)", wire, to, len(text), res.Delivered)
+	log.Printf("[atrium] %s told %s something across rooms (%d chars, %s)", logLine(wire), logLine(to), len(text), res.Delivered)
 	rec.ToWire, rec.State, rec.Note = to, store.SayHanded, "the hub took it: "+res.Delivered
 	if res.Delivered == "terminal" {
 		rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal

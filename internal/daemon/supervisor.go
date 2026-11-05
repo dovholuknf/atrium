@@ -156,10 +156,12 @@ func (r *ringBuffer) reserve(need int) {
 		return
 	}
 	grown := max(2*len(r.data), need+1, ringFloor)
-	if grown > r.max {
-		grown = r.max
+	var data []byte
+	if grown <= r.max {
+		data = make([]byte, grown)
+	} else {
+		data = make([]byte, r.max)
 	}
-	data := make([]byte, grown)
 	copy(data, r.data[:r.at])
 	r.data = data
 }

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,7 +24,7 @@ func findTool(name, path string) string {
 		}
 		for _, e := range exts {
 			p := filepath.Join(dir, name+e)
-			if st, err := os.Stat(p); err == nil && !st.IsDir() && (runtime.GOOS == "windows" || st.Mode()&0o111 != 0) {
+			if st, err := os.Stat(safepath.NoNUL(p)); err == nil && !st.IsDir() && (runtime.GOOS == "windows" || st.Mode()&0o111 != 0) {
 				return p
 			}
 		}

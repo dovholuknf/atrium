@@ -55,7 +55,7 @@ func (d *Daemon) recordSay(v store.Say, text string) string {
 	}
 	id, err := d.st.RecordSay(v, text)
 	if err != nil {
-		log.Printf("[atrium] could not record a say from %s to %s: %v", v.FromWire, v.ToInput, err)
+		log.Printf("[atrium] could not record a say from %s to %s: %v", logLine(v.FromWire), logLine(v.ToInput), err)
 		return ""
 	}
 	return id
@@ -79,7 +79,7 @@ func (d *Daemon) saySettled(from string, target *store.Task) {
 		return
 	}
 	if _, err := d.st.AnswerSaysFrom(replier, target.ID); err != nil {
-		log.Printf("[atrium] %s replied to %s but the owed reply could not be settled: %v", from, target.WireName, err)
+		log.Printf("[atrium] %s replied to %s but the owed reply could not be settled: %v", logLine(from), target.WireName, err)
 	}
 }
 

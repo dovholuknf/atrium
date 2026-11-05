@@ -47,7 +47,7 @@ func (g *Growler) EndAbout(id string) {
 	}
 	changed, err := rs.End(id)
 	if err != nil {
-		log.Printf("[hub] growlers could not end %s: %v", id, err)
+		log.Printf("[hub] growlers could not end %s: %v", logLine(id), err)
 		return
 	}
 	if changed {

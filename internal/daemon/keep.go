@@ -52,7 +52,7 @@ func (d *Daemon) keepOnCard(w http.ResponseWriter, from string, target *store.Ta
 	}
 	d.peerSaid(from, target, text, owedKind(kind, reply))
 	d.Publish(target.ID)
-	log.Printf("[atrium] kept %s's say to %s (%s)", from, target.WireName, why)
+	log.Printf("[atrium] kept %s's say to %s (%s)", logLine(from), target.WireName, why)
 	hublink.WriteJSONCode(w, http.StatusOK, out)
 }
 

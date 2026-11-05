@@ -269,7 +269,7 @@ func (d *Daemon) looksIdleGone(taskID, wire, cause string) {
 	if !ok {
 		return
 	}
-	log.Printf("[atrium] looks idle cleared: %s (%s) by %s after %s", wire, taskID, cause,
+	log.Printf("[atrium] looks idle cleared: %s (%s) by %s after %s", logLine(wire), taskID, logLine(cause),
 		time.Since(m.at).Truncate(time.Second))
 	d.Publish(taskID)
 	if a := d.act.get(taskID); a != nil {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,7 +42,7 @@ func (s *Server) launchCwd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"exists": false, "dir": false})
 		return
 	}
-	fi, err := os.Stat(path)
+	fi, err := os.Stat(safepath.NoNUL(path))
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"exists": err == nil,
 		"dir":    err == nil && fi.IsDir(),

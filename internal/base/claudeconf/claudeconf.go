@@ -68,7 +68,7 @@ func Load(projectDir string) ([]Entry, []Skipped, error) {
 		asks    []mcpAsk
 	)
 	for _, path := range SettingsPaths(projectDir) {
-		raw, err := os.ReadFile(path)
+		raw, err := os.ReadFile(noNUL(path))
 		if os.IsNotExist(err) {
 			continue
 		}

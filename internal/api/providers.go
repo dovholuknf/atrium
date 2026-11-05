@@ -326,7 +326,7 @@ func fillPresence(repos []*store.ProviderRepo) {
 		if r.Path == "" {
 			continue
 		}
-		info, err := os.Stat(filepath.FromSlash(r.Path))
+		info, err := os.Stat(safepath.NoNUL(filepath.FromSlash(r.Path)))
 		r.Present = err == nil && info.IsDir()
 	}
 }
@@ -594,7 +594,7 @@ type projectWorktree struct {
 // A bare repository has neither and is correctly not a checkout: a card cannot
 // start in one.
 func isCheckout(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, ".git"))
+	_, err := os.Stat(safepath.NoNUL(filepath.Join(dir, ".git")))
 	return err == nil
 }
 

@@ -945,8 +945,8 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	// A nested session inherits the name but must not replace the owning runner pid.
 	if req.PID > 0 {
 		if t, err := d.st.GetByWireName(req.Agent); err == nil && !d.ownsSession(t, req.PID) {
-			log.Printf("[atrium] permission for %s from pid %d, which is not its runner "+
-				"(a nested session?): gated, but its pid is not recorded", t.ID, req.PID)
+			log.Printf("[atrium] permission for %s from pid %s, which is not its runner "+
+				"(a nested session?): gated, but its pid is not recorded", t.ID, logLine(req.PID))
 			obs.PID = 0
 		}
 	}
@@ -1053,7 +1053,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			log.Printf("[atrium] clearing expired auto mode on %s: %v", task.ID, err)
 		} else {
 			log.Printf("[atrium] auto mode on %s ran out, so it is asking again",
-				task.DisplayTitle())
+				logLine(task.DisplayTitle()))
 			task.AutoApprove, task.AutoUntil = false, nil
 			d.Publish(task.ID)
 		}

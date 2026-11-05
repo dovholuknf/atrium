@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
 	"net/http"
@@ -193,7 +194,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		steps.end()
 		return res, http.StatusBadRequest, errors.New("which repository")
 	}
-	if _, err := os.Stat(filepath.FromSlash(dest)); err == nil {
+	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		steps.end()
 		return res, http.StatusConflict, errors.New(
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
@@ -227,7 +228,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			strconv.Itoa(req.Number) + ": " + err.Error())
 	}
 	steps.begin("worktree", "making the worktree")
-	if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(dest)), 0o755); err != nil {
+	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		steps.end()
 		return res, http.StatusInternalServerError, err
 	}
@@ -237,7 +238,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	if made {
 		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), prWorktreeRef(req.Number)}
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
@@ -304,11 +305,11 @@ func undoPRWorktree(res prWorktreeResult) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	run := func(args ...string) {
-		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 		cmd.Dir = filepath.FromSlash(res.Repo)
 		nowindow.Hide(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", res.Path, args[0], err, strings.TrimSpace(string(out)))
+			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", logLine(res.Path), logLine(args[0]), err, strings.TrimSpace(string(out)))
 		}
 	}
 	run("worktree", "remove", "--force", filepath.FromSlash(res.Path))

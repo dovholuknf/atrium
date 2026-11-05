@@ -134,7 +134,7 @@ func crActorOf(r *http.Request) (crActor, int, string) {
 		return crActor{}, http.StatusForbidden,
 			"a card writes change requests only from the machine the hub runs on" + edge.ProxyNote(r)
 	}
-	card, room := strings.TrimSpace(cards[0]), strings.TrimSpace(rooms[0])
+	card, room := strings.TrimSpace(cards[0]), strings.TrimSpace(r.Header.Get(CardRoomHeader))
 	if !gitsync.ValidCardID(card) || !validRoomName(room) {
 		return crActor{}, http.StatusBadRequest, "that is not a card and a room"
 	}

@@ -92,6 +92,7 @@ async function expire(tag, ms) {
 }
 
 self.addEventListener("message", event => {
+  if (event.origin && event.origin !== self.location.origin) return
   const m = event.data || {}
   if (m.type !== "notify") return
   event.waitUntil(sweepExpired())

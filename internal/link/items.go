@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -60,6 +61,9 @@ func (p *Proxy) itemStore() *hubstore.Store {
 
 // postItemRoom is itemRoomCall for a real room.
 func (p *Proxy) postItemRoom(ctx context.Context, room, path string, body []byte) (int, []byte, error) {
+	if ok, _ := regexp.MatchString(`^[A-Za-z0-9._-]{1,100}$`, room); !ok {
+		return 0, nil, errors.New("not a room name")
+	}
 	ctx, cancel := context.WithTimeout(ctx, itemRoomWait)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+hostFor(room)+path, bytes.NewReader(body))
