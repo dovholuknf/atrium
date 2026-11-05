@@ -256,11 +256,7 @@ func EnrolOver(ctx context.Context, dial wire.Dialer, keys Keys, pin, self, secr
 	if err != nil {
 		return "", err
 	}
-	conn, err := handshakeClient(ctx, raw, &tls.Config{
-		MinVersion:            tls.VersionTLS13,
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: pinnedTo(pin),
-	})
+	conn, err := handshakeClient(ctx, raw, verifiedByCallback(&tls.Config{MinVersion: tls.VersionTLS13}, pinnedTo(pin)))
 	if err != nil {
 		return "", err
 	}

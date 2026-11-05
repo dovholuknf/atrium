@@ -283,11 +283,9 @@ func (d Direct) clientTLS() (*tls.Config, error) {
 		// reasons that have nothing to do with security. What matters is that
 		// this is the same hub that issued this room's own certificate, and the
 		// verifier below is exactly that question.
-		cfg.InsecureSkipVerify = true
-		cfg.VerifyPeerCertificate = issuedBy(pool)
+		verifiedByCallback(cfg, issuedBy(pool))
 	} else if d.Pin != "" {
-		cfg.InsecureSkipVerify = true
-		cfg.VerifyPeerCertificate = pinnedTo(d.Pin)
+		verifiedByCallback(cfg, pinnedTo(d.Pin))
 	} else {
 		return nil, errors.New(
 			"this room has neither a hub certificate nor a join string to pin one with")
@@ -298,6 +296,14 @@ func (d Direct) clientTLS() (*tls.Config, error) {
 		cfg.Certificates = []tls.Certificate{cert}
 	}
 	return cfg, nil
+}
+
+// verifiedByCallback hands the whole certificate check to verify. Go's own check also matches the name, which a hub
+// reached at any address cannot satisfy, so it is skipped and verify is the only check.
+func verifiedByCallback(cfg *tls.Config, verify func([][]byte, [][]*x509.Certificate) error) *tls.Config {
+	cfg.InsecureSkipVerify = true
+	cfg.VerifyPeerCertificate = verify
+	return cfg
 }
 
 // issuedBy verifies a chain against a pool, ignoring the name.
@@ -390,11 +396,7 @@ func (d Direct) Enrol(ctx context.Context, self, secret string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	cfg := &tls.Config{
-		MinVersion:            tls.VersionTLS13,
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: pinnedTo(d.Pin),
-	}
+	cfg := verifiedByCallback(&tls.Config{MinVersion: tls.VersionTLS13}, pinnedTo(d.Pin))
 	dialer := &tls.Dialer{NetDialer: &net.Dialer{}, Config: cfg}
 	conn, err := dialer.DialContext(ctx, "tcp", d.Addr)
 	if err != nil {
