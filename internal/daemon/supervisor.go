@@ -1152,11 +1152,6 @@ func (r *runner) resetLineAtStop() bool {
 	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
 		return false
 	}
-	// A line atrium lost sight of in a restart is not known to have been sent by this turn. Enter or control-c
-	// clears it.
-	if r.line.unsure == reattachLineKey {
-		return false
-	}
 	if r.keySeq > r.promptSeq {
 		return false
 	}

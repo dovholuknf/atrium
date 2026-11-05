@@ -163,10 +163,6 @@ func TestReattachedLineIsNotEmpty(t *testing.T) {
 	if got := r.typing().Unsure; !strings.Contains(got, "restart") {
 		t.Fatalf("the line is marked %q", got)
 	}
-	// A Stop with no key since is not proof: the operator may have left a draft.
-	if r.resetLineAtStop() || r.peerGateOpen() {
-		t.Fatal("a Stop emptied a line atrium never saw")
-	}
 	r.noteOperatorTyped([]byte("\r"))
 	if st := r.typing(); st.Unsure != "" || st.Count != 0 {
 		t.Fatalf("Enter did not empty the line: %+v", st)
