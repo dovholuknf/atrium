@@ -213,7 +213,7 @@ func TestUnseenSessionIsNotGated(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	body := `{"agent":"perm-unseen","command":"ls","tool_use_id":"toolu_u1","via_location":true}`
+	body := `{"agent":"perm-unseen","command":"ls","tool_use_id":"toolu_u1"}`
 	resp, err := http.Post("http://"+d.opts.AgentAddr+"/permission", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -229,10 +229,6 @@ func TestUnseenSessionIsNotGated(t *testing.T) {
 	if pend, err := d.st.PendingForTask(task.ID); err != nil || len(pend) != 0 {
 		t.Fatalf("an unseen session left %d pending request(s), err %v", len(pend), err)
 	}
-	if _, said := d.viaLocationSaid.Load(task.ID); !said {
-		t.Fatal("a request that came through daemon.json was not said on the board")
-	}
-
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	postPermission(ctx, d, `{"agent":"perm-unseen","command":"rm x","tool_use_id":"toolu_u2"}`)

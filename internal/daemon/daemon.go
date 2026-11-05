@@ -170,8 +170,6 @@ type Daemon struct {
 	// perms holds the hook connections parked on a permission answer. See
 	// permwait.go.
 	perms *permWait
-	// viaLocationSaid holds the cards the board was told reached this room through daemon.json. See sayViaLocation.
-	viaLocationSaid sync.Map
 
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
@@ -969,9 +967,6 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	if created {
 		d.defaultAlias(task.ID, "")
 	}
-	if req.ViaLocation {
-		d.sayViaLocation(task)
-	}
 	tool, command := req.Tool, req.Command
 	// Permission requests also report activity when the separate activity hook is absent.
 	d.act.set(task.ID, ActivityTool, tool)
@@ -1082,18 +1077,6 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	d.Publish(task.ID)
 	d.ap.Broadcast("permission", p)
 	return p.ID, nil, nil
-}
-
-// sayViaLocation tells the board, once per card, that its hook found this room through daemon.json rather than its own
-// environment: the mark of a session resumed outside atrium, whose card may be on another room.
-func (d *Daemon) sayViaLocation(task *store.Task) {
-	if _, said := d.viaLocationSaid.LoadOrStore(task.ID, true); said {
-		return
-	}
-	text := task.DisplayTitle() + " reached this room through daemon.json, not its own environment. " +
-		"It may be a session resumed outside atrium."
-	log.Printf("[atrium] %s", text)
-	d.ap.Broadcast("hook-via-location", map[string]any{"task_id": task.ID, "toast": text})
 }
 
 // autoReason is recorded against every request auto mode lets through, so the

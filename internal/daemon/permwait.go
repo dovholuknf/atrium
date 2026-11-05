@@ -67,8 +67,6 @@ type PermissionRequest struct {
 	// because there is nothing to guard against. A hook that sends only a hash
 	// keeps the old behavior.
 	ToolUseID string `json:"tool_use_id,omitempty"`
-	// ViaLocation is set when the hook found this room through daemon.json, with no address in its environment.
-	ViaLocation bool `json:"via_location,omitempty"`
 }
 
 // PermissionResponse is what the daemon returns to the hook.

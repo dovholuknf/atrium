@@ -97,7 +97,7 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 	}
 
 	agent, nameSource := agentNameSource("")
-	base, from := hubAddressFrom(hubURL)
+	base := hubAddress(hubURL)
 
 	hookEvent := "PreToolUse"
 	if native {
@@ -141,8 +141,6 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 		"details":     permDetails(input),
 		"dedup_key":   key,
 		"tool_use_id": in.ToolUseID,
-		// A launched card knows its card, so only a session with no card id is worth telling the board about.
-		"via_location": from == fromLocation && os.Getenv("ATRIUM_TASK_ID") == "",
 	})
 	if err != nil {
 		return nil
