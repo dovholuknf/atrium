@@ -569,6 +569,7 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 		// What this daemon never saw: the activity counts and the operator's line. See reattachLineKey.
 		r.reattached.Store(true)
 		r.line.lost(reattachLineKey)
+		d.adoptCarryover(r)
 	}
 	t := newHostTerm(cl, addr, row.RunID, att.Info.Pid, att, false)
 	r.adopt(t)

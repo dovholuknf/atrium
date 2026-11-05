@@ -659,6 +659,41 @@ func TestAnOldExitedRunDoesNotKillACardWithANewerLiveOne(t *testing.T) {
 	_ = r.tm().Kill()
 }
 
+// A runner the host kept through a room restart is offered the saved scrollback, the same as one spawned fresh.
+// Without it the pane started at the runner's own first bytes, often a /clear, and the next save overwrote the file.
+func TestAReattachedRunnerKeepsTheScrollbackSavedBeforeIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d1 := daemonAt(t, dir)
+	task := cardAt(t, d1, "reattach-carry", t.TempDir())
+	before := carryRunner(task.ID, 4096, 100)
+	_, _ = before.buf.Write([]byte("work from before the clear\r\n"))
+	if err := writeCarry(d1.carryDir(), task.ID, before.carryFrom(4096)); err != nil {
+		t.Fatal(err)
+	}
+	spawnDirect(t, d1, task.ID, store.RunKindRunner, "sleep 120")
+
+	d2 := restarted(t, d1, dir)
+	d2.reattachRuns()
+	r := d2.sup.get(task.ID)
+	if r == nil {
+		t.Fatal("the run was not reattached")
+	}
+	defer func() { _ = r.tm().Kill() }()
+	r.mu.Lock()
+	c := r.carried
+	r.mu.Unlock()
+	if c == nil || !bytes.Contains(c.bytes, []byte("work from before the clear")) {
+		t.Fatalf("the reattached runner was not given the saved scrollback: %+v", c)
+	}
+	if got := r.carryFrom(1 << 20); got == nil || !bytes.Contains(got.bytes, []byte("work from before the clear")) {
+		t.Fatal("the next save would drop the scrollback from before the reattach")
+	}
+}
+
 // Off is the rollback: a host started while the setting was on keeps its runners after it is turned off, and the
 // next start must pick them up rather than leave them to be started a second time.
 func TestAHostStillHoldingRunnersIsReattachedWithTheSettingOff(t *testing.T) {
