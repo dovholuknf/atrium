@@ -808,6 +808,15 @@ function closeFind() {
   const bar = document.getElementById("t-find");
   if (bar) bar.hidden = true;
   placeToasts();
+  clearFind();
+  // Back to the terminal, or the next thing typed goes into a box nobody can
+  // see. WITHOUT SCROLLING: closing the find bar used to jump to the bottom,
+  // so searching for something above the fold and pressing escape lost the
+  // result you had just found. See `focusTerm`.
+  focusTerm();
+}
+
+function clearFind() {
   // THE SEARCH HAS TO BE FORGOTTEN, not just undecorated, and this is the
   // whole of the terminal-jumps-to-the-bottom bug.
   //
@@ -832,11 +841,6 @@ function closeFind() {
   // And the selection with it, since a selection left on a match is the other
   // half of what makes the old result look live.
   if (term) term.clearSelection();
-  // Back to the terminal, or the next thing typed goes into a box nobody can
-  // see. WITHOUT SCROLLING: closing the find bar used to jump to the bottom,
-  // so searching for something above the fold and pressing escape lost the
-  // result you had just found. See `focusTerm`.
-  focusTerm();
 }
 
 // `step` means move to another hit. Typing searches from where you are without
