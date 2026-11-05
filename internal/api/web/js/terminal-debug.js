@@ -172,11 +172,6 @@ function sendSignal(s) { send({ t: "signal", s }); }
 // The keystrokes are the runner's own, set on its harness, because there is no
 // common answer: a shell takes `exit`, claude takes control-d twice, ollama and
 // codex take it once. Sending the wrong one leaves it running.
-function exitTerm() {
-  if (!termTask) return;
-  return oneAtATime("kill:" + termTask.id, () => exitTermNow(termTask));
-}
-
 async function exitTermNow(t) {
   if (!await confirmUser(`ask ${t.display_title} to exit?`,
     "Sends whatever this runner is configured to quit on, then waits. " +

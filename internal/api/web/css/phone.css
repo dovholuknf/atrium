@@ -368,7 +368,7 @@
      board header is the separate u-021 slim row and keeps its own key. */
   #t-bar-toggle, #t-pick, #t-tray-handle { display: none; }
   body.term-phone .term-bar {
-    position: absolute; top: 0; left: 0; right: 0; z-index: 30; min-height: 48px;
+    position: absolute; top: 0; left: 0; right: 0; z-index: 30; min-height: 48px; flex-wrap: wrap;
     padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px));
     background-color: var(--shell-0);
     visibility: hidden; transform: translateY(-110%);
