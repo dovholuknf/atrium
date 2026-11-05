@@ -2064,6 +2064,44 @@ function preambleOf(s) {
   return raw;
 }
 
+const PASTE_WORDING = {
+  image: "check out the image here: ",
+  text: "read the file here: ",
+  pdf: "read the pdf here: ",
+  archive: "unpack and look inside the archive here: ",
+  other: "take a look at the file here: ",
+  mixed: "take a look at these files: ",
+};
+
+// Extension first, MIME second, because a drop of an unknown extension has an empty MIME.
+function pasteKindOfFile(f) {
+  const ext = ((f.name || "").match(/\.([^.\/\\]+)$/) || [])[1];
+  const e = (ext || "").toLowerCase();
+  const mime = f.type || "";
+  if (/^(png|jpe?g|gif|webp|bmp|svg)$/.test(e)) return "image";
+  if (/^(md|markdown|txt|log|json|ya?ml|csv|toml)$/.test(e)) return "text";
+  if (e === "pdf") return "pdf";
+  if (/^(zip|tar|gz|tgz|7z|rar)$/.test(e)) return "archive";
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("text/")) return "text";
+  if (mime === "application/pdf") return "pdf";
+  return "other";
+}
+
+// pasteKindOf is the one kind every file in the batch shares, or "mixed".
+function pasteKindOf(files) {
+  const kinds = new Set(Array.from(files || [], pasteKindOfFile));
+  if (kinds.size === 0) return "other";
+  return kinds.size === 1 ? Array.from(kinds)[0] : "mixed";
+}
+
+// A custom string or the sentinel wins for every kind. Only an unset setting gets the wording for the batch.
+function preambleForFiles(s, files) {
+  const raw = s.paste_preamble;
+  if (raw === undefined || raw === null || raw === "") return PASTE_WORDING[pasteKindOf(files)];
+  return preambleOf(s);
+}
+
 // pasteSettings fetches once per window and caches. A popped-out terminal is
 // its own window and never opens the settings dialog, so it cannot rely on
 // loadHousekeeping having run.
