@@ -657,10 +657,24 @@ async function peekSay(id) {
   toast("sent", title);
 }
 
+// What an open peek was drawn asking, so a list that changed it (an answer sent or given elsewhere) redraws the peek.
+let peekAsked = "";
+function peekAskSig(t) {
+  const s = (t && t.seen) || {};
+  return JSON.stringify([s.answered, s.questions_at, !!(t && t.ask)]);
+}
+function peekAskMoved() {
+  if (!peekEl || !peekEl.classList.contains("on") || !peekFor || document.querySelector(".qa-fly.on")) return;
+  const t = peekCard(peekFor), id = peekFor, seq = peekSeq;
+  if (!t || peekAskSig(t) === peekAsked) return;
+  peekFill(peekEl.querySelector(".peek-body"), id, () => seq === peekSeq && peekFor === id);
+}
+
 // Fills `box` with card `id`'s details: the card at once, the numbers when
 // the read answers. `still` says whether the answer is still wanted.
 async function peekFill(box, id, still) {
   const t = peekCard(id);
+  peekAsked = peekAskSig(t);
   const chat = peekChatterLoad(id);
   box.innerHTML = peekBody(t, null);
   peekDocs(box, id);

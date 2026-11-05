@@ -333,6 +333,7 @@ function blockerGone(taskFor, body) {
 
 // The poll has new cards: a question answered elsewhere stops asking in an open tray. Not while the flyout is on.
 function trayQuestionsMoved() {
+  if (typeof peekAskMoved === "function") peekAskMoved();
   const dlg = document.getElementById("toastlog");
   if (!dlg || !dlg.open || !dlg.querySelector(".peek-qa") || document.querySelector(".qa-fly.on")) return;
   openToastLog();
