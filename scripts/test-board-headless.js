@@ -4194,9 +4194,10 @@ async function termFollowBottomSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
+    const sockOpen = id => p.waitForFunction(id => __socks.some(s => s.url.includes("/" + id + "/") && s.readyState === 1), id, { timeout: slow(5000) });
+    await p.evaluate(() => attachTask("fb-a"));
+    await sockOpen("fb-a");
     const open = await p.evaluate(async () => {
-      attachTask("fb-a");
-      await __idle(50);
       __say("fb-a", __lines(0, 200, "replayed") + "> ");
       await __idle(900);
       return __at();
@@ -4210,12 +4211,16 @@ async function termFollowBottomSection(browser, base) {
     });
     if (!atBottom(more)) fail("termFollowBottom: output at the bottom did not keep the view there: " + JSON.stringify(more));
 
-    const back = await p.evaluate(async () => {
-      await __goto("fb-b");
+    await p.evaluate(() => __goto("fb-b"));
+    await sockOpen("fb-b");
+    await p.evaluate(async () => {
       __say("fb-b", __lines(0, 120, "other"));
       __say("fb-a", __lines(0, 40, "away"));
       await __idle();
       await __goto("fb-a");
+    });
+    await sockOpen("fb-a");
+    const back = await p.evaluate(async () => {
       __say("fb-a", __lines(0, 5, "after"));
       await __idle(900);
       return __at();
