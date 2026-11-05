@@ -1642,6 +1642,16 @@ function cleanCopyFrom(sel, replies, edges) {
       if (le < 0) le = raw.length;
       if (/^[\s*_`|~#>]*$/.test(raw.slice(b, le))) b = le;
     }
+    // A selection's last rows that normalize to nothing, a closing ``` fence, are past the match and taken line by line.
+    const tail = String(sel).trimEnd().split(/\r?\n/).reverse();
+    for (let k = 0; k < tail.length && tail[k].trim() && !ccNorm(tail[k]).t; k++) {
+      let le = raw.indexOf("\n", b);
+      if (le < 0 || !/^[\s*_`|~#>]*$/.test(raw.slice(b, le))) break;
+      let ne = raw.indexOf("\n", le + 1);
+      if (ne < 0) ne = raw.length;
+      if (!raw.slice(le + 1, ne).trim() || !/^[\s*_`|~#>]*$/.test(raw.slice(le + 1, ne))) break;
+      b = ne;
+    }
     return raw.slice(a, b).trimEnd();
   }
   return null;

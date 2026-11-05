@@ -8965,6 +8965,17 @@ async function cleanCopySection(browser, base) {
     const wc = await p.evaluate(() => window.__clip.slice());
     if (!w1.btn || wc[wc.length - 1] !== want) fail("cleanCopy: the reply match did not win: " + JSON.stringify(wc));
 
+    // 4a2b. A selection through a closing ``` row keeps that row.
+    const fenced = shown + "\r\n  ```go\r\n  func main() {}\r\n  ```\r\n";
+    const f1 = await select(fenced, [0, 7]);
+    if (!/```\s*$/.test(f1.sel)) fail("cleanCopy: the selection does not end on the closing fence, so this proves nothing: " + JSON.stringify(f1.sel));
+    const fLen = await p.evaluate(() => window.__clip.length);
+    await p.click("#cc-btn");
+    await p.waitForFunction(k => window.__clip.length > k, fLen);
+    const fc = await p.evaluate(() => window.__clip.slice());
+    const fwant = reply.slice(0, reply.indexOf("```\n\nThanks") + 3);
+    if (fc[fc.length - 1] !== fwant) fail("cleanCopy: a selection through a closing fence copied " + JSON.stringify(fc[fc.length - 1]) + ", not " + JSON.stringify(fwant));
+
     // 4a3. The pure de-render.
     const dr = await p.evaluate(() => ({
       wrap: ccDerender("  ▎ Please review the plan and tell\n  ▎ me what is missing from it.\n"),
