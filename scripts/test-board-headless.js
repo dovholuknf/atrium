@@ -16232,7 +16232,7 @@ async function mCompactSection(browser) {
     await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
     await p.tap("#m-compose .mc-send");
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-    await until(async () => (await mCompactCount(p)).note === 0, 5000, "the sent line to leave").catch(() => {});
+    await p.waitForFunction(() => { const n = document.querySelector("#m-compose .mc-note"); return !n || n.offsetHeight === 0; }, null, { timeout: slow(5000) }).catch(() => {});
     if ((await mCompactCount(p)).note > 0) fail(tag + "a sent line is still above the composer");
     // the activity shares the row above the composer with the send state, and has no box of its own
     const act = mCard("cp-1", { alias: "packer", display_title: "packer", status: "running", activity: { what: "tool", tool: "Bash" }, seen: { turn_ended_at: mIso(20 * M_MIN) } });
@@ -16240,6 +16240,7 @@ async function mCompactSection(browser) {
     await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     st.send("task", Object.assign({}, act, { row: 1 }));
     await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => { const s = document.querySelector("#m-working .wk-sent"); return !!s && s.textContent === "sent"; }, null, { timeout: slow(5000) });
     const row = await p.evaluate(() => {
       const w = document.getElementById("m-working");
       return { hidden: w.hidden, text: w.textContent.replace(/\s+/g, " ").trim(), spin: !!w.querySelector(".wk-spin"), h: Math.round(w.getBoundingClientRect().height),
