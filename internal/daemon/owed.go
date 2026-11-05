@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"strings"
 	"time"
@@ -364,7 +365,7 @@ func (d *Daemon) listOwed(host *store.Task) {
 	line := fmt.Sprintf("%d open %s from your workers: %s. atrium_task notices to read them.",
 		len(parts), noun, strings.Join(parts, ", "))
 	if _, err := d.st.QueueFromPeer(host.ID, shared.TruncatePeer(line), "atrium"); err != nil {
-		log.Printf("[atrium] could not list the owed items for %s: %v", host.DisplayTitle(), err)
+		log.Printf("[atrium] could not list the owed items for %s: %v", logline.S(host.DisplayTitle()), err)
 	}
 }
 

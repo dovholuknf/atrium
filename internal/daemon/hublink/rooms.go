@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"io"
@@ -403,7 +404,7 @@ func (d *Service) RoomCheckIn(rep RoomReport) ([]RoomDecision, error) {
 		// Said once. A room checking in every twenty seconds is not news, and a
 		// log line per heartbeat per room buries everything else.
 		log.Printf("[atrium] room %q checked in from %s with %d card(s)",
-			name, rep.Host, len(rep.Cards))
+			name, logline.S(rep.Host), len(rep.Cards))
 	}
 
 	// Settled against the report that just arrived, so a decision the room has
@@ -498,7 +499,7 @@ func (d *Service) RoomDecide(room, perm string, dec RoomDecision) error {
 	}
 	r.Answers[perm] = &RoomAnswer{Dec: dec, At: time.Now()}
 	log.Printf("[atrium] %s for a request on room %q, waiting for it to be collected",
-		dec.Decision, room)
+		logline.S(dec.Decision), room)
 	return nil
 }
 

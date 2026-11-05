@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -147,7 +148,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
 		"by": modelSwitchBy, "asked_by": by, "from": t.Model, "to": model, "state": state,
 	}); err != nil {
-		log.Printf("[atrium] switched %s to %s but could not record it: %v", taskID, model, err)
+		log.Printf("[atrium] switched %s to %s but could not record it: %v", taskID, logline.S(model), err)
 	}
 	if mw != nil {
 		d.waitForModel(taskID, mw)
@@ -315,7 +316,7 @@ func (d *Daemon) giveUpOnModel(taskID string, mw *modelWait) {
 		return
 	}
 	log.Printf("[atrium] gave up typing /model %s into %s after %s: the card holds it for the next start",
-		mw.model, taskID, d.hk.modelWaitMax)
+		logline.S(mw.model), taskID, d.hk.modelWaitMax)
 	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
 		"by": modelSwitchBy, "asked_by": mw.by, "to": mw.model, "state": "gave up waiting",
 		"waited": d.hk.modelWaitMax.String(),

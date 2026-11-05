@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"strings"
@@ -269,7 +270,7 @@ func (d *Daemon) looksIdleGone(taskID, wire, cause string) {
 	if !ok {
 		return
 	}
-	log.Printf("[atrium] looks idle cleared: %s (%s) by %s after %s", wire, taskID, cause,
+	log.Printf("[atrium] looks idle cleared: %s (%s) by %s after %s", logline.S(wire), taskID, logline.S(cause),
 		time.Since(m.at).Truncate(time.Second))
 	d.Publish(taskID)
 	if a := d.act.get(taskID); a != nil {

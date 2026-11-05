@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -102,7 +103,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 
 	task, err := d.taskFor(in.Agent, in.TaskID)
 	if err != nil {
-		log.Printf("[atrium] %s asked for help and has no card here", in.Agent)
+		log.Printf("[atrium] %s asked for help and has no card here", logline.S(in.Agent))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"recorded":false}`))
 		return
@@ -134,7 +135,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 		}
 		d.peerSaid(from, target, askEnvelope(from, ask, in.Blocked), KindNeeds)
 		peer = to
-		log.Printf("[atrium] %s asked %s: %s", from, to, ask)
+		log.Printf("[atrium] %s asked %s: %s", logline.S(from), logline.S(to), logline.S(ask))
 	}
 
 	// WHY IS NOT WHERE THIS GOES ANY MORE. An ask used to land in `why`, the
@@ -193,7 +194,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	d.Publish(task.ID)
 
 	if peer == "" {
-		log.Printf("[atrium] %s asked for help: %s", task.DisplayTitle(), ask)
+		log.Printf("[atrium] %s asked for help: %s", task.DisplayTitle(), logline.S(ask))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -292,14 +293,14 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	// table exists to stop.
 	settled, err := d.st.AnswerAsksFrom(target.ID, from, from)
 	if err != nil {
-		log.Printf("[atrium] %s answered %s but the card could not be updated: %v", from, to, err)
+		log.Printf("[atrium] %s answered %s but the card could not be updated: %v", logline.S(from), logline.S(to), err)
 	}
 	answered := len(settled) > 0
 	if answered {
 		d.askSettled(target.ID, from, settled)
 	}
 	d.Publish(target.ID)
-	log.Printf("[atrium] %s answered %s (%d chars)", from, to, len(text))
+	log.Printf("[atrium] %s answered %s (%d chars)", logline.S(from), logline.S(to), len(text))
 
 	note := queuedNote
 	if typed {

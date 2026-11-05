@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"net/http"
@@ -203,7 +204,7 @@ func (d *Service) WrapUpForRestart(ctx context.Context, wait time.Duration, why 
 	}
 	sort.Slice(cards, func(i, j int) bool { return cards[i].ID < cards[j].ID })
 	log.Printf("[atrium] restart wrap-up (%s): asking %d working card(s) to wrap up, waiting up to %s",
-		shared.OrWord(why, "no reason given"), len(cards), wait)
+		logline.S(shared.OrWord(why, "no reason given")), len(cards), wait)
 
 	tctx, tcancel := context.WithTimeout(ctx, wait)
 	defer tcancel()

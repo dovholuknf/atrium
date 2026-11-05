@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -86,7 +87,7 @@ func (d *Daemon) handleNeed(w http.ResponseWriter, r *http.Request) {
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	log.Printf("[atrium] %s needs %s: %s", task.ID, strings.Join(in.Needs, ", "), in.Why)
+	log.Printf("[atrium] %s needs %s: %s", task.ID, strings.Join(in.Needs, ", "), logline.S(in.Why))
 	out := map[string]any{"card": task.ID, "refused": refused}
 	lean := small.HasTag(task.Tags, LeanTag)
 	var given []string

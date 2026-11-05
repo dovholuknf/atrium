@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"io"
 	"log"
@@ -200,7 +201,7 @@ func (d *Service) QueueWake(taskID, text, by string) (*store.RestartWake, *store
 		return nil, nil, err
 	}
 	d.Wake.Put(w)
-	log.Printf("[atrium] after-restart wake queued for %s by %s", taskID, shared.OrWord(w.By, "an unnamed caller"))
+	log.Printf("[atrium] after-restart wake queued for %s by %s", taskID, logline.S(shared.OrWord(w.By, "an unnamed caller")))
 	d.Publish(taskID)
 	return w, old, nil
 }

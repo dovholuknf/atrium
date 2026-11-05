@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"net/http"
 	"os"
@@ -186,7 +187,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	pending := "pending:" + key + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	own := func(kind, ref, detail string) {
 		if _, err := s.st.AddResource(pending, kind, ref, detail); err != nil {
-			log.Printf("[atrium api] open %s: the inventory did not take %s %s: %v", key, kind, ref, err)
+			log.Printf("[atrium api] open %s: the inventory did not take %s %s: %v", key, kind, logline.S(ref), err)
 		}
 	}
 	undo := func() {
@@ -356,7 +357,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		// operator's checked-out branch is never touched.
 		if out, err := gitIn(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
 			res.FetchError = strings.TrimSpace(tailLines(out + " " + err.Error()))
-			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", repoPath, res.FetchError)
+			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", logline.S(repoPath), res.FetchError)
 		}
 	}
 	if opts.twig != "" {

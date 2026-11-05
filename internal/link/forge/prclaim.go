@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/link/notify"
 	"io"
 	"log"
@@ -314,7 +315,7 @@ func (p *Service) claimPR(ctx context.Context, st *hubstore.Store, asker string,
 	}
 	status, body, ferr := p.forwardPR(ctx, c.Room, ask)
 	if ferr != nil {
-		log.Printf("[hub] pr %s placed on %s but it did not take it (%v), so %s keeps it", ask.Key, c.Room, ferr, asker)
+		log.Printf("[hub] pr %s placed on %s but it did not take it (%v), so %s keeps it", logline.S(ask.Key), c.Room, ferr, logline.S(asker))
 		if mv, err := st.MovePRClaim(ask.Key, asker); err == nil {
 			ans.Owner = mv.Room
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -114,7 +115,7 @@ func (d *Daemon) handleFinish(w http.ResponseWriter, r *http.Request) {
 		// was never gated is entitled to say it finished and atrium is
 		// entitled to have nowhere to put that, and failing here would mean a
 		// session could fail at the moment it tried to end tidily.
-		log.Printf("[atrium] %s said it finished and has no card here", in.Agent)
+		log.Printf("[atrium] %s said it finished and has no card here", logline.S(in.Agent))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"recorded":false}`))
 		return
@@ -544,7 +545,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		d.EmitLifecycle("session-finish", finishLine)
 	}
 
-	log.Printf("[atrium] %s reports %s%s", task.DisplayTitle(), map[bool]string{true: in.Status, false: "done"}[in.Status != ""],
+	log.Printf("[atrium] %s reports %s%s", task.DisplayTitle(), logline.S(map[bool]string{true: in.Status, false: "done"}[in.Status != ""]),
 		map[bool]string{true: ", and left a recap", false: " and said nothing about what it did"}[recap != ""])
 
 	out := map[string]any{

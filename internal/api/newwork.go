@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -163,7 +164,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	if !wt.Existed {
 		own := func(kind, ref, detail string) {
 			if _, err := s.st.AddResource(pending, kind, ref, detail); err != nil {
-				log.Printf("[atrium api] new %s: the inventory did not take %s %s: %v", pick, kind, ref, err)
+				log.Printf("[atrium api] new %s: the inventory did not take %s %s: %v", logline.S(pick), kind, logline.S(ref), err)
 			}
 		}
 		own(store.ResWorktree, wt.Path, wt.Repo)
@@ -200,7 +201,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	s.PublishTask(task)
 	ans.Card, ans.Created = task.ID, true
 	if err := s.st.MoveResources(pending, task.ID); err != nil {
-		log.Printf("[atrium api] new %s: the inventory was not handed to %s: %v", pick, task.ID, err)
+		log.Printf("[atrium api] new %s: the inventory was not handed to %s: %v", logline.S(pick), task.ID, err)
 	}
 	s.measureAfterOpen(task)
 	writeJSON(w, http.StatusCreated, ans)
@@ -379,7 +380,7 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		if msg == "" {
 			msg = err.Error()
 		}
-		log.Printf("[atrium api] new %s/%s/%s: hook %s failed: %v", host, org, repo, file, err)
+		log.Printf("[atrium api] new %s/%s/%s: hook %s failed: %v", logline.S(host), logline.S(org), logline.S(repo), logline.S(file), err)
 		return file, msg
 	}
 	return file, ""

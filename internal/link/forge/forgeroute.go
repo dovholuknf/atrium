@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/link/notify"
 	"io"
 	"log"
@@ -491,7 +492,7 @@ func (f *HubForge) raise(p *Service, room, tool, cmd, host string, notInstalled 
 	raised, err := rs.Raise(room, notify.GrowlRow{ID: id, Reason: notify.ReasonQuestion, Subject: key,
 		Title: "The hub cannot use " + cmd + " for " + host, Body: msg})
 	if err != nil {
-		log.Printf("[hub] growlers could not raise the forge alert for %s: %v", key, err)
+		log.Printf("[hub] growlers could not raise the forge alert for %s: %v", logline.S(key), err)
 		return msg
 	}
 	f.Open[key] = id
@@ -518,7 +519,7 @@ func (f *HubForge) alerted() ([]string, error) {
 func (f *HubForge) markAlerted(alerted []string, key string) {
 	raw, _ := json.Marshal(append(alerted, key))
 	if err := f.st.SetHubSetting(SettingForgeAlerted, string(raw)); err != nil {
-		log.Printf("[hub] could not save the forge alert for %s as raised: %v", key, err)
+		log.Printf("[hub] could not save the forge alert for %s as raised: %v", logline.S(key), err)
 	}
 }
 

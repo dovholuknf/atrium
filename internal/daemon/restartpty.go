@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"net/http"
 	"os"
@@ -86,7 +87,7 @@ func (d *Daemon) RestartPtyHost(ctx context.Context, wait time.Duration, why str
 		return rep, fmt.Errorf("probe the pty host: %w", err)
 	}
 	rep.OldPid = pr.Pid
-	log.Printf("[atrium] restarting the pty host (pid %d), room staying up. %s", pr.Pid, orWord(why, "no reason given"))
+	log.Printf("[atrium] restarting the pty host (pid %d), room staying up. %s", pr.Pid, logline.S(orWord(why, "no reason given")))
 
 	rep.Ended = len(d.sup.all())
 	d.shortGate()

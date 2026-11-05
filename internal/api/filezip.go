@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"io/fs"
 	"log"
@@ -212,7 +213,7 @@ func (s *Server) zipFiles(w http.ResponseWriter, r *http.Request) {
 	if stopped != "" || len(notes) > 0 {
 		writeZipNote(zw, base, files, written, stopped, notes)
 	}
-	log.Printf("[atrium api] zipped %d file(s), %d byte(s) from %s", files, written, base)
+	log.Printf("[atrium api] zipped %d file(s), %d byte(s) from %s", files, written, logline.S(base))
 }
 
 // commonDir is the deepest directory every path is inside.

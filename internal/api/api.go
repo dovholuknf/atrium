@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -2117,28 +2118,28 @@ func logOrderPatch(id string, before *store.Task, body *patchBody) {
 		if before != nil {
 			was = fmt.Sprintf("%v", before.Rank)
 		}
-		log.Printf("[atrium api order] rank id=%s %s -> %v", id, was, *body.Rank)
+		log.Printf("[atrium api order] rank id=%s %s -> %v", id, was, logline.S(*body.Rank))
 	}
 	if body.Pinned != nil {
 		was := "?"
 		if before != nil {
 			was = fmt.Sprintf("%t", before.Pinned)
 		}
-		log.Printf("[atrium api order] pinned id=%s %s -> %t", id, was, *body.Pinned)
+		log.Printf("[atrium api order] pinned id=%s %s -> %s", id, was, logline.S(*body.Pinned))
 	}
 	if body.Tags != nil {
 		var was []string
 		if before != nil {
 			was = before.Tags
 		}
-		log.Printf("[atrium api order] tags id=%s %v -> %v", id, was, *body.Tags)
+		log.Printf("[atrium api order] tags id=%s %v -> %v", id, was, logline.S(*body.Tags))
 	}
 	if body.Status != nil {
 		was := "?"
 		if before != nil {
 			was = before.Status
 		}
-		log.Printf("[atrium api order] status id=%s %s -> %s", id, was, *body.Status)
+		log.Printf("[atrium api order] status id=%s %s -> %s", id, was, logline.S(*body.Status))
 	}
 }
 
@@ -2160,7 +2161,7 @@ func (s *Server) pinOrder(w http.ResponseWriter, r *http.Request) {
 			body.IDs[i] = id[j+1:]
 		}
 	}
-	log.Printf("[atrium api order] pin-order write ids=%v", body.IDs)
+	log.Printf("[atrium api order] pin-order write ids=%v", logline.S(body.IDs))
 	if err := s.st.SetPinOrder(body.IDs); err != nil {
 		s.fail(w, err)
 		return

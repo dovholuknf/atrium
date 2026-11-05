@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -884,7 +885,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// it must not fail a tool call. See docs/runtime/activity-design.md.
 		if IsAskingTool(in.Tool) {
 			if err := d.st.NoteAsked(taskID); err != nil {
-				log.Printf("[atrium] could not record a question from %s: %v", in.Agent, err)
+				log.Printf("[atrium] could not record a question from %s: %v", logline.S(in.Agent), err)
 			}
 		}
 	case "tool-end":
@@ -982,7 +983,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 			d.turnEnded(taskID)
 		}
 	default:
-		log.Printf("[atrium] unknown activity event %q from %s", in.Event, in.Agent)
+		log.Printf("[atrium] unknown activity event %q from %s", in.Event, logline.S(in.Agent))
 		return ""
 	}
 

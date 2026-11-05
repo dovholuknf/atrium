@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"os"
 	"path/filepath"
@@ -53,7 +54,7 @@ func (d *Daemon) toolNotFound(taskID, tool string) {
 	if tool == "" || !d.toolchain.heardNotFound(taskID, tool) {
 		return
 	}
-	log.Printf("[atrium] room misconfigured: %s found no %s on its PATH", taskID, tool)
+	log.Printf("[atrium] room misconfigured: %s found no %s on its PATH", taskID, logline.S(tool))
 	d.PublishHealth()
 }
 

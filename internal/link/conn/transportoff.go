@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"net/http"
 	"sort"
@@ -195,10 +196,10 @@ func (r *Room) SetTransport(ctx context.Context, kind string, on bool) error {
 		}
 	}
 	if on {
-		log.Printf("[link] transport %s turned on", kind)
+		log.Printf("[link] transport %s turned on", logline.S(kind))
 		return nil
 	}
-	log.Printf("[link] transport %s turned off", kind)
+	log.Printf("[link] transport %s turned off", logline.S(kind))
 	if l.OnKind() == kind {
 		r.mu.Lock()
 		drop := r.dropLink
