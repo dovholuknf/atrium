@@ -235,3 +235,38 @@ func TestAFixtureFirstStartNeverHaltsTheStore(t *testing.T) {
 		t.Fatal("the refused resume is not on the card the fixture made")
 	}
 }
+
+// A RESUME THAT STARTS A NEW CONVERSATION SAYS SO ON THE CARD, and the questions the old one asked stop counting.
+func TestAFreshResumeIsNotedAndClearsTheOldQuestions(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	task, _, err := d.st.Register(store.Observed{WireName: "lean-card", Worktree: t.TempDir(), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.NoteTurnEnded(task.ID, store.TurnQuestions{Known: true, Block: true, List: []string{"ship it?"}}); err != nil {
+		t.Fatal(err)
+	}
+	if id := d.reopenResume(task); id != "" {
+		t.Fatalf("a card with no conversation id resumed %q", id)
+	}
+	events, err := d.st.Events(task.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noted := false
+	for _, e := range events {
+		raw, _ := json.Marshal(e)
+		noted = noted || strings.Contains(string(raw), store.ResumeFresh)
+	}
+	if !noted {
+		t.Fatalf("the card does not say its resume started a new conversation: %v", events)
+	}
+	all, err := d.st.SeenAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := all[task.ID]; s == nil || !s.Answered() {
+		t.Fatalf("the old session's question still counts as open: %+v", s)
+	}
+}

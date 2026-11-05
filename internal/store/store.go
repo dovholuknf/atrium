@@ -102,6 +102,8 @@ const (
 	// reads the daemon log. See Store.ClaimResumeID.
 	ResumeMoved   = "resume-moved"
 	ResumeRefused = "resume-refused"
+	// ResumeFresh is the same `by` for a resume that started a new conversation because the card had none to pick up.
+	ResumeFresh = "resume-fresh"
 	// InProcessRunner is the `by` of a `notified` event on a card whose runner started in the room's own process
 	// although the pty_host setting is on, so it ends with the room. The payload carries the reason.
 	InProcessRunner = "pty-host-fallback"
