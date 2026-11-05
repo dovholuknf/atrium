@@ -975,6 +975,11 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			return "", nil, err
 		}
 	}
+	// A session this room had no card for is nobody's to answer yet, so its runner asks instead of waiting on a board.
+	if created {
+		d.Publish(task.ID)
+		return "", ungated, nil
+	}
 	// An exact tool id distinguishes retries from later identical commands, while an empty key always asks again.
 	key := req.DedupKey
 	if id := strings.TrimSpace(req.ToolUseID); id != "" {

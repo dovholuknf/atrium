@@ -297,6 +297,11 @@
     color: var(--dim); font-size: var(--fs-xs);
   }
   .tl-mini .term-list .card .title .tpath { display: none; }
+  .term-list .card .theld {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--warn); font-size: var(--fs-xs); font-family: var(--mono);
+  }
+  .tl-mini .term-list .card .theld { display: none; }
   /* The pop-out mark is never squeezed. It says this session is showing in a window of its own, and it is
      the one thing on the entry that changes what a click does. Narrowing the list shrank it to nothing, so
      the click that would have raised that window landed on the card and did something else. The name gives

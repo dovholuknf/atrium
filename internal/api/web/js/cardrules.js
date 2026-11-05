@@ -199,6 +199,10 @@ function runnerGone(t) {
   if (!t || !LIVE_STATUSES.includes(t.status)) return false;
   // `supervised` absent is unknown, not gone: the daemon always sends it, so only an explicit false counts.
   if (t.supervised !== false || t.starting || t.offline || t.pid > 0) return false;
+  // A request in the queue has a hook on the other end, with or without a runner atrium holds.
+  if (t.status === "needs-permission" && typeof permsLocal !== "undefined" && permsLocal.some(p => p.task_id === t.id)) {
+    return false;
+  }
   if (t.parked_at) return true;
   return t.status !== "running" || cardIdleAge(t) > NO_CONTACT_AFTER_SECONDS;
 }

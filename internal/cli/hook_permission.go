@@ -43,10 +43,14 @@ var permSkipTools = map[string]bool{
 // on the board.
 const permMaxDetails = 6000
 
-// defaultProbeTimeout is how long /gate may take. The POST below has no
-// deadline once the room has taken it, so this probe and permHeaderTimeout
-// are what stop one frozen room holding every gated call on the machine.
+// defaultProbeTimeout is how long /gate may take. This probe and
+// permHeaderTimeout are what stop one frozen room holding every gated call on
+// the machine.
 const defaultProbeTimeout = 2 * time.Second
+
+// defaultPermTimeout bounds the wait on a parked request. Past it the hook gives no answer and the runner asks
+// itself, so a request nobody sees never holds a session for good.
+const defaultPermTimeout = time.Minute
 
 type permissionPayload struct {
 	HookEventName string          `json:"hook_event_name"`
@@ -222,6 +226,9 @@ func envDuration(name string, def time.Duration) time.Duration {
 // errAnswered marks a room that answered without a decision. Only a room that could not be reached is warned about.
 var errAnswered = errors.New("atrium answered")
 
+// errUngated is a room's 204: it does not gate this session, so asking again would only spend the budget.
+var errUngated = fmt.Errorf("%w that it does not gate this session", errAnswered)
+
 type permissionAnswer struct {
 	Decision string `json:"decision"`
 	Reason   string `json:"reason"`
@@ -240,8 +247,8 @@ func postPermission(base string, body []byte, budget time.Time) (permissionAnswe
 	}
 	for {
 		ans, err := postPermissionOnce(permClient(time.Until(deadline)), base, body)
-		if err == nil {
-			return ans, nil
+		if err == nil || errors.Is(err, errUngated) {
+			return ans, err
 		}
 		if !time.Now().Add(every).Before(deadline) {
 			return permissionAnswer{}, err
@@ -257,6 +264,9 @@ func postPermissionOnce(client *http.Client, base string, body []byte) (permissi
 		return ans, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		return ans, errUngated
+	}
 	if resp.StatusCode != http.StatusOK {
 		return ans, fmt.Errorf("%w %s", errAnswered, resp.Status)
 	}
@@ -298,13 +308,12 @@ func probeGate(base, agent string, left time.Duration) (joined bool, err error) 
 	return g.Gate, nil
 }
 
-// permPostTimeout is zero (none) unless ATRIUM_PERM_TIMEOUT says otherwise,
-// since a human may take minutes. Accepts seconds, a Go duration, or the
-// hh:mm:ss the script took.
+// permPostTimeout is defaultPermTimeout unless ATRIUM_PERM_TIMEOUT says otherwise. Accepts seconds, a Go duration,
+// or the hh:mm:ss the script took.
 func permPostTimeout() time.Duration {
 	v := strings.TrimSpace(os.Getenv("ATRIUM_PERM_TIMEOUT"))
 	if v == "" {
-		return 0
+		return defaultPermTimeout
 	}
 	if n, err := strconv.Atoi(v); err == nil && n > 0 {
 		return time.Duration(n) * time.Second
@@ -320,7 +329,7 @@ func permPostTimeout() time.Duration {
 			return time.Duration(h*3600+m*60+s) * time.Second
 		}
 	}
-	return 0
+	return defaultPermTimeout
 }
 
 // mcpWired reports whether an .mcp.json naming atrium-agent sits in the cwd or

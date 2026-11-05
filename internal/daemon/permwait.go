@@ -87,6 +87,9 @@ type AutoDecision struct {
 	Reason   string
 }
 
+// ungated is the chain declining a request: the room answers 204 and the runner asks on its own.
+var ungated = &AutoDecision{}
+
 // pendingPermission is one hook connection parked on an answer.
 type pendingPermission struct {
 	id      int
@@ -148,6 +151,10 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("[atrium] record permission from %s: %v", in.Agent, err)
 		storeID, auto = "", nil
+	}
+	if auto == ungated {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	if auto != nil {
 		w.Header().Set("Content-Type", "application/json")
