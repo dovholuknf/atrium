@@ -686,6 +686,9 @@ function wireFlyouts() {
       cardMenuEl.querySelectorAll("button.subopen").forEach(o => {
         if (o !== b) o.classList.remove("subopen");
       });
+      // Re-entering inside the grace window must not re-measure: popFly resets the flip and the slide, so the flyout
+      // would jump from under the pointer.
+      if (b.classList.contains("subopen")) return;
       b.classList.add("subopen");
       // Measured now that it is showing: flips left, slides up, scrolls inside itself (js/popfit.js).
       popFly(b.querySelector(".sub"), { flip: "flipx" });
