@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -146,7 +145,7 @@ func (s *Server) dropIn(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		// THE FILE IS ALREADY WRITTEN, so a failed event is logged and the answer is still 200. A 500 here would
 		// make the caller retry a drop that landed.
-		log.Printf("drop: %s was written but its event was not: %v", logline.S(path), err)
+		log.Printf("drop: %s was written but its event was not: %v", logLine(path), err)
 	}
 	rel, _ := realRelative(task.Worktree, target)
 	writeJSON(w, http.StatusOK, map[string]any{"path": path, "rel": rel})

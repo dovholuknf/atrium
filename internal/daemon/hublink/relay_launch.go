@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -102,9 +101,9 @@ func (d *Service) HandleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 	})
 	code, body := LaunchAnswer(other, res, err)
 	if code >= 400 {
-		log.Printf("[atrium] %s's launch on %s was not made (%d): %v", logline.S(from), other, code, body["error"])
+		log.Printf("[atrium] %s's launch on %s was not made (%d): %v", logLine(from), other, code, body["error"])
 	} else {
-		log.Printf("[atrium] %s launched %v on %s", logline.S(from), body["card"], other)
+		log.Printf("[atrium] %s launched %v on %s", logLine(from), body["card"], other)
 	}
 	WriteJSONCode(w, code, body)
 }

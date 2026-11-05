@@ -3,7 +3,6 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"io"
 	"log"
@@ -299,7 +298,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 			// answering it as one would take the parent's queued message.
 			if !d.ownsSession(t, in.PID) {
 				log.Printf("[atrium] dropped a stop for %s from pid %s, which is not its runner "+
-					"(a nested session?)", t.ID, logline.S(in.PID))
+					"(a nested session?)", t.ID, logLine(in.PID))
 				nothing()
 				return
 			}
@@ -346,7 +345,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 			if !announced && !bare {
 				rejected = true
 				log.Printf("[atrium] a turn on %s named conversation %s, which no session start "+
-					"announced for it, so the card keeps %q", task.ID, logline.S(in.Resume), task.ResumeID)
+					"announced for it, so the card keeps %q", task.ID, logLine(in.Resume), task.ResumeID)
 			} else if err := d.claimResume(task, in.Resume, "stop hook", bound); err != nil {
 				log.Printf("[atrium] could not record a resume id for %s: %v", task.ID, err)
 			}

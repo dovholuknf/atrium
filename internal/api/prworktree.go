@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
@@ -310,7 +309,7 @@ func undoPRWorktree(res prWorktreeResult) {
 		cmd.Dir = filepath.FromSlash(res.Repo)
 		nowindow.Hide(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", logline.S(res.Path), logline.S(args[0]), err, strings.TrimSpace(string(out)))
+			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", logLine(res.Path), logLine(args[0]), err, strings.TrimSpace(string(out)))
 		}
 	}
 	run("worktree", "remove", "--force", filepath.FromSlash(res.Path))

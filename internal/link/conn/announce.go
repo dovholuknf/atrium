@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
@@ -239,7 +238,7 @@ func (a *announcer) send(ctx context.Context) {
 		a.mu.Lock()
 		a.owed = true
 		a.mu.Unlock()
-		log.Printf("[link] could not read this room's own state: %v", logline.S(err))
+		log.Printf("[link] could not read this room's own state: %v", logLine(err))
 		return
 	}
 	a.mu.Lock()

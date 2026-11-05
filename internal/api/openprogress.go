@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"time"
 )
@@ -58,7 +57,7 @@ func (o *opSteps) end() {
 	if o == nil || o.name == "" {
 		return
 	}
-	log.Printf("[atrium open] %s: %s took %.2fs", logline.S(o.label), o.name, time.Since(o.last).Seconds())
+	log.Printf("[atrium open] %s: %s took %.2fs", logLine(o.label), o.name, time.Since(o.last).Seconds())
 	o.name = ""
 }
 

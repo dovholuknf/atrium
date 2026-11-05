@@ -2,7 +2,6 @@ package gitsync
 
 import (
 	"context"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"path"
 	"sort"
@@ -278,7 +277,7 @@ func (s *Store) branchPass(ctx context.Context, name string, st *branchState) (R
 		res.Branches = append(res.Branches, b)
 	}
 	st.facts, st.sig, st.last = facts, sig.String(), res
-	log.Printf("[hub] branches %s: landed %d, open %d, orphaned %d, room-only %d, %d commits read, %s", logline.S(res.Repo),
+	log.Printf("[hub] branches %s: landed %d, open %d, orphaned %d, room-only %d, %d commits read, %s", logLine(res.Repo),
 		res.Counts[BranchLanded], res.Counts[BranchOpen], res.Counts[BranchOrphaned], res.Counts[BranchRoomOnly],
 		len(need), time.Since(started).Round(time.Millisecond))
 	return res, nil
@@ -543,7 +542,7 @@ func (s *Store) buildBranches(name string, e *branchEntry) {
 			e.val, e.at, e.err = v, time.Now(), nil
 		} else {
 			e.err = err
-			log.Printf("[hub] branches %s: %v", logline.S(name), err)
+			log.Printf("[hub] branches %s: %v", logLine(name), err)
 		}
 		if e.again {
 			e.again = false

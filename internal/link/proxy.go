@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"io/fs"
 	"log"
@@ -1124,7 +1123,7 @@ func (p *Proxy) oops(w http.ResponseWriter, r *http.Request, err error) {
 	// reconnects by design, and logging every one buries the failures worth
 	// reading.
 	if !isStream(r) {
-		log.Printf("[hub] %s %s: %v", r.Method, logline.S(r.URL.Path), err)
+		log.Printf("[hub] %s %s: %v", r.Method, logLine(r.URL.Path), err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

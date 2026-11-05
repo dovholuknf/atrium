@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
@@ -329,7 +328,7 @@ func (s *Stream) Abort() {
 }
 
 func (h *Hub) auditStream(room, kind, detail string) {
-	log.Printf("[hub] %s %s: %s", kind, logline.S(room), logline.S(detail))
+	log.Printf("[hub] %s %s: %s", kind, logLine(room), logLine(detail))
 	if h.OnStream != nil {
 		h.OnStream(room, kind, detail)
 	}
@@ -458,7 +457,7 @@ func (r *Room) streamRefusal(w http.ResponseWriter, id, caller string, status in
 		remoteaccess.AppendLog(r.RemoteDir, remoteaccess.LogLine{Event: "refused", ID: id, Caller: caller, Error: msg,
 			End: time.Now()})
 	}
-	log.Printf("[link] ssh stream %s from %q refused: %s", logline.S(id), caller, logline.S(msg))
+	log.Printf("[link] ssh stream %s from %q refused: %s", logLine(id), caller, logLine(msg))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
@@ -528,7 +527,7 @@ func (r *Room) serveSSH(w http.ResponseWriter, req *http.Request) {
 	start := time.Now()
 	via := r.viaNow()
 	r.logStream(remoteaccess.LogLine{Event: "open", ID: id, Caller: caller, Via: via, Start: start})
-	log.Printf("[link] ssh stream %s from %q to %s opened", logline.S(id), caller, addr)
+	log.Printf("[link] ssh stream %s from %q to %s opened", logLine(id), caller, addr)
 
 	res := splice(hub, sshd, streamLinger, o.stop)
 
@@ -542,7 +541,7 @@ func (r *Room) serveSSH(w http.ResponseWriter, req *http.Request) {
 	}
 	r.logStream(remoteaccess.LogLine{Event: "close", ID: id, Caller: caller, Via: via, Start: start, End: time.Now(),
 		BytesIn: res.ToB, BytesOut: res.FromB, EndedBy: ended})
-	log.Printf("[link] ssh stream %s from %q closed after %s, %s to sshd, %s from it, ended by %s", logline.S(id), caller,
+	log.Printf("[link] ssh stream %s from %q closed after %s, %s to sshd, %s from it, ended by %s", logLine(id), caller,
 		time.Since(start).Round(time.Second), byteCount(res.ToB), byteCount(res.FromB), ended)
 }
 

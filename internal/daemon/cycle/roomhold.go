@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -226,7 +225,7 @@ func (d *Service) StartDeployHold(in HoldStart) (*store.RoomHold, error) {
 		return nil, err
 	}
 	d.LoadHolds()
-	log.Printf("[atrium] deploy hold %s set by %s on %d card(s)", h.ID, logline.S(shared.OrWord(h.By, "an unnamed caller")), len(h.Cards))
+	log.Printf("[atrium] deploy hold %s set by %s on %d card(s)", h.ID, logLine(shared.OrWord(h.By, "an unnamed caller")), len(h.Cards))
 	d.HoldChanged(&h)
 	return &h, nil
 }

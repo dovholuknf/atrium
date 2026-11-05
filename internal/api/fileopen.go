@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"net/http"
 	"os"
@@ -117,7 +116,7 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.AppendEvent(task.ID, store.EventNotified, map[string]any{
 		"what": "opened a file in the editor", "path": body.Path, "with": name,
 	}); err != nil {
-		log.Printf("[atrium api] could not record the open of %s: %v", logline.S(body.Path), err)
+		log.Printf("[atrium api] could not record the open of %s: %v", logLine(body.Path), err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "opened": body.Path})
 }

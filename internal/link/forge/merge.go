@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"io"
 	"log"
@@ -1057,7 +1056,7 @@ func (p *Service) mergeVerdict(ctx context.Context, st *hubstore.Store, room str
 		return http.StatusOK, out, nil
 	}
 	gs := g.Store()
-	log.Printf("[hub] merge %d: %s from %s", m.N, logline.S(gitsync.MergeClean(rep.Verdict)), logline.S(room))
+	log.Printf("[hub] merge %d: %s from %s", m.N, logLine(gitsync.MergeClean(rep.Verdict)), logLine(room))
 	if rep.Verdict == gitsync.VerdictCannot {
 		why := cutReason("the merge room " + room + " could not run it: " + gitsync.MergeClean(rep.Reason))
 		p.Merges.stall(m.Repo, why)

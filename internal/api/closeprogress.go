@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"strings"
 	"time"
@@ -58,7 +57,7 @@ func (c *closeSteps) end(detail string) {
 	if c == nil || c.key == "" {
 		return
 	}
-	log.Printf("[atrium close] %s: %s took %.2fs", logline.S(c.label), c.key, time.Since(c.last).Seconds())
+	log.Printf("[atrium close] %s: %s took %.2fs", logLine(c.label), c.key, time.Since(c.last).Seconds())
 	if len(c.bad) > 0 {
 		c.emit("fail", strings.Join(c.bad, ". "))
 	} else {

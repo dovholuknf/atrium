@@ -1,7 +1,6 @@
 package store
 
 import (
-	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +73,7 @@ func ReadGitInfo(dir string) GitInfo {
 
 	for i := 0; i < gitWalkLimit; i++ {
 		dotgit := filepath.Join(dir, ".git")
-		fi, err := os.Lstat(safepath.NoNUL(dotgit))
+		fi, err := os.Lstat(noNUL(dotgit))
 		if err == nil {
 			var out GitInfo
 			if fi.IsDir() {
@@ -117,7 +116,7 @@ func relativeTo(root, start string) string {
 // directory. The worktree directory is named for the branch, and using it is
 // the bug this exists to fix.
 func worktreeInfo(dotgitFile string) GitInfo {
-	raw, err := os.ReadFile(safepath.NoNUL(dotgitFile))
+	raw, err := os.ReadFile(noNUL(dotgitFile))
 	if err != nil {
 		return GitInfo{}
 	}
@@ -159,7 +158,7 @@ func worktreeInfo(dotgitFile string) GitInfo {
 // `ref: refs/heads/<branch>` for a branch, a bare commit id when detached. A
 // detached head answers empty, which is correct: there is no branch to name.
 func headBranch(gitdir string) string {
-	raw, err := os.ReadFile(safepath.NoNUL(filepath.Join(gitdir, "HEAD")))
+	raw, err := os.ReadFile(noNUL(filepath.Join(gitdir, "HEAD")))
 	if err != nil {
 		return ""
 	}

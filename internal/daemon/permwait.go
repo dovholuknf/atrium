@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"encoding/json"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -147,7 +146,7 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 	// Automatic answers still need durable history without showing a human prompt.
 	storeID, auto, err := d.onPermRequest(in)
 	if err != nil {
-		log.Printf("[atrium] record permission from %s: %v", logline.S(in.Agent), err)
+		log.Printf("[atrium] record permission from %s: %v", logLine(in.Agent), err)
 		storeID, auto = "", nil
 	}
 	if auto != nil {

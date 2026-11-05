@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -33,7 +32,7 @@ func (d *Daemon) claimResume(task *store.Task, resume, via string, byID bool) er
 	}
 	for _, old := range res.Moved {
 		log.Printf("[atrium] conversation %s moved from %s to %s (%s): the old card has no live session",
-			logline.S(resume), old.ID, task.ID, via)
+			logLine(resume), old.ID, task.ID, via)
 		d.noteResume(old.ID, store.ResumeMoved, map[string]any{
 			"resume": resume, "to": task.ID, "via": via,
 			"reason": fmt.Sprintf("conversation %s moved to %q, which claimed it by its task id while this "+
@@ -47,7 +46,7 @@ func (d *Daemon) claimResume(task *store.Task, resume, via string, byID bool) er
 		d.Publish(old.ID)
 	}
 	if h := res.Refused; h != nil {
-		log.Printf("[atrium] conversation %s stays on %s, not %s (%s)", logline.S(resume), h.ID, task.ID, via)
+		log.Printf("[atrium] conversation %s stays on %s, not %s (%s)", logLine(resume), h.ID, task.ID, via)
 		key := task.ID + "|" + h.ID + "|" + resume
 		if _, seen := d.resumeNoted.LoadOrStore(key, true); !seen {
 			how := "by name"

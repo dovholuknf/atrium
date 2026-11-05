@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"log"
 	"os"
 	"path/filepath"
@@ -57,7 +56,7 @@ func (d *Daemon) doneBySay(sender *store.Task, text string) {
 		Agent: sender.WireName, TaskID: sender.ID, Status: ReportDone, SHA: m[1],
 		Recap: strings.TrimSpace(m[2]), viaSay: true,
 	}); err != nil {
-		log.Printf("[atrium] could not close %s on its done say: %v", sender.DisplayTitle(), logline.S(err))
+		log.Printf("[atrium] could not close %s on its done say: %v", sender.DisplayTitle(), logLine(err))
 	}
 }
 

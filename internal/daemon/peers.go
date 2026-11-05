@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
@@ -498,7 +497,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	d.recordTell(from, target, text, in.When, in.Reply, typed, msgID)
 	d.peerSaid(from, target, text, owedKind(in.Kind, in.Reply))
 	log.Printf("[atrium] %s told %s something (%d chars, typed %v, waits for the turn %v)",
-		logline.S(from), logline.S(to), len(text), typed, waitTurn)
+		logLine(from), logLine(to), len(text), typed, waitTurn)
 
 	w.Header().Set("Content-Type", "application/json")
 	if typed {

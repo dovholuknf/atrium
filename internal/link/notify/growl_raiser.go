@@ -1,7 +1,6 @@
 package notify
 
 import "log"
-import "github.com/dovholuknf/atrium/internal/base/logline"
 
 // GrowlRaiser is what a growl store that can hold a question about no card adds to GrowlStore. A store without it
 // raises none, and the event still goes out.
@@ -48,7 +47,7 @@ func (g *Growler) EndAbout(id string) {
 	}
 	changed, err := rs.End(id)
 	if err != nil {
-		log.Printf("[hub] growlers could not end %s: %v", logline.S(id), err)
+		log.Printf("[hub] growlers could not end %s: %v", logLine(id), err)
 		return
 	}
 	if changed {

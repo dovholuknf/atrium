@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/base/logline"
 	"io"
 	"log"
 	"net/http"
@@ -213,7 +212,7 @@ func (m *MergeRunner) report(rep MergeReport) {
 		cancel()
 		if err == nil || errors.Is(err, ErrReportRefused) || time.Now().After(deadline) {
 			if err != nil {
-				log.Printf("[git] merge %s: the hub did not take the verdict: %v", logline.S(rep.N), err)
+				log.Printf("[git] merge %s: the hub did not take the verdict: %v", logLine(rep.N), err)
 			}
 			return
 		}
