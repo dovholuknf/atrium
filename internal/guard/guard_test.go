@@ -100,6 +100,8 @@ Co-Authored-By: someone"`, want: "no-coauthor"},
 	{tool: "PowerShell", cmd: `go build -o build.claude/atrium.exe ./cmd/atrium`, want: ""},
 	{tool: "Bash", cmd: `go vet ./...`, want: ""},
 	{tool: "Bash", cmd: `grep -n "go build" Makefile`, want: "", note: "a phrase inside a grep"},
+	{tool: "PowerShell", cmd: `explorer.exe shell:AppsFolder\Claude_x!Claude`, want: "no-gui-app-launch"},
+	{tool: "Bash", cmd: `grep appsfolder notes.txt`, want: ""},
 	// commands
 	{tool: "Bash", cmd: `find . -name x`, want: "no-find"},
 	{tool: "Bash", cmd: `ls | xargs find`, want: "no-find"},

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tell the hub a CI run failed. The script decides what is sent, and the workflow only carries it.
 #
-#   ci-notify.sh [EVENT_FILE] [--conclusion C | --needs "RESULTS" [--expected-skipped N]] [--out FILE] [--url URL] [--secret S] [--local]
+#   ci-notify.sh [EVENT_FILE] [--conclusion C | --needs "RESULTS" [--expected-skipped N] [--check]] [--out FILE] [--url URL] [--secret S] [--local]
 #
 # With no EVENT_FILE the body is built from this run's own context: GITHUB_REPOSITORY, GITHUB_RUN_ID,
 # GITHUB_RUN_ATTEMPT, GITHUB_WORKFLOW, GITHUB_WORKFLOW_REF, GITHUB_HEAD_REF or GITHUB_REF_NAME, GITHUB_SHA (a pull
@@ -13,7 +13,7 @@
 # --needs takes the space-separated results of the jobs the run waited on and picks the conclusion: failure if any
 # failed or was skipped, cancelled if any was cancelled, else success. A skipped job means a gate stopped the run,
 # except as many as --expected-skipped N (default 0), the jobs a manual dispatch's os and suite left out on purpose.
-# else exits 3 and writes nothing.
+# else exits 3 and writes nothing. --check with --needs writes and sends nothing and exits 0 only for success, else 1.
 # The body is written to --out (default build.claude/ci-notify-body.json) and that path is printed. With no --url
 # that is all it does, and the ziti-hook step carries the body. With --url it POSTs the body with the secret in
 # X-Ziti-Hook-Secret. --local is http://127.0.0.1:7778/_hub/ci-hook, the hub's loopback route, so a route can be
@@ -22,13 +22,14 @@
 # Exit codes: 0 sent or written, 2 a usage problem, 3 EVENT_FILE is not a workflow_run event, 1 the POST failed.
 set -uo pipefail
 
-event=""; expected=0; conclusion="failure"; out="${CI_NOTIFY_OUT:-build.claude/ci-notify-body.json}"; url=""; secret="${ATRIUM_CI_HOOK_SECRET:-}"
+event=""; expected=0; conclusion="failure"; out="${CI_NOTIFY_OUT:-build.claude/ci-notify-body.json}"; url=""; secret="${ATRIUM_CI_HOOK_SECRET:-}"; check=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --conclusion) [ $# -ge 2 ] || { echo "--conclusion needs a value" >&2; exit 2; }; conclusion="$2"; shift 2 ;;
     --expected-skipped) [ $# -ge 2 ] || { echo "--expected-skipped needs a number" >&2; exit 2; }
       case "$2" in ''|*[!0-9]*) echo "--expected-skipped needs a number" >&2; exit 2 ;; esac; expected="$2"; shift 2 ;;
     --needs) [ $# -ge 2 ] || { echo "--needs needs the job results" >&2; exit 2; }; needs="$2"; shift 2 ;;
+    --check) check=1; shift ;;
     --out) [ $# -ge 2 ] || { echo "--out needs a file" >&2; exit 2; }; out="$2"; shift 2 ;;
     --url) [ $# -ge 2 ] || { echo "--url needs an address" >&2; exit 2; }; url="$2"; shift 2 ;;
     --secret) [ $# -ge 2 ] || { echo "--secret needs a value" >&2; exit 2; }; secret="$2"; shift 2 ;;
@@ -44,6 +45,12 @@ if [ -n "${needs+x}" ]; then
   for r in $needs; do [ "$r" = skipped ] && skips=$((skips + 1)); done
   case " $needs " in *" failure "*) conclusion=failure ;; *" cancelled "*) conclusion=cancelled ;;
     *) if [ "$skips" -gt "$expected" ]; then conclusion=failure; else conclusion=success; fi ;; esac
+fi
+
+if [ -n "$check" ]; then
+  [ -n "${needs+x}" ] || { echo "--check needs --needs" >&2; exit 2; }
+  [ "$conclusion" = success ] || { echo "ci-notify: the run is $conclusion" >&2; exit 1; }
+  exit 0
 fi
 
 mkdir -p "$(dirname "$out")" || exit 2

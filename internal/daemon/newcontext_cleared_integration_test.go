@@ -3,11 +3,14 @@
 package daemon
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // clearedCycle runs an automatic cycle to its limit prompt, then sends the board's DELETE.
@@ -57,5 +60,37 @@ func TestAReadyAfterTheBoardClearedTheCycleIsTheAck(t *testing.T) {
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 	if prompts(f) != 1 {
 		t.Fatalf("%d limit prompts, want 1", prompts(f))
+	}
+}
+
+func TestAReadyBeforeTheLimitPromptIsTypedIsTheAckAndNoSecondPromptFollows(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := cycleCard(t, d, 300_000)
+	midTurn(d, task.ID)
+	d.cycleCheck(task, 300_000)
+	until(t, "the cycle", func() bool { return d.Nctx.Get(task.ID) != nil })
+	ncAck(t, d, task)
+	ncTurnEnds(d, task.ID)
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+	d.cycleCheck(task, 305_000)
+	if prompts(f) > 1 {
+		t.Fatalf("%d limit prompts, want at most 1", prompts(f))
+	}
+}
+
+func TestAColdCycleClearedFromTheBoardIsNotStartedAgainOverTheLimit(t *testing.T) {
+	d := testDaemon(t)
+	task, f, _ := coldCard(t, d, store.KeepaliveOff)
+	d.Ka.Tick(context.Background())
+	until(t, "the limit prompt", func() bool { c := d.Nctx.Get(task.ID); return prompts(f) == 1 && c != nil && c.Prompted == 1 })
+	req := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+task.ID+"/new-context", nil)
+	req.SetPathValue("id", task.ID)
+	d.HandleNewContext(httptest.NewRecorder(), req)
+	task, _ = d.st.Get(task.ID)
+	d.cycleCheck(task, 300_000)
+	d.cycleCheck(task, 305_000)
+	if d.Nctx.Get(task.ID) != nil || prompts(f) != 1 {
+		t.Fatalf("a second cycle started: %d prompts, run %v", prompts(f), d.Nctx.Get(task.ID))
 	}
 }

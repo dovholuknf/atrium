@@ -47,9 +47,9 @@ func derivedStep(l Lifecycle, name string) hubstore.WorkStepRow {
 	return hubstore.WorkStepRow{}
 }
 
-func TestDeriveGivesEightStepsInOrder(t *testing.T) {
+func TestDeriveGivesEveryStepInOrder(t *testing.T) {
 	l := Derive(DeriveIn{Work: wk("f-x")})
-	if len(l.Steps) != 8 {
+	if len(l.Steps) != len(hubstore.Steps) {
 		t.Fatalf("steps = %d", len(l.Steps))
 	}
 	for i, name := range hubstore.Steps {
@@ -269,5 +269,101 @@ func TestWithStepTagReplacesAndRefuses(t *testing.T) {
 	}
 	if _, err := WithStepTag(nil, "napping"); err == nil || !strings.Contains(err.Error(), "designed") {
 		t.Fatalf("a step that is not one: %v", err)
+	}
+}
+
+func noteFact(sha, decision string) hubstore.WorkFact {
+	return hubstore.WorkFact{Kind: hubstore.FactNote, Source: "seen", AtSHA: sha, Ref: "docs/design/f-x.md", At: "2026-10-15T10:00:00Z",
+		Payload: `{"step":"spiked","decision":"` + decision + `","assignment":"a1"}`}
+}
+
+func spikeGate(kind, sha string) hubstore.WorkFact {
+	return hubstore.WorkFact{Kind: kind, Source: "seen", AtSHA: sha, Ref: "spiked", At: "2026-10-15T11:00:00Z", Payload: `{"step":"spiked"}`}
+}
+
+func spikeIn(facts ...hubstore.WorkFact) DeriveIn {
+	return DeriveIn{Work: wk("f-x"), Cards: []hubstore.WorkCard{stepCard("c1", "spiked")},
+		Assignments: []hubstore.Item{asg("a1", "c1", "finished", shaD1, "2026-10-15T10:00:00Z")}, Facts: facts}
+}
+
+func TestParseDecisionReadsOnlyTheFirstLine(t *testing.T) {
+	for text, want := range map[string]string{
+		"Decision: build the gate\n\nbody":    "Decision: build the gate",
+		"\uFEFFDecision: drop not worth it\n": "Decision: drop not worth it",
+		"Decision: question which room?":      "Decision: question which room?",
+		"Decision: maybe\n":                   "",
+		"# Spike\nDecision: build x":          "",
+		"":                                    "",
+	} {
+		if got := ParseDecision(text); got != want {
+			t.Errorf("ParseDecision(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
+func TestIsNotePathTakesOnlyTheItemsDesignNotes(t *testing.T) {
+	for path, want := range map[string]bool{"docs/design/f-x.md": true, "docs/design/f-x-design.md": true,
+		"docs/design/f-y.md": false, "docs/design/f-x/a.md": false, "docs/rnd/f-x.md": false, "docs/design/f-x.go": false} {
+		if got := isNotePath(path, "f-x"); got != want {
+			t.Errorf("isNotePath(%q) = %v", path, got)
+		}
+	}
+}
+
+// AN ITEM NO SPIKE WAS RUN FOR SKIPS THE GATE, so every item from before it reads as it did.
+func TestSpikedIsSkippedWhenNoSpikeWasRun(t *testing.T) {
+	if s := derivedStep(Derive(DeriveIn{Work: wk("f-x")}), "spiked"); s.State != hubstore.StepSkipped {
+		t.Fatalf("spiked = %+v", s)
+	}
+}
+
+// A SPIKE NOTE WITH A DECISION LINE PUTS THE ITEM IN REVIEW within one derive, and one without does not.
+func TestASpikeNoteWithADecisionWaitsOnTheHuman(t *testing.T) {
+	l := Derive(spikeIn(noteFact(shaD1, "Decision: build the gate")))
+	s := derivedStep(l, "spiked")
+	if s.State != hubstore.StepActive || s.Party != hubstore.PartyHuman || s.SHA != shaD1 || !strings.Contains(s.Reason, "Decision: build the gate") {
+		t.Fatalf("spiked = %+v", s)
+	}
+	if l.State != hubstore.ItemStateBlocked || l.Waiting != hubstore.PartyHuman || l.Current != hubstore.StepSpiked {
+		t.Fatalf("the item = %q waiting on %q at %q", l.State, l.Waiting, l.Current)
+	}
+	l = Derive(spikeIn(noteFact(shaD1, "")))
+	s = derivedStep(l, "spiked")
+	if s.State != hubstore.StepActive || s.Party != hubstore.PartyCard || !strings.Contains(s.Reason, "no Decision line") {
+		t.Fatalf("spiked with no Decision line = %+v", s)
+	}
+	if l.Waiting == hubstore.PartyHuman {
+		t.Fatalf("a note with no Decision line waits on the human")
+	}
+}
+
+func TestTheSpikedGateAnswers(t *testing.T) {
+	dec := "Decision: build the gate"
+	for _, c := range []struct {
+		name  string
+		facts []hubstore.WorkFact
+		state string
+		party string
+	}{
+		{"accepted", []hubstore.WorkFact{noteFact(shaD1, dec), spikeGate(hubstore.FactApprove, shaD1)}, hubstore.StepDone, ""},
+		{"dropped", []hubstore.WorkFact{noteFact(shaD1, dec), spikeGate(hubstore.FactDrop, shaD1)}, hubstore.StepDone, ""},
+		{"sent back", []hubstore.WorkFact{noteFact(shaD1, dec), spikeGate(hubstore.FactSendBack, shaD1)}, hubstore.StepActive, hubstore.PartyCard},
+		{"note moved after accepting", []hubstore.WorkFact{noteFact(shaD1, dec), spikeGate(hubstore.FactApprove, shaD1), noteFact(shaD2, dec)},
+			hubstore.StepStale, hubstore.PartyHuman},
+	} {
+		s := derivedStep(Derive(spikeIn(c.facts...)), "spiked")
+		if s.State != c.state || s.Party != c.party {
+			t.Errorf("%s: spiked = %+v", c.name, s)
+		}
+	}
+}
+
+// A SPIKE SENT BACK IS NOT A DESIGN SENT BACK: designed reads as it would without it.
+func TestASpikeSendBackLeavesDesignedAlone(t *testing.T) {
+	in := spikeIn(noteFact(shaD1, "Decision: build x"), spikeGate(hubstore.FactSendBack, shaD1))
+	in.Cards = append(in.Cards, stepCard("c2", ""))
+	in.Assignments = append(in.Assignments, asg("a2", "c2", "finished", shaD2, "2026-10-15T12:00:00Z"))
+	if d := derivedStep(Derive(in), "designed"); d.State != hubstore.StepSkipped {
+		t.Fatalf("designed = %+v", d)
 	}
 }

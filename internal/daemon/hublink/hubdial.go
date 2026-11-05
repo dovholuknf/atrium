@@ -2,6 +2,9 @@ package hublink
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -28,6 +31,20 @@ const HubDialUpgrade = "atrium-hubdial"
 type HubDialHolder struct {
 	Mu sync.Mutex
 	D  HubDialer
+	// Token is made at first use and only ever written to the room's own 0600 address file.
+	Token string
+}
+
+// HubDialToken is what a command on this machine must send to use the door, read from the room's private address file.
+func (d *Service) HubDialToken() string {
+	d.HubDial.Mu.Lock()
+	defer d.HubDial.Mu.Unlock()
+	if d.HubDial.Token == "" {
+		b := make([]byte, 32)
+		_, _ = rand.Read(b)
+		d.HubDial.Token = hex.EncodeToString(b)
+	}
+	return d.HubDial.Token
 }
 
 // SetHubDialer wires the room's ladder up for commands on this machine. Called once the link is built.
@@ -52,6 +69,10 @@ func (d *Service) HandleHubDial(w http.ResponseWriter, r *http.Request) {
 	}
 	if !LoopbackPeer(r) {
 		refuse(http.StatusForbidden, "the hub is dialled from this machine only")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Atrium-Token")), []byte(d.HubDialToken())) != 1 {
+		refuse(http.StatusForbidden, "the hub is dialled with the token in this user's room address file")
 		return
 	}
 	if r.Method != http.MethodPost || !strings.EqualFold(r.Header.Get("Upgrade"), HubDialUpgrade) ||

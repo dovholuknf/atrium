@@ -458,6 +458,15 @@ async function setTermContextLimit(t, k) {
   }
 }
 
+function termMenuIcon(name) {
+  const d = {
+    chat: "M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7.5L4.5 14v-2.5h-2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z",
+    clip: "M13.5 7.5l-5.6 5.6a3.2 3.2 0 0 1-4.5-4.5l6-6a2.1 2.1 0 0 1 3 3l-6 6a1 1 0 0 1-1.5-1.5l5.4-5.4",
+  }[name];
+  return `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor"
+    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="${d}"/></svg>`;
+}
+
 async function termSettings(e) {
   // The click would bubble to the document listener that dismisses any open menu.
   e.preventDefault();
@@ -470,7 +479,14 @@ async function termSettings(e) {
   const ctxMax = (t.context_size && t.context_size.ceiling_k) || 2000;
   let ctxK = peekThresholdK(t);
   const say = actionItems(t), share = shareItem(t);
+  // The left nav's own rows from `stop` down, so the two menus cannot drift: stop, dismiss, terminate and clean up.
+  const nav = termMenuItems(t.id, t);
   const items = [
+    { label: "switch to chat view", icon: termMenuIcon("chat"),
+      help: "Read this card as a conversation, in the chat tab.",
+      act: () => chatFromTerm() },
+    isGuest() ? null : { label: "attach a file or photo…", icon: termMenuIcon("clip"), act: () => pickTermFiles() },
+    { sep: true },
     { step: true, label: "text size",
       min: TERM_FONT_MIN, max: TERM_FONT_MAX,
       help: "Scales the text in this terminal only, unlike browser zoom, " +
@@ -535,6 +551,7 @@ async function termSettings(e) {
         "your own MCP servers. This restarts the same conversation with all of " +
         "them, and the card stops being lean.",
       act: () => restartTerm(true) } : null,
+    ...nav.slice(nav.findIndex(it => it.label === "settings") + 1),
     { sep: true },
     termOnly() ? {
       label: "remember this size", note: "for this card",
@@ -593,18 +610,11 @@ function paintTermChips(task) {
   if (!homeChips && typeof loadHomes === "function") {
     loadHomes().then(() => { if (homeOf(task)) paintTermChips(task); });
   }
-  const cold = document.getElementById("t-cold");
-  if (cold) cold.innerHTML = typeof kaTitleMark === "function" ? kaTitleMark(task) : "";
+  // No room chip: the list beside the pane already wears it. The cache dot turns into the snowflake when cold
+  // (`#t-chips .chip.cache.cold`), so the bar has one cache mark.
   document.getElementById("t-chips").innerHTML =
-    // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
-    // the id's tag and answers "" with a single room attached, so this draws
-    // nothing until a second room makes the question real, the same as the room
-    // chip on the strip row (see `termRoomChip`). The name is the tag itself.
-    (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
-       data-tip="this card runs in room ${esc(roomOf(task.id))}"
-       >${esc(roomOf(task.id))}</span>` : "") +
     (typeof keepaliveChip === "function" ? keepaliveChip(task) : "") +
-    (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
+    (task.pid ? `<span class="chip pid">pid ${task.pid}</span>` : "") +
     // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
     // button, so a row-width target sat over the bar saying `click to copy`
     // and swallowed clicks meant for what was behind it. A path is also a
@@ -613,7 +623,7 @@ function paintTermChips(task) {
     (homeChips || `<span class="chip path" data-path="${esc(task.worktree || "")}"
        ><button class="copybit" data-tip="copy this path"
          onclick="event.stopPropagation();copyPath(this.parentNode)"
-         >${copyIcon()}</button>${esc(task.worktree || "")}</span>`);
+         >${copyIcon()}</button><span class="ptext">${esc(task.worktree || "")}</span></span>`);
   if (typeof composeBar === "function") composeBar(task);
 }
 

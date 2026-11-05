@@ -66,6 +66,8 @@ type Server struct {
 	TaskLaunch func(body []byte) (*store.Task, error)
 	// Kill stops the runner behind a card.
 	Kill func(taskID string) error
+	// Closed is told when a close has moved a card to done, so what it still had held for others is released.
+	Closed func(t *store.Task)
 	// RunAction says a stored action's prompt to a card, and optionally asks
 	// the runner to leave afterwards. Owned by the daemon, which owns the
 	// terminals and the message queue.

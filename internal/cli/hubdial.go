@@ -26,14 +26,14 @@ const hubDialUpgrade = "atrium-hubdial"
 var errNoLocalRoom = errors.New("no room is running on this machine. start it with `atrium room`, which holds the link to the hub")
 
 // localRoomDialer dials the hub through the room's agent listener.
-type localRoomDialer struct{ agent string }
+type localRoomDialer struct{ agent, token string }
 
 func newLocalRoomDialer(location func() (daemon.Location, bool)) (*localRoomDialer, error) {
 	loc, ok := location()
 	if !ok || strings.TrimSpace(loc.Agent) == "" {
 		return nil, errNoLocalRoom
 	}
-	return &localRoomDialer{agent: loc.Agent}, nil
+	return &localRoomDialer{agent: loc.Agent, token: loc.HubDialToken}, nil
 }
 
 func (l *localRoomDialer) Describe() string { return "this machine's room" }
@@ -52,7 +52,7 @@ func (l *localRoomDialer) Dial(ctx context.Context) (net.Conn, error) {
 		deadline = d
 	}
 	_ = conn.SetDeadline(deadline)
-	req := "POST /hubdial HTTP/1.1\r\nHost: " + u.Host + "\r\nConnection: Upgrade\r\nUpgrade: " + hubDialUpgrade + "\r\n\r\n"
+	req := "POST /hubdial HTTP/1.1\r\nHost: " + u.Host + "\r\nConnection: Upgrade\r\nUpgrade: " + hubDialUpgrade + "\r\nX-Atrium-Token: " + l.token + "\r\n\r\n"
 	if _, err := io.WriteString(conn, req); err != nil {
 		conn.Close()
 		return nil, errNoLocalRoom

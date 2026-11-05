@@ -37,8 +37,8 @@ func TestItemBriefAnswersWhereAreWe(t *testing.T) {
 			t.Errorf("brief lacks %q:\n%s", want, got)
 		}
 	}
-	if n := strings.Count(got, "\n- "); n != 8 {
-		t.Errorf("want eight step lines, got %d", n)
+	if n := strings.Count(got, "\n- "); n != len(hubstore.Steps) {
+		t.Errorf("want a line per step, got %d", n)
 	}
 }
 

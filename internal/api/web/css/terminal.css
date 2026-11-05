@@ -388,9 +388,11 @@
      always. */
   .term-layout { --barh: 44px; }
   .term-bar {
-    display: flex; align-items: center; gap: var(--sp-4); padding: 10px 14px;
+    display: flex; align-items: center; gap: var(--sp-2); padding: 6px 10px;
     min-height: var(--barh); box-sizing: border-box;
-    border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap;
+    border-bottom: 1px solid var(--stroke-dim); flex-wrap: nowrap;
+    /* For the narrow rule at the end of this block, which drops the pid before anything else gives way. */
+    container-type: inline-size;
     flex: 0 0 auto;
     background: linear-gradient(180deg, rgba(var(--shell0-rgb),.92), rgba(var(--shell1-rgb),.92));
   }
@@ -402,6 +404,11 @@
     min-width: 0; flex: 0 1 auto;
   }
   #t-copy { flex: none; }
+  /* The name and its copy glyph, one pill when the card has an alias. */
+  .term-bar .tname { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+  .term-bar .tname:has(> .as-alias) {
+    background: var(--chip); border: 1px solid var(--stroke-dim); border-radius: 999px; padding: 1px 8px 1px 10px;
+  }
   .term-bar strong {
     color: var(--head); font-size: var(--fs-lg);
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -410,8 +417,7 @@
      tinted pill, so `@saorch` does not read as one more path. The label is a button for it. See js/alias.js. */
   .term-bar strong.as-alias {
     font-family: 'Cascadia Mono', ui-monospace, monospace; font-weight: 600;
-    color: var(--blue); background: var(--chip); border: 1px solid var(--stroke-dim);
-    border-radius: 999px; padding: 1px 10px; cursor: pointer;
+    color: var(--blue); cursor: pointer;
   }
   .term-bar strong.as-alias .at { color: var(--dim); }
   .term-bar strong.can-alias { cursor: pointer; }
@@ -419,7 +425,7 @@
      pane stops looking like a live session. */
   .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }
   .term-pane.dead .term-bar strong { color: var(--dim); }
-  .term-bar button { padding: 6px 13px; font-size: var(--fs-base); }
+  .term-bar button { padding: 3px 9px; font-size: var(--fs-sm); line-height: 1.3; }
   /* A glyph does not want the padding a word does. The rule above is tuned for `ctrl-c` and `exit` and is
      roughly twice as wide as it should be around a single character, so the folder and the cog sat in buttons
      with more air than content. Squared off here: tighter side padding, sized from the glyph.
@@ -427,10 +433,25 @@
      the folder and the cog took its 23px glyph and its transparent box and stood taller and boxless beside the
      worded buttons. Font size, line height and the chip box are pinned here so they match `ctrl-c` and `exit`. */
   .term-bar button.icon {
-    padding: 5px 9px; min-width: 0; line-height: 1;
-    font-size: var(--fs-lg); color: var(--body);
+    display: inline-grid; place-items: center; padding: 4px 6px; min-width: 28px; line-height: 1;
+    font-size: var(--fs-base); color: var(--body);
     background: var(--chip); border-color: var(--stroke-dim);
   }
+  .term-bar button.icon svg { display: block; }
+  /* The copy glyphs lost their `all: unset` to `.term-bar button`, which is more specific and padded them 6px 13px. */
+  .term-bar button.copybit {
+    all: unset; cursor: pointer; color: inherit; opacity: .65;
+    display: inline-flex; align-items: center; flex: none;
+  }
+  .term-bar button.copybit:hover { opacity: 1; color: var(--teal); }
+  .term-bar .termkind button { padding: 2px 9px; font-size: var(--fs-xxs); }
+  /* The bar's one cache mark: the dot, and the snowflake in its place once the cache has gone cold. */
+  #t-chips .chip.cache.cold {
+    width: auto; height: auto; border: none; background: none;
+    font: 13px/1 var(--sans); color: rgb(120,140,170);
+  }
+  #t-chips .chip.cache.cold::before { content: "❄"; }
+  @container (max-width: 900px) { #t-chips .chip.pid { display: none; } }
   @media (hover: hover) { .term-bar button.icon:hover { color: var(--head); border-color: var(--blue); background: var(--btn-hover); } }
   /* No height of its own. The bar and the help line take what they need and this takes the rest, so nothing
      has to guess how tall they are. */

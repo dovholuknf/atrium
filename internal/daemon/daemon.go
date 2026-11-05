@@ -455,6 +455,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Launch = d.launchFromJSON
 	d.ap.TaskLaunch = d.taskLaunchFromJSON
 	d.ap.Kill = d.Kill
+	d.ap.Closed = d.releaseSentBy
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
 	d.prr = pulls.NewPRRunner(st, d.ap.PublishPR, d.prConfig())
@@ -1640,7 +1641,7 @@ func (d *Daemon) initServices() {
 		Opts: func() roomconf.Options {
 			o := d.opts
 			return roomconf.Options{AgentAddr: o.AgentAddr, HumanAddr: o.HumanAddr, DBPath: o.DBPath, Room: o.Room,
-				RoomDir: o.RoomDir, LocationFile: o.LocationFile}
+				RoomDir: o.RoomDir, LocationFile: o.LocationFile, HubDialToken: d.hublinkService.HubDialToken()}
 		},
 		Calls: roomconf.Calls{
 			PidAlive:          func(pid int) bool { return d.hk.pidAlive(pid) },

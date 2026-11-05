@@ -358,6 +358,19 @@ jobs:
           retention-days: 90
           if-no-files-found: ignore
 
+  # The one check main requires for auto-merge: red unless every job passed or was left out on purpose.
+  ci-ok:
+    needs: [select, rollup]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
+          EXPECTED_SKIPPED: ${{ needs.select.outputs.skipped }}
+        run: bash scripts/ci-notify.sh --check --needs "$NEEDS_RESULTS" --expected-skipped "$EXPECTED_SKIPPED"
+
   # Tells the hub when this run finished, green or red, for now. It needs only rollup, which needs every other job and
   # hands on their results, so the graph reads rollup then notify. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks
   # the conclusion from the jobs' results and builds the body from this run's own context, and the ziti-hook action

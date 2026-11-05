@@ -595,17 +595,17 @@ func (n *NewContexts) FinishRecorded(taskID string, gen uint64, record func()) b
 	return true
 }
 
-// clear removes a card's chip whatever it says and stops its run. An auto run that had already asked leaves a
+// clear removes a card's chip whatever it says and stops its run. A run that had already asked leaves a
 // marker, so the next tick does not ask the same card again over the same limit.
 func (n *NewContexts) Clear(taskID string) bool {
 	n.Mu.Lock()
 	cur, had := n.By[taskID]
 	delete(n.By, taskID)
-	if had && cur.Auto && cur.Prompted > 0 {
+	if had && cur.Prompted > 0 {
 		if n.Dropped == nil {
 			n.Dropped = map[string]ncDropped{}
 		}
-		n.Dropped[taskID] = ncDropped{conv: cur.Conv, file: cur.File, tokens: cur.Tokens, limit: cur.Limit,
+		n.Dropped[taskID] = ncDropped{conv: cur.Conv, file: cur.File, auto: cur.Auto, tokens: cur.Tokens, limit: cur.Limit,
 			prompted: cur.Prompted, at: time.Now()}
 	}
 	n.Mu.Unlock()
@@ -616,11 +616,12 @@ func (n *NewContexts) Clear(taskID string) bool {
 // droppedHold is how long a cleared auto run holds the trigger off and may still be acked.
 const droppedHold = 10 * time.Minute
 
-// ncDropped is an auto run that was cleared after it asked.
+// ncDropped is a run that was cleared after it asked.
 type ncDropped struct {
 	conv, file    string
 	tokens, limit int64
 	prompted      int
+	auto          bool
 	at            time.Time
 }
 
@@ -647,7 +648,7 @@ func (n *NewContexts) Revive(taskID string) (uint64, bool) {
 	if !ok || time.Since(m.at) >= droppedHold {
 		return 0, false
 	}
-	gen, ok := n.Claim(taskID, &NewContext{Step: NewContextLimit, File: m.file, Conv: m.conv, Auto: true,
+	gen, ok := n.Claim(taskID, &NewContext{Step: NewContextLimit, File: m.file, Conv: m.conv, Auto: m.auto,
 		Tokens: m.tokens, Limit: m.limit, Prompted: m.prompted, LastPrompt: time.Now()})
 	if ok {
 		n.DropMarker(taskID)

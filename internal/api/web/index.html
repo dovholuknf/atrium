@@ -439,11 +439,12 @@ Exports honor whatever filter is applied.">?</span>
                As siblings in a wrapping flex row the runner's icon could end
                up on the line above its own session's name, which reads as two
                unrelated pieces of furniture. -->
+          <!-- The copy glyph is inside the name's pill, so the pill wraps both. -->
           <span class="term-who">
             <span id="t-mark"></span>
-            <strong id="t-title">nothing attached</strong><span id="t-cold"></span>
-            <button type="button" id="t-copy" class="copybit" data-tip="copy the name" aria-label="copy the name"
-              onclick="event.stopPropagation();copyTermName()"></button>
+            <span class="tname"><strong id="t-title">nothing attached</strong><button type="button" id="t-copy"
+              class="copybit" data-tip="copy the name" aria-label="copy the name"
+              onclick="event.stopPropagation();copyTermName()"></button></span>
           </span>
           <!-- PHONE ONLY (body.term-phone, see phone.css): this bar is the tray. Hidden by default, it slides over the
                terminal from the handle at the pane's top edge. The picker switches card, the chevron hides the tray. -->
@@ -464,27 +465,31 @@ Exports honor whatever filter is applied.">?</span>
               data-tip="a plain shell in the same directory, for when the agent is not answering">shell</button>
           </span>
           <span class="grow"></span>
-          <button type="button" id="t-chat" onclick="chatFromTerm()"
-            data-tip="read this card as a conversation">chat</button>
+          <!-- Chat, attach and exit live under the cog (`termSettings`). -->
           <button onclick="sendSignal('int')"
             data-tip="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
-          <!-- Picker for phones, which have no drag and no usable image paste. Same pipeline as both: `uploadIntoTerm`.
-               No `accept`, since a narrow one blocks HEIC and the camera on iOS and Android. Hidden for a guest. -->
-          <button id="t-attach" class="icon" onclick="pickTermFiles()"
-            aria-label="attach a file or photo" data-tip="attach a file or photo">&#128206;</button>
+          <!-- The picker behind the cog's attach row and the phone key bar's. No `accept`, since a narrow one blocks
+               HEIC and the camera on iOS and Android. -->
           <input type="file" id="t-attach-in" multiple hidden tabindex="-1">
           <button id="t-full" class="icon" onclick="toggleTermFull()" aria-pressed="false"
-            aria-label="full screen terminal" data-tip="full screen: the terminal fills the window">&#9974;</button>
-          <button id="t-popout" onclick="popOutTerm()"
-            data-tip="open this terminal in its own window, so alt-tab reaches it">pop out</button>
+            aria-label="full screen terminal" data-tip="full screen: the terminal fills the window"><svg
+            viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path
+            d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
+          <button id="t-popout" class="icon" onclick="popOutTerm()" aria-label="pop out"
+            data-tip="open this terminal in its own window, so alt-tab reaches it"><svg viewBox="0 0 16 16"
+            width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1
+            1-1h3.5"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></button>
           <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
                finding. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
             data-tip="walk this card's findings beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
-            aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it">&#128193;</button>
-          <button class="no" onclick="exitTerm()"
-            data-tip="ask this runner to quit, the way its own harness says to">exit</button>
+            aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it"><svg
+            viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path
+            d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg></button>
           <!-- No detach. Stopping watching is not a thing you decide, it is
                what happens when you look at something else: attaching to
                another session, leaving the tab, or closing a popped-out

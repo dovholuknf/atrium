@@ -391,7 +391,8 @@ async function chatTabSection(browser, base) {
     await p.waitForFunction(() => !document.getElementById("terms").hidden, null, { timeout: slow(10000) });
     const onTerms = await p.evaluate(() => document.getElementById("term-list").getBoundingClientRect().width);
     if (Math.abs(onTerms - after) > 2) fail(tag + "the terminals tab shows the list at " + onTerms + ", the chat tab at " + after);
-    await p.click("#t-chat");
+    await p.click("#t-cog");
+    await p.click("#cardmenu > button:has-text(\"switch to chat view\")");
     await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
     // a card in the chat list is as wide as on the terminals tab
     const cardW = await p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').getBoundingClientRect().width);
@@ -401,7 +402,8 @@ async function chatTabSection(browser, base) {
     await p.waitForFunction(() => !document.getElementById("terms").hidden && termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });
     if (await p.evaluate(() => !document.getElementById("term-layout").contains(document.getElementById("term-list")))) fail(tag + "the list was not given back to the terminals view");
     if (await p.evaluate(() => !!document.querySelector("#chat-frame-host iframe:not([hidden])"))) fail(tag + "a conversation frame shows outside the chat view");
-    await p.click("#t-chat");
+    await p.click("#t-cog");
+    await p.click("#cardmenu > button:has-text(\"switch to chat view\")");
     await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
     // another row switches the conversation
     await p.click('#chat-layout #term-list .card.tab[data-id="chat-b"]');

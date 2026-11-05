@@ -137,7 +137,8 @@
      stretches its items by default, so the path chip, taller because it carries an icon, pulled every chip
      beside it to its own height. A stretched chip keeps its text at the top of the box it was given, which is
      why `pid 21088` looked like it had floated up out of its pill. */
-  #t-chips { align-items: center; }
+  #t-chips { align-items: center; flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; }
+  #t-chips .chip { flex: none; }
   /* `inline-flex`, so the glyph and the path sit on one centred line. As inline content the button aligned on
      the text baseline, which puts a square icon low against lowercase letters and made it look like it was
      falling out of the chip. */
@@ -145,7 +146,10 @@
     display: inline-flex; align-items: center; gap: 3px;
     cursor: text; user-select: text;
     padding: 1px 6px 1px 4px;
+    flex: 0 1 auto; min-width: 60px; overflow: hidden;
   }
+  /* The path is what gives way when the bar is narrow, so the bar stays one line. */
+  #t-chips .chip.path .ptext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* `all: unset` rather than a list of overrides. A button carries a padding, a border, a background, a font
      and a line-height of its own, and undoing four of the five left the fifth to make the chip taller than
      every chip beside it. */
@@ -155,7 +159,7 @@
   }
   .copybit:hover { opacity: 1; color: var(--teal); }
   /* A picture does not want the padding a word does. */
-  #t-cog, #t-files { font-size: var(--fs-lg); padding: 5px 9px; line-height: 1; }
+  #t-cog, #t-files { font-size: var(--fs-lg); padding: 4px 6px; line-height: 1; }
   /* The floating panel for trying a look: the board's skin or a terminal's theme. Above the dialogs, since it is opened from one and that dialog
      closes behind it, and a panel that landed underneath would look like the button did nothing. */
   #skinlab {

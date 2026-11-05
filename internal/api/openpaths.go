@@ -70,3 +70,9 @@ func containedOrOpen(card, want string, roots func() []string) (real string, out
 	}
 	return "", false, err
 }
+
+// ContainedOrOpen is containedOrOpen against this server's open roots, for the room to bound a path a card names.
+func (s *Server) ContainedOrOpen(card, want string) (string, error) {
+	real, _, err := containedOrOpen(card, want, s.openRoots)
+	return real, err
+}

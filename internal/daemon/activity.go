@@ -784,6 +784,8 @@ type ActivityEvent struct {
 	// a hook older than the field, which is read as a told name. Nothing here
 	// acts on it yet: activity only looks a card up.
 	NameSource string `json:"name_source,omitempty"`
+	// PID is the runner the hook found above itself, 0 when it found none.
+	PID int `json:"pid,omitempty"`
 	// Event is tool-start, tool-end, prompt, subagent-start, subagent-end,
 	// idle or waiting.
 	//
@@ -837,6 +839,9 @@ func (d *Daemon) handleActivity(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) onActivity(in ActivityEvent) string {
 	taskID := ""
 	if t := d.ownCard(in.TaskID); t != nil {
+		if !d.ownsSession(t, in.PID) {
+			return ""
+		}
 		taskID = t.ID
 	}
 	if taskID == "" {

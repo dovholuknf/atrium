@@ -7589,10 +7589,86 @@ async function phoneTermBarSection(browser, base) {
     await dctx.addInitScript(fakeSock);
     const dp = await open(dctx);
     if (await vis(dp, "#t-bar-toggle") || await vis(dp, "#t-tray-handle") || await vis(dp, "#t-pick")) fail("phoneTermBar: a phone control shows on a desktop");
-    for (const s of ["#t-chips .chip.path", "#t-attach", "#t-full", "#t-cog"])
+    for (const s of ["#t-chips .chip.path", "#t-full", "#t-cog"])
       if (!(await vis(dp, s))) fail("phoneTermBar: " + s + " is not shown on a desktop");
     await dctx.close();
     if (errors.length) fail("phoneTermBar: the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+  }
+}
+
+// termBarOneLine: the terminal's bar is one line at 1500px and 1000px. No room chip, no exit, chat or paperclip
+// button, pop out is a glyph, the name's copy glyph sits in the name's pill, and the cog holds chat, attach and the
+// left nav's stop and terminate and clean up, with every help bubble round.
+async function termBarOneLineSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-bar", { supervised: true, status: "running", pid: 29672, alias: "ai-presentation",
+    worktree: "D:/worktrees/github/dovholuknf/dotfiles/ai-presentation", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-bar"]];
+  mock.landPerms = [];
+  const errors = [];
+  const shots = process.env.TERMBAR_SHOTS || "";
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    for (const width of [1500, 1000]) {
+      const tag = "termBarOneLine " + width + ": ";
+      const ctx = await browser.newContext({ viewport: { width, height: 800 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.addInitScript(fakeSock);
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await attachRetry(p, { unit: "termBarOneLine", id: "land-bar", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-bar" });
+      await settleStyle(p);
+      const bar = await p.evaluate(() => {
+        const b = document.querySelector("#term-pane .term-bar");
+        const kids = [...b.children].filter(k => k.getClientRects().length && getComputedStyle(k).visibility !== "hidden");
+        const mids = kids.map(k => { const r = k.getBoundingClientRect(); return Math.round(r.top + r.height / 2); });
+        const words = [...b.querySelectorAll("button")].map(x => x.textContent.trim());
+        return { spread: Math.max(...mids) - Math.min(...mids), over: b.scrollWidth > b.clientWidth + 1,
+          room: !!b.querySelector(".chip.room"), words: words.filter(w => w === "exit" || w === "chat"),
+          clip: !!document.getElementById("t-attach"), copyIn: !!b.querySelector(".tname > #t-copy"),
+          popWord: document.getElementById("t-popout").textContent.trim() };
+      });
+      if (bar.spread > 4 || bar.over) fail(tag + "the bar is not one line: " + JSON.stringify(bar));
+      if (bar.room) fail(tag + "the room chip is still on the bar");
+      if (bar.words.length) fail(tag + "still a button on the bar: " + bar.words.join(", "));
+      if (bar.clip) fail(tag + "the paperclip is still on the bar");
+      if (!bar.copyIn) fail(tag + "the name's copy glyph is not inside the name's pill");
+      if (bar.popWord) fail(tag + "pop out carries a word: " + bar.popWord);
+      await p.click("#t-cog");
+      await p.waitForSelector("#cardmenu.on", { timeout: slow(5000) });
+      const menu = await p.evaluate(() => ({
+        rows: [...document.querySelectorAll("#cardmenu > button, #cardmenu > .stepper")]
+          .map(r => r.textContent.replace(/[?▸]/g, "").replace(/\s+/g, " ").trim()),
+        bubbles: [...document.querySelectorAll("#cardmenu .help")]
+          .map(h => { const r = h.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })
+          .filter(([w, h]) => w || h),
+      }));
+      for (const want of ["switch to chat view", "attach a file or photo…", "restart this session", "stop", "terminate and clean up"])
+        if (!menu.rows.some(r => r.startsWith(want))) fail(tag + "the cog has no " + want + " row: " + JSON.stringify(menu.rows));
+      if (!menu.bubbles.length || menu.bubbles.some(([w, h]) => w < 15 || Math.abs(w - h) > 1))
+        fail(tag + "a help bubble is missing or squished: " + JSON.stringify(menu.bubbles));
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await p.screenshot({ path: path.join(shots, "termbar-" + width + ".png") });
+      }
+      await ctx.close();
+    }
+    if (errors.length) fail("termBarOneLine: the page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
   }
@@ -26072,12 +26148,13 @@ async function keepaliveMarkSection(browser, base) {
         out[c.id] = { n: marks.length, shown: marks.filter(m => m.classList.contains("on") && getComputedStyle(m).display !== "none").length,
           tip: marks.map(m => m.getAttribute("data-tip") || "")[0] || "" };
       }
-      const title = document.getElementById("t-cold");
+      // The bar has one cache mark: its dot, drawn as the snowflake once the cache is cold.
+      const head = document.getElementById("t-chips");
       out.view = {};
-      if (title) for (const c of cards) {
+      if (head) for (const c of cards) {
         paintTermChips(c);
-        const m = title.querySelector(".kamark.on");
-        out.view[c.id] = !!m && getComputedStyle(m).display !== "none";
+        const m = head.querySelector(".chip.cache.cold");
+        out.view[c.id] = !!m && getComputedStyle(m).display !== "none" && getComputedStyle(m, "::before").content.includes("❄");
       }
       return out;
     });
@@ -26121,7 +26198,7 @@ async function main() {
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
-      phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
+      phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlRoomAlert: growlRoomAlertSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection, trayMerge: trayMergeSection,
@@ -27994,6 +28071,7 @@ async function main() {
     await unit("cardRowChips", () => cardRowChipsSection(browser, base));
     await unit("phoneFocus", () => phoneFocusSection(browser, base));
     await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
+    await unit("termBarOneLine", () => termBarOneLineSection(browser, base));
     await unit("phoneShare", () => phoneShareSection(browser, base));
     await unit("phonePan", () => phonePanSection(browser, base));
     await unit("phoneFollow", () => phoneFollowSection(browser, base));

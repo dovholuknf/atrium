@@ -16,8 +16,9 @@ import (
 //     assignments and git, and writes them whole. Nothing here is the only copy of anything, so a bug in the engine is
 //     fixed by running it again.
 
-// The eight steps, in order.
+// The steps, in order.
 const (
+	StepSpiked   = "spiked"
 	StepDesigned = "designed"
 	StepApproved = "approved"
 	StepBuilding = "building"
@@ -29,9 +30,9 @@ const (
 )
 
 // Steps is every step, in order.
-var Steps = []string{StepDesigned, StepApproved, StepBuilding, StepTested, StepReviewed, StepLanded, StepDeployed, StepPushed}
+var Steps = []string{StepSpiked, StepDesigned, StepApproved, StepBuilding, StepTested, StepReviewed, StepLanded, StepDeployed, StepPushed}
 
-// ValidStep is whether s is one of the eight.
+// ValidStep is whether s is one of the steps.
 func ValidStep(s string) bool {
 	for _, x := range Steps {
 		if x == s {
@@ -67,6 +68,11 @@ const (
 	// took the report, payload {verdict: ok|hold, findings, report, by}. A verdict trailer is read from git each time and is
 	// never stored as a fact, so a rebase cannot leave a stale copy of it.
 	FactReview = "review"
+	// FactNote is a finished card's commit that touches docs/design/<item>*.md, noticed by the hub. at_sha is that commit,
+	// ref the path, payload {repo, path, sha, step, decision, assignment}. decision is the note's Decision line, or empty.
+	FactNote = "note"
+	// FactDrop is the human dropping an item at the spiked gate. at_sha is the note's commit, payload {step, by}.
+	FactDrop = "drop"
 )
 
 // Test results and review verdicts.
