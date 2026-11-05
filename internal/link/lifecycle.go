@@ -201,13 +201,15 @@ func Derive(in DeriveIn) Lifecycle {
 		byStep[s.Step] = s
 	}
 
+	put(deriveSpiked(in))
+
 	// ── designed ──
 	des := in.of(hubstore.StepDesigned)
 	designed := hubstore.WorkStepRow{Step: hubstore.StepDesigned, State: hubstore.StepPending, Cards: hubstore.CardsJSON(des.cards), StartedAt: des.started()}
 	design, haveDesign := latest(in.Facts, hubstore.FactDesign)
 	sentBack := map[string]bool{}
 	for _, f := range in.Facts {
-		if f.Kind == hubstore.FactSendBack {
+		if f.Kind == hubstore.FactSendBack && !spikeFact(f) {
 			sentBack[f.AtSHA] = true
 		}
 	}
@@ -328,7 +330,11 @@ func Derive(in DeriveIn) Lifecycle {
 // design noticed. A bug or small fix is filed and built straight away, and waiting at `designed` forever after it has landed
 // is wrong. An item a designer has been on, or whose design was sent back, is never skipped by this.
 func noDesignNeeded(in DeriveIn) bool {
-	if has(in.Facts, hubstore.FactDesign) || has(in.Facts, hubstore.FactSendBack) || len(in.of(hubstore.StepDesigned).cards) > 0 {
+	designSentBack := false
+	for _, f := range in.Facts {
+		designSentBack = designSentBack || (f.Kind == hubstore.FactSendBack && !spikeFact(f))
+	}
+	if has(in.Facts, hubstore.FactDesign) || designSentBack || len(in.of(hubstore.StepDesigned).cards) > 0 {
 		return false
 	}
 	if in.of(hubstore.StepBuilding).all(hubstore.ItemStateFinished) {
@@ -516,7 +522,7 @@ func itemState(l Lifecycle, as []hubstore.Item) (state, waiting string) {
 		return hubstore.ItemStateQueued, ""
 	}
 	switch l.Current {
-	case hubstore.StepDesigned, hubstore.StepApproved, hubstore.StepBuilding:
+	case hubstore.StepSpiked, hubstore.StepDesigned, hubstore.StepApproved, hubstore.StepBuilding:
 		return hubstore.ItemStateQueued, ""
 	}
 	return hubstore.ItemStateFinished, ""
@@ -536,8 +542,8 @@ func plural(n int, w string) string {
 	return itoaN(n) + " " + w + "s"
 }
 
-// engineSteps are the five steps Derive writes. The other three are L3's, read from git.
-var engineSteps = []string{hubstore.StepDesigned, hubstore.StepApproved, hubstore.StepBuilding, hubstore.StepTested, hubstore.StepReviewed}
+// engineSteps are the steps Derive writes. The other three are L3's, read from git.
+var engineSteps = []string{hubstore.StepSpiked, hubstore.StepDesigned, hubstore.StepApproved, hubstore.StepBuilding, hubstore.StepTested, hubstore.StepReviewed}
 
 func engineStep(s string) bool {
 	for _, x := range engineSteps {

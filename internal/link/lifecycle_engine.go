@@ -137,9 +137,12 @@ func (p *Proxy) refreshWork(ctx context.Context, st *hubstore.Store, id string, 
 	if withGit {
 		gr = p.designReader()
 	}
-	if gr != nil && p.noticeDesigns(ctx, st, gr, &r) {
-		if r.Facts, err = st.WorkFacts(id); err != nil {
-			return r, err
+	if gr != nil {
+		designs, notes := p.noticeDesigns(ctx, st, gr, &r), p.noticeNotes(ctx, st, gr, &r)
+		if designs || notes {
+			if r.Facts, err = st.WorkFacts(id); err != nil {
+				return r, err
+			}
 		}
 	}
 	r.Doc = docView(ctx, gr, r.Facts)
@@ -154,7 +157,7 @@ func (p *Proxy) refreshWork(ctx context.Context, st *hubstore.Store, id string, 
 		ev = evidenceMemo(id)
 	}
 	r.Lifecycle = Derive(DeriveIn{Work: r.Work, Cards: r.Cards, Assignments: r.Assignments, Facts: r.Facts, Doc: r.Doc, Stored: stored, Evidence: ev})
-	// ONLY THE ENGINE'S OWN FIVE ARE WRITTEN. landed, deployed and pushed are L3's rows, and this does not touch them.
+	// ONLY THE ENGINE'S OWN STEPS ARE WRITTEN. landed, deployed and pushed are L3's rows, and this does not touch them.
 	for _, s := range r.Lifecycle.Steps {
 		if !engineStep(s.Step) {
 			continue
@@ -336,7 +339,8 @@ func newFactRef() string {
 
 // ── what the human does ─────────────────────────────────────────────────────
 
-// workAct is `POST /_hub/work/<id>`: {do: approve|send_back|build_directly, by, sha?, note?}. Only the operator on the hub's
+// workAct is `POST /_hub/work/<id>`: {do: approve|send_back|drop|build_directly, by, sha?, note?}. While a spike note waits
+// on the human, approve, send_back and drop answer the spiked gate. Only the operator on the hub's
 // machine, as the items tab's own writes are, and the board sends `by: board`.
 type workAct struct {
 	Do   string `json:"do"`
@@ -369,7 +373,15 @@ func (p *Proxy) workAction(w http.ResponseWriter, r *http.Request, st *hubstore.
 		return hubstore.WorkStepRow{}
 	}
 	design, haveDesign := latest(cur.Facts, hubstore.FactDesign)
-	switch strings.ToLower(strings.TrimSpace(in.Do)) {
+	do := strings.ToLower(strings.TrimSpace(in.Do))
+	if sp := step(hubstore.StepSpiked); sp.Party == hubstore.PartyHuman && (do == "approve" || do == "send_back" || do == "drop") {
+		if !p.spikeAction(w, r, st, id, do, by, in, cur, sp) {
+			return
+		}
+		do = ""
+	}
+	switch do {
+	case "":
 	case "approve":
 		ap := step(hubstore.StepApproved)
 		if ap.State != hubstore.StepActive && ap.State != hubstore.StepStale {
@@ -437,8 +449,11 @@ func (p *Proxy) workAction(w http.ResponseWriter, r *http.Request, st *hubstore.
 			return
 		}
 		p.RecordAudit("", "work-build-directly", id)
+	case "drop":
+		crFail(w, http.StatusConflict, "there is no spike note waiting for you: spiked is "+step(hubstore.StepSpiked).State)
+		return
 	default:
-		crFail(w, http.StatusBadRequest, "do is approve, send_back or build_directly")
+		crFail(w, http.StatusBadRequest, "do is approve, send_back, drop or build_directly")
 		return
 	}
 	// Derived again, now the fact is written, so the answer is what the board shows next.

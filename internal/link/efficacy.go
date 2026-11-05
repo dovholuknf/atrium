@@ -430,7 +430,7 @@ func FactEvents(id string, facts []hubstore.WorkFact) []hubstore.WorkEvent {
 	for _, f := range sorted {
 		switch f.Kind {
 		case hubstore.FactSendBack:
-			out = append(out, hubstore.WorkEvent{WorkID: id, Kind: hubstore.EventSendBack, Step: hubstore.StepDesigned, At: f.At,
+			out = append(out, hubstore.WorkEvent{WorkID: id, Kind: hubstore.EventSendBack, Step: firstNonEmpty(f.Note("step"), hubstore.StepDesigned), At: f.At,
 				SHA: f.AtSHA, Note: f.Note("note"), Source: hubstore.EvObserved})
 		case hubstore.FactTest:
 			// Only the first test counts: fixing and running it again never rewrites history.
