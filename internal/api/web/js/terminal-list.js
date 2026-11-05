@@ -223,8 +223,6 @@ function termCold(t) {
   if (t && t.supervised) return false;
   // A parked card keeps its status but its process is gone.
   if (t && t.parked_at) return true;
-  // A held permission is live with no runner atrium holds: the orphan reaper, not the list, decides it went away.
-  if (t && t.status === "needs-permission") return false;
   return !(t && TERM_LIVE_STATUS.includes(t.status)) || runnerGone(t);
 }
 
