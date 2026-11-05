@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
@@ -385,16 +386,16 @@ func (rc *Receiver) cannotCreate(ref Ref, operator bool) string {
 	s := rc.h.Store()
 	switch {
 	case operator:
-		return ref.Name() + " is not in the hub's store. the operator makes it with `atrium rooms git init <url>`, and pushes after"
+		return html.EscapeString(ref.Name()) + " is not in the hub's store. the operator makes it with `atrium rooms git init <url>`, and pushes after"
 	case !rc.createOnPush():
-		return ref.Name() + " is not in the hub's store, and this hub does not make a repository on a push. " +
+		return html.EscapeString(ref.Name()) + " is not in the hub's store, and this hub does not make a repository on a push. " +
 			"ask the operator to run `atrium rooms git init <url>` for it"
 	}
 	if hit := s.collision(ref); hit != "" {
-		return ref.Name() + " cannot be made, because " + hit + " is in the store and a disk that ignores case would make them one"
+		return html.EscapeString(ref.Name()) + " cannot be made, because " + hit + " is in the store and a disk that ignores case would make them one"
 	}
 	if _, err := os.Stat(s.dir(ref)); err == nil {
-		return ref.Name() + " cannot be made, because something is already at that name that the store did not make. " +
+		return html.EscapeString(ref.Name()) + " cannot be made, because something is already at that name that the store did not make. " +
 			"the operator takes it in with `atrium rooms git init <url>`"
 	}
 	return ""
