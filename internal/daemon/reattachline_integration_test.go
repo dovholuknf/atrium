@@ -119,3 +119,24 @@ func TestAReattachedRunnerShowingOnlyASuggestionDeliversAHeldSayWithNoKey(t *tes
 		t.Fatalf("the held say was not delivered: %q", f.written())
 	}
 }
+
+// A turn that ended after a restart left the line unsure, because a Stop was not taken as proof, and an idle card at
+// an empty prompt held its mail for 20 minutes.
+func TestAStopAfterAReattachOpensTheGateUnlessAKeyCameSince(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	_, r := runningCard(t, d, "", time.Minute)
+	r.reattached.Store(true)
+	r.line.lost(reattachLineKey)
+	if !r.resetLineAtStop() || !r.peerGateOpen() {
+		t.Fatalf("the first Stop after the reattach left the gate shut: %+v", r.typing())
+	}
+
+	_, r2 := runningCard(t, d, "", time.Minute)
+	r2.reattached.Store(true)
+	r2.line.lost(reattachLineKey)
+	r2.noteOperatorTyped([]byte("x"))
+	if r2.resetLineAtStop() || r2.peerGateOpen() {
+		t.Fatal("a Stop emptied a draft typed since the reattach")
+	}
+}
