@@ -116,6 +116,9 @@ func encryptPushWith(plaintext, uaPublic, authSecret []byte, eph *ecdh.PrivateKe
 	if err != nil {
 		return nil, err
 	}
+	if len(rec) > 1<<20 {
+		return nil, errors.New("the push payload is too large")
+	}
 	// The header: salt, record size, the key id's length, and the key id, which is the ephemeral public key.
 	out := make([]byte, 0, 16+4+1+len(asPublic)+len(rec)+16)
 	out = append(out, salt...)
