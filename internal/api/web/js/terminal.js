@@ -1025,6 +1025,7 @@ function openTerm(task) {
   // decorations were painted on a buffer that no longer exists.
   const findbar = document.getElementById("t-find");
   if (findbar) findbar.hidden = true;
+  clearFind();
   deadPaneHide();
   termWait(typeof openingSay === "function" ? openingSay(task.id) : "");
   // A different card means the runner again. A shell belongs to the card it
