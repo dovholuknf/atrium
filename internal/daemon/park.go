@@ -263,7 +263,8 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 				"runner or directory it used", t.DisplayTitle()))
 			return
 		}
-		if _, err := d.Launch(d.reopenRequest(t)); err != nil {
+		req := d.reopenRequest(t)
+		if _, err := d.Launch(req); err != nil {
 			// Mapped the way `api.launch` maps it: a conversation held by another
 			// card is a 409, anything else is the request's problem, never a 500.
 			code := http.StatusBadRequest
@@ -274,6 +275,10 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if req.Resume == "" {
+			_, _ = w.Write([]byte(`{"ok":true,"started":true,"fresh":true,"note":"no conversation to resume: this is a new one"}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"ok":true,"started":true}`))
 		return
 	}

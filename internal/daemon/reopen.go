@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -253,15 +255,30 @@ func (d *Daemon) reopenWanted() []*store.Task {
 func (d *Daemon) reopenResume(t *store.Task) string {
 	id := t.ResumeID
 	if id == "" {
+		d.startedFresh(t, "this card has no conversation id recorded")
 		return ""
 	}
 	if !api.SessionExists(t.Worktree, id) {
 		log.Printf("[atrium] %s resumed conversation %s, which is gone. starting fresh", t.ID, id)
+		d.startedFresh(t, fmt.Sprintf("conversation %s is not on disk", id))
 		return ""
 	}
 	if h := d.resumeHeld(t.ID, id); h != nil {
 		d.noteHeldResume(t.ID, "reopen", &heldResume{resume: id, holder: h})
+		d.startedFresh(t, fmt.Sprintf("%q holds conversation %s and is live", h.DisplayTitle(), id))
 		return ""
 	}
 	return id
+}
+
+// startedFresh says on the card that its resume starts a new conversation, and settles the questions the old one
+// asked, which nobody can answer in the new one.
+func (d *Daemon) startedFresh(t *store.Task, why string) {
+	d.noteResume(t.ID, store.ResumeFresh, map[string]any{
+		"reason": "resumed as a new conversation: " + why + ". what the card asked before is from the previous session",
+	})
+	if _, _, err := d.st.DismissQuestions(t.ID, time.Now()); err != nil {
+		log.Printf("[atrium] clear %s questions: %v", t.ID, err)
+	}
+	d.Publish(t.ID)
 }
