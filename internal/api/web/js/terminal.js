@@ -2046,7 +2046,7 @@ async function uploadIntoTerm(files) {
   const paths = (res.paths || []).join(" ");
   // The preamble says what the path is for. A bare path is what a person types
   // when they mean "look at this", and it is not what they say.
-  const pre = preambleOf(await pasteSettings());
+  const pre = preambleForFiles(await pasteSettings(), files);
   // On a phone with the composer up the paths go into it, at its caret (js/tcompose.js).
   if (paths && typeof tcomposeInsert === "function" && tcomposeInsert(paths)) pasteEnd("the paths going into the message box");
   else if (paths) sendInput(pre + paths + " ", false, true);
