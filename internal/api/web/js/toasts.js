@@ -62,7 +62,7 @@ async function landableCard(id, superseded) {
   const until = Date.now() + landWaitMs;
   for (;;) {
     let t = null;
-    try { t = await api(`/v1/tasks/${id}`); } catch (e) {}
+    try { t = await api(`/v1/tasks/${encodeURIComponent(id)}`); } catch (e) {}
     if (t && (t.supervised || !terminalComing(t))) return t;
     if (Date.now() >= until || superseded()) return t;
     await new Promise(r => setTimeout(r, landStepMs));
