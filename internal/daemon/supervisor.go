@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
@@ -1916,6 +1917,8 @@ func (r *runner) writeLocked(chunk []byte) {
 		return
 	}
 	r.fed += int64(len(chunk))
+	// A /clear sends ESC[3J, which would erase the history the ring and every pane keep. Dropped here, once, for both.
+	chunk = bytes.ReplaceAll(chunk, []byte("\x1b[3J"), nil)
 	_, _ = r.buf.Write(chunk)
 	r.fanoutLocked(chunk)
 }
