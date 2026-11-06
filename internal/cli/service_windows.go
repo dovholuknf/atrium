@@ -158,6 +158,7 @@ func installService(o serviceOpts) error {
 		fmt.Printf("  it starts only when you run: net start %s\n  to start it at boot instead: sc config %s start= auto\n", o.name, o.name)
 	}
 	fmt.Printf("  start it now: net start %s\n  stop it: net stop %s\n", o.name, o.name)
+	fmt.Printf("  if the account's password changes, run: atrium service password --name %s\n", o.name)
 	return nil
 }
 
@@ -205,6 +206,36 @@ func servicePassword(file, account string, interactive bool) (string, error) {
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	return string(b), err
+}
+
+func passwordService(name, file string) error {
+	m, err := mgr.Connect()
+	if err != nil {
+		return fmt.Errorf("could not open the service manager: %w. this needs an administrator", err)
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(name)
+	if err != nil {
+		return fmt.Errorf("no service named %s: %w", name, err)
+	}
+	defer s.Close()
+	pw, err := servicePassword(file, "the service's account", term.IsTerminal(int(os.Stdin.Fd())))
+	if err != nil {
+		return err
+	}
+	if pw == "" {
+		return errors.New("a blank password cannot start a service. give the account a password first")
+	}
+	p, err := syscall.UTF16PtrFromString(pw)
+	if err != nil {
+		return err
+	}
+	const noChange = windows.SERVICE_NO_CHANGE
+	if err := windows.ChangeServiceConfig(s.Handle, noChange, noChange, noChange, nil, nil, nil, nil, nil, p, nil); err != nil {
+		return err
+	}
+	fmt.Printf("  stored the new password for service %s. start it with: net start %s\n", name, name)
+	return nil
 }
 
 func uninstallService(name string) error {
