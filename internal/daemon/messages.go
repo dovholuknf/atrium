@@ -655,7 +655,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// A PAUSED CARD IS WOKEN ONLY BY WAKE: the operator put it down, so an ordinary say does not undo that.
 	if gate == sayPaused && gated != nil && body.Wake {
 		if err := d.wakePaused(taskID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return
 		}
 		woke, gate = true, sayOK

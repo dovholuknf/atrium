@@ -162,7 +162,7 @@ func (d *Daemon) wakePaused(taskID, via string) error {
 	if err != nil {
 		return err
 	}
-	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 	t, err = d.st.Get(taskID)
 	if err != nil {
@@ -189,7 +189,7 @@ func (d *Daemon) wakePaused(taskID, via string) error {
 	d.queueHandoffWake(taskID)
 	d.injectKept(taskID)
 	log.Printf("[atrium] %s was paused and is resumed (%s)", t.DisplayTitle(), via)
-	d.publishTask(taskID)
+	d.publishCard(taskID)
 	return nil
 }
 

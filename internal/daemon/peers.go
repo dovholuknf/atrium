@@ -332,7 +332,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	}
 	if gate == sayPaused && !wake {
 		if text == "" {
-			writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s is paused. say it with wake to resume it", to))
+			small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("%s is paused. say it with wake to resume it", to))
 			return nil
 		}
 		d.keepOnCard(w, from, target, verb, text, when, kind, reply, "it is paused. say it again with wake to resume it")
@@ -367,7 +367,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	}
 	if gate == sayPaused {
 		if err := d.wakePaused(target.ID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return nil
 		}
 		woken := *target
