@@ -358,6 +358,8 @@ async function resumeStart(id, t, where, pick, full) {
   const resume = pick ? pick : await pickSession(id, t);
   if (resume === null) return;
 
+  // /v1/launch refuses a paused card, so it comes back first.
+  if (t.status === "paused" && !(await patchTask(id, { status: "running" }))) return;
   openingStart(id);
   const start = (withResume) => api("/v1/launch", {
     method: "POST", headers: { "Content-Type": "application/json" },
