@@ -240,7 +240,7 @@ function scriptsForFile(ix, rel) {
     if (/board-source\.js/.test(src) && path.extname(rel) === ".js") {
       const st = tokens(src);
       const hits = [...decl].filter(t => st.has(t) && /^[A-Za-z_$][\w$]*$/.test(t) && (ix.df.get(t) || 0) / ix.nUnits <= COMMON_SHARE &&
-        new RegExp("\\b(?:function\\s+|lift\\(\"|function )" + t.replace(/\$/g, "\\$") + "\\b|\\b" + t.replace(/\$/g, "\\$") + "\\(").test(src));
+        new RegExp("\\b(?:function\\s+|lift\\(\"|function )" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b|\\b" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\(").test(src));
       if (hits.length) out.push({ script: s, why: "it lifts " + hits.slice(0, 3).join(", ") + " out of the board" });
     }
   }

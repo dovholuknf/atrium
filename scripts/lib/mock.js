@@ -495,6 +495,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (mock.serveSW && (url === "/sw.js" || url === "/down.html")) {
+    // codeql[js/path-injection] url equals "/sw.js" or "/down.html" in the if above
     fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
       if (err) { res.writeHead(404); res.end(""); return; }
       res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html",
@@ -513,10 +514,12 @@ const server = http.createServer((req, res) => {
   }
   if (url === "/read.html" || url === "/read.js") {
     res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html" });
+    // codeql[js/path-injection] url equals "/read.html" or "/read.js" in the if above
     res.end(fs.readFileSync(path.join(WEB_ROOT, url)));
     return;
   }
   if (/^\/(js|css)\/[A-Za-z0-9_.-]+\.(js|css)$/.test(url)) {
+    // codeql[js/path-injection] url matched ^/(js|css)/[A-Za-z0-9_.-]+\.(js|css)$, one file name with no separator, so it stays under WEB_ROOT
     return fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
       if (err) { res.writeHead(404); res.end(""); return; }
       res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/css" });
