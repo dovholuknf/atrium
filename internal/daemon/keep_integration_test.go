@@ -280,7 +280,7 @@ func TestAWakeSayToAPausedCardResumesItAndDelivers(t *testing.T) {
 	d.sup.remove(target.ID)
 	var f *fakePTY
 	launched := 0
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		launched++
 		if cur, _ := d.st.Get(target.ID); cur.Status == store.StatusPaused {
 			t.Errorf("launched while still paused")
@@ -311,7 +311,7 @@ func TestAWakeSayToAPausedCardResumesItAndDelivers(t *testing.T) {
 	if cur, _ := d.st.Get(target.ID); cur.Status == store.StatusPaused {
 		t.Fatal("still paused after the wake")
 	}
-	d.wakeSawSession(target.ID, "conv-1")
+	d.WakeSawSession(target.ID, "conv-1")
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(f.written(), "\r") && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
