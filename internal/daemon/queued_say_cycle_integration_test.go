@@ -81,8 +81,11 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 	got := f.written()
 	wake := strings.Index(got, ncWakeMark)
 	for _, s := range []string{"SAYDONEONE", "SAYDONETWO", "SAYNOW"} {
-		// A say typed into the old context is repeated after the wake, once.
-		if n := strings.Count(got[wake:], s); n != 1 {
+		want := 1
+		if s == "SAYNOW" {
+			want = 0 // typed before the handoff was written, so the handoff holds it
+		}
+		if n := strings.Count(got[wake:], s); n != want {
 			t.Fatalf("%s arrived %d times after the wake: %q", s, n, got)
 		}
 	}
