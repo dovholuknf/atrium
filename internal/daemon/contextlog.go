@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -49,7 +50,7 @@ func (d *Daemon) noteInContext(taskID, from, text, kind string) {
 	}
 	d.inCtx.mu.Lock()
 	defer d.inCtx.mu.Unlock()
-	l := append(d.inCtx.by[taskID], deliveredSay{From: from, Text: text, Kind: kind, Turn: turn})
+	l := append(d.inCtx.by[taskID], deliveredSay{From: from, Text: text, Kind: kind, Turn: turn, At: time.Now()})
 	if len(l) > deliveredCap {
 		l = l[len(l)-deliveredCap:]
 	}

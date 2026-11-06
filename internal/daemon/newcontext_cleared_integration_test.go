@@ -94,3 +94,52 @@ func TestAColdCycleClearedFromTheBoardIsNotStartedAgainOverTheLimit(t *testing.T
 		t.Fatalf("a second cycle started: %d prompts, run %v", prompts(f), d.Nctx.Get(task.ID))
 	}
 }
+
+func boardClear(d *Daemon, id string) int {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	d.HandleNewContext(rec, req)
+	return rec.Code
+}
+
+// readyMidTurn is the card writing its handoff and running `atrium ready` inside a turn, after the board cleared it.
+func readyMidTurn(t *testing.T, d *Daemon, id, file string) {
+	t.Helper()
+	midTurn(d, id)
+	if err := os.WriteFile(file, handoffBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := d.st.Get(id)
+	if _, code, err := d.Ready(task); err != nil {
+		t.Fatalf("refused with %d: %v", code, err)
+	}
+}
+
+func TestABoardClearPastTheAckStillTypesTheClear(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	id, file, f := clearedCycle(t, d)
+	readyMidTurn(t, d, id, file)
+	code := boardClear(d, id)
+	ncTurnEnds(d, id)
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+	if code != http.StatusConflict {
+		t.Fatalf("a DELETE past the ack answered %d, want 409", code)
+	}
+}
+
+func TestABoardClearAfterTheClearStillTypesTheWake(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	id, file, f := clearedCycle(t, d)
+	readyMidTurn(t, d, id, file)
+	ncTurnEnds(d, id)
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+	code := boardClear(d, id)
+	d.WakeSawSession(id, "conv-new")
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), ncWakeMark) })
+	if code != http.StatusConflict {
+		t.Fatalf("a DELETE after /clear answered %d, want 409", code)
+	}
+}

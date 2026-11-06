@@ -38,7 +38,7 @@ func cycleToWake(t *testing.T, d *Daemon, worker *store.Task, f *fakePTY) {
 }
 
 // Cycling a worker's context opens no report debt and ends in no silent-stop notice. The launcher's last say went
-// into the old context, so it is handed back after the wake, and that repeat is not a new ask.
+// into the old context and the handoff holds it, so it is not handed back.
 func TestCyclingAWorkersContextOwesNothingAndIsNoSilentStop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
@@ -59,10 +59,9 @@ func TestCyclingAWorkersContextOwesNothingAndIsNoSilentStop(t *testing.T) {
 
 	cycleToWake(t, d, worker, f)
 
-	// The handed back say is queued behind the wake and still arrives, as a repeat.
-	until(t, "the repeat to be queued or typed", func() bool {
-		return strings.Contains(f.written(), "do the errand") || len(pendingFrom(t, d, worker.ID)) > 0
-	})
+	if strings.Contains(f.written(), "do the errand") || len(pendingFrom(t, d, worker.ID)) > 0 {
+		t.Fatal("a say that reached the context before the handoff was written was handed back")
+	}
 	after, err := d.st.Get(worker.ID)
 	if err != nil {
 		t.Fatal(err)

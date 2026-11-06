@@ -3121,6 +3121,24 @@ async function resumeSpinnerSection(browser, base) {
       const chip = await p.evaluate(() => [...document.querySelectorAll(".stackrow[data-id=\"land-res\"] .chip.opening")].map(e => e.textContent.trim()));
       if (!/could not start it: .*no such runner/.test(chip[0] || "")) fail("a failed launch left no reason on the row: " + JSON.stringify(chip));
     }
+
+    // 6. The dead pane's Resume on a paused card unpauses it and then launches, with the picked conversation.
+    if (isNew) {
+      launchAnswer = null;
+      const calls = [];
+      await ctx.route("**/v1/tasks/land-res", async route => {
+        if (route.request().method() !== "PATCH") { await route.fallback(); return; }
+        calls.push("patch:" + route.request().postData());
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) });
+      });
+      await p.evaluate(() => { openingEnd("land-res"); });
+      const n = launches;
+      await p.evaluate(() => { resumeCard("land-res", Object.assign({}, lastTasks.find(x => x.id === "land-res"), { status: "paused" }), "terms", "sess-2"); });
+      await until(() => launches === n + 1, 5000, "the paused resume to launch");
+      calls.push("launch");
+      release();
+      if (calls[0] !== 'patch:{"status":"running"}' || calls[1] !== "launch") fail("a paused card's resume did not unpause before it launched: " + JSON.stringify(calls));
+    }
   } finally {
     mock.tasksMode = was;
     await ctx.close();

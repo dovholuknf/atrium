@@ -800,6 +800,17 @@ function Get-PathRecord([string]$Dir = $ToolchainDir) {
   return @(Get-Content -LiteralPath $f | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
+# Get-LoginPath answers Machine then User PATH from the registry, expanded and deduped, because a WMI child's %PATH% is
+# Machine only and claude and codex live on the User one.
+function Get-LoginPath {
+  $out = @()
+  foreach ($k in 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 'HKCU:\Environment') {
+    $v = (Get-Item -LiteralPath $k -ErrorAction SilentlyContinue).GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $out += @($v -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_.Trim()) } | Where-Object { $_ })
+  }
+  return @($out | Select-Object -Unique)
+}
+
 # Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
 # when the result is still in one. Returns the pid of the cmd that runs it. Throws only when neither route could start it.
 function Start-Jobless([string]$Command, [string]$Tag) {
@@ -815,7 +826,8 @@ function Start-Jobless([string]$Command, [string]$Tag) {
   if ($route -eq 'wmi') {
     try {
       $launch = Join-Path $Base "launch-$Tag.cmd"
-      New-LaunchScript $launch $Command $record
+      $login = @(Get-LoginPath | Where-Object { $record -notcontains $_ })
+      New-LaunchScript $launch $Command (@($record) + $login)
       $procId = Start-Wmi "cmd.exe /c `"$launch`""
     } catch {
       Say "WARNING: could not start $Tag through WMI ($($_.Exception.Message)). falling back to breakaway, which leaves it in any outer job"

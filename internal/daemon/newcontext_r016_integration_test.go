@@ -30,7 +30,7 @@ func failedCycle(t *testing.T, d *Daemon, id string) {
 	until(t, "the chip to fail", func() bool { return failedWith(d, id) != "" })
 }
 
-func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
+func TestAFailedChipWithAHandoffStaysWhenANewConversationBegins(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
@@ -40,7 +40,6 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 	id := task.ID
 	failedCycle(t, d, id)
 
-	// The same conversation starting again is not proof.
 	d.WakeSawSession(id, "conv-A")
 	if failedWith(d, id) == "" {
 		t.Fatal("the chip cleared on a SessionStart in the same conversation")
@@ -49,14 +48,11 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 	if failedWith(d, id) == "" {
 		t.Fatal("the chip cleared on a SessionStart with no conversation id")
 	}
-	// A new conversation is.
 	d.WakeSawSession(id, "conv-B")
-	if d.NewContextFor(id) != nil {
-		t.Fatalf("the chip stayed after a new conversation began: %v", d.NewContextFor(id))
+	if failedWith(d, id) == "" {
+		t.Fatalf("the chip went when a new conversation began without reading its handoff: %v", d.NewContextFor(id))
 	}
 
-	// The reason stays in the card's history. The run records it just after it
-	// marks the chip failed, so it can land a moment after the chip does.
 	until(t, "the failure reason in the card's history", func() bool {
 		evs, err := d.st.Events(id, 50)
 		if err != nil {
