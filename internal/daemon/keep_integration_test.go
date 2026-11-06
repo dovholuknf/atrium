@@ -259,3 +259,71 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 		t.Fatalf("undelivered %d, want 0", n)
 	}
 }
+
+// A say with wake to a paused card resumes it and delivers the words once it is ready. Without wake the card stays
+// paused and the words are kept, never answered as typed or started.
+func TestAWakeSayToAPausedCardResumesItAndDelivers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	d.hk.keptTick, d.hk.keptSettle = 20*time.Millisecond, 100*time.Millisecond
+	target := cardFor(t, d, "shelved")
+	peerCard(t, d, "alice")
+	t.Cleanup(func() { d.pending.stopAll() })
+	if err := d.st.SetResumeID(target.ID, "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(target.ID, store.StatusPaused); err != nil {
+		t.Fatal(err)
+	}
+	d.sup.remove(target.ID)
+	var f *fakePTY
+	launched := 0
+	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		launched++
+		if cur, _ := d.st.Get(target.ID); cur.Status == store.StatusPaused {
+			t.Errorf("launched while still paused")
+		}
+		_, f = typedRunner(t, d, target.ID)
+		return d.st.Get(target.ID)
+	}
+
+	out := sayViaMessage(t, d, "alice", target.ID, "HELDONE")
+	if out["reachable"] != "kept" || launched != 0 {
+		t.Fatalf("a say without wake: %v, launched %d", out, launched)
+	}
+	if cur, _ := d.st.Get(target.ID); cur.Status != store.StatusPaused {
+		t.Fatalf("status %s, want paused", cur.Status)
+	}
+
+	raw := `{"from":"alice","text":"WAKEONE","wake":true}`
+	r := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+target.ID+"/message", strings.NewReader(raw))
+	r.SetPathValue("id", target.ID)
+	w := httptest.NewRecorder()
+	d.handleMessage(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("wake say answered %d: %s", w.Code, w.Body.String())
+	}
+	if launched != 1 {
+		t.Fatalf("resumed %d times, want 1", launched)
+	}
+	if cur, _ := d.st.Get(target.ID); cur.Status == store.StatusPaused {
+		t.Fatal("still paused after the wake")
+	}
+	d.wakeSawSession(target.ID, "conv-1")
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(f.written(), "\r") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(10 * d.hk.keptTick)
+	got := f.written()
+	for _, want := range []string{"HELDONE", "WAKEONE"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s missing from the turn: %q", want, got)
+		}
+	}
+	if n, _ := d.st.UndeliveredCount(target.ID); n != 0 {
+		t.Fatalf("undelivered %d, want 0", n)
+	}
+}

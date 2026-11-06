@@ -174,6 +174,8 @@ const (
 	sayOK     = ""
 	sayGone   = "gone"
 	sayParked = "parked"
+	// sayPaused is a card the operator put down: no process, and woken only by an explicit wake.
+	sayPaused = "paused"
 )
 
 // sayGate is the one question both say paths ask before delivering: is there
@@ -190,6 +192,9 @@ func (d *Daemon) sayGate(t *store.Task) string {
 	}
 	if small.IsParked(t) {
 		return sayParked
+	}
+	if t.Status == store.StatusPaused && d.sup.get(t.ID) == nil {
+		return sayPaused
 	}
 	if d.sessionGone(t) {
 		return sayGone
