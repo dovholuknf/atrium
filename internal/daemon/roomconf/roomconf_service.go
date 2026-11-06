@@ -13,6 +13,7 @@ type Options struct {
 	AgentAddr, HumanAddr, DBPath, Room, RoomDir, LocationFile string
 	// HubDialToken is written to the private address file only.
 	HubDialToken string
+	Service      bool
 }
 
 // Service is the room's own configuration: export, import, where-am-i, health, lifecycle and ready.

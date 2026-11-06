@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -30,6 +31,7 @@ func runAsService(args []string) (int, bool) {
 	}
 	toRoomLog(args)
 	h := &roomService{args: args}
+	serviceRestart = func() { h.restart.Store(true) }
 	if err := svc.Run("atrium", h); err != nil {
 		log.Printf("[service] %v", err)
 		return 1, true
@@ -56,8 +58,9 @@ func toRoomLog(args []string) {
 }
 
 type roomService struct {
-	args []string
-	code int
+	args    []string
+	code    int
+	restart atomic.Bool
 }
 
 // Execute is the SCM's view of the room. Stop and shutdown are the room's ctrl-c, which leaves the pty host's runners up.
@@ -69,6 +72,7 @@ func (s *roomService) Execute(_ []string, req <-chan svc.ChangeRequest, status c
 	for {
 		select {
 		case code := <-done:
+			code = serviceExitCode(code, s.restart.Load())
 			s.code = code
 			return code != 0, uint32(code)
 		case c := <-req:

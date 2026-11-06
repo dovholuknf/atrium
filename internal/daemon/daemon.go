@@ -95,6 +95,8 @@ type Options struct {
 	// RoomDir is where a room keeps its certificate (`atrium room --dir`).
 	// It is only recorded in the location file, so a restart can pass it back.
 	RoomDir string
+	// Service is set when the SCM runs this room. Only recorded in the location file.
+	Service bool
 	// StartedBy is the `--started-by <kind>:<nonce>` a supervisor gave this
 	// process. KEPT IN MEMORY ONLY: never exported to the environment and never
 	// passed to anything this process spawns, so no child of a supervised room
@@ -1646,7 +1648,7 @@ func (d *Daemon) initServices() {
 		Opts: func() roomconf.Options {
 			o := d.opts
 			return roomconf.Options{AgentAddr: o.AgentAddr, HumanAddr: o.HumanAddr, DBPath: o.DBPath, Room: o.Room,
-				RoomDir: o.RoomDir, LocationFile: o.LocationFile, HubDialToken: d.hublinkService.HubDialToken()}
+				RoomDir: o.RoomDir, LocationFile: o.LocationFile, HubDialToken: d.hublinkService.HubDialToken(), Service: o.Service}
 		},
 		Calls: roomconf.Calls{
 			PidAlive:          func(pid int) bool { return d.hk.pidAlive(pid) },
