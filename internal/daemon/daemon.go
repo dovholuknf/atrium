@@ -234,6 +234,9 @@ type Daemon struct {
 	// own restart rather than news. See settling.go.
 	settle settling
 
+	// reattached closes when startup has re-adopted the pty host's runners. The reaper waits on it when non-nil.
+	reattached chan struct{}
+
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
 	up updates
@@ -1274,6 +1277,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
+	if !d.opts.Passive {
+		d.reattached = make(chan struct{})
+	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
 	d.startRoomStats(ctx)
@@ -1332,6 +1338,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// host still holding runners must be picked up or the next start would run a second copy of each.
 			d.waitForHost()
 			d.reattachRuns()
+			close(d.reattached)
 			d.startFixtures()
 			d.reopenSaved()
 			// Throwaways whose session ended when the last daemon did, so
