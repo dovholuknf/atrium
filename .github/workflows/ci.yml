@@ -15,6 +15,10 @@ name: ci
 
 run-name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name && format('ci {0}', inputs.name) || format('ci {0} {1}', inputs.os, inputs.suite)) || github.event_name == 'push' && github.event.head_commit.message || 'ci' }}
 
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 on:
   push:
     branches: ["**", "!dependabot/**"]
