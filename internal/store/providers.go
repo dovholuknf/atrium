@@ -417,6 +417,9 @@ func (st *Store) SaveProviderRepo(r ProviderRepo) (*ProviderRepo, error) {
 	if strings.ContainsAny(r.Repo, "/\\") || strings.ContainsAny(r.Org, "/\\") {
 		return nil, errors.New("an org and a repo are one path segment each, with no slashes")
 	}
+	if r.Repo == "." || r.Repo == ".." || r.Org == "." || r.Org == ".." {
+		return nil, errors.New("an org and a repo are names, not . or ..")
+	}
 	err = st.guard(func() error {
 		adopted := ts(st.now())
 		row := st.db.QueryRow(`SELECT adopted_at FROM provider_repo

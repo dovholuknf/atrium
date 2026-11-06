@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -133,5 +134,16 @@ func TestCIOnBitbucketIsNotSupported(t *testing.T) {
 	g, _ := New(GitHub, "", nil)
 	if _, err := CIOf(g); err != nil {
 		t.Errorf("%v", err)
+	}
+}
+
+func TestDownloadDirKeepsADotsOnlyNameInItsRunFolder(t *testing.T) {
+	ref := Ref{Host: "github.com", Org: "o", Repo: "r"}
+	run := DownloadDir("dest", ref, 7, "x")
+	for _, name := range []string{"..", ".", "...", "../.."} {
+		got := DownloadDir("dest", ref, 7, name)
+		if filepath.Dir(got) != filepath.Dir(run) || filepath.Base(got) == "." || filepath.Base(got) == ".." {
+			t.Errorf("artifact %q goes to %s, want a folder of its own beside %s", name, got, run)
+		}
 	}
 }

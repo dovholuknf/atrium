@@ -30,3 +30,14 @@ func TestLaunchRefusedInADirectoryACardHolds(t *testing.T) {
 		t.Fatalf("skip = %v, %v, want the card already there", got, err)
 	}
 }
+
+// A launch whose cwd names a share is refused before anything stats it, so it opens no SMB session.
+func TestLaunchRefusesANetworkCwd(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	h := slowHarness(t, d)
+	_, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: "//evil/share"})
+	if err == nil || !strings.Contains(err.Error(), "network path") {
+		t.Fatalf("err = %v, want a network path refusal", err)
+	}
+}

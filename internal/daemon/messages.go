@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -282,7 +283,8 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	if in.Runner != "" {
 		obs.Runner = in.Runner
 	}
-	if in.Cwd != "" {
+	// a share is never a card's worktree: every later Stat of it would open SMB to that host
+	if in.Cwd != "" && !safepath.Network(in.Cwd) {
 		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
 	}
 	// Which conversation this is, so a report with no pid knows whether the pid

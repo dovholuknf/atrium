@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -76,7 +77,11 @@ func TestLaunchCwdIgnoresARelativePath(t *testing.T) {
 func TestLaunchCwdRefusesANetworkPath(t *testing.T) {
 	t.Parallel()
 	srv, _, _ := fileServer(t)
-	for _, p := range []string{`\\evil\share`, `//evil/share`, `\\?\UNC\evil\share`, `\\.\pipe\x`, `/\evil/share`, `\\?\C:\x`} {
+	paths := []string{`\\evil\share`, `//evil/share`, `\\?\UNC\evil\share`, `\\.\pipe\x`, `/\evil/share`, `\\?\C:\x`}
+	if runtime.GOOS == "windows" {
+		paths = append(paths, `\??\UNC\evil\share`)
+	}
+	for _, p := range paths {
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/launch/cwd?path="+url.QueryEscape(p), nil))
 		if rec.Code != http.StatusBadRequest {

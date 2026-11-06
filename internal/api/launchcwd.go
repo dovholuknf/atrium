@@ -24,14 +24,8 @@ import (
 // can launch. Read only, creates nothing.
 func (s *Server) launchCwd(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.URL.Query().Get("path"))
-	// A UNC PATH IS REFUSED BEFORE ANYTHING TOUCHES IT. On a Windows room
-	// `os.Stat(\\host\share)` opens SMB to that host with this user's credentials,
-	// which hands the user's NTLM hash to whatever host the caller named, and the
-	// hub fans this call out to every candidate room. Any two leading slashes of
-	// either kind, since Windows reads `//host` and `\\?\` and `\\.\` the same way.
-	// The hub refuses them first (internal/link/launchroute.go), and this makes a
-	// direct call safe too.
-	if len(raw) >= 2 && (raw[0] == '/' || raw[0] == '\\') && (raw[1] == '/' || raw[1] == '\\') {
+	// a share or device path is refused before any Stat: on Windows that opens SMB and hands the named host an NTLM hash
+	if safepath.Network(raw) {
 		writeErr(w, http.StatusBadRequest, errors.New("a network path is not a place to run"))
 		return
 	}
@@ -42,6 +36,7 @@ func (s *Server) launchCwd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"exists": false, "dir": false})
 		return
 	}
+	// codeql[go/path-injection] Network refused shares and device paths above, and a boolean is all POST /v1/launch already answers
 	fi, err := os.Stat(safepath.NoNUL(path))
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"exists": err == nil,

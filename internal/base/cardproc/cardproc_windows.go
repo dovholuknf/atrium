@@ -5,6 +5,7 @@ package cardproc
 import (
 	"context"
 	"errors"
+	"math"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -18,9 +19,10 @@ import (
 
 // StartTime is when pid started, as text that only compares equal for the same process.
 func StartTime(pid int) (string, error) {
-	if pid <= 0 {
+	if pid <= 0 || int64(pid) > math.MaxUint32 {
 		return "", ErrGone
 	}
+	// codeql[go/incorrect-integer-conversion] pid is bounded to 1..MaxUint32 by the check above
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {

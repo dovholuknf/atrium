@@ -438,3 +438,21 @@ func TestCompactingEndsOnTheNextEvent(t *testing.T) {
 		t.Fatalf("activity is %s/%s after a tool started, wanted tool/Bash", got.What, got.Tool)
 	}
 }
+
+// A hook that reports a share as its cwd never makes it the card's worktree, so nothing later stats it.
+func TestAHookCwdOnAShareIsNotTheWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+	resp := postJSON(t, "http://"+d.opts.AgentAddr+"/stop", map[string]any{"agent": "unc-cwd", "cwd": "//evil/share"})
+	resp.Body.Close()
+	task, err := d.st.GetByWireName("unc-cwd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || strings.Contains(task.Worktree, "evil") {
+		t.Fatalf("card %+v, want one with no share for a worktree", task)
+	}
+}

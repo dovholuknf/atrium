@@ -117,6 +117,13 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	if host == "" {
 		host = "github.com"
 	}
+	slugHost := host
+	if p != nil {
+		slugHost = "provider"
+	}
+	if !rules.RepoSlug(slugHost + "/" + req.Org + "/" + req.Repo) {
+		return res, http.StatusBadRequest, errors.New("host, org and repo are names, like github.com/openziti/ziti")
+	}
 	if s.PRForge == nil {
 		return res, http.StatusServiceUnavailable, errors.New("this room has no forge to ask about pull requests")
 	}
@@ -194,6 +201,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		steps.end()
 		return res, http.StatusBadRequest, errors.New("which repository")
 	}
+	// codeql[go/path-injection] prWorktree refused host, org and repo unless rules.RepoSlug, so the path is under the provider or scm root
 	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		steps.end()
 		return res, http.StatusConflict, errors.New(
@@ -228,6 +236,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			strconv.Itoa(req.Number) + ": " + err.Error())
 	}
 	steps.begin("worktree", "making the worktree")
+	// codeql[go/path-injection] prWorktree refused host, org and repo unless rules.RepoSlug, so the path is under the provider or scm root
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		steps.end()
 		return res, http.StatusInternalServerError, err
@@ -238,6 +247,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	if made {
 		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), prWorktreeRef(req.Number)}
 	}
+	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and the values are RepoSlug segments or paths under a root
 	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
@@ -305,6 +315,7 @@ func undoPRWorktree(res prWorktreeResult) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	run := func(args ...string) {
+		// codeql[go/command-injection] git argv with no shell: the undo of a worktree add this request made, with its own fixed arguments
 		cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 		cmd.Dir = filepath.FromSlash(res.Repo)
 		nowindow.Hide(cmd)
