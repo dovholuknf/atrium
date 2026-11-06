@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -48,8 +49,46 @@ const (
 )
 
 func RestartWrapPrompt(path, bin string) string {
-	return "the room is restarting. wrap up the current step, write your state to " + path +
-		", then run " + bin + " ready."
+	return "the room is restarting. do this now, it is an order and not a notice: write your state to " + path +
+		", then run " + bin + " ready. a reply without running it does not end the wait."
+}
+
+func RestartWrapNudge(path, bin string) string {
+	return "you have not run atrium ready: write the handoff to " + path + " and run " + bin + " ready now."
+}
+
+// WriteFallbackHandoff writes the state file the card did not, pointing at the newest earlier handoff of the card
+// and the tail of its history, so the restart wake has something to name. It never replaces a file the card wrote.
+func (d *Service) WriteFallbackHandoff(t *store.Task, path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("# Fallback handoff\n\nThe room wrote this because the card never ran ready after the restart prompt.\n\n")
+	prev, _ := filepath.Glob(strings.TrimSuffix(d.HandoffPath(t), filepath.Ext(d.HandoffPath(t))) + "-*.md")
+	newest, newestAt := "", time.Time{}
+	for _, p := range prev {
+		if fi, err := os.Stat(p); err == nil && p != path && fi.ModTime().After(newestAt) {
+			newest, newestAt = p, fi.ModTime()
+		}
+	}
+	if newest != "" {
+		b.WriteString("Newest earlier handoff: " + filepath.ToSlash(newest) + "\n\n")
+	} else {
+		b.WriteString("No earlier handoff exists for this card.\n\n")
+	}
+	b.WriteString("## Conversation tail\n\n")
+	evs, _ := d.St.Events(t.ID, 40)
+	sort.Slice(evs, func(i, j int) bool { return evs[i].At.Before(evs[j].At) })
+	for _, e := range evs {
+		var p struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(e.Payload, &p) == nil && p.Text != "" {
+			b.WriteString("- " + e.Kind + ": " + logLine(p.Text) + "\n")
+		}
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 func RestartWrapWake(path string, wrote bool, outcome string) string {
@@ -244,6 +283,7 @@ func (d *Service) WrapUpForRestart(ctx context.Context, wait time.Duration, why 
 			rep.Ready = append(rep.Ready, title)
 		case WrapIdle:
 			rep.Idle = append(rep.Idle, title)
+			d.NoteWrapGaveUp(r.T, r.Path, "went idle twice without running ready")
 		default:
 			rep.Unanswered = append(rep.Unanswered, title)
 			if rep.Cancelled {
@@ -251,12 +291,7 @@ func (d *Service) WrapUpForRestart(ctx context.Context, wait time.Duration, why 
 			} else {
 				log.Printf("[atrium] restart wrap-up: %s did not answer within %s", title, wait)
 			}
-			if err := d.St.AppendEvent(r.T.ID, store.EventNotified, map[string]any{
-				"by": WrapBy, "unanswered": true,
-				"text": "restart: did not answer the wrap-up in " + wait.String(),
-			}); err != nil {
-				log.Printf("[atrium] could not record the unanswered wrap-up on %s: %v", r.T.ID, err)
-			}
+			d.NoteWrapGaveUp(r.T, r.Path, "did not answer the wrap-up in "+wait.String())
 		}
 		rep.Asked = append(rep.Asked, title)
 		if r.Outcome != WrapUnanswered {
@@ -283,6 +318,42 @@ func (d *Service) WrapUpForRestart(ctx context.Context, wait time.Duration, why 
 		time.Since(start).Round(time.Millisecond), len(rep.Asked), len(rep.Ready), len(rep.Idle),
 		len(rep.Unanswered), len(rep.Woken))
 	return rep
+}
+
+// AbortWrapWakes is for a restart that did not happen after its wrap-up: the wakes it queued wait for a new runner that
+// is not coming, so they are dropped and each card is told in place that the restart is off.
+func (d *Service) AbortWrapWakes() {
+	for _, w := range d.Wake.All() {
+		if w.By != WrapBy {
+			continue
+		}
+		if _, err := d.ClearWake(w.TaskID, WrapBy); err != nil {
+			log.Printf("[atrium] restart wrap-up: could not drop the wake on %s: %v", w.TaskID, err)
+			continue
+		}
+		run := d.Sup.Get(w.TaskID)
+		if run == nil {
+			continue
+		}
+		text := "the restart did not happen. carry on where you left off."
+		if _, err := d.TypeLabelledGuarded(run, w.TaskID, WrapLabel, text, func() bool { return !d.Act.DialogOpen(w.TaskID) && !d.NcBusy(w.TaskID) }); err != nil {
+			log.Printf("[atrium] restart wrap-up: could not tell %s the restart is off: %v", w.TaskID, err)
+		}
+	}
+}
+
+// NoteWrapGaveUp ends a wait that got no ready: the room writes the fallback handoff and says so on the card's history.
+func (d *Service) NoteWrapGaveUp(t *store.Task, path, what string) {
+	text := "restart: " + what + ", the room wrote a fallback handoff"
+	if err := d.WriteFallbackHandoff(t, path); err != nil {
+		text = "restart: " + what + ", and the fallback handoff could not be written: " + err.Error()
+		log.Printf("[atrium] restart wrap-up: %s: %v", t.DisplayTitle(), err)
+	}
+	if err := d.St.AppendEvent(t.ID, store.EventNotified, map[string]any{
+		"by": WrapBy, "unanswered": true, "text": text,
+	}); err != nil {
+		log.Printf("[atrium] could not record the unanswered wrap-up on %s: %v", t.ID, err)
+	}
 }
 
 // joinWrapUp waits for the wrap-up already running instead of starting another, so a second stop does not skip the
@@ -312,7 +383,7 @@ func (d *Service) JoinWrapUp(ctx context.Context, run *WrapRun) WrapReport {
 func (d *Service) WrapCard(ctx context.Context, t *store.Task, path string, ack <-chan struct{}) string {
 	id := t.ID
 	mid := d.MidTurnInputFor(id)
-	typed, typedBusy, turn0 := false, false, 0
+	typed, typedBusy, turn0, nudged := false, false, 0, false
 	tick := time.NewTicker(d.Hk.WrapTiming.Poll)
 	defer tick.Stop()
 	for {
@@ -360,7 +431,26 @@ func (d *Service) WrapCard(ctx context.Context, t *store.Task, path string, ack 
 		// Asked. Idle is a turn that is over and stayed over. A prompt typed between turns must have started one.
 		if !d.NcBusy(id) && d.Act.SinceBusy(id) >= d.Hk.NcTiming.TurnSettle &&
 			(typedBusy || d.Act.TurnsBegun(id) > turn0) {
-			return WrapIdle
+			if nudged {
+				return WrapIdle
+			}
+			// Idle without ready is not an answer: say so once, firmly, before it is given up on.
+			text := RestartWrapNudge(path, d.Hk.AtriumBinary())
+			turn := 0
+			wrote, err := d.TypeLabelledGuarded(run, id, WrapLabel, text, func() bool {
+				turn = d.Act.TurnsBegun(id)
+				return !d.Act.DialogOpen(id) && !d.NcBusy(id)
+			})
+			if err != nil || !wrote {
+				continue
+			}
+			nudged, typedBusy, turn0 = true, false, turn
+			log.Printf("[atrium] restart wrap-up: %s went idle without ready, told it again", t.DisplayTitle())
+			if err := d.St.AppendEvent(id, store.EventPrompted, map[string]any{
+				"text": text, "via": "terminal", "from": WrapBy,
+			}); err != nil {
+				log.Printf("[atrium] could not record the wrap-up nudge on %s: %v", id, err)
+			}
 		}
 	}
 }

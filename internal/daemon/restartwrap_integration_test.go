@@ -79,7 +79,7 @@ func TestWrapAskedCardSaysReadyAndIsWoken(t *testing.T) {
 	}
 }
 
-func TestWrapAnIdleCardCountsAsAnswered(t *testing.T) {
+func TestWrapAnIdleCardIsToldOnceMoreThenGivenUpOn(t *testing.T) {
 	d := testDaemon(t)
 	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
@@ -88,13 +88,53 @@ func TestWrapAnIdleCardCountsAsAnswered(t *testing.T) {
 	ch := runWrap(d, time.Minute)
 	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
 	ncTurnEnds(d, task.ID)
+	until(t, "the firm re-prompt", func() bool { return strings.Count(f.written(), "you have not run atrium ready") == 1 })
+	if !d.Wrap.Waiting(task.ID) {
+		t.Fatal("the wrap-up stopped waiting on the card's ack after one idle")
+	}
+	midTurn(d, task.ID)
+	ncTurnEnds(d, task.ID)
 	rep := report(t, ch)
 	if len(rep.Idle) != 1 || len(rep.Unanswered) != 0 {
 		t.Fatalf("report = %+v", rep)
 	}
+	if n := strings.Count(f.written(), "you have not run atrium ready"); n != 1 {
+		t.Fatalf("the card was re-prompted %d times", n)
+	}
 	if wakeOf(d, task.ID) == nil {
 		t.Fatal("an idle card that was asked got no wake")
 	}
+	if !historySays(d, task.ID, "went idle twice without running ready") {
+		t.Fatal("the card's history does not say the wait was given up on")
+	}
+}
+
+func TestWrapReadyAfterTheRePromptStillCounts(t *testing.T) {
+	d := testDaemon(t)
+	fastWrap(t, d)
+	task, f, _ := ncCard(t, d)
+	midTurn(d, task.ID)
+
+	ch := runWrap(d, time.Minute)
+	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
+	ncTurnEnds(d, task.ID)
+	until(t, "the firm re-prompt", func() bool { return strings.Contains(f.written(), "you have not run atrium ready") })
+	if _, _, err := d.Ready(task); err != nil {
+		t.Fatalf("ready was refused after the re-prompt: %v", err)
+	}
+	if rep := report(t, ch); len(rep.Ready) != 1 {
+		t.Fatalf("report = %+v", rep)
+	}
+}
+
+func historySays(d *Daemon, id, what string) bool {
+	evs, _ := d.st.Events(id, 100)
+	for _, e := range evs {
+		if strings.Contains(string(e.Payload), what) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWrapTimeoutNamesTheCardAndWakesIt(t *testing.T) {
@@ -133,6 +173,12 @@ func TestWrapTimeoutNamesTheCardAndWakesIt(t *testing.T) {
 	}
 	if d.Wrap.Waiting(task.ID) {
 		t.Fatal("the wrap-up still waits on the card's ack after it ended")
+	}
+	if !strings.Contains(w.Text, "your state is in") {
+		t.Fatalf("the wake names no state file, so no fallback handoff was written: %q", w.Text)
+	}
+	if !historySays(d, task.ID, "the room wrote a fallback handoff") {
+		t.Fatal("the card's history does not say a fallback handoff was written")
 	}
 }
 
@@ -311,4 +357,27 @@ func TestCapWrapWait(t *testing.T) {
 	if got := cycle.CapWrapWait(90 * time.Second); got != 90*time.Second {
 		t.Fatalf("under-cap = %s", got)
 	}
+}
+
+func TestWrapWakeOfARestartThatDidNotHappenIsDroppedAndTheCardTold(t *testing.T) {
+	d := testDaemon(t)
+	fastWrap(t, d)
+	task, f, _ := ncCard(t, d)
+	midTurn(d, task.ID)
+
+	ch := runWrap(d, time.Minute)
+	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
+	if _, _, err := d.Ready(task); err != nil {
+		t.Fatal(err)
+	}
+	report(t, ch)
+	if wakeOf(d, task.ID) == nil {
+		t.Fatal("no wake was queued")
+	}
+	ncTurnEnds(d, task.ID)
+	d.AbortWrapWakes()
+	if wakeOf(d, task.ID) != nil {
+		t.Fatal("the wake of a restart that did not happen is still queued")
+	}
+	until(t, "the card told the restart is off", func() bool { return strings.Contains(f.written(), "the restart did not happen") })
 }

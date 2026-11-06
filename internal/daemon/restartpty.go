@@ -69,6 +69,12 @@ func (d *Daemon) RestartPtyHost(ctx context.Context, wait time.Duration, why str
 	if !immediate {
 		rep.Wrap = d.WrapUpForRestart(ctx, wait, why)
 	}
+	ended := false
+	defer func() {
+		if !ended {
+			d.AbortWrapWakes()
+		}
+	}()
 	// One at a time, and a stop that arrives meanwhile is refused as one with the other kind of ask.
 	if !d.stopAsked.CompareAndSwap(stopAskedNone, stopAskedRunners) {
 		return rep, errors.New("a stop or a pty host restart is already in flight")
@@ -88,6 +94,7 @@ func (d *Daemon) RestartPtyHost(ctx context.Context, wait time.Duration, why str
 	rep.OldPid = pr.Pid
 	log.Printf("[atrium] restarting the pty host (pid %d), room staying up. %s", pr.Pid, logLine(orWord(why, "no reason given")))
 
+	ended = true
 	rep.Ended = len(d.sup.all())
 	d.shortGate()
 	d.stopSupervised(10 * time.Second)
