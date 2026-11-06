@@ -1004,7 +1004,7 @@ func (d *Service) RunNewContext(taskID string, gen uint64) {
 	}
 	if finish(map[string]any{"done": true, "path": file}) {
 		log.Printf("[atrium] new context on %s done", taskID)
-		d.RequeueCarried(taskID, carried)
+		d.RequeueCarried(taskID, unwritten(carried, file))
 	}
 }
 
@@ -1522,4 +1522,19 @@ func (n *NewContexts) BusyCard() string {
 		}
 	}
 	return ""
+}
+
+// unwritten keeps the says that reached the model after the handoff was written: the handoff already holds the rest.
+func unwritten(carried []shared.DeliveredSay, file string) []shared.DeliveredSay {
+	fi, err := os.Stat(file)
+	if err != nil {
+		return carried
+	}
+	var out []shared.DeliveredSay
+	for _, s := range carried {
+		if s.At.After(fi.ModTime()) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
