@@ -26134,6 +26134,79 @@ async function newContextSseSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// composerStaysPut: the new context panel belongs to its card. The x closes it and queues what was typed, switching to
+// another terminal hides it and switching back shows it, and a refusal of a report xterm made by itself never opens it.
+async function composerStaysPutSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof composeFollow === "function" && typeof clearTermPane === "function" && typeof takeInRefused === "function", null, { timeout: slow(15000) });
+    const calls = [];
+    await p.route(u => /^\/v1\/tasks\/c-[^/]+\/(message|new-context)$/.test(u.pathname), route => {
+      const r = route.request();
+      calls.push(r.method() + " " + new URL(r.url()).pathname + " " + (r.postData() || ""));
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await p.evaluate(() => {
+      window.refresh = () => {};
+      window.send = () => {};
+      termKind = "runner";
+    });
+    const held = id => ({ id, row: 1, status: "running", new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
+    const state = () => p.evaluate(() => { const b = document.getElementById("t-ctxbox"); return { hidden: b.hidden, card: b.dataset.card || "", text: document.getElementById("t-ctxbox-in").value }; });
+
+    // The x: closed at once, the text queued on the card, the cycle stopped, and a stale row of the same cycle does not bring it back.
+    await p.evaluate(h => {
+      termTask = { id: "c-a", new_context: null };
+      onTaskEvent({ data: JSON.stringify(h) });
+      document.getElementById("t-ctxbox-in").value = "keep this";
+      document.querySelector("#t-ctxbox button[aria-label^='dismiss']").click();
+    }, held("c-a"));
+    await until(() => calls.some(c => c.startsWith("DELETE /v1/tasks/c-a/new-context")), 5000, "the x stopping the cycle");
+    await p.evaluate(h => onTaskEvent({ data: JSON.stringify(h) }), held("c-a"));
+    const afterX = await state();
+    const callsX = calls.slice();
+    if (!afterX.hidden || afterX.text) fail("composerStaysPut: the x did not close the panel: " + JSON.stringify(afterX));
+    if (!callsX.some(c => c.startsWith("POST /v1/tasks/c-a/message") && c.includes("keep this"))) fail("composerStaysPut: the x lost what was typed: " + JSON.stringify(callsX));
+
+    // Switching away hides it and queues the text on its own card, switching back shows it again.
+    await p.evaluate(h => {
+      termTask = { id: "c-b", new_context: null };
+      onTaskEvent({ data: JSON.stringify(h) });
+      document.getElementById("t-ctxbox-in").value = "for b";
+      clearTermPane(true);
+      termTask = { id: "c-plain", new_context: null };
+      composeBar(termTask);
+    }, held("c-b"));
+    const away = await state();
+    await until(() => calls.some(c => c.startsWith("POST /v1/tasks/c-b/message")), 5000, "the text queued on leaving");
+    const callsAway = calls.slice();
+    if (!away.hidden || away.card || away.text) fail("composerStaysPut: the panel stayed on another terminal: " + JSON.stringify(away));
+    if (!callsAway.some(c => c.startsWith("POST /v1/tasks/c-b/message") && c.includes("for b"))) fail("composerStaysPut: switching away lost what was typed: " + JSON.stringify(callsAway));
+    await p.evaluate(h => { termTask = { id: "c-b", new_context: h.new_context }; composeBar(termTask); }, held("c-b"));
+    const back = await state();
+    if (back.hidden || back.card !== "c-b") fail("composerStaysPut: switching back did not show the panel: " + JSON.stringify(back));
+    await p.evaluate(() => { termTask = { id: "c-plain", new_context: null }; composeBar(termTask); });
+    if (!(await state()).hidden) fail("composerStaysPut: a card with no cycle shows the panel");
+
+    // A refusal of a report xterm made on its own does not open it. One for a key the operator typed does.
+    await p.evaluate(() => {
+      termTask = { id: "c-r", new_context: null };
+      composeClose();
+      composeOperatorAt = 0;
+      takeInRefused(JSON.stringify({ t: "in-refused", why: "x" }));
+    });
+    if (!(await state()).hidden) fail("composerStaysPut: a refused auto report opened the panel");
+    await p.evaluate(() => { sendInput("k"); takeInRefused(JSON.stringify({ t: "in-refused", why: "x" })); });
+    const typedKey = await state();
+    if (typedKey.hidden || typedKey.card !== "c-r") fail("composerStaysPut: a refused key did not open the panel: " + JSON.stringify(typedKey));
+    if (errors.length) fail("composerStaysPut: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 // keepaliveMark: a fully cold cache puts a snowflake on the title in the board card, the stack row, the terminals
 // list and the open card view, with the chip's words as its tooltip. Warm and "no cache yet" cards carry none.
 async function keepaliveMarkSection(browser, base) {
@@ -28341,6 +28414,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("cardViewBarInline", () => cardViewBarInlineSection(browser, base));
     await unit("cardLabelAlias", () => cardLabelAliasSection(browser, base));
     await unit("newContextSse", () => newContextSseSection(browser, base));
+    await unit("composerStaysPut", () => composerStaysPutSection(browser, base));
     await unit("kidCounts", bu("kidCounts"));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));

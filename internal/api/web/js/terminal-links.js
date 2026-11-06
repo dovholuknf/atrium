@@ -2198,6 +2198,7 @@ function takeInRefused(data) {
   try { msg = JSON.parse(data); } catch (e) { return false; }
   if (!msg || msg.t !== "in-refused") return false;
   // The compose box keeps what was typed. A socket with no card to compose for falls back to the toast.
+  if (!composeAsked()) return true;
   if (!composeRefused()) toast("Typing dropped", msg.why || "input is refused during a new context", null, "in-refused");
   return true;
 }
