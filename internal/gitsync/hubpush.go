@@ -77,7 +77,8 @@ func hubPushTarget(ctx context.Context, r *Runner, dir, forwarderBase string) (u
 				urls = append(urls, l)
 			}
 		}
-		if len(urls) == 0 {
+		// git prints the remote's own name for an empty url, so the config is read for it.
+		if len(urls) == 0 || hasEmptyConfig(ctx, r, dir, "remote."+n+".url") || hasEmptyConfig(ctx, r, dir, "remote."+n+".pushurl") {
 			return "", "", fmt.Errorf("this clone's %s remote has an empty url. set it with `git remote set-url %s <url>`", n, n)
 		}
 		ok := len(urls) == 1 && strings.HasPrefix(urls[0], want)
@@ -93,6 +94,19 @@ func hubPushTarget(ctx context.Context, r *Runner, dir, forwarderBase string) (u
 		return "", "", errNoHubRemote
 	}
 	return "", "", fmt.Errorf("this clone's %s, not only this room's hub forwarder. it is refused so a card cannot push to another server", strings.Join(seen, " and "))
+}
+
+func hasEmptyConfig(ctx context.Context, r *Runner, dir, key string) bool {
+	out, err := r.Git(ctx, dir, "config", "--get-all", key)
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		if strings.TrimSpace(l) == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // errNoHubRemote is a clone with neither `hub` nor `atrium-hub`, which PushToHub pushes to a URL it builds instead.
