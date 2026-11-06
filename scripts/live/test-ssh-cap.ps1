@@ -64,8 +64,8 @@ exit [int]$env:FAKE_EXIT
   $r = Invoke-Capped $pwsh $fakeArgs 8
   Check 'a hung call run once is killed and run exactly once' ($r.TimedOut -and (Get-Content $count) -eq '1')
   $deploy = Get-Content -Raw "$PSScriptRoot\atrium-deploy.ps1"
-  Check 'the swap and the detach retry use the no-retry call' ($deploy -match 'Invoke-SshOnce "ssh \$name swap"' -and
-    $deploy -match 'Invoke-SshOnce "ssh \$name detach retry"')
+  Check 'the swap and the swap launch use the no-retry call' ($deploy -match 'Invoke-SshOnce "ssh \$name swap"' -and
+    $deploy -match 'Invoke-SshOnce "ssh \$name swap launch"')
   Check 'the no-retry call does not go through the retrying helper' (
     $deploy -match '(?s)function Invoke-SshOnce.*?Invoke-Capped \$ssh.*?\n\}' -and
     $deploy -notmatch '(?s)function Invoke-SshOnce[^}]*Invoke-CappedRetry')
