@@ -265,3 +265,29 @@ func TestTheRestartWakeEndpoint(t *testing.T) {
 		t.Fatal("the cleared wake is still on the card")
 	}
 }
+
+func TestAWakeIsNotTypedIntoARunnerReattachedBeforeItWasQueued(t *testing.T) {
+	d := testDaemon(t)
+	t.Cleanup(func() { d.pending.stopAll() })
+	w, r, f := queuedWake(t, d, "we up")
+	id := w.TaskID
+	d.act.set(id, ActivityIdle, "")
+
+	r.started = w.QueuedAt.Add(-time.Hour)
+	r.reattachedAt = w.QueuedAt.Add(-time.Minute)
+	d.Wake.SawSession(id, r.reattachedAt)
+	d.WakeTick(w.QueuedAt.Add(time.Minute))
+	if f.written() != "" {
+		t.Fatalf("typed into the runner the restart was about to end: %q", f.written())
+	}
+
+	r.reattachedAt = w.QueuedAt.Add(time.Second)
+	d.Wake.SawSession(id, r.reattachedAt)
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.typeMu.Unlock()
+	d.WakeTick(w.QueuedAt.Add(time.Second + cycle.WakeSettle))
+	if !strings.Contains(f.written(), "we up") {
+		t.Fatalf("not typed into a runner reattached after the wake: %q", f.written())
+	}
+}
