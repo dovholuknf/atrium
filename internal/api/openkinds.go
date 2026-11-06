@@ -354,9 +354,16 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		stepsOf(ctx).begin("fetch", "fetching origin")
 		// The room talking to its own origin over git, not a forge API. Only the remote-tracking refs move: the
 		// operator's checked-out branch is never touched.
-		if out, err := gitIn(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
+		forgeCmd := ""
+		if p != nil {
+			forgeCmd = p.ForgeCmd
+		}
+		if out, err := fetchOrigin(ctx, repoPath, credentialHelper(forge.GitHub, forgeCmd)); err != nil {
 			res.FetchError = strings.TrimSpace(tailLines(out + " " + err.Error()))
 			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", logLine(repoPath), res.FetchError)
+		}
+		if err := emptyCloneError(ctx, repoPath, host, org, repo, res.FetchError); err != nil {
+			return res, http.StatusBadRequest, err
 		}
 	}
 	if opts.twig != "" {
@@ -464,6 +471,43 @@ func checkBranchName(ctx context.Context, name string) error {
 		return fmt.Errorf("%q is not a branch name git takes", name)
 	}
 	return nil
+}
+
+// fetchOrigin fetches origin as the daemon, which has no one at a screen: the forge CLI's helper is the only one asked
+// and nothing may open a prompt, so a failed sign-in is fast and textual.
+func fetchOrigin(ctx context.Context, repo, helper string) (string, error) {
+	args := []string{}
+	if helper != "" {
+		args = append(args, "-c", "credential.helper=", "-c", "credential.helper="+helper)
+	}
+	cmd := exec.CommandContext(ctx, "git", append(args, "fetch", "--prune", "origin")...)
+	cmd.Dir = filepath.FromSlash(repo)
+	nowindow.Hide(cmd)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), errors.New("git fetch: " + strings.TrimSpace(tailLines(string(out))))
+	}
+	return string(out), nil
+}
+
+// emptyCloneError is the plain error for a repo with no commits after the clone and the fetch, or nil when it has
+// some. A clone atrium made that is empty is removed, so the next try clones fresh instead of failing the same way.
+func emptyCloneError(ctx context.Context, dir, host, org, repo, fetchErr string) error {
+	if out, err := gitIn(ctx, dir, "for-each-ref", "--count=1", "refs/heads", "refs/remotes"); err != nil || strings.TrimSpace(out) != "" {
+		return nil
+	}
+	if out, _ := gitIn(ctx, dir, "config", "--local", "atrium.clone"); strings.TrimSpace(out) == "made" {
+		if err := os.RemoveAll(filepath.FromSlash(dir)); err != nil {
+			log.Printf("[atrium api] new %s: could not remove the empty clone: %v", logLine(dir), err)
+		}
+	}
+	why := "the hub could not read it"
+	if fetchErr != "" {
+		why += " and fetching origin failed: " + fetchErr
+	}
+	return fmt.Errorf("%s/%s/%s has no commits here. %s. it may be private: sign in with `gh auth login` (or give the room access), then try again",
+		host, org, repo, why)
 }
 
 // defaultBase is what a fresh branch starts from: the remote's default branch, else the clone's HEAD.
