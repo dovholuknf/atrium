@@ -119,6 +119,11 @@ func installService(o serviceOpts) error {
 	if err != nil {
 		return err
 	}
+	if pw == "" {
+		return fmt.Errorf("%s has a blank password, and Windows refuses to start a service as an account with one "+
+			"(error 1069, a logon failure). give the account a password first, as an administrator: "+
+			"net user %s <password>. then run this again with that password", o.user, strings.TrimPrefix(o.user, `.\`))
+	}
 
 	m, err := mgr.Connect()
 	if err != nil {
