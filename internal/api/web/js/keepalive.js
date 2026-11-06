@@ -124,7 +124,8 @@ function kaModel(t, now) {
   };
   const rawWhy = why ? "the daemon's last reason: " + why : "";
   if (KA_STOP_WORD[k.state]) {
-    m.cls = "stopped";
+    // A stopped card nobody refreshes is drawn as an off one, so a cold one takes the title's snowflake.
+    m.cls = warm ? "off" : "off cold";
     m.full = "⊘ stopped · " + KA_STOP_WORD[k.state];
     m.short = "⊘ " + KA_STOP_WORD[k.state];
     m.tip.push(KEEPALIVE_STOPPED[k.state]);
@@ -232,7 +233,7 @@ function keepaliveChip(t) {
 }
 
 // The snowflake on a card's title when its cache is fully cold, with the chip's own words as its tooltip. It reads
-// `kaModel`, so the chip and the mark cannot disagree. Warm, stopped and "no cache yet" draw an empty span, which
+// `kaModel`, so the chip and the mark cannot disagree. Warm and "no cache yet" draw an empty span, which
 // `kaRepaint` fills when the cache goes cold.
 function kaTitleMark(t) {
   if (!t || !t.keepalive || over(t) || t.archived_at) return "";

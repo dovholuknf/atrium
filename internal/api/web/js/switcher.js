@@ -301,14 +301,8 @@ function swRemember(id) {
   } catch (e) {}
 }
 
-// THE ORDER WITH NOTHING TYPED IS THE ONE THAT MATTERS, because the common
-// case is the key and Enter with nothing typed at all. Most recently switched
-// to first, so going back and forth between two sessions is one keystroke and
-// one more.
-//
-// Everything else falls in behind, anything waiting on a human above the rest,
-// then by how recently it moved: the same order the session list uses, so the
-// two do not disagree about which session is the interesting one.
+// Live before dead, the best match when something is typed, then most recently active first, the same order the
+// session list uses. Most recently switched to, then waiting on a human, only break exact ties.
 function switcherRows() {
   const recent = swRecent();
   const here = swHere();
@@ -329,10 +323,10 @@ function switcherRows() {
   scored.sort((a, b) => {
     if (a.dead !== b.dead) return a.dead ? 1 : -1;
     if (swQuery && b.s !== a.s) return b.s - a.s;
+    const act = cardActivityCmp(a.t, b.t);
+    if (act) return act;
     if (a.r !== b.r) return a.r - b.r;
-    const w = (isWaiting(b.t) ? 1 : 0) - (isWaiting(a.t) ? 1 : 0);
-    if (w) return w;
-    return cardActivityCmp(a.t, b.t);
+    return (isWaiting(b.t) ? 1 : 0) - (isWaiting(a.t) ? 1 : 0);
   });
   // Where you already are, last. It is still listed, because a switcher that
   // hides a session makes you wonder whether it is gone.

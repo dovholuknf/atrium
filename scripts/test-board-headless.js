@@ -9562,8 +9562,8 @@ async function keepaliveSection(browser, base) {
         watching: c ? c.classList.contains("watching") : false, tip: c ? c.getAttribute("data-tip") : "" };
     }), KA_CARDS);
     const by = Object.fromEntries(chips.map(c => [c.id, c]));
-    if (!by["ka-stop"].stopped || !/stopped . not worth it/.test(by["ka-stop"].text)) {
-      fail("a card stopped at break-even does not draw the stopped chip: " + JSON.stringify(by["ka-stop"]));
+    if (by["ka-stop"].stopped || !/stopped . not worth it/.test(by["ka-stop"].text)) {
+      fail("a card stopped at break-even does not draw an off chip with its words: " + JSON.stringify(by["ka-stop"]));
     }
     // No chip's tooltip carries a dollar figure (item 37b).
     for (const c of chips) if (/\$/.test(c.tip || "")) fail("a keep-alive chip still shows money: " + JSON.stringify(c));
@@ -9582,7 +9582,7 @@ async function keepaliveSection(browser, base) {
       fail("the warm chip's tooltip lacks the why or the warm-until: " + JSON.stringify(q.tip));
     }
     const m = by["ka-miss"];
-    if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss/.test(m.tip)) {
+    if (m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss/.test(m.tip)) {
       fail("a card stopped on a miss does not show the miss: " + JSON.stringify(m));
     }
     // A suspended room says so on the card, with the reason and how to clear it.
@@ -9628,7 +9628,7 @@ async function keepaliveSection(browser, base) {
       board.remove();
       return out;
     }, rowCards);
-    const wantRow = { "ka-stop": "stopped", "ka-miss": "stopped", "ka-quiet": "pie", "ka-kept": "pie", "ka-due": "pie due" };
+    const wantRow = { "ka-quiet": "pie", "ka-kept": "pie", "ka-due": "pie due" };
     for (const r of rows) {
       const want = wantRow[r.id];
       if (want && (!r.shown || !want.split(" ").every(c => r.cls.split(" ").includes(c)))) {
@@ -26226,7 +26226,8 @@ async function composerStaysPutSection(browser, base) {
 }
 
 // keepaliveMark: a fully cold cache puts a snowflake on the title in the board card, the stack row, the terminals
-// list and the open card view, with the chip's words as its tooltip. Warm and "no cache yet" cards carry none.
+// list and the open card view, with the chip's words as its tooltip, whatever the keep-alive state. Warm and "no cache
+// yet" cards carry none.
 async function keepaliveMarkSection(browser, base) {
   const shots = process.env.KA_MARK_SHOTS || "";
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
@@ -26242,6 +26243,8 @@ async function keepaliveMarkSection(browser, base) {
       const cards = [
         { id: "k-cold", name: "cold", keepalive: ka("on", new Date(Date.now() - 20 * 60000).toISOString()) },
         { id: "k-offcold", name: "off and cold", keepalive: ka("off", "") },
+        { id: "k-stopcold", name: "stopped and cold", keepalive: ka("stopped:break-even", new Date(Date.now() - 20 * 60000).toISOString()) },
+        { id: "k-stopwarm", name: "stopped and warm", keepalive: ka("stopped:miss", new Date(Date.now() + 30 * 60000).toISOString()) },
         { id: "k-warm", name: "warm", keepalive: ka("on", new Date(Date.now() + 30 * 60000).toISOString()) },
         { id: "k-none", name: "no cache", keepalive: ka("on", "") },
       ].map(c => Object.assign({}, base, c, { display_title: c.name }));
@@ -26271,12 +26274,13 @@ async function keepaliveMarkSection(browser, base) {
       if (process.env.KA_MARK_HIDE) await p.addStyleTag({ content: ".kamark { display: none !important; }" });
       await p.locator("#ka-host").screenshot({ path: path.join(shots, process.env.KA_MARK_NAME || "marks.png") });
     }
-    for (const id of ["k-cold", "k-offcold"]) {
+    for (const id of ["k-cold", "k-offcold", "k-stopcold"]) {
       if (got[id].shown !== 3) fail("keepaliveMark: " + id + " shows the snowflake on " + got[id].shown + " of the board card, stack row and terminals list: " + JSON.stringify(got[id]));
       if (!/cache has expired|cold/.test(got[id].tip)) fail("keepaliveMark: " + id + " tooltip is not the chip's words: " + got[id].tip);
       if (!got.view[id]) fail("keepaliveMark: " + id + " shows no snowflake on the open card view's title");
     }
-    for (const id of ["k-warm", "k-none"]) {
+    if (!/stopped at break-even/.test(got["k-stopcold"].tip)) fail("keepaliveMark: a stopped cold card's snowflake does not say why it stopped: " + got["k-stopcold"].tip);
+    for (const id of ["k-warm", "k-none", "k-stopwarm"]) {
       if (got[id].shown !== 0) fail("keepaliveMark: " + id + " shows a snowflake: " + JSON.stringify(got[id]));
       if (got.view[id]) fail("keepaliveMark: " + id + " shows a snowflake on the open card view's title");
     }

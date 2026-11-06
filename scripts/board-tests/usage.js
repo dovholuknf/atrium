@@ -267,7 +267,7 @@ async function cacheChipSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector(".term-list .card", { timeout: slow(10000) });
     await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 6, null, { timeout: slow(10000) });
-    check("terminals list", await texts(".term-list .card"), ["cc-warm", "cc-cold", "cc-off", "cc-none"]);
+    check("terminals list", await texts(".term-list .card"), ["cc-warm", "cc-cold", "cc-stop", "cc-off", "cc-none"]);
     if (shots) await p.screenshot({ path: path.join(shots, "u-032-terms-1400x900.png") });
 
     // The header: attach a card and its chip is in the bar. A fake socket, as the phone sections use.
@@ -427,8 +427,8 @@ async function cacheChipSection(browser, base) {
       if (!/ due/.test(g("pp-due").cls) || !/about to refresh/.test(g("pp-due").tip)) fail("cachePie: about to fire has no look or tooltip " + JSON.stringify(g("pp-due")));
       if (g("pp-due").ring === g("pp-half").ring) fail("cachePie: about to fire has the same ring as filling");
       if (!/next refresh at/.test(g("pp-half").tip)) fail("cachePie: the filling tooltip has no next time " + g("pp-half").tip);
-      if (g("pp-stop").pie !== "" || !/linear-gradient/.test(g("pp-stop").img) || !/stopped at break-even/.test(g("pp-stop").tip)) {
-        fail("cachePie: a stopped card is not an empty struck circle with its reason " + JSON.stringify(g("pp-stop")));
+      if (g("pp-stop").pie !== "" || g("pp-stop").img !== "none" || !/off cold/.test(g("pp-stop").cls) || !/stopped at break-even/.test(g("pp-stop").tip)) {
+        fail("cachePie: a stopped cold card is not drawn as an off cold one with its reason " + JSON.stringify(g("pp-stop")));
       }
       if (/conic/.test(g("pp-cold").img) || g("pp-cold").pie !== "" || !/expired/.test(g("pp-cold").tip)) fail("cachePie: a cold card draws a pie " + JSON.stringify(g("pp-cold")));
       if (!/conic/.test(g("pp-first").img) || g("pp-first").pie !== "195deg") fail("cachePie: a card with no refresh yet fills from its cache write " + JSON.stringify(g("pp-first")));
