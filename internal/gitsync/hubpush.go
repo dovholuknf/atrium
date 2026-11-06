@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -72,9 +73,12 @@ func hubPushTarget(ctx context.Context, r *Runner, dir, forwarderBase string) (u
 		}
 		var urls []string
 		for _, l := range strings.Split(out, "\n") {
-			if l = strings.TrimSpace(l); l != "" {
+			if l = strings.TrimSpace(l); l != "" && !slices.Contains(urls, l) {
 				urls = append(urls, l)
 			}
+		}
+		if len(urls) == 0 {
+			return "", "", fmt.Errorf("this clone's %s remote has an empty url. set it with `git remote set-url %s <url>`", n, n)
 		}
 		ok := len(urls) == 1 && strings.HasPrefix(urls[0], want)
 		if ok {

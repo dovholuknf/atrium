@@ -395,3 +395,25 @@ func TestHubNameOfReadsOriginFirstAndSaysNothingOutsideARoot(t *testing.T) {
 		t.Fatalf("a clone four deep: %q", got)
 	}
 }
+
+func TestAHubUrlListedTwiceIsOneAndAnEmptyOneIsNamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	f := newRemote(t)
+	f.seedMain(hubRepo)
+	f.branch("fix/x", "x.txt")
+	git(t, f.work, "remote", "add", "hub", f.repoURL(hubRepo))
+	git(t, f.work, "config", "--add", "remote.hub.url", f.repoURL(hubRepo))
+	url, name, err := hubPushTarget(bg, Default, f.work, f.base)
+	if err != nil || name != "hub" || url != f.repoURL(hubRepo) {
+		t.Fatalf("a url listed twice: %q %q %v", url, name, err)
+	}
+
+	git(t, f.work, "config", "--replace-all", "remote.hub.url", "")
+	_, _, err = hubPushTarget(bg, Default, f.work, f.base)
+	if err == nil || !strings.Contains(err.Error(), "hub remote has an empty url") {
+		t.Fatalf("an empty url: %v", err)
+	}
+}
