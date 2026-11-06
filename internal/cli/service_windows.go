@@ -237,9 +237,12 @@ func statusService(name string) error {
 	defer windows.CloseServiceHandle(h)
 	n, _ := syscall.UTF16PtrFromString(name)
 	sh, err := windows.OpenService(h, n, windows.SERVICE_QUERY_STATUS|windows.SERVICE_QUERY_CONFIG)
-	if err != nil {
+	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 		fmt.Printf("  no service named %s\n", name)
 		return nil
+	}
+	if err != nil {
+		return err
 	}
 	s := &mgr.Service{Name: name, Handle: sh}
 	defer s.Close()
