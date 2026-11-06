@@ -447,15 +447,7 @@ func (d *Service) ConversationOf(t *store.Task) string {
 	return t.ResumeID
 }
 
-// sessionStarted clears a FAILED chip when a SessionStart names a conversation
-// other than the one the run began in: a new conversation really began, so the
-// clear did happen. It reports whether it cleared one.
-//
-// NEVER ON A TURN START. A peer message can start a turn in a card whose clear
-// failed, and in one whose context had cleared but whose wake was not typed. Both
-// turns say nothing about whether the context went, so the chip stays until this,
-// a rerun, or a dismissal. A run with no starting conversation on record cannot
-// be proven and stays as well.
+// SessionStarted keeps an acked chip, since a new conversation that never read the handoff must not look done.
 func (n *NewContexts) SessionStarted(taskID, conv string) bool {
 	if n == nil || conv == "" {
 		return false
@@ -466,7 +458,7 @@ func (n *NewContexts) SessionStarted(taskID, conv string) bool {
 		delete(n.Dropped, taskID)
 	}
 	cur := n.By[taskID]
-	if cur == nil || cur.Step != NewContextFailed || cur.Abandoned || cur.Conv == "" || cur.Conv == conv {
+	if cur == nil || cur.Step != NewContextFailed || cur.Abandoned || cur.Acked || cur.Conv == "" || cur.Conv == conv {
 		return false
 	}
 	delete(n.By, taskID)
@@ -873,6 +865,9 @@ var (
 	ErrNoTerminal     = errors.New("atrium does not own this session's terminal, so it cannot type into it")
 	ErrNewContextBusy = errors.New("a new context is already under way on this card")
 )
+
+var ErrNewContextAcked = errors.New("atrium ready came and the handoff is written, so this new context finishes: " +
+	"it clears and wakes the card in a moment, and what you type is queued for after the wake")
 
 // errCycleUnder ends an automatic cycle whose card fell back under its limit
 // before the ack: the runner compacted, and there is nothing left to cycle.
@@ -1452,8 +1447,7 @@ func (d *Service) HandoffWritten(taskID, file string, since time.Time, token str
 		file, dir, CaptureLine(token))
 }
 
-// handleNewContext is `/v1/tasks/{id}/new-context`: POST starts the sequence,
-// DELETE takes the chip off and stops a run, and GET reads it.
+// HandleNewContext refuses a DELETE past the ack: a run stopped there leaves its handoff unread for good.
 func (d *Service) HandleNewContext(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, err := d.St.Get(id); err != nil {
@@ -1464,6 +1458,11 @@ func (d *Service) HandleNewContext(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		NcJSON(w, http.StatusOK, map[string]any{"card": id, "new_context": d.NewContextFor(id)})
 	case http.MethodDelete:
+		if cur := d.Nctx.Get(id); cur != nil && cur.Acked && cur.Step != NewContextFailed {
+			log.Printf("[atrium] new context on %s: the board asked to stop it past atrium ready, so it finishes", id)
+			small.WriteJSONErr(w, http.StatusConflict, ErrNewContextAcked)
+			return
+		}
 		gone := d.Nctx.Clear(id)
 		log.Printf("[atrium] new context on %s cleared from the board (had a run: %v)", id, gone)
 		if gone {
