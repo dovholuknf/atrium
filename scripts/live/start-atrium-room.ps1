@@ -28,5 +28,9 @@ if (-not $WhatIf) {
   if (-not $h) {
     Say 'room did not reattach. last lines of room.err:'
     Get-Content (Join-Path $RoomLogs 'room.err') -Tail 20
+  } else {
+    $why = Wait-RoomLinked $RoomName
+    if ($why) { Say "$RoomName answers locally but is NOT linked to the hub after 30s: $why"; exit 1 }
+    Say "$RoomName up, linked to the hub"
   }
 }

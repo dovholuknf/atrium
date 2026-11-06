@@ -1,14 +1,18 @@
-# qa-refit report
+# start-atrium link check
 
-Fix: `TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves` waits for the replay's cursor move in its `hostWait`.
+## Change
+- scripts/live/live-common.ps1 `Wait-RoomLinked` (before `$StaySeconds`): polls the hub's `/_hub/rooms` (127.0.0.1:7778,
+  the connection list the board uses) for up to 30s. Returns '' when linked, else the reason: hub did not answer (not
+  the room's fault) or hub is up but does not list the room.
+- scripts/live/start-atrium-control.ps1: after the local port answers, prints `sg4-control up, linked to the hub` or
+  `sg4-control answers locally but is NOT linked to the hub after 30s: <reason>` and exits 1.
+- scripts/live/start-atrium-room.ps1: same for claude-sg4 once the hub is healthy.
+- Remote rooms already wait for the hub's list in start-atrium-remote.ps1, unchanged.
 
-PROVEN (by reading `internal/daemon/attach.go`):
-- Write order on attach is `caps`, `size` (`tellSize`), then the replay body with the cursor move. The size frame
-  always precedes the replay, so a wait on the size frame cannot guarantee the replay has landed.
-- The failing log's `large.seen()` was `caps` then `size 200x20` and nothing else, matching a check made between the
-  size write and the replay write.
+## Tested (read-only, nothing started)
+    live existing: []   (claude-sg4 linked)
+    live missing: [the hub is up but does not list it (it lists: claude-sg4, m1mini, sg3, sg4-control, sgg, sgg-zrok)]
+    dead hub: [the hub did not answer at http://127.0.0.1:1/_hub/rooms, so the link could not be checked]
 
-INFERRED:
-- That this gap is the whole cause on the Windows runner. Not reproduced locally, so no before/after run.
-
-Product bug: none. The size-before-backlog order is deliberate (see the comment in `attach.go`).
+## How clint verifies
+    pwsh -NoProfile -Command ". scripts/live/live-common.ps1; $w = Wait-RoomLinked 'sg4-control' 5; if ($w) { \"NOT linked: $w\" } else { 'sg4-control up, linked to the hub' }"

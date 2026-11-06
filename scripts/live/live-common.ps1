@@ -393,6 +393,22 @@ function Get-HubRoom {
   } catch { $null }
 }
 
+# Wait-RoomLinked polls the hub's connection list until the named room is on it, up to $Seconds. Returns '' when it is
+# linked, else the sentence that says why not: the hub did not answer (the room is not to blame) or the room is absent.
+function Wait-RoomLinked([string]$Name, [int]$Seconds = 30, [string]$Url = $HubRooms) {
+  $dl = (Get-Date).AddSeconds($Seconds)
+  $why = ''
+  do {
+    try {
+      $on = @((Invoke-RestMethod $Url -TimeoutSec 3).rooms | ForEach-Object { $_.name })
+      if ($on -contains $Name) { return '' }
+      $why = "the hub is up but does not list it (it lists: $($on -join ', '))"
+    } catch { $why = "the hub did not answer at $Url, so the link could not be checked" }
+    if ((Get-Date) -lt $dl) { Start-Sleep 1 }
+  } while ((Get-Date) -lt $dl)
+  return $why
+}
+
 # How long a room must stay attached, and how long before its second health check. One constant for both.
 $StaySeconds = 10
 
