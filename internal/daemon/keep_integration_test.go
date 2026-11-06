@@ -312,11 +312,10 @@ func TestAWakeSayToAPausedCardResumesItAndDelivers(t *testing.T) {
 		t.Fatal("still paused after the wake")
 	}
 	d.WakeSawSession(target.ID, "conv-1")
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(f.written(), "\r") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	time.Sleep(10 * d.hk.keptTick)
+	testwait.Eventually(t, 5*time.Second, "the held and wake text delivered", func() bool {
+		n, _ := d.st.UndeliveredCount(target.ID)
+		return strings.Contains(f.written(), "\r") && strings.Contains(f.written(), "WAKEONE") && n == 0
+	})
 	got := f.written()
 	for _, want := range []string{"HELDONE", "WAKEONE"} {
 		if !strings.Contains(got, want) {
