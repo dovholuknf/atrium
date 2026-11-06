@@ -57,7 +57,7 @@ func RestartWrapNudge(path, bin string) string {
 	return "you have not run atrium ready: write the handoff to " + path + " and run " + bin + " ready now."
 }
 
-// writeFallbackHandoff writes the state file the card did not, pointing at the newest earlier handoff of the card
+// WriteFallbackHandoff writes the state file the card did not, pointing at the newest earlier handoff of the card
 // and the tail of its history, so the restart wake has something to name. It never replaces a file the card wrote.
 func (d *Service) WriteFallbackHandoff(t *store.Task, path string) error {
 	if _, err := os.Stat(path); err == nil {
@@ -320,7 +320,29 @@ func (d *Service) WrapUpForRestart(ctx context.Context, wait time.Duration, why 
 	return rep
 }
 
-// noteWrapGaveUp ends a wait that got no ready: the room writes the fallback handoff and says so on the card's history.
+// AbortWrapWakes is for a restart that did not happen after its wrap-up: the wakes it queued wait for a new runner that
+// is not coming, so they are dropped and each card is told in place that the restart is off.
+func (d *Service) AbortWrapWakes() {
+	for _, w := range d.Wake.All() {
+		if w.By != WrapBy {
+			continue
+		}
+		if _, err := d.ClearWake(w.TaskID, WrapBy); err != nil {
+			log.Printf("[atrium] restart wrap-up: could not drop the wake on %s: %v", w.TaskID, err)
+			continue
+		}
+		run := d.Sup.Get(w.TaskID)
+		if run == nil {
+			continue
+		}
+		text := "the restart did not happen. carry on where you left off."
+		if _, err := d.TypeLabelledGuarded(run, w.TaskID, WrapLabel, text, func() bool { return !d.Act.DialogOpen(w.TaskID) && !d.NcBusy(w.TaskID) }); err != nil {
+			log.Printf("[atrium] restart wrap-up: could not tell %s the restart is off: %v", w.TaskID, err)
+		}
+	}
+}
+
+// NoteWrapGaveUp ends a wait that got no ready: the room writes the fallback handoff and says so on the card's history.
 func (d *Service) NoteWrapGaveUp(t *store.Task, path, what string) {
 	text := "restart: " + what + ", the room wrote a fallback handoff"
 	if err := d.WriteFallbackHandoff(t, path); err != nil {

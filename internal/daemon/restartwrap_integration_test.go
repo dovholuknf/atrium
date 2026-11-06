@@ -358,3 +358,26 @@ func TestCapWrapWait(t *testing.T) {
 		t.Fatalf("under-cap = %s", got)
 	}
 }
+
+func TestWrapWakeOfARestartThatDidNotHappenIsDroppedAndTheCardTold(t *testing.T) {
+	d := testDaemon(t)
+	fastWrap(t, d)
+	task, f, _ := ncCard(t, d)
+	midTurn(d, task.ID)
+
+	ch := runWrap(d, time.Minute)
+	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
+	if _, _, err := d.Ready(task); err != nil {
+		t.Fatal(err)
+	}
+	report(t, ch)
+	if wakeOf(d, task.ID) == nil {
+		t.Fatal("no wake was queued")
+	}
+	ncTurnEnds(d, task.ID)
+	d.AbortWrapWakes()
+	if wakeOf(d, task.ID) != nil {
+		t.Fatal("the wake of a restart that did not happen is still queued")
+	}
+	until(t, "the card told the restart is off", func() bool { return strings.Contains(f.written(), "the restart did not happen") })
+}
