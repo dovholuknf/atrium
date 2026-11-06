@@ -232,6 +232,7 @@ func (s *Server) overlayUp(w http.ResponseWriter, ctx context.Context, t *store.
 
 // startOwned starts a process in its own group, its output to logFile, and records it on the card as a proc.
 func (s *Server) startOwned(card, dir, logFile, bin string, args ...string) (pid, seq int, err error) {
+	// codeql[go/path-injection] logFile is home + a name that passed overlayName ^[a-z0-9][a-z0-9-]{0,31}$ + mode "host" or "proxy", so it stays in home
 	lf, err := os.OpenFile(safepath.NoNUL(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return 0, 0, err
@@ -711,6 +712,7 @@ func randomHex(n int) (string, error) {
 
 // tailOf is the last lines of a log file, for an error.
 func tailOf(path string) string {
+	// codeql[go/path-injection] only startOwned's logFile reaches here, home + an overlayName-checked name + "host" or "proxy"
 	raw, err := os.ReadFile(safepath.NoNUL(path))
 	if err != nil {
 		return err.Error()

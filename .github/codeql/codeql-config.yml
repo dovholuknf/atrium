@@ -1,4 +1,8 @@
 name: atrium
 paths-ignore:
   - internal/api/web/vendor
-  - scripts
+packs:
+  go:
+    - codeql/go-queries:AlertSuppression.ql
+  javascript:
+    - codeql/javascript-queries:AlertSuppression.ql

@@ -73,6 +73,7 @@ func ReadGitInfo(dir string) GitInfo {
 
 	for i := 0; i < gitWalkLimit; i++ {
 		dotgit := filepath.Join(dir, ".git")
+		// codeql[go/path-injection] the worktree is the session's own hook cwd, shares refused in messages.go, and only its .git is read
 		fi, err := os.Lstat(noNUL(dotgit))
 		if err == nil {
 			var out GitInfo
@@ -116,6 +117,7 @@ func relativeTo(root, start string) string {
 // directory. The worktree directory is named for the branch, and using it is
 // the bug this exists to fix.
 func worktreeInfo(dotgitFile string) GitInfo {
+	// codeql[go/path-injection] the worktree is the session's own hook cwd, shares refused in messages.go, and only its .git is read
 	raw, err := os.ReadFile(noNUL(dotgitFile))
 	if err != nil {
 		return GitInfo{}
@@ -158,6 +160,7 @@ func worktreeInfo(dotgitFile string) GitInfo {
 // `ref: refs/heads/<branch>` for a branch, a bare commit id when detached. A
 // detached head answers empty, which is correct: there is no branch to name.
 func headBranch(gitdir string) string {
+	// codeql[go/path-injection] gitdir is what the card's own .git file names, and only its HEAD is read
 	raw, err := os.ReadFile(noNUL(filepath.Join(gitdir, "HEAD")))
 	if err != nil {
 		return ""

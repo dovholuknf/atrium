@@ -123,11 +123,13 @@ func examinable(path string) error {
 		cur := pending[0]
 		pending = pending[1:]
 		for p := cur; ; {
+			// codeql[go/path-injection] card_root is the operator's board setting, a board caller has a shell (attach.go kind=shell), and this only lstats it
 			fi, err := os.Lstat(noNUL(p))
 			if errors.Is(err, fs.ErrPermission) {
 				return fmt.Errorf("%s is not readable", p)
 			}
 			if err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				// codeql[go/path-injection] card_root is the operator's board setting, a board caller has a shell (attach.go kind=shell), and this only reads a link
 				if to, err := os.Readlink(noNUL(p)); err == nil {
 					if !filepath.IsAbs(to) {
 						to = filepath.Join(filepath.Dir(p), to)

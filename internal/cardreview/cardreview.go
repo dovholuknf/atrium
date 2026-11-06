@@ -81,6 +81,7 @@ type Service struct {
 func git(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitBound)
 	defer cancel()
+	// codeql[go/command-injection] git argv with no shell: callers pass fixed subcommands, and Start refuses a base that starts with '-'
 	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = dir
 	nowindow.Hide(cmd)

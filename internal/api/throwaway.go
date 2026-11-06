@@ -91,10 +91,12 @@ func promoteTarget(raw string) (string, error) {
 		return "", errors.New("give the whole path, starting from the drive or the root")
 	}
 	to = filepath.Clean(to)
+	// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 	if _, err := os.Stat(safepath.NoNUL(to)); err == nil {
 		return "", fmt.Errorf("%s already exists", to)
 	}
 	parent := filepath.Dir(to)
+	// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 	if fi, err := os.Stat(safepath.NoNUL(parent)); err != nil || !fi.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", parent)
 	}
@@ -109,9 +111,11 @@ func MoveWorktree(from, to string) error {
 	if from == "" {
 		return errors.New("that card has no directory to move")
 	}
+	// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(to)), 0o755); err != nil {
 		return err
 	}
+	// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 	if err := os.Rename(from, safepath.NoNUL(to)); err != nil {
 		if err := copyTree(from, to); err != nil {
 			return err
@@ -152,9 +156,11 @@ func moveTranscripts(from, to string) {
 	if _, err := os.Stat(src); err != nil {
 		return
 	}
+	// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 	if _, err := os.Stat(safepath.NoNUL(dst)); err == nil {
 		return
 	}
+	// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 	if err := os.Rename(src, safepath.NoNUL(dst)); err != nil {
 		if err := copyTree(src, dst); err == nil {
 			_ = os.RemoveAll(src)
@@ -174,6 +180,7 @@ func copyTree(from, to string) error {
 		}
 		target := filepath.Join(to, rel)
 		if e.IsDir() {
+			// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 			return os.MkdirAll(safepath.NoNUL(target), 0o755)
 		}
 		if !e.Type().IsRegular() {
@@ -188,6 +195,7 @@ func copyTree(from, to string) error {
 		if err != nil {
 			return err
 		}
+		// codeql[go/path-injection] board-only route, and a board caller can already open a shell (attach.go kind=shell), so moving its card adds nothing
 		out, err := os.OpenFile(safepath.NoNUL(target), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
 		if err != nil {
 			return err

@@ -40,9 +40,11 @@ func (d *Daemon) scratchFor(t *store.Task, home string) string {
 	}
 	dir := scratch.Dir(root, t.DisplayTitle(), t.WireName, t.ID)
 	path := filepath.FromSlash(dir)
+	// codeql[go/path-injection] dir is the scratch root + scratch.Short, a [a-z0-9-] slug and the card id, so it is a child of the root
 	if _, err := os.Lstat(safepath.NoNUL(path)); err == nil {
 		return dir
 	}
+	// codeql[go/path-injection] dir is the scratch root + scratch.Short, a [a-z0-9-] slug and the card id, so it is a child of the root
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(path)), 0o755); err != nil {
 		log.Printf("[atrium] could not make the scratch root for %s: %v", t.ID, err)
 		return home
@@ -51,6 +53,7 @@ func (d *Daemon) scratchFor(t *store.Task, home string) string {
 		log.Printf("[atrium] could not record the scratch folder of %s: %v", t.ID, err)
 		return home
 	}
+	// codeql[go/path-injection] dir is the scratch root + scratch.Short, a [a-z0-9-] slug and the card id, so it is a child of the root
 	if err := os.Mkdir(safepath.NoNUL(path), 0o755); err != nil && !os.IsExist(err) {
 		_ = d.st.CardScratchRemoved(dir)
 		log.Printf("[atrium] could not make the scratch folder of %s: %v", t.ID, err)

@@ -24,6 +24,7 @@ func findTool(name, path string) string {
 		}
 		for _, e := range exts {
 			p := filepath.Join(dir, name+e)
+			// codeql[go/path-injection] a Stat of name under each PATH entry of the card's own launch env, the lookup its shell makes itself
 			if st, err := os.Stat(safepath.NoNUL(p)); err == nil && !st.IsDir() && (runtime.GOOS == "windows" || st.Mode()&0o111 != 0) {
 				return p
 			}

@@ -326,6 +326,7 @@ func fillPresence(repos []*store.ProviderRepo) {
 		if r.Path == "" {
 			continue
 		}
+		// codeql[go/path-injection] SaveProviderRepo refuses slashes, . and .. in org and repo, so this is a direct child of the provider root
 		info, err := os.Stat(safepath.NoNUL(filepath.FromSlash(r.Path)))
 		r.Present = err == nil && info.IsDir()
 	}
@@ -594,6 +595,7 @@ type projectWorktree struct {
 // A bare repository has neither and is correctly not a checkout: a card cannot
 // start in one.
 func isCheckout(dir string) bool {
+	// codeql[go/path-injection] every caller's dir is a ProviderPath of ValidName or RepoSlug segments under a provider root
 	_, err := os.Stat(safepath.NoNUL(filepath.Join(dir, ".git")))
 	return err == nil
 }
