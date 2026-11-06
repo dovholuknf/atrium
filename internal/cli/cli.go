@@ -61,6 +61,9 @@ func speaksForItself(run func(*cobra.Command, []string) error) func(*cobra.Comma
 
 // Execute runs the cobra root. Returns the exit code.
 func Execute() int {
+	if code, ok := runAsService(os.Args[1:]); ok {
+		return code
+	}
 	return run(os.Args[1:])
 }
 
@@ -121,7 +124,7 @@ func newRoot() *cobra.Command {
 	// became one. See docs/archive/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")
 	backups.AddCommand(hubRestoreCmd("atrium-"))
-	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd(), newAdapter())
+	root.AddCommand(newRun(), roomCmd(), newServiceCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd(), newAdapter())
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "run", "room":

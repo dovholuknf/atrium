@@ -274,6 +274,19 @@ function Find-Atrium([ValidateSet('run', 'room', 'ptyhost')][string]$Sub) {
     }
 }
 
+# Get-RoomService is the name of the Windows service that runs this room (`atrium service install`), or $null. A room
+# that is a service is stopped and started through the SCM: a process kill would make the SCM restart or report it failed.
+# $env:ATRIUM_ROOM_SERVICE names it, else the service whose command is this $AtriumBin running `room`.
+function Get-RoomService {
+  if ($env:ATRIUM_ROOM_SERVICE) { return $env:ATRIUM_ROOM_SERVICE }
+  try {
+    $bin = $AtriumBin -replace '/', '\'
+    $s = Get-CimInstance Win32_Service -ErrorAction Stop |
+      Where-Object { $_.PathName -like "*$bin*" -and $_.PathName -match ' room( |$)' } | Select-Object -First 1
+    return $s.Name
+  } catch { return $null }
+}
+
 # Find-Control finds the sg4-control room by its own binary directory and the `room` subcommand.
 function Find-Control {
   Get-CimInstance Win32_Process |
@@ -593,6 +606,11 @@ function Get-ShutdownStatus($err) {
   return 0
 }
 function Stop-Room {
+  $svc = Get-RoomService
+  if ($svc) {
+    Invoke-Step "stop room service ${svc}: net stop, which is the room's own graceful stop" { net.exe stop $svc | ForEach-Object { Say $_ } }
+    return $true
+  }
   $room = Find-Atrium room
   if (-not $room) { Say 'no running room found'; return $true }
   $post = $RoomShutdown
@@ -872,6 +890,11 @@ function Start-Room {
   if (-not $WhatIf -and (Test-Up $RoomHealth)) {
     Say "a room already answers at $RoomHealth. not starting another"
     return $false
+  }
+  $svc = Get-RoomService
+  if ($svc) {
+    Invoke-Step "start room service ${svc}: net start" { net.exe start $svc | ForEach-Object { Say $_ } }
+    return $true
   }
   $h = Get-LiveHosts
   Say (Get-LiveHostsSaid $h)
