@@ -11,7 +11,7 @@ $said = [System.Collections.Generic.List[string]]::new()
 function Say($m) { $said.Add("$m") }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Get-StartRoute', 'New-LaunchScript', 'Get-PathRecord', 'Start-Jobless') {
+foreach ($n in 'Get-StartRoute', 'New-LaunchScript', 'Get-PathRecord', 'Get-LoginPath', 'Start-Jobless') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -74,7 +74,12 @@ try {
     Reset $true $false $false $false
     $null = Start-Jobless '"x.exe" room > out 2> err' 'room'
     $launch = Get-Content (Join-Path $Base 'launch-room.cmd') -Raw
-    Check 'a WMI start carries the room''s record, not the caller''s profile' ($launch -match [regex]::Escape('set "PATH=C:\tools\go\bin;C:\tools\jq;%PATH%"'))
+    $login = @(Get-LoginPath | Where-Object { @('C:\tools\go\bin', 'C:\tools\jq') -notcontains $_ } | ForEach-Object { $_ -replace '%', '%%' })
+    $want = (@('C:\tools\go\bin', 'C:\tools\jq') + $login) -join ';'
+    Check 'a WMI start carries the room''s record, then Machine and User PATH from the registry' ($launch -match [regex]::Escape("set `"PATH=$want;%PATH%`""))
+    $userKey = (Get-Item -LiteralPath 'HKCU:\Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $userDirs = @($userKey -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_.Trim()) } | Where-Object { $_ })
+    Check 'the launch script holds every registry User PATH entry' (@($userDirs | Where-Object { $launch.Contains(($_ -replace '%', '%%')) }).Count -eq $userDirs.Count)
     Check 'a breakaway start inherits the record first, once each' ($env:Path -eq 'C:\tools\go\bin;C:\tools\jq;C:\Windows')
     Check 'it says the record it used' (($said -join "`n") -match [regex]::Escape('PATH record first: C:\tools\go\bin;C:\tools\jq'))
   } finally { $env:Path = $oldPath }
