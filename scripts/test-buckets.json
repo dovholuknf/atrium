@@ -250,7 +250,7 @@
         "internal/api/web/share.html",
         "internal/api/web/css/files.css"
       ],
-      "tests": [],
+      "tests": ["scripts/test-paste-kind.js"],
       "checks": []
     },
     "deploy": {
