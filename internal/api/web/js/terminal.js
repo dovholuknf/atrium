@@ -840,6 +840,7 @@ function keepShow(slot, task) {
   syncPhoneView();
   swMark("keep-focus");
   renderTermList();
+  if (typeof composeBar === "function") composeBar(termTask);
   swMark("keep-listed");
   keepEnforce();
   swMark("keep-end");

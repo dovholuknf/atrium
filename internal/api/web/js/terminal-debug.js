@@ -379,6 +379,7 @@ function clearTermPane(switching) {
   sayWhetherFocused();
   if (typeof dbgFollow === "function") dbgFollow();
   if (typeof tcomposeSync === "function") tcomposeSync();
+  if (typeof composeHide === "function") composeHide();
   if (typeof phoneManualReset === "function") phoneManualReset();
   if (typeof walkReset === "function") walkReset();
   dropThemePreview();
