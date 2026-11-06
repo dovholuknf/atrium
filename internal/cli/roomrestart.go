@@ -161,13 +161,39 @@ func onHubRestart(boardURL string, l roomLaunch, stop func()) func(wire.RestartA
 			}
 		}
 
-		if err := spawnRoomRestart(l); err != nil {
+		if err := scheduleRoomRestart(l, serviceRestart); err != nil {
 			restartLog(l.dir, "could not schedule the restart: %v", err)
 			return
 		}
 		log.Printf("[atrium] restart scheduled in %s, winding this room down", roomRestartDelay)
 		stop()
 	}
+}
+
+// serviceRestart is set when the SCM started this room, and marks its exit as a restart. Nil everywhere else.
+var serviceRestart func()
+
+// serviceRestartExit is the code a service room exits with to be restarted: the recovery action set at install
+// restarts a non-zero exit, and a respawn the SCM does not know would fight the next `net start` for the ports.
+const serviceRestartExit = 1
+
+// scheduleRoomRestart brings the room back after it winds down: through the SCM when viaSCM is set, else through
+// a detached restarter.
+func scheduleRoomRestart(l roomLaunch, viaSCM func()) error {
+	if viaSCM != nil {
+		viaSCM()
+		restartLog(l.dir, "running as a service: exiting %d so the service manager restarts this room", serviceRestartExit)
+		return nil
+	}
+	return spawnRoomRestart(l)
+}
+
+// serviceExitCode is what a service room reports to the SCM: a clean exit asked as a restart becomes non-zero.
+func serviceExitCode(code int, restart bool) int {
+	if restart && code == 0 {
+		return serviceRestartExit
+	}
+	return code
 }
 
 // A stderr that is a file is handed on so a scripted room keeps one log, and a console or pipe is not: it dies or blocks.

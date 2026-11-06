@@ -46,7 +46,9 @@ type Location struct {
 	// RoomDir is the room's --dir, so a room started outside the default
 	// directory restarts in the same one.
 	RoomDir string `json:"room_dir,omitempty"`
-	PID     int    `json:"pid"`
+	// Service is set when the SCM runs this room, so a restart goes through the SCM and never a detached respawn.
+	Service bool `json:"service,omitempty"`
+	PID     int  `json:"pid"`
 	// Since dates the file, so a stale one can be recognized by a human
 	// reading it even though nothing acts on it.
 	Since string `json:"since"`
@@ -261,6 +263,7 @@ func (d *Service) WriteLocation() {
 		BoardListen: strings.TrimSpace(d.Opts().HumanAddr),
 		Room:        d.Opts().Room,
 		RoomDir:     d.Opts().RoomDir,
+		Service:     d.Opts().Service,
 		PID:         os.Getpid(),
 		Since:       time.Now().Format(time.RFC3339),
 		DB:          d.Opts().DBPath,

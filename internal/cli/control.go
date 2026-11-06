@@ -249,6 +249,11 @@ func restartHandler(_ context.Context, _ *mcp.CallToolRequest, in RestartInput) 
 	db := ""
 	if loc, err := readLocation(); err == nil {
 		db = strings.TrimSpace(loc.DB)
+		if loc.Service {
+			return nil, RestartOutput{}, fmt.Errorf("this room runs as a Windows service, and a detached respawn " +
+				"would fight the service manager for its ports. restart it from the board or the hub, which " +
+				"restarts it through the service manager, or with net stop and net start")
+		}
 	}
 	if db == "" {
 		if prev, ok := lastDatabase(); ok {

@@ -386,6 +386,7 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 		AgentAddr: agent,
 		DBPath:    db,
 		RoomDir:   keys.Dir,
+		Service:   serviceRestart != nil,
 		// THE HUB-DECIDED NAME, the same one the link attaches under below, so
 		// every session this room launches carries ATRIUM_ROOM and its HTTP
 		// control MCP registration can name this room to the hub.

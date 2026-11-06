@@ -82,6 +82,9 @@ func installUpgrade(path string, o wire.Offer) error {
 	// the wind-down that closes them tidily is the one the daemon already runs
 	// on ctrl-c. Asking for it here means a swap costs exactly what a stop
 	// costs and nothing more.
+	if serviceRestart != nil {
+		serviceRestart()
+	}
 	askToStop()
 	return nil
 }
