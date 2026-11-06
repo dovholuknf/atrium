@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"sync"
 
@@ -88,7 +89,8 @@ func (d *Daemon) cardSpendUSD(taskID string) (total float64, unpriced []string, 
 		return 0, nil, err
 	}
 	for _, r := range rows {
-		p, ok := usagePriceFor(r.Model)
+		// Rows are summed per model, so a reply's prompt size is gone: a tiered model is priced at its dearer tier.
+		p, ok := usagePriceForPrompt(r.Model, math.MaxInt64)
 		if !ok {
 			unpriced = append(unpriced, r.Model)
 			continue

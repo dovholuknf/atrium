@@ -64,6 +64,34 @@ function composeClose() {
   if (term) term.focus();
 }
 
+// Text that could not be queued when its box went away, per card, put back in the box when the card shows it again.
+const composeDrafts = new Map();
+
+async function composeQueue(id, text) {
+  try {
+    await api("/v1/tasks/" + encodeURIComponent(id) + "/message", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+    });
+  } catch (e) {
+    toast("could not queue it", e.message);
+    return false;
+  }
+  return true;
+}
+
+// The box belongs to one card. Leaving that card's terminal queues what was typed on the card and takes the box down.
+function composeHide() {
+  const box = document.getElementById("t-ctxbox");
+  const ta = document.getElementById("t-ctxbox-in");
+  if (!box || box.hidden) return;
+  const id = box.dataset.card;
+  const text = ta ? ta.value.replace(/\s+$/, "") : "";
+  box.hidden = true;
+  delete box.dataset.card;
+  if (ta) ta.value = "";
+  if (id && text) composeQueue(id, text).then(ok => { if (!ok) composeDrafts.set(id, text); });
+}
+
 // Queues the text on the card. If the cycle has ended by now the room types it at once, which is what was wanted.
 async function composeSend() {
   const box = document.getElementById("t-ctxbox");
@@ -71,15 +99,8 @@ async function composeSend() {
   const id = box && box.dataset.card;
   const text = ta ? ta.value.replace(/\s+$/, "") : "";
   if (!id || !text) { composeClose(); return; }
-  try {
-    await api("/v1/tasks/" + encodeURIComponent(id) + "/message", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
-    });
-  } catch (e) {
-    // Left in the box: losing what was typed is the one outcome this exists to prevent.
-    toast("could not queue it", e.message);
-    return;
-  }
+  // Left in the box on failure: losing what was typed is the one outcome this exists to prevent.
+  if (!(await composeQueue(id, text))) return;
   composeClose();
   toast("queued", "it is typed into the card when the new context is ready");
   if (typeof refresh === "function") refresh();
@@ -107,6 +128,7 @@ let composeDismissedFor = "";
 function composeNoEntry(n) {
   const el = document.getElementById("t-ctxbox");
   if (!el) return;
+  if (!el.hidden && el.dataset.card && termTask && el.dataset.card !== termTask.id) composeHide();
   const held = composeHeld(n);
   if (!held) {
     composeDismissedFor = "";
@@ -118,6 +140,9 @@ function composeNoEntry(n) {
   composeWire();
   el.dataset.card = termTask.id;
   el.hidden = false;
+  const kept = composeDrafts.get(termTask.id);
+  const inp = document.getElementById("t-ctxbox-in");
+  if (kept && inp && !inp.value) { inp.value = kept; composeDrafts.delete(termTask.id); }
   const say = document.getElementById("t-nodev-say");
   say.textContent = "step " + n.n + "/" + n.of + ": " + (n.step === "wake" ? "waking it to read the handoff" : n.label);
   say.dataset.tip = say.textContent;
@@ -181,13 +206,26 @@ async function composeStop() {
   return true;
 }
 
-// The x and Escape: the panel goes away and the hold with it, at any step. What was typed in it is dropped.
+// The x and Escape: the panel goes away and the hold with it, at any step, even when the room will not say yes. What
+// was typed in it is queued on the card first, so the stop sends it.
 async function composeDismiss() {
-  if (termTask) composeDismissedFor = termTask.id;
   const box = document.getElementById("t-ctxbox");
-  if (box) box.hidden = true;
-  if (!(await composeStop())) composeDismissedFor = "";
+  const ta = document.getElementById("t-ctxbox-in");
+  const id = box && box.dataset.card;
+  const text = ta ? ta.value.replace(/\s+$/, "") : "";
+  if (termTask) composeDismissedFor = termTask.id;
   composeClose();
+  if (id && text && !(await composeQueue(id, text))) composeDrafts.set(id, text);
+  await composeStop();
+  // composeStop clears it for a cycle that ended, but a row of this one still in flight must not open the panel again.
+  if (termTask) composeDismissedFor = termTask.id;
+}
+
+// Whether the room's refusal is for something the operator typed just now. The reports xterm makes by itself (focus,
+// the mouse, answers to the runner's queries) are refused too and must not draw the box, nor may a card dismissed.
+let composeOperatorAt = 0;
+function composeAsked() {
+  return Date.now() - composeOperatorAt < 3000 && !(termTask && composeDismissedFor === termTask.id);
 }
 
 // A key or paste typed into the terminal while it is held: the hold is released and the bytes go through.
@@ -256,6 +294,7 @@ function composeWire() {
 // Keys are dropped here while the new context holds typing, so a room that has not caught up cannot let them through.
 // The first one opens the compose box seeded with it, the same as a key the room refused.
 function composeGate(d, pasted) {
+  composeOperatorAt = Date.now();
   if (typeof termTask === "undefined" || !termTask || termKind === "shell" || !composeHeld(termTask.new_context)) return false;
   composeRelease(d, pasted);
   return true;

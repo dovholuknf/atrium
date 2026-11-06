@@ -155,6 +155,44 @@ func (d *Daemon) keptUndelivered(taskID string, n int) {
 			"read them. They are still on its card. Resume it and say again, or end it.", t.WireName, n))
 }
 
+// wakePaused resumes a paused card for a say that asked for it, the way the board's resume does: out of paused first,
+// since a launch onto a paused card is refused, and back to paused if the launch fails.
+func (d *Daemon) wakePaused(taskID, via string) error {
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		return err
+	}
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
+	defer unlock()
+	t, err = d.st.Get(taskID)
+	if err != nil {
+		return err
+	}
+	if t.Status != store.StatusPaused || d.sup.get(taskID) != nil {
+		return nil
+	}
+	if !resumable(t) {
+		return fmt.Errorf("%s is paused and cannot be resumed: nothing records its conversation", t.DisplayTitle())
+	}
+	if err := d.st.SetStatusBecause(taskID, store.StatusNeedsInput, store.WaitingStarted); err != nil {
+		return err
+	}
+	launch := d.launchLocked
+	if d.wakeLaunch != nil {
+		launch = d.wakeLaunch
+	}
+	if _, err := launch(d.reopenRequest(t)); err != nil {
+		_ = d.st.SetStatus(taskID, store.StatusPaused)
+		return fmt.Errorf("could not resume %s: %w", t.DisplayTitle(), err)
+	}
+	d.startedAt.Store(taskID, time.Now())
+	d.queueHandoffWake(taskID)
+	d.injectKept(taskID)
+	log.Printf("[atrium] %s was paused and is resumed (%s)", t.DisplayTitle(), via)
+	d.publishCard(taskID)
+	return nil
+}
+
 // wakeGone resumes a done or dead card that has a conversation, the way unpark does for a parked one. The card is
 // not parked, so there is no flag to clear: the launch is the whole of it.
 func (d *Daemon) wakeGone(taskID, via string) error {

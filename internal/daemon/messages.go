@@ -652,9 +652,20 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		woke, gate = true, sayOK
 	}
+	// A PAUSED CARD IS WOKEN ONLY BY WAKE: the operator put it down, so an ordinary say does not undo that.
+	if gate == sayPaused && gated != nil && body.Wake {
+		if err := d.wakePaused(taskID, wakeVia(from)); err != nil {
+			small.WriteJSONErr(w, http.StatusConflict, err)
+			return
+		}
+		woke, gate = true, sayOK
+	}
 	// NOBODY TO READ IT NOW: KEPT ON THE CARD. Stored before the sender is answered, delivered the next time it runs.
-	if gate == sayParked || gate == sayGone {
+	if gate == sayParked || gate == sayGone || gate == sayPaused {
 		why := "it is parked"
+		if gate == sayPaused {
+			why = "it is paused. say it again with wake to resume it"
+		}
 		if gate == sayGone {
 			why = "it has no running session"
 			if body.Wake {

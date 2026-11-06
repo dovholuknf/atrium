@@ -129,7 +129,7 @@ func turnCostOf(set *replySet) store.TurnCost {
 		c.CacheRead += one.CacheRead
 		c.CacheWrite5m += w5
 		c.CacheWrite1h += w1
-		if p, ok := usagePriceFor(r.Model); ok {
+		if p, ok := usagePriceForPrompt(r.Model, int64(one.Input+one.CacheRead+w5+w1)); ok {
 			c.Cost += usageCost(one, p)
 		}
 		c.Model = r.Model

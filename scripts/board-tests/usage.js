@@ -688,7 +688,7 @@ async function contextCycleSection(browser, base) {
     let woke = nextFree();
     await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
     await woke;
-    if (await wp.evaluate(() => composeOpen()) || composed.length !== 1 || freed.length !== 1) fail("Escape did not dismiss the panel and release the hold.");
+    if (await wp.evaluate(() => composeOpen()) || composed.length !== 2 || composed[1].text !== "never mind" || freed.length !== 1) fail("Escape did not dismiss the panel and release the hold.");
     await wp.evaluate(() => composeRefused());
     woke = nextFree();
     await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
@@ -727,7 +727,7 @@ async function contextCycleSection(browser, base) {
       window.sendInput = realSend;
       return { mid, hidden: document.getElementById("t-ncbar").hidden, box: composeOpen(), typed };
     });
-    if (composed.length !== 1 || JSON.stringify(endFrame.typed) !== JSON.stringify(["typed during the cycle"]))
+    if (composed.length !== 2 || JSON.stringify(endFrame.typed) !== JSON.stringify(["typed during the cycle"]))
       fail("the end frame did not put the box text on the input line: " + JSON.stringify({ composed, typed: endFrame.typed }));
     if (endFrame.mid.hidden || !/2\/3: clearing the context/.test(endFrame.mid.text))
       fail("a mid-cycle frame did not move the bar to step 2: " + JSON.stringify(endFrame.mid));
@@ -770,7 +770,7 @@ async function contextCycleSection(browser, base) {
     await wp.waitForFunction(() => document.getElementById("t-ctxbox-in").value.includes(".atrium/incoming/pasted.png"), null, { timeout: slow(5000) });
     await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
-    if (composed.length !== 2 || !/^look: .*\.atrium\/incoming\/pasted\.png$/.test(composed[1].text))
+    if (composed.length !== 3 || !/^look: .*\.atrium\/incoming\/pasted\.png$/.test(composed[2].text))
       fail("the pasted image path was not queued with the text: " + JSON.stringify(composed));
     await wp.evaluate(() => { termTask = null; });
 

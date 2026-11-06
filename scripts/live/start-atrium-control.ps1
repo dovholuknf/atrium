@@ -62,7 +62,11 @@ Invoke-Step "start sg4-control: $CtlExe $shown" {
 if (-not $WhatIf) {
   $up = $false
   for ($i = 0; $i -lt 30 -and -not $up; $i++) { $up = Test-Up $CtlHealth; if (-not $up) { Start-Sleep 1 } }
-  if ($up) { Say "sg4-control up at http://127.0.0.1:7791" }
+  if ($up) {
+    $why = Wait-RoomLinked $CtlName
+    if ($why) { Say "sg4-control answers locally but is NOT linked to the hub after 30s: $why"; exit 1 }
+    Say "sg4-control up, linked to the hub (http://127.0.0.1:7791)"
+  }
   else {
     Say 'sg4-control did not answer in 30s. last lines of room.err:'
     Get-Content (Join-Path $CtlLogs 'room.err') -Tail 20

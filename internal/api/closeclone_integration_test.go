@@ -118,3 +118,34 @@ func TestCloseKeepsACloneSomethingElseUses(t *testing.T) {
 		}
 	})
 }
+
+// A repo the hub could not read is cloned empty, and origin cannot be fetched: the open says why and leaves no clone.
+func TestNewWorkOnAnEmptyCloneWithAFailingOriginSaysWhyAndRemovesTheClone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git clones")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{})
+	hub := filepath.Join(t.TempDir(), "hub.git")
+	git(t, filepath.Dir(hub), "init", "-q", "--bare", hub)
+	clone := filepath.Join(t.TempDir(), "scm", "github.com", "o", "r")
+	oh.srv.SCMClone = func(_ context.Context, url string) (gitsync.SCMResult, error) {
+		mkDir(t, filepath.Dir(clone))
+		git(t, filepath.Dir(clone), "clone", "-q", hub, clone)
+		git(t, clone, "config", "atrium.clone", "made")
+		git(t, clone, "remote", "set-url", "origin", "file://"+filepath.ToSlash(filepath.Join(t.TempDir(), "nope.git")))
+		return gitsync.SCMResult{Path: filepath.ToSlash(clone), State: "cloned"}, nil
+	}
+	_, status, err := oh.srv.branchWorktreeFrom(context.Background(), nil, "github.com", "o", "r", "feat/x", true, branchOpts{fetch: true})
+	if err == nil || status != 400 {
+		t.Fatalf("%d %v", status, err)
+	}
+	for _, want := range []string{"github.com/o/r has no commits here", "the hub could not read it", "fetching origin failed", "gh auth login"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q is not in %q", want, err)
+		}
+	}
+	if _, err := os.Stat(clone); err == nil {
+		t.Error("the empty clone was left on disk")
+	}
+}

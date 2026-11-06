@@ -232,10 +232,19 @@ $waitFree = '$n = 0 ; while ($n -lt ' + $portWait + ') { $c = New-Object Net.Soc
 $winWaitStore = New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium\atrium.db'')'
 $sg3WaitStore = New-StoreWaitScript 'windows' '''C:/Users/claude/.atrium/atrium.db'''
 $macWaitStore = New-StoreWaitScript 'mac' '~/.atrium/atrium.db'
+# A running atrium.prev.exe can be renamed but not replaced, so a locked one is moved aside and stale ones swept.
+# A failed move prints $swapFailed and exits before anything is started, so the old binary is never restarted.
+$swapFailed = 'SWAP-FAILED'
+$swapExe = '$p = ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
+  'if (Test-Path $p) { try { Remove-Item -Force $p -ErrorAction Stop } catch { ' +
+  'try { Rename-Item $p (''atrium.prev-'' + (Get-Date -Format yyyyMMddHHmmss) + ''.exe'') -ErrorAction Stop } catch { } } } ; ' +
+  'Get-ChildItem (Split-Path $p) -Filter ''atrium.prev-*.exe'' | ForEach-Object { ' +
+  'try { Remove-Item -Force $_.FullName -ErrorAction Stop } catch { } } ; ' +
+  'try { Move-Item -Force $b $p -ErrorAction Stop ; Move-Item -Force $n $b -ErrorAction Stop } ' +
+  'catch { ''' + $swapFailed + ' '' + $_.Exception.Message ; exit 4 } ; '
 $winSwap = $winEnv + '& $b stop ; ' +
   $waitFree + $winWaitStore +
-  'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
-  'Move-Item -Force (Join-Path $HOME ''atrium.new.exe'') $b ; & $b room --detach'
+  '$n = (Join-Path $HOME ''atrium.new.exe'') ; ' + $swapExe + '& $b room --detach'
 $macWait = 'for i in {1..' + $portWait + '}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
   'if lsof -iTCP:7781 -sTCP:LISTEN >/dev/null ; then echo ' + $portTimeout + ' ; exit 3 ; fi ; '
 # sgg-zrok keeps its address beside its own --dir (--isolated), so a bare `atrium stop` would reach sgg: it names its board.
@@ -245,8 +254,7 @@ $zrokWait = $waitFree.Replace('7781', '7791') + (New-StoreWaitScript 'windows' '
 $remote = @{
   'sg3'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'
     Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' + $waitFree + $sg3WaitStore +
-      'Move-Item -Force C:/Users/claude/.atrium/bin/atrium.exe C:/Users/claude/.atrium/bin/atrium.prev.exe ; ' +
-      'Move-Item -Force C:/Users/claude/atrium.new.exe C:/Users/claude/.atrium/bin/atrium.exe ; ' + $sg3Detach
+      '$b = ''C:/Users/claude/.atrium/bin/atrium.exe'' ; $n = ''C:/Users/claude/atrium.new.exe'' ; ' + $swapExe + $sg3Detach
     Retry = $waitFree + $sg3WaitStore + $sg3Detach
     Log = 'Get-Content C:/Users/claude/.atrium/room/room.log -Tail 300' }
   'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap
@@ -254,8 +262,7 @@ $remote = @{
     Log = 'Get-Content (Join-Path $HOME ''.atrium\room\room.log'') -Tail 300' }
   'sgg-zrok' = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium-zrok.new.exe'; SshName = 'sgg'
     Swap = $zrokEnv + '& $b stop --url http://127.0.0.1:7791 ; ' + $zrokWait +
-      'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
-      'Move-Item -Force (Join-Path $HOME ''atrium-zrok.new.exe'') $b ; ' + $zrokDetach
+      '$n = (Join-Path $HOME ''atrium-zrok.new.exe'') ; ' + $swapExe + $zrokDetach
     Retry = $zrokEnv + $zrokWait + $zrokDetach
     Log = 'Get-Content (Join-Path $HOME ''.atrium-zrok\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
@@ -346,6 +353,11 @@ foreach ($name in $remoteNames) {
   if ($swapHung) { Say "${name}: the swap output was not seen within ${swapCap}s. checking the hub for the room anyway" }
   if ($swapOut -contains $portTimeout) {
     $results[$name] = "failed - the room still held its port after ${portWait}s, so nothing was swapped or started"
+    continue
+  }
+  $swapFail = $swapOut | Where-Object { $_ -like "$swapFailed*" } | Select-Object -First 1
+  if ($swapFail) {
+    $results[$name] = "failed - the swap failed, the old binary was not replaced and the room was not started ($swapFail)"
     continue
   }
   $storeLine = $swapOut | Where-Object { $_ -like "$StoreTimeout*" } | Select-Object -First 1
