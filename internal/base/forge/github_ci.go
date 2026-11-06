@@ -168,8 +168,17 @@ var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 // DownloadDir is where an artifact goes under dest: a folder per host, repository, run and artifact name.
 func DownloadDir(dest string, ref Ref, runID int64, name string) string {
-	return filepath.Join(dest, unsafeName.ReplaceAllString(host(ref), "_"), unsafeName.ReplaceAllString(ref.Org, "_"),
-		unsafeName.ReplaceAllString(ref.Repo, "_"), strconv.FormatInt(runID, 10), unsafeName.ReplaceAllString(name, "_"))
+	return filepath.Join(dest, safeSegment(host(ref)), safeSegment(ref.Org), safeSegment(ref.Repo),
+		strconv.FormatInt(runID, 10), safeSegment(name))
+}
+
+// safeSegment is s as one folder name: a fork can name an artifact "..", which would climb to the repo's folder.
+func safeSegment(s string) string {
+	s = unsafeName.ReplaceAllString(s, "_")
+	if strings.Trim(s, ".") == "" {
+		return "_"
+	}
+	return s
 }
 
 // Download puts one artifact of a run in a folder under dest on this machine, the hub, unless it is there already. The
@@ -306,7 +315,7 @@ func scanDir(dir string, maxBytes int64) (*CIDownload, error) {
 // named and not read.
 func ReadFile(d *CIDownload, rel string, lines int) error {
 	clean := filepath.Clean(filepath.FromSlash(rel))
-	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+	if !filepath.IsLocal(clean) {
 		return fmt.Errorf("%q is not a file inside the artifact", rel)
 	}
 	f, err := os.Open(noNUL(filepath.Join(d.Dir, clean)))

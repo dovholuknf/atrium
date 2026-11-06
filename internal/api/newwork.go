@@ -296,6 +296,7 @@ func (s *Server) worktreeHookFile(host, org, repo string) string {
 	for _, h := range hosts {
 		for _, f := range []string{"worktree.ps1", "worktree.sh"} {
 			p := filepath.Join(dir, h, org, repo, f)
+			// codeql[go/path-injection] joined from RepoSlug or ValidName segments and a checkBranchName branch, so the hooks path is under its root
 			if st, err := os.Stat(safepath.NoNUL(p)); err == nil && !st.IsDir() {
 				return p
 			}
@@ -365,9 +366,12 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		if _, err := exec.LookPath(shell); err != nil {
 			shell = "powershell"
 		}
+		// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 		cmd = exec.CommandContext(ctx, shell, "-NoProfile", "-File", safepath.NoNUL(file),
+			// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 			"-WorktreePath", safepath.NoNUL(filepath.FromSlash(path)), "-Org", safepath.NoNUL(org), "-Repo", safepath.NoNUL(repo), "-RemoteHost", safepath.NoNUL(host))
 	} else {
+		// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 		cmd = exec.CommandContext(ctx, "sh", safepath.NoNUL(file), safepath.NoNUL(filepath.FromSlash(path)), safepath.NoNUL(org), safepath.NoNUL(repo), safepath.NoNUL(host))
 	}
 	cmd.Dir = filepath.FromSlash(path)

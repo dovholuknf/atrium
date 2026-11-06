@@ -3,7 +3,6 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
-	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"net/http"
 	"os"
@@ -72,19 +71,18 @@ func (d *Daemon) worktreesRepo(repo, caller string) (string, error) {
 		}
 		repo = t.Worktree
 	}
-	if fi, err := os.Stat(safepath.NoNUL(filepath.FromSlash(repo))); err == nil && fi.IsDir() {
-		card := ""
-		if t, terr := d.st.GetByWireName(caller); terr == nil && t != nil {
-			card = filepath.FromSlash(t.Worktree)
+	card := ""
+	if t, terr := d.st.GetByWireName(caller); terr == nil && t != nil {
+		card = filepath.FromSlash(t.Worktree)
+	}
+	// contained before any Stat, so a path outside answers like a missing one and a share is never opened
+	if real, cerr := d.ap.ContainedOrOpen(card, filepath.FromSlash(repo)); cerr == nil {
+		if fi, err := os.Stat(real); err == nil && fi.IsDir() {
+			return real, nil
 		}
-		real, cerr := d.ap.ContainedOrOpen(card, filepath.FromSlash(repo))
-		if cerr != nil {
-			return "", errors.New("repo " + repo + " is outside your directory and the paths atrium opens")
-		}
-		return real, nil
 	}
 	if !rules.RepoSlug(repo) {
-		return "", errors.New("repo is a path inside a checkout that exists, or host/org/repo, like github.com/openziti/ziti")
+		return "", errors.New("repo " + repo + " is not a directory inside yours or the paths atrium opens, nor host/org/repo like github.com/openziti/ziti")
 	}
 	if p := d.checkoutOf(repo); p != "" {
 		return p, nil

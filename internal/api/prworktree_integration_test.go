@@ -179,6 +179,24 @@ func TestPRWorktreeSameRepoUsesTheRealBranch(t *testing.T) {
 	}
 }
 
+func TestPRWorktreeRefusesAnOrgOrRepoThatIsNotAName(t *testing.T) {
+	t.Parallel()
+	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "main"}})
+	for _, req := range []prWorktreeRequest{
+		{Org: "..", Repo: "r", Number: 7},
+		{Org: "o", Repo: "../../x", Number: 7},
+		{Host: "..", Org: "o", Repo: "r", Number: 7},
+	} {
+		if _, status, err := hn.srv.prWorktree(context.Background(), nil, req); status != http.StatusBadRequest || err == nil || !strings.Contains(err.Error(), "are names") {
+			t.Errorf("%+v answered %d %v, want 400", req, status, err)
+		}
+	}
+	rec := post(t, hn.h, "/v1/providers/github/pr-worktree", map[string]any{"org": "o", "repo": "..", "number": 7})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "are names") {
+		t.Errorf("a provider's request answered %d %s, want 400", rec.Code, rec.Body)
+	}
+}
+
 func TestPRWorktreeForkUsesPRNumber(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")

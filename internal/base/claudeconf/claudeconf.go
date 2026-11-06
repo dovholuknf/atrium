@@ -68,6 +68,7 @@ func Load(projectDir string) ([]Entry, []Skipped, error) {
 		asks    []mcpAsk
 	)
 	for _, path := range SettingsPaths(projectDir) {
+		// codeql[go/path-injection] dir is from the board's rule import, a board caller has a shell (attach.go kind=shell), and only .claude/settings files are read
 		raw, err := os.ReadFile(noNUL(path))
 		if os.IsNotExist(err) {
 			continue

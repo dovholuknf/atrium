@@ -96,6 +96,7 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name, args := editorCommand(tmpl, full)
+	// codeql[go/command-injection] the editor template is the board's own setting, and a board caller can already open a shell (attach.go kind=shell)
 	cmd := exec.Command(safepath.NoNUL(name), args...)
 	// Started from the card's directory, so an editor that opens a workspace
 	// from its working directory opens the right one.

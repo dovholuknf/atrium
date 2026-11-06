@@ -93,6 +93,10 @@ func containedWith(evalSymlinks func(string) (string, error), root, path string)
 	if err != nil {
 		return "", err
 	}
+	// resolving a share or device path opens it, so one outside the root's volume is refused before any probe
+	if Network(absTarget) && !eq(filepath.VolumeName(absTarget), filepath.VolumeName(absRoot)) {
+		return "", ErrOutside
+	}
 	realTarget, err := resolve(evalSymlinks, absTarget, func(cur string) bool {
 		// the root as spelled too: an ancestor is unresolved, and a symlinked or 8.3 temp dir resolves to another spelling
 		return within(cur, realRoot) || within(cur, absRoot)
@@ -198,6 +202,7 @@ func walkLinks(path string) (string, error) {
 			continue
 		}
 		next := filepath.Join(cur, name)
+		// codeql[go/path-injection] the resolver must lstat each component to find links, shares are refused before resolve, and within still checks the result
 		fi, err := os.Lstat(NoNUL(next))
 		if err != nil {
 			return "", err
@@ -210,6 +215,7 @@ func walkLinks(path string) (string, error) {
 		if links++; links > maxLinks {
 			return "", errors.New("too many links")
 		}
+		// codeql[go/path-injection] the resolver must read each link to follow it, shares are refused before resolve, and within still checks the result
 		target, err := os.Readlink(NoNUL(next))
 		if err != nil {
 			return "", err

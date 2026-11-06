@@ -435,6 +435,7 @@ func worktreeWork(ctx context.Context, dir string) (dirty, unpushed int, branch 
 
 // gitIn runs git in dir and answers its output, and its last lines as the error when it fails.
 func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
+	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and a branch that passed checkBranchName cannot start with '-'
 	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(dir)
 	nowindow.Hide(cmd)

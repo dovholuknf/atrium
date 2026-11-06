@@ -41,7 +41,9 @@ const server = http.createServer((req, res) => {
   const url = req.url.split("?")[0];
   if (url === "/" || url === "/index.html") { res.writeHead(200, { "Content-Type": "text/html" }); res.end(HTML); return; }
   if (url.startsWith("/vendor/") || url.startsWith("/m/")) {
-    return fs.readFile(path.join(__dirname, "..", "internal", "api", "web", url), (e, b) => {
+    const web = path.join(__dirname, "..", "internal", "api", "web"), file = path.join(web, url);
+    if (!file.startsWith(web + path.sep)) { res.writeHead(404); res.end(""); return; }
+    return fs.readFile(file, (e, b) => {
       if (e) { res.writeHead(404); res.end(""); return; }
       res.writeHead(200, { "Content-Type": url.endsWith(".css") ? "text/css" : "application/javascript" }); res.end(b);
     });

@@ -101,7 +101,7 @@ function annotate({ run, jobs, rows, retried, missing }) {
 }
 
 function retriedTable(retried) {
-  const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 160);
+  const cell = (s) => String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 160);
   const out = ['| os | job | unit | timings | first try error | history |', '|---|---|---|---|---|---|'];
   for (const r of retried.slice(0, MAX_ROWS)) out.push(`| ${r.os} | ${r.job} | ${cell(r.unit)} | ${cell(r.times)} | ${cell(r.error)} | ${r.history} |`);
   if (retried.length > MAX_ROWS) out.push('', `and ${retried.length - MAX_ROWS} more`);
@@ -126,7 +126,7 @@ function render({ run, jobs, rows, retried, missing, history, note }) {
   out.push(`History is the last ${history.length} completed runs of ci on main, ${known} with artifacts to read.`, '');
   if (rows.length) {
     out.push('| os | job | unit | first error | retry | history |', '|---|---|---|---|---|---|');
-    const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 160);
+    const cell = (s) => String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 160);
     for (const r of rows.slice(0, MAX_ROWS)) {
       out.push(`| ${r.os} | ${r.job} | ${cell(unitText(r))} | ${cell(r.error)} | ${retryText(r)} | ${r.history} |`);
     }

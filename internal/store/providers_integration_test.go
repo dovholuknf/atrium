@@ -102,6 +102,18 @@ func TestProviderRepoKeyIsCaseFolded(t *testing.T) {
 	}
 }
 
+func TestProviderRepoRefusesADotSegment(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	mustProvider(t, s, "github", "d:/git/github")
+	for _, r := range []ProviderRepo{{Org: "..", Repo: "x"}, {Org: "o", Repo: ".."}, {Org: ".", Repo: "x"}, {Org: "o", Repo: "."}} {
+		r.Provider = "github"
+		if _, err := s.SaveProviderRepo(r); err == nil {
+			t.Errorf("%s/%s was saved", r.Org, r.Repo)
+		}
+	}
+}
+
 // Deleting a provider takes its repository rows and nothing else. A card that
 // happens to sit in one of those directories is not configuration and must not
 // be touched.

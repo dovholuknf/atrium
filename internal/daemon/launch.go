@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/daemon/launch"
@@ -794,6 +795,9 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 
 	cwd := strings.TrimSpace(req.Cwd)
+	if safepath.Network(cwd) {
+		return nil, fmt.Errorf("%s is a network path, not a place to run", cwd)
+	}
 	if err := home.HomeLaunchRefusal(req, cwd); err != nil {
 		return nil, err
 	}

@@ -252,7 +252,7 @@ function report(args) {
   for (const r of rows) {
     const osNew = OSES.filter((os) => r.s.fails.some((f) => f.os === os && latestIds.has(f.run)) && !r.s.fails.some((f) => f.os === os && idNum(f.run) < firstLatest));
     const tag = r.failedLatest ? (r.isNew ? 'NEW' : `known${osNew.length ? `, new on ${osNew.join('+')}` : ''}`) : '';
-    out.push(`| ${r.s.unit.replace(/\|/g, '\\|')} | ${r.s.group} | ${r.winRuns}/${n} | ${r.per.join(' | ')} | ${r.s.firstSeen} | ${r.s.totalFailRuns}/${r.s.totalRuns} | ${r.retryRuns ? `${r.retryRuns}/${r.winRuns} runs, PASSED ON RETRY` : ''} | ${tag} | ${fixedBy(fixes, r.s.unit).replace(/\|/g, '\\|')} |`);
+    out.push(`| ${r.s.unit.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} | ${r.s.group} | ${r.winRuns}/${n} | ${r.per.join(' | ')} | ${r.s.firstSeen} | ${r.s.totalFailRuns}/${r.s.totalRuns} | ${r.retryRuns ? `${r.retryRuns}/${r.winRuns} runs, PASSED ON RETRY` : ''} | ${tag} | ${fixedBy(fixes, r.s.unit).replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`);
   }
   out.push('');
   out.push(`Latest ${latestRuns.length} runs (${latestRuns.map((r) => r.id).join(', ')}): a unit is NEW when it never failed in a run before the first of these, known otherwise.`);

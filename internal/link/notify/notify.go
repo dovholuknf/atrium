@@ -942,6 +942,7 @@ func commandFound(argv []string) error {
 		return errors.New("the command's first element is empty")
 	}
 	if filepath.IsAbs(first) {
+		// codeql[go/path-injection] the only route here is LocalOperator-gated (notifyapi.go:63), and running the configured command is the feature
 		if st, err := os.Stat(noNUL(first)); err != nil || st.IsDir() {
 			return fmt.Errorf("%s does not exist or is a directory", first)
 		}

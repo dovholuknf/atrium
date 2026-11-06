@@ -446,6 +446,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		return res, http.StatusInternalServerError, err
 	}
+	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and a branch that passed checkBranchName cannot start with '-'
 	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
