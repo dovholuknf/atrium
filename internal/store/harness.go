@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -527,25 +525,9 @@ func (s *Store) SeedHarnesses() error {
 		if err != sql.ErrNoRows {
 			return err
 		}
-		if _, err := s.SaveHarness(withMCPConfig(h)); err != nil {
+		if _, err := s.SaveHarness(h); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// withMCPConfig names ~/.atrium/mcp.json on the claude row when the file is there, because --strict-mcp-config alone
-// gives a session no servers, so a room on a new database had no atrium-control tools.
-func withMCPConfig(h Harness) Harness {
-	home, err := os.UserHomeDir()
-	if h.ID != "claude" || err != nil {
-		return h
-	}
-	p := filepath.ToSlash(filepath.Join(home, ".atrium", "mcp.json"))
-	if _, err := os.Stat(p); err != nil {
-		return h
-	}
-	h.Args = append([]string{"--mcp-config", p}, h.Args...)
-	h.ResumeArgs = append(h.ResumeArgs, "--mcp-config", p)
-	return h
 }
