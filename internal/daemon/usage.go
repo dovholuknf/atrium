@@ -58,7 +58,7 @@ import (
 const usageSettle = 1500 * time.Millisecond
 
 // usagePricesVersion names the price table a row's cost was worked out on.
-const usagePricesVersion = "usageprices-2026-09-28b"
+const usagePricesVersion = "usageprices-2026-11-06"
 
 // usageOnlyPrices are the models a usage row prices that keep-alive must not
 // refresh, because keepalivePrices is also the list of models keep-alive may
@@ -76,6 +76,24 @@ var usageOnlyPrices = map[string]cycle.KeepalivePrice{
 	"claude-sonnet-4-5": {In: 3, Cw5m: 3.75, Cw1h: 6, Cr: 0.30, Out: 15},
 	"claude-sonnet-4-6": {In: 3, Cw5m: 3.75, Cw1h: 6, Cr: 0.30, Out: 15},
 	"claude-sonnet-5":   {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
+	"claude-fable-5":    {In: 10, Cw5m: 12.5, Cw1h: 20, Cr: 1, Out: 50},
+	"claude-haiku-5-5":  {In: 0.10, Cw5m: 0.125, Cw1h: 0.20, Cr: 0.01, Out: 0.50},
+}
+
+// haiku55OverPrompt is the prompt size above which a Haiku 5.5 reply is priced at haiku55Dear. The table row is the
+// rate up to and including it.
+const haiku55OverPrompt = 100_000
+
+var haiku55Dear = cycle.KeepalivePrice{In: 0.50, Cw5m: 0.625, Cw1h: 1, Cr: 0.05, Out: 2.50}
+
+// usagePriceForPrompt is usagePriceFor for a reply whose prompt held prompt tokens (input, cache writes and cache
+// reads), which sets the tier of a model priced by prompt length.
+func usagePriceForPrompt(model string, prompt int64) (cycle.KeepalivePrice, bool) {
+	p, ok := usagePriceFor(model)
+	if ok && prompt > haiku55OverPrompt && strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "claude-haiku-5-5") {
+		return haiku55Dear, true
+	}
+	return p, ok
 }
 
 // usagePriceFor prices a reply for a usage row: keep-alive's models, then the
