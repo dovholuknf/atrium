@@ -84,6 +84,8 @@ Check 'the reattach budget accepts ziti taking minutes' ($ReattachBudget -ge 300
 Check 'atrium-deploy waits the named reattach budget' ($deploy -match 'Wait-RoomAttached \$start \$ReattachBudget')
 Check 'every swap and retry waits for the store before the swap' (([regex]::Matches($deploy, 'WaitStore \+')).Count -ge 6)
 Check 'a store that never released is reported with its pid' ($deploy -match 'still held its store')
+Check 'all three windows swaps rename a locked atrium.prev.exe aside and share one helper' (([regex]::Matches($deploy, '\$swapExe')).Count -ge 4 -and $deploy -match 'atrium.prev-')
+Check 'a failed swap is reported and nothing is restarted' ($deploy -match 'SWAP-FAILED' -and $deploy -match 'the swap failed')
 
 if ($fail) { Write-Host "$fail FAILED"; exit 1 }
 Write-Host 'all passed'
