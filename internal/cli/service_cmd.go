@@ -13,7 +13,7 @@ type serviceOpts struct {
 func newServiceCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "service",
-		Short: "Run a room as a Windows service: install, uninstall, status.",
+		Short: "Run a room as a Windows service: install, uninstall, status, password.",
 		Long: "A room as a Windows service you control with `net stop <name>` and `net start <name>`.\n\n" +
 			"Stopping the service is the room's normal graceful stop, so runners the pty host holds stay up, " +
 			"exactly as on `atrium stop`. Running `atrium room` from a console is unchanged.",
@@ -59,6 +59,18 @@ func newServiceCmd() *cobra.Command {
 	}
 	status.Flags().StringVar(&name, "name", "", "the service name")
 	_ = status.MarkFlagRequired("name")
-	c.AddCommand(install, uninstall, status)
+	var passwordFile string
+	password := &cobra.Command{
+		Use:   "password --name <service> [--password-file <file>]",
+		Short: "Store the account's new password on the service. Needs an administrator.",
+		Long: "Run this when the service account's password changes, else the service fails to log on. " +
+			"The password comes from --password-file, else $ATRIUM_SERVICE_PASSWORD, else a prompt.",
+		Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error { return passwordService(name, passwordFile) },
+	}
+	password.Flags().StringVar(&name, "name", "", "the service name")
+	password.Flags().StringVar(&passwordFile, "password-file", "", "a file holding the account's password")
+	_ = password.MarkFlagRequired("name")
+	c.AddCommand(install, uninstall, status, password)
 	return c
 }
