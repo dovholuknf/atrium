@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -42,6 +43,13 @@ func (d *Daemon) askExit(taskID string, grace time.Duration) error {
 	}
 	// ATRIUM TYPED THIS EXIT, so the hook's /exit rule skips it. See windDown.
 	r.SetLeaving(true)
+	if r.LooksIdleFrame() {
+		// Text on the input line would take the exit keys as more text. Esc leaves any mode, ctrl-u empties the line.
+		for _, k := range [][]byte{{0x1b}, {0x15}} {
+			_ = r.Write(k)
+			time.Sleep(d.hk.windDownKeyGap)
+		}
+	}
 	for _, k := range d.exitKeysFor(taskID) {
 		_ = r.Write(k)
 		select {
@@ -59,9 +67,24 @@ func (d *Daemon) askExit(taskID string, grace time.Duration) error {
 	}
 	r.SetLeaving(false)
 	log.Printf("[atrium] runner for %s ignored its exit keys for %s, leaving it running", taskID, grace)
+	held := ""
+	if rr := d.sup.get(taskID); rr != nil && rr.inputLineHoldsText() {
+		held = " the input line held text, which may have swallowed the exit keys."
+	}
 	return fmt.Errorf("%s did not exit when asked, even after %s. it is still running and was not "+
-		"restarted. it may be mid-turn or waiting on a prompt. finish or answer that and try again, "+
-		"or terminate it from the card", d.TaskTitle(taskID), grace)
+		"restarted.%s it may be mid-turn or waiting on a prompt. finish or answer that and try again, "+
+		"or terminate it from the card", d.TaskTitle(taskID), grace, held)
+}
+
+// inputLineHoldsText is whether the last frame is an idle prompt with something typed on its input line.
+func (r *runner) inputLineHoldsText() bool {
+	if r.buf == nil {
+		return false
+	}
+	cols, rows := r.buf.CurrentSize()
+	tail := r.buf.Tail(screen.FrameTailBytes)
+	idle, _ := screen.ClassifyFrame(tail, cols, rows)
+	return idle && !screen.FramePromptEmpty(tail, cols, rows)
 }
 
 // RestartRunner asks a card's runner to exit, waits for it to be gone, and

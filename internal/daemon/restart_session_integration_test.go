@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -119,5 +120,50 @@ func TestARestartTypesTwoControlDsAndNeverClear(t *testing.T) {
 	}
 	if strings.Contains(f.written(), cycle.NewContextClearCommand) {
 		t.Fatal("a restart typed /clear")
+	}
+}
+
+func idleFrameWithText(text string) []byte {
+	rule := strings.Repeat("─", 40)
+	return []byte(rule + "\r\n❯ " + text + "\r\n" + rule + "\r\n  ? for shortcuts\r\n")
+}
+
+func TestAskExitClearsTheInputLineBeforeTheExitKeys(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.ToSlash(filepath.Join(t.TempDir(), "atrium.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	task, _, err := st.Register(store.Observed{WireName: "stale", Worktree: "/tmp/atrium-test", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{st: st, sup: newSupervisor()}
+	d.initServices()
+	d.hk.windDownKeyGap = time.Millisecond
+
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{
+		taskID:   task.ID,
+		pty:      f,
+		started:  time.Now(),
+		buf:      newRingSized(1<<16, 80, 24),
+		watchers: map[chan []byte]struct{}{},
+		done:     make(chan struct{}),
+	}
+	_, _ = r.buf.Write(idleFrameWithText("text nobody typed"))
+	d.sup.add(r)
+
+	err = d.askExit(task.ID, 20*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "the input line held text") {
+		t.Fatalf("a failed exit with text on the line should say so, got %v", err)
+	}
+	got := f.written()
+	clear := strings.IndexByte(got, 0x15)
+	exit := strings.IndexByte(got, 0x04)
+	if clear < 0 || exit < 0 || clear > exit || got[0] != 0x1b {
+		t.Fatalf("the line was not cleared before the exit keys, wrote %q", got)
 	}
 }

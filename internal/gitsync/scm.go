@@ -130,6 +130,8 @@ type SCM struct {
 	source func(Ref) string
 	// extra is git config for the clone, `-c k=v` pairs, and is for the same tests.
 	extra []string
+	// direct is where the fallback clone from origin goes, for the same tests.
+	direct func(Ref) string
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
@@ -273,6 +275,9 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 		}
 		defer done()
 		src, viaHub, env = from, true, []string{"GIT_ALLOW_PROTOCOL=http"}
+		if c.direct != nil {
+			env = nil
+		}
 		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.http.allow=always")
 	default:
 		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always")
@@ -283,8 +288,20 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 	}
 	// An argv slice, never a shell. `--` ends options, though the URL was built from checked
 	// parts and cannot start with a dash. The output is capped, and the runner bounds the time.
-	args = append(args, "clone", "--no-tags", "--", src, dest)
-	if _, err := g.GitCapped(ctx, filepath.Dir(dest), env, 64<<10, args...); err != nil {
+	cloneArgs := append(args, "clone", "--no-tags", "--", src, dest)
+	_, err = g.GitCapped(ctx, filepath.Dir(dest), env, 64<<10, cloneArgs...)
+	if err == nil && viaHub && !c.hasRefs(ctx, dest) {
+		// The hub could not read the repository, so its copy is empty. A worktree off it fails on HEAD.
+		_ = os.RemoveAll(dest)
+		src, env, viaHub = httpsURL(ref), []string{"GIT_ALLOW_PROTOCOL=https"}, false
+		args = []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}
+		if c.direct != nil {
+			src, env, args = c.direct(ref), nil, nil
+		}
+		args = append(append(args, c.extra...), c.credentialArgs(ref)...)
+		_, err = g.GitCapped(ctx, filepath.Dir(dest), env, 64<<10, append(args, "clone", "--no-tags", "--", src, dest)...)
+	}
+	if err != nil {
 		if errors.Is(err, ErrStopped) {
 			return SCMResult{}, err
 		}
@@ -304,6 +321,11 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 	res := SCMResult{Path: filepath.ToSlash(dest), State: "cloned"}
 	c.hub(ctx, ref, dest, &res)
 	return res, nil
+}
+
+func (c *SCM) hasRefs(ctx context.Context, dir string) bool {
+	out, err := c.runner().Git(ctx, dir, "for-each-ref", "--count=1")
+	return err != nil || strings.TrimSpace(out) != ""
 }
 
 // existing handles a clone that is already there.
