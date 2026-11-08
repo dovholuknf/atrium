@@ -293,11 +293,10 @@ func (c *MCP) readCardFileWith(ctx context.Context, client *http.Client, timeout
 	}
 	raw := res.Header.Get(RealPathHeader)
 	if raw == "" {
-		// A ROOM FROM BEFORE THIS TOOL cannot say what a path resolved to, and a name check on the
-		// name that was asked for is the one that a link defeats. Refused, not guessed.
-		return nil, "", &Refusal{Status: http.StatusBadGateway, Msg: "this room is older than the publish tool and cannot " +
-			"say what that path resolves to, which the secret check needs. pass content instead, or have the room " +
-			"restarted on a current build"}
+		// A name check on the name that was asked for is the one that a link defeats. Refused, not guessed.
+		return nil, "", &Refusal{Status: http.StatusBadGateway, Msg: "the room did not say what that path resolves " +
+			"to, which the secret check needs. the room sent no resolved path for it, so check that it is a plain " +
+			"readable file, or pass content instead"}
 	}
 	rel, err := url.PathUnescape(raw)
 	if err != nil || rel == "" {

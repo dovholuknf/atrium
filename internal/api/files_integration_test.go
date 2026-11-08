@@ -419,3 +419,25 @@ func TestDownloadSaysWhatItResolvedTo(t *testing.T) {
 		}
 	}
 }
+
+func TestDownloadingOutsideTheWorktreeSendsTheResolvedPath(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	_, _, home := fileServer(t)
+	if err := os.WriteFile(filepath.Join(home, "doc.md"), []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(SettingOpenPaths, filepath.ToSlash(home)); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	target := filepath.ToSlash(filepath.Join(home, "doc.md"))
+	s.downloadFile(w, downloadReq(task.ID, target))
+	if w.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
+	}
+	if got, err := url.PathUnescape(w.Header().Get(RealPathHeader)); err != nil || got != target {
+		t.Errorf("resolved to %q (%v), want %q", got, err, target)
+	}
+}

@@ -346,13 +346,15 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 	// on the file that is really being read and not on the name it was asked for. A link
 	// `notes.md -> .env` passes containment and the filename above has lost its leading dot.
 	// See docshare.SecretFileName and atrium_publish.
-	if rel, ok := realRelative(filepath.ToSlash(root), real); ok {
-		w.Header().Set(RealPathHeader, url.PathEscape(rel))
+	rel, ok := realRelative(filepath.ToSlash(root), real)
+	if !ok {
+		rel = filepath.ToSlash(real)
 	}
+	w.Header().Set(RealPathHeader, url.PathEscape(rel))
 	http.ServeContent(w, r, "", fi.ModTime(), f)
 }
 
-// RealPathHeader carries a download's resolved path, relative to the card, path-escaped.
+// RealPathHeader carries a download's resolved path, path-escaped: relative to the card, or absolute outside it.
 const RealPathHeader = "X-Atrium-Real-Path"
 
 // realRelative is real, which safepath already resolved, as a slash path under the card's
