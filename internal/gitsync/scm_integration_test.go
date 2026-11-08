@@ -395,3 +395,42 @@ func TestStableHubURLNeverNamesAllInterfaces(t *testing.T) {
 		}
 	}
 }
+
+func emptyHubSCM(t *testing.T, direct string) (*SCM, string) {
+	t.Helper()
+	c, root := newSCM(t)
+	empty := filepath.Join(t.TempDir(), "empty.git")
+	gitT(t, filepath.Dir(empty), "init", "-q", "--bare", empty)
+	c.source = nil
+	c.From = func(context.Context, Ref) (string, func(), error) { return empty, func() {}, nil }
+	c.extra = []string{"-c", "protocol.file.allow=always"}
+	c.direct = func(Ref) string { return direct }
+	return c, root
+}
+
+func TestEmptyHubCloneFallsBackToOrigin(t *testing.T) {
+	t.Parallel()
+	c, root := emptyHubSCM(t, bareSource(t))
+	res, err := c.Clone(context.Background(), "https://github.com/acme/private")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := gitT(t, res.Path, "for-each-ref", "--count=1"); strings.TrimSpace(out) == "" {
+		t.Fatal("the clone has no refs")
+	}
+	if _, serr := os.Stat(filepath.Join(root, "github", "acme", "private", ".git")); serr != nil {
+		t.Fatal(serr)
+	}
+}
+
+func TestEmptyHubCloneAndFailingOriginLeavesNothing(t *testing.T) {
+	t.Parallel()
+	c, root := emptyHubSCM(t, filepath.Join(t.TempDir(), "nope.git"))
+	_, err := c.Clone(context.Background(), "https://github.com/acme/private")
+	if err == nil || err.Error() != CloneFailed {
+		t.Fatalf("err = %v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(root, "github", "acme", "private")); serr == nil {
+		t.Fatal("a failed clone left its folder behind")
+	}
+}
