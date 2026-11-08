@@ -1985,7 +1985,6 @@ function sendInput(text, quiet, pasted) {
     if (term) term.scrollToBottom();
     followScrollUntil = Infinity;
   }
-  if (!quiet && typeof composeLineFeed === "function") composeLineFeed(d, pasted);
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
   if (pasted && !quiet) { sendPaste(d); return; }
   send({ t: "in", d });
