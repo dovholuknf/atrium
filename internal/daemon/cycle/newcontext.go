@@ -923,6 +923,9 @@ func (d *Service) RunNewContext(taskID string, gen uint64) {
 		reason := step + ": " + err.Error()
 		if d.Nctx.Fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
+			if err := d.St.RaiseAttention(taskID); err != nil {
+				log.Printf("[atrium] could not raise attention on %s: %v", taskID, err)
+			}
 			// The chip goes when the clear is proven, and the reason stays in the card's
 			// history after it.
 			end(map[string]any{"failed": reason})
