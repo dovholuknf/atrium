@@ -37,7 +37,11 @@ $argv = if ($Join) { @('room', 'join', $Join, '--dir', (Join-Path $AtriumRoot "$
   else { @('room', '--root', $AtriumRoot, '--name', $CtlName) + $common }
 $shown = if ($Join) { ($argv -replace [regex]::Escape($Join), '<join>') -join ' ' } else { $argv -join ' ' }
 
-Invoke-Step "start sg4-control: $CtlExe $shown" {
+$svc = Get-ControlService
+if ($svc) {
+  if ($Join) { Say "sg4-control runs as service $svc, so -Join is ignored: the service holds its own command line" }
+  Invoke-Step "start sg4-control service ${svc}: net start" { net.exe start $svc | ForEach-Object { Say $_ } }
+} else { Invoke-Step "start sg4-control: $CtlExe $shown" {
   Clear-SessionEnv
   # A supervised session exports these too, and the room must not inherit them.
   foreach ($n in 'ATRIUM_HUB_URL', 'ATRIUM_PERM_GATE', 'ATRIUM_DEBUG_INPUTLAG', 'ATRIUM_NEW_BUILD') {
@@ -57,7 +61,7 @@ Invoke-Step "start sg4-control: $CtlExe $shown" {
   # In no job object, through cmd for the redirects.
   $q = $argv | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }
   $null = Start-Jobless "`"$CtlExe`" $($q -join ' ') > $CtlLogs\room.out 2> $CtlLogs\room.err" 'control'
-}
+} }
 
 if (-not $WhatIf) {
   $up = $false
