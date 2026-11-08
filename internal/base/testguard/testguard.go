@@ -82,6 +82,7 @@ func Home(dir string) {
 	for _, k := range []string{"HOME", "USERPROFILE"} {
 		_ = os.Setenv(k, home)
 	}
+	_ = os.Unsetenv("CODEX_HOME")
 	// On Windows atrium's own files, daemon.json among them, live under these and
 	// not under the home directory.
 	for k, sub := range map[string]string{"APPDATA": "AppData/Roaming", "LOCALAPPDATA": "AppData/Local"} {

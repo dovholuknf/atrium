@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/userenv"
@@ -1040,6 +1041,13 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
 	if isCodex(h) {
 		opts.GitDir = outsideGitDir(cwd)
+		trust := []string{cwd}
+		if opts.GitDir != "" {
+			trust = append(trust, filepath.Dir(opts.GitDir))
+		}
+		if err := claudeconf.TrustCodexProjects(trust); err != nil {
+			log.Printf("[atrium] could not pre-trust %v for codex: %v", trust, err)
+		}
 	}
 	// The compaction window, from the limit this card will be held to. The tags are the
 	// request's and the card's, and the agent mark is put on as the launch will.
