@@ -636,6 +636,11 @@ func (n *NewContexts) DropMarker(taskID string) {
 func (n *NewContexts) Revive(taskID string) (uint64, bool) {
 	n.Mu.Lock()
 	m, ok := n.Dropped[taskID]
+	// A cycle that failed before any ack takes a late ready as the ack too.
+	if cur := n.By[taskID]; !ok && cur != nil && cur.Step == NewContextFailed && !cur.Acked && !cur.Cleared && cur.File != "" {
+		m, ok = ncDropped{conv: cur.Conv, file: cur.File, auto: cur.Auto, tokens: cur.Tokens, limit: cur.Limit,
+			prompted: cur.Prompted, at: time.Now()}, true
+	}
 	n.Mu.Unlock()
 	if !ok || time.Since(m.at) >= droppedHold {
 		return 0, false

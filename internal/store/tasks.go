@@ -716,6 +716,24 @@ func (s *Store) SetStatusBecause(id, status, reason string) error {
 	return s.guard(func() error { return s.setStatusOn(s.db, id, status, reason) })
 }
 
+// RaiseAttention marks a card that stopped waiting on something atrium owed it as asking, so it does not read as idle.
+func (s *Store) RaiseAttention(id string) error {
+	return s.guard(func() error {
+		t, err := s.getBy(`id = ?`, id)
+		if err != nil {
+			return err
+		}
+		switch t.Status {
+		case StatusRunning:
+			return s.setStatusOn(s.db, id, StatusNeedsInput, WaitingAsked)
+		case StatusNeedsInput:
+			_, err = s.db.Exec(`UPDATE task SET waiting_reason = ? WHERE id = ?`, WaitingAsked, id)
+			return err
+		}
+		return nil
+	})
+}
+
 // setStatusOn is SetStatusBecause on a given connection, so a report can move
 // its card in the same transaction as everything else it records.
 func (s *Store) setStatusOn(q querier, id, status, reason string) error {
