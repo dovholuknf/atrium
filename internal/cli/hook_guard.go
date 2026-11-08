@@ -123,3 +123,24 @@ func guardOutput(d guard.Decision) []byte {
 	}
 	return b
 }
+
+// codexPreToolUse drops a PreToolUse answer codex refuses: it takes deny, and allow only with updatedInput.
+func codexPreToolUse(out []byte, runner string) []byte {
+	if !strings.HasPrefix(whichRunner(runner), "codex") {
+		return out
+	}
+	var ans struct {
+		Hook struct {
+			Event    string          `json:"hookEventName"`
+			Decision string          `json:"permissionDecision"`
+			Input    json.RawMessage `json:"updatedInput"`
+		} `json:"hookSpecificOutput"`
+	}
+	if json.Unmarshal(out, &ans) != nil || ans.Hook.Event != "PreToolUse" {
+		return out
+	}
+	if ans.Hook.Decision == "ask" || ans.Hook.Decision == "allow" && len(ans.Hook.Input) == 0 {
+		return nil
+	}
+	return out
+}

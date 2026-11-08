@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/userenv"
@@ -170,6 +171,10 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		}
 	}
 	if o.GitDir != "" && isCodex(h) {
+		if !namesSandbox(args) && !namesSandbox(o.Args) {
+			// codex's default sandbox refuses --add-dir and exits at once.
+			args = append(append([]string{}, args...), "--sandbox", "workspace-write")
+		}
 		args = append(append([]string{}, args...), "--add-dir", o.GitDir)
 	}
 	if len(o.Args) > 0 {
@@ -196,6 +201,15 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+func namesSandbox(args []string) bool {
+	for _, a := range args {
+		if a == "-s" || a == "--sandbox" || strings.HasPrefix(a, "--sandbox=") || a == "--dangerously-bypass-approvals-and-sandbox" {
+			return true
+		}
+	}
+	return false
 }
 
 // outsideGitDir is the git common dir of the worktree at cwd, which lies outside it, else "".
@@ -1027,6 +1041,13 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
 	if isCodex(h) {
 		opts.GitDir = outsideGitDir(cwd)
+		trust := []string{cwd}
+		if opts.GitDir != "" {
+			trust = append(trust, filepath.Dir(opts.GitDir))
+		}
+		if err := claudeconf.TrustCodexProjects(trust); err != nil {
+			log.Printf("[atrium] could not pre-trust %v for codex: %v", trust, err)
+		}
 	}
 	// The compaction window, from the limit this card will be held to. The tags are the
 	// request's and the card's, and the agent mark is put on as the launch will.

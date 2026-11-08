@@ -218,7 +218,7 @@ func newHook() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Permission decisions need their own stdout protocol rather than activity reporting.
 			if strings.EqualFold(strings.TrimSpace(event), permissionEvent) {
-				if out := permissionHookForRunner(hubURL, readStdin(), runnerPID, runner); out != nil {
+				if out := codexPreToolUse(permissionHookForRunner(hubURL, readStdin(), runnerPID, runner), runner); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}
 				return nil
@@ -240,7 +240,7 @@ func newHook() *cobra.Command {
 				return nil
 			}
 			if strings.EqualFold(strings.TrimSpace(event), preToolUseEvent) {
-				if out := guardHook(readStdin(), guard.OSEnv{AgentFunc: recordedAgentAddr}); out != nil {
+				if out := codexPreToolUse(guardHook(readStdin(), guard.OSEnv{AgentFunc: recordedAgentAddr}), runner); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}
 				return nil

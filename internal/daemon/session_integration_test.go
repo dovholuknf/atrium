@@ -221,3 +221,29 @@ func TestSessionBindsToLaunchedCard(t *testing.T) {
 		t.Fatal("session did not bind to the card that launched it")
 	}
 }
+
+func TestACodexSessionStartAfterItsPromptStaysRunning(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	for _, runner := range []string{"codex", "claude"} {
+		ev := SessionEvent{Agent: runner + "-work", Event: "start", Cwd: `D:\git\atrium`, PID: 4243, Runner: runner}
+		if err := d.onSession(ev); err != nil {
+			t.Fatal(err)
+		}
+		task, err := d.st.GetByWireName(ev.Agent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.act.promptSeen(task.ID)
+		d.turnResumed(task.ID)
+		if err := d.onSession(ev); err != nil {
+			t.Fatal(err)
+		}
+		if task, err = d.st.GetByWireName(ev.Agent); err != nil {
+			t.Fatal(err)
+		}
+		if want := map[string]string{"codex": store.StatusRunning, "claude": store.StatusNeedsInput}[runner]; task.Status != want {
+			t.Fatalf("%s: status is %q, want %q", runner, task.Status, want)
+		}
+	}
+}
