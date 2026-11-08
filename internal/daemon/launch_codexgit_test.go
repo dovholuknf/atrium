@@ -18,15 +18,22 @@ func TestCodexWorktreeAddsItsGitDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"--no-alt-screen", "--add-dir", common, "go"}; !slices.Equal(args, want) {
+	if want := []string{"--no-alt-screen", "--sandbox", "workspace-write", "--add-dir", common, "go"}; !slices.Equal(args, want) {
 		t.Fatalf("args %q, want %q", args, want)
 	}
 	args, _, err = runnerArgsWith(codex, "sess-1", "", launchOptions{GitDir: common})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"resume", "--no-alt-screen", "sess-1", "--add-dir", common}; !slices.Equal(args, want) {
+	if want := []string{"resume", "--no-alt-screen", "sess-1", "--sandbox", "workspace-write", "--add-dir", common}; !slices.Equal(args, want) {
 		t.Fatalf("resume args %q, want %q", args, want)
+	}
+	args, _, err = runnerArgsWith(codex, "", "", launchOptions{GitDir: common, Args: []string{"--sandbox", "danger-full-access"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"--no-alt-screen", "--add-dir", common, "--sandbox", "danger-full-access"}; !slices.Equal(args, want) {
+		t.Fatalf("own sandbox args %q, want %q", args, want)
 	}
 	claude := &store.Harness{ID: "claude", Label: "claude code", Cmd: "claude"}
 	if args, _, _ := runnerArgsWith(claude, "", "", launchOptions{GitDir: common}); len(args) != 0 {

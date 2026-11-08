@@ -170,6 +170,10 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		}
 	}
 	if o.GitDir != "" && isCodex(h) {
+		if !namesSandbox(args) && !namesSandbox(o.Args) {
+			// codex's default sandbox refuses --add-dir and exits at once.
+			args = append(append([]string{}, args...), "--sandbox", "workspace-write")
+		}
 		args = append(append([]string{}, args...), "--add-dir", o.GitDir)
 	}
 	if len(o.Args) > 0 {
@@ -196,6 +200,15 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+func namesSandbox(args []string) bool {
+	for _, a := range args {
+		if a == "-s" || a == "--sandbox" || strings.HasPrefix(a, "--sandbox=") || a == "--dangerously-bypass-approvals-and-sandbox" {
+			return true
+		}
+	}
+	return false
 }
 
 // outsideGitDir is the git common dir of the worktree at cwd, which lies outside it, else "".
