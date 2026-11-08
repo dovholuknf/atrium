@@ -91,9 +91,8 @@ func TestHubApprovesAPendingRequestWhenBoardWideAutoIsOn(t *testing.T) {
 	proxy, done := oneRoom(t, "alpha", g.handler())
 	defer done()
 
-	// Wiring the inventory starts the approver, and this inventory says the flag
-	// is on.
-	proxy.SetInventory(&remembering{boardAuto: true})
+	// Remembering another room's cards makes this the merged view, where the hub's switch is the board's.
+	proxy.SetInventory(&remembering{boardAuto: true, cards: map[string][]CardState{"beta": nil}})
 
 	waitFor(t, 5*time.Second, func() bool {
 		decided, _, _ := g.answered()
@@ -133,6 +132,27 @@ func TestHubLeavesARequestPendingWhenBoardWideAutoIsOff(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return inv.looks.Load() >= 1 })
 	if decided, _, _ := g.answered(); decided {
 		t.Fatalf("a request was approved with board-wide auto off")
+	}
+}
+
+// One room alone is scoped to it, so the board shows and writes that room's own switch, and the hub's switch,
+// unwritten and so on, must not answer for it.
+func TestHubLeavesARequestPendingWithOneRoomAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
+	lightSlot(t)
+	g := &gate{}
+	proxy, done := oneRoom(t, "alpha", g.handler())
+	defer done()
+
+	inv := &looked{remembering: &remembering{boardAuto: true}}
+	proxy.SetInventory(inv)
+
+	waitFor(t, 5*time.Second, func() bool { return inv.looks.Load() >= 1 })
+	time.Sleep(500 * time.Millisecond) // wait: negative check, a sweep has nothing to signal when it declines
+	if decided, _, _ := g.answered(); decided {
+		t.Fatalf("the hub's switch approved a request on a hub with one room alone")
 	}
 }
 

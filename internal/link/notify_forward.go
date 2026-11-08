@@ -83,6 +83,13 @@ func (p *Proxy) notifyCalls() notify.Calls {
 			}
 			return nil
 		},
+		Merged: func() bool {
+			if p.hub == nil {
+				return true
+			}
+			_, merged := p.merged()
+			return merged
+		},
 		PRWarnSweep: p.prWarnSweep,
 		GoWork:      p.goWork,
 	}

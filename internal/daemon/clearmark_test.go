@@ -78,3 +78,21 @@ func TestAnOSCThatIsNotTheMarkIsIgnored(t *testing.T) {
 		t.Fatalf("an unknown OSC leaked:\n%q", got)
 	}
 }
+
+// The frame showing at a repaint's clear is a prefix of the next one, not a page the operator left behind.
+func TestAPartialFrameOfARepaintIsNotKeptInHistory(t *testing.T) {
+	t.Parallel()
+	const clear = "\x1b[2J\x1b[3J\x1b[H"
+	const head = "| name | size |\r\n+------+------+\r\n"
+	in := "earlier reply\r\n" + clear + "reply\r\n" + head + clear + "reply\r\n" + head + "| a | 1 |\r\n+------+------+\r\n"
+	got := plain(render(in, 40))
+	if n := strings.Count(got, "| name | size |"); n != 1 {
+		t.Fatalf("the table header is in the scrollback %d times, not once:\n%q", n, got)
+	}
+	if !strings.Contains(got, "earlier reply") {
+		t.Fatalf("the page that was cleared away is gone:\n%q", got)
+	}
+	if got := plain(render("old\r\n"+clear+"banner\r\n"+clear+"banner\r\n> /clear\r\n", 40)); strings.Count(got, "banner") != 1 {
+		t.Fatalf("the intermediate banner was kept:\n%q", got)
+	}
+}

@@ -28,6 +28,9 @@ type Calls struct {
 	Subscribe func(room string) (events <-chan wire.Event, leave func())
 	// Inventory is the hub's inventory, nil when the hub has none.
 	Inventory func() BoardAuto
+	// Merged says whether a board that names no room sees the merged view. Without it the board is one room's,
+	// whose own switch is the one it shows and writes, so the hub's switch does not answer for that room.
+	Merged func() bool
 	// PRWarnSweep is the PR claim warning the growler waits on.
 	PRWarnSweep func(g *Growler) bool
 	// GoWork runs fn as hub work that a shutdown waits for.

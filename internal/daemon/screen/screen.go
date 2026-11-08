@@ -113,6 +113,10 @@ type Screen struct {
 	// pushedRows is each row's text at that push, and pushedLive is whether the grid has not scrolled or shifted since.
 	pushedRows []string
 	pushedLive bool
+	// keptRows, keptEnd and keptN are the last page keepPage filed, so dropPartial can take a partial frame back.
+	keptRows []string
+	keptEnd  int
+	keptN    int
 	// modes is the last `h` (true) or `l` seen for each of inputModes, so a replay can turn mouse and paste reporting back on.
 	modes map[string]bool
 }
@@ -506,6 +510,7 @@ func (s *Screen) keepPage() {
 	if s.alt {
 		return
 	}
+	s.dropPartial()
 	var sig strings.Builder
 	for i := 0; i < s.rows && i < len(s.cells); i++ {
 		if rowIsBlank(s.cells[i]) {
@@ -537,12 +542,38 @@ func (s *Screen) keepPage() {
 	for s.pushedLive && upto >= 0 && (rows[upto] == "" || (upto < len(s.pushedRows) && rows[upto] == s.pushedRows[upto])) {
 		upto--
 	}
+	s.keptRows, s.keptN = nil, 0
 	for i := 0; i <= upto; i++ {
 		if !rowIsBlank(s.cells[i]) {
 			s.history = append(s.history, append([]cell(nil), s.cells[i]...))
+			s.keptRows = append(s.keptRows, rows[i])
+			s.keptN++
 		}
 	}
+	s.keptEnd = len(s.history)
 	s.pushedRows, s.pushedLive = rows, true
+}
+
+// dropPartial unfiles the last kept page once the grid extends it, since Claude Code repaints a growing reply per clear.
+func (s *Screen) dropPartial() {
+	if s.keptN == 0 || len(s.history) != s.keptEnd || s.alt {
+		return
+	}
+	i := 0
+	for r := 0; r < s.rows && r < len(s.cells); r++ {
+		if rowIsBlank(s.cells[r]) {
+			continue
+		}
+		if i < len(s.keptRows) && rowText(s.cells[r]) != s.keptRows[i] {
+			return
+		}
+		i++
+	}
+	if i <= len(s.keptRows) {
+		return
+	}
+	s.history = s.history[:s.keptEnd-s.keptN]
+	s.keptN = 0
 }
 
 // insertLines is `CSI L`, and deleteLines is `CSI M`. Both move the lines below
@@ -700,6 +731,7 @@ func (s *Screen) textWithCursor() string {
 // attaching terminal is this grid's height, which the pty size frame sent ahead
 // of the replay sees to. See `TestReplayKeepsTheSessionsRows`.
 func (s *Screen) textAtRows() string {
+	s.dropPartial()
 	var b strings.Builder
 	cur := ""
 	blanks := 0
@@ -771,6 +803,7 @@ func (s *Screen) writeRow(b *strings.Builder, r []cell, cur *string) {
 // prompt with nothing under it: the resting position is already right and no
 // move is owed.
 func (s *Screen) render() (body string, curLine, total int, ok bool) {
+	s.dropPartial()
 	var b strings.Builder
 	rows := append(append([][]cell{}, s.history...), s.cells...)
 	// Where the session's cursor sits in the combined rows.
@@ -1534,7 +1567,7 @@ func ReplayCols(widths []int, wantCols int) int {
 func (s *Screen) Cursor() (row, col int) { return s.row, s.col }
 
 // HistoryRows is how many rows have scrolled off the top.
-func (s *Screen) HistoryRows() int { return len(s.history) }
+func (s *Screen) HistoryRows() int { s.dropPartial(); return len(s.history) }
 
 // Grid is the visible rows as text, without history and without the cells a wide character covers.
 func (s *Screen) Grid() string {
