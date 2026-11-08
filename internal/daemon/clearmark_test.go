@@ -79,8 +79,7 @@ func TestAnOSCThatIsNotTheMarkIsIgnored(t *testing.T) {
 	}
 }
 
-// Claude Code repaints a growing reply with a clear and the whole frame each time. The frame showing at a clear is a
-// prefix of the next one, so it is not a page the operator left behind and it stays out of history.
+// The frame showing at a repaint's clear is a prefix of the next one, not a page the operator left behind.
 func TestAPartialFrameOfARepaintIsNotKeptInHistory(t *testing.T) {
 	t.Parallel()
 	const clear = "\x1b[2J\x1b[3J\x1b[H"

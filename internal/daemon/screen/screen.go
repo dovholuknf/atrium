@@ -113,8 +113,7 @@ type Screen struct {
 	// pushedRows is each row's text at that push, and pushedLive is whether the grid has not scrolled or shifted since.
 	pushedRows []string
 	pushedLive bool
-	// keptRows is the text of the page that push filed, keptEnd the history length right after it and keptN how many
-	// rows it added, so a push that turns out to be a partial frame can be taken back while nothing came after it.
+	// keptRows, keptEnd and keptN are the last page keepPage filed, so dropPartial can take a partial frame back.
 	keptRows []string
 	keptEnd  int
 	keptN    int
@@ -555,9 +554,7 @@ func (s *Screen) keepPage() {
 	s.pushedRows, s.pushedLive = rows, true
 }
 
-// dropPartial takes back the last page keepPage filed when the page showing now is that page plus more rows under it,
-// with nothing filed since. Claude Code repaints a growing reply as a clear and the whole frame each time, so the
-// frame at a clear is a prefix of the next one and not a page the operator left behind.
+// dropPartial unfiles the last kept page once the grid extends it, since Claude Code repaints a growing reply per clear.
 func (s *Screen) dropPartial() {
 	if s.keptN == 0 || len(s.history) != s.keptEnd || s.alt {
 		return
