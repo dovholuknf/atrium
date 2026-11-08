@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// TrustCodexProjects marks each folder trusted in codex's config.toml, the only place its trust prompt reads, and
-// leaves a folder already listed as its owner set it. Appended, so a write codex makes meanwhile is not lost.
+// TrustCodexProjects appends a trusted entry per unlisted folder, since config.toml is all codex's trust prompt reads.
 func TrustCodexProjects(dirs []string) error {
 	hooks, err := CodexHooksPath()
 	if err != nil {
