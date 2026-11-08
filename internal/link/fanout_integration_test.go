@@ -689,3 +689,43 @@ func TestBoardUsageLandsOnTheFirstRoomInTheAllView(t *testing.T) {
 		t.Fatalf("rooms saw %q, want %q", got, want)
 	}
 }
+
+func pngRoom(room, id string, png []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/tasks" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"tasks":[{"id":%q,"title":%q}]}`, id, room+"-card")
+			return
+		}
+		if r.URL.Path != "/v1/tasks/"+id+"/files/view" || r.URL.Query().Get("path") != "shot.png" {
+			http.Error(w, `{"error":"no such card"}`, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(png)
+	})
+}
+
+func TestAPictureOfACardOnARemoteRoomIsServedByThatRoom(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 300000)...)
+	for i := range png[8:] {
+		png[8+i] = byte(i * 7)
+	}
+	front, _, done := two(t, pngRoom("alpha", "acard", []byte("no")), pngRoom("beta", "bcard", png))
+	defer done()
+
+	for _, id := range []string{"bcard", "beta~bcard"} {
+		res, err := http.Get(front.URL + "/v1/tasks/" + id + "/files/view?path=shot.png")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "image/png" ||
+			res.Header.Get("X-Content-Type-Options") != "nosniff" || string(got) != string(png) {
+			t.Fatalf("%s: status %d, type %q, %d bytes of %d", id, res.StatusCode,
+				res.Header.Get("Content-Type"), len(got), len(png))
+		}
+	}
+}

@@ -1662,7 +1662,7 @@ func (d *Daemon) initServices() {
 			TaskFor:           d.taskFor,
 			Cycle: func(id string) (string, bool, bool) {
 				cur := d.Nctx.Get(id)
-				if cur == nil {
+				if cur == nil || cur.Step == cycle.NewContextFailed {
 					if gen, ok := d.Nctx.Revive(id); ok {
 						cur = d.Nctx.Get(id)
 						go d.RunNewContext(id, gen)

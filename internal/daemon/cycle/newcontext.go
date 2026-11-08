@@ -636,6 +636,11 @@ func (n *NewContexts) DropMarker(taskID string) {
 func (n *NewContexts) Revive(taskID string) (uint64, bool) {
 	n.Mu.Lock()
 	m, ok := n.Dropped[taskID]
+	// A cycle that failed before any ack takes a late ready as the ack too.
+	if cur := n.By[taskID]; !ok && cur != nil && cur.Step == NewContextFailed && !cur.Acked && !cur.Cleared && cur.File != "" {
+		m, ok = ncDropped{conv: cur.Conv, file: cur.File, auto: cur.Auto, tokens: cur.Tokens, limit: cur.Limit,
+			prompted: cur.Prompted, at: time.Now()}, true
+	}
 	n.Mu.Unlock()
 	if !ok || time.Since(m.at) >= droppedHold {
 		return 0, false
@@ -918,6 +923,9 @@ func (d *Service) RunNewContext(taskID string, gen uint64) {
 		reason := step + ": " + err.Error()
 		if d.Nctx.Fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
+			if err := d.St.RaiseAttention(taskID); err != nil {
+				log.Printf("[atrium] could not raise attention on %s: %v", taskID, err)
+			}
 			// The chip goes when the clear is proven, and the reason stays in the card's
 			// history after it.
 			end(map[string]any{"failed": reason})
