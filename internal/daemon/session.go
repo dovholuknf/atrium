@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -524,8 +525,10 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		//
 		// A card put down by hand stays put: shelving is an answer, and a
 		// session starting inside a paused worktree does not overrule it.
-		switch task.Status {
-		case store.StatusPaused:
+		switch {
+		case task.Status == store.StatusPaused:
+		case task.Status == store.StatusRunning && strings.HasPrefix(runner, "codex") && d.act.quietFor(task.ID) < time.Minute:
+			// codex fires SessionStart with its first turn, after the opening prompt already moved the card to running.
 		default:
 			// Ready because it has not started, which is the opposite of the
 			// other way into this column. Without the reason the board told
