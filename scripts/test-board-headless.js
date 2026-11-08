@@ -26093,8 +26093,9 @@ async function notifyTrayWrapSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
-// newContextSse: a new context that arrives on the task stream with no poll holds typing at once, keeps what the human had
-// on the line in the compose box, and a list read that began before the stream row cannot lift the hold.
+// newContextSse: a new context that arrives on the task stream with no poll holds typing at once, and a list read that
+// began before the stream row cannot lift the hold. The room holds only once its own line is empty, so what this board
+// once typed is stale by then: it is neither moved into the box nor typed back after the cycle.
 async function newContextSseSection(browser, base) {
   const shots = process.env.NCSSE_SHOTS || "";
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
@@ -26130,7 +26131,6 @@ async function newContextSseSection(browser, base) {
     if (shots) {
       await p.evaluate(() => {
         termTask = { id: "c-sse", new_context: null }; composeClose();
-        composeLine = "i thought rooms w";
         composeFollow({ id: "c-sse", row: 1, new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
         for (let e = document.getElementById("t-ctxbox"); e && e !== document.body; e = e.parentElement) {
           e.hidden = e.id === "t-ctxbox" ? e.hidden : false;
@@ -26142,11 +26142,11 @@ async function newContextSseSection(browser, base) {
       await p.screenshot({ path: path.join(shots, process.env.NCSSE_NAME || "after.png") });
     }
     if (!got.held.sign || !got.held.box) fail("newContextSse: the stream row did not engage the gate: " + JSON.stringify(got.held));
-    if (got.held.text !== "i thought rooms w") fail("newContextSse: the line the human had was not kept: " + JSON.stringify(got.held));
+    if (got.held.text !== "") fail("newContextSse: a stale line was moved into the box: " + JSON.stringify(got.held));
     if (!got.dropped) fail("newContextSse: a key reached the terminal under the hold");
-    if (JSON.stringify(got.clears) !== "[17]") fail("newContextSse: the line moved into the box was not cleared off the terminal: " + JSON.stringify(got.clears));
+    if (got.clears.length) fail("newContextSse: backspaces went to a line the room had already found empty: " + JSON.stringify(got.clears));
     if (!got.stillHeld) fail("newContextSse: a list read from before the stream row lifted the hold");
-    if (JSON.stringify(got.typed) !== JSON.stringify(["i thought rooms w"])) fail("newContextSse: the line was not handed back after the cycle: " + JSON.stringify(got.typed));
+    if (got.typed.length) fail("newContextSse: a stale line was typed back after the cycle: " + JSON.stringify(got.typed));
     if (got.after.box || got.after.sign) fail("newContextSse: the hold stayed up after the cycle: " + JSON.stringify(got.after));
     if (errors.length) fail("newContextSse: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }

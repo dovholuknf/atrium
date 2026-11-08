@@ -287,6 +287,18 @@ function Get-RoomService {
   } catch { return $null }
 }
 
+# Get-ControlService is Get-RoomService for sg4-control: $env:ATRIUM_CONTROL_SERVICE, else the service whose command is
+# ctl-bin's atrium.exe running `room`, or $null.
+function Get-ControlService {
+  if ($env:ATRIUM_CONTROL_SERVICE) { return $env:ATRIUM_CONTROL_SERVICE }
+  try {
+    $bin = (Join-Path $CtlBinDir 'atrium.exe') -replace '/', '\'
+    $s = Get-CimInstance Win32_Service -ErrorAction Stop |
+      Where-Object { $_.PathName -like "*$bin*" -and $_.PathName -match ' room( |$)' } | Select-Object -First 1
+    return $s.Name
+  } catch { return $null }
+}
+
 # Find-Control finds the sg4-control room by its own binary directory and the `room` subcommand.
 function Find-Control {
   Get-CimInstance Win32_Process |
@@ -654,6 +666,11 @@ function Stop-Room {
 
 # Stop-Control winds the sg4-control room down the same way Stop-Room does claude-sg4.
 function Stop-Control {
+  $svc = Get-ControlService
+  if ($svc) {
+    Invoke-Step "stop sg4-control service ${svc}: net stop, which is the room's own graceful stop" { net.exe stop $svc | ForEach-Object { Say $_ } }
+    return
+  }
   $ctl = Find-Control
   if (-not $ctl) { Say 'no running sg4-control room found'; return }
   $post = $CtlShutdown

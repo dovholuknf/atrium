@@ -233,7 +233,7 @@ func TestPublishRefusesAPathFromARoomThatCannotSayWhatItResolvedTo(t *testing.T)
 	h.noHeader = true
 	h.write("fine.md", "fine")
 	_, err := h.publish(publishInput{Title: "t", Path: "fine.md"})
-	if r := refusalOf(t, err); r.Status != 502 || !strings.Contains(r.Msg, "content") {
+	if r := refusalOf(t, err); r.Status != 502 || !strings.Contains(r.Msg, "content") || strings.Contains(r.Msg, "older than") {
 		t.Fatalf("%+v", r)
 	}
 	h.none()
