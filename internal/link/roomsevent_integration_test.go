@@ -367,6 +367,7 @@ func TestAutoApprovesFromTheEventWithNoBoardAndNoPolling(t *testing.T) {
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
 	s := newStock("alpha")
+	s.cards = map[string][]CardState{"beta": nil} // another room remembered, so the hub's switch is the board's
 	s.set(true, nil)
 	b.proxy.SetInventory(s)
 
@@ -396,6 +397,7 @@ func TestASweepAndAnEventForOneRequestDecideOnce(t *testing.T) {
 	l.pending["p1"] = true
 	b.attach("alpha", l.handler())
 	s := newStock("alpha")
+	s.cards = map[string][]CardState{"beta": nil} // another room remembered, so the hub's switch is the board's
 	s.set(true, nil)
 	b.proxy.SetInventory(s)
 
@@ -418,6 +420,7 @@ func TestAnEventInFlightWhenAutoIsSwitchedOffIsNotApproved(t *testing.T) {
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
 	s := newStock("alpha")
+	s.cards = map[string][]CardState{"beta": nil} // another room remembered, so the hub's switch is the board's
 	s.set(true, nil)
 	b.proxy.SetInventory(s)
 	waitFor(t, 5*time.Second, func() bool { return b.proxy.feeds.count() == 1 })
@@ -442,6 +445,7 @@ func TestAnEventPastTheDeadlineIsNotApproved(t *testing.T) {
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
 	s := newStock("alpha")
+	s.cards = map[string][]CardState{"beta": nil} // another room remembered, so the hub's switch is the board's
 	until := time.Now().Add(1500 * time.Millisecond)
 	s.set(true, &until)
 	b.proxy.SetInventory(s)

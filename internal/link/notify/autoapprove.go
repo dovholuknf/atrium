@@ -311,6 +311,9 @@ func (a *AutoApprover) approveIfOn(ctx context.Context, room, id string) {
 	if on, _ := a.state(); !on {
 		return
 	}
+	if a.Merged != nil && !a.Merged() {
+		return
+	}
 	if !a.claim(room, id) {
 		return
 	}
