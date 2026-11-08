@@ -18,8 +18,16 @@ import (
 // adoptWorktree adds the card's own worktree and its branch to the inventory when they are missing. It adopts only a
 // linked worktree of an agent-launched card, never a main checkout, a protected branch or a card the operator started.
 func (s *Server) adoptWorktree(ctx context.Context, t *store.Task, rows []*store.CardResource) []*store.CardResource {
+	if !slices.Contains(t.Tags, "origin:agent") {
+		return rows
+	}
+	return s.adoptLinked(ctx, t, rows)
+}
+
+// adoptLinked is adoptWorktree for any card, for a close asked to remove the card's worktree as well.
+func (s *Server) adoptLinked(ctx context.Context, t *store.Task, rows []*store.CardResource) []*store.CardResource {
 	wt := strings.TrimSpace(t.Worktree)
-	if wt == "" || !slices.Contains(t.Tags, "origin:agent") {
+	if wt == "" {
 		return rows
 	}
 	for _, r := range rows {
@@ -74,4 +82,64 @@ func (s *Server) adoptWorktree(ctx context.Context, t *store.Task, rows []*store
 		return fresh
 	}
 	return rows
+}
+
+// closeForeign is the card's folder when its inventory does not list it. Atrium did not make it, so a close keeps it
+// unless asked to remove it as well. Why says why removing it is not offered.
+type closeForeign struct {
+	Path     string `json:"path"`
+	Branch   string `json:"branch,omitempty"`
+	Repo     string `json:"repo,omitempty"`
+	Main     bool   `json:"main,omitempty"`
+	Dirty    int    `json:"dirty"`
+	Unpushed int    `json:"unpushed"`
+	Why      string `json:"why,omitempty"`
+}
+
+// foreignWorktree describes the card's folder for a close whose inventory does not list it, or nil when it does.
+func (s *Server) foreignWorktree(ctx context.Context, t *store.Task, rows []*store.CardResource) *closeForeign {
+	wt := strings.TrimSpace(t.Worktree)
+	if wt == "" {
+		return nil
+	}
+	for _, r := range rows {
+		if r.Live() && r.Kind == store.ResWorktree && samePathFold(r.Ref, wt) {
+			return nil
+		}
+	}
+	f := &closeForeign{Path: wt, Branch: strings.TrimSpace(t.Branch)}
+	dir := filepath.FromSlash(wt)
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		f.Why = "it is not on disk"
+		return f
+	}
+	gctx, cancel := context.WithTimeout(ctx, closeGitWait)
+	defer cancel()
+	gitDir, err := gitIn(gctx, dir, "rev-parse", "--path-format=absolute", "--git-dir")
+	common, err2 := gitIn(gctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil || err2 != nil {
+		f.Why = "it is not a git worktree"
+		return f
+	}
+	gitDir, common = strings.TrimSpace(gitDir), strings.TrimSpace(common)
+	f.Repo = filepath.ToSlash(filepath.Dir(filepath.Clean(common)))
+	f.Dirty, f.Unpushed, f.Branch = worktreeWork(ctx, wt)
+	if samePathFold(gitDir, common) {
+		f.Main, f.Why = true, "it is the repository's main checkout"
+		return f
+	}
+	// adoptLinked never takes a protected branch, so the tick names only the folder.
+	switch strings.ToLower(f.Branch) {
+	case "main", "master", "claude/main", "hub-main":
+		f.Branch = ""
+	}
+	if all, err := s.st.List(); err == nil {
+		for _, o := range all {
+			if o.ID != t.ID && o.ArchivedAt == nil && samePathFold(o.Worktree, wt) {
+				f.Why = "another open card works in it"
+				return f
+			}
+		}
+	}
+	return f
 }

@@ -140,7 +140,7 @@
     catch (e) { openSheet(id, "could not read what cleaning up frees: " + e.message); return; }
     const answers = {};
     const asks = pv.asks || [];
-    if (!(pv.items || []).length && !asks.length) { showForeign(id, t); return; }
+    if ((pv.foreign && !asks.length) || (!(pv.items || []).length && !asks.length)) { showForeign(id, t, pv); return; }
     if (asks.length && !skipped()[CLEANUP_KEY]) { showAsk(id, t, pv); return; }
     asks.forEach(a => { answers[String(a.seq)] = "delete"; });
     finishCleanUp(id, answers);
@@ -154,26 +154,60 @@
     window.mNet.refresh();
   }
 
-  async function finishCleanUp(id, answers) {
+  async function finishCleanUp(id, answers, adopt) {
     let out;
-    try { out = await post(id, "close", { confirm: true, answers }); }
+    try { out = await post(id, "close", { confirm: true, answers, adopt: !!adopt }); }
     catch (e) { openSheet(id, "could not clean up: " + e.message); return; }
     if (out && out.session_error) { openSheet(id, "could not terminate: " + out.session_error); return; }
     close();
     window.mNet.refresh();
   }
 
-  // A preview with no items frees nothing: atrium removes only what it created, and this folder is not. Say so first.
-  function showForeign(id, t) {
+  // The stop question, with a tick to delete the folder atrium did not make (pv.foreign) as well.
+  function showForeign(id, t, pv) {
+    const f = pv.foreign;
+    const box = sheet.querySelector(".rmenu-box");
+    const offer = f && !f.why;
+    box.innerHTML = '<p class="rmenu-name"></p><p class="rmenu-ask" style="white-space: pre-line"></p>' +
+      (offer ? '<label class="rmenu-tick"><input type="checkbox" class="rmenu-adopt"> <span></span></label>' : "") +
+      '<button type="button" class="rmenu-go rmenu-danger" data-ans="go">stop session</button>' +
+      '<button type="button" class="rmenu-x" data-close="1">cancel</button>';
+    box.querySelector(".rmenu-name").textContent = "Stop the " + window.mUtil.cardName(t).main + " session?";
+    let said = "The agent stops. Its card, files and history stay.";
+    if (f && f.main) {
+      said = "The agent stops. Its checkout " + f.path + (f.branch ? " and branch " + f.branch : "") +
+        " stay on disk. It is the repository's main checkout, so atrium does not offer to delete it.";
+    } else if (f) {
+      said = "The agent stops. Its " + (f.branch ? "worktree and branch stay" : "worktree stays") + " on disk.";
+      if (f.why && f.repo) {
+        said += " Atrium does not offer to delete it: " + f.why + ". To delete it yourself:\n" +
+          "git -C " + f.repo + " worktree remove " + f.path + (f.branch ? "\ngit -C " + f.repo + " branch -d " + f.branch : "");
+      }
+    }
+    box.querySelector(".rmenu-ask").textContent = said;
+    if (offer) box.querySelector(".rmenu-tick span").textContent = "Also delete worktree " + f.path + (f.branch ? " and branch " + f.branch : "");
+    box.querySelector("[data-ans]").onclick = () => {
+      const adopt = !!(offer && box.querySelector(".rmenu-adopt").checked);
+      if (adopt && (f.dirty || f.unpushed)) { showAdoptAsk(id, f, pv.can_stash); return; }
+      finishCleanUp(id, {}, adopt);
+    };
+    reveal(id);
+  }
+
+  // The tick named a folder holding work found nowhere else. Keep comes first: a tick is not reason enough to lose it.
+  function showAdoptAsk(id, f, canStash) {
     const box = sheet.querySelector(".rmenu-box");
     box.innerHTML = '<p class="rmenu-name"></p><p class="rmenu-ask"></p>' +
-      '<button type="button" class="rmenu-go rmenu-danger" data-ans="go">terminate</button>' +
+      '<button type="button" class="rmenu-go" data-ans="keep">keep it</button>' +
+      (canStash ? '<button type="button" class="rmenu-go" data-ans="stash">stash to the hub</button>' : "") +
+      '<button type="button" class="rmenu-go rmenu-danger" data-ans="delete">delete it</button>' +
       '<button type="button" class="rmenu-x" data-close="1">cancel</button>';
-    box.querySelector(".rmenu-name").textContent = window.mUtil.cardName(t).main;
-    box.querySelector(".rmenu-ask").textContent = "Nothing here was created by atrium, so nothing is removed." +
-      (t.worktree ? " " + t.worktree + (t.branch ? " and branch " + t.branch : "") + " stay." : "") + " The session is stopped.";
-    box.querySelector("[data-ans]").onclick = () => finishCleanUp(id, {});
-    reveal(id);
+    box.querySelector(".rmenu-name").textContent = (f.branch || "this folder") + " has work found nowhere else";
+    box.querySelector(".rmenu-ask").textContent = f.dirty + " changed files and " + f.unpushed + " commits are only in this folder.";
+    box.querySelectorAll("[data-ans]").forEach(b => b.onclick = () => {
+      const ans = b.dataset.ans;
+      if (ans === "keep") finishCleanUp(id, {}, false); else finishCleanUp(id, { adopt: ans }, true);
+    });
   }
 
   // The menu closed itself when the item was tapped, so the question has to bring the sheet back up.

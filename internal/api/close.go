@@ -115,6 +115,8 @@ type closePreview struct {
 	Kept      []string    `json:"kept"`
 	DiskBytes int64       `json:"disk_bytes"`
 	CanStash  bool        `json:"can_stash"`
+	// Foreign is the card's folder when atrium did not make it, so the board can offer to remove it as well.
+	Foreign *closeForeign `json:"foreign,omitempty"`
 	// keepAll ends the card and frees nothing, for a close asked to leave the folder and branches alone.
 	keepAll bool
 }
@@ -125,6 +127,8 @@ type closeRequest struct {
 	Keep bool `json:"keep,omitempty"`
 	// Answers is keep, stash or delete by the worktree row's seq.
 	Answers map[string]string `json:"answers"`
+	// Adopt removes the card's folder atrium did not make as well, answered under the key "adopt" when it asks.
+	Adopt bool `json:"adopt,omitempty"`
 	// Progress is the id the board sends so each step of the close is broadcast as a close-progress event with it.
 	Progress string `json:"progress,omitempty"`
 }
@@ -214,10 +218,37 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 	}
 	defer closing.Delete(t.ID)
 
+	if in.Confirm && in.Adopt && !in.Keep {
+		if rows, err := s.st.Resources(t.ID); err == nil {
+			// Asked before adopting: an adopted folder stays in the inventory, and a later plain close would free it.
+			f := s.foreignWorktree(r.Context(), t, rows)
+			ans := in.Answers["adopt"]
+			switch {
+			case f == nil || f.Why != "" || ans == CloseKeep:
+			case (f.Dirty > 0 || f.Unpushed > 0) && ans == "":
+				writeJSON(w, http.StatusConflict, map[string]any{"code": "needs_answer",
+					"error": "say keep, stash or delete for " + f.Path})
+				return
+			case ans == CloseStash && s.Stash == nil:
+				prError(w, http.StatusBadRequest, "no_stash", "this room cannot stash to a hub. keep or delete "+f.Path, nil)
+				return
+			default:
+				s.adoptLinked(r.Context(), t, rows)
+			}
+		}
+	}
 	pv, err := s.closePreview(r.Context(), t)
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	if ans, ok := in.Answers["adopt"]; ok {
+		delete(in.Answers, "adopt")
+		for _, a := range pv.Asks {
+			if !a.Hub && samePathFold(a.Path, t.Worktree) {
+				in.Answers[strconv.Itoa(a.Seq)] = ans
+			}
+		}
 	}
 	if !in.Confirm {
 		writeJSON(w, http.StatusOK, pv)
@@ -276,7 +307,8 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	rows = s.adoptWorktree(ctx, t, rows)
 	pv := &closePreview{Card: t.ID, Items: []closeItem{}, Asks: []closeAsk{}, Warnings: []string{},
 		DiskBytes: diskOf(rows), CanStash: s.Stash != nil,
-		Kept: []string{"the card and its transcript", "this list, with what freeing each row said"}}
+		Kept:    []string{"the card and its transcript", "this list, with what freeing each row said"},
+		Foreign: s.foreignWorktree(ctx, t, rows)}
 	if s.sessionLive(t) {
 		pv.Warnings = append(pv.Warnings, "the session is still running. it is stopped first")
 	}
