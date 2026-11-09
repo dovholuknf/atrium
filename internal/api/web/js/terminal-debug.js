@@ -495,7 +495,7 @@ function renderHeldTiles(host) {
       <code>${esc(p.tool)}: ${esc(p.command)}</code>
       <span class="held-why">This session was resumed outside atrium, so atrium has no terminal for it and its requests
         wait here.</span>
-      <span class="held-why">Move it into atrium to end it there and resume it here, in a terminal atrium holds.</span>
+      <span class="held-why">Adopt it into atrium to end it there and resume it here, in a terminal atrium holds.</span>
     </div>
     <div class="actions">
       <button class="go" onclick="decideFromTerm('${p.id}','approve', this)">allow</button>
@@ -504,24 +504,24 @@ function renderHeldTiles(host) {
         data-tip="to set a standing rule for this">open permissions</button>
       <button class="move-in" data-card="${esc(t.id)}" onclick="moveIntoAtrium(this)"
         data-tip="ends the session where it runs now, denies this request and resumes it under atrium"
-        >move into atrium</button>
+        >adopt into atrium</button>
     </div></div>`).join("");
 }
 
 // Ends the joined session's process, so it asks first. The room refuses anything that is not still that runner.
 async function moveIntoAtrium(btn) {
   const id = btn.dataset.card;
-  const ok = await askUser({ title: "move into atrium",
+  const ok = await askUser({ title: "adopt into atrium",
     body: "This ends the session in the terminal it runs in now, denies the waiting request, and resumes the same " +
       "conversation here in a terminal atrium holds. Anything typed in that other terminal is lost.",
-    buttons: [{ label: "cancel", value: null }, { label: "move it", value: true, style: "go" }] });
+    buttons: [{ label: "cancel", value: null }, { label: "adopt it", value: true, style: "go" }] });
   if (!ok) return;
   await busyWhile(btn, async () => {
     try { await api(`/v1/tasks/${id}/move-in`, { method: "POST" }); }
-    catch (e) { toast("not moved", e.message); return; }
+    catch (e) { toast("not adopted", e.message); return; }
     await loadPerms();
     attachTask(id);
-  }, "moving…");
+  }, "adopting…");
 }
 
 // One answer per request, shared with the perms card's key. See js/core.js.

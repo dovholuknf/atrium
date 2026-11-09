@@ -13,7 +13,7 @@ import (
 )
 
 // MoveInReason is what the held request is answered with when its session is moved into atrium.
-const MoveInReason = "moved into atrium: this session is ending here and resuming under atrium's own terminal"
+const MoveInReason = "adopted into atrium: this session is ending here and resuming under atrium's own terminal"
 
 // moveIn is how `handleMoveIn` reaches the process. Zero fields take the real ones.
 type moveIn struct {
