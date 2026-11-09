@@ -57,3 +57,25 @@ func TestTheHandlerServesTheDirectoryWhenGivenOne(t *testing.T) {
 		t.Errorf("a board directory answered %d with %q", rec.Code, rec.Body.String())
 	}
 }
+
+// A page names its build itself and never revalidates, or a reload is handed the cached page's header and the old
+// build, and reloads again.
+func TestAPageLoadNamesItsBuildAndIsNeverA304(t *testing.T) {
+	t.Parallel()
+	h := stampBuild(func() string { return "b2" }, webHandler(""))
+	first := httptest.NewRecorder()
+	h.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/index.js", nil))
+	if got := first.Header().Get("Server-Timing"); got != "" {
+		t.Errorf("a script was stamped %q, only a page is", got)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, req)
+	req.Header.Set("If-None-Match", page.Header().Get("ETag"))
+	again := httptest.NewRecorder()
+	h.ServeHTTP(again, req)
+	if again.Code != http.StatusOK || again.Header().Get("Server-Timing") != `build;desc="b2"` {
+		t.Errorf("a page revalidated answered %d with Server-Timing %q", again.Code, again.Header().Get("Server-Timing"))
+	}
+}

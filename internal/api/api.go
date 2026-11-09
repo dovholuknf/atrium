@@ -1009,7 +1009,7 @@ func (s *Server) Handler() http.Handler {
 	// happened.
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.pendingMessages)
 	mux.HandleFunc("GET /v1/events", s.events)
-	mux.Handle("/", webHandler(s.BoardDir))
+	mux.Handle("/", stampBuild(s.boardID, webHandler(s.BoardDir)))
 	// A card by its handle as well as its id, on every route. See cardnames.go.
 	return s.byName(mux)
 }

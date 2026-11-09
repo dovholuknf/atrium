@@ -22,7 +22,12 @@
   const GUARD_MS = 30000;
   const RECHECK_MS = 2000;
 
-  let seen = "";
+  let seen = (() => {
+    try {
+      const t = performance.getEntriesByType("navigation")[0].serverTiming.find(e => e.name === "build");
+      return t ? t.description : "";
+    } catch (e) { return ""; }
+  })();
   let target = "";
   let timer = 0;
   let cue = null;
