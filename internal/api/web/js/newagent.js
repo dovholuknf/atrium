@@ -360,6 +360,30 @@ function naPaintHow() {
   };
 }
 
+function naPaintPreview(title, br) {
+  const h = naHarness(), how = naS.how, r = naS.link, el = naEl("na-preview");
+  const short = naS.ref ? naShort(naS.ref) : "";
+  const where = !short ? "its own folder under the card root" : r && r.num ? short + "#" + r.num + ", on the branch the room names" : short + ":" + br;
+  const pinTip = naS.pinned ? "pinned when it starts. click to unpin" : "keep it at the top and in terminals when it starts";
+  const model = h && naCanModel(h) && how.model ? naModelLabel(how.model) : "";
+  const effort = h && naCanEffort(h) && how.effort ? how.effort + " effort" : "";
+  const rooms = naRooms(), room = how.room || "";
+  const chips = naS.groups.map(g => `<span class="chip accent">${esc(g)}</span>`).join("") +
+    (model || effort ? `<span class="chip" data-tip="started with this model and effort">${esc([model, effort].filter(Boolean).join(" · "))}</span>` : "") +
+    (r && r.num ? `<span class="chip" data-tip="${esc(r.url)}">#${r.num}</span>` : "") +
+    `<span class="chip">starting</span>` +
+    (rooms.length && room ? `<span class="chip room" style="--rhue:${roomHue(room)}" data-tip="this card runs in room ${esc(room)}">${esc(room)}</span>` : "");
+  el.innerHTML = `<div class="card-line"><div class="title">` +
+    `<span class="pin ${naS.pinned ? "on" : ""}" id="na-pin" role="button" tabindex="0" aria-label="${pinTip}" data-tip="${pinTip}">${naS.pinned ? "&#9733;" : "&#9734;"}</span>` +
+    runnerMark(h ? hookTargetFor(h) || h.label || h.id : "") +
+    `<span class="tstack"><span class="tname${title.trim() ? "" : " ph"}">${esc(title.trim() || "what the card is called")}</span>` +
+    `<span class="tpath">${esc(where)}</span></span></div>` +
+    `<div class="chips">${chips}</div></div>`;
+  const pin = naEl("na-pin");
+  pin.onclick = () => { naS.pinned = !naS.pinned; naRender(); };
+  pin.onkeydown = e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pin.click(); } };
+}
+
 function naRender() {
   if (!naS) return;
   const d = naEl("na");
@@ -382,7 +406,8 @@ function naRender() {
   } else if (naS.ref && !row.here) {
     res.innerHTML = `<span class="kind clone">clone</span><span class="txt">on the hub, not on ${room}: cloned first</span>`;
   } else {
-    res.innerHTML = naS.ref ? `<span class="txt" style="color:var(--dim)">a new worktree under the card root</span>` : "";
+    res.innerHTML = naS.ref ? `<span class="txt" style="color:var(--dim)">a new worktree under the card root</span>`
+      : `<span class="txt" style="color:var(--dim)">or paste a GitHub link here: a repo, an issue, a pull request or a branch. it fills in the name and branch</span>`;
   }
 
   naPaintGroups(naEl("na-groups"), naS.groups, gs => { naS.groups = gs; naRender(); });
@@ -399,6 +424,7 @@ function naRender() {
   if (t.trim()) naEl("na-title").classList.remove("missing");
   naEl("na-reset").hidden = !(naS.titleTouched || naS.branchTouched) || !naS.ref;
 
+  naPaintPreview(t, br);
   naEl("na-sum").innerHTML = naSummary();
   naEl("na-change").textContent = naS.howOpen ? "close" : "change";
   naEl("na-change").setAttribute("aria-expanded", String(naS.howOpen));
@@ -425,7 +451,7 @@ async function openNewAgent(tw, prefill) {
   naS = {
     tw: !!tw, ref: "", link: null, what: "", title: "", titleTouched: false, branch: "", branchTouched: false,
     groups: naRead(NA_GROUPS_KEY, []), how: naDefaultHow(), howOpen: false, savedFlash: false,
-    listOpen: false, listIdx: 0, brChoice: "new", check: null
+    listOpen: false, listIdx: 0, brChoice: "new", check: null, pinned: false
   };
   naEl("na-what").value = "";
   naEl("na-repo").value = "";
@@ -558,6 +584,7 @@ async function naLaunch(tw) {
       naSay(e.message, true);
       return;
     }
+    if (!tw && naS.pinned && task) task = await naPin(task);
     if (!tw) {
       naWrite(NA_GROUPS_KEY, naS.groups);
       naWrite(NA_RECENT_GROUPS_KEY, [...new Set([...naS.groups, ...naRead(NA_RECENT_GROUPS_KEY, [])])].slice(0, 12));
@@ -623,4 +650,15 @@ function naKeepChip(t) {
 function naKeepFromCard(id) {
   const t = (lastTasks || []).find(x => x.id === id);
   if (t) promoteCard(id, t);
+}
+
+async function naPin(task) {
+  try {
+    await api("/v1/tasks/" + encodeURIComponent(task.id), { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: true }) });
+    return Object.assign({}, task, { pinned: true });
+  } catch (e) {
+    toast("could not pin it", e.message);
+    return task;
+  }
 }

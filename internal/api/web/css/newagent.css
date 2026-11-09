@@ -145,3 +145,8 @@ dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
 #na .dlg-foot { padding: 12px 22px; gap: var(--sp-3); }
 #na .dlg-foot .twhint { font-size: var(--fs-xs); color: var(--dim); }
 #na-keep .hintline { color: var(--dim); font-size: var(--fs-sm); }
+#na .na-pv { flex: none; width: auto; padding: 0; background: none; overflow: visible; }
+#na .na-pv .card { margin: 0; cursor: default; }
+#na .na-pv .card .title .pin { color: var(--stroke); }
+#na .na-pv .card .title .pin:hover, #na .na-pv .card .title .pin.on { color: var(--warn); }
+#na .na-pv .tname.ph { color: var(--dimmest); font-weight: 500; }

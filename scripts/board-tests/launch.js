@@ -562,11 +562,12 @@ async function launchRepoUrlsSection(browser, base) {
 // THE NEW AGENT DIALOG (js/newagent.js): a repo picked from the list names the card and its branch, a branch that exists
 // is asked about (new branch by default, continue on it when picked), one another worktree holds is moved off, groups go
 // as tags and are remembered, Enter launches and ctrl+Enter starts a throwaway, an empty name refuses, a setup saved as
-// default is the next open's, a pull request link goes to the open verb and its card takes the groups after.
+// default is the next open's, a pull request link goes to the open verb and its card takes the groups after, the card
+// preview shows the name, where it lives and its chips, and its star pins the card it makes.
 // NEWAGENT_SHOTS=<dir> writes the dialog.
 async function launchNewAgentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const launches = [], opens = [], patches = [];
+  const launches = [], opens = [], patches = [], pins = [];
   try {
     const p = await ctx.newPage();
     const errors = [];
@@ -585,6 +586,10 @@ async function launchNewAgentSection(browser, base) {
     await p.route(/\/v1\/tasks\/t2$/, r => {
       if (r.request().method() === "PATCH") { patches.push(JSON.parse(r.request().postData() || "{}")); return json(r, {}); }
       return json(r, { id: "t2", tags: ["pull-request"], status: "running" });
+    });
+    await p.route(/\/v1\/tasks\/t1$/, r => {
+      if (r.request().method() === "PATCH") { pins.push(JSON.parse(r.request().postData() || "{}")); return json(r, {}); }
+      return json(r, { id: "t1", status: "running" });
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof openNewAgent === "function" && typeof launchableHarnesses === "function");
@@ -611,8 +616,18 @@ async function launchNewAgentSection(browser, base) {
     await p.fill("#na-groups input.gp-new", "research");
     await p.press("#na-groups input.gp-new", "Enter");
     await p.fill("#na-what", "the per-identity allowlist");
+    const pv = () => p.evaluate(() => ({ name: document.querySelector("#na-preview .tname").textContent, where: document.querySelector("#na-preview .tpath").textContent,
+      star: document.getElementById("na-pin").textContent, mark: !!document.querySelector("#na-preview .rmark svg"),
+      chips: [...document.querySelectorAll("#na-preview .chips .chip")].map(c => c.textContent) }));
+    let v = await pv();
+    if (v.name !== "allowlist" || v.where !== "openziti/mcp-gateway:claude/allowlist" || v.star !== "☆" || !v.mark || !v.chips.includes("research") || !v.chips.includes("starting"))
+      fail("launchNewAgent: the card preview " + JSON.stringify(v));
+    await p.click("#na-pin");
+    if ((await pv()).star !== "★") fail("launchNewAgent: the preview's star did not pin");
+    if (process.env.NEWAGENT_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.NEWAGENT_SHOTS + "/newagent-preview.png" });
     await p.press("#na-what", "Enter");
     await closed("Enter");
+    if (JSON.stringify(pins) !== '[{"pinned":true}]') fail("launchNewAgent: a pinned preview did not pin the card " + JSON.stringify(pins));
     let b = launches[0] || {};
     if (b.repo !== "github.com/openziti/mcp-gateway" || b.branch !== "claude/allowlist" || b.title !== "allowlist" ||
         JSON.stringify(b.tags) !== '["research"]' || b.prompt !== "the per-identity allowlist" || b.throwaway || b.cwd !== "")
