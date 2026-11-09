@@ -348,6 +348,8 @@ type Fetch struct {
 	Prune            bool
 	Quiet            bool
 	NoWriteFetchHead bool
+	Depth            int
+	Filter           string
 }
 
 func (o Fetch) build(b *builder) {
@@ -356,6 +358,12 @@ func (o Fetch) build(b *builder) {
 	b.flag(o.NoTags, "--no-tags")
 	b.flag(o.NoWriteFetchHead, "--no-write-fetch-head")
 	b.flag(o.Prune, "--prune")
+	if o.Depth > 0 {
+		b.add("--depth", strconv.Itoa(o.Depth))
+	}
+	if o.Filter != "" {
+		b.add("--filter=" + b.value("filter", o.Filter))
+	}
 	if o.Remote == "" && len(o.Refspecs) == 0 {
 		return
 	}

@@ -146,6 +146,8 @@ func opCases() []opCase {
 		{"config --get scopes", ConfigGet{Key: "k", Global: true, Worktree: true},
 			"config --global --worktree --get --end-of-options k", nil},
 		{"fetch prune", Fetch{NoWriteFetchHead: true, Prune: true}, "fetch --no-write-fetch-head --prune", nil},
+		{"fetch shallow", Fetch{Remote: "origin", Refspecs: []string{"r"}, Quiet: true, Depth: 1, Filter: "blob:none"},
+			"fetch --quiet --depth 1 --filter=blob:none -- origin r", nil},
 		{"ls-remote heads", LsRemote{Remote: "o", Heads: true, Symref: true}, "ls-remote --heads --symref -- o", nil},
 		{"clone no tags", Clone{URL: "u", Dir: "d", NoTags: true}, "clone --no-tags -- u d", nil},
 		{"log flags", Log{Revs: []string{"a"}, Paths: []string{"-p"}, EmptyFormat: true, NoMerges: true, Merges: true,

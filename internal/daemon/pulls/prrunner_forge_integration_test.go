@@ -180,7 +180,7 @@ func TestPRRunnerWithAHubAsksTheHubAndFetchesFromItsStore(t *testing.T) {
 		if strings.Contains(c, "github.com") && strings.HasPrefix(c, "git ") {
 			t.Fatalf("a room with a hub fetched from the forge: %s", c)
 		}
-		if strings.HasPrefix(c, "git remote add origin http://127.0.0.1:1/tok/git/hub/github/o/r.git") {
+		if strings.HasPrefix(c, "git remote add --end-of-options origin http://127.0.0.1:1/tok/git/hub/github/o/r.git") {
 			added = true
 		}
 		if strings.HasPrefix(c, "git fetch") && strings.HasSuffix(c, " origin "+forge.PRRef(p.Number)) {
