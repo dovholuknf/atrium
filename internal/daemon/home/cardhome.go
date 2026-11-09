@@ -283,8 +283,18 @@ func (d *Service) BranchCheck(repo, branch string) (BranchState, error) {
 	}
 	bs := BranchStateIn(clone, branch)
 	if bs.HeldAt != "" {
-		if row, ok, _ := d.St.CardHomeByPath(filepath.ToSlash(filepath.Dir(filepath.FromSlash(bs.HeldAt)))); ok {
+		dir := filepath.Dir(filepath.FromSlash(bs.HeldAt))
+		if row, ok, _ := d.St.CardHomeByPath(filepath.ToSlash(dir)); ok {
 			bs.HeldBy = row.Card
+		} else if rows, err := d.St.CardHomesOpen(); err == nil {
+			// git reports the real path; a symlinked or 8.3 temp dir stores another spelling of it.
+			want, _ := filepath.EvalSymlinks(dir)
+			for _, r := range rows {
+				if got, err := filepath.EvalSymlinks(filepath.FromSlash(r.Path)); err == nil && want != "" && strings.EqualFold(got, want) {
+					bs.HeldBy = r.Card
+					break
+				}
+			}
 		}
 	}
 	return bs, nil

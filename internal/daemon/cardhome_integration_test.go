@@ -351,7 +351,7 @@ func TestABranchCheckSaysWhoHoldsABranchAndOffersAFreeOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bs.Exists || bs.Ahead != 1 || bs.Last == "" || bs.HeldBy != task.ID || bs.Free != "claude/fix-the-thing-3" ||
-		!strings.EqualFold(bs.HeldAt, filepath.ToSlash(dd.Work)) {
+		!sameFolder(bs.HeldAt, dd.Work) {
 		t.Fatalf("a held branch: %+v, work %s, card %s", bs, filepath.ToSlash(dd.Work), task.ID)
 	}
 	if bs, err := d.BranchCheck(repo, "claude/fix-the-thing-2"); err != nil || !bs.Exists || bs.HeldAt != "" || bs.Ahead != 0 {
@@ -379,4 +379,11 @@ func TestALaunchOnABranchAnotherCardHoldsIsRefused(t *testing.T) {
 	if _, _, err := d.LaunchHome(store.CardHomeWorktree, &req); err != nil {
 		t.Fatalf("an existing free branch: %v", err)
 	}
+}
+
+// sameFolder is whether two spellings name one folder: a temp dir can be a symlink or an 8.3 name.
+func sameFolder(a, b string) bool {
+	ra, ea := filepath.EvalSymlinks(filepath.FromSlash(a))
+	rb, eb := filepath.EvalSymlinks(filepath.FromSlash(b))
+	return ea == nil && eb == nil && strings.EqualFold(ra, rb)
 }
