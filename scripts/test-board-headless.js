@@ -20539,10 +20539,13 @@ async function joinedHeldTileSection(browser, base) {
       if (await p.$("#ask[open]")) fail(tag + "a held row opened the dialog instead of its tile");
       const tile = await p.$eval("#term-perm .held-tile", e => ({ text: e.innerText.replace(/\s+/g, " "),
         btns: [...e.querySelectorAll("button")].map(b => b.textContent), shown: e.getBoundingClientRect().height > 0 }));
-      if (!/resumed outside atrium is blocked/.test(tile.text) || !/Bash: git push hub held-perm-on-terminals/.test(tile.text)) {
+      if (!/resumed outside atrium wants to run a command/.test(tile.text) || !/Bash: git push hub held-perm-on-terminals/.test(tile.text) ||
+          !/atrium has no terminal for it/.test(tile.text) || !/To move it into atrium/.test(tile.text)) {
         fail(tag + "the tile reads " + JSON.stringify(tile.text));
       }
-      if (tile.btns.join() !== "approve once,block once,open in perms") fail(tag + "the tile's buttons are " + tile.btns.join());
+      if (tile.btns.join() !== "allow,deny,open permissions") fail(tag + "the tile's buttons are " + tile.btns.join());
+      const head = await p.$eval("#t-title", e => e.textContent);
+      if (!phone && head !== "resumed outside atrium") fail(tag + "the pane's header reads " + JSON.stringify(head));
       if (!tile.shown) fail(tag + "the tile is not on screen");
       await p.evaluate(() => { document.getElementById("toasts").innerHTML = ""; });
       if (shots) {
