@@ -239,7 +239,7 @@ func opCases() []opCase {
 				"remote": func(v string) Op { return RemoteSetURL{Name: v, URL: "u"} },
 				"url":    func(v string) Op { return RemoteSetURL{Name: "hub", URL: v} },
 			}},
-		{"merge --ff-only", MergeFFOnly{Commit: "origin/main", Quiet: true}, "merge --quiet --ff-only --end-of-options origin/main",
+		{"merge --ff-only", MergeFFOnly{Commit: "origin/main", Quiet: true}, "merge --quiet --ff-only origin/main",
 			map[string]func(string) Op{"commit": func(v string) Op { return MergeFFOnly{Commit: v} }}},
 		{"branch -f", BranchForce{Branch: "b", Start: "HEAD"}, "branch -f -- b HEAD", map[string]func(string) Op{
 			"branch": func(v string) Op { return BranchForce{Branch: v, Start: "s"} },
@@ -254,7 +254,7 @@ func opCases() []opCase {
 				"refspec": func(v string) Op { return Push{Remote: "hub", Refspecs: []string{v}} },
 			}},
 		{"checkout --detach", CheckoutDetach{Commit: "abc", Force: true, Quiet: true},
-			"checkout --quiet --detach --force --end-of-options abc",
+			"checkout --quiet --detach --force abc",
 			map[string]func(string) Op{"commit": func(v string) Op { return CheckoutDetach{Commit: v} }}},
 		{"clean", Clean{Force: 2, Dirs: true, Ignored: true, Quiet: true}, "clean -f -f -d -x -q", nil},
 		{"patch-id", PatchID{Stable: true}, "patch-id --stable", nil},

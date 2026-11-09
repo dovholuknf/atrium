@@ -297,7 +297,7 @@ func (o RemoteSetURL) build(b *builder) {
 	b.add(eoo, b.ref("remote", o.Name), b.ref("url", o.URL))
 }
 
-// MergeFFOnly is `git merge --ff-only` of Commit.
+// MergeFFOnly is `git merge --ff-only` of Commit. No --end-of-options: git 2.43 refuses it here, and ref refuses a leading '-'.
 type MergeFFOnly struct {
 	Commit string
 	Quiet  bool
@@ -306,7 +306,7 @@ type MergeFFOnly struct {
 func (o MergeFFOnly) build(b *builder) {
 	b.sub("merge")
 	b.flag(o.Quiet, "--quiet")
-	b.add("--ff-only", eoo, b.ref("commit", o.Commit))
+	b.add("--ff-only", b.ref("commit", o.Commit))
 }
 
 // BranchForce is `git branch -f`: Branch made or moved to Start.
@@ -350,7 +350,7 @@ func (o Push) build(b *builder) {
 	b.add(b.refs("refspec", o.Refspecs)...)
 }
 
-// CheckoutDetach is `git checkout --detach` of Commit, throwing away local changes when Force.
+// CheckoutDetach is `git checkout --detach` of Commit, throwing away local changes when Force. No --end-of-options: git 2.43 reads it as a path, and ref refuses a leading '-'.
 type CheckoutDetach struct {
 	Commit string
 	Force  bool
@@ -362,7 +362,7 @@ func (o CheckoutDetach) build(b *builder) {
 	b.flag(o.Quiet, "--quiet")
 	b.add("--detach")
 	b.flag(o.Force, "--force")
-	b.add(eoo, b.ref("commit", o.Commit))
+	b.add(b.ref("commit", o.Commit))
 }
 
 // Clean is `git clean`, with -f Force times, directories too when Dirs, ignored files too when Ignored.
