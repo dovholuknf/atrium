@@ -209,8 +209,9 @@
     .walk-head { flex-wrap: wrap; row-gap: var(--vs-1); }
     .walk-head .grow { flex: 1 1 0; }
     #walk-count { white-space: normal; flex: 1 1 100%; order: 5; }
-    /* Every state is one tap: accept, posted, dismiss, defer and undo are buttons, so the keys are not needed. */
-    .wk-actions button { flex: 1 1 28%; min-height: 40px; }
+    /* Accept, dismiss and defer are one tap. Posted and undo sit in More, so the keys are not needed. */
+    .wk-actions > button { flex: 1 1 28%; min-height: 40px; }
+    .wk-menu button { min-height: 40px; align-items: center; }
 
     dialog { width: 96vw; }
     .dlg-body { padding: 14px; }

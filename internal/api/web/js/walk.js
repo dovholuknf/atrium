@@ -30,7 +30,8 @@ const dock = {
   timer: 0,
   gen: 0,           // bumped on every open and reset, so a slow answer for a card that has gone is dropped
   want: "",         // a card whose drawer the operator left open, so a reattach puts it back
-  loading: false
+  loading: false,
+  menu: false       // the finding's More menu is open
 };
 
 // A card is a tenant's when its probe says so. Called from `openTerm` for every attach.
@@ -68,6 +69,7 @@ function dockReset() {
   dock.tenant = null;
   dock.editing = null;
   dock.conflict = null;
+  dock.menu = false;
   walkSheet(false);
   const drawer = document.getElementById("walk-drawer");
   if (drawer) { drawer.hidden = true; walkPlace(); }
@@ -163,6 +165,7 @@ function dockSelect(key, focus) {
   if (dock.editing || dock.conflict) return;
   if (dock.cur !== key) dock.tenant.selected(dock, key);
   dock.cur = key;
+  dock.menu = false;
   dockPaint();
   const row = document.querySelector('#walk-rail .wk-row.cur');
   if (row) row.scrollIntoView({ block: "nearest" });
@@ -215,6 +218,10 @@ const walkNameRe = /^(\d+)-([a-z]+)-(.+)-L(\d+)\.txt$/i;
 // The label line: `MED controller/share.go line 165: committed = true`.
 const walkLabelRe = /^(\S+)\s+(\S+)\s+line\s+(\d+):\s?(.*)$/;
 
+// One turn of the talk about a finding, under Evidence: `Thread: reviewer 2026-11-09T14:13:00Z the answer`. A newline
+// in the text is written `\n`, so a turn stays one line and the file's other lines are never touched.
+const walkThreadRe = /^Thread:\s*(operator|reviewer)\s+(\S+)\s?(.*)$/;
+
 function walkParseName(name) {
   const m = walkNameRe.exec(name);
   if (!m) return null;
@@ -246,13 +253,18 @@ function walkParseFinding(name, text, hash, eol, meta) {
   const code = lm ? lm[4].trim() : "";
   const id = field(/^Id:\s*(.+)$/);
   const wl = field(/^Walk:\s*(.+)$/);
-  const wm = /^(accepted|posted|skipped)\s*(\S*)\s*(.*)$/.exec(wl);
+  const wm = /^(accepted|posted|skipped|deferred)\s*(\S*)\s*(.*)$/.exec(wl);
+  const thread = [];
+  for (const l of evLines) {
+    const m = walkThreadRe.exec(l);
+    if (m) thread.push({ who: m[1], at: m[2], text: m[3].replace(/\\n/g, "\n") });
+  }
   return {
     name, text, hash, eol: eol || "\n", mtime: (meta && meta.mtime) || "", size: (meta && meta.size) || 0,
     lines, ev, prUrl: (lines[0] || "").trim(), label, link, comment, evLines,
     num: nm.num, sev: nm.sev, sevText: lm ? lm[1].toUpperCase() : nm.sevWord.toUpperCase(),
     path, line: lm ? Number(lm[3]) : nm.line, code,
-    id, leak: evLines.some(l => /^Leak:/.test(l)),
+    id, leak: evLines.some(l => /^Leak:/.test(l)), thread,
     state: wm ? walkUiState(wm[1] === "posted" ? "done" : wm[1]) : "", stateAt: wm ? wm[2] : "", stateUrl: wm ? wm[3].trim() : "",
     key: "", isNew: false, flash: null
   };
@@ -409,6 +421,7 @@ const walkTenant = {
   ctx: { key: "", above: 3, below: 3 },
   head: new Map(),     // diff path -> { lines } once `src/<path>` is read, null while it is not there
   evOpen: new Set(),   // keys whose Evidence is unfolded
+  drafts: new Map(),   // key -> a reply not sent yet, so a repaint or a step away keeps it
   prId: "",            // the pulls row this card walks, "" for a bare findings folder
 
   reset() {
@@ -545,8 +558,10 @@ const walkTenant = {
     return `<button type="button" class="wk-row s-${it.sev}${it.key === d.cur ? " cur" : ""}${it.state ? " " + it.state : ""}${
         prev && prev.sev !== it.sev ? " brk" : ""}" data-i="${i}" role="option"
         aria-selected="${it.key === d.cur}" data-tip="${esc(it.label)}">
-      <span class="wk-g">${glyph}</span><span class="wk-n">${esc(it.num)}</span><span class="wk-sev s-${it.sev}">${esc(it.sevText)}</span><span class="wk-p">${
-        esc(it.path.split("/").pop())}:${it.line}</span>${
+      <span class="wk-g">${glyph}</span><span class="wk-n">${esc(it.num)}</span><span class="wk-sev s-${it.sev}">${esc(it.sevText)}</span><span class="wk-rt"><span class="wk-t">${
+        esc(walkTitle(it))}</span><span class="wk-p">${
+        esc(it.path.split("/").pop())}:${it.line}</span></span>${
+        it.thread.length ? `<span class="wk-tc${walkWaiting(it) ? " wait" : ""}" data-tip="turns with the review card">${it.thread.length}</span>` : ""}${
         it.leak ? `<span class="wk-lk" data-tip="a leak">◆</span>` : ""}${
         it.group ? `<span class="wk-grp" data-tip="from the review panel">${esc(it.group)}</span>` : ""}${
         it.isNew ? `<span class="wk-new">new</span>` : ""}</button>`;
@@ -567,23 +582,48 @@ const walkTenant = {
         <span class="wk-sev s-${it.sev}">${esc(it.sevText)}</span>${it.leak ? `<span class="wk-leakchip">LEAK</span>` : ""}
         <span class="wk-where">${esc(it.path)} · line ${it.line}</span>${state}
         <span class="grow"></span>
-        ${it.link ? `<button type="button" data-act="o" data-tip="open the line on GitHub (o)">⧉ open</button>` : ""}
+        ${it.link ? `<button type="button" class="wk-btn" data-act="o" data-tip="open the line on GitHub (o)">⧉ open</button>` : ""}
       </div>
       ${warns.length ? `<div class="wk-warns">${warns.map(w => `<div class="wk-warn">${esc(w)}</div>`).join("")}</div>` : ""}
       ${this.codeHtml(it, loc)}
       <div class="wk-comment" data-tip="exactly what c copies">${this.commentHtml(it)}</div>
       ${this.evidenceHtml(it)}
-      <div class="wk-actions">
-        <button type="button" data-act="a" data-tip="ask the walker about this one, then finish the sentence (a). A asks the canned question">a ask</button>
-        <button type="button" data-act="e" data-tip="edit the comment (e)">e edit</button>
-        <button type="button" data-act="c" data-tip="copy the comment (c). C copies then opens the line">c copy</button>
-        <button type="button" data-act="o" data-tip="open the line on GitHub (o)"${it.link ? "" : " disabled"}>o open</button>
-        <button type="button" data-act="y" data-tip="accept: it should be raised, not posted yet (y)">y accept</button>
-        <button type="button" data-act="d" data-tip="mark posted, with the comment link if you have it (d)">d posted</button>
-        <button type="button" data-act="s" data-tip="dismiss: do not raise it (s)">s dismiss</button>${this.prId
-          ? `<button type="button" data-act="f" data-tip="come back to it later (f)">f defer</button>` : ""}
-        <button type="button" data-act="u" data-tip="set it back to open (u)"${it.state ? "" : " disabled"}>u undo</button>
-      </div>`;
+      <div class="wk-actions${d.menu ? " menu-open" : ""}">
+        <button type="button" class="wk-btn accept" data-act="y" data-tip="accept: it should be raised, not posted yet (y)">✓ Accept <kbd>y</kbd></button>
+        <button type="button" class="wk-btn dismiss" data-act="s" data-tip="dismiss: do not raise it (s)">✕ Dismiss <kbd>s</kbd></button>
+        <button type="button" class="wk-btn defer" data-act="f" data-tip="come back to it later (f)">⏸ Defer <kbd>f</kbd></button>
+        <span class="grow"></span>
+        <button type="button" class="wk-btn more" data-act="m" aria-haspopup="menu" aria-expanded="${!!d.menu}" data-tip="edit, copy, open, posted, undo (m)">More ▾</button>
+        ${d.menu ? `<div class="wk-menu" role="menu">${walkSoloMode() ? "" : `
+          <button type="button" role="menuitem" data-act="a">Ask in the terminal<kbd>a</kbd></button>`}
+          <button type="button" role="menuitem" data-act="e">Edit the comment<kbd>e</kbd></button>
+          <button type="button" role="menuitem" data-act="c">Copy the comment<kbd>c</kbd></button>
+          <button type="button" role="menuitem" data-act="o"${it.link ? "" : " disabled"}>Open the line on GitHub<kbd>o</kbd></button>
+          <button type="button" role="menuitem" data-act="d">Mark posted<kbd>d</kbd></button>
+          <hr>
+          <button type="button" role="menuitem" data-act="u"${it.state ? "" : " disabled"}>Undo, set it back to open<kbd>u</kbd></button>
+        </div>` : ""}
+      </div>
+      ${this.threadHtml(it)}`;
+  },
+
+  // The talk with the review card about this finding: the `Thread:` lines, oldest first, and a box to say more.
+  threadHtml(it) {
+    const turns = it.thread.map(t => `<div class="wk-turn ${t.who === "reviewer" ? "rv" : "op"}">
+        <div class="wk-av">${t.who === "reviewer" ? "rv" : "you"}</div>
+        <div class="wk-bub"><div class="wk-who"><b>${t.who === "reviewer" ? "review card" : "you"}</b> · ${esc(walkWhen(t.at))}</div>
+          <div class="wk-said">${esc(t.text).replace(/`([^`]+)`/g, "<code>$1</code>")}</div></div></div>`).join("");
+    const draft = this.drafts.get(it.key) || "";
+    return `<section class="wk-thread">
+        <h3>Thread with the review card <span>${it.thread.length ? "· " + it.thread.length + (it.thread.length === 1 ? " turn" : " turns") + ", newest last" : "· ask it anything about this finding"}</span></h3>
+        ${turns}${walkWaiting(it) ? `<div class="wk-wait">waiting for the review card to answer</div>` : ""}
+        <div class="wk-reply">
+          <textarea id="walk-reply" data-morph-key="${esc(it.key)}" spellcheck="true" aria-label="reply to the review card"
+            placeholder="Reply to the review card about this finding…">${esc(draft)}</textarea>
+          <div class="wk-rfoot"><span>sent tagged</span><span class="tag">finding ${esc(it.num)} · ${esc(it.path.split("/").pop())}:${it.line}</span>
+            <span class="grow"></span><button type="button" class="wk-btn go" data-act="send" data-tip="send it to the review card (ctrl-enter)">Send ⏎</button></div>
+        </div>
+      </section>`;
   },
 
   // The head tree's copy of a file as lines, or null while it is unread or the run folder has no `src/` for it. The
@@ -661,7 +701,7 @@ const walkTenant = {
     const open = this.evOpen.has(it.key);
     return `<div class="wk-ev${open ? " open" : ""}"><button type="button" class="wk-evh" data-ev="1" aria-expanded="${open}">${
       open ? "▾" : "▸"} Evidence <span>${esc(bits.join(" · "))}</span></button>${
-      open ? `<pre>${esc(it.evLines.join("\n"))}</pre>` : ""}</div>`;
+      open ? `<pre>${esc(it.evLines.filter(l => !walkThreadRe.test(l)).join("\n"))}</pre>` : ""}</div>`;
   },
 
   // A write that was refused: yours against what is on disk, and a way through either side.
@@ -689,7 +729,8 @@ function walkKeydown(e) {
   const k = e.key;
   const key = k === "Enter" ? "C" : k;
   if (k === "Enter" && t && (t.tagName === "BUTTON" || t.tagName === "A")) return;
-  if (!"aAecCopsdyfujkg".includes(key) || key.length !== 1) return;
+  if (k === "Escape" && dock.menu) { e.preventDefault(); walkMenu(false); return; }
+  if (!"aAecCopsdyfujkgm".includes(key) || key.length !== 1) return;
   if (dock.editing || dock.conflict) return;
   e.preventDefault();
   e.stopPropagation();
@@ -722,9 +763,8 @@ async function walkAct(k) {
     case "p": case "d": return walkPosted(it);
     case "y": return void walkWriteState(it, `Walk: accepted ${walkNow()}`, "accepted");
     case "s": return void walkWriteState(it, `Walk: skipped ${walkNow()}`, "skipped");
-    case "f":
-      if (!walkTenant.prId) return;
-      return void walkWriteState(it, null, "deferred");
+    case "f": return void walkWriteState(it, `Walk: deferred ${walkNow()}`, "deferred");
+    case "m": return walkMenu();
     case "u":
       if (!it.state) { toast("nothing to undo", "this finding is still open"); return; }
       return void walkWriteState(it, null, "open");
@@ -862,7 +902,7 @@ async function walkMark(it, state, url) {
     const out = await pullsPost(`/v1/prs/${encodeURIComponent(walkTenant.prId)}/findings/${encodeURIComponent(it.key)}/walk`, body);
     const w = (out && out.walk) || { state, at: "", url: "" };
     it.state = walkUiState(w.state); it.stateAt = w.at || ""; it.stateUrl = w.url || "";
-    const row = pulls.rows.find(r => r.id === walkTenant.prId);
+    const row = typeof pulls === "undefined" ? null : pulls.rows.find(r => r.id === walkTenant.prId);
     if (row && out && out.counts) { row.walk = out.counts; pullsChanged(); }
     dockPaint();
     return true;
@@ -1002,11 +1042,98 @@ async function walkDone() {
   walkAsk("walk done", true);
 }
 
+// ── the thread with the review card ─────────────────────
+
+// The finding in a few words for the rail: its first bullet, else the code on the label line.
+function walkTitle(it) {
+  const b = it.comment.split("\n").slice(1).map(l => l.replace(/^\s*[*-]\s*/, "").trim()).find(Boolean);
+  return b || it.code || it.label;
+}
+
+function walkWaiting(it) { return it.thread.length > 0 && it.thread[it.thread.length - 1].who === "operator"; }
+
+function walkWhen(at) {
+  const t = new Date(at);
+  if (isNaN(t)) return at;
+  const hm = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return t.toDateString() === new Date().toDateString() ? hm : t.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + hm;
+}
+
+function walkSoloMode() { return !!document.querySelector("#walk-drawer.solo"); }
+
+function walkMenu(open) {
+  dock.menu = open === undefined ? !dock.menu : !!open;
+  dockPaint();
+  const to = document.querySelector(dock.menu ? "#walk-drawer .wk-menu button:not([disabled])" : '#walk-drawer [data-act="m"]');
+  if (to) to.focus({ preventScroll: true });
+}
+
+// The walk in a tab of its own (walk.html), on the same card and the same findings.
+function walkPopOut() {
+  if (!dock.taskId) return;
+  const q = "task=" + encodeURIComponent(dock.taskId) + (walkTenant.prId ? "&pr=" + encodeURIComponent(walkTenant.prId) : "");
+  window.open("/walk.html#" + q, "atrium-walk-" + dock.taskId);
+}
+
+// A line added at the end of Evidence, every other line kept as it was.
+function walkAppendEv(text, line) {
+  const lines = text.split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  if (!lines.some((l, i) => i >= 3 && l.trim() === "Evidence")) lines.push("", "Evidence");
+  lines.push(line);
+  return lines.join("\n") + "\n";
+}
+
+// Adding a turn only appends, so a file the review card wrote meanwhile is safe to append to again, once.
+async function walkAddLine(it, line) {
+  let text = it.text, hash = it.hash;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const out = walkAppendEv(text, line);
+      const res = await walkPut(dock.taskId, it.name, out, hash, it.eol, it);
+      walkAdopt(it, out, res.hash, res.key);
+      dockPaint();
+      return true;
+    } catch (e) {
+      if (e.status === 409 && e.body && e.body.hash && attempt === 0) { text = e.body.text; hash = e.body.hash; continue; }
+      toast("could not write it to the thread", e.message);
+      return false;
+    }
+  }
+  return false;
+}
+
+// The reply goes into the finding's file as an operator turn, then to the review card as a say (queued, never typed
+// over a human), tagged with the finding and telling it where its answer goes.
+async function walkReply() {
+  const it = dockCurrent();
+  const ta = document.getElementById("walk-reply");
+  if (!it || !ta || !dock.taskId) return;
+  const said = ta.value.trim();
+  if (!said) return;
+  const one = said.replace(/\r?\n/g, "\\n");
+  if (!await walkAddLine(it, `Thread: operator ${walkNow()} ${one}`)) return;
+  walkTenant.drafts.delete(it.key);
+  const box = document.getElementById("walk-reply");
+  if (box) box.value = "";
+  const file = (walkTenant.prId ? "" : "findings/") + it.name;
+  const text = `About review finding ${it.num} ${it.path}:${it.line} (${file}): ${said}\n\n` +
+    `Answer in that finding's file: add one line at the end of Evidence, "Thread: reviewer <UTC time> <your answer>", ` +
+    `with any newline in the answer written as \\n. Change nothing else in the file.`;
+  try {
+    await api(`/v1/tasks/${encodeURIComponent(dock.taskId)}/message`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text })
+    });
+  } catch (e) {
+    toast("it is in the thread but did not reach the review card", e.message);
+  }
+}
+
 // ── the drawer's own wiring ─────────────────────────────
 
 function walkApplyWidth() {
   const d = document.getElementById("walk-drawer");
-  if (!d) return;
+  if (!d || d.classList.contains("solo")) return;
   let w = 0;
   try { w = Number(localStorage.getItem("atrium.walk.w")) || 0; } catch (e) {}
   if (window.matchMedia("(max-width: 900px)").matches) w = 0;
@@ -1082,8 +1209,11 @@ function walkGripDown(e) {
   if (lay) new MutationObserver(replace).observe(lay, { attributes: true, attributeFilter: ["class"] });
   drawer.addEventListener("keydown", walkKeydown);
   drawer.addEventListener("click", e => {
+    // Found before the menu shuts: walk.html repaints by innerHTML, which takes the clicked node out of the page.
     const el = e.target.closest("[data-act],[data-i],[data-more],[data-ev]");
-    if (!el || !drawer.contains(el)) return;
+    const inDrawer = el && drawer.contains(el);
+    if (dock.menu && !e.target.closest('.wk-menu,[data-act="m"]')) { dock.menu = false; dockPaint(); }
+    if (!inDrawer) return;
     if (el.dataset.i !== undefined) {
       const it = dock.items[Number(el.dataset.i)];
       if (it) dockSelect(it.key, true);
@@ -1105,10 +1235,20 @@ function walkGripDown(e) {
     const a = el.dataset.act;
     if (a === "save") return void walkSave();
     if (a === "cancel") return walkEditDone();
+    if (a === "send") return void walkReply();
+    if (a !== "m" && dock.menu) { dock.menu = false; dockPaint(); }
     walkAct(a);
+  });
+  drawer.addEventListener("input", e => {
+    const it = dockCurrent();
+    if (it && e.target && e.target.id === "walk-reply") walkTenant.drafts.set(it.key, e.target.value);
   });
   // ctrl-s saves and escape leaves, the same reflexes the file editor has.
   drawer.addEventListener("keydown", e => {
+    if (e.target && e.target.id === "walk-reply") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.stopPropagation(); walkReply(); }
+      return;
+    }
     if (e.target && e.target.id === "walk-edit-text") {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); e.stopPropagation(); walkSave(); }
       else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); walkEditDone(); }

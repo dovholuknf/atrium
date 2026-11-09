@@ -12239,6 +12239,201 @@ async function walkContextSection(browser, base) {
   console.log("walkContext: ok");
 }
 
+// b-walk-own-view: the walk in a tab of its own (walk.html) over a made-up findings folder, and the drawer's way there.
+const WALK_VIEW_FILES = {
+  "01-high-a.go-L3.txt": "https://github.com/x/y/pull/9\nHIGH pkg/a.go line 3: x := 1\nhttps://github.com/x/y/pull/9/files#diff-1R3\n\n" +
+    "* The cache is never cleared.\n\nEvidence\nId: wv-1\nCause: introduced\n",
+  "02-med-b.go-L9.txt": "https://github.com/x/y/pull/9\nMED pkg/b.go line 9: y := 2\n\n\n* Refetch on every focus.\n\nEvidence\nId: wv-2\n" +
+    "Thread: operator 2026-11-09T14:12:00Z Is 30s the right floor?\n" +
+    "Thread: reviewer 2026-11-09T14:13:00Z The tick is fine.\\nKeep one listener.\n" +
+    "Thread: operator 2026-11-09T14:15:00Z Drop focus then?\n",
+  "03-nit-c.css-L4.txt": "https://github.com/x/y/pull/9\nNIT web/c.css line 4: content: \"closed\";\n\n\n* Capitalise it.\n\nEvidence\nId: wv-3\n" +
+    "Walk: deferred 2026-11-09T14:20:00Z\n"
+};
+function walkViewFolder(id) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-wview-"));
+  fs.mkdirSync(path.join(tmp, "findings"), { recursive: true });
+  for (const [n, t] of Object.entries(WALK_VIEW_FILES)) fs.writeFileSync(path.join(tmp, "findings", n), t);
+  mock.walkDirs[id] = tmp;
+  return tmp;
+}
+
+async function walkViewSection(browser, base) {
+  const id = "land-wview";
+  const dir = walkViewFolder(id);
+  const read = n => fs.readFileSync(path.join(dir, "findings", n), "utf8");
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/wview" })];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__opened = [];
+    window.open = (url, name) => { window.__opened.push({ url, name }); return null; };
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const S = "#walk-drawer ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/walk.html#task=" + id, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 3, null, { timeout: slow(10000) })
+      .catch(() => fail("walkView: the own tab did not list the three findings"));
+    const rail = await p.$$eval(S + ".wk-row", els => els.map(e => ({ t: e.querySelector(".wk-t").textContent,
+      shown: getComputedStyle(e.querySelector(".wk-t")).display !== "none", tc: (e.querySelector(".wk-tc") || {}).textContent || "",
+      cls: e.className })));
+    if (rail[0].t !== "The cache is never cleared." || !rail[0].shown) fail("walkView: the rail does not show a finding's title: " + JSON.stringify(rail[0]));
+    if (rail[1].tc !== "3" || rail[0].tc) fail("walkView: the thread count is wrong on the rail: " + JSON.stringify(rail));
+    if (!/\bdeferred\b/.test(rail[2].cls)) fail("walkView: a deferred finding is not drawn deferred: " + rail[2].cls);
+    if (!/1 deferred/.test(await p.textContent("#walk-count"))) fail("walkView: the count leaves out the deferred one: " + await p.textContent("#walk-count"));
+
+    // Three decisions in sight, the rest behind More.
+    const shown = await p.$$eval(S + ".wk-actions > button", els => els.map(e => e.dataset.act).join());
+    if (shown !== "y,s,f,m") fail("walkView: the visible buttons are " + shown + ", not accept, dismiss, defer and More");
+    await p.click(S + '[data-act="m"]');
+    const menu = await p.$$eval(S + ".wk-menu button", els => els.map(e => e.dataset.act).join());
+    if (menu !== "e,c,o,d,u") fail("walkView: More holds " + menu + ", not edit, copy, open, posted and undo");
+    await p.keyboard.press("Escape");
+    await p.waitForFunction(() => !document.querySelector("#walk-drawer .wk-menu"), null, { timeout: slow(3000) })
+      .catch(() => fail("walkView: escape did not close More"));
+
+    // The decisions write the Walk line, defer included, and undo takes it away.
+    const n1 = "01-high-a.go-L3.txt";
+    await p.click(S + '[data-act="y"]');
+    await until(() => /\nWalk: accepted \S+\n/.test(read(n1)), 5000).catch(() => fail("walkView: accept wrote no Walk line: " + read(n1)));
+    await p.click(S + '[data-act="f"]');
+    await until(() => /\nWalk: deferred \S+\n/.test(read(n1)) && !/accepted/.test(read(n1)), 5000)
+      .catch(() => fail("walkView: defer did not replace the Walk line: " + read(n1)));
+    await p.click(S + '[data-act="m"]');
+    await p.click(S + '.wk-menu [data-act="u"]');
+    await until(() => !/Walk:/.test(read(n1)), 5000).catch(() => fail("walkView: undo from More left the Walk line: " + read(n1)));
+
+    // The thread under a finding: oldest first, who said it, a `\n` drawn as a newline, waiting after the operator.
+    await p.click(S + '.wk-row[data-i="1"]');
+    await p.waitForSelector(S + ".wk-turn", { timeout: slow(5000) });
+    const turns = await p.$$eval(S + ".wk-turn", els => els.map(e => e.className.replace("wk-turn ", "") + ":" + e.querySelector(".wk-said").innerText));
+    if (turns.join("|") !== "op:Is 30s the right floor?|rv:The tick is fine.\nKeep one listener.|op:Drop focus then?") fail("walkView: the thread reads " + JSON.stringify(turns));
+    if (!await p.$(S + ".wk-wait")) fail("walkView: a thread ending on the operator does not say it is waiting");
+    if (await p.$('#walk-drawer .wk-menu [data-act="a"]')) fail("walkView: the own tab offers to ask in a terminal it does not have");
+    await p.close();
+
+    // A phone: the rail is a row of chips, the decisions sit on the bottom edge, and nothing is wider than the screen.
+    const pp = await ctx.newPage();
+    pp.on("pageerror", e => errors.push(String(e)));
+    await pp.setViewportSize({ width: 390, height: 800 });
+    await pp.goto(base + "/walk.html#task=" + id, { waitUntil: "domcontentloaded" });
+    await pp.waitForSelector(S + ".wk-actions", { timeout: slow(10000) });
+    const lay = await pp.evaluate(() => {
+      const rows = [...document.querySelectorAll("#walk-rail .wk-row")].map(e => e.getBoundingClientRect());
+      const a = document.querySelector("#walk-drawer .wk-actions").getBoundingClientRect();
+      return { sameLine: rows.every(r => Math.abs(r.top - rows[0].top) < 2), actBottom: Math.round(a.bottom), h: innerHeight,
+        wide: document.documentElement.scrollWidth };
+    });
+    if (!lay.sameLine) fail("walkView: on a phone the rail is not one row of chips");
+    if (Math.abs(lay.actBottom - lay.h) > 1) fail("walkView: on a phone the decisions are not on the bottom edge: " + JSON.stringify(lay));
+    if (lay.wide > 390) fail("walkView: on a phone the page is " + lay.wide + "px wide");
+    await pp.close();
+
+    // The drawer on the board: the same three and More, and its own-tab button opens walk.html on this card.
+    const pb = await ctx.newPage();
+    pb.on("pageerror", e => errors.push(String(e)));
+    await pb.goto(base, { waitUntil: "domcontentloaded" });
+    await pb.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(pb, { unit: "walkView", id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await pb.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    await pb.click("#t-walk");
+    await pb.waitForSelector(S + ".wk-actions", { timeout: slow(10000) });
+    const drawerBtns = await pb.$$eval(S + ".wk-actions > button", els => els.map(e => e.dataset.act).join());
+    if (drawerBtns !== "y,s,f,m") fail("walkView: the drawer's buttons are " + drawerBtns);
+    await pb.click(S + '[data-act="m"]');
+    if (!await pb.$('#walk-drawer .wk-menu [data-act="a"]')) fail("walkView: the drawer's More lost ask in the terminal");
+    await pb.click("#walk-popout");
+    const opened = await pb.evaluate(() => window.__opened);
+    if (!opened.some(o => o.url === "/walk.html#task=" + encodeURIComponent(id))) fail("walkView: the own-tab button opened " + JSON.stringify(opened));
+    await pb.close();
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    delete mock.walkDirs[id];
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkView: the page threw: " + errors.join(" | "));
+}
+
+// b-review-reply-back: a reply under a finding goes into its file and to the review card, and the card's answer, a
+// `Thread: reviewer` line it appends, comes back under the finding with nothing on the page touched.
+async function walkReplySection(browser, base) {
+  const id = "land-wreply";
+  const dir = walkViewFolder(id);
+  const n2 = "02-med-b.go-L9.txt";
+  const read = n => fs.readFileSync(path.join(dir, "findings", n), "utf8");
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  mock.walkSays = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/walk.html#task=" + id, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
+    await p.click('#walk-drawer .wk-row[data-i="1"]');
+    await p.waitForSelector("#walk-reply", { timeout: slow(5000) });
+
+    // A draft outlives a step to another finding and back.
+    await p.fill("#walk-reply", "kept?");
+    await p.click('#walk-drawer .wk-row[data-i="0"]');
+    await p.click('#walk-drawer .wk-row[data-i="1"]');
+    if (await p.inputValue("#walk-reply") !== "kept?") fail("walkReply: the draft was lost on a step away and back");
+
+    // The review card wrote to the file after the page read it, so the first write is refused and appended again.
+    fs.appendFileSync(path.join(dir, "findings", n2), "Thread: reviewer 2026-11-09T14:16:00Z Yes, drop focus.\n");
+    await p.fill("#walk-reply", "And the phone board?\nIt has no focus event.");
+    await p.click('#walk-drawer [data-act="send"]');
+    await until(() => /\nThread: operator \S+ And the phone board\?\\nIt has no focus event\.\n$/.test(read(n2)), 5000)
+      .catch(() => fail("walkReply: the reply is not the last line of the file: " + read(n2)));
+    if (!read(n2).includes("Thread: reviewer 2026-11-09T14:16:00Z Yes, drop focus.\n")) fail("walkReply: the send wrote over the review card's line");
+    await until(() => mock.walkSays.length === 1, 5000).catch(() => fail("walkReply: nothing was said to the review card"));
+    const say = mock.walkSays[0] || { id: "", text: "" };
+    if (say.id !== id || !say.text.includes("(findings/" + n2 + ")") || !say.text.includes("And the phone board?") ||
+      !/Thread: reviewer <UTC time>/.test(say.text)) fail("walkReply: the say is not tagged with the finding: " + JSON.stringify(say));
+    if (await p.inputValue("#walk-reply") !== "") fail("walkReply: the box kept the sent reply");
+    await p.waitForFunction(() => document.querySelectorAll("#walk-drawer .wk-turn").length === 5 && document.querySelector("#walk-drawer .wk-wait"),
+      null, { timeout: slow(5000) }).catch(() => fail("walkReply: the sent reply is not in the thread"));
+
+    // The answer lands in the file, and the tab, which has no event stream, reads it back on its own.
+    await p.fill("#walk-reply", "half typed");
+    fs.appendFileSync(path.join(dir, "findings", n2), "Thread: reviewer 2026-11-09T14:18:00Z It uses visibilitychange too.\n");
+    await p.waitForFunction(() => document.querySelectorAll("#walk-drawer .wk-turn").length === 6, null, { timeout: slow(10000) })
+      .catch(() => fail("walkReply: the review card's answer never showed"));
+    const last = await p.$$eval("#walk-drawer .wk-turn", els => { const e = els[els.length - 1]; return e.className + ":" + e.querySelector(".wk-said").textContent; });
+    if (!/\brv\b/.test(last) || !/visibilitychange too/.test(last)) fail("walkReply: the last turn is " + last);
+    if (await p.$("#walk-drawer .wk-wait")) fail("walkReply: still waiting after the answer");
+    if (await p.inputValue("#walk-reply") !== "half typed") fail("walkReply: the answer arriving threw away what was typed");
+    if (await p.$eval('#walk-drawer .wk-row[data-i="1"] .wk-tc', e => e.textContent) !== "6") fail("walkReply: the rail count did not follow");
+    await p.close();
+  } finally {
+    await ctx.close();
+    mock.walkSays = [];
+    delete mock.walkDirs[id];
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkReply: the page threw: " + errors.join(" | "));
+}
+
 // u-review-walk-no-resize: opening and closing the walk never moves the terminal. A list at 380px takes the drawer in
 // its column, the default 260px list gets it over the terminal's right edge. Either way the grid, the pane's box and
 // the frames sent are what they were, so the runner never redraws for a resize. WALK_SHOTS=<dir> writes PNGs.
@@ -26329,7 +26524,7 @@ async function main() {
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -28180,6 +28375,8 @@ async function main() {
     await unit("questionsClick", () => questionsClickSection(browser, base));
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
+    await unit("walkView", () => walkViewSection(browser, base));
+    await unit("walkReply", () => walkReplySection(browser, base));
     await unit("walkNoResize", () => walkNoResizeSection(browser, base));
     await unit("linkReuse", () => linkReuseSection(browser, base));
     await unit("linkBoard", () => linkBoardSection(browser, base));

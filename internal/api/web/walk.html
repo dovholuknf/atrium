@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>walk</title>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/themes.css">
+<link rel="stylesheet" href="/css/walk.css">
+<!-- The review walk with the window to itself: the drawer's markup and code (js/walk.js), drawn full size. -->
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+</head>
+<body class="wv-page">
+<aside id="walk-drawer" class="walk solo" hidden tabindex="-1" aria-label="walk the findings">
+  <div class="walk-head">
+    <strong>Review walk</strong>
+    <span class="wv-card" id="walk-title"></span>
+    <span class="by" id="walk-note"></span>
+    <span class="walk-bar" id="walk-bar"></span>
+    <span class="by" id="walk-count"></span>
+    <span class="grow"></span>
+    <a class="wk-btn" id="wv-board" href="/" target="_blank" rel="noopener" data-tip="the card on the board">Board ↗</a>
+  </div>
+  <div class="walk-body">
+    <nav id="walk-rail" class="walk-rail" role="listbox" aria-label="findings"></nav>
+    <section id="walk-item" class="walk-item"></section>
+  </div>
+</aside>
+<div id="wv-toasts" class="wv-toasts" role="status" aria-live="polite"></div>
+<script src="/js/walk-view.js"></script>
+<script src="/js/walk.js"></script>
+</body>
+</html>

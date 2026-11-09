@@ -995,7 +995,7 @@ async function pullsDrawerSection(browser, base) {
       // the finding pane is what scrolls: bring the buttons into view and say where they landed
       await btn("y").scrollIntoViewIfNeeded();
       const geo = await ph.evaluate(() => {
-        const b = [...document.querySelectorAll("#walk-item .wk-actions button")].map(x => x.getBoundingClientRect());
+        const b = [...document.querySelectorAll("#walk-item .wk-actions > button")].map(x => x.getBoundingClientRect());
         const d = document.getElementById("walk-drawer").getBoundingClientRect();
         const t = document.getElementById("t-screen").getBoundingClientRect();
         return { top: Math.min(...b.map(r => r.top)), bottom: Math.max(...b.map(r => r.bottom)), h: Math.min(...b.map(r => r.height)),
@@ -1008,6 +1008,7 @@ async function pullsDrawerSection(browser, base) {
       await shoot("buttons");
       const rowState = () => ph.evaluate(() => document.querySelector("#walk-rail .wk-row.cur").className.replace(/\b(wk-row|cur|brk)\b/g, "").trim());
       for (const [act, want] of [["y", "accepted"], ["d", "posted"], ["s", "dismissed"], ["f", "deferred"]]) {
+        if (act === "d") await btn("m").click();
         await btn(act).scrollIntoViewIfNeeded();
         await btn(act).click();
         // posted asks for the comment's URL, and is one more tap
@@ -1021,6 +1022,7 @@ async function pullsDrawerSection(browser, base) {
         await ph.evaluate(() => { document.getElementById("walk-item").scrollTop = 0; });
         await shoot("state-" + want);
       }
+      await btn("m").click();
       await btn("u").click();
       await ph.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.cur.accepted, #walk-rail .wk-row.cur.posted, #walk-rail .wk-row.cur.dismissed, #walk-rail .wk-row.cur.deferred"), null, { timeout: slow(5000) })
         .catch(() => fail(tag + "tapping u did not put the finding back to open"));

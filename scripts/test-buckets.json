@@ -43,6 +43,8 @@
         "internal/api/web/js/peek.js",
         "internal/api/web/js/peek-debug.js",
         "internal/api/web/js/walk.js",
+        "internal/api/web/js/walk-view.js",
+        "internal/api/web/walk.html",
         "internal/api/web/js/switcher.js",
         "internal/api/web/js/resume-opening.js",
         "internal/api/web/js/keepalive.js",
