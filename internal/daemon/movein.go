@@ -91,16 +91,6 @@ func (d *Daemon) handleMoveIn(w http.ResponseWriter, r *http.Request) {
 		small.WriteJSONErr(w, http.StatusConflict, err)
 		return
 	}
-	held, err := d.st.PendingForTask(id)
-	if err != nil {
-		small.WriteJSONErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	for _, p := range held {
-		if _, err := d.decide(p.ID, "block", MoveInReason, ""); err != nil {
-			log.Printf("[atrium] move in %s: request %s was not answered: %v", t.DisplayTitle(), p.ID, err)
-		}
-	}
 	began := time.Now()
 	if started != "" {
 		// The same process the check saw, or a reused pid this must not touch.
@@ -113,6 +103,17 @@ func (d *Daemon) handleMoveIn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ended := time.Since(began)
+	// Denied only once its process is ended, so nothing the denial releases can run in between.
+	held, err := d.st.PendingForTask(id)
+	if err != nil {
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, p := range held {
+		if _, err := d.decide(p.ID, "block", MoveInReason, ""); err != nil {
+			log.Printf("[atrium] move in %s: request %s was not answered: %v", t.DisplayTitle(), p.ID, err)
+		}
+	}
 	if err := d.moveInQuiet(id, pid, started, m); err != nil {
 		small.WriteJSONErr(w, http.StatusConflict, err)
 		return

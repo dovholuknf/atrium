@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -213,5 +214,39 @@ func TestMoveInEndsARealProcess(t *testing.T) {
 	}
 	if f.resumed != 1 {
 		t.Fatalf("resumed %d times, want once", f.resumed)
+	}
+}
+
+func TestMoveInEndsTheProcessBeforeItDenies(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	card, p, f := joinedHeld(t, d, 4247)
+	var atStop string
+	d.mv.stop = func(pid int) error {
+		got, _ := d.st.GetPermission(p.ID)
+		atStop = got.Decision
+		return f.stop(pid)
+	}
+	if w := moveInCall(d, card.ID); w.Code != http.StatusOK {
+		t.Fatalf("move in answered %d: %s", w.Code, w.Body)
+	}
+	if atStop != "" {
+		t.Fatalf("the request was already answered %q when its process was ended", atStop)
+	}
+}
+
+func TestMoveInThatCannotEndTheProcessLeavesTheRequestHeld(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	card, p, f := joinedHeld(t, d, 4248)
+	d.mv.stop = func(int) error { return errors.New("access is denied") }
+	if w := moveInCall(d, card.ID); w.Code != http.StatusConflict {
+		t.Fatalf("answered %d, want 409: %s", w.Code, w.Body)
+	}
+	if got, _ := d.st.GetPermission(p.ID); got.Decision != "" {
+		t.Fatalf("the request was answered %q though the session still runs", got.Decision)
+	}
+	if f.resumed != 0 {
+		t.Fatal("resumed a card whose outside session still runs")
 	}
 }

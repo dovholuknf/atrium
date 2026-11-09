@@ -503,7 +503,7 @@ function renderHeldTiles(host) {
       <button class="to-perms" onclick="switchView('perms')"
         data-tip="to set a standing rule for this">open permissions</button>
       <button class="move-in" data-card="${esc(t.id)}" onclick="moveIntoAtrium(this)"
-        data-tip="denies this request, ends the session where it runs now and resumes it under atrium"
+        data-tip="ends the session where it runs now, denies this request and resumes it under atrium"
         >move into atrium</button>
     </div></div>`).join("");
 }
@@ -512,7 +512,7 @@ function renderHeldTiles(host) {
 async function moveIntoAtrium(btn) {
   const id = btn.dataset.card;
   const ok = await askUser({ title: "move into atrium",
-    body: "This denies the waiting request, ends the session in the terminal it runs in now, and resumes the same " +
+    body: "This ends the session in the terminal it runs in now, denies the waiting request, and resumes the same " +
       "conversation here in a terminal atrium holds. Anything typed in that other terminal is lost.",
     buttons: [{ label: "cancel", value: null }, { label: "move it", value: true, style: "go" }] });
   if (!ok) return;
