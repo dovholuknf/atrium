@@ -1,15 +1,3 @@
-// ── the new agent dialog ─────────────────────
-//
-// WHAT FIRST, HOW ON ONE LINE. The repo, the name and the groups come first, the room, runner, model, effort and setup
-// fold into one summary line whose defaults are the last ones saved. A card always lives under the room's card root:
-//   a repo                 POST /v1/launch with repo host/org/repo, which makes a worktree home on `branch`.
-//   a pull request, issue  POST /v1/open, as a pasted link always has: the room names the branch.
-//   no repo                POST /v1/launch with home, a scratch home.
-//   quick throwaway        POST /v1/launch with throwaway, a home that goes when the session ends. `keep` on its card
-//                          keeps it where it is (naKeepOpen).
-// A branch that is already there is asked about before the launch (GET /v1/branches/check). The `launch` dialog in
-// js/fixtures.js still serves resume, the switcher's links and starting onto a card.
-
 const NA_HOW_KEY = "atrium.newagent.how";
 const NA_GROUPS_KEY = "atrium.newagent.groups";
 const NA_RECENT_GROUPS_KEY = "atrium.newagent.recentgroups";
@@ -35,14 +23,11 @@ function naSlug(s, n) {
 }
 const naFirstLine = s => (String(s || "").split("\n")[0] || "").trim();
 const naClip = (s, n) => s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
-// What a repo is called on screen: owner/repo on github, host/owner/repo elsewhere, a folder's name for a path.
 function naShort(ref) {
   if (/^[a-z]:[\\/]|^\//i.test(ref)) return ref.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   return ref.replace(/^github(\.com)?\//i, "");
 }
 
-// The rooms a launch can choose between: only on the hub's all-rooms view with two or more. Otherwise the launch goes
-// where the board is, and the summary names it.
 function naRooms() {
   const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms) || [];
   const scoped = typeof roomNow === "function" ? roomNow() : "";
@@ -61,7 +46,6 @@ const naCanModel = h => !!(h && ((h.model_args || []).length || (h.model_env || 
 const naCanEffort = h => !!(h && ((h.effort_args || []).length || (h.effort_env || "").trim()));
 const naIsClaude = h => !!(h && hookTargetFor(h) === "claude");
 
-// The saved default, with a room or runner that is gone replaced by what is there now.
 function naDefaultHow() {
   const saved = naRead(NA_HOW_KEY, {});
   const rooms = naRooms();
@@ -76,8 +60,6 @@ function naSameAsDefault() {
   return ["room", "harness", "model", "effort", "setup"].every(k => (d[k] || "") === (h[k] || ""));
 }
 
-// ── what was typed or pasted ─────────────────────
-// {ref, link} or null. ref is host/owner/repo (owner/repo means github), link is a pull request, issue or branch.
 function naParse(text) {
   const t = String(text || "").trim();
   if (!t) return null;
@@ -93,7 +75,6 @@ function naParse(text) {
   return { ref, link: null };
 }
 
-// ── derived values ─────────────────────
 const naOpens = () => !!(naS.link && naS.link.num);
 function naAutoTitle() {
   const what = naClip(naFirstLine(naS.what), 64);
@@ -112,8 +93,6 @@ function naAutoBranch() {
   return "claude/" + (naSlug(named, 38) || "work");
 }
 const naWantedBranch = () => naS.branchTouched ? naS.branch.trim() : naAutoBranch();
-// The branch the launch goes on: a free name when the wanted one is held by another worktree, or exists and the choice
-// is a new branch.
 function naBranch() {
   const want = naWantedBranch(), c = naS.check;
   if (!c || c.branch !== want) return want;
@@ -121,7 +100,6 @@ function naBranch() {
   return want;
 }
 
-// ── the repo list ─────────────────────
 function naRows() {
   const memo = launchRepoMemo[naS.how.room || ""];
   if (!memo) return null;
@@ -193,7 +171,6 @@ function naSetRepo(ref, link) {
   naRender();
 }
 
-// A pull request or issue is read for its title, the same /v1/recognise a pasted link always asks.
 async function naRecognise(link) {
   link.reading = true;
   try {
@@ -207,7 +184,6 @@ async function naRecognise(link) {
   if (naS && naS.link === link) naRender();
 }
 
-// ── the branch check ─────────────────────
 function naQueueCheck() {
   clearTimeout(naCheckTimer);
   const want = naWantedBranch();
@@ -260,9 +236,6 @@ function naPaintConflicts() {
   el.innerHTML = "";
 }
 
-// ── groups ─────────────────────
-// The groups a card can go in: the ones picked, the ones used lately, the board's own named groups, and every tag a card
-// carries that is not atrium's (those have a colon).
 function naGroupChoices(sel) {
   const p = typeof groupingPrefs === "function" ? groupingPrefs() : {};
   const named = p.mode === "custom" && Array.isArray(p.groups) ? p.groups : [];
@@ -338,7 +311,6 @@ document.addEventListener("mousedown", e => {
   });
 });
 
-// ── how it runs ─────────────────────
 function naSummary() {
   const h = naHarness(), how = naS.how;
   if (!h) return "<b>" + esc(naRoomName()) + "</b> · no runner here";
@@ -388,7 +360,6 @@ function naPaintHow() {
   };
 }
 
-// ── paint ─────────────────────
 function naRender() {
   if (!naS) return;
   const d = naEl("na");
@@ -448,7 +419,6 @@ async function naLoadRepos() {
   if (await loadLaunchRepos(room) && naS && naEl("na").open && (naS.how.room || "") === room) naRender();
 }
 
-// ── open ─────────────────────
 async function openNewAgent(tw, prefill) {
   if (!allHarnesses.length) await loadHarnesses();
   if (!allHarnesses.some(h => h.enabled)) { openLaunch(); return; }
@@ -499,7 +469,6 @@ naEl("na-repo").addEventListener("keydown", e => {
 });
 naEl("na-repo-clr").onclick = () => { naS.ref = ""; naS.link = null; naS.check = null; naEl("na-repo").value = ""; naEl("na-repo").focus(); };
 
-// A link pasted into the what box fills the repo, and leaves the box empty when the link was all it held.
 naEl("na-what").addEventListener("input", () => {
   const v = naEl("na-what").value, url = (v.match(/https?:\/\/\S+/i) || [])[0];
   const p = url && !naS.tw ? naParse(url) : null;
@@ -534,7 +503,6 @@ naEl("na").addEventListener("keydown", e => {
   naLaunch(e.ctrlKey || e.metaKey ? true : naS.tw);
 });
 
-// ── launch ─────────────────────
 function naBody(h) {
   const how = naS.how, body = { harness: h.id, prompt: naEl("na-what").value.trim() };
   if (naCanModel(h) && how.model) body.model = how.model;
@@ -604,7 +572,7 @@ async function naLaunch(tw) {
   }, "starting…");
 }
 
-// A card a link opened takes the groups after it exists: the open verb makes it and knows nothing of groups.
+// The open verb makes the card and knows nothing of groups, so they are patched on after.
 async function naTag(id, groups) {
   const t = await api("/v1/tasks/" + encodeURIComponent(id)).catch(() => null);
   const tags = [...new Set([...((t && t.tags) || []), ...groups])];
@@ -612,8 +580,6 @@ async function naTag(id, groups) {
     body: JSON.stringify({ tags }) }).catch(e => toast("could not put it in its groups", e.message));
 }
 
-// ── keep a throwaway ─────────────────────
-// Its name and groups, and its home stays where it is: POST /promote with no path keeps a home under the card root.
 let naKeepId = "", naKeepGroups = [];
 function naKeepOpen(id, t) {
   naKeepId = id;
@@ -648,7 +614,6 @@ naEl("na-keep").addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.id === "nk-title") { e.preventDefault(); naEl("nk-go").click(); }
 });
 
-// The chip a throwaway wears on its card: one click to keep it.
 function naKeepChip(t) {
   if (!t || !t.throwaway || isMinion(t)) return "";
   if (t.promote_to) return `<span class="chip" data-tip="kept: it stays when the session ends">kept</span>`;

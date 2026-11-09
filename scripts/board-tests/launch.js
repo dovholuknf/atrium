@@ -594,7 +594,6 @@ async function launchNewAgentSection(browser, base) {
     const seen = () => p.evaluate(() => ({ title: document.getElementById("na-title").value, branch: document.getElementById("na-branch").value,
       conf: document.getElementById("na-conf").textContent, sum: document.getElementById("na-sum").textContent }));
 
-    // a repo from the list, a branch that exists: a new branch by default, continue on it when picked
     await p.evaluate(() => openNewAgent(false));
     await p.fill("#na-repo", "mcp");
     await p.waitForSelector("#na-repo-list .cb-opt");
@@ -619,7 +618,6 @@ async function launchNewAgentSection(browser, base) {
         JSON.stringify(b.tags) !== '["research"]' || b.prompt !== "the per-identity allowlist" || b.throwaway || b.cwd !== "")
       fail("launchNewAgent: the repo launch sent " + JSON.stringify(b));
 
-    // a branch another worktree holds is moved off, and the groups are remembered
     await p.evaluate(() => openNewAgent(false, "openziti/mcp-gateway"));
     if (!(await p.locator("#na-groups .chip").allTextContents()).includes("research")) fail("launchNewAgent: the groups were not remembered");
     await p.fill("#na-title", "held");
@@ -629,7 +627,6 @@ async function launchNewAgentSection(browser, base) {
     await closed("launch");
     if ((launches[1] || {}).branch !== "claude/held-2") fail("launchNewAgent: a held branch was launched on " + JSON.stringify(launches[1]));
 
-    // an empty name refuses, ctrl+Enter starts a throwaway, the button does too
     await p.evaluate(() => openNewAgent(false));
     await p.click("#na-go");
     if (launches.length !== 2 || !(await p.locator("#na-title.missing").count())) fail("launchNewAgent: an empty name launched or was not marked");
@@ -644,7 +641,6 @@ async function launchNewAgentSection(browser, base) {
     await closed("start throwaway");
     if ((launches[3] || {}).throwaway !== true) fail("launchNewAgent: the throwaway button sent " + JSON.stringify(launches[3]));
 
-    // a setup saved as default is the next open's
     await p.evaluate(() => openNewAgent(false, "openziti/mcp-gateway"));
     await p.click("#na-change");
     await p.click('#na-how .seg[data-k="setup"] button[data-v="lean"]');
@@ -658,7 +654,6 @@ async function launchNewAgentSection(browser, base) {
     await closed("a lean launch");
     if ((launches[4] || {}).lean !== true) fail("launchNewAgent: the saved setup was not sent " + JSON.stringify(launches[4]));
 
-    // a pull request link goes to the open verb, named from the forge, and its card takes the groups
     await p.evaluate(() => openNewAgent(false));
     await p.fill("#na-repo", "https://github.com/openziti/tlsuv/pull/394");
     await p.waitForFunction(() => document.getElementById("na-title").value.includes("win32crypto"), null, { timeout: slow(3000) })
