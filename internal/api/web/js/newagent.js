@@ -283,7 +283,7 @@ function naPaintGroups(root, sel, set) {
     `<button type="button" class="gp-field" aria-expanded="${open}" aria-haspopup="listbox">` +
       (sel.length ? sel.map(g => `<span class="chip accent">${esc(g)}</span>`).join("") : `<span class="ph">no group</span>`) +
       `<span class="caret">▾</span></button>` +
-    `<button type="button" class="gp-add" title="a new group">+</button>` +
+    `<button type="button" class="gp-add" aria-label="a new group" data-tip="a new group">+</button>` +
     (open ? `<div class="gp-list" role="listbox">` + (all.length ? all.map(g =>
       `<label class="check"><input type="checkbox" data-g="${esc(g)}" ${sel.includes(g) ? "checked" : ""}><span>${esc(g)}</span>` +
       `<span class="n">${naGroupCount(g) || ""}</span></label>`).join("") : `<div class="empty">no groups yet. + makes one.</div>`) + `</div>` : "");
