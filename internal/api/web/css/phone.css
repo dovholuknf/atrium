@@ -388,7 +388,7 @@
   body.term-phone #t-bar-toggle { margin-left: auto; }
   body.term-phone #t-full { min-width: 44px; min-height: 44px; }
   body.term-phone #t-attach, body.term-phone #t-view-note, body.term-phone .term-bar > .grow { display: none; }
-  body.term-phone .term-bar .term-who { flex: 1 1 0; min-height: 44px; }
+  body.term-phone .term-bar .term-who { flex: 1 1 0; min-height: 44px; min-width: 44px; overflow: hidden; }  /* clipped, so a narrow chip never spills over the buttons */
   /* the handle: a visible grip a few px tall, in a 96 by 44 touch area at top centre (the top right is the bell's) */
   body.term-phone #t-tray-handle {
     display: block; position: absolute; top: 0; left: 50%; width: 96px; height: 44px; margin-left: -48px; z-index: 6;
