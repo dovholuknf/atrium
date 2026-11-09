@@ -110,9 +110,6 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	if req.Number <= 0 || strings.TrimSpace(req.Org) == "" || strings.TrimSpace(req.Repo) == "" {
 		return res, http.StatusBadRequest, errors.New("which pull request: org, repo and number")
 	}
-	if climbs(req.Org) || climbs(req.Repo) {
-		return res, http.StatusBadRequest, errors.New("that org or repository is not a name")
-	}
 	host, forgeCmd := strings.TrimSpace(req.Host), ""
 	if p != nil {
 		host, forgeCmd = p.Host, p.ForgeCmd
