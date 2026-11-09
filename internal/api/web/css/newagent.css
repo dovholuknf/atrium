@@ -14,6 +14,10 @@
     background: linear-gradient(rgba(var(--warn-rgb),.24), rgba(var(--warn-rgb),.24)), var(--chip-accent); }
 }
 .na-split > button:focus-visible { z-index: 1; outline: 2px solid var(--teal); outline-offset: -3px; }
+/* The ink sits low in its line box: lift it to the button's centre, the "+" a hair less to meet the x-height middle. */
+.na-split > button.newagent > span { position: relative; top: -.12em; }
+.na-split > button.newagent > .na-plus { top: -.09em; }
+.na-split > button.newagent::before { position: relative; top: -.13em; }
 
 dialog#na { width: min(792px, 94vw); overflow: visible; }
 dialog#na:focus { outline: none; }
