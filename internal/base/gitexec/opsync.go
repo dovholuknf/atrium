@@ -329,7 +329,8 @@ type ResetKeep struct {
 func (o ResetKeep) build(b *builder) {
 	b.sub("reset", "--keep")
 	b.flag(o.Quiet, "--quiet")
-	b.add(eoo, b.ref("commit", o.Commit))
+	// no --end-of-options: git 2.43 refuses it here; ref rejects a leading dash
+	b.add(b.ref("commit", o.Commit))
 }
 
 // Push is `git push` of Refspecs to Remote, a name or URL. The rest are git's flags of the same name.

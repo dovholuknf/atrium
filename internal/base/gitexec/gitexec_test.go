@@ -245,7 +245,7 @@ func opCases() []opCase {
 			"branch": func(v string) Op { return BranchForce{Branch: v, Start: "s"} },
 			"start":  func(v string) Op { return BranchForce{Branch: "b", Start: v} },
 		}},
-		{"reset --keep", ResetKeep{Commit: "abc", Quiet: true}, "reset --keep --quiet --end-of-options abc",
+		{"reset --keep", ResetKeep{Commit: "abc", Quiet: true}, "reset --keep --quiet abc",
 			map[string]func(string) Op{"commit": func(v string) Op { return ResetKeep{Commit: v} }}},
 		{"push", Push{Remote: "hub", Refspecs: []string{"HEAD:refs/heads/x"}, Porcelain: true, NoVerify: true,
 			NoRecurseSubmodules: true},
