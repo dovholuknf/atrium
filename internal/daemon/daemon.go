@@ -478,6 +478,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.SCMClone = d.PrWorktreeClone
 	d.ap.SCMHas = d.PrWorktreeHas
 	d.ap.CloneFromHub = d.CloneFromHub
+	d.ap.BranchCheck = func(repo, branch string) (any, error) { return d.BranchCheck(repo, branch) }
 	d.ap.ScopeHub = d.scopeHubRemote
 	d.ap.Stash = d.StashTo
 	d.ap.HubDelete = d.HubDeleteBranch

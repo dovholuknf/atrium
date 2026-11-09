@@ -298,3 +298,19 @@ func (s *Server) cloneCheckout(w http.ResponseWriter, r *http.Request) {
 	s.refreshCheckouts()
 	writeJSON(w, http.StatusOK, res)
 }
+
+// branchCheck is the launch dialog's warning before a launch: whether the branch it would make already exists or is
+// checked out by another card. See home.BranchCheck.
+func (s *Server) branchCheck(w http.ResponseWriter, r *http.Request) {
+	if s.BranchCheck == nil {
+		writeErr(w, http.StatusServiceUnavailable, errors.New("this room cannot check branches"))
+		return
+	}
+	q := r.URL.Query()
+	out, err := s.BranchCheck(q.Get("repo"), q.Get("branch"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}

@@ -472,6 +472,8 @@ type Server struct {
 	// CloneFromHub clones a repository from the hub's copy into the scm folder, for the launch dialog's repo list. Nil
 	// or an error is a room with no hub to clone from, and it never reads a forge. See checkouts.go.
 	CloneFromHub func(ctx context.Context, url string) (gitsync.SCMResult, error)
+	// BranchCheck says whether a launch's branch exists or is held by another worktree. See home.BranchCheck.
+	BranchCheck func(repo, branch string) (any, error)
 	// checkouts is the launch dialog's list of this room's checkouts, kept so opening it reads no disk.
 	checkouts checkoutCache
 }
@@ -714,6 +716,7 @@ func (s *Server) Handler() http.Handler {
 	// The launch dialog's repo list: this room's checkouts, and cloning one from the hub. See checkouts.go.
 	mux.HandleFunc("GET /v1/checkouts", s.listCheckouts)
 	mux.HandleFunc("POST /v1/checkouts/clone", s.cloneCheckout)
+	mux.HandleFunc("GET /v1/branches/check", s.branchCheck)
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/atrium-review", s.getReview)
 	mux.HandleFunc("POST /v1/tasks/{id}/atrium-review", s.postReview)

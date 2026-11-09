@@ -100,3 +100,28 @@ func TestCloneCheckoutRefusesBadNamesAndRoomsWithNoHub(t *testing.T) {
 		t.Errorf("a room that cannot clone: %d", rec.Code)
 	}
 }
+
+func TestBranchCheckAsksTheRoomAndSaysWhenItCannot(t *testing.T) {
+	get := func(s *Server) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		s.branchCheck(rec, httptest.NewRequest(http.MethodGet, "/v1/branches/check?repo=github.com/o/r&branch=claude/x", nil))
+		return rec
+	}
+	if rec := get(&Server{}); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("no checker: %d", rec.Code)
+	}
+	s := &Server{BranchCheck: func(repo, branch string) (any, error) {
+		if repo != "github.com/o/r" || branch != "claude/x" {
+			return nil, errors.New("asked " + repo + " " + branch)
+		}
+		return map[string]any{"exists": true, "free": "claude/x-2"}, nil
+	}}
+	rec := get(s)
+	var out struct {
+		Exists bool   `json:"exists"`
+		Free   string `json:"free"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil || !out.Exists || out.Free != "claude/x-2" {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
