@@ -14153,7 +14153,7 @@ async function termMenuSection(browser, base) {
 
     // a running card: the whole menu, in order.
     let m = await openMenu("land-tm-run");
-    const want = ["restart", "new context", "---", "settings", "---", "stop", "terminate and clean up"];
+    const want = ["restart", "new context", "---", "settings", "---", "clone card", "stop", "terminate and clean up"];
     if (JSON.stringify(m.labels) !== JSON.stringify(want)) fail("termMenu: a running card's menu is " + JSON.stringify(m.labels));
     // settings has no (?) in the interview's table, so it is the only item allowed without one.
     if (m.noHelp.some(l => l !== "settings")) fail("termMenu: items without their (?): " + JSON.stringify(m.noHelp));
