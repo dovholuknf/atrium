@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/store"
 	"io"
 	"io/fs"
 	"net/http"
@@ -38,6 +39,12 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
+	}
+	if strings.TrimSpace(body.To) == "" {
+		if row, ok, _ := s.st.CardHomeByCard(id); ok && row.Kind == store.CardHomeThrowaway {
+			s.keepHomeThrowaway(w, task, row)
+			return
+		}
 	}
 	to, err := promoteTarget(body.To)
 	if err != nil {
@@ -79,6 +86,32 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 	}
 	s.PublishTask(t)
 	writeJSON(w, http.StatusOK, map[string]any{"task": s.toView(t), "to": to, "when": "now"})
+}
+
+// keepHomeThrowaway keeps a throwaway whose home is under the card root where it is: nothing moves. A live one is marked,
+// and its home is kept when the session ends (endHomeThrowaway).
+func (s *Server) keepHomeThrowaway(w http.ResponseWriter, task *store.Task, row store.CardHome) {
+	when := "now"
+	var err error
+	if sup := s.supervised(); sup != nil && sup(task.ID) {
+		when = "the session ends"
+		err = s.st.SetPromoteTo(task.ID, task.Worktree)
+	} else if err = s.st.Promoted(task.ID, task.Worktree); err == nil {
+		if err = s.st.CardHomeSet(row.Path, store.CardHomeKept, "promoted, so it was kept where it is", row.Owed); err == nil {
+			err = s.st.SetWhy(task.ID, "")
+		}
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	t, err := s.st.Get(task.ID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.PublishTask(t)
+	writeJSON(w, http.StatusOK, map[string]any{"task": s.toView(t), "to": task.Worktree, "when": when})
 }
 
 // promoteTarget requires an absolute, unused destination before moving files.

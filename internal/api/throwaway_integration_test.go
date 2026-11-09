@@ -135,3 +135,36 @@ func TestATreeIsCopiedWhenItCannotBeRenamed(t *testing.T) {
 		t.Fatalf("copied %q", got)
 	}
 }
+
+func TestKeepingAThrowawayWithAHomeLeavesItWhereItIs(t *testing.T) {
+	for _, live := range []bool{false, true} {
+		s, st, dir := fileServer(t)
+		task := throwawayCard(t, st, dir)
+		s.hk.isSupervised = func(string) bool { return live }
+		home := filepath.ToSlash(filepath.Dir(dir))
+		if _, err := st.CardHomeNew(store.CardHome{Path: home, Kind: store.CardHomeThrowaway}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CardHomeCard(home, task.ID); err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest("POST", "/v1/tasks/"+task.ID+"/promote", strings.NewReader(`{}`))
+		r.SetPathValue("id", task.ID)
+		w := httptest.NewRecorder()
+		s.promoteCard(w, r)
+		if w.Code != 200 {
+			t.Fatalf("live=%v: promote answered %d: %s", live, w.Code, w.Body.String())
+		}
+		if _, err := os.Stat(filepath.Join(dir, "notes.md")); err != nil {
+			t.Fatalf("live=%v: the work moved: %v", live, err)
+		}
+		got, _ := st.Get(task.ID)
+		row, _, _ := st.CardHomeByPath(home)
+		if live && (!got.Throwaway || got.PromoteTo == "") {
+			t.Fatalf("a live throwaway was not marked: %+v", got)
+		}
+		if !live && (got.Throwaway || row.State != store.CardHomeKept) {
+			t.Fatalf("an idle throwaway was not kept: throwaway=%v home %+v", got.Throwaway, row)
+		}
+	}
+}
