@@ -373,12 +373,12 @@ function naPaintPreview(title, br) {
     (r && r.num ? `<span class="chip" data-tip="${esc(r.url)}">#${r.num}</span>` : "") +
     `<span class="chip">starting</span>` +
     (rooms.length && room ? `<span class="chip room" style="--rhue:${roomHue(room)}" data-tip="this card runs in room ${esc(room)}">${esc(room)}</span>` : "");
-  el.innerHTML = `<div class="card-line"><div class="title">` +
+  el.innerHTML = `<div class="term-list na-pv"><div class="card tab"><div class="card-line"><div class="title">` +
     `<span class="pin ${naS.pinned ? "on" : ""}" id="na-pin" role="button" tabindex="0" aria-label="${pinTip}" data-tip="${pinTip}">${naS.pinned ? "&#9733;" : "&#9734;"}</span>` +
     runnerMark(h ? hookTargetFor(h) || h.label || h.id : "") +
     `<span class="tstack"><span class="tname${title.trim() ? "" : " ph"}">${esc(title.trim() || "what the card is called")}</span>` +
     `<span class="tpath">${esc(where)}</span></span></div>` +
-    `<div class="chips">${chips}</div></div>`;
+    `<div class="chips">${chips}</div></div></div></div>`;
   const pin = naEl("na-pin");
   pin.onclick = () => { naS.pinned = !naS.pinned; naRender(); };
   pin.onkeydown = e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pin.click(); } };
@@ -517,6 +517,7 @@ naEl("na-branch").addEventListener("input", () => { naS.branch = naEl("na-branch
 naEl("na-reset").onclick = () => { naS.titleTouched = naS.branchTouched = false; naRender(); };
 naEl("na-change").onclick = () => { naS.howOpen = !naS.howOpen; naRender(); };
 naEl("na-x").onclick = () => naEl("na").close();
+naEl("na").addEventListener("close", () => { naEl("na-preview").innerHTML = ""; });
 naEl("na-full").onclick = () => { naS.tw = false; naRender(); naEl("na-repo").focus(); };
 naEl("na-go").onclick = () => naLaunch(naS.tw);
 naEl("na-tw").onclick = () => naLaunch(true);
