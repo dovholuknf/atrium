@@ -1,17 +1,19 @@
-.na-split { display: inline-flex; align-items: stretch; border: 1px solid var(--chip-accent-stroke);
-  border-radius: var(--r-sm); background: var(--chip-accent); overflow: hidden; transition: border-color .14s; }
-.na-split:hover, .na-split:focus-within { border-color: var(--teal); }
-.na-split > button, .na-split > button:hover, .na-split > button:active { border: 0; border-radius: 0; transform: none;
-  box-shadow: none; }
-.na-split > button.newagent { background: transparent; color: var(--chip-accent-text); }
+.na-split { display: inline-flex; align-items: stretch; }
+.na-split > button, .na-split > button:hover, .na-split > button:active { position: relative; transform: none;
+  box-shadow: none; border: 1px solid var(--chip-accent-stroke); }
+.na-split > button.newagent { background: var(--chip-accent); color: var(--chip-accent-text);
+  border-radius: var(--r-sm) 0 0 var(--r-sm); }
 .na-split .na-twopen { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: 42px;
-  color: var(--warn); border-left: 1px solid var(--chip-accent-stroke); background: var(--warn-bg-soft); }
+  margin-left: -1px; color: var(--warn); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: linear-gradient(var(--warn-bg-soft), var(--warn-bg-soft)), var(--chip-accent); }
 .na-split .na-twopen svg { width: 16px; height: 16px; display: block; }
 @media (hover: hover) {
-  .na-split > button.newagent:hover { background: rgba(var(--teal-rgb),.16); color: var(--chip-accent-text); }
-  .na-split > button.na-twopen:hover { background: var(--warn-bg); color: var(--warn); }
+  .na-split > button.newagent:hover { z-index: 1; border-color: var(--teal); color: var(--chip-accent-text);
+    background: linear-gradient(rgba(var(--teal-rgb),.16), rgba(var(--teal-rgb),.16)), var(--chip-accent); }
+  .na-split > button.na-twopen:hover { z-index: 1; border-color: var(--warn); color: var(--warn);
+    background: linear-gradient(rgba(var(--warn-rgb),.24), rgba(var(--warn-rgb),.24)), var(--chip-accent); }
 }
-.na-split > button:focus-visible { outline: 2px solid var(--teal); outline-offset: -3px; }
+.na-split > button:focus-visible { z-index: 1; outline: 2px solid var(--teal); outline-offset: -3px; }
 
 dialog#na { width: min(792px, 94vw); overflow: visible; }
 dialog#na:focus { outline: none; }
