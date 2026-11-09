@@ -9,11 +9,13 @@ package claudeconf
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Entry is one converted rule.
@@ -67,6 +69,10 @@ func Load(projectDir string) ([]Entry, []Skipped, error) {
 		skipped []Skipped
 		asks    []mcpAsk
 	)
+	// a share path would open SMB on Windows and hand its host an NTLM hash, and a relative one reads the daemon's cwd
+	if safepath.Network(projectDir) || (projectDir != "" && !filepath.IsAbs(filepath.FromSlash(projectDir))) {
+		return nil, nil, errors.New("dir must be a local absolute path")
+	}
 	for _, path := range SettingsPaths(projectDir) {
 		// codeql[go/path-injection] dir is from the board's rule import, a board caller has a shell (attach.go kind=shell), and only .claude/settings files are read
 		raw, err := os.ReadFile(noNUL(path))
