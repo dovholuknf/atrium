@@ -1,7 +1,17 @@
-.na-split { display: inline-flex; gap: 6px; }
-.na-split .na-twopen { padding: 6px 11px; color: var(--warn); border: 1px solid rgba(var(--warn-rgb),.55);
-  background: var(--warn-bg-soft); border-radius: var(--r-md); }
-.na-split .na-twopen:hover { border-color: var(--warn); background: var(--warn-bg); }
+.na-split { display: inline-flex; align-items: stretch; border: 1px solid var(--chip-accent-stroke);
+  border-radius: var(--r-sm); background: var(--chip-accent); overflow: hidden; transition: border-color .14s; }
+.na-split:hover, .na-split:focus-within { border-color: var(--teal); }
+.na-split > button, .na-split > button:hover, .na-split > button:active { border: 0; border-radius: 0; transform: none;
+  box-shadow: none; }
+.na-split > button.newagent { background: transparent; color: var(--chip-accent-text); }
+.na-split .na-twopen { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: 42px;
+  color: var(--warn); border-left: 1px solid var(--chip-accent-stroke); background: var(--warn-bg-soft); }
+.na-split .na-twopen svg { width: 16px; height: 16px; display: block; }
+@media (hover: hover) {
+  .na-split > button.newagent:hover { background: rgba(var(--teal-rgb),.16); color: var(--chip-accent-text); }
+  .na-split > button.na-twopen:hover { background: var(--warn-bg); color: var(--warn); }
+}
+.na-split > button:focus-visible { outline: 2px solid var(--teal); outline-offset: -3px; }
 
 dialog#na { width: min(792px, 94vw); overflow: visible; }
 dialog#na:focus { outline: none; }
