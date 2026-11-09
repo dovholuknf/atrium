@@ -120,6 +120,9 @@ func promoteTarget(raw string) (string, error) {
 	if to == "" {
 		return "", errors.New("say where to put it")
 	}
+	if safepath.Network(to) {
+		return "", errors.New("a network path is not a place to put it")
+	}
 	if !filepath.IsAbs(to) {
 		return "", errors.New("give the whole path, starting from the drive or the root")
 	}
