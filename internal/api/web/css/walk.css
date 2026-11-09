@@ -155,7 +155,135 @@
   .wk-evh span { color: var(--dim); margin-left: var(--sp-2); }
   .wk-ev pre { font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--vs-1) 0 0; }
 
-  .wk-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .wk-actions {
+    display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; position: relative;
+    margin: var(--vs-3) 0 var(--vs-5);
+  }
+  .wk-btn {
+    display: inline-flex; align-items: center; gap: var(--sp-2); cursor: pointer; text-decoration: none;
+    padding: var(--vs-1) var(--sp-4); border-radius: var(--r-sm); border: 1px solid var(--stroke-dim);
+    color: var(--head); font: var(--fs-sm)/1.6 var(--sans); background: var(--lift);
+  }
+  .wk-btn:hover { background: var(--lift-strong); }
+  .wk-btn kbd, .wk-menu kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); }
+  .wk-btn.accept { border-color: rgba(var(--teal-rgb),.55); background: var(--teal-bg); }
+  .wk-btn.dismiss { color: var(--body); }
+  .wk-btn.defer { border-color: var(--warn-stroke); background: var(--warn-bg); }
+  .wk-btn.go { background: var(--teal); color: var(--bg-0); border-color: var(--teal); font-weight: 600; }
+  .wk-menu {
+    position: absolute; right: 0; top: calc(100% + 4px); min-width: 15em; z-index: 5;
+    background: var(--shell-1); border: 1px solid var(--stroke); border-radius: var(--r-md);
+    box-shadow: var(--shadow-pop); padding: var(--vs-1) 0;
+  }
+  .wk-menu button {
+    all: unset; box-sizing: border-box; display: flex; width: 100%; gap: var(--sp-3); cursor: pointer;
+    padding: var(--vs-2) var(--sp-4); color: var(--body); font: var(--fs-sm) var(--sans);
+  }
+  .wk-menu button:hover, .wk-menu button:focus-visible { background: var(--lift-strong); color: var(--head); }
+  .wk-menu button:disabled { opacity: .45; cursor: default; }
+  .wk-menu button kbd { margin-left: auto; }
+  .wk-menu hr { border: 0; border-top: 1px solid var(--stroke-dim); margin: var(--vs-1) 0; }
+
+  /* The rail's title and the thread count. The drawer is too narrow for the title, the tab of its own shows it. */
+  .wk-rt { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+  .wk-t { display: none; }
+  .wk-tc {
+    font: var(--fs-xxs) var(--mono); color: var(--path); border: 1px solid rgba(var(--path-rgb),.45);
+    border-radius: var(--r-pill); padding: 0 var(--sp-2); white-space: nowrap;
+  }
+  .wk-tc.wait { background: rgba(var(--path-rgb),.16); }
+
+  /* The thread with the review card, under the finding. */
+  .wk-thread h3 {
+    display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; margin: 0 0 var(--vs-3);
+    font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--label);
+  }
+  .wk-thread h3 span { text-transform: none; letter-spacing: 0; color: var(--dim); font-weight: 400; }
+  .wk-turn { display: flex; gap: var(--sp-3); margin-bottom: var(--vs-3); }
+  .wk-av {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font: 600 var(--fs-xxs) var(--mono); color: var(--bg-0); background: var(--teal);
+  }
+  .wk-turn.rv .wk-av { background: var(--path); }
+  .wk-bub {
+    flex: 1; min-width: 0; border-radius: var(--r-md); padding: var(--vs-2) var(--sp-4);
+    border: 1px solid var(--stroke-dim); background: var(--lift);
+  }
+  .wk-turn.rv .wk-bub { background: rgba(var(--path-rgb),.07); border-color: rgba(var(--path-rgb),.25); }
+  .wk-who { font-size: var(--fs-xs); color: var(--label); margin-bottom: 2px; }
+  .wk-who b { color: var(--head); font-weight: 600; }
+  .wk-said { color: var(--body); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wk-said code { font: var(--fs-xs) var(--mono); background: rgba(var(--teal-rgb),.12); border-radius: var(--r-xs); padding: 0 3px; }
+  .wk-wait { font-size: var(--fs-xs); color: var(--dim); margin: 0 0 var(--vs-3) 38px; }
+  .wk-reply { border: 1px solid var(--stroke); border-radius: var(--r-md); background: var(--bg-2); margin-top: var(--vs-2); }
+  .wk-reply textarea {
+    all: unset; box-sizing: border-box; display: block; width: 100%; min-height: 4.2em; padding: var(--vs-3) var(--sp-4);
+    color: var(--head); font: var(--fs-sm)/1.5 var(--sans); white-space: pre-wrap;
+  }
+  .wk-reply textarea::placeholder { color: var(--dimmest); }
+  .wk-rfoot {
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    padding: var(--vs-2) var(--sp-3) var(--vs-2) var(--sp-4);
+    border-top: 1px solid var(--stroke-dim); font-size: var(--fs-xs); color: var(--dim);
+  }
+  .wk-rfoot .tag { font-family: var(--mono); color: var(--label); }
+  .walk .grow { flex: 1 1 auto; }
+
+  /* walk.html: the same drawer with the window to itself. */
+  .wv-page { font: var(--fs-base)/1.45 var(--sans); }
+  .walk.solo {
+    position: relative; inset: auto; flex: 1 1 auto; width: auto; min-width: 0; max-width: none; z-index: 1;
+    border-left: none; box-shadow: none; background: transparent;
+  }
+  .walk.solo .walk-head { padding: var(--vs-3) var(--sp-5); flex-wrap: wrap; background: var(--shell-0); }
+  .walk.solo .walk-head strong { font-size: var(--fs-lg); }
+  .wv-card { font: var(--fs-sm) var(--mono); color: var(--label); }
+  .walk.solo .walk-rail { width: 19em; max-width: 40%; }
+  .walk.solo .wk-row { white-space: normal; align-items: flex-start; padding: var(--vs-3) var(--sp-4); }
+  .walk.solo .wk-t {
+    display: block; font: var(--fs-sm)/1.3 var(--sans); color: var(--body);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .walk.solo .wk-row.cur .wk-t { color: var(--head); }
+  .walk.solo .wk-p { font-size: var(--fs-xs); color: var(--dim); white-space: nowrap; }
+  .walk.solo .walk-item { padding: var(--vs-4) var(--sp-6) var(--vs-6); }
+  .walk.solo .walk-item > * { max-width: 920px; }
+  .wv-toasts { position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 9; display: grid; gap: var(--sp-2); }
+  .wv-toast {
+    display: grid; gap: 2px; max-width: 26rem; padding: var(--vs-2) var(--sp-4); border-radius: var(--r-md);
+    background: var(--shell-1); border: 1px solid var(--stroke); box-shadow: var(--shadow-pop); font-size: var(--fs-sm);
+  }
+  .wv-toast b { color: var(--head); }
+
+  /* A phone: the rail is a row of chips over the finding, and the three decisions sit at the bottom of the screen. */
+  @media (max-width: 700px) {
+    .walk.solo .walk-head { padding: var(--vs-2) var(--sp-3); gap: var(--sp-2); }
+    .walk.solo .walk-head .walk-bar, .walk.solo .walk-head .by { display: none; }
+    .walk.solo .walk-body { flex-direction: column; }
+    .walk.solo .walk-rail {
+      display: flex; gap: var(--sp-2); width: auto; max-width: none; overflow-x: auto; flex: 0 0 auto;
+      padding: var(--vs-2) var(--sp-3); border-right: none; border-bottom: 1px solid var(--stroke-dim);
+    }
+    .walk.solo .wk-row {
+      width: auto; flex: 0 0 auto; align-items: center; white-space: nowrap; padding: var(--vs-1) var(--sp-3);
+      border: 1px solid var(--stroke-dim); border-radius: var(--r-pill);
+    }
+    .walk.solo .wk-row.cur { border-color: var(--teal); background: var(--teal-bg); box-shadow: none; }
+    .walk.solo .wk-row.brk { border-top: 1px solid var(--stroke-dim); }
+    .walk.solo .wk-rt, .walk.solo .wk-lk, .walk.solo .wk-new { display: none; }
+    .walk.solo .wk-g { width: auto; }
+    .walk.solo .walk-item { padding: var(--vs-3) var(--sp-3) calc(var(--vs-6) * 3); }
+    .walk.solo .wk-code { font-size: var(--fs-xs); }
+    .walk.solo .wk-actions {
+      position: fixed; left: 0; right: 0; bottom: 0; margin: 0; z-index: 3; flex-wrap: nowrap; max-width: none;
+      padding: var(--vs-2) var(--sp-3); background: var(--shell-0); border-top: 1px solid var(--stroke-dim);
+    }
+    .walk.solo .wk-actions .grow { display: none; }
+    .walk.solo .wk-actions .wk-btn { flex: 1; justify-content: center; padding: var(--vs-3) 0; }
+    .walk.solo .wk-actions .wk-btn kbd { display: none; }
+    .walk.solo .wk-actions .wk-btn.more { flex: 0 0 auto; padding: var(--vs-3) var(--sp-4); }
+    .walk.solo .wk-menu { top: auto; bottom: calc(100% + 4px); right: var(--sp-3); }
+  }
   .wk-edit {
     width: 100%; box-sizing: border-box; min-height: 14em; background: var(--bg-2); color: var(--head);
     border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: var(--sp-3);

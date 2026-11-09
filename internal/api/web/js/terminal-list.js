@@ -241,6 +241,11 @@ function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
 // already does is live: its card and a message to it. Ending it and taking it over both need the terminal atrium
 // does not hold (exit types into it, kill stops a runner atrium started), so they are drawn grey, with the reason.
 async function joinedClick(id) {
+  if (permsLocal.some(p => p.task_id === id)) {
+    forgetTerm();
+    if (termNarrow()) setTermListOpen(false);
+    return;
+  }
   let t;
   try { t = await api(`/v1/tasks/${id}`); }
   catch (e) { toast("could not open it", e.message); return; }

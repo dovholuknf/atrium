@@ -183,6 +183,14 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			return
 		case <-tick.C:
 		}
+		// A card the host still holds is not supervised until reattachRuns adopts it, and would be filed dead here.
+		if d.reattached != nil {
+			select {
+			case <-d.reattached:
+			default:
+				continue
+			}
+		}
 		// Questions asked for sessions that have gone. Same tick, because it
 		// is the same job: deciding what is still there. Its own error is
 		// logged rather than skipping the liveness check, since the two are

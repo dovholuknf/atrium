@@ -389,8 +389,22 @@ const HTML = wholeBoard();
 // internal/api/filetext.go does: a write quotes the hash it read, and a stale one is a 409 that hands back what
 // is there now. `walkDirs` is card id -> a TEMPORARY COPY, never a real review folder. See `walkSection`.
 mock.walkDirs = {};
+// The says a walk card got (POST /message), as { id, text }, so the walk's reply box can be checked.
+mock.walkSays = [];
 const walkHash = b => crypto.createHash("sha256").update(b).digest("hex");
 function walkRoute(req, res, url) {
+  const say = /^\/v1\/tasks\/([^/]+)\/message$/.exec(url);
+  if (say && req.method === "POST" && mock.walkDirs[say[1]]) {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      mock.walkSays.push({ id: say[1], text: String(body.text || "") });
+      sendJSON(res, { ok: true, queued: true });
+    });
+    return true;
+  }
   const m = /^\/v1\/tasks\/([^/]+)\/files\/(list|text)$/.exec(url);
   if (!m || !mock.walkDirs[m[1]]) return false;
   const dir = mock.walkDirs[m[1]];
@@ -512,7 +526,7 @@ const server = http.createServer((req, res) => {
     res.end(fs.readFileSync(path.join(WEB_ROOT, "index.html")));
     return;
   }
-  if (url === "/read.html" || url === "/read.js") {
+  if (url === "/read.html" || url === "/read.js" || url === "/walk.html") {
     res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html" });
     // codeql[js/path-injection] url equals "/read.html" or "/read.js" in the if above
     res.end(fs.readFileSync(path.join(WEB_ROOT, url)));

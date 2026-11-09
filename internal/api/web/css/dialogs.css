@@ -162,6 +162,10 @@
     right: min(calc(min(420px, 92vw) + 12px), calc(100vw - 252px));
   }
   #toasts .toast { pointer-events: auto; }
+  /* An ask is a decision with its buttons at the bottom right, where a toast can sit. The toast lets the click through
+     and hides its own buttons, so none looks live and none can block the answer. */
+  dialog#ask #toasts .toast { pointer-events: none; }
+  dialog#ask #toasts .toast .copy, dialog#ask #toasts .toast .x { visibility: hidden; }
   .toast {
     display: flex; align-items: flex-start; gap: var(--sp-4); cursor: pointer;
     background: linear-gradient(180deg, var(--card-0), var(--card-1));

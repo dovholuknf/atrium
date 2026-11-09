@@ -75,7 +75,9 @@ if [ -n "$dupes" ]; then
 fi
 
 ( cd "$web/js" && ls *.js ) | sort > "$tmp/ondisk.txt"
-sort "$tmp/order.txt" > "$tmp/named.txt"
+# walk.html is a second page with its own scripts: a file only it loads is not dead.
+grep -o 'src="/js/[A-Za-z0-9_-]*\.js"' "$web/walk.html" | sed 's|src="/js/||; s|"||' > "$tmp/walk.txt"
+sort -u "$tmp/order.txt" "$tmp/walk.txt" > "$tmp/named.txt"
 if ! diff -u "$tmp/ondisk.txt" "$tmp/named.txt" > "$tmp/order.diff"; then
   echo "the files in internal/api/web/js do not match what index.html loads." >&2
   echo "a file on disk and not in the head never runs. one in the head and not" >&2

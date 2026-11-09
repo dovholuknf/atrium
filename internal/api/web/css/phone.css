@@ -158,6 +158,9 @@
        bar and must not take half the screen. */
     .term-layout:not(.has-term) .term-pane { display: none; }
     .term-layout:not(.has-term) .term-list { flex: 1 1 auto; }
+    /* A held request with no terminal atrium owns is the one thing the empty pane still carries, above the list. */
+    .term-layout:not(.has-term):has(#term-perm.tiles:not([hidden])) .term-pane { display: flex; flex: 0 0 auto; order: -1; }
+    .term-layout:not(.has-term):has(#term-perm.tiles:not([hidden])) .term-pane > :not(#term-perm) { display: none; }
 
     /* No gutter to cross when the list is stacked above the terminal. */
     .tabbridge { display: none; }
@@ -209,8 +212,9 @@
     .walk-head { flex-wrap: wrap; row-gap: var(--vs-1); }
     .walk-head .grow { flex: 1 1 0; }
     #walk-count { white-space: normal; flex: 1 1 100%; order: 5; }
-    /* Every state is one tap: accept, posted, dismiss, defer and undo are buttons, so the keys are not needed. */
-    .wk-actions button { flex: 1 1 28%; min-height: 40px; }
+    /* Accept, dismiss and defer are one tap. Posted and undo sit in More, so the keys are not needed. */
+    .wk-actions > button { flex: 1 1 28%; min-height: 40px; }
+    .wk-menu button { min-height: 40px; align-items: center; }
 
     dialog { width: 96vw; }
     .dlg-body { padding: 14px; }
@@ -384,7 +388,7 @@
   body.term-phone #t-bar-toggle { margin-left: auto; }
   body.term-phone #t-full { min-width: 44px; min-height: 44px; }
   body.term-phone #t-attach, body.term-phone #t-view-note, body.term-phone .term-bar > .grow { display: none; }
-  body.term-phone .term-bar .term-who { flex: 1 1 0; min-height: 44px; }
+  body.term-phone .term-bar .term-who { flex: 1 1 0; min-height: 44px; min-width: 44px; overflow: hidden; }  /* clipped, so a narrow chip never spills over the buttons */
   /* the handle: a visible grip a few px tall, in a 96 by 44 touch area at top centre (the top right is the bell's) */
   body.term-phone #t-tray-handle {
     display: block; position: absolute; top: 0; left: 50%; width: 96px; height: 44px; margin-left: -48px; z-index: 6;

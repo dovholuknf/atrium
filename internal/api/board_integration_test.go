@@ -54,6 +54,7 @@ func TestBoardScriptParses(t *testing.T) {
 		t.Skip("node is not on PATH, so the board's script cannot be parsed here")
 	}
 	files := scriptFiles(t)
+	walk := walkScripts(t)
 
 	// ONE NODE FOR ALL OF IT. Starting node costs more than parsing a file, and on a macOS runner two dozen
 	// starts ran the test past its time ceiling. vm.Script parses without running, as --check does.
@@ -77,12 +78,15 @@ try { new vm.Script(all, { filename: 'board.js' }); }
 catch (e) { bad++; console.log('JOINED does not parse:\n' + e.stack.split('\n    at ')[0]); }
 process.exit(bad ? 1 : 0);`
 	args := []string{"-e", parse}
-	for _, f := range files {
-		args = append(args, filepath.Join("web", "js", f.name))
-	}
-	if out, err := exec.Command(node, args...).CombinedOutput(); err != nil {
-		t.Fatalf("the board's script does not parse:\n%s\n"+
-			"a JOINED line number is relative to the concatenation, in load order", out)
+	for _, set := range [][]scriptFile{files, walk} {
+		a := append([]string{}, args...)
+		for _, f := range set {
+			a = append(a, filepath.Join("web", "js", f.name))
+		}
+		if out, err := exec.Command(node, a...).CombinedOutput(); err != nil {
+			t.Fatalf("the page's script does not parse:\n%s\n"+
+				"a JOINED line number is relative to the concatenation, in load order", out)
+		}
 	}
 }
 
@@ -117,7 +121,19 @@ type scriptFile struct {
 // nothing else would ever say so.
 func scriptFiles(t *testing.T) []scriptFile {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("web", "index.html"))
+	return pageScripts(t, "index.html", "walk.html")
+}
+
+// walkScripts is the walk page's own scripts: a second page is its own global scope.
+func walkScripts(t *testing.T) []scriptFile {
+	t.Helper()
+	return pageScripts(t, "walk.html", "index.html")
+}
+
+// pageScripts reads page's scripts in load order, and fails on a file loaded by neither it nor other.
+func pageScripts(t *testing.T, page, other string) []scriptFile {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("web", page))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,18 +151,22 @@ func scriptFiles(t *testing.T) []scriptFile {
 			t.Fatalf("could not read a script name out of %q", line)
 		}
 		if seen[name] {
-			t.Fatalf("index.html loads js/%s twice, so every listener in it is "+
+			t.Fatalf(page+" loads js/%s twice, so every listener in it is "+
 				"bound twice and every keystroke is sent twice", name)
 		}
 		seen[name] = true
 		body, err := os.ReadFile(filepath.Join("web", "js", name))
 		if err != nil {
-			t.Fatalf("index.html loads js/%s and it is not there: %v", name, err)
+			t.Fatalf(page+" loads js/%s and it is not there: %v", name, err)
 		}
 		out = append(out, scriptFile{name: name, body: string(body)})
 	}
 	if len(out) == 0 {
-		t.Fatal("index.html loads no scripts under /js/, so this test is proving nothing")
+		t.Fatal(page + " loads no scripts under /js/, so this test is proving nothing")
+	}
+	otherLoads, err := os.ReadFile(filepath.Join("web", other))
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	ondisk, err := os.ReadDir(filepath.Join("web", "js"))
@@ -154,8 +174,9 @@ func scriptFiles(t *testing.T) []scriptFile {
 		t.Fatal(err)
 	}
 	for _, e := range ondisk {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") && !seen[e.Name()] {
-			t.Errorf("web/js/%s is never loaded by index.html, so it is dead code "+
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") && !seen[e.Name()] &&
+			!strings.Contains(string(otherLoads), `<script src="/js/`+e.Name()+`"`) {
+			t.Errorf("web/js/%s is never loaded by "+page+" or "+other+", so it is dead code "+
 				"that reads as live", e.Name())
 		}
 	}

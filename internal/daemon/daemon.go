@@ -215,6 +215,8 @@ type Daemon struct {
 	// act holds what each runner is doing right now, in memory only. See
 	// docs/runtime/activity-design.md.
 	act *activityTracker
+	// mv is how moving a joined session into atrium reaches the process. See movein.go.
+	mv moveIn
 	// esc is which agent-launched cards the board should hear about, and how
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
@@ -233,6 +235,9 @@ type Daemon struct {
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
 	settle settling
+
+	// reattached closes when startup has re-adopted the pty host's runners. The reaper waits on it when non-nil.
+	reattached chan struct{}
 
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
@@ -517,6 +522,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Hold = d.HandleHold
 	d.ap.NewContext = d.HandleNewContext
 	d.ap.Resume = d.handleResume
+	d.ap.MoveIn = d.handleMoveIn
 	d.ap.SendNote = d.handleSendNote
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
@@ -1274,6 +1280,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
+	if !d.opts.Passive {
+		d.reattached = make(chan struct{})
+	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
 	d.startRoomStats(ctx)
@@ -1332,6 +1341,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// host still holding runners must be picked up or the next start would run a second copy of each.
 			d.waitForHost()
 			d.reattachRuns()
+			close(d.reattached)
 			d.startFixtures()
 			d.reopenSaved()
 			// Throwaways whose session ended when the last daemon did, so

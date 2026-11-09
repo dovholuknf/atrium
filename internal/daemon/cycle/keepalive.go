@@ -76,6 +76,9 @@ const (
 	// keepaliveForkTail is the tokens a fork writes at the 1h price on top of its read: the card's last
 	// reply and the prompt, measured near 2,000 in the ledger.
 	KeepaliveForkTail = 2_000
+	// keepaliveMaxWarms is the warm-ups an idle card gets after its last real turn. The next due time is the
+	// cold handoff, while the cache is still warm.
+	KeepaliveMaxWarms = 2
 )
 
 // keepalivePrompt is what the fork is asked. The words do not matter to the
@@ -819,6 +822,10 @@ func (k *Keepalive) Decide(t *store.Task, card *store.KeepaliveCard) Verdict {
 		Act: "refresh", Reply: r, H: h, Price: price, Budget: BudgetFor(r.Context, price),
 		Spent: spent, Count: count, Expiry: expiry, Anchor: anchor, History: rows,
 	}
+	if count >= KeepaliveMaxWarms {
+		v.Act, v.Why = "cold", "warm-ups spent"
+		return v
+	}
 	next := (float64(r.Context)*price.Cr + KeepaliveForkTail*price.Cw1h) / 1e6
 	if spent+next > v.Budget {
 		v.Act, v.Why = "break-even", "budget spent"
@@ -934,6 +941,8 @@ func (k *Keepalive) Tick(ctx context.Context) {
 		switch v.Act {
 		case "break-even":
 			k.Stop(t, store.KeepaliveBreakEven, v)
+			k.ColdCheck(t, card, false)
+		case "cold":
 			k.ColdCheck(t, card, false)
 		case "refresh":
 			if busy {
