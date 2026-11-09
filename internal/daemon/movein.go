@@ -101,6 +101,7 @@ func (d *Daemon) handleMoveIn(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[atrium] move in %s: request %s was not answered: %v", t.DisplayTitle(), p.ID, err)
 		}
 	}
+	began := time.Now()
 	if started != "" {
 		// The same process the check saw, or a reused pid this must not touch.
 		if now, err := m.startTime(pid); err == nil && now == started {
@@ -111,10 +112,13 @@ func (d *Daemon) handleMoveIn(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	ended := time.Since(began)
 	if err := d.moveInQuiet(id, pid, started, m); err != nil {
 		small.WriteJSONErr(w, http.StatusConflict, err)
 		return
 	}
+	log.Printf("[atrium] move in %s: ended in %s, quiet after %s, resuming", t.DisplayTitle(),
+		ended.Round(time.Millisecond), time.Since(began).Round(time.Millisecond))
 	m.resume(w, r)
 }
 
