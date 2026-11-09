@@ -276,9 +276,12 @@ func TestWarmScheduleThirdDueTimeHandsOffAndStopsWarming(t *testing.T) {
 	n := f.coldCounter()
 	f.reply(f.now.Add(-166*time.Minute), replyOpt{})
 	f.seed(2, 0.06, 56*time.Minute)
-	f.tick()
+	for i := 0; i < 5; i++ {
+		f.tick()
+		f.now = f.now.Add(time.Minute)
+	}
 	if f.forks() != 0 || n.Load() != 1 {
-		t.Fatalf("forks = %d cycles = %d, want 0 and 1", f.forks(), n.Load())
+		t.Fatalf("forks = %d cycles = %d, want 0 and 1 across five ticks", f.forks(), n.Load())
 	}
 	if f.state() != store.KeepaliveOn {
 		t.Fatalf("state = %s, want on", f.state())
@@ -298,7 +301,10 @@ func TestWarmScheduleStaysColdAfterTheHandoff(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		f.now = f.now.Add(50 * time.Minute)
 		f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
-		f.tick()
+		for j := 0; j < 8; j++ {
+			f.tick()
+			f.now = f.now.Add(time.Minute)
+		}
 	}
 	if f.forks() != 0 || n.Load() != 1 {
 		t.Fatalf("forks = %d cycles = %d after the handoff, want 0 and 1", f.forks(), n.Load())
