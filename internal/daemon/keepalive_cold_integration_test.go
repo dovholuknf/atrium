@@ -39,7 +39,7 @@ func TestColdHandoffFiresOnTheBreakEvenStop(t *testing.T) {
 	f := newKAFix(t)
 	n := f.coldCounter()
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
-	f.seed(5, 0.06, 56*time.Minute)
+	f.seed(1, 0.30, 56*time.Minute)
 	f.tick()
 	if f.state() != store.KeepaliveBreakEven {
 		t.Fatalf("state = %s, want break-even", f.state())
@@ -234,5 +234,91 @@ func TestColdHandoffSurvivesARoomRestartAndWaitsForAPerson(t *testing.T) {
 	f.tick()
 	if n.Load() != 2 {
 		t.Fatalf("cycles = %d, want 2: the second handoff spent it again", n.Load())
+	}
+}
+
+func TestWarmScheduleFirstWarmAtFiftyFiveMinutes(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	n := f.coldCounter()
+	f.reply(f.now.Add(-50*time.Minute), replyOpt{})
+	f.tick()
+	if f.forks() != 0 || n.Load() != 0 {
+		t.Fatalf("forks = %d cycles = %d at 0:50, want 0 and 0", f.forks(), n.Load())
+	}
+	f.now = f.now.Add(5 * time.Minute)
+	f.tick()
+	if f.forks() != 1 || n.Load() != 0 {
+		t.Fatalf("forks = %d cycles = %d at 0:55, want 1 and 0", f.forks(), n.Load())
+	}
+}
+
+func TestWarmScheduleSecondWarmOneHourLater(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	n := f.coldCounter()
+	f.reply(f.now.Add(-105*time.Minute), replyOpt{})
+	f.seed(1, 0.06, 50*time.Minute)
+	f.tick()
+	if f.forks() != 0 || n.Load() != 0 {
+		t.Fatalf("forks = %d cycles = %d at 1:45, want 0 and 0", f.forks(), n.Load())
+	}
+	f.now = f.now.Add(5 * time.Minute)
+	f.tick()
+	if f.forks() != 1 || n.Load() != 0 {
+		t.Fatalf("forks = %d cycles = %d, want 1 and 0", f.forks(), n.Load())
+	}
+}
+
+func TestWarmScheduleThirdDueTimeHandsOffAndStopsWarming(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	n := f.coldCounter()
+	f.reply(f.now.Add(-166*time.Minute), replyOpt{})
+	f.seed(2, 0.06, 56*time.Minute)
+	f.tick()
+	if f.forks() != 0 || n.Load() != 1 {
+		t.Fatalf("forks = %d cycles = %d, want 0 and 1", f.forks(), n.Load())
+	}
+	if f.state() != store.KeepaliveOn {
+		t.Fatalf("state = %s, want on", f.state())
+	}
+	if evs := f.coldEvents(); len(evs) != 1 || evs[0]["started"] != true {
+		t.Fatalf("events = %v", evs)
+	}
+}
+
+func TestWarmScheduleStaysColdAfterTheHandoff(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	n := f.coldCounter()
+	f.reply(f.now.Add(-166*time.Minute), replyOpt{})
+	f.seed(2, 0.06, 56*time.Minute)
+	f.tick()
+	for i := 0; i < 4; i++ {
+		f.now = f.now.Add(50 * time.Minute)
+		f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
+		f.tick()
+	}
+	if f.forks() != 0 || n.Load() != 1 {
+		t.Fatalf("forks = %d cycles = %d after the handoff, want 0 and 1", f.forks(), n.Load())
+	}
+	f.k.ColdRearm(f.task.ID)
+	f.now = f.now.Add(time.Hour)
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
+	f.tick()
+	if f.forks() != 1 {
+		t.Fatalf("forks = %d, want 1: a person's turn restarts the schedule", f.forks())
+	}
+}
+
+func TestWarmScheduleLeavesAnAlreadyColdCardAlone(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	n := f.coldCounter()
+	f.reply(f.now.Add(-3*time.Hour), replyOpt{})
+	f.tick()
+	if f.forks() != 0 || n.Load() != 0 {
+		t.Fatalf("forks = %d cycles = %d, want 0 and 0", f.forks(), n.Load())
 	}
 }

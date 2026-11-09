@@ -462,7 +462,7 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 	// A 300k Opus 5.5 card: budget is 1/8 of 300k x $8/M = $0.30, and a
 	// refresh reads 300k at $0.20/M = $0.06. Five spent leaves no room.
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
-	f.seed(5, 0.06, 56*time.Minute)
+	f.seed(1, 0.30, 56*time.Minute)
 	f.tick()
 	if f.forks() != 0 {
 		t.Fatal("a refresh past the budget was sent")
@@ -471,7 +471,7 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 		t.Fatalf("state = %s, want %s", f.state(), store.KeepaliveBreakEven)
 	}
 	toasts := f.toasts()
-	if len(toasts) != 1 || !strings.Contains(toasts[0], "break-even after 5 refreshes") ||
+	if len(toasts) != 1 || !strings.Contains(toasts[0], "break-even after 1 refreshes") ||
 		strings.Contains(toasts[0], "$") {
 		t.Fatalf("toasts = %q", toasts)
 	}
@@ -481,7 +481,7 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 	}
 	// The view carries the spend for the card's tooltip.
 	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
-	if v == nil || v.Refreshes != 5 || v.Spent < 0.299 || v.Budget < 0.299 {
+	if v == nil || v.Refreshes != 1 || v.Spent < 0.299 || v.Budget < 0.299 {
 		t.Fatalf("view = %+v", v)
 	}
 	// The stop still runs on the priced budget, but no dollar figure leaves the daemon.
@@ -493,7 +493,7 @@ func TestKeepaliveStopsWhenReadPlusForkTailPassesTheBudget(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-5*time.Hour), replyOpt{})
-	f.seed(4, 0.06, 56*time.Minute)
+	f.seed(1, 0.25, 56*time.Minute)
 	f.tick()
 	if f.forks() != 0 {
 		t.Fatal("a refresh whose read and fork tail pass the budget was sent")
@@ -508,7 +508,7 @@ func TestKeepaliveRefreshesUpToTheBudget(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-5*time.Hour), replyOpt{})
-	f.seed(3, 0.06, 56*time.Minute)
+	f.seed(1, 0.06, 56*time.Minute)
 	f.tick()
 	if f.forks() != 1 {
 		t.Fatal("the last refresh inside the budget was not sent")
@@ -520,7 +520,7 @@ func TestKeepaliveRealTurnClearsTheStopAndTheBudget(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
-	f.seed(5, 0.06, 56*time.Minute)
+	f.seed(1, 0.30, 56*time.Minute)
 	f.tick()
 	if f.state() != store.KeepaliveBreakEven {
 		t.Fatalf("state = %s", f.state())
@@ -542,7 +542,7 @@ func TestKeepaliveHandOnRestartsTheBudget(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
-	f.seed(5, 0.06, 56*time.Minute)
+	f.seed(1, 0.30, 56*time.Minute)
 	f.tick()
 	d := &Daemon{hk: *testHooks(), st: f.st}
 	d.initServices()
