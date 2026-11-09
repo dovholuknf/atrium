@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -268,7 +269,7 @@ func (d *Daemon) launcherOn(w *store.WorkItem, into string) bool {
 	if err != nil || strings.TrimSpace(l.Worktree) == "" {
 		return false
 	}
-	branch, err := gitIn(filepath.FromSlash(l.Worktree), "symbolic-ref", "--short", "-q", "HEAD")
+	branch, err := gitIn(filepath.FromSlash(l.Worktree), gitexec.SymbolicRef{Name: "HEAD", Short: true})
 	return err == nil && strings.EqualFold(branch, into)
 }
 

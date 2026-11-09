@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
@@ -257,7 +258,7 @@ func dirKey(p string) string {
 // newWorkBase is the ref a branch called name that exists nowhere yet starts from. See the header.
 func newWorkBase(ctx context.Context, repo, name, from string) (string, error) {
 	has := func(ref string) bool {
-		_, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		_, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true})
 		return err == nil
 	}
 	if from = strings.TrimSpace(from); from != "" {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // InterviewTag marks a card launched with `kind: "interview"`. The interviewer's turn ends are its QUESTIONS to a
@@ -43,7 +44,7 @@ func agentCheckoutRefusal(cwd string) string {
 
 // agentCheckoutBranch is the claude/* branch cwd is on, or why it is not on one.
 func agentCheckoutBranch(cwd string) (branch, why string) {
-	branch, err := gitIn(cwd, "symbolic-ref", "--short", "-q", "HEAD")
+	branch, err := gitIn(cwd, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 	switch {
 	case err != nil && !isGitCheckout(cwd):
 		return "", fmt.Sprintf("%s is not a git checkout, so what the agent writes there is not kept in git", cwd)
@@ -56,7 +57,7 @@ func agentCheckoutBranch(cwd string) (branch, why string) {
 }
 
 func isGitCheckout(dir string) bool {
-	_, err := gitIn(dir, "rev-parse", "--git-dir")
+	_, err := gitIn(dir, gitexec.RevParseGitDirs{GitDir: true})
 	return err == nil
 }
 

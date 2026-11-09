@@ -86,13 +86,8 @@ func TestCloseReportsAFailedHubDeleteAndFinishesTheRest(t *testing.T) {
 	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
-	ctx := context.Background()
-	if _, err := gitIn(ctx, wt, "branch", "claude/main", "HEAD"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := gitIn(ctx, wt, "branch", "claude/done", "HEAD"); err != nil {
-		t.Fatal(err)
-	}
+	git(t, wt, "branch", "claude/main", "HEAD")
+	git(t, wt, "branch", "claude/done", "HEAD")
 	if _, err := oh.srv.st.AddResource(card, store.ResHubBranch, "claude/done", "github/o/r"); err != nil {
 		t.Fatal(err)
 	}

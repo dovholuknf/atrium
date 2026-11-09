@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // Packet is the evidence a hold shows, so the decision to accept is a person reading about a page. It holds no
@@ -58,13 +60,13 @@ func (holdStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 	}
 	p := Packet{Item: st.ItemID, Title: it.Title, Base: st.BaseSHA, Branch: st.Branch, Symbols: map[string]int{}}
 	_ = json.Unmarshal([]byte(st.Packet), &p.Checks)
-	if p.Main, err = git(ctx, e, e.Cfg.Repo, "rev-parse", main); err != nil {
+	if p.Main, err = git(ctx, e, e.Cfg.Repo, gitexec.RevParse{Rev: main}); err != nil {
 		return Outcome{}, err
 	}
-	if p.Land, err = git(ctx, e, st.Stage, "rev-parse", "HEAD"); err != nil {
+	if p.Land, err = git(ctx, e, st.Stage, gitexec.RevParse{Rev: "HEAD"}); err != nil {
 		return Outcome{}, err
 	}
-	log, err := git(ctx, e, st.Stage, "log", "--oneline", main+"..HEAD")
+	log, err := git(ctx, e, st.Stage, gitexec.Log{Revs: []string{main + "..HEAD"}, Oneline: true})
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -73,12 +75,12 @@ func (holdStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 			p.Commits = append(p.Commits, l)
 		}
 	}
-	if p.Diffstat, err = git(ctx, e, st.Stage, "diff", "--stat", main+"...HEAD"); err != nil {
+	if p.Diffstat, err = git(ctx, e, st.Stage, gitexec.Diff{Revs: []string{main + "...HEAD"}, Stat: true}); err != nil {
 		return Outcome{}, err
 	}
 	for _, sym := range symbolsIn(it.Body) {
 		// A grep that finds nothing exits 1, which is an answer of zero and not a failure.
-		r, err := e.Runner.Run(ctx, e.Cfg.Repo, "git", "grep", "-c", "-F", sym, main, "--", "internal")
+		r, _, err := gitRun(ctx, e, e.Cfg.Repo, gitexec.GrepCount{Pattern: sym, Fixed: true, Rev: main, Paths: []string{"internal"}})
 		if err != nil {
 			continue
 		}

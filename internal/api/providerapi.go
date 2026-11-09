@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -405,18 +404,11 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	// is a fact about a repository, and two repositories under one root
 	// routinely disagree about main versus master.
 	made := !branchExists(ctx, repoPath, branch)
-	args := []string{"worktree", "add", filepath.FromSlash(dest), branch}
+	add := gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), Commitish: branch}
 	if made {
-		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest)}
+		add = gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), NewBranch: branch}
 	}
-	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and a branch that passed checkBranchName cannot start with '-'
-	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
-	cmd.Dir = filepath.FromSlash(repoPath)
-	nowindow.Hide(cmd)
-	// Nothing on stdin, so a command that decides to ask a question fails
-	// rather than waiting out the deadline in silence.
-	cmd.Stdin = nil
-	out, err := cmd.CombinedOutput()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(repoPath), Combined: true}, add)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, errors.New(
 			"git could not make that worktree: "+strings.TrimSpace(tailLines(string(out)))))
@@ -467,11 +459,8 @@ func flattenBranch(b string) string {
 // branchExists asks git, so a name that is already a branch is checked out
 // rather than refused as a duplicate.
 func branchExists(ctx context.Context, repo, branch string) bool {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet",
-		"refs/heads/"+branch)
-	cmd.Dir = filepath.FromSlash(repo)
-	nowindow.Hide(cmd)
-	return cmd.Run() == nil
+	_, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(repo)}, gitexec.RevParseVerify{Rev: "refs/heads/" + branch, Quiet: true})
+	return err == nil
 }
 
 // tailLines keeps the end of a command's output, which is where git puts the

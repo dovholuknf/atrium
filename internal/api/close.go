@@ -11,7 +11,6 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,7 +19,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -448,37 +447,32 @@ func (s *Server) walkedOutside(card string, rows []*store.CardResource) []*store
 func worktreeWork(ctx context.Context, dir string) (dirty, unpushed int, branch string) {
 	ctx, cancel := context.WithTimeout(ctx, closeGitWait)
 	defer cancel()
-	if out, err := gitIn(ctx, dir, "status", "--porcelain"); err == nil {
+	if out, err := gitIn(ctx, dir, gitexec.Status{}); err == nil {
 		for _, l := range strings.Split(out, "\n") {
 			if strings.TrimSpace(l) != "" {
 				dirty++
 			}
 		}
 	}
-	if out, err := gitIn(ctx, dir, "rev-list", "--count", "HEAD", "--not", "--remotes",
-		"--glob=refs/atrium/*"); err == nil {
+	if out, err := gitIn(ctx, dir, gitexec.RevListCount{Revs: []string{"HEAD"}, NotRemotes: true,
+		NotGlob: "refs/atrium/*"}); err == nil {
 		unpushed, _ = strconv.Atoi(strings.TrimSpace(out))
 	}
-	if out, err := gitIn(ctx, dir, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
+	if out, err := gitIn(ctx, dir, gitexec.SymbolicRef{Name: "HEAD", Short: true}); err == nil {
 		branch = strings.TrimSpace(out)
 	}
 	return dirty, unpushed, branch
 }
 
 // gitIn runs git in dir and answers its output, and its last lines as the error when it fails.
-func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
-	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and a branch that passed checkBranchName cannot start with '-'
-	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
-	cmd.Dir = filepath.FromSlash(dir)
-	nowindow.Hide(cmd)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	out, err := cmd.CombinedOutput()
+func gitIn(ctx context.Context, dir string, op gitexec.Op) (string, error) {
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir), Env: []string{"GIT_TERMINAL_PROMPT=0"}, Combined: true}, op)
 	if err != nil {
 		msg := strings.TrimSpace(tailLines(string(out)))
 		if msg == "" {
 			msg = err.Error()
 		}
-		return string(out), errors.New("git " + args[0] + ": " + msg)
+		return string(out), errors.New("git " + gitexec.Name(op) + ": " + msg)
 	}
 	return string(out), nil
 }
@@ -692,7 +686,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
-		_, err := gitIn(ctx, r.Detail, "branch", "-D", "--", r.Ref)
+		_, err := gitIn(ctx, r.Detail, gitexec.BranchDelete{Branch: r.Ref})
 		cancel()
 		if err != nil && branchStillThere(r.Detail, r.Ref) {
 			failed(r, err)
@@ -706,7 +700,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 	for _, r := range of(store.ResRef) {
 		ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
-		_, err := gitIn(ctx, r.Detail, "update-ref", "-d", r.Ref)
+		_, err := gitIn(ctx, r.Detail, gitexec.DeleteRef{Ref: r.Ref})
 		cancel()
 		if err != nil {
 			failed(r, err)
@@ -727,8 +721,8 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		if !s.remoteHeld(r.Ref, r.Detail, t.ID) {
 			ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
-			_, err := gitIn(ctx, r.Detail, "remote", "remove", r.Ref)
-			_, still := gitIn(ctx, r.Detail, "remote", "get-url", r.Ref)
+			_, err := gitIn(ctx, r.Detail, gitexec.RemoteRemove{Name: r.Ref})
+			_, still := gitIn(ctx, r.Detail, gitexec.RemoteGetURL{Name: r.Ref})
 			cancel()
 			if err != nil && still == nil {
 				failed(r, err)
@@ -888,7 +882,7 @@ func procStillIt(r *store.CardResource) bool {
 func branchStillThere(repo, branch string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
 	defer cancel()
-	_, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	_, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: "refs/heads/" + branch, Quiet: true})
 	return err == nil
 }
 
@@ -913,7 +907,7 @@ func removeWorktree(repo, path string) error {
 	if _, err := os.Stat(filepath.FromSlash(path)); errors.Is(err, os.ErrNotExist) {
 		ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
 		defer cancel()
-		_, _ = gitIn(ctx, repo, "worktree", "prune")
+		_, _ = gitIn(ctx, repo, gitexec.WorktreePrune{})
 		return nil
 	}
 	var err error
@@ -922,7 +916,7 @@ func removeWorktree(repo, path string) error {
 			time.Sleep(time.Second)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
-		_, err = gitIn(ctx, repo, "worktree", "remove", "--force", "--force", filepath.FromSlash(path))
+		_, err = gitIn(ctx, repo, gitexec.WorktreeRemove{Path: filepath.FromSlash(path), Force: 2})
 		cancel()
 		if err == nil || !worktreeListed(repo, path) {
 			err = nil
@@ -985,7 +979,7 @@ func (s *Server) retryLeftovers(card string, rows map[*store.CardResource]string
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
-				_, err := gitIn(ctx, b.Detail, "branch", "-D", "--", b.Ref)
+				_, err := gitIn(ctx, b.Detail, gitexec.BranchDelete{Branch: b.Ref})
 				cancel()
 				if err == nil || !branchStillThere(b.Detail, b.Ref) {
 					_ = s.st.FreeResource(b.Card, b.Seq, "")

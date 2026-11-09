@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -231,7 +232,7 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 	if !BranchOK.MatchString(branch) || strings.Contains(branch, "..") {
 		return "", "", fmt.Errorf("%q is not a branch name atrium will make a worktree on", branch)
 	}
-	if _, err := shared.GitIn(clone, "check-ref-format", "--branch", branch); err != nil {
+	if _, err := shared.GitIn(clone, gitexec.CheckRefFormat{Name: branch, Branch: true}); err != nil {
 		return "", "", fmt.Errorf("%q is not a branch name: %v", branch, err)
 	}
 	if base = strings.TrimSpace(base); base == "" {
@@ -240,14 +241,14 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 	if !BranchOK.MatchString(base) || strings.Contains(base, "..") {
 		return "", "", fmt.Errorf("%q is not a start atrium will branch from", base)
 	}
-	if _, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+branch); err == nil {
+	if _, err := shared.GitIn(clone, gitexec.RevParseVerify{Rev: "refs/heads/" + branch, Quiet: true}); err == nil {
 		if at := BranchHeldAt(clone, branch); at != "" {
 			return "", "", fmt.Errorf("branch %s is already checked out at %s: pick another branch, or open that card", branch, at)
 		}
-		_, err = shared.GitIn(clone, "worktree", "add", dd.Work, branch)
+		_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, Commitish: branch})
 		return branch, "", WrapGit("add the worktree", err)
 	}
-	_, err = shared.GitIn(clone, "worktree", "add", "-b", branch, dd.Work, base)
+	_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, NewBranch: branch, Commitish: base})
 	return branch, base, WrapGit("add the worktree", err)
 }
 
@@ -305,15 +306,15 @@ func (d *Service) BranchCheck(repo, branch string) (BranchState, error) {
 func BranchStateIn(clone, branch string) BranchState {
 	bs := BranchState{Branch: branch, Free: branch}
 	taken := func(b string) bool {
-		_, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+b)
+		_, err := shared.GitIn(clone, gitexec.RevParseVerify{Rev: "refs/heads/" + b, Quiet: true})
 		return err == nil || BranchHeldAt(clone, b) != ""
 	}
-	if _, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+branch); err == nil {
+	if _, err := shared.GitIn(clone, gitexec.RevParseVerify{Rev: "refs/heads/" + branch, Quiet: true}); err == nil {
 		bs.Exists = true
-		if n, err := shared.GitIn(clone, "rev-list", "--count", DefaultBase(clone)+".."+branch); err == nil {
+		if n, err := shared.GitIn(clone, gitexec.RevListCount{Revs: []string{DefaultBase(clone) + ".." + branch}}); err == nil {
 			bs.Ahead, _ = strconv.Atoi(strings.TrimSpace(n))
 		}
-		bs.Last, _ = shared.GitIn(clone, "log", "-1", "--format=%cI", branch)
+		bs.Last, _ = shared.GitIn(clone, gitexec.Log{Revs: []string{branch}, MaxCount: 1, Format: "%cI"})
 	}
 	bs.HeldAt = BranchHeldAt(clone, branch)
 	if bs.Exists || bs.HeldAt != "" {
@@ -329,7 +330,7 @@ func BranchStateIn(clone, branch string) BranchState {
 
 // BranchHeldAt is the worktree of a clone that has a branch checked out, or "".
 func BranchHeldAt(clone, branch string) string {
-	out, err := shared.GitIn(clone, "worktree", "list", "--porcelain")
+	out, err := shared.GitIn(clone, gitexec.WorktreeList{})
 	if err != nil {
 		return ""
 	}
@@ -354,13 +355,13 @@ func WrapGit(what string, err error) error {
 
 // defaultBase is where a new branch starts: the clone's claude/main, else its default branch.
 func DefaultBase(clone string) string {
-	if _, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+shared.DefaultCullInto); err == nil {
+	if _, err := shared.GitIn(clone, gitexec.RevParseVerify{Rev: "refs/heads/" + shared.DefaultCullInto, Quiet: true}); err == nil {
 		return shared.DefaultCullInto
 	}
-	if out, err := shared.GitIn(clone, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"); err == nil && out != "" {
+	if out, err := shared.GitIn(clone, gitexec.SymbolicRef{Name: "refs/remotes/origin/HEAD", Short: true}); err == nil && out != "" {
 		return out
 	}
-	if out, err := shared.GitIn(clone, "symbolic-ref", "--short", "-q", "HEAD"); err == nil && out != "" {
+	if out, err := shared.GitIn(clone, gitexec.SymbolicRef{Name: "HEAD", Short: true}); err == nil && out != "" {
 		return out
 	}
 	return "HEAD"
@@ -434,11 +435,11 @@ func (d *Service) HomeGuard(row store.CardHome) (string, error) {
 
 // hubHas says whether the hub's mirror, as read back into the clone, holds the commit.
 func HubHas(clone, tip string) bool {
-	if remotes, err := shared.GitIn(clone, "remote"); err != nil || !ContainsLine(remotes, "hub") {
+	if remotes, err := shared.GitIn(clone, gitexec.RemoteList{}); err != nil || !ContainsLine(remotes, "hub") {
 		return false
 	}
-	_, _ = shared.GitIn(clone, "fetch", "--quiet", "hub")
-	out, err := shared.GitIn(clone, "for-each-ref", "--contains", tip, "--format=%(refname)", "refs/remotes/hub")
+	_, _ = shared.GitIn(clone, gitexec.Fetch{Remote: "hub", Quiet: true})
+	out, err := shared.GitIn(clone, gitexec.ForEachRef{Contains: tip, Format: "%(refname)", Patterns: []string{"refs/remotes/hub"}})
 	return err == nil && out != ""
 }
 
@@ -457,7 +458,7 @@ func (d *Service) HomeWorkState(row store.CardHome, dd HomeDirs) (why, branch st
 	if _, err := os.Stat(dd.Work); err != nil {
 		return "", "", false
 	}
-	status, err := shared.GitIn(dd.Work, "status", "--porcelain=v1", "--untracked-files=normal")
+	status, err := shared.GitIn(dd.Work, gitexec.Status{V1: true, Untracked: "normal"})
 	if err != nil {
 		return "work/ could not be read: " + small.FirstLine(err.Error()), "", false
 	}
@@ -470,11 +471,11 @@ func (d *Service) HomeWorkState(row store.CardHome, dd HomeDirs) (why, branch st
 		}
 		return "work/ has " + shared.Plural(lines, "uncommitted file"), "", false
 	}
-	branch, _ = shared.GitIn(dd.Work, "symbolic-ref", "--short", "-q", "HEAD")
+	branch, _ = shared.GitIn(dd.Work, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 	if branch == "" {
 		branch = row.Branch
 	}
-	tip, err := shared.GitIn(dd.Work, "rev-parse", "--verify", "-q", "HEAD")
+	tip, err := shared.GitIn(dd.Work, gitexec.RevParseVerify{Rev: "HEAD", Quiet: true})
 	if err != nil {
 		return "work/ has no commit to check", branch, false
 	}
@@ -490,7 +491,7 @@ func (d *Service) HomeWorkState(row store.CardHome, dd HomeDirs) (why, branch st
 			return "", branch, false
 		}
 	}
-	ahead, _ := shared.GitIn(dd.Work, "rev-list", "--count", tip, "--not", "--remotes=hub")
+	ahead, _ := shared.GitIn(dd.Work, gitexec.RevListCount{Revs: []string{tip}, NotRemote: "hub"})
 	if ahead == "" {
 		ahead = "some"
 	}
@@ -541,13 +542,13 @@ func (d *Service) ReclaimHomeBranch(t *store.Task, row store.CardHome, force boo
 	if row.Kind == store.CardHomeWorktree {
 		if clone := d.HomeClone(row, dd); clone != "" {
 			if _, err := os.Stat(dd.Work); err == nil {
-				if _, err := shared.GitIn(clone, "worktree", "remove", "--force", dd.Work); err != nil {
+				if _, err := shared.GitIn(clone, gitexec.WorktreeRemove{Path: dd.Work, Force: 1}); err != nil {
 					log.Printf("[atrium] git kept the worktree %s: %v", dd.Work, err)
 				}
 			}
-			_, _ = shared.GitIn(clone, "worktree", "prune")
+			_, _ = shared.GitIn(clone, gitexec.WorktreePrune{})
 			if onHub && branch != "" && !shared.ProtectedBranch(branch, shared.DefaultCullInto) {
-				if _, err := shared.GitIn(clone, "branch", "-D", branch); err == nil {
+				if _, err := shared.GitIn(clone, gitexec.BranchDelete{Branch: branch}); err == nil {
 					branchGone = true
 				} else {
 					log.Printf("[atrium] kept the branch %s of %s: %v", branch, row.Path, err)
@@ -568,7 +569,7 @@ func (d *Service) HomeClone(row store.CardHome, dd HomeDirs) string {
 	if row.Clone != "" && shared.HasDotGit(row.Clone) {
 		return filepath.FromSlash(row.Clone)
 	}
-	common, err := shared.GitIn(dd.Work, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := shared.GitIn(dd.Work, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil {
 		return ""
 	}

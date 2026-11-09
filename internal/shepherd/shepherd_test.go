@@ -109,9 +109,9 @@ func newRig() *rig {
 			return Result{Stdout: "base111\n"}, nil
 		case strings.HasPrefix(line, "atrium launch"):
 			return Result{Stdout: "card-1\n"}, nil
-		case strings.HasPrefix(line, "git log --oneline claude/main.."):
+		case strings.HasPrefix(line, "git log --oneline --end-of-options claude/main.."):
 			return Result{Stdout: "abc1234 fix x\n"}, nil
-		case strings.HasPrefix(line, "git log --oneline claude/main..HEAD"):
+		case strings.HasPrefix(line, "git log --oneline --end-of-options claude/main..HEAD"):
 			return Result{Stdout: "abc1234 fix x\n"}, nil
 		case strings.HasPrefix(line, "git diff --name-only"):
 			return Result{Stdout: "docs/changes/bug-x.md\n"}, nil
@@ -267,7 +267,7 @@ func TestAnEmptyRangeIsAnExceptionNotALanding(t *testing.T) {
 	r := newRig()
 	inner := r.runner.handle
 	r.runner.handle = func(dir, line string) (Result, error) {
-		if strings.HasPrefix(line, "git log --oneline claude/main..refs/heads") {
+		if strings.HasPrefix(line, "git log --oneline --end-of-options claude/main..refs/heads") {
 			return Result{}, nil
 		}
 		return inner(dir, line)
@@ -282,7 +282,7 @@ func TestAConflictAbortsThePickAndIsAnException(t *testing.T) {
 	r := newRig()
 	inner := r.runner.handle
 	r.runner.handle = func(dir, line string) (Result, error) {
-		if strings.HasPrefix(line, "git cherry-pick claude/main..") {
+		if strings.HasPrefix(line, "git cherry-pick --end-of-options claude/main..") {
 			return Result{Code: 1, Stderr: "CONFLICT in a.go"}, nil
 		}
 		return inner(dir, line)

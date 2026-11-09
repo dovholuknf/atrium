@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
@@ -214,7 +215,7 @@ func namesSandbox(args []string) bool {
 
 // outsideGitDir is the git common dir of the worktree at cwd, which lies outside it, else "".
 func outsideGitDir(cwd string) string {
-	out, err := gitIn(cwd, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+	out, err := gitIn(cwd, gitexec.RevParseGitDirs{Absolute: true, GitDir: true, Common: true})
 	if err != nil {
 		return ""
 	}

@@ -6,6 +6,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 func (c Config) mainBranch() string {
@@ -16,15 +18,25 @@ func (c Config) mainBranch() string {
 }
 
 // git runs git in a directory and turns a non-zero exit into an error carrying the last of its output.
-func git(ctx context.Context, e *Env, dir string, args ...string) (string, error) {
-	r, err := e.Runner.Run(ctx, dir, "git", args...)
+func git(ctx context.Context, e *Env, dir string, op gitexec.Op) (string, error) {
+	r, args, err := gitRun(ctx, e, dir, op)
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w", args[0], err)
+		return "", fmt.Errorf("git %s: %w", gitexec.Name(op), err)
 	}
 	if r.Code != 0 {
 		return r.Out(), fmt.Errorf("git %s exited %d: %s", strings.Join(args, " "), r.Code, tail(r.Out(), 6))
 	}
 	return strings.TrimSpace(r.Stdout), nil
+}
+
+// gitRun runs op through the Runner with the argv gitexec checked.
+func gitRun(ctx context.Context, e *Env, dir string, op gitexec.Op) (Result, []string, error) {
+	args, err := gitexec.Argv(gitexec.Opts{}, op)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	r, err := e.Runner.Run(ctx, dir, "git", args...)
+	return r, args, err
 }
 
 // tail is the last n lines, which is where a failure says what it was.
@@ -59,7 +71,7 @@ func (checkStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 		return stop(st, PhaseRefused, "the item is already "+it.Status), nil
 	}
 	if st.BaseSHA == "" {
-		sha, err := git(ctx, e, e.Cfg.Repo, "rev-parse", e.Cfg.mainBranch())
+		sha, err := git(ctx, e, e.Cfg.Repo, gitexec.RevParse{Rev: e.Cfg.mainBranch()})
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -90,10 +102,10 @@ func (worktreeStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error)
 	}
 	if !have {
 		// The branch may be there from a run that died after making it.
-		if _, err := git(ctx, e, e.Cfg.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-			_, err = git(ctx, e, e.Cfg.Repo, "worktree", "add", wt, branch)
+		if _, err := git(ctx, e, e.Cfg.Repo, gitexec.RevParseVerify{Rev: "refs/heads/" + branch, Quiet: true}); err == nil {
+			_, err = git(ctx, e, e.Cfg.Repo, gitexec.WorktreeAdd{Path: wt, Commitish: branch})
 		} else {
-			_, err = git(ctx, e, e.Cfg.Repo, "worktree", "add", "-b", branch, wt, st.BaseSHA)
+			_, err = git(ctx, e, e.Cfg.Repo, gitexec.WorktreeAdd{Path: wt, NewBranch: branch, Commitish: st.BaseSHA})
 		}
 		if err != nil {
 			return Outcome{}, err
@@ -102,7 +114,7 @@ func (worktreeStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error)
 	if err := configureWorktree(ctx, e, wt); err != nil {
 		return Outcome{}, err
 	}
-	head, err := git(ctx, e, wt, "rev-parse", "HEAD")
+	head, err := git(ctx, e, wt, gitexec.RevParse{Rev: "HEAD"})
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -126,7 +138,7 @@ func (worktreeStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error)
 }
 
 func hasWorktree(ctx context.Context, e *Env, wt string) (bool, error) {
-	out, err := git(ctx, e, e.Cfg.Repo, "worktree", "list", "--porcelain")
+	out, err := git(ctx, e, e.Cfg.Repo, gitexec.WorktreeList{})
 	if err != nil {
 		return false, err
 	}
@@ -159,7 +171,7 @@ func configureWorktree(ctx context.Context, e *Env, wt string) error {
 	for _, kv := range [][]string{
 		{"extensions.worktreeConfig", "true"},
 	} {
-		if _, err := git(ctx, e, wt, "config", kv[0], kv[1]); err != nil {
+		if _, err := git(ctx, e, wt, gitexec.ConfigSet{Key: kv[0], Value: kv[1]}); err != nil {
 			return err
 		}
 	}
@@ -167,7 +179,7 @@ func configureWorktree(ctx context.Context, e *Env, wt string) error {
 		{"user.name", prof.Name},
 		{"user.email", prof.Email},
 	} {
-		if _, err := git(ctx, e, wt, "config", "--worktree", kv[0], kv[1]); err != nil {
+		if _, err := git(ctx, e, wt, gitexec.ConfigSet{Key: kv[0], Value: kv[1], Worktree: true}); err != nil {
 			return err
 		}
 	}
@@ -267,13 +279,13 @@ func (collectStep) Phase() Phase { return PhaseCollect }
 
 func (collectStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 	ref := "refs/heads/claude/" + st.ItemID
-	if _, err := git(ctx, e, e.Cfg.Repo, "rev-parse", "--verify", "--quiet", ref); err != nil {
+	if _, err := git(ctx, e, e.Cfg.Repo, gitexec.RevParseVerify{Rev: ref, Quiet: true}); err != nil {
 		return Outcome{}, fmt.Errorf("the worker's branch %s is not there: %w", ref, err)
 	}
 	st.Ref = ref
 	// An empty range is the worker saying done on work that was already on main, or on nothing. A script cannot read
 	// which, so it refuses to land a no-op and hands the case on.
-	commits, err := git(ctx, e, e.Cfg.Repo, "log", "--oneline", e.Cfg.mainBranch()+".."+ref)
+	commits, err := git(ctx, e, e.Cfg.Repo, gitexec.Log{Revs: []string{e.Cfg.mainBranch() + ".." + ref}, Oneline: true})
 	if err != nil {
 		return Outcome{}, err
 	}

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -119,7 +120,7 @@ func reclaimScratch(path string) (briefGone, dirGone bool, kept string) {
 		return false, false, "its directory " + path + " could not be read as a directory"
 	}
 	inRepo := false
-	if _, err := gitIn(dir, "rev-parse", "--git-dir"); err == nil {
+	if _, err := gitIn(dir, gitexec.RevParseGitDirs{GitDir: true}); err == nil {
 		inRepo = true
 	}
 
@@ -180,6 +181,6 @@ func leftIn(dir string) []string {
 
 // trackedByGit says whether a file in dir is in the index of the repository holding it.
 func trackedByGit(dir, name string) bool {
-	_, err := gitIn(dir, "ls-files", "--error-unmatch", "--", name)
+	_, err := gitIn(dir, gitexec.LsFiles{ErrorUnmatch: true, Paths: []string{name}})
 	return err == nil
 }

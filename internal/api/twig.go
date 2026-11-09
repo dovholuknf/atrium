@@ -6,11 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
@@ -38,12 +37,12 @@ func (s *Server) twigSource(ctx context.Context, dir string) (top, head string, 
 		return "", "", http.StatusForbidden, errors.New(filepath.ToSlash(dir) +
 			" is not under an atrium path or an open_paths folder, so it cannot be twigged from")
 	}
-	out, err := gitIn(ctx, real, "rev-parse", "--show-toplevel")
+	out, err := gitIn(ctx, real, gitexec.RevParseShowToplevel{})
 	if err != nil {
 		return "", "", http.StatusBadRequest, errors.New(filepath.ToSlash(dir) + " is not a git worktree")
 	}
 	top = strings.TrimSpace(out)
-	out, err = gitIn(ctx, top, "rev-parse", "--verify", "HEAD^{commit}")
+	out, err = gitIn(ctx, top, gitexec.RevParseVerify{Rev: "HEAD^{commit}"})
 	if err != nil {
 		return "", "", http.StatusBadRequest, errors.New(top + " has no commit to branch from")
 	}
@@ -63,13 +62,13 @@ func twigBase(ctx context.Context, repo, branch, src, head string) (int, error) 
 		return http.StatusConflict, errors.New("the branch " + branch + " already exists in " + repo +
 			". a twig makes a new branch: pick another name")
 	}
-	if _, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", head+"^{commit}"); err == nil {
+	if _, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: head + "^{commit}", Quiet: true}); err == nil {
 		return http.StatusOK, nil
 	}
-	if _, err := gitIn(ctx, repo, "fetch", "--no-tags", filepath.FromSlash(src), "HEAD"); err != nil {
+	if _, err := gitIn(ctx, repo, gitexec.Fetch{Remote: filepath.FromSlash(src), Refspecs: []string{"HEAD"}, NoTags: true}); err != nil {
 		return http.StatusBadRequest, errors.New("could not fetch " + src + "'s HEAD into " + repo + ": " + err.Error())
 	}
-	if _, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", head+"^{commit}"); err != nil {
+	if _, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: head + "^{commit}", Quiet: true}); err != nil {
 		return http.StatusConflict, errors.New(src + " moved its HEAD while it was twigged. try again")
 	}
 	return http.StatusOK, nil
@@ -79,12 +78,12 @@ func twigBase(ctx context.Context, repo, branch, src, head string) (int, error) 
 // patch that does not apply is written to `<dest>.twig.patch` and answered as patch, with why as failed. An
 // untracked file that does not copy is named in failed and the rest still copy.
 func carryTwig(ctx context.Context, src, dest string) (patch, failed string) {
-	diff, err := gitOut(ctx, src, nil, "diff", "HEAD", "--binary")
+	diff, err := gitOut(ctx, src, nil, gitexec.Diff{Revs: []string{"HEAD"}, Binary: true})
 	if err != nil {
 		return "", "the diff of " + src + " was not read: " + err.Error()
 	}
 	if len(diff) > 0 {
-		if _, err := gitOut(ctx, dest, diff, "apply", "--binary", "--whitespace=nowarn"); err != nil {
+		if _, err := gitOut(ctx, dest, diff, gitexec.Apply{Binary: true, Whitespace: "nowarn"}); err != nil {
 			patch = filepath.ToSlash(filepath.FromSlash(dest)) + ".twig.patch"
 			if werr := os.WriteFile(safepath.NoNUL(filepath.FromSlash(patch)), diff, 0o644); werr != nil {
 				return "", "the patch did not apply (" + err.Error() + ") and was not saved: " + werr.Error()
@@ -92,7 +91,7 @@ func carryTwig(ctx context.Context, src, dest string) (patch, failed string) {
 			failed = "the patch did not apply: " + err.Error()
 		}
 	}
-	list, err := gitOut(ctx, src, nil, "ls-files", "--others", "--exclude-standard", "-z")
+	list, err := gitOut(ctx, src, nil, gitexec.LsFiles{Others: true, ExcludeStandard: true, Z: true})
 	if err != nil {
 		return patch, strings.TrimSpace(failed + " the untracked files were not listed: " + err.Error())
 	}
@@ -109,23 +108,15 @@ func carryTwig(ctx context.Context, src, dest string) (patch, failed string) {
 }
 
 // gitOut runs git in dir with stdin and answers its stdout alone, so a warning on stderr is not taken as the patch.
-func gitOut(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = filepath.FromSlash(dir)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
+func gitOut(ctx context.Context, dir string, stdin []byte, op gitexec.Op) ([]byte, error) {
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	nowindow.Hide(cmd)
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir), Env: []string{"GIT_TERMINAL_PROMPT=0"}, Stdin: stdin, Stderr: &stderr}, op)
 	if err != nil {
 		msg := strings.TrimSpace(tailLines(stderr.String()))
 		if msg == "" {
 			msg = err.Error()
 		}
-		return out, errors.New("git " + args[0] + ": " + msg)
+		return out, errors.New("git " + gitexec.Name(op) + ": " + msg)
 	}
 	return out, nil
 }

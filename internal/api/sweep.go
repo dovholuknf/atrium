@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -272,7 +273,7 @@ func (s *Server) sweepGone(ctx context.Context, r *store.CardResource) string {
 	case store.ResRef:
 		if r.Detail != "" && isCheckout(filepath.FromSlash(r.Detail)) {
 			cctx, cancel := context.WithTimeout(ctx, closeGitWait)
-			_, err := gitIn(cctx, r.Detail, "rev-parse", "--verify", "--quiet", r.Ref)
+			_, err := gitIn(cctx, r.Detail, gitexec.RevParseVerify{Rev: r.Ref, Quiet: true})
 			cancel()
 			if err != nil {
 				return "the ref is gone, found by the sweep"
@@ -281,7 +282,7 @@ func (s *Server) sweepGone(ctx context.Context, r *store.CardResource) string {
 	case store.ResRemote:
 		if r.Detail != "" && isCheckout(filepath.FromSlash(r.Detail)) {
 			cctx, cancel := context.WithTimeout(ctx, closeGitWait)
-			_, err := gitIn(cctx, r.Detail, "remote", "get-url", r.Ref)
+			_, err := gitIn(cctx, r.Detail, gitexec.RemoteGetURL{Name: r.Ref})
 			cancel()
 			if err != nil {
 				return "the remote is gone, found by the sweep"

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -90,7 +91,7 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 		if !have[base] {
 			continue
 		}
-		if _, err := gitIn(ctx, dir, "merge-base", "--is-ancestor", tip, base); err == nil {
+		if _, err := gitIn(ctx, dir, gitexec.IsAncestor{Commit: tip, Of: base}); err == nil {
 			return true
 		}
 	}
@@ -99,7 +100,7 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 
 // commitRefs says which of the named refs exist and are commits, in one git call. A clone that cannot be read has none.
 func commitRefs(ctx context.Context, dir string, names []string) map[string]bool {
-	out, err := gitIn(ctx, dir, append([]string{"for-each-ref", "--format=%(refname) %(objecttype)"}, names...)...)
+	out, err := gitIn(ctx, dir, gitexec.ForEachRef{Format: "%(refname) %(objecttype)", Patterns: names})
 	have := map[string]bool{}
 	if err != nil {
 		return have

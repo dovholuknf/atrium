@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // gitWait bounds the git command that lists worktrees.
@@ -72,11 +71,7 @@ func EqPath(a, b string) bool {
 func Listed(repo, path string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), gitWait)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
-	cmd.Dir = filepath.FromSlash(repo)
-	nowindow.Hide(cmd)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(repo), Env: []string{"GIT_TERMINAL_PROMPT=0"}}, gitexec.WorktreeList{})
 	if err != nil {
 		return true
 	}

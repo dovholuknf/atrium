@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // guardFakeEnv answers the guard without touching the machine.
@@ -10,9 +12,9 @@ type guardFakeEnv struct {
 	files map[string]string
 }
 
-func (guardFakeEnv) Git(string, ...string) (string, error) { return "", errors.New("no git here") }
-func (guardFakeEnv) Stat(string) (bool, bool)              { return false, false }
-func (guardFakeEnv) HasPrefix(string, string) bool         { return false }
+func (guardFakeEnv) Git(string, gitexec.Op) (string, error) { return "", errors.New("no git here") }
+func (guardFakeEnv) Stat(string) (bool, bool)               { return false, false }
+func (guardFakeEnv) HasPrefix(string, string) bool          { return false }
 func (e guardFakeEnv) ReadFile(p string) ([]byte, error) {
 	if s, ok := e.files[p]; ok {
 		return []byte(s), nil

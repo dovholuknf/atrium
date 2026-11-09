@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -48,11 +49,11 @@ func (s *Server) adoptLinked(ctx context.Context, t *store.Task, rows []*store.C
 	}
 	gctx, cancel := context.WithTimeout(ctx, closeGitWait)
 	defer cancel()
-	gitDir, err := gitIn(gctx, dir, "rev-parse", "--path-format=absolute", "--git-dir")
+	gitDir, err := gitIn(gctx, dir, gitexec.RevParseGitDirs{Absolute: true, GitDir: true})
 	if err != nil {
 		return rows
 	}
-	common, err := gitIn(gctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := gitIn(gctx, dir, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil {
 		return rows
 	}
@@ -64,7 +65,7 @@ func (s *Server) adoptLinked(ctx context.Context, t *store.Task, rows []*store.C
 	if _, err := s.st.AddResource(t.ID, store.ResWorktree, wt, repo); err != nil {
 		return rows
 	}
-	if b, err := gitIn(gctx, dir, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
+	if b, err := gitIn(gctx, dir, gitexec.SymbolicRef{Name: "HEAD", Short: true}); err == nil {
 		b = strings.TrimSpace(b)
 		switch strings.ToLower(b) {
 		case "", "main", "master", "claude/main", "hub-main":
@@ -115,8 +116,8 @@ func (s *Server) foreignWorktree(ctx context.Context, t *store.Task, rows []*sto
 	}
 	gctx, cancel := context.WithTimeout(ctx, closeGitWait)
 	defer cancel()
-	gitDir, err := gitIn(gctx, dir, "rev-parse", "--path-format=absolute", "--git-dir")
-	common, err2 := gitIn(gctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	gitDir, err := gitIn(gctx, dir, gitexec.RevParseGitDirs{Absolute: true, GitDir: true})
+	common, err2 := gitIn(gctx, dir, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil || err2 != nil {
 		f.Why = "it is not a git worktree"
 		return f

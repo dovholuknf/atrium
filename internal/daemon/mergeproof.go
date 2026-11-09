@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The proof half of a merge whose worker is on ANOTHER room. See
@@ -43,16 +45,16 @@ func (d *Daemon) MergeProof(dir, ref, into string) (*MergeProof, error) {
 		return nil, fmt.Errorf("%s is not a directory any card on this room works in", dir)
 	}
 	local := filepath.FromSlash(dir)
-	tip, err := gitIn(local, "rev-parse", "--verify", "-q", ref+"^{commit}")
+	tip, err := gitIn(local, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true})
 	if err != nil {
 		return nil, fmt.Errorf("there is no %s to check. has it been fetched?", ref)
 	}
-	if _, err := gitIn(local, "rev-parse", "--verify", "-q", into+"^{commit}"); err != nil {
+	if _, err := gitIn(local, gitexec.RevParseVerify{Rev: into + "^{commit}", Quiet: true}); err != nil {
 		return nil, fmt.Errorf("there is no branch %s here to check against", into)
 	}
 	// Exit 1 is "not an ancestor", which is an answer. Anything else is the same
 	// error shape here, and is also reported as not merged: the safe direction.
-	_, ancestorErr := gitIn(local, "merge-base", "--is-ancestor", tip, into)
+	_, ancestorErr := gitIn(local, gitexec.IsAncestor{Commit: tip, Of: into})
 	return &MergeProof{Into: into, Ref: ref, Tip: tip, Merged: ancestorErr == nil}, nil
 }
 

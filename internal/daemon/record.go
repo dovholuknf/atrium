@@ -8,13 +8,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -55,13 +54,11 @@ const StampLogMax = 512 << 10
 
 var stampItemRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$`)
 
-// stampGit runs git in a directory and answers its trimmed output. A variable so a test does not need a repository.
-var stampGit = func(dir string, args ...string) (string, error) {
+// stampGit runs op in a directory and answers its trimmed output. A variable so a test does not need a repository.
+var stampGit = func(dir string, op gitexec.Op) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", filepath.FromSlash(dir)}, args...)...)
-	nowindow.Hide(cmd)
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir)}, op)
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -97,15 +94,15 @@ func stamp(stateDir string, task *store.Task, in stampRequest) (StampReply, erro
 	if !stampItemRe.MatchString(item) || strings.Contains(item, "..") {
 		return rep, fmt.Errorf("%q is not an item id this room will make a folder for", item)
 	}
-	head, err := stampGit(dir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	head, err := stampGit(dir, gitexec.RevParseVerify{Rev: "HEAD^{commit}", Quiet: true})
 	if err != nil || head == "" {
 		return rep, errors.New("this card's directory has no commit yet, so a record cannot be pinned to one")
 	}
 	rep.AtSHA = strings.ToLower(head)
-	if rep.Branch, err = stampGit(dir, "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
+	if rep.Branch, err = stampGit(dir, gitexec.RevParseAbbrevRef{Rev: "HEAD"}); err != nil {
 		return rep, fmt.Errorf("could not read the branch of this card's directory: %w", err)
 	}
-	status, err := stampGit(dir, "status", "--porcelain")
+	status, err := stampGit(dir, gitexec.Status{})
 	if err != nil {
 		return rep, fmt.Errorf("could not read the state of this card's directory: %w", err)
 	}

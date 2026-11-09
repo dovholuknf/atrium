@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dovholuknf/atrium/internal/base/docshare"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/roomspec"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -251,18 +252,14 @@ func (f packFetcher) url(repo string) string {
 }
 
 // gitCmd runs git with prompts off for this child alone.
-func gitCmd(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
+func gitCmd(ctx context.Context, dir string, op gitexec.Op) ([]byte, error) {
 	if dir == "" {
-		cmd.Dir = os.TempDir() // never the folder the command was typed in: a repo there would be read as config
+		dir = os.TempDir() // never the folder the command was typed in: a repo there would be read as config
 	}
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: dir, Env: []string{"GIT_TERMINAL_PROMPT=0"}, Stderr: &stderr, Visible: true}, op)
 	if err != nil {
-		return out, fmt.Errorf("git %s: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		return out, fmt.Errorf("git %s: %v: %s", gitexec.Name(op), err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
 }
@@ -273,7 +270,7 @@ func (f packFetcher) Latest(repo, branch string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := gitCmd(ctx, "", "ls-remote", "--", f.url(repo), "refs/heads/"+branch)
+	out, err := gitCmd(ctx, "", gitexec.LsRemote{Remote: f.url(repo), Refs: []string{"refs/heads/" + branch}})
 	if err != nil {
 		return "", err
 	}
@@ -294,11 +291,11 @@ func (f packFetcher) Fetch(repo, branch, from string) (*roomspec.PackSource, err
 		}
 		defer os.RemoveAll(tmp)
 		root = filepath.Join(tmp, "pack")
-		if _, err := gitCmd(ctx, "", "clone", "--depth", "1", "--branch", branch, "--", f.url(repo), root); err != nil {
+		if _, err := gitCmd(ctx, "", gitexec.Clone{URL: f.url(repo), Dir: root, Branch: branch, Depth: 1}); err != nil {
 			return nil, err
 		}
 	}
-	head, err := gitCmd(ctx, root, "rev-parse", "HEAD")
+	head, err := gitCmd(ctx, root, gitexec.RevParse{Rev: "HEAD"})
 	if err != nil {
 		return nil, err
 	}

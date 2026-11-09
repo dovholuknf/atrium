@@ -22,7 +22,6 @@ var visibleOnPurpose = map[string]string{
 	"internal/base/detach/detach_windows.go:Start":      "flags are deliberate: the pty host and the room must outlive their job",
 	"internal/cli/new.go:repoOfCheckout":                "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:Query":                   "operator CLI, runs in the operator's own console",
-	"internal/cli/roomsetup.go:gitCmd":                  "operator CLI, runs in the operator's own console",
 	"internal/cli/adapter_test_cmd.go:runDriver":        "operator CLI, runs in the operator's own console",
 	"internal/cli/twig.go:newTwig":                      "operator CLI, runs in the operator's own console",
 	"internal/cli/worktree.go:worktreeGit":              "operator CLI, runs in the operator's own console",
