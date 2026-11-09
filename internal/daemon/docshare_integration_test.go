@@ -280,10 +280,21 @@ func TestDocShareStopExpiryAndRestart(t *testing.T) {
 	}
 	d.RestoreDocShares()
 	waitFor(t, func() bool { return d.Docs.Has(keep.ID) })
-	rec, _ := d.st.DocShareByID(keep.ID)
-	if code, body, _ := docGet(t, strings.TrimSuffix(rec.Address, "/"), "/doc.md"); code != 200 || !strings.Contains(body, "# Title") {
-		t.Fatalf("a restored share answered %d %q", code, body)
-	}
+	// the restore binds first and writes the new address after, so read the row until it answers
+	var rec *store.DocShare
+	waitFor(t, func() bool {
+		rec, _ = d.st.DocShareByID(keep.ID)
+		if rec == nil {
+			return false
+		}
+		resp, err := http.Get(rec.Address + "doc.md")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode == 200 && strings.Contains(string(body), "# Title")
+	})
 
 	rec.ExpiresAt = time.Now().Add(-time.Hour).UTC().Format(store.TimeFormat)
 	if err := d.st.PutDocShare(*rec); err != nil {
