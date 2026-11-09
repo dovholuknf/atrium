@@ -458,6 +458,9 @@ function forgetTerm() {
 async function renderTermPerm() {
   const host = document.getElementById("term-perm");
   host.classList.remove("tiles");
+  // The terminal's palette, held to 4.5:1 on its background, or the skin's own on a terminal nobody coloured.
+  const wear = termTask && wearFor(termTask);
+  host.style.cssText = wear ? wear.style : "";
   if (!termTask) { renderHeldTiles(host); return; }
   // The queue the refresh pass holds (js/cards.js), read again on every
   // `permission` event. It used to be fetched here a moment after the pass
