@@ -215,6 +215,8 @@ type Daemon struct {
 	// act holds what each runner is doing right now, in memory only. See
 	// docs/runtime/activity-design.md.
 	act *activityTracker
+	// mv is how moving a joined session into atrium reaches the process. See movein.go.
+	mv moveIn
 	// esc is which agent-launched cards the board should hear about, and how
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
@@ -520,6 +522,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Hold = d.HandleHold
 	d.ap.NewContext = d.HandleNewContext
 	d.ap.Resume = d.handleResume
+	d.ap.MoveIn = d.handleMoveIn
 	d.ap.SendNote = d.handleSendNote
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown

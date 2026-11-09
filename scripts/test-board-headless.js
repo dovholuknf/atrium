@@ -20540,10 +20540,10 @@ async function joinedHeldTileSection(browser, base) {
       const tile = await p.$eval("#term-perm .held-tile", e => ({ text: e.innerText.replace(/\s+/g, " "),
         btns: [...e.querySelectorAll("button")].map(b => b.textContent), shown: e.getBoundingClientRect().height > 0 }));
       if (!/resumed outside atrium wants to run a command/.test(tile.text) || !/Bash: git push hub held-perm-on-terminals/.test(tile.text) ||
-          !/atrium has no terminal for it/.test(tile.text) || !/To move it into atrium/.test(tile.text)) {
+          !/atrium has no terminal for it/.test(tile.text) || !/Move it into atrium to end it there and resume it here/.test(tile.text)) {
         fail(tag + "the tile reads " + JSON.stringify(tile.text));
       }
-      if (tile.btns.join() !== "allow,deny,open permissions") fail(tag + "the tile's buttons are " + tile.btns.join());
+      if (tile.btns.join() !== "allow,deny,open permissions,move into atrium") fail(tag + "the tile's buttons are " + tile.btns.join());
       const head = await p.$eval("#t-title", e => e.textContent);
       if (!phone && head !== "resumed outside atrium") fail(tag + "the pane's header reads " + JSON.stringify(head));
       if (!tile.shown) fail(tag + "the tile is not on screen");
@@ -20551,6 +20551,23 @@ async function joinedHeldTileSection(browser, base) {
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
         await p.screenshot({ path: path.join(shots, phone ? "held-tile-phone.png" : "held-tile-desktop.png") });
+      }
+      if (!phone) {
+        const moved = [];
+        await p.route("**/v1/tasks/hd/move-in", r => { moved.push(r.request().method()); r.fulfill({ json: { ok: true, started: true } }); });
+        await p.evaluate(() => { window.__attached = []; attachTask = id => window.__attached.push(id); });
+        await p.click("#term-perm .held-tile button.move-in");
+        await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+        await p.click("#ask-actions button:has-text('cancel')");
+        await p.waitForSelector("#ask[open]", { state: "detached", timeout: slow(5000) }).catch(() => {});
+        if (moved.length) fail(tag + "cancel still moved it: " + JSON.stringify(moved));
+        await p.click("#term-perm .held-tile button.move-in");
+        await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+        await p.click("#ask-actions button:has-text('move it')");
+        await p.waitForFunction(() => window.__attached.length === 1, null, { timeout: slow(5000) })
+          .catch(() => fail(tag + "the moved card was not attached"));
+        if (moved.join() !== "POST") fail(tag + "move into atrium posted " + JSON.stringify(moved));
+        if ((await p.evaluate(() => window.__attached.join())) !== "hd") fail(tag + "attached the wrong card");
       }
       await p.click("#term-perm .held-tile button.go");
       await until(() => decided.length, 5000, "the decide POST").catch(() => {});
