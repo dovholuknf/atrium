@@ -7200,7 +7200,7 @@ async function tabsOrderSection(browser, base) {
   const row = (v) => '#tabsdlg-list .tabsdlg-row[data-view="' + v + '"]';
   try {
     fs.mkdirSync(imgs, { recursive: true });
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 700 } }); // 1440: the new agent split button took the room 1280 had for the runners tab
     await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -7208,7 +7208,7 @@ async function tabsOrderSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(250);
     if (stage === "before") {
-      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-before.png"), clip: { x: 0, y: 0, width: 1280, height: 700 } });
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-before.png"), clip: { x: 0, y: 0, width: 1440, height: 700 } });
       await ctx.close();
       console.log("tabsOrder before shot taken");
       return;
