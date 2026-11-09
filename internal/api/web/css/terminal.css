@@ -849,6 +849,10 @@
     display: block; margin-top: 5px; font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
     word-break: break-all;
   }
+  /* In a terminal's theme: the wash `legible` in js/themes.js holds the warn text to 4.5:1 under, and the
+     command in the terminal's own text colour, since its accent is only held against the bare background. */
+  .term-perm.worn { background: linear-gradient(90deg, rgba(var(--warn-rgb),.14), rgba(var(--warn-rgb),.04)); }
+  .term-perm.worn code { color: var(--body); }
 
   /* ── cards in their terminal's colours ──────────────────
      The board setting "cards wear their terminal colours". `cardWear` in js/themes.js puts `.worn` on a card
