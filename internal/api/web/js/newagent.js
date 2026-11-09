@@ -318,7 +318,7 @@ function naSummary() {
   if (naCanModel(h) && how.model) parts.push(esc(naModelLabel(how.model)));
   if (naCanEffort(h) && how.effort) parts.push(esc(how.effort) + " effort");
   if (naIsClaude(h)) parts.push(esc((NA_SETUPS.find(s => s[0] === how.setup) || NA_SETUPS[0])[1]));
-  if (naS.clone) parts.push(naS.clone.fork ? "forks its conversation" : "a new conversation");
+  if (naS.clone) parts.push(naS.clone.fork && !naCloneNoFork(naS.clone) ? "forks its conversation" : "a new conversation");
   return parts.join(" · ") + (naS.clone || naSameAsDefault() ? "" : ' <span class="ch">• changed</span>');
 }
 function naModelLabel(id) {
@@ -543,19 +543,12 @@ naEl("na").addEventListener("keydown", e => {
   naLaunch(e.ctrlKey || e.metaKey ? true : naS.tw);
 });
 
-function naCloneRefusal(t) {
-  const h = allHarnesses.find(x => x.id === t.runner);
-  if (!h || !naIsClaude(h)) return "only a claude card can be cloned for now";
-  if (!t.resume_id) return "atrium never learned this session's id, so there is no conversation to fork";
-  if (!t.worktree) return "this card has no folder to copy";
-  return "";
-}
 function naCloneItem(id, t) {
-  const why = naCloneRefusal(t);
+  const why = t.worktree ? "" : "this card has no folder to copy";
   return {
     label: "clone card", limited: !!why, tip: why,
     help: "Opens the new agent form filled in from this card: a new worktree on a new branch from its commit, its " +
-      "uncommitted changes, its runner settings and BRIEF.md, and a fork of its conversation. This card is untouched.",
+      "uncommitted changes, its runner settings and BRIEF.md, and on claude a fork of its conversation. This card is untouched.",
     act: () => why ? toast("cannot clone", why) : openCloneCard(id, t)
   };
 }
@@ -573,9 +566,9 @@ async function openCloneCard(id, t) {
       how: { room: roomOf(id), harness: t.runner, model: t.model || "", effort: t.effort || "", setup }
     },
     src: {
-      id, title, resume: t.resume_id, head: src.head || "", dirty: src.dirty || [], brief: src.brief || "",
-      base: src.head || "", args: (t.launch_args || []).join(" "), env: t.launch_env_keys || [], theme: t.theme || "",
-      agents: tagged("atrium:agent:").join(", "), skills: tagged("atrium:skill:").join(", "), fork: true, carry: true
+      id: id.replace(/^.*~/, ""), title, noFork: src.no_fork || "", head: src.head || "", dirty: src.dirty || [], brief: src.brief || "",
+      base: src.head || "", argv: t.launch_args || [], args: (t.launch_args || []).join(" "), env: t.launch_env_keys || [], theme: t.theme || "",
+      agents: tagged("atrium:agent:").join(", "), skills: tagged("atrium:skill:").join(", "), fork: !src.no_fork, carry: true
     }
   });
 }
@@ -584,7 +577,9 @@ function naCloneRows(rows, c) {
   const seg = (k, opts) => `<div class="seg" data-ck="${k}">` + opts.map(([v, label]) =>
     `<button type="button" data-v="${v}" class="${String(c[k]) === v ? "on" : ""}">${esc(label)}</button>`).join("") + `</div>`;
   const input = (k, cls, ph) => `<input class="cl ${cls}" data-ck="${k}" spellcheck="false" value="${esc(c[k])}" placeholder="${esc(ph)}">`;
-  if (naS.how.setup !== "full") {
+  const noFork = naCloneNoFork(c);
+  if (noFork) c.fork = false;
+  if (naIsClaude(naHarness()) && naS.how.setup !== "full") {
     rows.push(["agents", input("agents", "", "none") + q("The agents the lean session keeps, by name, comma separated.")]);
     rows.push(["skills", input("skills", "", "none") + q("The skills the lean session keeps, by name, comma separated.")]);
   }
@@ -596,8 +591,20 @@ function naCloneRows(rows, c) {
   rows.push(["changes", c.dirty.length ? seg("carry", [["true", "carry " + c.dirty.length + (c.dirty.length === 1 ? " file" : " files")], ["false", "leave them"]]) +
     q("Uncommitted in the original: " + c.dirty.join(", ") + ". Copied into the clone's worktree. The original keeps them too.")
     : `<span class="none">none uncommitted</span>`]);
-  rows.push(["memory", seg("fork", [["true", "fork its conversation"], ["false", "start fresh"]]) +
+  rows.push(["memory", seg("fork", [["true", "fork its conversation"], ["false", "start fresh"]]).replace('data-v="true"',
+    'data-v="true"' + (noFork ? ` disabled data-tip="${esc(noFork)}"` : "")) +
     q("A fork resumes a copy of the original's conversation, so the clone knows what it knew. The original's conversation is untouched.")]);
+}
+function naCloneNoFork(c) {
+  return c.noFork || (naIsClaude(naHarness()) ? "" : "only a claude conversation can be forked for now");
+}
+function naCloneBody(body, c) {
+  const list = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
+  Object.assign(body, { clone_of: c.id, clone_carry: !!(c.carry && c.dirty.length), clone_fork: !!c.fork && !naCloneNoFork(c),
+    base: c.base.trim(), theme: c.theme, brief: naEl("na-brief").value,
+    args: c.args.trim() === c.argv.join(" ") ? c.argv : c.args.split(/\s+/).filter(Boolean) });
+  if ((body.lean || body.superlean) && list(c.agents).length) body.lean_agents = list(c.agents);
+  if ((body.lean || body.superlean) && list(c.skills).length) body.lean_skills = list(c.skills);
 }
 function naCloneWire(el, c) {
   el.querySelectorAll(".seg[data-ck] button").forEach(b => b.onclick = () => { c[b.parentElement.dataset.ck] = b.dataset.v === "true"; naRender(); });
@@ -650,6 +657,7 @@ async function naLaunch(tw) {
           const c = naS.check, br = naBranch();
           Object.assign(body, { repo: naS.ref, branch: br });
           if (naS.link && naS.link.kind === "branch" && br === naS.link.head && !(c && c.exists)) body.base = "origin/" + br;
+          if (naS.clone) naCloneBody(body, naS.clone);
         } else {
           body.home = true;
         }

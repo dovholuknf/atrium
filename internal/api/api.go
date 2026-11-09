@@ -272,6 +272,8 @@ type Server struct {
 	// choice, `POST /v1/tasks/{id}/model`. Owned by the daemon, which owns the
 	// terminal. See daemon/modelswitch.go.
 	SwitchModel http.HandlerFunc
+	// CloneSource answers what the board's clone form is filled from, `GET /v1/tasks/{id}/clone`. See daemon/clone.go.
+	CloneSource http.HandlerFunc
 	// DrainAuto approves everything already waiting, when auto mode is turned
 	// on with a full queue. Supplied by the daemon for the same reason Decide
 	// is: each waiting agent is parked on an in-memory reply channel, and a
@@ -896,6 +898,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.SwitchModel != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/model", s.SwitchModel)
+	}
+	if s.CloneSource != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/clone", s.CloneSource)
 	}
 	if s.GitClone != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/git/clone", s.GitClone)

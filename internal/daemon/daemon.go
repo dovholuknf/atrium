@@ -526,6 +526,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.MoveIn = d.handleMoveIn
 	d.ap.SendNote = d.handleSendNote
 	d.ap.SwitchModel = d.handleModel
+	d.ap.CloneSource = d.handleCloneSource
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.RestartWrap = d.HandleRestartWrap
 	d.ap.RestartPtyHost = d.handleRestartPtyHost
