@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // What a room offers to a reader the hub passes through. See docs/fabric/hub-forge-design.md 3.3.
@@ -66,12 +68,12 @@ func DefaultBranches(g *Runner, gitDir string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var out []string
-	if ref, err := g.Git(ctx, gitDir, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil {
+	if ref, err := g.Git(ctx, gitDir, gitexec.SymbolicRef{Name: "refs/remotes/origin/HEAD"}); err == nil {
 		if b, ok := strings.CutPrefix(strings.TrimSpace(ref), "refs/remotes/origin/"); ok && b != "" {
 			out = append(out, b)
 		}
 	}
-	if b, err := g.Git(ctx, gitDir, "config", "--get", "init.defaultBranch"); err == nil {
+	if b, err := g.Git(ctx, gitDir, gitexec.ConfigGet{Key: "init.defaultBranch"}); err == nil {
 		if b = strings.TrimSpace(b); b != "" {
 			out = append(out, b)
 		}

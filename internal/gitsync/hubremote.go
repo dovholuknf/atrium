@@ -9,6 +9,8 @@ import (
 	"net/http/httputil"
 	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // HubRemotePrefix is where a room's stable hub forwarder is mounted on its agent listener. A clone's `hub` remote
@@ -222,16 +224,16 @@ const movedNote = "this clone's own `hub` remote points somewhere else and was l
 // and atrium's remote goes in as `atrium-hub`.
 func ensureHubRemote(ctx context.Context, g *Runner, dir, url string) (name, note string, err error) {
 	for _, n := range []string{HubRemote, HubRemoteAtrium} {
-		have, gerr := g.Git(ctx, dir, "config", "--local", "--get", "remote."+n+".url")
+		have, gerr := g.Git(ctx, dir, gitexec.ConfigGet{Key: "remote." + n + ".url", Local: true})
 		have = strings.TrimSpace(have)
 		switch {
 		case gerr != nil || have == "":
-			if _, err := g.Git(ctx, dir, "remote", "add", n, url); err != nil {
+			if _, err := g.Git(ctx, dir, gitexec.RemoteAdd{Name: n, URL: url}); err != nil {
 				return "", "", fmt.Errorf("%s", firstLine(err))
 			}
 		case have == url:
 		case ownForwarderURL.MatchString(have):
-			if _, err := g.Git(ctx, dir, "remote", "set-url", n, url); err != nil {
+			if _, err := g.Git(ctx, dir, gitexec.RemoteSetURL{Name: n, URL: url}); err != nil {
 				return "", "", fmt.Errorf("%s", firstLine(err))
 			}
 		default:

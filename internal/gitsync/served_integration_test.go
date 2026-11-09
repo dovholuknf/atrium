@@ -167,7 +167,7 @@ func TestStashNotesAnUnservedBranchAndClaudeMainAreRefusedToAFetch(t *testing.T)
 	} {
 		dst := t.TempDir()
 		git(t, dst, "init", "-q")
-		if out, err := Default.Git(bg, dst, "fetch", r.url(), c.ref); err == nil {
+		if out, err := rawGit(dst, nil, nil, "fetch", r.url(), c.ref); err == nil {
 			t.Errorf("%s: the fetch of %s went through: %s", c.name, c.ref, out)
 		}
 		if out := git(t, dst, "for-each-ref"); out != "" || git(t, dst, "count-objects", "-v") == "" {

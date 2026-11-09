@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -28,11 +29,11 @@ func Updates(ctx context.Context, repo string, run *gitsync.Runner) ([]Update, e
 		run.Bound = CommandBound
 	}
 	repo = filepath.FromSlash(repo)
-	out, err := run.Git(ctx, repo, "worktree", "list", "--porcelain")
+	out, err := run.Git(ctx, repo, gitexec.WorktreeList{})
 	if err != nil {
 		return nil, &Refusal{"git could not list the worktrees: " + firstLine(err)}
 	}
-	if _, err := run.Git(ctx, repo, "fetch", "--prune"); err != nil {
+	if _, err := run.Git(ctx, repo, gitexec.Fetch{Prune: true}); err != nil {
 		return nil, &Refusal{"git could not fetch, so no upstream is known to be live: " + firstLine(err)}
 	}
 	var res []Update
@@ -56,7 +57,7 @@ func updateOne(ctx context.Context, run *gitsync.Runner, l Line) Update {
 		u.Skipped = ReasonLocked
 		return u
 	}
-	st, err := run.Git(ctx, dir, "-c", "core.quotepath=off", "status", "--porcelain")
+	st, err := run.GitCall(ctx, dir, gitsync.Call{Config: []string{"core.quotepath=off"}}, gitexec.Status{})
 	if err != nil {
 		u.Skipped = "status: " + firstLine(err)
 		return u
@@ -65,7 +66,8 @@ func updateOne(ctx context.Context, run *gitsync.Runner, l Line) Update {
 		u.Skipped = ReasonDirty
 		return u
 	}
-	up, err := run.Git(ctx, dir, "for-each-ref", "--format=%(upstream:short)|%(upstream:track)", "refs/heads/"+l.Branch)
+	up, err := run.Git(ctx, dir, gitexec.ForEachRef{Format: "%(upstream:short)|%(upstream:track)",
+		Patterns: []string{"refs/heads/" + l.Branch}})
 	if err != nil {
 		u.Skipped = "upstream: " + firstLine(err)
 		return u
@@ -79,16 +81,16 @@ func updateOne(ctx context.Context, run *gitsync.Runner, l Line) Update {
 		u.Skipped = "upstream " + name + " is gone"
 		return u
 	}
-	before, err := run.Git(ctx, dir, "rev-parse", "HEAD")
+	before, err := run.Git(ctx, dir, gitexec.RevParse{Rev: "HEAD"})
 	if err != nil {
 		u.Skipped = "rev-parse: " + firstLine(err)
 		return u
 	}
-	if _, err := run.Git(ctx, dir, "merge", "--ff-only", name); err != nil {
+	if _, err := run.Git(ctx, dir, gitexec.MergeFFOnly{Commit: name}); err != nil {
 		u.Skipped = "cannot fast-forward to " + name + ": " + firstLine(err)
 		return u
 	}
-	after, _ := run.Git(ctx, dir, "rev-parse", "HEAD")
+	after, _ := run.Git(ctx, dir, gitexec.RevParse{Rev: "HEAD"})
 	if strings.TrimSpace(before) == strings.TrimSpace(after) {
 		u.Done = "already up to date with " + name
 		return u

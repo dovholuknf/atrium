@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -95,20 +96,20 @@ func shortSHA(s string) string {
 // else its origin's.
 func mergeHere(ctx context.Context, dir string) (repo, branch, sha string, err error) {
 	g := gitsync.Default
-	branch, err = g.Git(ctx, dir, "symbolic-ref", "--short", "-q", "HEAD")
+	branch, err = g.Git(ctx, dir, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 	if branch = strings.TrimSpace(branch); err != nil || branch == "" {
 		return "", "", "", errors.New("this is not a worktree on a branch")
 	}
-	if sha, err = g.Git(ctx, dir, "rev-parse", "HEAD"); err != nil {
+	if sha, err = g.Git(ctx, dir, gitexec.RevParse{Rev: "HEAD"}); err != nil {
 		return "", "", "", errors.New("this worktree has no commit")
 	}
 	sha = strings.TrimSpace(sha)
-	if u, err := g.Git(ctx, dir, "remote", "get-url", "hub"); err == nil {
+	if u, err := g.Git(ctx, dir, gitexec.RemoteGetURL{Name: "hub"}); err == nil {
 		if name := mergeRepoOfHubURL(strings.TrimSpace(u)); name != "" {
 			return name, branch, sha, nil
 		}
 	}
-	if u, err := g.Git(ctx, dir, "remote", "get-url", "origin"); err == nil {
+	if u, err := g.Git(ctx, dir, gitexec.RemoteGetURL{Name: "origin"}); err == nil {
 		if ref, err := gitsync.ParseURL(strings.TrimSpace(u)); err == nil {
 			return ref.Name(), branch, sha, nil
 		}

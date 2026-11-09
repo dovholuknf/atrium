@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // RoomInfo is an attached room, as the hub's git side needs to know it.
@@ -211,7 +213,7 @@ func (h *Hub) RoomKey(ctx context.Context, room string) (string, error) {
 	if key == "" || strings.ContainsAny(key, " \t\\:~^?*[") || strings.Contains(key, "..") {
 		return "", fmt.Errorf("the room name %q cannot be part of a git ref", room)
 	}
-	if _, err := h.runner().Git(ctx, "", "check-ref-format", "refs/rooms/"+key+"/claude/x"); err != nil {
+	if _, err := h.runner().Git(ctx, "", gitexec.CheckRefFormat{Name: "refs/rooms/" + key + "/claude/x"}); err != nil {
 		return "", fmt.Errorf("the room name %q cannot be part of a git ref", room)
 	}
 	return key, nil
@@ -293,32 +295,32 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 		if err := os.MkdirAll(bare, 0o755); err != nil {
 			return mirrored{}, err
 		}
-		if _, err := run.Git(ctx, "", "init", "-q", "--bare", bare); err != nil {
+		if _, err := run.Git(ctx, "", gitexec.Init{Quiet: true, Bare: true, Dir: bare}); err != nil {
 			return mirrored{}, err
 		}
-		if _, err := run.Git(ctx, bare, "symbolic-ref", "HEAD", "refs/heads/"+r.Branch); err != nil {
+		if _, err := run.Git(ctx, bare, gitexec.SymbolicRefSet{Name: "HEAD", Target: "refs/heads/" + r.Branch}); err != nil {
 			return mirrored{}, err
 		}
 	}
 	h.cleanLocks(bare, "refs", "packed-refs")
 	// HEAD ALWAYS NAMES THE INTEGRATION BRANCH. Upload-pack advertises `symref=HEAD:<target>`
 	// even when HEAD is hidden, so a HEAD that pointed at a room's branch would say its name.
-	if cur, _ := run.Git(ctx, bare, "symbolic-ref", "-q", "HEAD"); strings.TrimSpace(cur) != "refs/heads/"+r.Branch {
-		if _, err := run.Git(ctx, bare, "symbolic-ref", "HEAD", "refs/heads/"+r.Branch); err != nil {
+	if cur, _ := run.Git(ctx, bare, gitexec.SymbolicRef{Name: "HEAD"}); strings.TrimSpace(cur) != "refs/heads/"+r.Branch {
+		if _, err := run.Git(ctx, bare, gitexec.SymbolicRefSet{Name: "HEAD", Target: "refs/heads/" + r.Branch}); err != nil {
 			return mirrored{}, err
 		}
 	}
 
 	ck := slash(r.Checkout)
-	want, err := run.Git(ctx, ck, "-c", "safe.directory="+ck, "rev-parse", "--verify", "-q", "refs/heads/"+r.Branch+"^{commit}")
+	want, err := run.GitCall(ctx, ck, Call{Config: []string{"safe.directory=" + ck}}, gitexec.RevParseVerify{Rev: "refs/heads/" + r.Branch + "^{commit}", Quiet: true})
 	want = strings.TrimSpace(want)
 	if err != nil || want == "" {
 		return mirrored{}, fmt.Errorf("the checkout %s has no branch %s", r.Checkout, r.Branch)
 	}
-	have, _ := run.Git(ctx, bare, "rev-parse", "--verify", "-q", "refs/heads/"+r.Branch+"^{commit}")
+	have, _ := run.Git(ctx, bare, gitexec.RevParseVerify{Rev: "refs/heads/" + r.Branch + "^{commit}", Quiet: true})
 	have = strings.TrimSpace(have)
 	mark := func(sha string) {
-		_, _ = run.Git(ctx, bare, "update-ref", mirroredRef, sha)
+		_, _ = run.Git(ctx, bare, gitexec.UpdateRef{Ref: mirroredRef, New: sha})
 	}
 	stuck := func(err error) (mirrored, error) {
 		h.auditFailure("", "git-mirror-stuck", "mirror-stuck:"+r.Name, err)
@@ -333,10 +335,10 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 	// The checkout follows it, and until it has, or when it has diverged, nothing is mirrored from it and nothing in it
 	// is touched. A tip this pass set itself is the checkout's to rewrite, as a re-signed claude/main is.
 	force := "+"
-	if last, _ := run.Git(ctx, bare, "rev-parse", "--verify", "-q", mirroredRef+"^{commit}"); have != "" && strings.TrimSpace(last) != "" && strings.TrimSpace(last) != have {
+	if last, _ := run.Git(ctx, bare, gitexec.RevParseVerify{Rev: mirroredRef + "^{commit}", Quiet: true}); have != "" && strings.TrimSpace(last) != "" && strings.TrimSpace(last) != have {
 		force = ""
-		if _, err := run.Git(ctx, bare, "cat-file", "-e", want+"^{commit}"); err == nil {
-			if _, err := run.Git(ctx, bare, "merge-base", "--is-ancestor", want, have); err == nil {
+		if _, err := run.Git(ctx, bare, gitexec.CatFileExists{Object: want + "^{commit}"}); err == nil {
+			if _, err := run.Git(ctx, bare, gitexec.IsAncestor{Commit: want, Of: have}); err == nil {
 				if err := h.followCheckout(ctx, r, bare, have, want); err != nil {
 					return stuck(err)
 				}
@@ -346,8 +348,8 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 			}
 		}
 	}
-	if _, err := run.Git(ctx, bare, "-c", "safe.directory="+ck, "fetch", "-q", "--no-tags", "--no-write-fetch-head",
-		ck, force+"refs/heads/"+r.Branch+":refs/heads/"+r.Branch); err != nil {
+	if _, err := run.GitCall(ctx, bare, Call{Config: []string{"safe.directory=" + ck}}, gitexec.Fetch{Quiet: true,
+		NoTags: true, NoWriteFetchHead: true, Remote: ck, Refspecs: []string{force + "refs/heads/" + r.Branch + ":refs/heads/" + r.Branch}}); err != nil {
 		if force == "" {
 			return stuck(fmt.Errorf("the checkout %s and the hub have each moved %s, so nothing is mirrored from it until they are in step: %w", r.Checkout, r.Branch, err))
 		}
@@ -376,26 +378,26 @@ func (e *followStuck) Error() string {
 func (h *Hub) followCheckout(ctx context.Context, r Repo, bare, have, want string) error {
 	run := h.runner()
 	ck := slash(r.Checkout)
-	safe := []string{"-c", "safe.directory=" + ck}
-	git := func(dir string, args ...string) (string, error) {
-		return run.Git(ctx, dir, append(append([]string{}, safe...), args...)...)
+	safe := Call{Config: []string{"safe.directory=" + ck}}
+	git := func(dir string, op gitexec.Op) (string, error) {
+		return run.GitCall(ctx, dir, safe, op)
 	}
 	stuck := func(why string) error { return &followStuck{r: r, have: have, why: why} }
 	ref := "refs/heads/" + r.Branch
-	if _, err := git(ck, "fetch", "-q", "--no-tags", slash(bare), ref); err != nil {
+	if _, err := git(ck, gitexec.Fetch{Quiet: true, NoTags: true, Remote: slash(bare), Refspecs: []string{ref}}); err != nil {
 		return stuck("the hub's commits could not be fetched into it: " + err.Error())
 	}
-	if got, _ := git(ck, "rev-parse", "--verify", "-q", "FETCH_HEAD^{commit}"); strings.TrimSpace(got) != have {
+	if got, _ := git(ck, gitexec.RevParseVerify{Rev: "FETCH_HEAD^{commit}", Quiet: true}); strings.TrimSpace(got) != have {
 		return stuck("the hub's tip moved while it was fetched")
 	}
-	if _, err := git(ck, "merge-base", "--is-ancestor", want, have); err != nil {
+	if _, err := git(ck, gitexec.IsAncestor{Commit: want, Of: have}); err != nil {
 		return stuck("it is not behind the hub's tip")
 	}
-	if cur, _ := git(ck, "rev-parse", "--verify", "-q", ref+"^{commit}"); strings.TrimSpace(cur) != want {
+	if cur, _ := git(ck, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true}); strings.TrimSpace(cur) != want {
 		return stuck("it moved while the hub looked")
 	}
 	dir := ""
-	if out, err := git(ck, "worktree", "list", "--porcelain"); err == nil {
+	if out, err := git(ck, gitexec.WorktreeList{}); err == nil {
 		path := ""
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
@@ -408,16 +410,16 @@ func (h *Hub) followCheckout(ctx context.Context, r Repo, bare, have, want strin
 		}
 	}
 	if dir == "" {
-		if _, err := git(ck, "update-ref", "-m", "atrium: follow the hub", ref, have, want); err != nil {
+		if _, err := git(ck, gitexec.UpdateRef{Message: "atrium: follow the hub", Ref: ref, New: have, Old: want}); err != nil {
 			return stuck("its branch could not be moved: " + err.Error())
 		}
 		h.audit("", "git-checkout-followed", r.Name+" "+r.Branch+" ref moved to "+short(have))
 		return nil
 	}
-	if st, err := git(dir, "status", "--porcelain", "--untracked-files=no"); err != nil || strings.TrimSpace(st) != "" {
+	if st, err := git(dir, gitexec.Status{Untracked: "no"}); err != nil || strings.TrimSpace(st) != "" {
 		return stuck("it has changes that are not committed")
 	}
-	if _, err := git(dir, "merge", "-q", "--ff-only", have); err != nil {
+	if _, err := git(dir, gitexec.MergeFFOnly{Quiet: true, Commit: have}); err != nil {
 		return stuck("it could not be fast-forwarded: " + err.Error())
 	}
 	h.audit("", "git-checkout-followed", r.Name+" "+r.Branch+" fast-forwarded to "+short(have))
@@ -644,9 +646,9 @@ func (h *Hub) collectOne(ctx context.Context, room, key string, r Repo) CollectR
 		return cr
 	}
 	defer fwd.Close()
-	_, err = run.Git(ctx, bare, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--prune",
-		fwd.URL+"/"+r.Name+".git",
-		"+refs/heads/claude/*:refs/rooms/"+key+"/claude/*", "^refs/heads/claude/main")
+	_, err = run.Git(ctx, bare, gitexec.Fetch{Quiet: true, NoTags: true, NoWriteFetchHead: true, Prune: true,
+		Remote:   fwd.URL + "/" + r.Name + ".git",
+		Refspecs: []string{"+refs/heads/claude/*:refs/rooms/" + key + "/claude/*", "^refs/heads/claude/main"}})
 	if err != nil {
 		cr.Error = err.Error()
 		return cr
@@ -662,7 +664,7 @@ func (h *Hub) collectOne(ctx context.Context, room, key string, r Repo) CollectR
 	// Delivered when the collect moved a ref, or when the checkout does not already hold what
 	// the bare repository does, which is what a hub killed between the two leaves behind.
 	ck := slash(r.Checkout)
-	have, _ := listRefs(ctx, run, ck, "refs/remotes/"+key+"/", "-c", "safe.directory="+ck)
+	have, _ := listRefs(ctx, run, ck, "refs/remotes/"+key+"/", "safe.directory="+ck)
 	if !cr.Moved && sameRefs(rename(after, "refs/rooms/"+key+"/", ""), rename(have, "refs/remotes/"+key+"/", "")) {
 		return cr
 	}
@@ -678,16 +680,17 @@ func (h *Hub) collectOne(ctx context.Context, room, key string, r Repo) CollectR
 func (h *Hub) deliver(ctx context.Context, r Repo, key string) error {
 	run := h.runner()
 	ck := slash(r.Checkout)
-	if common, err := run.Git(ctx, ck, "-c", "safe.directory="+ck, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
+	if common, err := run.GitCall(ctx, ck, Call{Config: []string{"safe.directory=" + ck}}, gitexec.RevParseGitDirs{Absolute: true, Common: true}); err == nil {
 		h.cleanLocks(strings.TrimSpace(common), "refs/remotes/"+key)
 	}
-	args := []string{"-c", "safe.directory=" + ck, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--prune",
-		slash(h.Bare(r.Name)), "+refs/rooms/" + key + "/claude/*:refs/remotes/" + key + "/claude/*"}
+	safe := Call{Config: []string{"safe.directory=" + ck}}
+	fetch := gitexec.Fetch{Quiet: true, NoTags: true, NoWriteFetchHead: true, Prune: true, Remote: slash(h.Bare(r.Name)),
+		Refspecs: []string{"+refs/rooms/" + key + "/claude/*:refs/remotes/" + key + "/claude/*"}}
 	// The checkout is a working clone somebody else is using, so a ref lock held for a moment
 	// is not a failure.
 	var err error
 	for i, wait := 0, 200*time.Millisecond; i < 5; i, wait = i+1, wait*2 {
-		if _, err = run.Git(ctx, ck, args...); err == nil {
+		if _, err = run.GitCall(ctx, ck, safe, fetch); err == nil {
 			return nil
 		}
 		if !strings.Contains(err.Error(), "lock") {
@@ -702,11 +705,10 @@ func (h *Hub) deliver(ctx context.Context, r Repo, key string) error {
 	return err
 }
 
-// listRefs answers refname to sha for everything under a prefix. `pre` are git options to
-// put before the command.
-func listRefs(ctx context.Context, run *Runner, dir, prefix string, pre ...string) (map[string]string, error) {
-	args := append(append([]string{}, pre...), "for-each-ref", "--format=%(objectname) %(refname)", prefix)
-	out, err := run.Git(ctx, dir, args...)
+// listRefs answers refname to sha for everything under a prefix. `config` is each "key=value" set for the command.
+func listRefs(ctx context.Context, run *Runner, dir, prefix string, config ...string) (map[string]string, error) {
+	out, err := run.GitCall(ctx, dir, Call{Config: config},
+		gitexec.ForEachRef{Format: "%(objectname) %(refname)", Patterns: []string{prefix}})
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"sort"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // WHICH BRANCH OF THE HUB HAS A COMMIT, whatever repository it is in. A worker ending with atrium_done names a commit
@@ -73,13 +75,14 @@ func (s *Store) branchContaining(ctx context.Context, dir, sha string) (string, 
 	if dir == "" || !isHex(sha) {
 		return "", ""
 	}
-	if _, err := s.git(ctx, dir, "cat-file", "-e", sha+"^{commit}"); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.CatFileExists{Object: sha + "^{commit}"}); err != nil {
 		return "", ""
 	}
 	if s.h.hk.onContains != nil {
 		s.h.hk.onContains(dir)
 	}
-	out, err := s.git(ctx, dir, "for-each-ref", "--contains", sha, "--format=%(refname:lstrip=2) %(objectname)", "refs/heads")
+	out, err := s.git(ctx, dir, gitexec.ForEachRef{Contains: sha, Format: "%(refname:lstrip=2) %(objectname)",
+		Patterns: []string{"refs/heads"}})
 	if err != nil {
 		return "", ""
 	}

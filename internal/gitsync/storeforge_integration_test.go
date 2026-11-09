@@ -454,7 +454,7 @@ func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
 	if got := x.lookupMain(t); got != merged {
 		t.Fatalf("lookup main = %s, want the forge's fast-forward %s", got, merged)
 	}
-	if out, err := Default.Git(bg, x.forge.work, "merge-base", "--is-ancestor", pushed, merged); err != nil {
+	if out, err := rawGit(x.forge.work, nil, nil, "merge-base", "--is-ancestor", pushed, merged); err != nil {
 		t.Fatalf("the operator's commit was lost: %v %s", err, out)
 	}
 }

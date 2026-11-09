@@ -84,14 +84,18 @@ func (o BranchDelete) build(b *builder) {
 	b.add("--", b.ref("branch", o.Branch))
 }
 
-// DeleteRef is `git update-ref -d`.
+// DeleteRef is `git update-ref -d`, only while Ref is at Old when Old is set.
 type DeleteRef struct {
 	Ref string
+	Old string
 }
 
 func (o DeleteRef) build(b *builder) {
 	b.sub("update-ref", "-d")
 	b.add(eoo, b.ref("ref", o.Ref))
+	if o.Old != "" {
+		b.add(b.ref("old", o.Old))
+	}
 }
 
 // RemoteAdd is `git remote add`.
@@ -252,15 +256,20 @@ type WorktreeList struct{}
 
 func (WorktreeList) build(b *builder) { b.sub("worktree", "list", "--porcelain") }
 
-// ConfigGet is `git config --get`, of the repository's own file alone when Local.
+// ConfigGet is `git config --get`, of the repository's, the user's or the worktree's own file alone when Local,
+// Global or Worktree.
 type ConfigGet struct {
-	Key   string
-	Local bool
+	Key      string
+	Local    bool
+	Global   bool
+	Worktree bool
 }
 
 func (o ConfigGet) build(b *builder) {
 	b.sub("config")
 	b.flag(o.Local, "--local")
+	b.flag(o.Global, "--global")
+	b.flag(o.Worktree, "--worktree")
 	b.add("--get", eoo, b.ref("key", o.Key))
 }
 
@@ -330,20 +339,26 @@ func (o ForEachRef) build(b *builder) {
 	b.add(b.refs("pattern", o.Patterns)...)
 }
 
-// Fetch is `git fetch` of Refspecs from Remote, a name, URL or path.
+// Fetch is `git fetch` of Refspecs from Remote, a name, URL or path. An empty Remote with no Refspecs is the
+// branch's own remote.
 type Fetch struct {
-	Remote   string
-	Refspecs []string
-	NoTags   bool
-	Prune    bool
-	Quiet    bool
+	Remote           string
+	Refspecs         []string
+	NoTags           bool
+	Prune            bool
+	Quiet            bool
+	NoWriteFetchHead bool
 }
 
 func (o Fetch) build(b *builder) {
 	b.sub("fetch")
 	b.flag(o.Quiet, "--quiet")
 	b.flag(o.NoTags, "--no-tags")
+	b.flag(o.NoWriteFetchHead, "--no-write-fetch-head")
 	b.flag(o.Prune, "--prune")
+	if o.Remote == "" && len(o.Refspecs) == 0 {
+		return
+	}
 	b.add("--", b.ref("remote", o.Remote))
 	b.add(b.refs("refspec", o.Refspecs)...)
 }
@@ -360,15 +375,23 @@ func (o CheckRefFormat) build(b *builder) {
 	b.add(b.ref("name", o.Name))
 }
 
-// Diff is `git diff` of Revs: the patch (binary when Binary), or --numstat, --stat or --name-only, limited to
-// DiffFilter.
+// Diff is `git diff` of Revs under Paths: the patch (binary when Binary), or --numstat, --stat, --name-only or
+// --name-status, limited to DiffFilter. The rest are git's flags of the same name, FindRenames being -M.
 type Diff struct {
-	Revs       []string
-	Binary     bool
-	Numstat    bool
-	Stat       bool
-	NameOnly   bool
-	DiffFilter string
+	Revs        []string
+	Paths       []string
+	Binary      bool
+	Numstat     bool
+	Stat        bool
+	NameOnly    bool
+	DiffFilter  string
+	NameStatus  bool
+	Z           bool
+	Relative    bool
+	FindRenames bool
+	NoExtDiff   bool
+	NoTextconv  bool
+	NoColor     bool
 }
 
 func (o Diff) build(b *builder) {
@@ -380,8 +403,48 @@ func (o Diff) build(b *builder) {
 	if o.DiffFilter != "" {
 		b.add("--diff-filter=" + b.value("diff-filter", o.DiffFilter))
 	}
+	diffFlags(b, o.NameStatus, o.Z, o.Relative, o.FindRenames, o.NoExtDiff, o.NoTextconv, o.NoColor)
 	b.add(eoo)
 	b.add(b.refs("rev", o.Revs)...)
+	if len(o.Paths) > 0 {
+		b.add("--")
+		b.add(b.paths("path", o.Paths)...)
+	}
+}
+
+func diffFlags(b *builder, nameStatus, z, relative, findRenames, noExtDiff, noTextconv, noColor bool) {
+	b.flag(nameStatus, "--name-status")
+	b.flag(z, "-z")
+	b.flag(relative, "--relative")
+	b.flag(findRenames, "-M")
+	b.flag(noExtDiff, "--no-ext-diff")
+	b.flag(noTextconv, "--no-textconv")
+	b.flag(noColor, "--no-color")
+}
+
+// ShowDiff is `git show --format=` of Rev: the commit's diff with no header, under Paths. The flags are Diff's.
+type ShowDiff struct {
+	Rev         string
+	Paths       []string
+	Numstat     bool
+	NameStatus  bool
+	Z           bool
+	Relative    bool
+	FindRenames bool
+	NoExtDiff   bool
+	NoTextconv  bool
+	NoColor     bool
+}
+
+func (o ShowDiff) build(b *builder) {
+	b.sub("show", "--format=")
+	b.flag(o.Numstat, "--numstat")
+	diffFlags(b, o.NameStatus, o.Z, o.Relative, o.FindRenames, o.NoExtDiff, o.NoTextconv, o.NoColor)
+	b.add(eoo, b.ref("rev", o.Rev))
+	if len(o.Paths) > 0 {
+		b.add("--")
+		b.add(b.paths("path", o.Paths)...)
+	}
 }
 
 // DiffNoIndex is `git diff --no-index --no-color` of two paths. Git exits 1 when they differ.
@@ -452,14 +515,19 @@ func (o CatFileExists) build(b *builder) {
 	b.add(eoo, b.ref("object", o.Object))
 }
 
-// LsRemote is `git ls-remote` of Refs on Remote.
+// LsRemote is `git ls-remote` of Refs on Remote, branches alone when Heads, with what a symbolic ref points at when
+// Symref.
 type LsRemote struct {
 	Remote string
 	Refs   []string
+	Heads  bool
+	Symref bool
 }
 
 func (o LsRemote) build(b *builder) {
 	b.sub("ls-remote")
+	b.flag(o.Heads, "--heads")
+	b.flag(o.Symref, "--symref")
 	b.add("--", b.ref("remote", o.Remote))
 	b.add(b.refs("ref", o.Refs)...)
 }
@@ -470,10 +538,12 @@ type Clone struct {
 	Dir    string
 	Branch string
 	Depth  int
+	NoTags bool
 }
 
 func (o Clone) build(b *builder) {
 	b.sub("clone")
+	b.flag(o.NoTags, "--no-tags")
 	if o.Depth > 0 {
 		b.add("--depth", strconv.Itoa(o.Depth))
 	}
@@ -483,12 +553,36 @@ func (o Clone) build(b *builder) {
 	b.add("--", b.ref("url", o.URL), b.path("dir", o.Dir))
 }
 
-// Log is `git log` of Revs, at most MaxCount, one line each when Oneline, else in Format.
+// Log is `git log` of Revs (and of those on stdin when Stdin) limited to Paths, at most MaxCount, one line each when
+// Oneline, else in Format, or with no header when EmptyFormat. The rest are git's flags of the same name.
 type Log struct {
-	Revs     []string
-	MaxCount int
-	Oneline  bool
-	Format   string
+	Revs           []string
+	Paths          []string
+	MaxCount       int
+	Oneline        bool
+	Format         string
+	EmptyFormat    bool
+	NoMerges       bool
+	Merges         bool
+	RemergeDiff    bool
+	NoRenames      bool
+	NameOnly       bool
+	NameStatus     bool
+	FullDiff       bool
+	Raw            bool
+	Patch          bool
+	All            bool
+	AncestryPath   bool
+	FirstParent    bool
+	Reverse        bool
+	LeftRight      bool
+	DateOrder      bool
+	NoWalk         bool
+	NoWalkUnsorted bool
+	ExtendedRegexp bool
+	Grep           string
+	DiffFilter     string
+	Stdin          bool
 }
 
 func (o Log) build(b *builder) {
@@ -499,16 +593,50 @@ func (o Log) build(b *builder) {
 	b.flag(o.Oneline, "--oneline")
 	if o.Format != "" {
 		b.add("--format=" + b.value("format", o.Format))
+	} else if o.EmptyFormat {
+		b.add("--format=")
 	}
+	b.flag(o.NoMerges, "--no-merges")
+	b.flag(o.Merges, "--merges")
+	b.flag(o.RemergeDiff, "--remerge-diff")
+	b.flag(o.NoRenames, "--no-renames")
+	b.flag(o.NameOnly, "--name-only")
+	b.flag(o.NameStatus, "--name-status")
+	b.flag(o.FullDiff, "--full-diff")
+	b.flag(o.Raw, "--raw")
+	b.flag(o.Patch, "-p")
+	b.flag(o.All, "--all")
+	b.flag(o.AncestryPath, "--ancestry-path")
+	b.flag(o.FirstParent, "--first-parent")
+	b.flag(o.Reverse, "--reverse")
+	b.flag(o.LeftRight, "--left-right")
+	b.flag(o.DateOrder, "--date-order")
+	b.flag(o.NoWalk, "--no-walk")
+	b.flag(o.NoWalkUnsorted, "--no-walk=unsorted")
+	b.flag(o.ExtendedRegexp, "--extended-regexp")
+	if o.Grep != "" {
+		b.add("--grep=" + b.value("grep", o.Grep))
+	}
+	if o.DiffFilter != "" {
+		b.add("--diff-filter=" + b.value("diff-filter", o.DiffFilter))
+	}
+	b.flag(o.Stdin, "--stdin")
 	b.add(eoo)
 	b.add(b.refs("rev", o.Revs)...)
+	if len(o.Paths) > 0 {
+		b.add("--")
+		b.add(b.paths("path", o.Paths)...)
+	}
 }
 
-// Commit is `git commit -a --amend --no-edit` as far as each is set.
+// Commit is `git commit -a --amend --no-edit --no-verify --quiet` as far as each is set, with Message when set.
 type Commit struct {
-	All    bool
-	Amend  bool
-	NoEdit bool
+	All      bool
+	Amend    bool
+	NoEdit   bool
+	NoVerify bool
+	Quiet    bool
+	Message  string
 }
 
 func (o Commit) build(b *builder) {
@@ -516,6 +644,11 @@ func (o Commit) build(b *builder) {
 	b.flag(o.All, "-a")
 	b.flag(o.Amend, "--amend")
 	b.flag(o.NoEdit, "--no-edit")
+	b.flag(o.NoVerify, "--no-verify")
+	b.flag(o.Quiet, "--quiet")
+	if o.Message != "" {
+		b.add("-m", b.value("message", o.Message))
+	}
 }
 
 // SwitchReset is `git switch -C`: Branch made or reset at Start, and checked out.

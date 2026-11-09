@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The merge queue's git, in the hub's own store. See docs/rnd/merge-queue.md.
@@ -55,7 +57,7 @@ func (s *Store) MergeGitOK(ctx context.Context) error {
 	if s.GitVersion != nil {
 		line, err = s.GitVersion(ctx)
 	} else {
-		line, err = s.h.runner().Git(ctx, "", "--version")
+		line, err = s.h.runner().Git(ctx, "", gitexec.Version{})
 	}
 	if err != nil {
 		return err
@@ -119,7 +121,7 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 	if ff, err := s.isAncestor(ctx, dir, base, tip); err != nil {
 		return r, err
 	} else if !ff {
-		out, err := s.git(ctx, dir, "merge-tree", "--write-tree", "--name-only", "--no-messages", base, tip)
+		out, err := s.git(ctx, dir, gitexec.MergeTree{Branch1: base, Branch2: tip})
 		lines := strings.Split(strings.TrimSpace(out), "\n")
 		switch {
 		case err != nil && exitCode(err) == 1:
@@ -141,7 +143,8 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 		}
 		env := append(s.env(), "GIT_AUTHOR_NAME="+mergeName, "GIT_AUTHOR_EMAIL="+mergeEmail,
 			"GIT_COMMITTER_NAME="+mergeName, "GIT_COMMITTER_EMAIL="+mergeEmail)
-		out, err = s.h.runner().GitEnv(ctx, dir, env, "commit-tree", tree, "-p", base, "-p", tip, "-m", msg)
+		out, err = s.h.runner().GitEnv(ctx, dir, env, gitexec.CommitTree{Tree: tree, Parents: []string{base, tip},
+			Message: msg})
 		if err != nil {
 			return r, err
 		}
@@ -155,7 +158,8 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 		return r, err
 	}
 	defer unlock()
-	if _, err := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d", n), MergeRef(n), cand); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.UpdateRef{Message: fmt.Sprintf("merge queue %d", n), Ref: MergeRef(n),
+		New: cand}); err != nil {
 		return r, err
 	}
 	r.Candidate = cand
@@ -205,7 +209,8 @@ func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candi
 	if adopted {
 		return s.landInCheckout(ctx, dir, mirror, n, base, candidate)
 	}
-	_, err = s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d", n), ClaudeMainRef, candidate, base)
+	_, err = s.git(ctx, dir, gitexec.UpdateRef{Message: fmt.Sprintf("merge queue %d", n), Ref: ClaudeMainRef,
+		New: candidate, Old: base})
 	return err
 }
 
@@ -214,18 +219,20 @@ func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candi
 // the checkout cannot follow. A checkout that is not at base, as the mirror pass left it, is a claude/main that moved.
 func (s *Store) landInCheckout(ctx context.Context, dir string, r Repo, n int64, base, candidate string) error {
 	ck := slash(r.Checkout)
-	at, _ := s.h.runner().Git(ctx, ck, "-c", "safe.directory="+ck, "rev-parse", "--verify", "-q", "refs/heads/"+r.Branch+"^{commit}")
+	at, _ := s.h.runner().GitCall(ctx, ck, Call{Config: []string{"safe.directory=" + ck}}, gitexec.RevParseVerify{Rev: "refs/heads/" + r.Branch + "^{commit}", Quiet: true})
 	if at = strings.TrimSpace(at); at != base {
 		return conflict("the checkout %s has claude/main at %s and not %s while request %d was tested", r.Checkout, short(at), short(base), n)
 	}
-	if _, err := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d", n), ClaudeMainRef, candidate, base); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.UpdateRef{Message: fmt.Sprintf("merge queue %d", n), Ref: ClaudeMainRef,
+		New: candidate, Old: base}); err != nil {
 		return err
 	}
 	err := s.h.followCheckout(ctx, r, dir, candidate, base)
 	if err == nil {
 		return nil
 	}
-	if _, rerr := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d undone", n), ClaudeMainRef, base, candidate); rerr != nil {
+	if _, rerr := s.git(ctx, dir, gitexec.UpdateRef{Message: fmt.Sprintf("merge queue %d undone", n),
+		Ref: ClaudeMainRef, New: base, Old: candidate}); rerr != nil {
 		return rerr
 	}
 	var stuck *followStuck
@@ -253,7 +260,7 @@ func (s *Store) MergeDrop(ctx context.Context, name string, n int64) error {
 	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	_, err = s.git(ctx, dir, "update-ref", "-d", MergeRef(n))
+	_, err = s.git(ctx, dir, gitexec.DeleteRef{Ref: MergeRef(n)})
 	return err
 }
 
@@ -284,7 +291,7 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 	if in, err := s.isAncestor(ctx, dir, tip, ClaudeMainRef); err != nil || !in {
 		return false, err
 	}
-	if _, err := s.git(ctx, dir, "update-ref", "-d", headsPrefix+branch, tip); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.DeleteRef{Ref: headsPrefix + branch, Old: tip}); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -341,7 +348,7 @@ type LandAuthor struct{ Name, Email string }
 // OperatorAuthor reads user.name and user.email from the operator's global git config.
 func OperatorAuthor(ctx context.Context) (LandAuthor, error) {
 	cfg := func(k string) string {
-		out, _ := Default.Git(ctx, "", "config", "--global", "--get", k)
+		out, _ := Default.Git(ctx, "", gitexec.ConfigGet{Key: k, Global: true})
 		return strings.TrimSpace(out)
 	}
 	a := LandAuthor{Name: cfg("user.name"), Email: cfg("user.email")}
@@ -397,7 +404,8 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandA
 		return c, err
 	}
 	if !under {
-		out, err := s.git(ctx, dir, "for-each-ref", "--count=1", "--format=%(refname)", "--points-at", c.MainBefore, LandRefPrefix)
+		out, err := s.git(ctx, dir, gitexec.ForEachRef{Count: 1, Format: "%(refname)", PointsAt: c.MainBefore,
+			Patterns: []string{LandRefPrefix}})
 		if err != nil {
 			return c, err
 		}
@@ -405,7 +413,7 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandA
 			return c, refuse("main (%s) is neither under claude/main nor a land, so a land would undo what main has", short(c.MainBefore))
 		}
 	}
-	trees, err := s.git(ctx, dir, "rev-parse", c.ClaudeBefore+"^{tree}", c.MainBefore+"^{tree}")
+	trees, err := s.git(ctx, dir, gitexec.RevParseRevs{Revs: []string{c.ClaudeBefore + "^{tree}", c.MainBefore + "^{tree}"}})
 	if err != nil {
 		return c, err
 	}
@@ -417,7 +425,8 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandA
 	if tt[0] != tt[1] {
 		env := append(s.env(), "GIT_AUTHOR_NAME="+by.Name, "GIT_AUTHOR_EMAIL="+by.Email,
 			"GIT_COMMITTER_NAME="+by.Name, "GIT_COMMITTER_EMAIL="+by.Email)
-		out, err := s.h.runner().GitEnv(ctx, dir, env, "commit-tree", "--no-gpg-sign", tt[0], "-p", c.MainBefore, "-m", msg)
+		out, err := s.h.runner().GitEnv(ctx, dir, env, gitexec.CommitTree{NoGPGSign: true, Tree: tt[0],
+			Parents: []string{c.MainBefore}, Message: msg})
 		if err != nil {
 			return c, err
 		}
@@ -430,7 +439,8 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandA
 	if c.Moved {
 		tx += fmt.Sprintf("update %s %s %s\n", MainRef, c.Commit, c.MainBefore)
 	}
-	_, err = s.h.runner().gitWith(ctx, dir, s.env(), []byte(tx), 0, "update-ref", "-m", fmt.Sprintf("land %d", n), "--stdin")
+	_, err = s.h.runner().GitCall(ctx, dir, Call{Env: s.env(), Stdin: []byte(tx)},
+		gitexec.UpdateRefStdin{Message: fmt.Sprintf("land %d", n)})
 	return c, err
 }
 

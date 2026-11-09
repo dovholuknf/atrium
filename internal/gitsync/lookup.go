@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The lookup a card calls for the URL to fetch code it does not have: `atrium_git_url`, and GET /_hub/git/url.
@@ -863,7 +865,7 @@ func (s *Store) hasCommit(ctx context.Context, dir, sha string) bool {
 	if dir == "" || !isHex40(sha) {
 		return false
 	}
-	_, err := s.git(ctx, dir, "cat-file", "-e", sha+"^{commit}")
+	_, err := s.git(ctx, dir, gitexec.CatFileExists{Object: sha + "^{commit}"})
 	return err == nil
 }
 

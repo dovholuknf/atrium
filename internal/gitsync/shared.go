@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // commonDirOf is the absolute git common directory of dir, "" when dir is not in a repository.
@@ -13,7 +15,7 @@ func commonDirOf(ctx context.Context, r *Runner, dir string) string {
 	if strings.TrimSpace(dir) == "" {
 		return ""
 	}
-	out, err := r.Git(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	out, err := r.Git(ctx, dir, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil {
 		return ""
 	}
@@ -44,7 +46,7 @@ func SharesGitDir(ctx context.Context, r *Runner, a, b string) bool {
 // room's checkout carries, because the remote lives in the shared .git/config.
 func PointsAtOtherForwarder(ctx context.Context, r *Runner, dir, forwarderBase string) bool {
 	for _, n := range []string{HubRemote, HubRemoteAtrium} {
-		out, err := r.Git(ctx, dir, "remote", "get-url", "--push", "--all", n)
+		out, err := r.Git(ctx, dir, gitexec.RemoteGetURL{Name: n, Push: true, All: true})
 		if err != nil {
 			continue
 		}

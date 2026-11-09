@@ -72,7 +72,7 @@ func (f *remoteFix) cardEnv(card string) []string {
 
 func (f *remoteFix) git(env []string, dir string, args ...string) (string, error) {
 	f.t.Helper()
-	out, err := Default.GitEnv(bg, dir, env, args...)
+	out, err := rawGit(dir, env, nil, args...)
 	if ge, ok := err.(*Error); ok {
 		return out + ge.Stderr, err
 	}

@@ -280,10 +280,10 @@ func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
 	// A hidden sha by id, the client asking for v2, must fail.
 	dst := t.TempDir()
 	git(t, dst, "init", "-q")
-	if _, err := Default.Git(bg, dst, "-c", "protocol.version=2", "fetch", "--no-tags", url, other); err == nil {
+	if _, err := rawGit(dst, nil, nil, "-c", "protocol.version=2", "fetch", "--no-tags", url, other); err == nil {
 		t.Fatal("a hidden sha was fetched by id")
 	}
-	if _, err := Default.Git(bg, dst, "-c", "protocol.version=2", "fetch", "--no-tags", url, "+refs/heads/claude/w1:refs/heads/w1"); err != nil {
+	if _, err := rawGit(dst, nil, nil, "-c", "protocol.version=2", "fetch", "--no-tags", url, "+refs/heads/claude/w1:refs/heads/w1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := git(t, dst, "rev-parse", "w1"); got != w1 {
@@ -296,7 +296,7 @@ func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
 			t.Fatalf("GET %s: %d", p, code)
 		}
 	}
-	if _, err := Default.Git(bg, clone, "push", url, "claude/w1:refs/heads/x"); err == nil {
+	if _, err := rawGit(clone, nil, nil, "push", url, "claude/w1:refs/heads/x"); err == nil {
 		t.Fatal("a push was accepted")
 	}
 	// Serving wrote no policy into the clone.

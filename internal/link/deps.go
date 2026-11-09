@@ -21,6 +21,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/itemgate"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
@@ -172,13 +173,13 @@ func (p *Proxy) repoFor(name string) (gitsync.Repo, error) {
 	return gitsync.Repo{}, fmt.Errorf("%q is not in git_repos", name)
 }
 
-func (p *Proxy) gitIn(ctx context.Context, r gitsync.Repo, args ...string) (string, error) {
-	return runnerOf(p.git()).Git(ctx, r.Checkout, args...)
+func (p *Proxy) gitIn(ctx context.Context, r gitsync.Repo, op gitexec.Op) (string, error) {
+	return runnerOf(p.git()).Git(ctx, r.Checkout, op)
 }
 
 // tipOf is the integration branch's commit in the hub's checkout.
 func (p *Proxy) tipOf(ctx context.Context, r gitsync.Repo) (string, error) {
-	out, err := p.gitIn(ctx, r, "rev-parse", "--verify", "--quiet", "refs/heads/"+r.Branch+"^{commit}")
+	out, err := p.gitIn(ctx, r, gitexec.RevParseVerify{Rev: "refs/heads/" + r.Branch + "^{commit}", Quiet: true})
 	if err != nil {
 		return "", fmt.Errorf("could not read %s in %s: %v", r.Branch, r.Checkout, err)
 	}
@@ -198,7 +199,7 @@ func (p *Proxy) landedItems(ctx context.Context, d *deps, r gitsync.Repo) (map[s
 	if ok && c.tip == tip {
 		return c.items, tip, nil
 	}
-	out, err := p.gitIn(ctx, r, "ls-tree", "-r", "--name-only", tip, "--", "changelog")
+	out, err := p.gitIn(ctx, r, gitexec.LsTree{Recursive: true, NameOnly: true, Tree: tip, Paths: []string{"changelog"}})
 	if err != nil {
 		return nil, "", fmt.Errorf("could not list changelog on %s: %v", r.Branch, err)
 	}
@@ -219,7 +220,7 @@ func (p *Proxy) landedItems(ctx context.Context, d *deps, r gitsync.Repo) (map[s
 
 // isAncestor is `merge-base --is-ancestor a b`: true, false, or git could not say.
 func (p *Proxy) isAncestor(ctx context.Context, r gitsync.Repo, a, b string) (bool, error) {
-	_, err := p.gitIn(ctx, r, "merge-base", "--is-ancestor", a, b)
+	_, err := p.gitIn(ctx, r, gitexec.IsAncestor{Commit: a, Of: b})
 	if err == nil {
 		return true, nil
 	}
@@ -324,7 +325,8 @@ func (p *Proxy) evaluate(ctx context.Context, d *deps, g itemgate.Gate) (bool, s
 		if d.build == "" {
 			return false, "hub build unknown: this hub was built without a commit, so it cannot say what it runs"
 		}
-		added, err := p.gitIn(ctx, r, "log", "--diff-filter=A", "-1", "--format=%H", tip, "--", at)
+		added, err := p.gitIn(ctx, r, gitexec.Log{DiffFilter: "A", MaxCount: 1, Format: "%H", Revs: []string{tip},
+			Paths: []string{at}})
 		added = strings.TrimSpace(added)
 		if err != nil || added == "" {
 			return false, fmt.Sprintf("could not find the commit that added %s: %v", at, err)
@@ -735,7 +737,7 @@ func (p *Proxy) readyItems(ctx context.Context, d *deps, repoName, dept string) 
 	if err != nil {
 		return nil, err
 	}
-	listing, err := p.gitIn(ctx, r, "ls-tree", "--name-only", tip, "--", "docs/backlog/"+dept+"/")
+	listing, err := p.gitIn(ctx, r, gitexec.LsTree{NameOnly: true, Tree: tip, Paths: []string{"docs/backlog/" + dept + "/"}})
 	if err != nil {
 		return nil, fmt.Errorf("could not list docs/backlog/%s on %s: %v", dept, r.Branch, err)
 	}
@@ -769,7 +771,7 @@ func (p *Proxy) readyItems(ctx context.Context, d *deps, repoName, dept string) 
 	for _, f := range files {
 		stdin.WriteString(tip + ":" + f + "\n")
 	}
-	raw, err := runnerOf(p.git()).GitInput(ctx, r.Checkout, stdin.Bytes(), "cat-file", "--batch")
+	raw, err := runnerOf(p.git()).GitInput(ctx, r.Checkout, stdin.Bytes(), gitexec.CatFileBatch{})
 	if err != nil {
 		return nil, fmt.Errorf("could not read the backlog files: %v", err)
 	}

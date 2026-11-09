@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 )
@@ -35,11 +36,11 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 	fail := func(err error) {
 		log.Printf("[atrium] hub remote for %s not scoped: %s", cwd, small.FirstLine(err.Error()))
 	}
-	have, err := g.Git(ctx, cwd, "config", "--get", "remote.hub.url")
+	have, err := g.Git(ctx, cwd, gitexec.ConfigGet{Key: "remote.hub.url"})
 	have = strings.TrimSpace(have)
 	if err != nil || have == "" {
 		// After a move the url lives in the main worktree's config.worktree, so a worktree added later sees none.
-		list, lerr := g.Git(ctx, cwd, "worktree", "list", "--porcelain")
+		list, lerr := g.Git(ctx, cwd, gitexec.WorktreeList{})
 		if lerr != nil {
 			return // not a git directory
 		}
@@ -47,7 +48,7 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 		if main == "" || sameDir(main, cwd) {
 			return
 		}
-		have, _ = g.Git(ctx, main, "config", "--worktree", "--get", "remote.hub.url")
+		have, _ = g.Git(ctx, main, gitexec.ConfigGet{Key: "remote.hub.url", Worktree: true})
 		have = strings.TrimSpace(have)
 		if have == "" {
 			return // no hub remote
@@ -55,7 +56,7 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 	}
 	// The shared url is the one in .git/config. Two values there is not a state we made, so fall back to the
 	// effective one.
-	shared, _ := g.Git(ctx, cwd, "config", "--local", "--get-all", "remote.hub.url")
+	shared, _ := g.Git(ctx, cwd, gitexec.ConfigGetAll{Key: "remote.hub.url", Local: true})
 	shared = strings.TrimSpace(shared)
 	inLocal := shared != ""
 	if shared == "" || strings.Contains(shared, "\n") {
@@ -68,13 +69,13 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 	base := gitsync.StableHubURL(agent, gitsync.Ref{})
 	base = base[:strings.Index(base, "/git/")]
 	want := base + u.EscapedPath()
-	if _, err := g.Git(ctx, cwd, "config", "extensions.worktreeConfig", "true"); err != nil {
+	if _, err := g.Git(ctx, cwd, gitexec.ConfigSet{Key: "extensions.worktreeConfig", Value: "true"}); err != nil {
 		fail(err)
 		return
 	}
 	if want != shared {
 		// Park the shared url in every worktree that has none, then drop it from the shared config.
-		list, err := g.Git(ctx, cwd, "worktree", "list", "--porcelain")
+		list, err := g.Git(ctx, cwd, gitexec.WorktreeList{})
 		if err != nil {
 			fail(err)
 			return
@@ -84,20 +85,20 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 			if !ok || wt == "" || sameDir(wt, cwd) {
 				continue
 			}
-			if own, _ := g.Git(ctx, wt, "config", "--worktree", "--get", "remote.hub.url"); strings.TrimSpace(own) != "" {
+			if own, _ := g.Git(ctx, wt, gitexec.ConfigGet{Key: "remote.hub.url", Worktree: true}); strings.TrimSpace(own) != "" {
 				continue
 			}
-			if _, err := g.Git(ctx, wt, "config", "--worktree", "remote.hub.url", shared); err != nil {
+			if _, err := g.Git(ctx, wt, gitexec.ConfigSet{Key: "remote.hub.url", Value: shared, Worktree: true}); err != nil {
 				fail(err)
 				return // never unset the shared url while a worktree still depends on it
 			}
 		}
-		if _, err := g.Git(ctx, cwd, "config", "--local", "--unset-all", "remote.hub.url"); inLocal && err != nil {
+		if _, err := g.Git(ctx, cwd, gitexec.ConfigUnsetAll{Key: "remote.hub.url", Local: true}); inLocal && err != nil {
 			fail(err)
 			return
 		}
 	}
-	if _, err := g.Git(ctx, cwd, "config", "--worktree", "remote.hub.url", want); err != nil {
+	if _, err := g.Git(ctx, cwd, gitexec.ConfigSet{Key: "remote.hub.url", Value: want, Worktree: true}); err != nil {
 		fail(err)
 	}
 }

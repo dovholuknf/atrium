@@ -3,9 +3,10 @@ package gitsync
 import (
 	"context"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // REVERTS ON THE MIRROR, for the item lifecycle's efficacy (docs/rnd/item-lifecycle-design.md section 12.1 measure 6): a
@@ -38,10 +39,11 @@ func (s *Store) RevertScan(ctx context.Context, name string) ([]Revert, error) {
 	seen := map[string]bool{}
 	var out []Revert
 	for _, ref := range []string{ClaudeMainRef, MainRef} {
-		if _, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
+		if _, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true}); err != nil {
 			continue
 		}
-		raw, err := s.git(ctx, dir, "log", "-n", strconv.Itoa(revertScanMax), "--grep=This reverts commit", "--format=%H%x1f%cI%x1f%B%x1e", ref)
+		raw, err := s.git(ctx, dir, gitexec.Log{MaxCount: revertScanMax, Grep: "This reverts commit",
+			Format: "%H%x1f%cI%x1f%B%x1e", Revs: []string{ref}})
 		if err != nil {
 			return out, err
 		}

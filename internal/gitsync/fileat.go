@@ -3,6 +3,8 @@ package gitsync
 import (
 	"context"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // A FILE AS A COMMIT HELD IT. docs/rnd/doc-debt-from-features.md section 2.8 (the check at `landed`): the hub reads a
@@ -27,14 +29,14 @@ func (s *Store) FileAt(ctx context.Context, name, sha, path string) (string, boo
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
 	// ls-tree says a missing path with an empty answer, where cat-file says it with an error that looks like any other.
-	out, err := s.git(ctx, dir, "ls-tree", "--name-only", sha, "--", path)
+	out, err := s.git(ctx, dir, gitexec.LsTree{NameOnly: true, Tree: sha, Paths: []string{path}})
 	if err != nil {
 		return "", false, err
 	}
 	if strings.TrimSpace(out) == "" {
 		return "", false, nil
 	}
-	out, err = s.git(ctx, dir, "cat-file", "-p", sha+":"+path)
+	out, err = s.git(ctx, dir, gitexec.CatFilePretty{Object: sha + ":" + path})
 	if err != nil {
 		return "", false, err
 	}

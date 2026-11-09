@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -105,17 +106,16 @@ type gitAt struct {
 	listMax int
 }
 
-func (g gitAt) git(args ...string) (string, error) {
-	full := append([]string{"--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)
-	return g.run.GitEnv(g.ctx, g.dir, []string{"GIT_LITERAL_PATHSPECS=1"}, full...)
+func (g gitAt) git(op gitexec.Op) (string, error) {
+	return g.capped(0, op)
 }
 
 func refused(status int, msg string) error { return &api.ChangesError{Status: status, Msg: msg} }
 
 // capped is git with a bound on its output, which is stopped at it. See gitsync.Runner.GitCapped.
-func (g gitAt) capped(max int, args ...string) (string, error) {
-	full := append([]string{"--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)
-	return g.run.GitCapped(g.ctx, g.dir, []string{"GIT_LITERAL_PATHSPECS=1"}, max, full...)
+func (g gitAt) capped(max int, op gitexec.Op) (string, error) {
+	return g.run.GitCall(g.ctx, g.dir, gitsync.Call{Env: []string{"GIT_LITERAL_PATHSPECS=1", "GIT_OPTIONAL_LOCKS=0"},
+		Max: max, Config: []string{"core.fsmonitor=false"}}, op)
 }
 
 // ListMax is a variable so a test can use a small cap.
@@ -147,16 +147,16 @@ func (c Changes) For(ctx context.Context, taskID, against string, turn time.Time
 		return nil, refused(http.StatusNotFound, notAWorktree)
 	}
 	g := gitAt{ctx: ctx, run: gitsync.Default, dir: dir, listMax: c.ListMax}
-	if out, err := g.git("rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(out) != "true" {
+	if out, err := g.git(gitexec.RevParseIsInsideWorkTree{}); err != nil || strings.TrimSpace(out) != "true" {
 		return nil, refused(http.StatusNotFound, notAWorktree)
 	}
 	v := &ChangesView{Against: "head", Files: []ChangeFile{}}
 	ref := emptyTree
-	if out, err := g.git("rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+	if out, err := g.git(gitexec.RevParseVerify{Rev: "HEAD", Quiet: true}); err == nil {
 		v.Head = strings.TrimSpace(out)
 		ref = v.Head
 	}
-	if out, err := g.git("status", "--porcelain"); err == nil {
+	if out, err := g.git(gitexec.Status{}); err == nil {
 		v.Dirty = strings.TrimSpace(out) != ""
 	}
 	v.Base = v.Head
@@ -172,7 +172,7 @@ func (c Changes) For(ctx context.Context, taskID, against string, turn time.Time
 			v.Note = "this worktree has no claude/main or main to compare against, so this shows uncommitted changes"
 		}
 	}
-	files, err := fileDiff(g, []string{"diff"}, []string{ref}, nil)
+	files, err := fileDiff(g, false, ref, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -190,10 +190,10 @@ func mergeBase(g gitAt, head string) (string, string) {
 		return "", ""
 	}
 	for _, br := range []string{"claude/main", "main"} {
-		if _, err := g.git("rev-parse", "--verify", "--quiet", "refs/heads/"+br); err != nil {
+		if _, err := g.git(gitexec.RevParseVerify{Rev: "refs/heads/" + br, Quiet: true}); err != nil {
 			continue
 		}
-		if out, err := g.git("merge-base", "HEAD", "refs/heads/"+br); err == nil {
+		if out, err := g.git(gitexec.MergeBase{A: "HEAD", B: "refs/heads/" + br}); err == nil {
 			if sha := strings.TrimSpace(out); sha != "" {
 				return sha, br
 			}
@@ -226,7 +226,7 @@ func (c Changes) turnChanges(g gitAt, t *store.Task, v *ChangesView, ref string,
 	}
 
 	// Uncommitted first: what the turn's edits left in the tree.
-	files, err := fileDiff(g, []string{"diff"}, []string{ref}, rels)
+	files, err := fileDiff(g, false, ref, rels)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +287,7 @@ func (c Changes) turnChanges(g gitAt, t *store.Task, v *ChangesView, ref string,
 
 // lastCommit is when HEAD was committed, or the zero time (so every edit counts) with no commit.
 func lastCommit(g gitAt) time.Time {
-	out, err := g.git("log", "-1", "--format=%ct", "HEAD")
+	out, err := g.git(gitexec.Log{MaxCount: 1, Format: "%ct", Revs: []string{"HEAD"}})
 	if err != nil {
 		return time.Time{}
 	}
@@ -302,14 +302,14 @@ func lastCommit(g gitAt) time.Time {
 // says one of them has an author date outside the window: a rebase keeps the author date and
 // moves the committer date, so the window found a commit that was not made in the turn.
 func committedInTurn(g gitAt, paths []string, start, end time.Time) ([]ChangeFile, bool, error) {
-	args := []string{"rev-list", "--no-merges", "--max-count=200", "--format=%at"}
+	op := gitexec.RevList{NoMerges: true, MaxCount: 200, Format: "%at", Revs: []string{"HEAD"}}
 	if !start.IsZero() {
-		args = append(args, "--after="+strconv.FormatInt(start.Unix(), 10))
+		op.After = start.Unix()
 	}
 	if !end.IsZero() {
-		args = append(args, "--before="+strconv.FormatInt(end.Add(time.Second-1).Unix(), 10))
+		op.Before = end.Add(time.Second - 1).Unix()
 	}
-	out, err := g.git(append(args, "HEAD")...)
+	out, err := g.git(op)
 	if err != nil {
 		return nil, false, err
 	}
@@ -334,7 +334,7 @@ func committedInTurn(g gitAt, paths []string, start, end time.Time) ([]ChangeFil
 			(!end.IsZero() && c.at.After(end.Add(time.Second))) {
 			rewritten = true
 		}
-		fs, err := fileDiff(g, []string{"show", "--format="}, []string{c.sha}, paths)
+		fs, err := fileDiff(g, true, c.sha, paths)
 		if err != nil {
 			return nil, false, err
 		}
@@ -363,15 +363,15 @@ func committedInTurn(g gitAt, paths []string, start, end time.Time) ([]ChangeFil
 }
 
 // fileDiff runs name-status, numstat and the patch for one comparison and joins them, in the
-// order git printed them. head is the subcommand (diff, or show --format=), tail the commit or
-// ref, and paths limit it, or nothing when nil.
-func fileDiff(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
+// order git printed them. It diffs the tree against rev, or shows the commit rev when show, and paths limit it, or
+// nothing when nil.
+func fileDiff(g gitAt, show bool, rev string, paths []string) ([]ChangeFile, error) {
 	if len(paths) == 0 {
-		return fileDiffOne(g, head, tail, nil)
+		return fileDiffOne(g, show, rev, nil)
 	}
 	var all []ChangeFile
 	for _, chunk := range chunkPaths(paths) {
-		fs, err := fileDiffOne(g, head, tail, chunk)
+		fs, err := fileDiffOne(g, show, rev, chunk)
 		if err != nil {
 			return nil, err
 		}
@@ -400,27 +400,25 @@ func chunkPaths(paths []string) [][]string {
 	return out
 }
 
-func fileDiffOne(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
-	run := func(max int, mode ...string) (string, error) {
-		args := append([]string{}, head...)
-		args = append(args, "--relative", "-M", "--no-ext-diff", "--no-textconv", "--no-color")
-		args = append(args, mode...)
-		args = append(args, tail...)
-		if len(paths) > 0 {
-			args = append(args, "--")
-			args = append(args, paths...)
+func fileDiffOne(g gitAt, show bool, rev string, paths []string) ([]ChangeFile, error) {
+	run := func(max int, nameStatus, numstat bool) (string, error) {
+		z := nameStatus || numstat
+		if show {
+			return g.capped(max, gitexec.ShowDiff{Rev: rev, Paths: paths, Relative: true, FindRenames: true,
+				NoExtDiff: true, NoTextconv: true, NoColor: true, NameStatus: nameStatus, Numstat: numstat, Z: z})
 		}
-		return g.capped(max, args...)
+		return g.capped(max, gitexec.Diff{Revs: []string{rev}, Paths: paths, Relative: true, FindRenames: true,
+			NoExtDiff: true, NoTextconv: true, NoColor: true, NameStatus: nameStatus, Numstat: numstat, Z: z})
 	}
 	tooMany := refused(http.StatusRequestEntityTooLarge, "this card changed too many files to list")
-	ns, err := run(g.listMax, "--name-status", "-z")
+	ns, err := run(g.listMax, true, false)
 	if errors.Is(err, gitsync.ErrOutputCap) {
 		return nil, tooMany
 	}
 	if err != nil {
 		return nil, err
 	}
-	num, err := run(g.listMax, "--numstat", "-z")
+	num, err := run(g.listMax, false, true)
 	if errors.Is(err, gitsync.ErrOutputCap) {
 		return nil, tooMany
 	}
@@ -475,11 +473,10 @@ func fileDiffOne(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
 		files[n].Added, _ = strconv.Atoi(parts[0])
 		files[n].Removed, _ = strconv.Atoi(parts[1])
 	}
-	patch, err := run(PatchMax)
+	patch, err := run(PatchMax, false, false)
 	blocks := splitPatch(patch)
 	if errors.Is(err, gitsync.ErrOutputCap) {
-		// Git was stopped partway. The last block is incomplete and the files after the complete ones
-		// have no hunks, which the cut says.
+		// Git was stopped partway: the last block is incomplete and the files after it have no hunks.
 		if len(blocks) > 0 {
 			blocks = blocks[:len(blocks)-1]
 		}
@@ -534,14 +531,10 @@ func splitPatch(p string) []string {
 // whole-file addition. A symlink or anything but a regular file is listed with no content, and
 // no file is read that safepath does not place inside dir.
 func untracked(g gitAt, dir string, paths []string) []ChangeFile {
-	args := []string{"ls-files", "--others", "--exclude-standard", "-z"}
-	if len(paths) > 0 {
-		args = append(args, "--")
-		args = append(args, paths...)
-	}
+	ls := gitexec.LsFiles{Others: true, ExcludeStandard: true, Z: true}
 	// A listing stopped at the cap ends mid-name, so each one is cut back to its last whole name.
-	list := func(args ...string) (string, bool) {
-		o, err := g.capped(g.listMax, args...)
+	list := func(op gitexec.LsFiles) (string, bool) {
+		o, err := g.capped(g.listMax, op)
 		if errors.Is(err, gitsync.ErrOutputCap) {
 			return o[:strings.LastIndexByte(o, 0)+1], true
 		}
@@ -549,15 +542,15 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 	}
 	var out string
 	if len(paths) == 0 {
-		o, ok := list(args...)
+		o, ok := list(ls)
 		if !ok {
 			return nil
 		}
 		out = o
 	} else {
-		head := args[:len(args)-len(paths)-1]
 		for _, chunk := range chunkPaths(paths) {
-			o, ok := list(append(append(append([]string{}, head...), "--"), chunk...)...)
+			ls.Paths = chunk
+			o, ok := list(ls)
 			if !ok {
 				return nil
 			}

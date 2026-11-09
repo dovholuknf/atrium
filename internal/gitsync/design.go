@@ -4,6 +4,8 @@ import (
 	"context"
 	"strconv"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // WHAT THE ITEM LIFECYCLE'S DESIGN STEPS READ OF THE HUB'S STORE (L2). Four reads, each a git command in a bare repository
@@ -24,7 +26,7 @@ func (s *Store) FindCommit(ctx context.Context, sha string) (name, full string, 
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
 	for _, e := range entries {
-		out, err := s.git(ctx, e.Dir, "rev-parse", "--verify", "-q", sha+"^{commit}")
+		out, err := s.git(ctx, e.Dir, gitexec.RevParseVerify{Rev: sha + "^{commit}", Quiet: true})
 		if err != nil {
 			continue
 		}
@@ -43,7 +45,8 @@ func (s *Store) CommitFiles(ctx context.Context, name, sha string) ([]string, er
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	out, err := s.git(ctx, dir, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "-z", sha)
+	out, err := s.git(ctx, dir, gitexec.DiffTree{NoCommitID: true, NameOnly: true, Recursive: true, Root: true, Z: true,
+		Commit: sha})
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +83,8 @@ func (s *Store) LastTouch(ctx context.Context, name, base, path string) (string,
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	out, err := s.git(ctx, dir, "log", "-n1", "--format=%H", "--all", "--ancestry-path", "^"+base, "--", path)
+	out, err := s.git(ctx, dir, gitexec.Log{MaxCount: 1, Format: "%H", All: true, AncestryPath: true,
+		Revs: []string{"^" + base}, Paths: []string{path}})
 	if err != nil {
 		return base, err
 	}
@@ -98,7 +102,8 @@ func (s *Store) TouchesSince(ctx context.Context, name, base, path string) (int,
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	out, err := s.git(ctx, dir, "rev-list", "--count", "--all", "--ancestry-path", "^"+base, "--", path)
+	out, err := s.git(ctx, dir, gitexec.RevList{Count: true, All: true, AncestryPath: true,
+		Revs: []string{"^" + base}, Paths: []string{path}})
 	if err != nil {
 		return 0, err
 	}

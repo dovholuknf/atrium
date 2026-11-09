@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // MinGit is the oldest git that can take server config from the environment
@@ -26,7 +28,7 @@ func (r *Runner) CheckGit(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("git is not installed on this machine, install it, then rerun")
 	}
-	out, err := r.Git(ctx, "", "--version")
+	out, err := r.Git(ctx, "", gitexec.Version{})
 	if err != nil {
 		return "", err
 	}

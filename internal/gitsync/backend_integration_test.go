@@ -12,13 +12,15 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 var bg = context.Background()
 
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := Default.Git(bg, dir, args...)
+	out, err := rawGit(dir, nil, nil, args...)
 	if err != nil {
 		t.Fatalf("git %v in %s: %v", args, dir, err)
 	}
@@ -128,7 +130,7 @@ func TestAPushToTheServedURLFails(t *testing.T) {
 	dst := t.TempDir()
 	git(t, dst, "init", "-q", "-b", "claude/main")
 	commit(t, dst, "b.txt", "pushed")
-	if _, err := Default.Git(bg, dst, "push", s.url(), "claude/main:refs/heads/pushed"); err == nil {
+	if _, err := rawGit(dst, nil, nil, "push", s.url(), "claude/main:refs/heads/pushed"); err == nil {
 		t.Fatal("a push was accepted")
 	}
 	if out := git(t, s.bare, "for-each-ref", "refs/heads/pushed"); out != "" {
@@ -159,11 +161,11 @@ func TestAHiddenShaFetchedByIDFailsWhenTheClientAsksForV2(t *testing.T) {
 	s := newServed(t)
 	dst := t.TempDir()
 	git(t, dst, "init", "-q")
-	_, err := Default.Git(bg, dst, "-c", "protocol.version=2", "fetch", "--no-tags", s.url(), s.hiddenSHA)
+	_, err := rawGit(dst, nil, nil, "-c", "protocol.version=2", "fetch", "--no-tags", s.url(), s.hiddenSHA)
 	if err == nil {
 		t.Fatal("a hidden sha was fetched by id")
 	}
-	if _, err := Default.Git(bg, dst, "cat-file", "-e", s.hiddenSHA); err == nil {
+	if _, err := rawGit(dst, nil, nil, "cat-file", "-e", s.hiddenSHA); err == nil {
 		t.Fatal("the hidden object is in the client")
 	}
 }
@@ -320,14 +322,14 @@ func TestStopCancelsAndWaitsForGitChildren(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		// A fetch from a listener that never answers.
-		_, err := r.Git(bg, t.TempDir(), "ls-remote", "http://127.0.0.1:1/x.git")
+		_, err := r.Git(bg, t.TempDir(), gitexec.LsRemote{Remote: "http://127.0.0.1:1/x.git"})
 		done <- err
 	}()
 	if !r.Stop(5e9) {
 		t.Fatal("children did not exit within the bound")
 	}
 	<-done
-	if _, err := r.Git(bg, "", "version"); err != ErrStopped {
+	if _, err := r.Git(bg, "", gitexec.Version{}); err != ErrStopped {
 		t.Fatalf("a stopped runner ran a command: %v", err)
 	}
 }

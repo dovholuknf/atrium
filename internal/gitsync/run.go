@@ -10,11 +10,13 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"regexp"
+
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // CommandBound is how long any one git command may run. A clone of atrium from scratch is
@@ -149,48 +151,77 @@ func CleanEnv(extra ...string) []string {
 // hardening is on every command. No credential helper and no proxy variable can interfere, and the maintenance a
 // fetch or a commit starts on its own runs inside that command rather than detached, so no git outlives the one the
 // runner waits for.
-var hardening = []string{"-c", "credential.helper=", "-c", "http.proxy=",
-	"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"}
+var hardening = []string{"credential.helper=", "http.proxy=", "maintenance.autoDetach=false", "gc.autoDetach=false"}
 
-// Git runs one git command in `dir` (or in no directory when empty) and answers its stdout.
-// A failure is an *Error carrying git's stderr.
-func (r *Runner) Git(ctx context.Context, dir string, args ...string) (string, error) {
-	return r.git(ctx, dir, nil, args...)
+// Git runs op in `dir` (or in no directory when empty) and answers its stdout.
+// A failure is an *Error carrying git's stderr, or wrapping the *gitexec.ArgError that refused op.
+func (r *Runner) Git(ctx context.Context, dir string, op gitexec.Op) (string, error) {
+	return r.gitWith(ctx, dir, nil, nil, 0, nil, op)
 }
 
 // GitEnv is Git with extra environment, applied after every GIT_* variable is stripped. For a
 // setting that has to hold for one command, such as GIT_LITERAL_PATHSPECS=1.
-func (r *Runner) GitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
-	return r.git(ctx, dir, extraEnv, args...)
+func (r *Runner) GitEnv(ctx context.Context, dir string, extraEnv []string, op gitexec.Op) (string, error) {
+	return r.gitWith(ctx, dir, extraEnv, nil, 0, nil, op)
 }
 
 // GitCapped is GitEnv that stops reading at `max` bytes of output and kills git, so a very large
 // diff is never held whole. What was read so far comes back with an *Error wrapping ErrOutputCap.
-func (r *Runner) GitCapped(ctx context.Context, dir string, extraEnv []string, max int, args ...string) (string, error) {
-	return r.gitWith(ctx, dir, extraEnv, nil, max, args...)
+func (r *Runner) GitCapped(ctx context.Context, dir string, extraEnv []string, max int, op gitexec.Op) (string, error) {
+	return r.gitWith(ctx, dir, extraEnv, nil, max, nil, op)
 }
 
 // GitInput is Git with `stdin` fed to the command, for a batch read such as
 // `cat-file --batch` that takes its list on standard input.
-func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {
-	return r.gitWith(ctx, dir, nil, stdin, 0, args...)
+func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, op gitexec.Op) (string, error) {
+	return r.gitWith(ctx, dir, nil, stdin, 0, nil, op)
 }
 
-var argRe = regexp.MustCompile(`^[^\x00]*$`)
-
-func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
-	return r.gitWith(ctx, dir, extraEnv, nil, 0, args...)
+// Call is how GitCall runs: extra environment as GitEnv, stdin as GitInput, an output cap as GitCapped, and each
+// "key=value" of Config set for this command alone, such as safe.directory.
+type Call struct {
+	Env    []string
+	Stdin  []byte
+	Max    int
+	Config []string
 }
 
-func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, maxOut int, args ...string) (string, error) {
-	checked := make([]string, 0, len(args))
-	for _, a := range args {
-		if !argRe.MatchString(a) {
-			return "", &Error{Args: args, Err: errors.New("a git argument holds a NUL")}
-		}
-		checked = append(checked, a)
+// GitCall is Git run as c says.
+func (r *Runner) GitCall(ctx context.Context, dir string, c Call, op gitexec.Op) (string, error) {
+	return r.gitWith(ctx, dir, c.Env, c.Stdin, c.Max, c.Config, op)
+}
+
+func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, maxOut int, config []string,
+	op gitexec.Op) (string, error) {
+	args, err := gitexec.Argv(gitexec.Opts{Config: config}, op)
+	if err != nil {
+		return "", &Error{Err: err}
 	}
-	args = checked
+	return r.start(ctx, args, stdin, maxOut, func(ctx context.Context) (*exec.Cmd, error) {
+		return gitCommand(ctx, dir, extraEnv, config, op)
+	})
+}
+
+// gitCommand is the git child gitWith runs, before its streams and its cancel are set: the
+// hardening flags, the clean environment, and prepareTree, which on Windows also keeps it
+// from opening a console window.
+func gitCommand(ctx context.Context, dir string, extraEnv, config []string, op gitexec.Op) (*exec.Cmd, error) {
+	cmd, err := gitexec.Command(ctx, gitexec.Opts{
+		Dir:      dir,
+		Config:   append(append([]string{}, hardening...), config...),
+		Env:      CleanEnv(extraEnv...),
+		CleanEnv: true,
+	}, op)
+	if err != nil {
+		return nil, err
+	}
+	prepareTree(cmd)
+	return cmd, nil
+}
+
+// start runs the command mk makes, bounded, cancelled with the runner, and with its output capped at maxOut.
+func (r *Runner) start(ctx context.Context, args []string, stdin []byte, maxOut int,
+	mk func(context.Context) (*exec.Cmd, error)) (string, error) {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
@@ -210,8 +241,11 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 	stop := context.AfterFunc(r.root, cancel)
 	defer stop()
 
+	cmd, err := mk(ctx)
+	if err != nil {
+		return "", &Error{Args: args, Err: err}
+	}
 	r.Spawned.Add(1)
-	cmd := gitCommand(ctx, dir, extraEnv, args)
 	var stdout, stderr bytes.Buffer
 	capped := &capWriter{buf: &stdout, max: maxOut, stop: cancel}
 	cmd.Stdout, cmd.Stderr = capped, &stderr
@@ -227,7 +261,7 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 		}
 		return cmd.Process.Kill()
 	}
-	err := cmd.Start()
+	err = cmd.Start()
 	if err == nil {
 		t := startTree(cmd)
 		tree.Store(t)
@@ -251,16 +285,4 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 		return stdout.String(), &Error{Args: args, Stderr: stderr.String(), Err: err}
 	}
 	return stdout.String(), nil
-}
-
-// gitCommand is the git child gitWith runs, before its streams and its cancel are set: the
-// hardening flags, the clean environment, and prepareTree, which on Windows also keeps it
-// from opening a console window.
-func gitCommand(ctx context.Context, dir string, extraEnv, args []string) *exec.Cmd {
-	full := append(append([]string{}, hardening...), args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Dir = dir
-	cmd.Env = CleanEnv(extraEnv...)
-	prepareTree(cmd)
-	return cmd
 }

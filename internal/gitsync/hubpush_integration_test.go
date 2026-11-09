@@ -161,7 +161,7 @@ func TestEnsureRemotesAddsHubFollowsAPortChangeAndLeavesOriginAlone(t *testing.T
 	if got := git(t, c, "remote", "get-url", "hub"); got != u1 {
 		t.Fatalf("hub is %s", got)
 	}
-	if out, err := Default.Git(bg, c, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if out, err := rawGit(c, nil, nil, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatalf("origin was given a pushurl: %s", out)
 	}
 	// The agent port moved: atrium's own remote follows, and it is not "elsewhere".
@@ -184,7 +184,7 @@ func TestEnsureRemotesDropsTheRetiredOriginGuardAndKeepsTheOperatorsPushURL(t *t
 	if note := ensureRemotes(bg, Default, old, u); note != "" {
 		t.Fatalf("the clone had something to say: %q", note)
 	}
-	if out, err := Default.Git(bg, old, "config", "--get-all", "remote.origin.pushurl"); err == nil {
+	if out, err := rawGit(old, nil, nil, "config", "--get-all", "remote.origin.pushurl"); err == nil {
 		t.Fatalf("the retired guard is still there: %s", out)
 	}
 
@@ -210,7 +210,7 @@ func TestEnsureRemotesLeavesARoomGitCloneAloneAndSilent(t *testing.T) {
 	if note := ensureRemotes(bg, Default, c, "http://127.0.0.1:7777/git/hub/github/o/r.git"); note != "" {
 		t.Fatalf("a room-git clone had something to say: %q", note)
 	}
-	if out, err := Default.Git(bg, c, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if out, err := rawGit(c, nil, nil, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatalf("a pushurl was made for an origin that is not there: %s", out)
 	}
 }
@@ -231,7 +231,7 @@ func TestSyncAddsTheHubRemoteAndDropsTheRetiredOriginGuard(t *testing.T) {
 	if got := git(t, clone, "remote", "get-url", "hub"); got != "http://127.0.0.1:7777/git/hub/github/o/r.git" {
 		t.Fatalf("hub is %s", got)
 	}
-	if out, err := Default.Git(bg, clone, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if out, err := rawGit(clone, nil, nil, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatalf("origin was given a pushurl: %s", out)
 	}
 	// A clone that still carries the old guard loses it on the next sync, and the sync says nothing.
@@ -240,7 +240,7 @@ func TestSyncAddsTheHubRemoteAndDropsTheRetiredOriginGuard(t *testing.T) {
 	if r.State != StateOK || r.Remote != "" {
 		t.Fatalf("%+v", r)
 	}
-	if out, err := Default.Git(bg, clone, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if out, err := rawGit(clone, nil, nil, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatalf("the retired guard survived a sync: %s", out)
 	}
 }

@@ -3,7 +3,6 @@
 package link
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -70,7 +69,7 @@ type storeProxy struct {
 
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := gitsync.Default.Git(context.Background(), dir, args...)
+	out, err := rawGit(dir, nil, args...)
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}

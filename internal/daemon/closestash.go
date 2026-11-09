@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"path/filepath"
 	"strings"
@@ -49,23 +50,23 @@ func (d *Daemon) StashTo(ctx context.Context, card, dir, branch string) (string,
 	g := gitsync.Default
 	dir = filepath.FromSlash(dir)
 
-	if out, err := g.Git(ctx, dir, "status", "--porcelain"); err == nil && strings.TrimSpace(out) != "" {
-		if _, err := g.Git(ctx, dir, "add", "-A"); err != nil {
+	if out, err := g.Git(ctx, dir, gitexec.Status{}); err == nil && strings.TrimSpace(out) != "" {
+		if _, err := g.Git(ctx, dir, gitexec.AddAll{}); err != nil {
 			return "", "", fmt.Errorf("the dirty files did not stage: %w", err)
 		}
-		args := []string{}
-		if who, _ := g.Git(ctx, dir, "config", "user.email"); strings.TrimSpace(who) == "" {
-			args = append(args, "-c", "user.name=atrium", "-c", "user.email=atrium@localhost")
+		var config []string
+		if who, _ := g.Git(ctx, dir, gitexec.ConfigGet{Key: "user.email"}); strings.TrimSpace(who) == "" {
+			config = []string{"user.name=atrium", "user.email=atrium@localhost"}
 		}
-		args = append(args, "commit", "--no-verify", "--quiet", "-m", "atrium stash: work in progress from "+card)
-		if _, err := g.Git(ctx, dir, args...); err != nil {
+		commit := gitexec.Commit{NoVerify: true, Quiet: true, Message: "atrium stash: work in progress from " + card}
+		if _, err := g.GitCall(ctx, dir, gitsync.Call{Config: config}, commit); err != nil {
 			return "", "", fmt.Errorf("the WIP commit was not made: %w", err)
 		}
 	}
-	if _, err := g.Git(ctx, dir, "branch", "-f", name, "HEAD"); err != nil {
+	if _, err := g.Git(ctx, dir, gitexec.BranchForce{Branch: name, Start: "HEAD"}); err != nil {
 		return "", "", fmt.Errorf("the stash branch was not made: %w", err)
 	}
-	defer g.Git(context.Background(), dir, "branch", "-D", name)
+	defer g.Git(context.Background(), dir, gitexec.BranchDelete{Branch: name})
 
 	// The token is good only while the card is live, and a card being closed is let push this once.
 	d.HubGit.Stashing.Store(card, true)

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
@@ -24,7 +25,7 @@ func hasNoWindow(cmd *exec.Cmd) bool {
 // on the operator's desktop every time gitsync runs it.
 func TestGitCommandHasNoWindow(t *testing.T) {
 	t.Parallel()
-	cmd := gitCommand(context.Background(), t.TempDir(), nil, []string{"version"})
+	cmd, _ := gitCommand(context.Background(), t.TempDir(), nil, nil, gitexec.Version{})
 	if !hasNoWindow(cmd) {
 		t.Fatalf("git child would open a console window: SysProcAttr = %+v", cmd.SysProcAttr)
 	}

@@ -3,10 +3,11 @@
 package conn
 
 import (
-	"context"
+	"bytes"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -46,7 +47,7 @@ func run(t *testing.T, dir string, args ...string) string {
 	// a detached auto maintenance run would create and remove maintenance.lock while copyTree walks the template
 	noGC := []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=maintenance.auto", "GIT_CONFIG_VALUE_0=false",
 		"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0"}
-	out, err := gitsync.Default.GitEnv(context.Background(), dir, noGC, args...)
+	out, err := rawGit(dir, noGC, args...)
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}
@@ -142,4 +143,19 @@ func copyTree(t *testing.T, src, dst string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// rawGit is git as a test sets a repository up, outside the typed ops, with the runner's environment and hardening.
+func rawGit(dir string, env []string, args ...string) (string, error) {
+	full := []string{"-c", "credential.helper=", "-c", "http.proxy=", "-c", "maintenance.autoDetach=false",
+		"-c", "gc.autoDetach=false"}
+	cmd := exec.Command("git", append(full, args...)...)
+	cmd.Dir = dir
+	cmd.Env = gitsync.CleanEnv(env...)
+	var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr
+	if err := cmd.Run(); err != nil {
+		return out.String(), &gitsync.Error{Args: args, Stderr: stderr.String(), Err: err}
+	}
+	return out.String(), nil
 }

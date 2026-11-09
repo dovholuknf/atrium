@@ -324,14 +324,14 @@ func TestCredentialHelperIsScopedToTheCheckedHostAndOnlyForListedHosts(t *testin
 	gh, _ := ParseURL("https://github.com/a/b")
 	other, _ := ParseURL("https://collector.example/a/b")
 
-	if got := strings.Join(c.credentialArgs(gh), " "); got != "-c credential.https://github.com.helper=store" {
+	if got := strings.Join(c.credentialArgs(gh), " "); got != "credential.https://github.com.helper=store" {
 		t.Fatalf("github args = %q", got)
 	}
 	if got := c.credentialArgs(other); got != nil {
 		t.Fatalf("a host not in git.credential_hosts got %v", got)
 	}
 	c.CredentialHosts = func() string { return "git.example.org, Collector.Example" }
-	if got := strings.Join(c.credentialArgs(other), " "); got != "-c credential.https://collector.example.helper=store" {
+	if got := strings.Join(c.credentialArgs(other), " "); got != "credential.https://collector.example.helper=store" {
 		t.Fatalf("listed host args = %q", got)
 	}
 	if got := c.credentialArgs(gh); got != nil {
@@ -374,7 +374,7 @@ func TestAHelperIsNeverCalledForAHostNotListed(t *testing.T) {
 		os.Remove(marker)
 		c, _ := newSCM(t)
 		c.source = func(Ref) string { return srv.URL + "/a/b.git" }
-		c.extra = []string{"-c", "http.sslVerify=false"}
+		c.extra = []string{"http.sslVerify=false"}
 		c.CredentialHelper = func() string { return "!" + filepath.ToSlash(script) }
 		c.CredentialHosts = func() string { return tc.hosts }
 		if _, err := c.Clone(context.Background(), "https://github.com/acme/widget"); err == nil {
@@ -403,7 +403,7 @@ func emptyHubSCM(t *testing.T, direct string) (*SCM, string) {
 	gitT(t, filepath.Dir(empty), "init", "-q", "--bare", empty)
 	c.source = nil
 	c.From = func(context.Context, Ref) (string, func(), error) { return empty, func() {}, nil }
-	c.extra = []string{"-c", "protocol.file.allow=always"}
+	c.extra = []string{"protocol.file.allow=always"}
 	c.direct = func(Ref) string { return direct }
 	return c, root
 }

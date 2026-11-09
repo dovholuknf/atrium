@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // A forge's branch in the hub's store, fetched when a card asks for it. See docs/fabric/hub-forge-design.md 3.5.
@@ -130,7 +132,7 @@ func (s *Store) forgeBranchOK(ctx context.Context, branch string) bool {
 	if branch == "" || len(branch) > 200 || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, " \t\r\n\x00:") {
 		return false
 	}
-	_, err := s.git(ctx, "", "check-ref-format", headsPrefix+branch)
+	_, err := s.git(ctx, "", gitexec.CheckRefFormat{Name: headsPrefix + branch})
 	return err == nil
 }
 
@@ -149,21 +151,21 @@ func (s *Store) forgeBound() time.Duration {
 	return 2 * time.Minute
 }
 
-// credArgs set helper for one command, after every configured helper is reset, as prFetchArgs does.
-func credArgs(helper string) []string {
+// credConfig sets helper for one command, after every configured helper is reset.
+func credConfig(helper string) []string {
 	if helper == "" {
 		return nil
 	}
-	return []string{"-c", "credential.helper=", "-c", "credential.helper=" + helper}
+	return []string{"credential.helper=", "credential.helper=" + helper}
 }
 
 // forgeHeads asks the forge for the tips of branches, by one ls-remote. A branch it does not have is not in the answer.
 func (s *Store) forgeHeads(ctx context.Context, ref Ref, helper string, branches []string) (map[string]string, error) {
-	args := append(credArgs(helper), "ls-remote", "--heads", "--", s.forgeURL(ref))
+	ls := gitexec.LsRemote{Heads: true, Remote: s.forgeURL(ref)}
 	for _, b := range branches {
-		args = append(args, headsPrefix+b)
+		ls.Refs = append(ls.Refs, headsPrefix+b)
 	}
-	out, err := s.git(ctx, "", args...)
+	out, err := s.gitc(ctx, "", credConfig(helper), ls)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +268,7 @@ func (s *Store) fetchForge(ctx context.Context, ref Ref, dir, branch string) (st
 	if err := s.forgeUpdate(ctx, ref, dir, helper, []string{branch}, nil); err != nil {
 		return "", err
 	}
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", dst+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: dst + "^{commit}", Quiet: true})
 	if err != nil {
 		return "", &FetchError{Msg: "the fetch finished and " + dst + " is not there"}
 	}
@@ -285,13 +287,14 @@ func (s *Store) forgeUpdate(ctx context.Context, ref Ref, dir, helper string, fe
 		for _, b := range fetch {
 			specs = append(specs, "+"+headsPrefix+b+":"+ForgeRefPrefix+b)
 		}
-		if _, err := s.git(ctx, dir, prFetchArgs(s.forgeURL(ref), helper, specs)...); err != nil {
+		config, fetchOp := prFetch(s.forgeURL(ref), helper, specs)
+		if _, err := s.gitc(ctx, dir, config, fetchOp); err != nil {
 			return s.forgeFailed(ref, helper, err)
 		}
 		s.h.audit("", "git-store-forge", ref.Name()+" "+strings.Join(fetch, " "))
 	}
 	for _, b := range gone {
-		if _, err := s.git(ctx, dir, "update-ref", "-d", ForgeRefPrefix+b); err == nil {
+		if _, err := s.git(ctx, dir, gitexec.DeleteRef{Ref: ForgeRefPrefix + b}); err == nil {
 			s.h.audit("", "git-store-forge-gone", ref.Name()+" "+b)
 		}
 	}
@@ -383,11 +386,11 @@ func (s *Store) forgeTips(ctx context.Context, ref Ref, helper string, withHead 
 		got, err := s.forgeHeads(ctx, ref, helper, branches)
 		return got, forgeDefault{}, err
 	}
-	args := append(credArgs(helper), "ls-remote", "--symref", "--", s.forgeURL(ref), "HEAD")
+	ls := gitexec.LsRemote{Symref: true, Remote: s.forgeURL(ref), Refs: []string{"HEAD"}}
 	for _, b := range branches {
-		args = append(args, headsPrefix+b)
+		ls.Refs = append(ls.Refs, headsPrefix+b)
 	}
-	out, err := s.git(ctx, "", args...)
+	out, err := s.gitc(ctx, "", credConfig(helper), ls)
 	if err != nil {
 		return nil, forgeDefault{}, err
 	}
@@ -433,13 +436,13 @@ func forgeClash(held map[string]string, b string) bool {
 // under the repository's lock, so a push that moved main in the meantime wins.
 func (s *Store) followMain(ctx context.Context, ref Ref, dir, def string) {
 	cur := s.tip(ctx, dir)
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ForgeRefPrefix+def+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ForgeRefPrefix + def + "^{commit}", Quiet: true})
 	next := strings.TrimSpace(out)
 	if cur == "" || err != nil || next == "" || next == cur {
 		return
 	}
 	how := "fast-forward"
-	if _, err := s.git(ctx, dir, "merge-base", "--is-ancestor", cur, next); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.IsAncestor{Commit: cur, Of: next}); err != nil {
 		if !s.mainIsSeed(ctx, ref, dir) {
 			s.h.audit("", "git-store-forge-main-kept", fmt.Sprintf("%s main %s, forge %s", ref.Name(), short(cur), short(next)))
 			return
@@ -449,7 +452,8 @@ func (s *Store) followMain(ctx context.Context, ref Ref, dir, def string) {
 	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
 	l.Lock()
 	defer l.Unlock()
-	if _, err := s.git(ctx, dir, "update-ref", "-m", "atrium: main follows the forge", MainRef, next, cur); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.UpdateRef{Message: "atrium: main follows the forge", Ref: MainRef, New: next,
+		Old: cur}); err != nil {
 		return
 	}
 	s.h.audit("", "git-store-forge-main", fmt.Sprintf("%s main %s..%s (%s)", ref.Name(), short(cur), short(next), how))
@@ -461,7 +465,8 @@ func (s *Store) mainIsSeed(ctx context.Context, ref Ref, dir string) bool {
 	if s.h.PushLog == nil {
 		return false
 	}
-	if out, err := s.git(ctx, dir, "for-each-ref", "--count=1", "--format=%(refname)", LandRefPrefix); err != nil || strings.TrimSpace(out) != "" {
+	if out, err := s.git(ctx, dir, gitexec.ForEachRef{Count: 1, Format: "%(refname)",
+		Patterns: []string{LandRefPrefix}}); err != nil || strings.TrimSpace(out) != "" {
 		return false
 	}
 	_, pushed, err := s.h.PushLog.LastOperatorPush(ctx, ref.Name(), MainRef)

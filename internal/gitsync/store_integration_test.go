@@ -182,7 +182,7 @@ func commitAt(t *testing.T, dir, file, body string, at int64) {
 		at += 1_600_000_000
 	}
 	date := strconv.FormatInt(at, 10) + " +0000"
-	if _, err := Default.GitEnv(bg, dir, []string{"GIT_COMMITTER_DATE=" + date, "GIT_AUTHOR_DATE=" + date},
+	if _, err := rawGit(dir, []string{"GIT_COMMITTER_DATE=" + date, "GIT_AUTHOR_DATE=" + date}, nil,
 		"-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", body); err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestTheNewRepoIsReadyForReceiveAndHasNoHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir, _ := x.s.Path("o/r")
-	if out, err := Default.Git(bg, dir, "config", "--get", "http.receivepack"); err == nil {
+	if out, err := rawGit(dir, nil, nil, "config", "--get", "http.receivepack"); err == nil {
 		t.Fatalf("http.receivepack is set: %q", out)
 	}
 	ents, _ := os.ReadDir(filepath.Join(dir, "hooks"))
@@ -548,7 +548,7 @@ func TestReftableOnlyWhereGitHasItAndTheProbeWorks(t *testing.T) {
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
 	}
 	t.Parallel()
-	realVer, err := Default.Git(bg, "", "--version")
+	realVer, err := rawGit("", nil, nil, "--version")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1069,7 +1069,7 @@ func TestTheSeedChecksTheForgesObjects(t *testing.T) {
 	// A commit with no email in its author line, which git's object check refuses.
 	tree := git(t, x.forge.dir, "mktree")
 	_ = tree
-	out, err := Default.GitInput(bg, x.forge.dir, []byte("tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"+
+	out, err := rawGit(x.forge.dir, nil, []byte("tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"+
 		"author A 1000000000 +0000\ncommitter A 1000000000 +0000\n\nbroken\n"), "hash-object", "-t", "commit", "-w", "--stdin", "--literally")
 	if err != nil {
 		t.Fatal(err)

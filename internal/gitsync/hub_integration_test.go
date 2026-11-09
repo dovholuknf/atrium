@@ -529,7 +529,7 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 		if got != shaA && got != shaB {
 			t.Fatalf("%s in %s is %s, neither the old nor the new sha", ref, dir, got)
 		}
-		if out, err := Default.Git(bg, dir, "fsck", "--connectivity-only", "--no-progress"); err != nil {
+		if out, err := rawGit(dir, nil, nil, "fsck", "--connectivity-only", "--no-progress"); err != nil {
 			t.Fatalf("fsck %s: %v %s", dir, err, out)
 		}
 	}

@@ -35,7 +35,6 @@ var table = []row{
 	{0, "internal/base/cardurl", nil},
 	{0, "internal/base/codeid", nil},
 	{0, "internal/base/dblock", nil},
-	{0, "internal/deployready", nil},
 	{0, "internal/base/docshare", nil},
 	{0, "internal/base/edge", nil},
 	{0, "internal/base/forge", nil},
@@ -82,8 +81,9 @@ var table = []row{
 	{1, "tools/codeid", []string{"internal/base/codeid"}},
 	{2, "internal/cardreview", []string{"internal/base/gitexec", "internal/base/safepath", "internal/store"}},
 	{2, "internal/guard", []string{"internal/base/gitexec"}},
+	{2, "internal/deployready", []string{"internal/base/gitexec"}},
 	{2, "internal/gitsync", []string{
-		"internal/base/claudeconf", "internal/base/nowindow", "internal/base/safepath", "internal/base/testguard",
+		"internal/base/claudeconf", "internal/base/gitexec", "internal/base/nowindow", "internal/base/safepath", "internal/base/testguard",
 		"internal/base/testwait",
 	}},
 	{2, "internal/daemon/screen", []string{"internal/store"}},
@@ -102,7 +102,7 @@ var table = []row{
 	}},
 	{3, "internal/runnersetup", []string{"internal/base/claudeconf", "internal/runnerprofile", "internal/store"}},
 	{3, "internal/shepherd", []string{"internal/base/gitexec", "internal/gitsync", "internal/base/nowindow"}},
-	{3, "internal/worktrees", []string{"internal/gitsync"}},
+	{3, "internal/worktrees", []string{"internal/base/gitexec", "internal/gitsync"}},
 	{4, "internal/api", []string{
 		"internal/base/cardcolors", "internal/base/cardproc", "internal/cardreview", "internal/base/cardroot", "internal/base/cardurl",
 		"internal/base/claudeconf", "internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/base/inputlag",
@@ -132,14 +132,14 @@ var table = []row{
 	}},
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
-		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
+		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
 		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{3, "internal/daemon/shared", []string{"internal/base/gitexec", "internal/daemon/screen", "internal/store"}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
 	{5, "internal/daemon/pulls", []string{
-		"internal/api", "internal/base/forge", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
+		"internal/api", "internal/base/forge", "internal/base/gitexec", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
 		"internal/daemon/promptline", "internal/gitsync", "internal/small", "internal/store",
 	}},
 	{5, "internal/daemon/publish", []string{

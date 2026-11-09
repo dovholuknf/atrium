@@ -123,7 +123,7 @@ func TestMergeLandCutPutsClaudeMainsTreeOnMainAndLeavesClaudeMain(t *testing.T) 
 	st := x.h.Store()
 	dir, _ := st.Path(hubRepo)
 	at := func(f, rev string) string {
-		return strings.TrimSpace(must(Default.Git(bg, dir, "log", "-1", "--format="+f, rev)))
+		return strings.TrimSpace(must(rawGit(dir, nil, nil, "log", "-1", "--format="+f, rev)))
 	}
 	by := LandAuthor{Name: "o", Email: "o@o"}
 	main := x.refOn(hubRepo, MainRef)
@@ -149,7 +149,7 @@ func TestMergeLandCutPutsClaudeMainsTreeOnMainAndLeavesClaudeMain(t *testing.T) 
 	if strings.Contains(x.refsOn(hubRepo), "refs/heads/land/") {
 		t.Fatalf("a land branch: %s", x.refsOn(hubRepo))
 	}
-	if strings.Contains(must(Default.Git(bg, dir, "cat-file", "-p", c.Commit)), "gpgsig") {
+	if strings.Contains(must(rawGit(dir, nil, nil, "cat-file", "-p", c.Commit)), "gpgsig") {
 		t.Fatal("the land is signed")
 	}
 
@@ -161,8 +161,8 @@ func TestMergeLandCutPutsClaudeMainsTreeOnMainAndLeavesClaudeMain(t *testing.T) 
 	}
 
 	env := []string{"GIT_AUTHOR_NAME=s", "GIT_AUTHOR_EMAIL=s@s", "GIT_COMMITTER_NAME=s", "GIT_COMMITTER_EMAIL=s@s"}
-	stray := strings.TrimSpace(must(Default.GitEnv(bg, dir, env, "commit-tree", next.Commit+"^{tree}", "-p", next.Commit, "-m", "stray")))
-	must(Default.Git(bg, dir, "update-ref", MainRef, stray))
+	stray := strings.TrimSpace(must(rawGit(dir, env, nil, "commit-tree", next.Commit+"^{tree}", "-p", next.Commit, "-m", "stray")))
+	must(rawGit(dir, nil, nil, "update-ref", MainRef, stray))
 	if _, err := st.MergeLandCut(bg, hubRepo, 4, by, "Land 4"); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "neither") {
 		t.Fatalf("main moved by hand: %v", err)
 	}
