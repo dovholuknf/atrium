@@ -3566,6 +3566,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field what">
       <textarea id="na-what" rows="1" spellcheck="true" placeholder="what should it do? optional"></textarea>
     </div>
+    <div class="field onlyclone">
+      <label class="eyebrow" for="na-brief">brief<span class="help" tabindex="0"
+        data-tip="The original's BRIEF.md, written into the clone's folder before it starts. Edit it here or empty it.">?</span></label>
+      <textarea id="na-brief" rows="4" spellcheck="true" placeholder="no BRIEF.md"></textarea>
+    </div>
     <div class="field notw">
       <label class="eyebrow">the card it makes</label>
       <div id="na-preview"></div>
@@ -3575,7 +3580,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="sum" id="na-sum"></span>
       <button type="button" class="linkbtn" id="na-change" aria-expanded="false">change</button>
       <span class="grow"></span>
-      <button type="button" class="twbtn notw" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends. keep it from the card if it matters">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
+      <button type="button" class="twbtn notw notclone" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends. keep it from the card if it matters">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
     </div>
     <div class="how" id="na-how" hidden></div>
     <div class="na-note" id="na-note"></div>
