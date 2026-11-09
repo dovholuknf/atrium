@@ -23,11 +23,11 @@ import (
 // cloneSource is what the board's clone form is filled from, `GET /v1/tasks/{id}/clone`. NoFork is why the clone
 // cannot fork the conversation, "" when it can.
 type cloneSource struct {
-	Repo  string   `json:"repo"`
-	Head  string   `json:"head"`
-	Dirty []string `json:"dirty"`
-	Brief string   `json:"brief"`
-	NoFork string  `json:"no_fork,omitempty"`
+	Repo   string   `json:"repo"`
+	Head   string   `json:"head"`
+	Dirty  []string `json:"dirty"`
+	Brief  string   `json:"brief"`
+	NoFork string   `json:"no_fork,omitempty"`
 }
 
 // cloneRefusal is why a card cannot be cloned, nil when it can.
