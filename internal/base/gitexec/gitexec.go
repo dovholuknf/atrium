@@ -83,6 +83,7 @@ func Command(ctx context.Context, o Opts, op Op) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
+	// codeql[go/command-injection] the program is the literal git, and args are built by Argv, which refuses a value that reads as an option
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = o.Dir
 	switch {

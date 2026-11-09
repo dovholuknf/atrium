@@ -368,9 +368,11 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 			shell = "powershell"
 		}
 		// -Name:value, since a RepoSlug segment may begin with '-' and would otherwise bind as a parameter name.
-		cmd = exec.CommandContext(ctx, shell, "-NoProfile", "-File", safepath.NoNUL(file),
-			"-WorktreePath:"+safepath.NoNUL(filepath.FromSlash(path)), "-Org:"+safepath.NoNUL(org),
-			"-Repo:"+safepath.NoNUL(repo), "-RemoteHost:"+safepath.NoNUL(host))
+		args := []string{"-NoProfile", "-File", safepath.NoNUL(file),
+			"-WorktreePath:" + safepath.NoNUL(filepath.FromSlash(path)), "-Org:" + safepath.NoNUL(org),
+			"-Repo:" + safepath.NoNUL(repo), "-RemoteHost:" + safepath.NoNUL(host)}
+		// codeql[go/command-injection] argv to pwsh -File, no shell evaluates it, and every value is a RepoSlug or ValidName segment
+		cmd = exec.CommandContext(ctx, shell, args...)
 	} else {
 		// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 		cmd = exec.CommandContext(ctx, "sh", safepath.NoNUL(file), safepath.NoNUL(filepath.FromSlash(path)), safepath.NoNUL(org), safepath.NoNUL(repo), safepath.NoNUL(host))
