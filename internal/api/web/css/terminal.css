@@ -606,8 +606,7 @@
     color: var(--term-fg, var(--dim)); font: var(--fs-sm)/1.2 var(--mono); opacity: .7;
   }
   .pastebox button:hover { opacity: 1; background: rgba(255,255,255,.08); }
-  /* Positioning context for the find bar. The pane already clips, which is what keeps the bar inside the
-     terminal. */
+  /* Positioning context for the paste box and the banners. The find bar sits in `.term-body`, under the bar. */
   .term-pane { position: relative; }
 
   #t-screen {

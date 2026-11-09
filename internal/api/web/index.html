@@ -556,10 +556,6 @@ Exports honor whatever filter is applied.">?</span>
                          }"></textarea>
           </div>
         </div>
-        <!-- Find, over the terminal rather than above it. A bar that took a
-             row would change the terminal's box, and xterm measures itself in
-             characters: opening find would reflow the grid and repaint every
-             line, which is a lot of work to ask for a text box. -->
         <!-- Said on the pane rather than written into the scrollback. A line
              of text in the terminal scrolls away, is indistinguishable from
              output, and is gone entirely across the reload that a new build
@@ -577,37 +573,6 @@ Exports honor whatever filter is applied.">?</span>
             <button id="t-dead-new" type="button">Launch new</button>
             <button id="t-dead-cancel" type="button">Cancel</button>
           </div>
-        </div>
-        <div class="findbar" id="t-find" hidden>
-          <!-- `type="search"` and the four ignore attributes are aimed at
-               EXTENSIONS, not at the browser. A password manager or an email
-               alias extension decides what to offer from the shape of an
-               input, and a bare `type="text"` with no autocomplete hint is the
-               shape they guess at: one of them drew a "create a random email
-               that forwards to your inbox" card over this find bar.
-               None of these is a standard that anything is obliged to honour.
-               They are the flags the common extensions actually read, which is
-               the most a page can do: 1Password, LastPass and Dashlane each
-               read their own, and `type="search"` is the honest description
-               anyway. If one still injects here, that extension is the place
-               to turn it off. -->
-          <input id="t-find-q" type="search" spellcheck="false" autocomplete="off"
-            data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
-            placeholder="find in this session"
-            oninput="runFind(false)"
-            onkeydown="if (event.key === 'Enter') { event.preventDefault();
-                         runFind(true, event.shiftKey); }
-                       else if (event.key === 'Escape') { event.preventDefault(); closeFind(); }">
-          <span class="findcount" id="t-find-n"></span>
-          <button onclick="runFind(true, true)" aria-label="previous (shift-enter)" data-tip="previous (shift-enter)">&#8593;</button>
-          <button onclick="runFind(true, false)" aria-label="next (enter)" data-tip="next (enter)">&#8595;</button>
-          <button id="t-find-case" class="findtog" onclick="toggleFind('case')"
-            aria-label="match case" data-tip="match case">Aa</button>
-          <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
-            aria-label="regular expression" data-tip="regular expression">.*</button>
-          <button id="t-find-who" class="findtog" onclick="toggleFind('who')"
-            aria-label="whose text: all, mine or the agent's" data-tip="whose text: all, mine or the agent's">all</button>
-          <button onclick="closeFind()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
         </div>
         <!-- The paste that needs no permission.
              Reading the clipboard from script is a permission, and it is
@@ -666,6 +631,41 @@ Exports honor whatever filter is applied.">?</span>
               data-tip="drag to resize" onpointerdown="walkGripDown(event)"></button>
           </aside>
           <div id="t-screen"></div>
+          <!-- Find, over the terminal rather than above it. A bar that took a
+               row would change the terminal's box, and xterm measures itself in
+               characters: opening find would reflow the grid and repaint every
+               line, which is a lot of work to ask for a text box. -->
+          <div class="findbar" id="t-find" hidden>
+            <!-- `type="search"` and the four ignore attributes are aimed at
+                 EXTENSIONS, not at the browser. A password manager or an email
+                 alias extension decides what to offer from the shape of an
+                 input, and a bare `type="text"` with no autocomplete hint is the
+                 shape they guess at: one of them drew a "create a random email
+                 that forwards to your inbox" card over this find bar.
+                 None of these is a standard that anything is obliged to honour.
+                 They are the flags the common extensions actually read, which is
+                 the most a page can do: 1Password, LastPass and Dashlane each
+                 read their own, and `type="search"` is the honest description
+                 anyway. If one still injects here, that extension is the place
+                 to turn it off. -->
+            <input id="t-find-q" type="search" spellcheck="false" autocomplete="off"
+              data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+              placeholder="find in this session"
+              oninput="runFind(false)"
+              onkeydown="if (event.key === 'Enter') { event.preventDefault();
+                           runFind(true, event.shiftKey); }
+                         else if (event.key === 'Escape') { event.preventDefault(); closeFind(); }">
+            <span class="findcount" id="t-find-n"></span>
+            <button onclick="runFind(true, true)" aria-label="previous (shift-enter)" data-tip="previous (shift-enter)">&#8593;</button>
+            <button onclick="runFind(true, false)" aria-label="next (enter)" data-tip="next (enter)">&#8595;</button>
+            <button id="t-find-case" class="findtog" onclick="toggleFind('case')"
+              aria-label="match case" data-tip="match case">Aa</button>
+            <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
+              aria-label="regular expression" data-tip="regular expression">.*</button>
+            <button id="t-find-who" class="findtog" onclick="toggleFind('who')"
+              aria-label="whose text: all, mine or the agent's" data-tip="whose text: all, mine or the agent's">all</button>
+            <button onclick="closeFind()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
+          </div>
           <button type="button" id="walk-sheet" class="walk-sheet" aria-expanded="false" onclick="walkSheet()"
             data-tip="pull the terminal up to talk to the walker">▴ terminal</button>
           <!-- "Messages waiting, clear the line". Absolute, never focused. See js/heldline.js. -->
