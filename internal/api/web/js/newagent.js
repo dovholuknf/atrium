@@ -125,7 +125,7 @@ function naListItems() {
   if (p && !rows.some(r => launchRepoKey(r.ref) === launchRepoKey(p.ref))) items.push({ ref: p.ref, name: naShort(p.ref), meta: "fetch it" });
   if (here.length) items.push({ sec: q ? "repos" : "recent" }, ...here.map(r => ({ ref: r.ref, name: r.name, meta: "" })));
   if (hub.length) items.push({ sec: "on the hub, not here" }, ...hub.map(r => ({ ref: r.ref, name: r.name, meta: "clone" })));
-  if (!items.length) items.push({ empty: rows.length ? "nothing matches. type owner/repo or paste a link." : "no repos yet. type owner/repo or paste a link." });
+  if (!items.length) items.push({ empty: (rows.length ? "nothing matches. " : "no repos yet. ") + "type owner/repo, or paste a GitHub link here: a repo, an issue, a pull request or a branch" });
   return items;
 }
 function naHL(name, q) {
