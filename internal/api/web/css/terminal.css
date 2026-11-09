@@ -853,6 +853,18 @@
      under them, a warn edge instead, and the command in the terminal's own text colour. */
   .term-perm.worn { background: none; border-left: 3px solid var(--warn); }
   .term-perm.worn code { color: var(--body); }
+  /* The skin's hover fill and hover text are not held against a terminal's background, so a button keeps its resting
+     fill and text, which are, and says hover, focus and press with a ring in the theme's title colour instead. */
+  .term-perm.worn button:hover, .term-perm.worn button:focus-visible, .term-perm.worn button:active {
+    color: var(--body); background: var(--chip); border-color: var(--head);
+    box-shadow: inset 0 0 0 1px var(--head); transform: none; outline: none;
+  }
+  .term-perm.worn button.go:hover, .term-perm.worn button.go:focus-visible, .term-perm.worn button.go:active {
+    color: var(--chip-accent-text); background: var(--chip-accent);
+  }
+  .term-perm.worn button.no:hover, .term-perm.worn button.no:focus-visible, .term-perm.worn button.no:active {
+    border-color: var(--danger-text); box-shadow: inset 0 0 0 1px var(--danger-text);
+  }
 
   /* ── cards in their terminal's colours ──────────────────
      The board setting "cards wear their terminal colours". `cardWear` in js/themes.js puts `.worn` on a card
