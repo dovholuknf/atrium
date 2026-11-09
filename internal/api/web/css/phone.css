@@ -248,7 +248,7 @@
     }
     header nav::-webkit-scrollbar { display: none; }
     /* The two widest things in the header, and neither is what you came for. */
-    .newagent, .conn { display: none; }
+    .newagent, .conn, header .na-split { display: none; }
 
     .row.perm { padding: 12px; }
     /* Room to read the command, which is the thing being decided on. */
@@ -312,7 +312,7 @@
       display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; order: 5;
       font-size: var(--fs-sm); color: var(--teal); text-decoration: none; white-space: nowrap;
     }
-    body.hdr-open header .bar .newagent { display: inline-flex; }
+    body.hdr-open header .bar .newagent, body.hdr-open header .bar .na-split { display: inline-flex; }
     body:not(.hdr-open) header .bar {
       flex-wrap: nowrap; align-items: center; padding: 4px 8px; gap: var(--sp-2);
     }
@@ -322,7 +322,7 @@
     body:not(.hdr-open) header .bar > #gauto { order: 3; }
     body:not(.hdr-open) header .bar > #toastlog-open { order: 4; }
     body:not(.hdr-open) header .bar > #hdr-toggle { order: 6; }
-    body:not(.hdr-open) header .bar > :is(.wordmark, .grow, #working, #sharing, .newagent, #sound, #gear, #rooms, #rooms-all) {
+    body:not(.hdr-open) header .bar > :is(.wordmark, .grow, #working, #sharing, .newagent, .na-split, #sound, #gear, #rooms, #rooms-all) {
       display: none;
     }
     body:not(.hdr-open) header .conn { gap: 4px; padding: 0 4px; min-height: 44px; }
