@@ -20510,6 +20510,55 @@ async function joinedClickSection(browser, base) {
   if (!bad) console.log("joinedClick ok");
 }
 
+// A card held on a request with no terminal atrium owns gets a tile in the terminal's place, answered from there.
+// HELD_TILE_SHOTS=/dir writes the desktop and phone pictures.
+async function joinedHeldTileSection(browser, base) {
+  const shots = process.env.HELD_TILE_SHOTS || "";
+  for (const phone of [false, true]) {
+    const tag = "joinedHeldTile" + (phone ? " phone" : "") + ": ";
+    const ctx = await browser.newContext({ viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 800 } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    const decided = [];
+    let held = [{ id: "pq1", task_id: "hd", tool: "Bash", command: "git push hub held-perm-on-terminals" }];
+    const cards = [{ id: "hd", status: "needs-permission", supervised: false, title: "hd", display_title: "resumed outside atrium", tags: [] }];
+    await p.route(u => u.pathname === "/v1/permissions", r => r.fulfill({ json: { permissions: held } }));
+    await p.route(u => u.pathname === "/v1/tasks", r => r.fulfill({ json: { tasks: cards } }));
+    await p.route("**/v1/permissions/pq1/decide", r => { decided.push(JSON.parse(r.request().postData())); held = [];
+      r.fulfill({ json: { ok: true } }); });
+    try {
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof renderHeldTiles === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+      await p.evaluate(() => switchView("terms"));
+      await p.waitForSelector("#term-list .card.tab[data-id='hd'] .theld", { timeout: slow(5000) });
+      const row = await p.$eval("#term-list .card.tab[data-id='hd']", e => e.outerHTML);
+      if (!/joinedClick\('hd'\)/.test(row)) fail(tag + "the held row is not a joined row: " + row);
+      await p.evaluate(() => joinedClick("hd"));
+      await p.waitForSelector("#term-perm:not([hidden]) .held-tile", { timeout: slow(5000) });
+      if (await p.$("#ask[open]")) fail(tag + "a held row opened the dialog instead of its tile");
+      const tile = await p.$eval("#term-perm .held-tile", e => ({ text: e.innerText.replace(/\s+/g, " "),
+        btns: [...e.querySelectorAll("button")].map(b => b.textContent), shown: e.getBoundingClientRect().height > 0 }));
+      if (!/resumed outside atrium is blocked/.test(tile.text) || !/Bash: git push hub held-perm-on-terminals/.test(tile.text)) {
+        fail(tag + "the tile reads " + JSON.stringify(tile.text));
+      }
+      if (tile.btns.join() !== "approve once,block once,open in perms") fail(tag + "the tile's buttons are " + tile.btns.join());
+      if (!tile.shown) fail(tag + "the tile is not on screen");
+      await p.evaluate(() => { document.getElementById("toasts").innerHTML = ""; });
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await p.screenshot({ path: path.join(shots, phone ? "held-tile-phone.png" : "held-tile-desktop.png") });
+      }
+      await p.click("#term-perm .held-tile button.go");
+      await until(() => decided.length, 5000, "the decide POST").catch(() => {});
+      if (decided.length !== 1 || decided[0].decision !== "approve") fail(tag + "approve posted " + JSON.stringify(decided));
+      await p.waitForSelector("#term-perm .held-tile", { state: "detached", timeout: slow(5000) }).catch(() => fail(tag + "the tile outlived its answer"));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  }
+  if (!bad) console.log("joinedHeldTile ok");
+}
+
 // The Terminals tab keeps the cards whose session ended in a collapsed group per room, with how each ended and a
 // one click resume. SHOTS=/dir also writes the three pictures of the change.
 async function termEndedSection(browser, base) {
@@ -26552,7 +26601,7 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
-      mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
+      mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
@@ -28739,6 +28788,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("unifiedCard", bu("unifiedCard"));
     await unit("termEnded", () => termEndedSection(browser, base));
     await unit("joinedClick", () => joinedClickSection(browser, base));
+    await unit("joinedHeldTile", () => joinedHeldTileSection(browser, base));
     await unit("coverPoll", () => coverPollSection(browser, base));
     await unit("coverSteps", () => coverStepsSection(browser, base));
     await unit("termBox", () => termBoxSection(browser, base));

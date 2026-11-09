@@ -158,6 +158,9 @@
        bar and must not take half the screen. */
     .term-layout:not(.has-term) .term-pane { display: none; }
     .term-layout:not(.has-term) .term-list { flex: 1 1 auto; }
+    /* A held request with no terminal atrium owns is the one thing the empty pane still carries, above the list. */
+    .term-layout:not(.has-term):has(#term-perm.tiles:not([hidden])) .term-pane { display: flex; flex: 0 0 auto; order: -1; }
+    .term-layout:not(.has-term):has(#term-perm.tiles:not([hidden])) .term-pane > :not(#term-perm) { display: none; }
 
     /* No gutter to cross when the list is stacked above the terminal. */
     .tabbridge { display: none; }

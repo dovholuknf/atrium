@@ -457,7 +457,8 @@ function forgetTerm() {
 // shows nothing, so the question has to appear where you are already looking.
 async function renderTermPerm() {
   const host = document.getElementById("term-perm");
-  if (!termTask) { host.hidden = true; return; }
+  host.classList.remove("tiles");
+  if (!termTask) { renderHeldTiles(host); return; }
   // The queue the refresh pass holds (js/cards.js), read again on every
   // `permission` event. It used to be fetched here a moment after the pass
   // fetched the same list.
@@ -476,6 +477,28 @@ async function renderTermPerm() {
       <button class="to-perms" onclick="switchView('perms')"
         data-tip="to set a standing rule for this">open in perms</button>
     </div>`;
+}
+
+// Nothing attached: a request from a session atrium holds no terminal for is drawn in the terminal's place, or nobody
+// sees it.
+function renderHeldTiles(host) {
+  const cards = termOnly() ? [] : cardList();
+  const held = permsLocal.map(p => ({ p, t: cards.find(c => c.id === p.task_id) })).filter(h => h.t && termJoined(h.t));
+  if (!held.length) { host.hidden = true; host.innerHTML = ""; return; }
+  host.classList.add("tiles");
+  host.hidden = false;
+  host.innerHTML = held.map(({ p, t }) => `<div class="held-tile">
+    <div class="who">
+      <b>${esc(t.display_title || t.id)} is blocked, waiting on you</b>
+      <span class="held-why">atrium holds no terminal for this session, so its request is answered here</span>
+      <code>${esc(p.tool)}: ${esc(p.command)}</code>
+    </div>
+    <div class="actions">
+      <button class="go" onclick="decideFromTerm('${p.id}','approve', this)">approve once</button>
+      <button class="no" onclick="decideFromTerm('${p.id}','block', this)">block once</button>
+      <button class="to-perms" onclick="switchView('perms')"
+        data-tip="to set a standing rule for this">open in perms</button>
+    </div></div>`).join("");
 }
 
 // One answer per request, shared with the perms card's key. See js/core.js.
