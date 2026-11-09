@@ -51,7 +51,7 @@ func daemonLaunchArgs() []string {
 		"launch_key": true, "window": true, "throwaway": true, "if_running": true, "spawned_by": true,
 		"spawned_by_id": true, "spawned_by_dir": true, "report_to": true, "outside_code": true, "work_item": true,
 		"item": true, "lifetime": true, "source": true, "external_id": true, "url": true, "source_kind": true,
-		"source_url": true, "org": true, "host": true,
+		"source_url": true, "org": true, "host": true, "clone_of": true, "clone_carry": true, "clone_fork": true,
 	}
 	var out []string
 	rt := reflect.TypeOf(shared.LaunchRequest{})
