@@ -244,7 +244,10 @@ async function forgetSessionsNow(id, t) {
 // Give a throwaway a permanent directory. The response says whether it moved
 // now or will move after the running session exits.
 // One at a time: see oneAtATime in js/core.js.
-function promoteCard(id, t) { return oneAtATime("promote:" + id, () => promoteCardNow(id, t)); }
+function promoteCard(id, t) {
+  if (typeof homeOf === "function" && homeOf(t) && typeof naKeepOpen === "function") { naKeepOpen(id, t); return; }
+  return oneAtATime("promote:" + id, () => promoteCardNow(id, t));
+}
 
 async function promoteCardNow(id, t) {
   const to = await askUser({

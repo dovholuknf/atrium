@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -240,11 +241,108 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 		return "", "", fmt.Errorf("%q is not a start atrium will branch from", base)
 	}
 	if _, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+branch); err == nil {
+		if at := BranchHeldAt(clone, branch); at != "" {
+			return "", "", fmt.Errorf("branch %s is already checked out at %s: pick another branch, or open that card", branch, at)
+		}
 		_, err = shared.GitIn(clone, "worktree", "add", dd.Work, branch)
 		return branch, "", WrapGit("add the worktree", err)
 	}
 	_, err = shared.GitIn(clone, "worktree", "add", "-b", branch, dd.Work, base)
 	return branch, base, WrapGit("add the worktree", err)
+}
+
+// BranchState is what a launch on a branch of a clone would meet, for the launch dialog to warn before it launches.
+type BranchState struct {
+	Branch string `json:"branch"`
+	Exists bool   `json:"exists"`
+	Ahead  int    `json:"ahead"`
+	Last   string `json:"last,omitempty"`
+	HeldAt string `json:"held_at,omitempty"`
+	HeldBy string `json:"held_by,omitempty"`
+	Free   string `json:"free"`
+}
+
+// BranchCheck answers BranchStateIn for the clone a repo names, and never clones: a repo not on this room has no
+// branches yet, so any name is free.
+func (d *Service) BranchCheck(repo, branch string) (BranchState, error) {
+	branch = strings.TrimSpace(branch)
+	if !BranchOK.MatchString(branch) || strings.Contains(branch, "..") {
+		return BranchState{}, fmt.Errorf("%q is not a branch name atrium will make a worktree on", branch)
+	}
+	clone := ""
+	repo = strings.TrimSpace(repo)
+	if filepath.IsAbs(filepath.FromSlash(repo)) {
+		clone = filepath.FromSlash(repo)
+	} else if ref, err := gitsync.ParseURL("https://" + repo); err == nil {
+		if _, dest, err := d.Scm(nil).ClonePath(ref); err == nil {
+			clone = dest
+		}
+	}
+	if clone == "" || !shared.HasDotGit(clone) {
+		return BranchState{Branch: branch, Free: branch}, nil
+	}
+	bs := BranchStateIn(clone, branch)
+	if bs.HeldAt != "" {
+		dir := filepath.Dir(filepath.FromSlash(bs.HeldAt))
+		if row, ok, _ := d.St.CardHomeByPath(filepath.ToSlash(dir)); ok {
+			bs.HeldBy = row.Card
+		} else if rows, err := d.St.CardHomesOpen(); err == nil {
+			// git reports the real path; a symlinked or 8.3 temp dir stores another spelling of it.
+			want, _ := filepath.EvalSymlinks(dir)
+			for _, r := range rows {
+				if got, err := filepath.EvalSymlinks(filepath.FromSlash(r.Path)); err == nil && want != "" && strings.EqualFold(got, want) {
+					bs.HeldBy = r.Card
+					break
+				}
+			}
+		}
+	}
+	return bs, nil
+}
+
+// BranchStateIn reads a branch of a clone: whether it exists, how far it is past the base a new branch starts from,
+// its last commit, the worktree holding it, and the first `branch-N` that neither exists nor is held.
+func BranchStateIn(clone, branch string) BranchState {
+	bs := BranchState{Branch: branch, Free: branch}
+	taken := func(b string) bool {
+		_, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+b)
+		return err == nil || BranchHeldAt(clone, b) != ""
+	}
+	if _, err := shared.GitIn(clone, "rev-parse", "--verify", "-q", "refs/heads/"+branch); err == nil {
+		bs.Exists = true
+		if n, err := shared.GitIn(clone, "rev-list", "--count", DefaultBase(clone)+".."+branch); err == nil {
+			bs.Ahead, _ = strconv.Atoi(strings.TrimSpace(n))
+		}
+		bs.Last, _ = shared.GitIn(clone, "log", "-1", "--format=%cI", branch)
+	}
+	bs.HeldAt = BranchHeldAt(clone, branch)
+	if bs.Exists || bs.HeldAt != "" {
+		for n := 2; n < 100; n++ {
+			if b := fmt.Sprintf("%s-%d", branch, n); !taken(b) {
+				bs.Free = b
+				break
+			}
+		}
+	}
+	return bs
+}
+
+// BranchHeldAt is the worktree of a clone that has a branch checked out, or "".
+func BranchHeldAt(clone, branch string) string {
+	out, err := shared.GitIn(clone, "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	at := ""
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if p, ok := strings.CutPrefix(line, "worktree "); ok {
+			at = p
+		} else if line == "branch refs/heads/"+branch {
+			return filepath.ToSlash(at)
+		}
+	}
+	return ""
 }
 
 func WrapGit(what string, err error) error {

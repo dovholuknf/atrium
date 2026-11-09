@@ -9,6 +9,7 @@ package claudeconf
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,10 @@ func Load(projectDir string) ([]Entry, []Skipped, error) {
 		skipped []Skipped
 		asks    []mcpAsk
 	)
+	// a share path would open SMB on Windows and hand its host an NTLM hash, and a relative one reads the daemon's cwd
+	if network(projectDir) || (projectDir != "" && !filepath.IsAbs(filepath.FromSlash(projectDir))) {
+		return nil, nil, errors.New("dir must be a local absolute path")
+	}
 	for _, path := range SettingsPaths(projectDir) {
 		// codeql[go/path-injection] dir is from the board's rule import, a board caller has a shell (attach.go kind=shell), and only .claude/settings files are read
 		raw, err := os.ReadFile(noNUL(path))
@@ -297,4 +302,13 @@ func driveRe(p string) string {
 		return ""
 	}
 	return strings.ToUpper(string(letter)) + ":" + trimmed[1:]
+}
+
+// network is whether opening p could reach another machine: a UNC share, a device path, or a leading //. Local, as the layers allow.
+func network(p string) bool {
+	p = strings.TrimSpace(p)
+	if len(p) >= 2 && strings.ContainsRune(`/\`, rune(p[0])) && strings.ContainsRune(`/\`, rune(p[1])) {
+		return true
+	}
+	return len(filepath.VolumeName(filepath.FromSlash(p))) > 2
 }

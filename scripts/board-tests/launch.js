@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
+// Units: launchNewAgent, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -559,7 +559,135 @@ async function launchRepoUrlsSection(browser, base) {
   if (!bad) console.log("launchRepoUrls ok");
 }
 
+// THE NEW AGENT DIALOG (js/newagent.js): a repo picked from the list names the card and its branch, a branch that exists
+// is asked about (new branch by default, continue on it when picked), one another worktree holds is moved off, groups go
+// as tags and are remembered, Enter launches and ctrl+Enter starts a throwaway, an empty name refuses, a setup saved as
+// default is the next open's, a pull request link goes to the open verb and its card takes the groups after, the card
+// preview shows the name, where it lives and its chips, and its star pins the card it makes.
+// NEWAGENT_SHOTS=<dir> writes the dialog.
+async function launchNewAgentSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const launches = [], opens = [], patches = [], pins = [];
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    const json = (r, body) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    await p.route(/\/v1\/checkouts(\?|$)/, r => json(r, { checkouts: [{ slug: "github/openziti/mcp-gateway", path: "/src/mcp-gateway", repo: "mcp-gateway" }] }));
+    await p.route(/\/v1\/branches\/check\?/, r => {
+      const b = new URL(r.request().url()).searchParams.get("branch");
+      if (b === "claude/allowlist") return json(r, { branch: b, exists: true, ahead: 3, last: new Date(Date.now() - 2 * 86400e3).toISOString(), free: "claude/allowlist-2" });
+      if (b === "claude/held") return json(r, { branch: b, exists: true, held_at: "/cards/held-abc123/work", free: "claude/held-2" });
+      return json(r, { branch: b, free: b });
+    });
+    await p.route(/\/v1\/launch(\?|$)/, r => { launches.push(JSON.parse(r.request().postData() || "{}")); return json(r, { id: "t1", status: "running" }); });
+    await p.route(/\/v1\/recognise(\?|$)/, r => json(r, { title: "openziti/tlsuv#394 win32crypto", recogniser: "github pr" }));
+    await p.route(/\/v1\/open(\?|$)/, r => { opens.push(JSON.parse(r.request().postData() || "{}")); return json(r, { card: "t2", created: true }); });
+    await p.route(/\/v1\/tasks\/t2$/, r => {
+      if (r.request().method() === "PATCH") { patches.push(JSON.parse(r.request().postData() || "{}")); return json(r, {}); }
+      return json(r, { id: "t2", tags: ["pull-request"], status: "running" });
+    });
+    await p.route(/\/v1\/tasks\/t1$/, r => {
+      if (r.request().method() === "PATCH") { pins.push(JSON.parse(r.request().postData() || "{}")); return json(r, {}); }
+      return json(r, { id: "t1", status: "running" });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openNewAgent === "function" && typeof launchableHarnesses === "function");
+    await p.evaluate(() => { localStorage.removeItem("atrium.newagent.how"); localStorage.removeItem("atrium.newagent.groups"); });
+    const closed = what => p.waitForFunction(() => !document.getElementById("na").open, null, { timeout: slow(5000) })
+      .catch(() => fail("launchNewAgent: the dialog stayed open after " + what + ": " + JSON.stringify(launches)));
+    const seen = () => p.evaluate(() => ({ title: document.getElementById("na-title").value, branch: document.getElementById("na-branch").value,
+      conf: document.getElementById("na-conf").textContent, sum: document.getElementById("na-sum").textContent }));
+
+    await p.evaluate(() => openNewAgent(false));
+    await p.fill("#na-repo", "mcp");
+    await p.waitForSelector("#na-repo-list .cb-opt");
+    await p.press("#na-repo", "Enter");
+    let s = await seen();
+    if (s.title !== "openziti/mcp-gateway" || s.branch !== "claude/work") fail("launchNewAgent: a picked repo " + JSON.stringify(s));
+    await p.fill("#na-title", "allowlist");
+    await p.waitForFunction(() => document.getElementById("na-conf").textContent.includes("already exists"), null, { timeout: slow(3000) })
+      .catch(() => fail("launchNewAgent: no word on a branch that exists"));
+    if ((await seen()).branch !== "claude/allowlist-2") fail("launchNewAgent: a branch that exists was not moved off by default " + JSON.stringify(await seen()));
+    if (process.env.NEWAGENT_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.NEWAGENT_SHOTS + "/newagent-branch.png" });
+    await p.click('#na-conf button[data-v="reuse"]');
+    if ((await seen()).branch !== "claude/allowlist") fail("launchNewAgent: continue on it " + JSON.stringify(await seen()));
+    await p.click("#na-groups .gp-add");
+    await p.fill("#na-groups input.gp-new", "research");
+    await p.press("#na-groups input.gp-new", "Enter");
+    await p.fill("#na-what", "the per-identity allowlist");
+    const pv = () => p.evaluate(() => ({ name: document.querySelector("#na-preview .tname").textContent, where: document.querySelector("#na-preview .tpath").textContent,
+      star: document.getElementById("na-pin").textContent, mark: !!document.querySelector("#na-preview .rmark svg"),
+      chips: [...document.querySelectorAll("#na-preview .chips .chip")].map(c => c.textContent) }));
+    let v = await pv();
+    if (v.name !== "allowlist" || v.where !== "openziti/mcp-gateway:claude/allowlist" || v.star !== "☆" || !v.mark || !v.chips.includes("research") || !v.chips.includes("starting"))
+      fail("launchNewAgent: the card preview " + JSON.stringify(v));
+    await p.click("#na-pin");
+    if ((await pv()).star !== "★") fail("launchNewAgent: the preview's star did not pin");
+    if (process.env.NEWAGENT_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.NEWAGENT_SHOTS + "/newagent-preview.png" });
+    await p.press("#na-what", "Enter");
+    await closed("Enter");
+    if (JSON.stringify(pins) !== '[{"pinned":true}]') fail("launchNewAgent: a pinned preview did not pin the card " + JSON.stringify(pins));
+    let b = launches[0] || {};
+    if (b.repo !== "github.com/openziti/mcp-gateway" || b.branch !== "claude/allowlist" || b.title !== "allowlist" ||
+        JSON.stringify(b.tags) !== '["research"]' || b.prompt !== "the per-identity allowlist" || b.throwaway || b.cwd !== "")
+      fail("launchNewAgent: the repo launch sent " + JSON.stringify(b));
+
+    await p.evaluate(() => openNewAgent(false, "openziti/mcp-gateway"));
+    if (!(await p.locator("#na-groups .chip").allTextContents()).includes("research")) fail("launchNewAgent: the groups were not remembered");
+    await p.fill("#na-title", "held");
+    await p.waitForFunction(() => document.getElementById("na-conf").textContent.includes("checked out"), null, { timeout: slow(3000) })
+      .catch(() => fail("launchNewAgent: no word on a held branch"));
+    await p.click("#na-go");
+    await closed("launch");
+    if ((launches[1] || {}).branch !== "claude/held-2") fail("launchNewAgent: a held branch was launched on " + JSON.stringify(launches[1]));
+
+    await p.evaluate(() => openNewAgent(false));
+    await p.click("#na-go");
+    if (launches.length !== 2 || !(await p.locator("#na-title.missing").count())) fail("launchNewAgent: an empty name launched or was not marked");
+    await p.fill("#na-what", "look around");
+    await p.press("#na-what", "Control+Enter");
+    await closed("ctrl+Enter");
+    b = launches[2] || {};
+    if (b.throwaway !== true || b.cwd !== "" || b.title !== "look around" || b.repo || b.tags) fail("launchNewAgent: the throwaway sent " + JSON.stringify(b));
+    await p.evaluate(() => openNewAgent(true));
+    if (await p.locator("#na-repo").isVisible()) fail("launchNewAgent: a quick throwaway asked for a repo");
+    await p.click("#na-go");
+    await closed("start throwaway");
+    if ((launches[3] || {}).throwaway !== true) fail("launchNewAgent: the throwaway button sent " + JSON.stringify(launches[3]));
+
+    await p.evaluate(() => openNewAgent(false, "openziti/mcp-gateway"));
+    await p.click("#na-change");
+    await p.click('#na-how .seg[data-k="setup"] button[data-v="lean"]');
+    if (!(await seen()).sum.includes("changed")) fail("launchNewAgent: a changed setup did not say so " + JSON.stringify(await seen()));
+    await p.click("#na-save");
+    await p.click("#na-x");
+    await p.evaluate(() => openNewAgent(false, "openziti/mcp-gateway"));
+    s = await seen();
+    if (!s.sum.includes("lean") || s.sum.includes("changed")) fail("launchNewAgent: the saved default was not the next open's " + JSON.stringify(s));
+    await p.click("#na-go");
+    await closed("a lean launch");
+    if ((launches[4] || {}).lean !== true) fail("launchNewAgent: the saved setup was not sent " + JSON.stringify(launches[4]));
+
+    await p.evaluate(() => openNewAgent(false));
+    await p.fill("#na-repo", "https://github.com/openziti/tlsuv/pull/394");
+    await p.waitForFunction(() => document.getElementById("na-title").value.includes("win32crypto"), null, { timeout: slow(3000) })
+      .catch(() => fail("launchNewAgent: the pull request was not named from what was read"));
+    await p.click("#na-go");
+    await closed("a pull request");
+    if (opens.length !== 1 || opens[0].url !== "https://github.com/openziti/tlsuv/pull/394" || opens[0].title !== "openziti/tlsuv#394 win32crypto")
+      fail("launchNewAgent: the open sent " + JSON.stringify(opens));
+    if (launches.length !== 5) fail("launchNewAgent: a pull request also launched " + JSON.stringify(launches[5]));
+    if (!patches.length || JSON.stringify(patches[0].tags) !== '["pull-request","research"]') fail("launchNewAgent: the card's groups " + JSON.stringify(patches));
+    if (errors.length) fail("launchNewAgent: page errors " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("launchNewAgent ok");
+}
+
 const units = [
+  { name: "launchNewAgent", run: ({ browser, base }) => launchNewAgentSection(browser, base) },
   { name: "launchRepoUrls", run: ({ browser, base }) => launchRepoUrlsSection(browser, base) },
   { name: "launchLink", run: ({ browser, base }) => launchLinkSection(browser, base) },
   { name: "launchThrowaway", run: ({ browser, base }) => launchThrowawaySection(browser, base) },
@@ -567,7 +695,7 @@ const units = [
   { name: "launchPresets", run: ({ browser, base }) => launchPresetsSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
 ];
-const sections = { launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
+const sections = { launchNewAgent: launchNewAgentSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

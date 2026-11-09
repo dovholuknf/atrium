@@ -170,7 +170,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	}
 	res.PR = pr
 	branch := pr.HeadRef
-	if pr.FromFork || strings.TrimSpace(branch) == "" {
+	if pr.FromFork || strings.TrimSpace(branch) == "" || checkBranchName(ctx, branch) != nil {
 		branch = "pr-" + strconv.Itoa(req.Number)
 	}
 

@@ -86,6 +86,7 @@
 <link rel="stylesheet" href="/m/docs.css">
 <link rel="stylesheet" href="/m/files.css">
 <link rel="stylesheet" href="/css/homes.css">
+<link rel="stylesheet" href="/css/newagent.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
      then the script puts you back on the view you were reading. Between those
@@ -223,7 +224,7 @@
     <button id="working" class="working" onclick="switchView('terms')" hidden></button>
     <button id="sharing" class="sharing" onclick="openSharing()" hidden></button>
     <button id="gauto" class="gauto" onclick="toggleGlobalAuto()">asking</button>
-    <button class="go newagent" onclick="openLaunch()">+ new agent</button>
+    <span class="na-split"><button class="go newagent" onclick="openNewAgent(false)"><span class="na-plus">+</span> <span>new agent</span></button><button class="na-twopen" onclick="openNewAgent(true)" data-tip="a quick throwaway: gone when it ends" aria-label="quick throwaway"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg></button></span>
     <!-- Trying a skin is the same act as trying a terminal theme, so it is the
          same control: a select that previews live, and two buttons that answer
          it. In the header rather than the gear for the reason the terminal one
@@ -555,10 +556,6 @@ Exports honor whatever filter is applied.">?</span>
                          }"></textarea>
           </div>
         </div>
-        <!-- Find, over the terminal rather than above it. A bar that took a
-             row would change the terminal's box, and xterm measures itself in
-             characters: opening find would reflow the grid and repaint every
-             line, which is a lot of work to ask for a text box. -->
         <!-- Said on the pane rather than written into the scrollback. A line
              of text in the terminal scrolls away, is indistinguishable from
              output, and is gone entirely across the reload that a new build
@@ -576,37 +573,6 @@ Exports honor whatever filter is applied.">?</span>
             <button id="t-dead-new" type="button">Launch new</button>
             <button id="t-dead-cancel" type="button">Cancel</button>
           </div>
-        </div>
-        <div class="findbar" id="t-find" hidden>
-          <!-- `type="search"` and the four ignore attributes are aimed at
-               EXTENSIONS, not at the browser. A password manager or an email
-               alias extension decides what to offer from the shape of an
-               input, and a bare `type="text"` with no autocomplete hint is the
-               shape they guess at: one of them drew a "create a random email
-               that forwards to your inbox" card over this find bar.
-               None of these is a standard that anything is obliged to honour.
-               They are the flags the common extensions actually read, which is
-               the most a page can do: 1Password, LastPass and Dashlane each
-               read their own, and `type="search"` is the honest description
-               anyway. If one still injects here, that extension is the place
-               to turn it off. -->
-          <input id="t-find-q" type="search" spellcheck="false" autocomplete="off"
-            data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
-            placeholder="find in this session"
-            oninput="runFind(false)"
-            onkeydown="if (event.key === 'Enter') { event.preventDefault();
-                         runFind(true, event.shiftKey); }
-                       else if (event.key === 'Escape') { event.preventDefault(); closeFind(); }">
-          <span class="findcount" id="t-find-n"></span>
-          <button onclick="runFind(true, true)" aria-label="previous (shift-enter)" data-tip="previous (shift-enter)">&#8593;</button>
-          <button onclick="runFind(true, false)" aria-label="next (enter)" data-tip="next (enter)">&#8595;</button>
-          <button id="t-find-case" class="findtog" onclick="toggleFind('case')"
-            aria-label="match case" data-tip="match case">Aa</button>
-          <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
-            aria-label="regular expression" data-tip="regular expression">.*</button>
-          <button id="t-find-who" class="findtog" onclick="toggleFind('who')"
-            aria-label="whose text: all, mine or the agent's" data-tip="whose text: all, mine or the agent's">all</button>
-          <button onclick="closeFind()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
         </div>
         <!-- The paste that needs no permission.
              Reading the clipboard from script is a permission, and it is
@@ -665,6 +631,41 @@ Exports honor whatever filter is applied.">?</span>
               data-tip="drag to resize" onpointerdown="walkGripDown(event)"></button>
           </aside>
           <div id="t-screen"></div>
+          <!-- Find, over the terminal rather than above it. A bar that took a
+               row would change the terminal's box, and xterm measures itself in
+               characters: opening find would reflow the grid and repaint every
+               line, which is a lot of work to ask for a text box. -->
+          <div class="findbar" id="t-find" hidden>
+            <!-- `type="search"` and the four ignore attributes are aimed at
+                 EXTENSIONS, not at the browser. A password manager or an email
+                 alias extension decides what to offer from the shape of an
+                 input, and a bare `type="text"` with no autocomplete hint is the
+                 shape they guess at: one of them drew a "create a random email
+                 that forwards to your inbox" card over this find bar.
+                 None of these is a standard that anything is obliged to honour.
+                 They are the flags the common extensions actually read, which is
+                 the most a page can do: 1Password, LastPass and Dashlane each
+                 read their own, and `type="search"` is the honest description
+                 anyway. If one still injects here, that extension is the place
+                 to turn it off. -->
+            <input id="t-find-q" type="search" spellcheck="false" autocomplete="off"
+              data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+              placeholder="find in this session"
+              oninput="runFind(false)"
+              onkeydown="if (event.key === 'Enter') { event.preventDefault();
+                           runFind(true, event.shiftKey); }
+                         else if (event.key === 'Escape') { event.preventDefault(); closeFind(); }">
+            <span class="findcount" id="t-find-n"></span>
+            <button onclick="runFind(true, true)" aria-label="previous (shift-enter)" data-tip="previous (shift-enter)">&#8593;</button>
+            <button onclick="runFind(true, false)" aria-label="next (enter)" data-tip="next (enter)">&#8595;</button>
+            <button id="t-find-case" class="findtog" onclick="toggleFind('case')"
+              aria-label="match case" data-tip="match case">Aa</button>
+            <button id="t-find-re" class="findtog" onclick="toggleFind('re')"
+              aria-label="regular expression" data-tip="regular expression">.*</button>
+            <button id="t-find-who" class="findtog" onclick="toggleFind('who')"
+              aria-label="whose text: all, mine or the agent's" data-tip="whose text: all, mine or the agent's">all</button>
+            <button onclick="closeFind()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
+          </div>
           <button type="button" id="walk-sheet" class="walk-sheet" aria-expanded="false" onclick="walkSheet()"
             data-tip="pull the terminal up to talk to the walker">▴ terminal</button>
           <!-- "Messages waiting, clear the line". Absolute, never focused. See js/heldline.js. -->
@@ -3531,6 +3532,84 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button class="go big" id="l-go" onclick="doLaunch()">launch</button>
   </div>
 </dialog>
+<!-- THE NEW AGENT DIALOG: what first, how folded into one line. js/newagent.js, css/newagent.css. The `launch` dialog
+     above still serves resume, links from the switcher and starting onto a card. -->
+<dialog id="na" data-guard tabindex="-1">
+  <div class="dlg-head">
+    <div class="grow"><h2 id="na-h">new agent</h2></div>
+    <button class="x" id="na-x" aria-label="close" data-tip="close (esc)">&times;</button>
+  </div>
+  <div class="dlg-body">
+    <div class="two">
+      <div class="field notw">
+        <label class="eyebrow" for="na-repo">repo</label>
+        <div class="cb">
+          <input type="text" id="na-repo" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false"
+            placeholder="owner/repo, or paste a GitHub link">
+          <button class="clr" id="na-repo-clr" hidden aria-label="clear">&times;</button>
+          <div class="cb-list" id="na-repo-list" hidden></div>
+        </div>
+        <div class="resolved" id="na-resolved"></div>
+      </div>
+      <div class="field notw">
+        <label class="eyebrow" for="na-title">name<span class="need" id="na-need">needed</span>
+          <button class="reset" id="na-reset" hidden data-tip="name it from the repo and the link again">&#8634; from the link</button></label>
+        <input type="text" id="na-title" spellcheck="false" placeholder="what the card is called">
+        <div class="brline" id="na-brline">branch <span class="brglyph">&#5833;</span><input class="flat" id="na-branch" spellcheck="false" aria-label="branch"></div>
+      </div>
+    </div>
+    <div class="conf notw" id="na-conf"></div>
+    <div class="field notw">
+      <label class="eyebrow">groups</label>
+      <div class="gpick" id="na-groups"></div>
+    </div>
+    <div class="field what">
+      <textarea id="na-what" rows="1" spellcheck="true" placeholder="what should it do? optional"></textarea>
+    </div>
+    <div class="field notw">
+      <label class="eyebrow">the card it makes</label>
+      <div id="na-preview"></div>
+    </div>
+    <div class="howline">
+      <span class="ico">&#9881;</span>
+      <span class="sum" id="na-sum"></span>
+      <button type="button" class="linkbtn" id="na-change" aria-expanded="false">change</button>
+      <span class="grow"></span>
+      <button type="button" class="twbtn notw" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends. keep it from the card if it matters">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
+    </div>
+    <div class="how" id="na-how" hidden></div>
+    <div class="na-note" id="na-note"></div>
+  </div>
+  <div class="dlg-foot">
+    <span class="twhint onlytw">gone when it ends. keep it from its card if it matters</span>
+    <span class="grow"></span>
+    <button type="button" class="linkbtn onlytw" id="na-full">full launch</button>
+    <button class="go big" id="na-go"><span>launch</span><kbd>&#9166;</kbd></button>
+  </div>
+</dialog>
+
+<!-- Keeping a throwaway: its name and groups, and its home stays where it is. js/newagent.js. -->
+<dialog id="na-keep" data-guard>
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">keep this throwaway</div><h2 id="nk-h"></h2></div>
+    <button class="x" id="nk-x" aria-label="close" data-tip="close (esc)">&times;</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label class="eyebrow" for="nk-title">name</label>
+      <input type="text" id="nk-title" spellcheck="false">
+    </div>
+    <div class="field">
+      <label class="eyebrow">groups</label>
+      <div class="gpick" id="nk-groups"></div>
+    </div>
+    <span class="hintline">It stays where it is under the card root, and the card stays when the session ends.</span>
+  </div>
+  <div class="dlg-foot">
+    <span class="grow"></span>
+    <button class="go big" id="nk-go">keep it</button>
+  </div>
+</dialog>
 
 <!-- Sending work to another machine.
      Deliberately NOT the launch dialog with a room dropdown on it. That dialog
@@ -4025,6 +4104,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
 <script src="/js/launchrepo.js"></script>
+<script src="/js/newagent.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>

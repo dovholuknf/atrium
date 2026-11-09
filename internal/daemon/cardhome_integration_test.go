@@ -335,3 +335,55 @@ func TestAPromotedThrowawayHomeIsKeptWhereItIs(t *testing.T) {
 		t.Fatalf("row %+v", got)
 	}
 }
+
+func TestABranchCheckSaysWhoHoldsABranchAndOffersAFreeOne(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	if bs, err := d.BranchCheck(repo, "claude/fix-the-thing"); err != nil || bs.Exists || bs.HeldAt != "" || bs.Free != "claude/fix-the-thing" {
+		t.Fatalf("a new branch: %+v %v", bs, err)
+	}
+	task, _, dd := worktreeHome(t, d, repo)
+	cullGit(t, dd.Work, "commit", "-q", "--allow-empty", "-m", "work")
+	cullGit(t, repo, "branch", "claude/fix-the-thing-2")
+	bs, err := d.BranchCheck(repo, "claude/fix-the-thing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bs.Exists || bs.Ahead != 1 || bs.Last == "" || bs.HeldBy != task.ID || bs.Free != "claude/fix-the-thing-3" ||
+		!sameFolder(bs.HeldAt, dd.Work) {
+		t.Fatalf("a held branch: %+v, work %s, card %s", bs, filepath.ToSlash(dd.Work), task.ID)
+	}
+	if bs, err := d.BranchCheck(repo, "claude/fix-the-thing-2"); err != nil || !bs.Exists || bs.HeldAt != "" || bs.Ahead != 0 {
+		t.Fatalf("a free existing branch: %+v %v", bs, err)
+	}
+	if _, err := d.BranchCheck(repo, "-bad..name"); err == nil {
+		t.Fatal("a bad branch name was checked")
+	}
+	if bs, err := d.BranchCheck("github.com/nobody/nothing", "claude/x"); err != nil || bs.Exists || bs.Free != "claude/x" {
+		t.Fatalf("a repo not on this room: %+v %v", bs, err)
+	}
+}
+
+func TestALaunchOnABranchAnotherCardHoldsIsRefused(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	worktreeHome(t, d, repo)
+	req := shared.LaunchRequest{Repo: repo, Title: "Again", Branch: "claude/fix-the-thing"}
+	if _, _, err := d.LaunchHome(store.CardHomeWorktree, &req); err == nil || !strings.Contains(err.Error(), "already checked out") {
+		t.Fatalf("a held branch was launched on: %v", err)
+	}
+	cullGit(t, repo, "branch", "claude/old")
+	req = shared.LaunchRequest{Repo: repo, Title: "Continue", Branch: "claude/old"}
+	if _, _, err := d.LaunchHome(store.CardHomeWorktree, &req); err != nil {
+		t.Fatalf("an existing free branch: %v", err)
+	}
+}
+
+// sameFolder is whether two spellings name one folder: a temp dir can be a symlink or an 8.3 name.
+func sameFolder(a, b string) bool {
+	ra, ea := filepath.EvalSymlinks(filepath.FromSlash(a))
+	rb, eb := filepath.EvalSymlinks(filepath.FromSlash(b))
+	return ea == nil && eb == nil && strings.EqualFold(ra, rb)
+}

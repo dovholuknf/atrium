@@ -31,3 +31,6 @@ read.js:btn\.title = "Opens it # read page has no styled tooltips
 read.html:id="pdf" # iframe title is for screen readers
 # A property of a plain data object (the toast log row's title), not an element's tooltip.
 js/toast-log.js:same\.title = title # data, not a tooltip
+# A property of the new agent dialog's link and state objects, not an element's tooltip.
+js/newagent.js:link\.title = \(got # data, not a tooltip
+js/newagent.js:naS\.title = naEl # data, not a tooltip

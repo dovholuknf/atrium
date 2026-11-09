@@ -909,6 +909,7 @@ function cardHTML(t, wearAs) {
         >wake queued</span>` : ""}
       ${newContextChip(t)}${parkedChip(t)}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
+      ${typeof naKeepChip === "function" ? naKeepChip(t) : ""}
       ${stuckMark(t)}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
         data-tip="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +

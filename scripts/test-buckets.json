@@ -111,7 +111,9 @@
       "units": ["launch*", "newWorkDialog"],
       "sources": [
         "internal/api/web/js/launchrepo.js",
-        "internal/api/web/js/newcard.js"
+        "internal/api/web/js/newcard.js",
+        "internal/api/web/js/newagent.js",
+        "internal/api/web/css/newagent.css"
       ],
       "tests": [],
       "checks": []

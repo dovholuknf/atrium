@@ -333,6 +333,11 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if climbs(req.Org) || climbs(req.Repo) || checkBranchName(r.Context(), branch) != nil {
+		writeErr(w, http.StatusBadRequest, errors.New("that org, repository or branch is not a name"))
+		return
+	}
+
 	repoPath := store.ProviderPath(p.Root, req.Org, req.Repo)
 	if repoPath == "" {
 		writeErr(w, http.StatusBadRequest, errors.New("which repository"))
@@ -432,6 +437,16 @@ func worktreeDest(root, org, repo, branch string) string {
 		return ""
 	}
 	return base + "/" + flattenBranch(branch)
+}
+
+// climbs is whether a name has a `.` or `..` segment, which would leave the folder it is joined under.
+func climbs(name string) bool {
+	for _, seg := range strings.Split(strings.ReplaceAll(name, "\\", "/"), "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // flattenBranch turns `feature/thing` into `feature-thing`.

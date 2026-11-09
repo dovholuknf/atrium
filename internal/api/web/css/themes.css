@@ -468,3 +468,7 @@
     background: var(--chip); border-color: var(--stroke-dim); color: var(--body);
     box-shadow: none;
   }
+  :root[data-skin="website"] .na-split > button.newagent:hover {
+    background: linear-gradient(90deg, var(--teal), var(--blue)); color: #04121D;
+    filter: brightness(1.12);
+  }
