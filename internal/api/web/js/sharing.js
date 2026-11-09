@@ -959,23 +959,59 @@ function cleanUpCard(id, t) { return oneAtATime("close:" + id, () => cleanUpNow(
 // closeNotDone is a close that left a row on the card it tried and failed to free. A row kept on purpose has no error.
 function closeNotDone(out) { return (out.items || []).some(it => it.action === "keep" && it.error); }
 
+// stopBody is the stop question's text for the card's folder atrium did not make (pv.foreign), or for none.
+function stopBody(f) {
+  if (!f) return "The agent stops. Its card, files and history stay.";
+  if (f.main) {
+    return `The agent stops. Its checkout <b>${esc(f.path)}</b>` + (f.branch ? ` and branch <b>${esc(f.branch)}</b>` : "") +
+      ` stay on disk. It is the repository's main checkout, so atrium does not offer to delete it.`;
+  }
+  const said = "The agent stops. Its " + (f.branch ? "worktree and branch stay" : "worktree stays") + " on disk.";
+  if (!f.why) {
+    return said + `<div class="field"><label class="check"><input type="checkbox" id="ask-adopt">` +
+      `<span>Also delete worktree <b>${esc(f.path)}</b>` + (f.branch ? ` and branch <b>${esc(f.branch)}</b>` : "") +
+      `</span></label></div>`;
+  }
+  if (!f.repo) return said;
+  const q = s => /\s/.test(s) ? `"${s}"` : s;
+  const cmds = [`git -C ${q(f.repo)} worktree remove ${q(f.path)}`];
+  if (f.branch) cmds.push(`git -C ${q(f.repo)} branch -d ${q(f.branch)}`);
+  return `${said} Atrium does not offer to delete it: ${esc(f.why)}. To delete it yourself:` +
+    cmds.map(c => `<code>${esc(c)}</code>`).join("");
+}
+
 async function cleanUpNow(id, t) {
   let pv;
   try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
   catch (e) { toast("could not read what cleaning up frees", e.message); return; }
   const title = (t && t.display_title) || id;
-  // A PREVIEW WITH NO ITEMS FREES NOTHING. Atrium removes only what its ledger says it made, so a folder it did not
-  // create (a gwt worktree) stays. Say so before stopping the session, rather than promising a clean up.
-  if (!(pv.items || []).length && !(pv.asks || []).length) {
-    const where = (t && t.worktree) ? `<b>${esc(t.worktree)}</b>` + (t.branch ? ` and branch <b>${esc(t.branch)}</b>` : "") + " stay." : "";
+  // A folder atrium did not make (a gwt worktree) stays unless the stop question's tick asks for it too.
+  const f = pv.foreign;
+  const answers = {};
+  let adopt = false;
+  if (f || (!(pv.items || []).length && !(pv.asks || []).length)) {
     const ok = await askUser({
-      title: `terminate ${title}?`,
-      body: `Nothing here was created by atrium, so nothing is removed. ${where} The session is stopped.`,
-      buttons: [{ label: "cancel", value: null }, { label: "terminate", value: true, style: "go" }]
+      title: `Stop the ${title} session?`,
+      body: stopBody(f),
+      buttons: [{ label: "cancel", value: null }, { label: "stop session", value: true, style: "go" }]
     });
     if (!ok) return;
+    const tick = document.getElementById("ask-adopt");
+    adopt = !!(f && !f.why && tick && tick.checked);
+    if (adopt && (f.dirty || f.unpushed)) {
+      // Enter takes the LAST button, so keep is it: a tick is not reason enough to lose work.
+      const buttons = [{ label: "cancel", value: null }, { label: "delete it", value: "delete", style: "no" }];
+      if (pv.can_stash) buttons.push({ label: "stash to the hub", value: "stash" });
+      buttons.push({ label: "keep it", value: "keep", style: "go" });
+      const ans = await askUser({
+        title: `${f.branch || "this folder"} has work found nowhere else`,
+        body: `${f.dirty} changed files and ${f.unpushed} commits are only in this folder.`,
+        buttons
+      });
+      if (ans === null) return;
+      if (ans === "keep") adopt = false; else answers.adopt = ans;
+    }
   }
-  const answers = {};
   for (const a of pv.asks || []) {
     if (skippedConfirms()[CLEANUP_ASK_KEY]) { answers[String(a.seq)] = "delete"; continue; }
     // Enter takes the LAST button, so delete is not it: stash is, or keep when the room cannot stash.
@@ -1000,7 +1036,7 @@ async function cleanUpNow(id, t) {
   try {
     const out = await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: true, answers })
+      body: JSON.stringify({ confirm: true, answers, adopt })
     });
     const said = [];
     (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));

@@ -292,6 +292,9 @@ func describePath(p wire.Path) string {
 		}
 	case "zrok":
 		s += " private share"
+		if p.Share != "" {
+			s += " " + wire.MaskShare(p.Share)
+		}
 	}
 	if p.From != "" {
 		s += "   (" + p.From + ")"
