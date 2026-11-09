@@ -384,7 +384,7 @@ func (o CheckRefFormat) build(b *builder) {
 }
 
 // Diff is `git diff` of Revs under Paths: the patch (binary when Binary), or --numstat, --stat, --name-only or
-// --name-status, limited to DiffFilter. The rest are git's flags of the same name, FindRenames being -M.
+// --name-status, limited to DiffFilter, written to the file Output when set. The rest are git's flags of the same name, FindRenames being -M.
 type Diff struct {
 	Revs        []string
 	Paths       []string
@@ -400,6 +400,8 @@ type Diff struct {
 	NoExtDiff   bool
 	NoTextconv  bool
 	NoColor     bool
+	NoRenames   bool
+	Output      string
 }
 
 func (o Diff) build(b *builder) {
@@ -412,6 +414,10 @@ func (o Diff) build(b *builder) {
 		b.add("--diff-filter=" + b.value("diff-filter", o.DiffFilter))
 	}
 	diffFlags(b, o.NameStatus, o.Z, o.Relative, o.FindRenames, o.NoExtDiff, o.NoTextconv, o.NoColor)
+	b.flag(o.NoRenames, "--no-renames")
+	if o.Output != "" {
+		b.add("--output=" + b.value("output", o.Output))
+	}
 	b.add(eoo)
 	b.add(b.refs("rev", o.Revs)...)
 	if len(o.Paths) > 0 {
@@ -466,10 +472,11 @@ func (o DiffNoIndex) build(b *builder) {
 	b.add("--", b.path("a", o.A), b.path("b", o.B))
 }
 
-// Apply is `git apply` of the patch on stdin.
+// Apply is `git apply` of the file Patch, else of the patch on stdin.
 type Apply struct {
 	Binary     bool
 	Whitespace string
+	Patch      string
 }
 
 func (o Apply) build(b *builder) {
@@ -477,6 +484,9 @@ func (o Apply) build(b *builder) {
 	b.flag(o.Binary, "--binary")
 	if o.Whitespace != "" {
 		b.add("--whitespace=" + b.oneOf("whitespace", o.Whitespace, "nowarn", "warn", "fix", "error", "error-all"))
+	}
+	if o.Patch != "" {
+		b.add("--", b.path("patch", o.Patch))
 	}
 }
 

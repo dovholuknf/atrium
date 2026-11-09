@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,11 +20,13 @@ func TestCarryChangesAppliesTheDiffAndCopiesUntrackedFiles(t *testing.T) {
 	}
 	git := func(dir string, args ...string) string {
 		t.Helper()
-		out, err := gitIn(dir, append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"}, args...)...)
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"}, args...)...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("git %v: %v", args, err)
+			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
-		return out
+		return strings.TrimSpace(string(out))
 	}
 	write := func(p, s string) {
 		t.Helper()

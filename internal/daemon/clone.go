@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
@@ -35,7 +36,7 @@ func cloneRefusal(t *store.Task) error {
 	if t.Worktree == "" {
 		return errors.New("this card has no folder to copy")
 	}
-	if _, err := gitIn(t.Worktree, "rev-parse", "--verify", "HEAD"); err != nil {
+	if _, err := gitIn(t.Worktree, gitexec.RevParseVerify{Rev: "HEAD"}); err != nil {
 		return fmt.Errorf("%s is not a git checkout with a commit: %v", filepath.ToSlash(t.Worktree), err)
 	}
 	return nil
@@ -57,7 +58,7 @@ func (d *Daemon) cloneRepo(t *store.Task) (string, error) {
 	if row, ok := d.HomeOf(t.ID); ok && row.Clone != "" {
 		return row.Clone, nil
 	}
-	common, err := gitIn(t.Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := gitIn(t.Worktree, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil {
 		return "", err
 	}
@@ -80,8 +81,8 @@ func (d *Daemon) briefOf(t *store.Task) string {
 // dirtyFiles are the paths changed against HEAD in dir, then the untracked ones.
 func dirtyFiles(dir string) ([]string, error) {
 	files := []string{}
-	for _, args := range [][]string{{"diff", "--name-only", "--no-renames", "HEAD"}, {"ls-files", "--others", "--exclude-standard"}} {
-		out, err := gitIn(dir, args...)
+	for _, op := range []gitexec.Op{gitexec.Diff{Revs: []string{"HEAD"}, NameOnly: true, NoRenames: true}, gitexec.LsFiles{Others: true, ExcludeStandard: true}} {
+		out, err := gitIn(dir, op)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +107,7 @@ func (d *Daemon) handleCloneSource(w http.ResponseWriter, r *http.Request) {
 	}
 	src := cloneSource{Brief: d.briefOf(t), NoFork: d.forkRefusal(t)}
 	if src.Repo, err = d.cloneRepo(t); err == nil {
-		if src.Head, err = gitIn(t.Worktree, "rev-parse", "HEAD"); err == nil {
+		if src.Head, err = gitIn(t.Worktree, gitexec.RevParse{Rev: "HEAD"}); err == nil {
 			src.Dirty, err = dirtyFiles(t.Worktree)
 		}
 	}
@@ -168,16 +169,16 @@ func (d *Daemon) cloneInto(src *store.Task, cwd, tmp string, carry, fork bool) (
 // carryChanges applies from's diff against its HEAD to to, and copies its untracked files. tmp holds the patch.
 func carryChanges(from, to, tmp string) error {
 	patch := filepath.Join(tmp, "clone.patch")
-	if _, err := gitIn(from, "diff", "--binary", "HEAD", "--output="+patch); err != nil {
+	if _, err := gitIn(from, gitexec.Diff{Revs: []string{"HEAD"}, Binary: true, Output: patch}); err != nil {
 		return err
 	}
 	defer os.Remove(patch)
 	if fi, err := os.Stat(patch); err == nil && fi.Size() > 0 {
-		if _, err := gitIn(to, "apply", "--binary", "--whitespace=nowarn", patch); err != nil {
+		if _, err := gitIn(to, gitexec.Apply{Binary: true, Whitespace: "nowarn", Patch: patch}); err != nil {
 			return err
 		}
 	}
-	out, err := gitIn(from, "ls-files", "--others", "--exclude-standard")
+	out, err := gitIn(from, gitexec.LsFiles{Others: true, ExcludeStandard: true})
 	if err != nil {
 		return err
 	}
