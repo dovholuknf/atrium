@@ -12380,7 +12380,7 @@ async function walkBranchSection(browser, base) {
     await p.keyboard.press("Enter");
     await p.waitForSelector(S + ".cmt[data-cid]", { timeout: slow(5000) }).catch(() => fail("walkBranch: Enter did not save the comment"));
     const kept = () => (mock.walkState[ids.ok] && mock.walkState[ids.ok].comments || []).length;
-    for (let i = 0; i < 100 && !kept(); i++) await p.waitForTimeout(50);
+    for (let i = 0; i < 100 && !kept(); i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
     if (kept() !== 1) fail("walkBranch: the comment was not kept for the card: " + JSON.stringify(mock.walkState[ids.ok]));
     if (!await p.$("#walk-bottom .wb-toggle")) fail("walkBranch: no bar along the bottom");
     await p.click('#walk-bottom [data-wp="toggle"]');
@@ -12409,10 +12409,10 @@ async function walkBranchSection(browser, base) {
       comments: [{ id: "o1", file: "a.cs", line: 3, who: "you", text: "from another dev", turns: [{ who: "you", text: "why?" }] }], thread: [{ q: "is it safe", scope: "", at: 1 }] };
     await p.waitForFunction(() => !walkPr.timer, null, { timeout: slow(5000) });
     await p.evaluate(t => walkPrImportText(t), JSON.stringify(other));
-    for (let i = 0; i < 100 && !mock.walkOpen.calls.length; i++) await p.waitForTimeout(50);
+    for (let i = 0; i < 100 && !mock.walkOpen.calls.length; i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
     const call = mock.walkOpen.calls[0] || {};
     if (call.url !== other.pr.url || !/from another dev/.test(call.why || "") || !/is it safe/.test(call.why || "")) fail("walkBranch: importing another PR's walk opened " + JSON.stringify(call));
-    for (let i = 0; i < 100 && !(mock.walkState[ids.ok] && mock.walkState[ids.ok].comments.some(c => c.id === "o1")); i++) await p.waitForTimeout(50);
+    for (let i = 0; i < 100 && !(mock.walkState[ids.ok] && mock.walkState[ids.ok].comments.some(c => c.id === "o1")); i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
     if (!(mock.walkState[ids.ok].comments || []).some(c => c.id === "o1")) fail("walkBranch: the imported walk was not kept on the new card");
     mock.walkOpen.card = "";
     await p.waitForSelector("#walk-bottom.wb-term", { timeout: slow(5000) }).catch(() => fail("walkBranch: the terminal switch did nothing"));

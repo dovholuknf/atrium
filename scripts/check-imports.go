@@ -87,7 +87,7 @@ var table = []row{
 		"internal/base/testwait",
 	}},
 	{2, "internal/daemon/screen", []string{"internal/store"}},
-	{2, "internal/roomstats", []string{"internal/store", "internal/zitictx"}},
+	{2, "internal/roomstats", []string{"internal/base/nowindow", "internal/store", "internal/zitictx"}},
 	{2, "internal/runnerprofile", []string{"internal/store"}},
 	{2, "internal/small", []string{"internal/store"}},
 	{2, "internal/wtfree", []string{"internal/base/gitexec"}},
