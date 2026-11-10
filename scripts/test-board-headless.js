@@ -10484,11 +10484,11 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
-    await p.waitForFunction(r => ["held", "questions", "unseen", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
+    await p.waitForFunction(r => ["held", "questions", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
     await settleStyle(p);
     // The row's badges, by what they are. Every one must be on the row for the test to mean anything. The cache dial is the
     // state slot's, and a working card draws the spinner there.
-    const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.room"]
+    const badges = ["chip.held", "chip.questions", "chip.room"]
       .map(c => row + " ." + c.split(".").join("."));
     const hovered = [];
     for (const sel of badges.concat([row + " .chip:not(.held):not(.questions):not(.unseen):not(.cache):not(.room)", row + " .tname", row])) {
@@ -26741,7 +26741,7 @@ async function main() {
       fail("the card with two open questions did not draw `? 2`: " + JSON.stringify(seenMarks));
     }
     if (seenMarks.plain !== 0) fail("a card with no seen state drew a seen mark");
-    if (seenMarks.tab === false) fail("the terminal strip row did not draw the unread dot");
+    if (seenMarks.tab === true) fail("the terminal strip row drew the unread dot");
     mock.tasksMode = "first";
     await page.evaluate(() => runRefresh());
     });
