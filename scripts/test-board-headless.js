@@ -28485,6 +28485,7 @@ async function main() {
     await unit("pollsGone", bu("pollsGone"));
     await unit("findingsProbe", bu("findingsProbe"));
     await unit("roomsMachine", bu("roomsMachine"));
+    await unit("roomsLogin", bu("roomsLogin"));
     await unit("mHome", () => mHomeSection(browser));
     await unit("mResume", () => mResumeSection(browser));
     await unit("mCard", () => mCardSection(browser));

@@ -337,6 +337,7 @@
   @media (max-width: 640px) {
     .rt-bands { grid-template-columns: minmax(0, 1fr); }
     .rd-band { flex-direction: column; }
+    .rtile .rt-head { flex-wrap: wrap; }
   }
 
   /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.

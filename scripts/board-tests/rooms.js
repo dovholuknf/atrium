@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo, roomsMenuScroll.
+// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo, roomsMenuScroll.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -2106,6 +2106,81 @@ async function roomsMenuScrollSection(browser, base) {
   }
 }
 
+// A room's runner logins: the room tile says in words which login to renew, and a healthy room says nothing.
+// ROOMS_LOGIN_SHOTS names a folder for the desktop and 390px pictures.
+async function roomsLoginSection(browser, base) {
+  const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  const shots = process.env.ROOMS_LOGIN_SHOTS || "";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(skip);
+  try {
+    await p.clock.install();
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
+      roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await fakePause(p);
+    await p.evaluate(() => openRooms());
+    await p.clock.runFor(2300);
+    await p.evaluate(() => clearInterval(roomsDemoTimer));
+    await p.clock.runFor(900);
+    await p.evaluate(() => {
+      const now = Date.now();
+      const iso = ms => new Date(ms).toISOString();
+      const runners = (claude, codex) => [
+        Object.assign({ kind: "claude", resolves: true }, claude), Object.assign({ kind: "codex", resolves: true }, codex)];
+      const send = (room, rs, al) => onRoomStats({ v: 1, room, at: iso(now), runners: rs, alert: al });
+      send("sg3", runners({ login: "in", login_expires_at: iso(now + 20 * 86400000), login_renews: true }, { login: "in" }));
+      send("sg4", runners({ login: "in", login_expires_at: iso(now + 2 * 86400000) }, { login: "in" }),
+        { logins_due: [{ kind: "claude", state: "expiring", expires_at: iso(now + 2 * 86400000), fix: "claude auth login" }] });
+      send("m1mini", runners({ login: "out" }, { login: "in" }), { logins_due: [{ kind: "claude", state: "out", fix: "claude auth login" }] });
+    });
+    await p.clock.runFor(300);
+    const read = () => p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      const badge = room => {
+        const b = m.querySelector(`.rtile[data-room="${room}"] .rd-alert`);
+        const c = m.querySelector(`.rtile[data-room="${room}"] .rd-login-copy`);
+        return b ? { text: b.textContent, tip: b.dataset.tip, copy: c ? c.dataset.copy : "" } : null;
+      };
+      const gr = document.createElement("div");
+      gr.innerHTML = growlFull({ id: "sg4|runner-login|x", room: "sg4", reason: "runner-login", title: "sg4: a runner needs a login",
+        body: "claude login expires soon. On sg4 run: claude auth login", subject: "claude auth login", state: "open" });
+      const grCopy = gr.querySelector(".gr-fix button.copybit");
+      const kind = room => [...m.querySelectorAll(`.rtile[data-room="${room}"] .rd-kinds span`)].map(e => e.dataset.tip);
+      return { sg3: badge("sg3"), sg4: badge("sg4"), m1: badge("m1mini"), kinds: kind("sg4").concat(kind("m1mini")),
+        grCopy: grCopy ? grCopy.dataset.copy : "", grCode: (gr.querySelector(".gr-fix code") || {}).textContent || "",
+        tiles: Object.fromEntries([...m.querySelectorAll(".rtile[data-room]")].map(t => [t.dataset.room, t.scrollWidth - t.clientWidth])),
+        sw: m.scrollWidth, cw: m.clientWidth, doc: document.documentElement.scrollWidth };
+    });
+    const d = await read();
+    const has = (label, ok, extra) => { if (!ok) fail("roomsLogin: " + label + ": " + JSON.stringify(extra || d)); };
+    has("a healthy room drew an alert", d.sg3 === null);
+    has("the expiring login was not named", d.sg4 && d.sg4.text === "login needed" &&
+      /claude login expires in 2 days\. On sg4 run: claude auth login/.test(d.sg4.tip) && d.sg4.copy === "claude auth login");
+    has("the logged out runner was not named", d.m1 && /claude is not logged in\. On m1mini run: claude auth login/.test(d.m1.tip) &&
+      d.m1.copy === "claude auth login");
+    has("the growler has no copy beside its command", d.grCopy === "claude auth login" && d.grCode === "claude auth login");
+    has("the runner chip lost its login line", d.kinds.some(k => /claude\. logged in, token expires/.test(k)) &&
+      d.kinds.some(k => /claude\. not logged in/.test(k)));
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "runner-login-desktop.png") });
+    }
+    await p.setViewportSize({ width: 390, height: 844 });
+    await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+    await p.clock.runFor(300);
+    const phone = await read();
+    has("at 390px a room with an alert overflows", phone.tiles.sg4 <= 1 && phone.tiles.m1mini <= 1 && phone.doc <= 390, phone);
+    if (shots) await p.screenshot({ path: path.join(shots, "runner-login-390.png") });
+    if (errors.length) fail("roomsLogin: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 const units = [
   { name: "restartGate", run: ({ browser, base }) => restartGateSection(browser, base) },
   { name: "restartStays", run: ({ browser, base }) => restartStaysSection(browser, base) },
@@ -2120,6 +2195,7 @@ const units = [
   { name: "pollsGone", run: ({ browser, base }) => pollsGoneSection(browser, base) },
   { name: "findingsProbe", run: ({ browser, base }) => findingsProbeSection(browser, base) },
   { name: "roomsMachine", run: ({ browser, base }) => roomsMachineSection(browser, base) },
+  { name: "roomsLogin", run: ({ browser, base }) => roomsLoginSection(browser, base) },
   { name: "loginNeeded", run: ({ browser, base }) => loginNeededSection(browser, base) },
   { name: "restartMenu", run: ({ browser, base }) => restartMenuSection(browser, base) },
   { name: "roomsSetup", run: ({ browser, base }) => roomsSetupSection(browser, base) },
@@ -2127,7 +2203,7 @@ const units = [
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
   { name: "roomsMenuScroll", run: ({ browser, base }) => roomsMenuScrollSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection };
+const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

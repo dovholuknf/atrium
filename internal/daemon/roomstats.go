@@ -34,6 +34,7 @@ func (d *Daemon) worktreeVolume() string {
 }
 
 func (d *Daemon) startRoomStats(ctx context.Context) {
+	logins := &roomstats.LoginCache{Files: roomstats.RealLoginFiles()}
 	s := roomstats.New(roomstats.Sources{
 		Room:         d.opts.Room,
 		Started:      time.Now(),
@@ -64,7 +65,14 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 			}
 			out := make([]roomstats.Runner, 0, len(hs))
 			for _, h := range hs {
-				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: d.hk.runnerFound(h) != "", Enabled: h.Enabled})
+				r := roomstats.Runner{Kind: h.ID, Resolves: d.hk.runnerFound(h) != "", Enabled: h.Enabled}
+				if l := logins.Read(h.LoginRead); l.State != "" {
+					r.Login, r.LoginRenews, r.LoginFix = l.State, l.Renews, h.LoginFix
+					if !l.ExpiresAt.IsZero() {
+						r.LoginExpires = l.ExpiresAt.UTC().Format(time.RFC3339)
+					}
+				}
+				out = append(out, r)
 			}
 			return out, nil
 		},

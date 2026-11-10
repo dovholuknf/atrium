@@ -137,6 +137,11 @@ type Harness struct {
 	// empty. A bare shell has no version and ollama ships as a platform
 	// installer, so empty is the right answer for both and means "do not ask".
 	Package string `json:"package"`
+	// LoginRead names the reader for this runner's login store, so the room can say when the login is out or about
+	// to expire. "claude" and "codex" are the readers there are. Empty means the room reads nothing and says nothing.
+	LoginRead string `json:"login_read"`
+	// LoginFix is the command a person runs on the room to log this runner in, shown and copied as written.
+	LoginFix string `json:"login_fix"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
 	RulesSource string    `json:"rules_source"`
@@ -181,8 +186,9 @@ func DefaultHarnesses() []Harness {
 			EffortArgs:      []string{"--effort", "{effort}"},
 			AutocompactArgs: []string{"--autocompact", "{autocompact}"},
 			RulesSource:     "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true, QueuesMidTurn: true,
-			Package: "@anthropic-ai/claude-code",
-			Notes:   "resume needs a session id, which only a runner that reports one can supply",
+			Package:   "@anthropic-ai/claude-code",
+			LoginRead: "claude", LoginFix: "claude auth login",
+			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			// `codex resume <SESSION_ID>` takes the same uuid codex puts in
@@ -208,6 +214,7 @@ func DefaultHarnesses() []Harness {
 			// in codex-cli 0.156.1.
 			EffortArgs:     []string{"-c", "model_reasoning_effort={effort}"},
 			BracketedPaste: true, MidTurnInput: true, Package: "@openai/codex",
+			LoginRead: "codex", LoginFix: "codex login --device-auth",
 			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
@@ -252,7 +259,8 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
 		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn,
-		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK, &queuesMid, &fork, &h.ForkCopy); err != nil {
+		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK, &queuesMid, &fork, &h.ForkCopy,
+		&h.LoginRead, &h.LoginFix); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -303,7 +311,8 @@ func orDefault(s, def string) string {
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
 	model_args, bracketed_paste, package, bin_path, mid_turn_input,
-	effort_args, model_env, effort_env, autocompact_args, context_limit_k, queues_mid_turn, fork_args, fork_copy`
+	effort_args, model_env, effort_env, autocompact_args, context_limit_k, queues_mid_turn, fork_args, fork_copy,
+	login_read, login_fix`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -438,7 +447,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			queuesMid = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -455,13 +464,15 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				autocompact_args = excluded.autocompact_args,
 				context_limit_k = excluded.context_limit_k,
 				queues_mid_turn = excluded.queues_mid_turn,
-				fork_args = excluded.fork_args, fork_copy = excluded.fork_copy`,
+				fork_args = excluded.fork_args, fork_copy = excluded.fork_copy,
+				login_read = excluded.login_read, login_fix = excluded.login_fix`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
 			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn,
 			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv), string(autocompact),
-			h.ContextLimitK, queuesMid, string(fork), strings.TrimSpace(h.ForkCopy))
+			h.ContextLimitK, queuesMid, string(fork), strings.TrimSpace(h.ForkCopy),
+			strings.TrimSpace(h.LoginRead), strings.TrimSpace(h.LoginFix))
 		return err
 	})
 	if err != nil {

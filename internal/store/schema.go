@@ -2534,6 +2534,19 @@ var migrations = []struct {
 			   WHERE id = 'codex' AND fork_args = '[]' AND resume_args = '["resume","--no-alt-screen","{resume}"]'`,
 		},
 	},
+	{
+		// Where the room reads a runner's login and what fixes it, f-runner-login-expiry. Seeded for the two rows
+		// that have a reader, guarded on an empty value so a row edited by hand stays.
+		name: "0118_harness_login",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN login_read TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE harness ADD COLUMN login_fix TEXT NOT NULL DEFAULT ''`,
+			`UPDATE harness SET login_read = 'claude', login_fix = 'claude auth login'
+			   WHERE id = 'claude' AND login_read = '' AND login_fix = ''`,
+			`UPDATE harness SET login_read = 'codex', login_fix = 'codex login --device-auth'
+			   WHERE id = 'codex' AND login_read = '' AND login_fix = ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

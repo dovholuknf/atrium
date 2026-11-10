@@ -106,3 +106,31 @@ func TestSeededHarnessesKnowHowToExit(t *testing.T) {
 		}
 	}
 }
+
+// A runner row says where its login is read and what fixes it, and a row with no reader says nothing.
+func TestHarnessLoginReadAndFix(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	want := map[string][2]string{"claude": {"claude", "claude auth login"}, "codex": {"codex", "codex login --device-auth"},
+		"ollama": {"", ""}}
+	for id, w := range want {
+		h, err := s.Harness(id)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if h.LoginRead != w[0] || h.LoginFix != w[1] {
+			t.Errorf("%s reads %q and fixes with %q, wanted %q", id, h.LoginRead, h.LoginFix, w)
+		}
+	}
+	if _, err := s.SaveHarness(Harness{ID: "probe", Cmd: "probe", LaunchMode: LaunchPTY,
+		LoginRead: " codex ", LoginFix: " probe login "}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := s.Harness("probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LoginRead != "codex" || got.LoginFix != "probe login" {
+		t.Fatalf("came back as %q %q", got.LoginRead, got.LoginFix)
+	}
+}

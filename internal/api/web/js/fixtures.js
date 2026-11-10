@@ -885,6 +885,8 @@ async function editHarness(id, room, seed) {
   document.getElementById("h-env").value =
     Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
   document.getElementById("h-rules").value = h.rules_source || "";
+  document.getElementById("h-login-read").value = h.login_read || "";
+  document.getElementById("h-login-fix").value = h.login_fix || "";
   document.getElementById("h-package").value = h.package || "";
   document.getElementById("h-notes").value = h.notes || "";
   document.querySelectorAll("#h-mode button").forEach(b =>
@@ -934,6 +936,8 @@ function harnessFromForm() {
     env,
     launch_mode: document.querySelector("#h-mode button.on").dataset.v,
     rules_source: document.getElementById("h-rules").value,
+    login_read: document.getElementById("h-login-read").value,
+    login_fix: document.getElementById("h-login-fix").value.trim(),
     // Sent on every save for the same reason bracketed paste is: the PUT
     // replaces the whole row, so a field left out is a field cleared.
     package: document.getElementById("h-package").value.trim(),

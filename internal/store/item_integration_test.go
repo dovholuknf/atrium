@@ -137,7 +137,7 @@ func TestItemOfTaskIsTheLatest(t *testing.T) {
 }
 
 func TestItemStuckMigrationIsLast(t *testing.T) {
-	if last := migrations[len(migrations)-1].name; last != "0117_harness_fork" {
+	if last := migrations[len(migrations)-1].name; last != "0118_harness_login" {
 		t.Fatalf("the last migration is %q", last)
 	}
 }

@@ -37,13 +37,14 @@ import (
 
 // Growl reasons, as the CHECK constraint spells them.
 const (
-	GrowlPermission = "permission"
-	GrowlHalt       = "halt"
-	GrowlBlocked    = "blocked"
-	GrowlQuestion   = "question"
-	GrowlDeployHold = "deploy-hold"
-	GrowlRoomCPU    = "room-cpu"
-	GrowlRunnerGone = "runner-missing"
+	GrowlPermission  = "permission"
+	GrowlHalt        = "halt"
+	GrowlBlocked     = "blocked"
+	GrowlQuestion    = "question"
+	GrowlDeployHold  = "deploy-hold"
+	GrowlRoomCPU     = "room-cpu"
+	GrowlRunnerGone  = "runner-missing"
+	GrowlRunnerLogin = "runner-login"
 )
 
 // Growl states.

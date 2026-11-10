@@ -9,9 +9,9 @@ import (
 
 // The alert is what the operator should hear about a room with nobody there to
 // notice: the machine hot for HotFor with no agent mid-turn, or an enabled
-// runner that does not resolve. The hub raises a growler from it and the board
-// badges the room tile. Clearing the condition clears the alert, which re-arms
-// it. See f-room-cpu-alert.
+// runner that does not resolve, or an enabled runner logged out or about to be. The hub raises a growler from it and
+// the board badges the room tile. Clearing the condition clears the alert, which re-arms it. See f-room-cpu-alert
+// and f-runner-login-expiry.
 const (
 	HotPct   = 80.0
 	HotFor   = 10 * time.Minute
@@ -31,10 +31,11 @@ const (
 
 // Alert is absent when there is nothing to say.
 type Alert struct {
-	HotSince       string   `json:"hot_since,omitempty"`
-	CPUPct         float64  `json:"cpu_pct,omitempty"`
-	Procs          []Proc   `json:"procs,omitempty"`
-	RunnersMissing []string `json:"runners_missing,omitempty"`
+	HotSince       string     `json:"hot_since,omitempty"`
+	CPUPct         float64    `json:"cpu_pct,omitempty"`
+	Procs          []Proc     `json:"procs,omitempty"`
+	RunnersMissing []string   `json:"runners_missing,omitempty"`
+	LoginsDue      []LoginDue `json:"logins_due,omitempty"`
 }
 
 // Proc is one process. CPUPct is of one core, as ps reports it.
@@ -110,6 +111,9 @@ func (s *Sampler) sampleAlert(now time.Time, agents int, procs []Proc, procsOK b
 		if r.Enabled && !r.Resolves {
 			a.RunnersMissing = append(a.RunnersMissing, r.Kind)
 		}
+		if d, ok := loginDue(r, now); ok {
+			a.LoginsDue = append(a.LoginsDue, d)
+		}
 	}
 	m := s.snap.Machine
 	if m != nil && m.CPUPct != nil && m.StaleSince == "" && *m.CPUPct >= HotPct && agents == 0 {
@@ -125,7 +129,7 @@ func (s *Sampler) sampleAlert(now time.Time, agents int, procs []Proc, procsOK b
 	if !s.hotStart.IsZero() && now.Sub(s.hotStart) >= HotFor && (s.src.Procs == nil || s.hotProcs != nil) {
 		a.HotSince, a.CPUPct, a.Procs = rfc(s.hotStart), *m.CPUPct, s.hotProcs
 	}
-	if a.HotSince == "" && a.RunnersMissing == nil {
+	if a.HotSince == "" && a.RunnersMissing == nil && a.LoginsDue == nil {
 		s.snap.Alert = nil
 		return
 	}

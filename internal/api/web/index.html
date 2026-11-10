@@ -3306,6 +3306,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         </select>
       </div>
       <div class="field">
+        <label class="eyebrow" for="h-login-read">login store <span class="help" tabindex="0"
+          data-tip="Where the room reads this runner's login, to say when it is out or about to expire. None means the room says nothing about it.">?</span></label>
+        <select id="h-login-read">
+          <option value="">none</option>
+          <option value="claude">claude code credentials</option>
+          <option value="codex">codex auth.json</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-login-fix">login command <span class="help" tabindex="0"
+          data-tip="What to run on the room to log this runner in. The login alert shows it with a copy button.">?</span></label>
+        <input type="text" id="h-login-fix" spellcheck="false" placeholder="claude auth login">
+      </div>
+      <div class="field">
         <label class="eyebrow" for="h-prepare">prepare</label>
         <textarea id="h-prepare" rows="2" spellcheck="false"
           placeholder="add-clion_tools"></textarea>

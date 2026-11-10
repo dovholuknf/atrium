@@ -29,9 +29,10 @@ const growlUndo = new Map();
 const GROWL_NAME = {
   permission: ["permission", "permissions"], halt: ["halt", "halts"], blocked: ["blocked", "blocked"],
   question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"], ci: ["CI notice", "CI notices"],
-  "room-cpu": ["hot room", "hot rooms"], "runner-missing": ["missing runner", "missing runners"]
+  "room-cpu": ["hot room", "hot rooms"], "runner-missing": ["missing runner", "missing runners"],
+  "runner-login": ["login to renew", "logins to renew"]
 };
-const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5, ci: 6, "room-cpu": 7, "runner-missing": 8 };
+const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5, ci: 6, "room-cpu": 7, "runner-missing": 8, "runner-login": 8 };
 const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["tomorrow 9am", 0]];
 
 function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
@@ -221,7 +222,7 @@ function growlPrimary(g) {
     case "permission": return `<button data-do="approve"${g.subject ? "" : " disabled"}>approve once</button>`;
     case "halt": return `<button data-do="room">open the room</button>`;
     case "room-cpu": return g.subject ? `<button data-do="kill">kill orphans</button>` : `<button data-do="room">open the room</button>`;
-    case "runner-missing": return `<button data-do="room">open the room</button>`;
+    case "runner-missing": case "runner-login": return `<button data-do="room">open the room</button>`;
     case "deploy-hold": return `<button data-do="lift">lift</button>`;
     case "ci": return "";
     default: return `<button data-do="open">open</button>`;
@@ -246,12 +247,15 @@ function growlFull(g) {
   const perm = g.reason === "permission";
   // A question is read whole, in a box that scrolls. Anything else keeps its one line.
   const asks = g.reason === "blocked" || g.reason === "question";
-  const room = g.reason === "room-cpu" || g.reason === "runner-missing";
+  const room = g.reason === "room-cpu" || g.reason === "runner-missing" || g.reason === "runner-login";
   const split = asks ? replies.split(g.body) : { text: g.body, choices: [] };
   const text = perm
     ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
     : asks || room ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
       : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
+  const fixes = g.reason === "runner-login" && g.subject ? g.subject.split("\n").filter(Boolean).map(c =>
+    `<div class="gr-fix"><code>${esc(c)}</code><button type="button" class="copybit" data-copy="${esc(c)}" ` +
+    `data-tip="${esc("copy " + c)}" aria-label="${esc("copy " + c)}">${copyIcon()}</button></div>`).join("") : "";
   const offered = asks ? replies.of({ replies: g.replies, ask: g.body, fixed: g.fixed }) : [];
   const choices = offered.length
     ? replies.buttons(offered, { cls: "gr-choices", disabled: growlChoiceSent.get(g.id) === g.body }).outerHTML : "";
@@ -274,7 +278,7 @@ function growlFull(g) {
   const snooze = growlSnoozing === g.id
     ? `<div class="gr-snooze">${GROWL_SNOOZES.map(s => `<button data-snooze="${s[1]}">${s[0]}</button>`).join("")}</div>` : "";
   return `<div class="gr-full" data-id="${esc(g.id)}" data-reason="${esc(g.reason)}">` +
-    `<div class="gr-head"><b>${esc(g.title)}</b>${off}</div>${text}${choices}${reply}<div class="gr-acts">${acts}</div>${snooze}</div>`;
+    `<div class="gr-head"><b>${esc(g.title)}</b>${off}</div>${text}${fixes}${choices}${reply}<div class="gr-acts">${acts}</div>${snooze}</div>`;
 }
 
 // The growlers whose choice is in flight or answered, by the body they answered, so a redraw keeps the
@@ -477,6 +481,7 @@ function growlClick(e) {
   if (!btn) return;
   const row = btn.closest(".gr-full, .gr-row");
   if (btn.dataset.snooze !== undefined) { growlSnoozeFor(row, Number(btn.dataset.snooze)); return; }
+  if (btn.dataset.copy !== undefined) { copyAliasHandle(btn, "", btn.dataset.copy); return; }
   if (btn.dataset.choice !== undefined) {
     const g = row && growlByRow(row);
     if (g) growlSendChoice(g, row, btn.dataset.choice);
