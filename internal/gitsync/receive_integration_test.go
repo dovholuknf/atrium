@@ -2272,3 +2272,47 @@ func TestOrchestratorDeletesASquashedAndACherryPickedBranch(t *testing.T) {
 		t.Errorf("a branch with an unlanded commit: %v\n%s", err, out)
 	}
 }
+
+// An adopted mirror is never fetched from its forge, so the merged check reads the forge's main from the checkout's
+// origin/main.
+func TestOrchestratorDeletesABranchSquashedIntoAnAdoptedMirrorsForgeMain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	forge := filepath.ToSlash(t.TempDir())
+	ck := filepath.ToSlash(filepath.Join(t.TempDir(), "ck"))
+	x := newRecv(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+		h.Repos = func() ([]Repo, error) { return []Repo{{Name: hubRepo, Checkout: ck, Branch: "claude/main"}}, nil }
+	})
+	git(t, forge, "init", "-q", "--bare")
+	git(t, x.work, "push", "-q", forge, "main:refs/heads/main")
+	git(t, "", "clone", "-q", forge, ck)
+	git(t, ck, "branch", "-q", "claude/main", "origin/main")
+	if _, err := x.h.Mirror(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMarker(x.h.Bare(hubRepo), KindAdopted); err != nil {
+		t.Fatal(err)
+	}
+	x.branch("claude/sq", "s.txt")
+	x.branch("claude/open", "o.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
+	ident := []string{"-c", "user.name=t", "-c", "user.email=t@example.com"}
+	git(t, x.work, "checkout", "-q", "main")
+	git(t, x.work, "merge", "--squash", "claude/sq")
+	git(t, x.work, append(ident, "commit", "-q", "-m", "squash")...)
+	git(t, x.work, "push", "-q", forge, "main:refs/heads/main")
+	git(t, ck, "fetch", "-q", "origin")
+
+	orch := roomCard("sg4", "ORCH")
+	out, err := x.push(orch, hubRepo, ":refs/heads/claude/open")
+	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+		t.Errorf("a branch the forge's main lacks: %v\n%s", err, out)
+	}
+	x.must(x.push(orch, hubRepo, ":refs/heads/claude/sq"))
+	if got := x.refOn(hubRepo, "refs/heads/claude/sq"); got != "" {
+		t.Errorf("claude/sq is still there at %s", got)
+	}
+}

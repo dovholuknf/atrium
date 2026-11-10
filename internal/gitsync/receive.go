@@ -576,6 +576,9 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 					refuseAll(why)
 					return
 				}
+				if u.New == zeroSHA {
+					rc.h.carryForgeMain(ctx, r, dir)
+				}
 			}
 		}
 	} else if why := rc.cannotCreate(ref, who.Operator); why != "" {

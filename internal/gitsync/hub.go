@@ -313,6 +313,7 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 			return mirrored{}, err
 		}
 	}
+	h.carryForgeMain(ctx, r, bare)
 
 	ck := slash(r.Checkout)
 	want, err := run.GitCall(ctx, ck, Call{Config: []string{"safe.directory=" + ck}}, gitexec.RevParseVerify{Rev: "refs/heads/" + r.Branch + "^{commit}", Quiet: true})
@@ -362,6 +363,17 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 	h.auditFailure("", "git-mirror-stuck", "mirror-stuck:"+r.Name, nil)
 	h.audit("", "git-mirrored", r.Name+" "+r.Branch+" is now "+short(want))
 	return mirrored{sha: want, moved: true}, nil
+}
+
+// carryForgeMain copies the checkout's origin/main into refs/forge/main, for the merged check to read what a squash
+// PR landed. The hub never fetches the forge for a mirror the operator's clone feeds.
+func (h *Hub) carryForgeMain(ctx context.Context, r Repo, bare string) {
+	if r.Checkout == "" {
+		return
+	}
+	ck := slash(r.Checkout)
+	_, _ = h.runner().GitCall(ctx, bare, Call{Config: []string{"safe.directory=" + ck}}, gitexec.Fetch{Quiet: true,
+		NoTags: true, NoWriteFetchHead: true, Remote: ck, Refspecs: []string{"+refs/remotes/origin/main:" + ForgeRefPrefix + "main"}})
 }
 
 // followStuck is why a checkout did not follow the hub's tip, and why a land that needed it was refused.
