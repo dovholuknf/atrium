@@ -1121,16 +1121,29 @@ function termRunnerMark(t) {
 //
 // The class and the custom properties a row is drawn with: `--tabc` and `--tabbg` for the bridge, and the worn palette.
 // A shut group's heading wears the same when it stands in for the attached row.
-function termRowWear(t) {
-  const given = themeSource(t);
-  const th = given || themeFor(t);
-  const on = termTask && t.id === termTask.id;
-  const wear = given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
-  return { cls: wear.cls, vars: (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
-    (wear.style ? ";" + wear.style : "") };
+// A CHILD WITH NO COLOUR OF ITS OWN IS TINTED FROM ITS PARENT. `launcherColor` never hands a worker its launcher's theme, so a
+// child of a green orchestrator was the plain card. `inherit` is the parent's theme, softened toward the skin's card here.
+function termTintOf(inherit) {
+  const own = hexRGB(inherit.background), plain = hexRGB(plainTheme().background);
+  const fg = hexRGB(inherit.cursor || inherit.foreground), fg0 = hexRGB(plainTheme().foreground);
+  if (!own || !plain || !fg || !fg0) return null;
+  return Object.assign({}, inherit, {
+    background: rgbHex(mixRGB(own, plain, 0.55)), foreground: rgbHex(mixRGB(fg, fg0, 0.75)), cursor: rgbHex(mixRGB(fg, fg0, 0.75))
+  });
 }
 
-function termRow(t, deep, kid) {
+function termRowWear(t, inherit) {
+  const tint = !themeSource(t) && inherit ? termTintOf(inherit) : null;
+  const given = themeSource(t) || tint;
+  const th = given || themeFor(t);
+  const on = termTask && t.id === termTask.id;
+  const wear = tint ? ((termCold(t) ? termWearOn.exited : termWearOn.idle) ? wearOf(tint) || NO_WEAR : NO_WEAR)
+    : given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
+  return { cls: wear.cls, vars: (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
+    (tint ? `;--tabedge:${inherit.cursor || inherit.foreground}` : "") + (wear.style ? ";" + wear.style : "") };
+}
+
+function termRow(t, deep, kid, inherit) {
   // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a row of
   // tabs onto the panes behind it rather than as a list of names. Amber for
   // waiting said something the board already says better and cost the one
@@ -1141,7 +1154,7 @@ function termRow(t, deep, kid) {
   // A COLLAPSED PARENT HOLDING THE ATTACHED CARD CARRIES ITS BRIDGE, as a shut group does (`termGroupHead`). The attached
   // card is one of its hidden children, at any depth, so the row wears that card's colours and stands in for it.
   const carries = !on && termKidTotal(t) > 0 && termKidsShut(t) && termHoldsOn(t);
-  const wear = termRowWear(carries ? termTask : t);
+  const wear = carries ? termRowWear(termTask) : termRowWear(t, inherit);
   if (on) themeTrace("row", t);
   const style = wear.vars;
   const full = terminalLabel(t) || t.display_title;
@@ -1172,7 +1185,8 @@ function termRow(t, deep, kid) {
   const shut = termKidTotal(t) > 0 && termKidsShut(t);
   // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
   const shown = shut ? [] : allKids;
-  const kids = shown.map(k => termRow(k, false, true)).join("");
+  const down = themeSource(t) || inherit;
+  const kids = shown.map(k => termRow(k, false, true, down)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${carries ? "carries" : ""}${kid ? " kid" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one

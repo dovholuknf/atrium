@@ -98,6 +98,9 @@ function groupIsNew(name, made, now) {
   const at = made && made[name];
   return typeof at === "number" && (now === undefined ? Date.now() : now) - at < GROUP_NEW_MS;
 }
+// A TAG A PERSON PICKED, as opposed to the machine's: `atrium:*`, `origin:*`, `dept:*`, `link:*`, `pr:*`, `pull-request` and model names.
+const MACHINE_TAG = /^(atrium:|origin:|dept:|link:|pr:|claude-)|^(pull-request|sonnet|opus|haiku)$/;
+function isPickedTag(tag) { return !MACHINE_TAG.test(String(tag).trim().toLowerCase()); }
 // The group name a person typed, as the tag it becomes: trimmed and lower case.
 function groupNameOf(raw) { return String(raw || "").trim().toLowerCase(); }
 

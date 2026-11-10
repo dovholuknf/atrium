@@ -476,6 +476,7 @@
     margin-left: 14px; padding-left: 6px;
     border-left: 1px solid var(--hairline);
   }
+  .tkids .card.tab[style*="--tabedge"] { border-left: 3px solid var(--tabedge); }
   /* The fold button on a parent row. Folded, it carries the count of the cards it hides. */
   .tkidfold {
     display: inline-flex; align-items: center; gap: 2px; flex: none;
