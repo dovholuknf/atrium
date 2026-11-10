@@ -3,6 +3,7 @@
 package claudeconf
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +29,7 @@ func anExe(t *testing.T) string {
 	if err := os.WriteFile(p, []byte("not really a binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	real, err := filepath.EvalSymlinks(p)
+	real, err := safepath.Real(p)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,7 +18,7 @@ func root(t *testing.T) string {
 	// Resolved, because a temp directory is itself often a symlink (macOS
 	// /var, and Windows short paths), and a test that compares against the
 	// unresolved form tests the wrong thing.
-	real, err := filepath.EvalSymlinks(dir)
+	real, err := Real(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

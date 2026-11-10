@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -169,7 +170,7 @@ func TestPRWorktreeAdoptsAnOperatorsCloneWithoutAsking(t *testing.T) {
 	}
 	// The scm folder is checked after symlinks are resolved, so the path comes back as the real one: /private/var for
 	// a /var temp folder on a Mac, the long name for an 8.3 short one on Windows.
-	real, err := filepath.EvalSymlinks(clone)
+	real, err := safepath.Real(clone)
 	if err != nil {
 		t.Fatal(err)
 	}

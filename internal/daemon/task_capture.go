@@ -175,7 +175,7 @@ func readRecap(folder string) string {
 
 // resolveTaskOutputs lists the files the task named, each resolved through safepath, under the caps.
 func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missing []string, err error) {
-	root, err := filepath.EvalSymlinks(folder)
+	root, err := safepath.Real(folder)
 	if err != nil {
 		return nil, nil, fmt.Errorf("the task folder is not readable: %v", err)
 	}

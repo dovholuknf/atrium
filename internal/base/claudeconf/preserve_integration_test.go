@@ -104,6 +104,9 @@ func TestInstallWritesThroughASymlink(t *testing.T) {
 		// promise still holds there, it just cannot be demonstrated here.
 		t.Skipf("cannot create a symlink on this machine: %v", err)
 	}
+	if _, err := os.Stat(link); err != nil {
+		t.Skipf("the OS refuses to follow a symlink this account made: %v", err)
+	}
 
 	if _, _, err := Install("C:/tools/atrium.exe"); err != nil {
 		t.Fatal(err)

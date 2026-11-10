@@ -100,7 +100,7 @@ var table = []row{
 		"internal/base/forge", "internal/base/remoteaccess", "internal/base/testwait", "internal/gitsync", "internal/link/transport",
 		"internal/link/wire",
 	}},
-	{3, "internal/runnersetup", []string{"internal/base/claudeconf", "internal/runnerprofile", "internal/store"}},
+	{3, "internal/runnersetup", []string{"internal/base/claudeconf", "internal/base/safepath", "internal/runnerprofile", "internal/store"}},
 	{3, "internal/shepherd", []string{"internal/base/gitexec", "internal/gitsync", "internal/base/nowindow"}},
 	{3, "internal/worktrees", []string{"internal/base/gitexec", "internal/gitsync"}},
 	{4, "internal/api", []string{
@@ -133,7 +133,7 @@ var table = []row{
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules", "internal/base/safepath",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{3, "internal/daemon/shared", []string{"internal/base/gitexec", "internal/daemon/screen", "internal/store"}},

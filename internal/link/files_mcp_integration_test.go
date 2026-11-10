@@ -104,7 +104,7 @@ func newFilesHarness(t *testing.T) *filesHarness {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "no such file"})
 				return
 			}
-			root, _ := filepath.EvalSymlinks(work)
+			root, _ := safepath.Real(work)
 			rel, _ := filepath.Rel(root, real)
 			w.Header().Set(docs.RealPathHeader, url.PathEscape(filepath.ToSlash(rel)))
 			w.Header().Set("Content-Type", "application/octet-stream")

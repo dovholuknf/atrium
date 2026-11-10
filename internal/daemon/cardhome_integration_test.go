@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"os"
 	"os/exec"
@@ -383,7 +384,7 @@ func TestALaunchOnABranchAnotherCardHoldsIsRefused(t *testing.T) {
 
 // sameFolder is whether two spellings name one folder: a temp dir can be a symlink or an 8.3 name.
 func sameFolder(a, b string) bool {
-	ra, ea := filepath.EvalSymlinks(filepath.FromSlash(a))
-	rb, eb := filepath.EvalSymlinks(filepath.FromSlash(b))
+	ra, ea := safepath.Real(filepath.FromSlash(a))
+	rb, eb := safepath.Real(filepath.FromSlash(b))
 	return ea == nil && eb == nil && strings.EqualFold(ra, rb)
 }

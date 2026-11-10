@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"os"
 	"path/filepath"
@@ -191,7 +192,7 @@ func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if real, err := filepath.EvalSymlinks(self); err == nil {
+	if real, err := safepath.Real(self); err == nil {
 		self = real
 	}
 	if loc.Exe != filepath.ToSlash(self) {

@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func fileServer(t *testing.T) (*Server, *store.Store, string) {
 	st := openMigrated(t)
 
 	work := t.TempDir()
-	real, err := filepath.EvalSymlinks(work)
+	real, err := safepath.Real(work)
 	if err != nil {
 		t.Fatal(err)
 	}

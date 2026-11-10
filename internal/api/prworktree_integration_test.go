@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"os"
 	"os/exec"
@@ -294,7 +295,7 @@ func TestPRWorktreeAccessErrorIsUnchangedAndNothingIsCloned(t *testing.T) {
 // real resolves symlinks, since git reports /private/var where the test made /var.
 func real(v any) string {
 	p, _ := v.(string)
-	if r, err := filepath.EvalSymlinks(p); err == nil {
+	if r, err := safepath.Real(p); err == nil {
 		return r
 	}
 	return p

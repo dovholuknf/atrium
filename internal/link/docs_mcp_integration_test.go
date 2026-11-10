@@ -68,7 +68,7 @@ func newPublishHarness(t *testing.T) *publishHarness {
 				return
 			}
 			if !h.noHeader {
-				root, _ := filepath.EvalSymlinks(work)
+				root, _ := safepath.Real(work)
 				rel, _ := filepath.Rel(root, real)
 				w.Header().Set(docs.RealPathHeader, url.PathEscape(filepath.ToSlash(rel)))
 			}

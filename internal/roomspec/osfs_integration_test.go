@@ -3,6 +3,7 @@
 package roomspec
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,7 +40,7 @@ func TestRealFSApplyConverges(t *testing.T) {
 		t.Skip("no adapter")
 	}
 	tmp := filepath.ToSlash(t.TempDir())
-	if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
+	if resolved, err := safepath.Real(tmp); err == nil {
 		tmp = filepath.ToSlash(resolved)
 	}
 	h := Home{Dir: tmp + "/home", Config: tmp + "/home/cfg", AppSup: tmp + "/home/appsup"}

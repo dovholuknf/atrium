@@ -3,6 +3,7 @@
 package guard
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -173,7 +174,7 @@ func buildRepos(t *testing.T) repos {
 		t.Skip("no git")
 	}
 	root := t.TempDir()
-	if r, err := filepath.EvalSymlinks(root); err == nil {
+	if r, err := safepath.Real(root); err == nil {
 		root = r
 	}
 	rp := repos{"root": root}

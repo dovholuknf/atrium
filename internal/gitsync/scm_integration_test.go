@@ -5,6 +5,7 @@ package gitsync
 import (
 	"context"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -66,8 +67,8 @@ func TestCloneMakesTheCloneAtHostOwnerRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.ToSlash(filepath.Join(root, "github", "acme", "widget"))
-	got, _ := filepath.EvalSymlinks(res.Path)
-	wantR, _ := filepath.EvalSymlinks(want)
+	got, _ := safepath.Real(res.Path)
+	wantR, _ := safepath.Real(want)
 	if filepath.ToSlash(got) != filepath.ToSlash(wantR) || res.State != "cloned" {
 		t.Fatalf("path %q state %q, want %q cloned", res.Path, res.State, want)
 	}

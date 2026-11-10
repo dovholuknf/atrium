@@ -3,6 +3,7 @@
 package api
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,7 +22,7 @@ func TestTheBoardDownloadsFromTheCardsScratchFolder(t *testing.T) {
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
-	scratchDir, err := filepath.EvalSymlinks(t.TempDir())
+	scratchDir, err := safepath.Real(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
