@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 func TestGitCappedStopsGitAtTheCap(t *testing.T) {
@@ -29,16 +31,16 @@ func TestGitCappedStopsGitAtTheCap(t *testing.T) {
 	run("add", ".")
 	run("-c", "commit.gpgsign=false", "commit", "-m", "x")
 	r := NewRunner()
-	out, err := r.GitCapped(context.Background(), dir, nil, 1000, "show", "--format=", "HEAD")
+	out, err := r.GitCapped(context.Background(), dir, nil, 1000, gitexec.ShowDiff{Rev: "HEAD"})
 	if !errors.Is(err, ErrOutputCap) || len(out) != 1000 {
 		t.Fatalf("got %d bytes, err %v", len(out), err)
 	}
 	// Under the cap, or exactly at it, nothing is cut.
-	full, err := r.GitCapped(context.Background(), dir, nil, 0, "show", "--format=", "HEAD")
+	full, err := r.GitCapped(context.Background(), dir, nil, 0, gitexec.ShowDiff{Rev: "HEAD"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := r.GitCapped(context.Background(), dir, nil, len(full), "show", "--format=", "HEAD"); err != nil || got != full {
+	if got, err := r.GitCapped(context.Background(), dir, nil, len(full), gitexec.ShowDiff{Rev: "HEAD"}); err != nil || got != full {
 		t.Fatalf("exactly at the cap: %d of %d bytes, err %v", len(got), len(full), err)
 	}
 }

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -78,25 +78,24 @@ type Service struct {
 	St *store.Store
 }
 
-func git(ctx context.Context, dir string, args ...string) (string, error) {
+func git(ctx context.Context, dir string, op gitexec.Op) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitBound)
 	defer cancel()
-	// codeql[go/command-injection] git argv with no shell: callers pass fixed subcommands, and Start refuses a base that starts with '-'
-	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
-	cmd.Dir = dir
-	nowindow.Hide(cmd)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	err := cmd.Run()
+	var errb bytes.Buffer
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: dir, Stderr: &errb}, op)
 	if err != nil {
 		// git diff --no-index exits 1 when the sides differ
 		var ee *exec.ExitError
-		if errors.As(err, &ee) && ee.ExitCode() == 1 && len(args) > 1 && args[0] == "diff" && out.Len() > 0 {
-			return out.String(), nil
+		if _, noIndex := op.(gitexec.DiffNoIndex); noIndex && errors.As(err, &ee) && ee.ExitCode() == 1 && len(out) > 0 {
+			return string(out), nil
 		}
-		return out.String(), fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(errb.String()))
+		var ae *gitexec.ArgError
+		if errors.As(err, &ae) {
+			return "", err
+		}
+		return string(out), fmt.Errorf("git %s: %s", gitexec.Name(op), strings.TrimSpace(errb.String()))
 	}
-	return out.String(), nil
+	return string(out), nil
 }
 
 // Start finds the merge-base with base, lists the changed files and records the review on the card.
@@ -105,12 +104,12 @@ func (s *Service) Start(ctx context.Context, card, dir, base string) (StartOut, 
 	if base == "" || strings.HasPrefix(base, "-") {
 		return StartOut{}, errors.New("say the base branch")
 	}
-	mb, err := git(ctx, dir, "merge-base", "HEAD", base)
+	mb, err := git(ctx, dir, gitexec.MergeBase{A: "HEAD", B: base})
 	if err != nil {
 		return StartOut{}, fmt.Errorf("no merge-base between HEAD and %s: %w", base, err)
 	}
 	mb = strings.TrimSpace(mb)
-	num, err := git(ctx, dir, "diff", "--numstat", mb)
+	num, err := git(ctx, dir, gitexec.Diff{Revs: []string{mb}, Numstat: true})
 	if err != nil {
 		return StartOut{}, err
 	}
@@ -346,7 +345,7 @@ func (s *Service) measure(ctx context.Context, dir, mergeBase string, edits []Ed
 		if err := put(filepath.Join(scratch, "b", filepath.FromSlash(rel)), []byte(files[full])); err != nil {
 			return "", "", 0, err
 		}
-		if base, err := git(ctx, dir, "show", mergeBase+":"+rel); err == nil {
+		if base, err := git(ctx, dir, gitexec.ShowFile{Rev: mergeBase, Path: rel}); err == nil {
 			if err := put(filepath.Join(scratch, "c", filepath.FromSlash(rel)), []byte(base)); err != nil {
 				return "", "", 0, err
 			}
@@ -355,11 +354,11 @@ func (s *Service) measure(ctx context.Context, dir, mergeBase string, edits []Ed
 	if err := os.MkdirAll(filepath.Join(scratch, "c"), 0o755); err != nil {
 		return "", "", 0, err
 	}
-	diff, err = git(ctx, scratch, "diff", "--no-index", "--no-color", "a", "b")
+	diff, err = git(ctx, scratch, gitexec.DiffNoIndex{A: "a", B: "b"})
 	if err != nil {
 		return "", "", 0, err
 	}
-	bd, err := git(ctx, scratch, "diff", "--no-index", "--no-color", "c", "b")
+	bd, err := git(ctx, scratch, gitexec.DiffNoIndex{A: "c", B: "b"})
 	if err != nil {
 		return "", "", 0, err
 	}

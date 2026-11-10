@@ -5,13 +5,12 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // DefaultCullInto is the branch a worker's branch has to be merged into.
@@ -47,14 +46,17 @@ type CullResult struct {
 	Kept              string `json:"kept,omitempty"`
 }
 
-// GitIn runs git in dir and returns its trimmed output, or git's own reason.
-func GitIn(dir string, args ...string) (string, error) {
+// GitIn runs op in dir and returns its trimmed output, or git's own reason.
+func GitIn(dir string, op gitexec.Op) (string, error) {
+	return GitWith(gitexec.Opts{Dir: dir}, op)
+}
+
+// GitWith is GitIn with the rest of gitexec.Opts, such as GitDir.
+func GitWith(o gitexec.Opts, op gitexec.Op) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), CullGitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	nowindow.Hide(cmd)
-	out, err := cmd.CombinedOutput()
+	o.Combined = true
+	out, err := gitexec.Run(ctx, o, op)
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -343,7 +344,7 @@ type slowGit struct {
 	calls int
 }
 
-func (g *slowGit) Git(ctx context.Context, _ string, _ ...string) (string, error) {
+func (g *slowGit) Git(ctx context.Context, _ string, _ gitexec.Op) (string, error) {
 	g.mu.Lock()
 	g.calls++
 	g.mu.Unlock()
@@ -351,8 +352,8 @@ func (g *slowGit) Git(ctx context.Context, _ string, _ ...string) (string, error
 	return "", ctx.Err()
 }
 
-func (g *slowGit) GitInput(ctx context.Context, dir string, _ []byte, a ...string) (string, error) {
-	return g.Git(ctx, dir, a...)
+func (g *slowGit) GitInput(ctx context.Context, dir string, _ []byte, op gitexec.Op) (string, error) {
+	return g.Git(ctx, dir, op)
 }
 
 func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testing.T) {

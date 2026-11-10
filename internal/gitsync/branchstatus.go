@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // WHICH BRANCHES ARE LANDED, BY WHAT THEY CHANGE, NOT BY WHERE THEY SIT. See docs/fabric/branch-status-design.md, phase 1.
@@ -162,7 +164,7 @@ func (s *Store) branchPass(ctx context.Context, name string, st *branchState) (R
 	}
 	ctx, cancel := context.WithTimeout(ctx, branchPassBound)
 	defer cancel()
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ClaudeMainRef+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ClaudeMainRef + "^{commit}", Quiet: true})
 	if err != nil {
 		if exitCode(err) == 1 {
 			res.Why = "the repository has no claude/main to measure against"
@@ -201,7 +203,7 @@ func (s *Store) branchPass(ctx context.Context, name string, st *branchState) (R
 	seen := map[string]bool{}
 	var need []string
 	for _, h := range heads {
-		out, err := s.git(ctx, dir, "rev-list", "--no-merges", h.SHA, "^"+m)
+		out, err := s.git(ctx, dir, gitexec.RevList{NoMerges: true, Revs: []string{h.SHA, "^" + m}})
 		if err != nil {
 			return res, err
 		}
@@ -330,7 +332,7 @@ func (s *Store) extendMain(ctx context.Context, dir, m string, st *branchState) 
 	if st.mainPIDs == nil {
 		st.mainPIDs, st.mainSubj = map[string]bool{}, map[string]map[string]bool{}
 	}
-	out, err := s.git(ctx, dir, append([]string{"rev-list", "--no-merges"}, spec...)...)
+	out, err := s.git(ctx, dir, gitexec.RevList{NoMerges: true, Revs: spec})
 	if err != nil {
 		return err
 	}
@@ -353,7 +355,7 @@ func (s *Store) extendMain(ctx context.Context, dir, m string, st *branchState) 
 
 // changelogOnMain is every changelog entry path main holds.
 func (s *Store) changelogOnMain(ctx context.Context, dir, m string) (map[string]bool, error) {
-	out, err := s.git(ctx, dir, "ls-tree", "-r", "--name-only", m, "--", "changelog")
+	out, err := s.git(ctx, dir, gitexec.LsTree{Recursive: true, NameOnly: true, Tree: m, Paths: []string{"changelog"}})
 	if err != nil {
 		return nil, err
 	}
@@ -371,8 +373,8 @@ func (s *Store) addedOnMain(ctx context.Context, dir, tip, m string, onMain map[
 	if len(onMain) == 0 {
 		return false, nil
 	}
-	out, err := s.git(ctx, dir, "log", "--no-renames", "--diff-filter=A", "--name-only", "--format=", tip, "^"+m, "--",
-		"changelog")
+	out, err := s.git(ctx, dir, gitexec.Log{NoRenames: true, DiffFilter: "A", NameOnly: true, EmptyFormat: true,
+		Revs: []string{tip, "^" + m}, Paths: []string{"changelog"}})
 	if err != nil {
 		return false, err
 	}

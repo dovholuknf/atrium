@@ -815,6 +815,7 @@ function termMenuItems(id, t) {
     // Everything about what this card is, the context limit included (settings-spine.js).
     { label: "settings", act: () => openTask(id) },
     { sep: true },
+    typeof naCloneItem === "function" ? naCloneItem(id, t) : null,
     // What the board calls paused. It stops the runner and the card keeps its place, hidden from this list unless
     // the paused filter is on. Resume starts it again.
     t.supervised && !over ? {

@@ -203,4 +203,10 @@ type LaunchRequest struct {
 	// travels with the card, and the assignment pushed to the hub names it. Launchers resolve `new:` before they post, so
 	// this is always an id. A launch from a script that sends none is attached to nothing and unchanged.
 	WorkItem string `json:"work_item,omitempty"`
+	// CloneOf is a card on this room this launch clones, into the new worktree `repo` and `branch` make. CloneCarry
+	// copies that card's uncommitted changes into it, and CloneFork starts claude on a fork of its conversation. See
+	// clone.go.
+	CloneOf    string `json:"clone_of,omitempty"`
+	CloneCarry bool   `json:"clone_carry,omitempty"`
+	CloneFork  bool   `json:"clone_fork,omitempty"`
 }

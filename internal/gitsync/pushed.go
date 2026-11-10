@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // What the hub knows of a branch, for the change record's "Pushed" line and for change requests. See
@@ -98,7 +100,7 @@ func (s *Store) tipOf(ctx context.Context, dir, branch string) (string, bool, er
 	if !revArgRe.MatchString(branch) || strings.Contains(branch, "..") {
 		return "", false, refuse("that is not a branch name")
 	}
-	out, err := s.git(ctx, dir, "for-each-ref", "--format=%(objectname)", headsPrefix+branch)
+	out, err := s.git(ctx, dir, gitexec.ForEachRef{Format: "%(objectname)", Patterns: []string{headsPrefix + branch}})
 	if err != nil {
 		return "", false, err
 	}
@@ -114,7 +116,7 @@ func (s *Store) commitHeld(ctx context.Context, dir, sha string) (bool, error) {
 	if !safeRevArg(sha) {
 		return false, refuse("that is not a commit id")
 	}
-	_, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", sha+"^{commit}")
+	_, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: sha + "^{commit}", Quiet: true})
 	switch {
 	case err == nil:
 		return true, nil
@@ -129,7 +131,7 @@ func (s *Store) isAncestor(ctx context.Context, dir, a, b string) (bool, error) 
 	if !safeRevArg(a) || !safeRevArg(b) {
 		return false, refuse("that is not a commit id or a ref")
 	}
-	_, err := s.git(ctx, dir, "merge-base", "--is-ancestor", a, b)
+	_, err := s.git(ctx, dir, gitexec.IsAncestor{Commit: a, Of: b})
 	switch {
 	case err == nil:
 		return true, nil

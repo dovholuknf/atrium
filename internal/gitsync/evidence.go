@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // WHAT THE HUB'S MIRROR SAYS OF AN ITEM'S TESTS AND REVIEWS (item lifecycle L4). A test is a fact pinned to a commit, so what
@@ -43,8 +45,8 @@ type EvidenceChecker interface {
 
 // CheckerGit is what a checker runs git through. A *Runner is one.
 type CheckerGit interface {
-	Git(ctx context.Context, dir string, args ...string) (string, error)
-	GitInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error)
+	Git(ctx context.Context, dir string, op gitexec.Op) (string, error)
+	GitInput(ctx context.Context, dir string, stdin []byte, op gitexec.Op) (string, error)
 }
 
 // checkers keeps one checker per mirror, so the per-commit patch ids it learns survive from one read to the next.
@@ -100,7 +102,7 @@ func (s *Store) ItemEvidence(ctx context.Context, name, branch string, shas []st
 		}
 		ev.Since[sha] = n
 	}
-	base, err := s.git(ctx, dir, "merge-base", tip, ClaudeMainRef)
+	base, err := s.git(ctx, dir, gitexec.MergeBase{A: tip, B: ClaudeMainRef})
 	if err != nil {
 		return ev, nil
 	}

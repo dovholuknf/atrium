@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -25,10 +26,10 @@ import (
 func cloneKeepReason(ctx context.Context, dir string, mineWT, mineBranch []string) string {
 	ctx, cancel := context.WithTimeout(ctx, closeGitWait)
 	defer cancel()
-	if out, err := gitIn(ctx, dir, "config", "--local", "atrium.clone"); err != nil || strings.TrimSpace(out) != "made" {
+	if out, err := gitIn(ctx, dir, gitexec.ConfigGet{Key: "atrium.clone", Local: true}); err != nil || strings.TrimSpace(out) != "made" {
 		return "atrium did not make it, so it is not atrium's to delete"
 	}
-	if top, err := gitIn(ctx, dir, "rev-parse", "--show-toplevel"); err != nil ||
+	if top, err := gitIn(ctx, dir, gitexec.RevParseShowToplevel{}); err != nil ||
 		!sameRealDir(filepath.FromSlash(strings.TrimSpace(top)), filepath.FromSlash(dir)) {
 		return "git does not answer for it as a clone"
 	}
@@ -50,18 +51,17 @@ func cloneKeepReason(ctx context.Context, dir string, mineWT, mineBranch []strin
 	if others > 0 {
 		return fmt.Sprintf("%d other %s off it", others, plural(others, "worktree hangs", "worktrees hang"))
 	}
-	if out, err := gitIn(ctx, dir, "status", "--porcelain"); err != nil || strings.TrimSpace(out) != "" {
+	if out, err := gitIn(ctx, dir, gitexec.Status{}); err != nil || strings.TrimSpace(out) != "" {
 		return "it has changed files"
 	}
-	if _, err := gitIn(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/stash"); err == nil {
+	if _, err := gitIn(ctx, dir, gitexec.RevParseVerify{Rev: "refs/stash", Quiet: true}); err == nil {
 		return "it has a stash"
 	}
-	args := []string{"rev-list", "--count"}
+	count := gitexec.RevListCount{Branches: true, NotRemotes: true, NotGlob: "refs/atrium/*"}
 	for _, b := range mineBranch {
-		args = append(args, "--exclude=refs/heads/"+b)
+		count.Exclude = append(count.Exclude, "refs/heads/"+b)
 	}
-	args = append(args, "--branches", "--not", "--remotes", "--glob=refs/atrium/*")
-	out, err := gitIn(ctx, dir, args...)
+	out, err := gitIn(ctx, dir, count)
 	if err != nil {
 		return "git could not say what in it is on no remote"
 	}

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // EVERY ITEM'S CHANGELOG ENTRY, READ ONCE PER REF TIP. A lifecycle pass reads landing for each open item, against claude/main
@@ -78,7 +80,7 @@ func (s *Store) resolveTip(ctx context.Context, dir, ref string) (string, error)
 	if ok && stamp != "" && t.stamp == stamp {
 		return t.sha, nil
 	}
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true})
 	sha := strings.TrimSpace(out)
 	switch {
 	case err != nil && exitCode(err) == 1:
@@ -244,8 +246,9 @@ func (s *Store) landIndexAt(ctx context.Context, dir, ref string) (*landIndex, e
 // readLandIndex is the one log of a tip: every non-merge commit that touched a changelog entry, newest first, with every
 // file it touched and how.
 func (s *Store) readLandIndex(ctx context.Context, dir, tip string) (map[string]string, map[string][]string, error) {
-	out, err := s.h.runner().GitCapped(ctx, dir, s.env(), changelogIndexCap, "log", "--no-merges", "--no-renames",
-		"--full-diff", "--name-status", "--format=commit %H", tip, "--", "changelog/")
+	out, err := s.h.runner().GitCapped(ctx, dir, s.env(), changelogIndexCap, gitexec.Log{NoMerges: true,
+		NoRenames: true, FullDiff: true, NameStatus: true, Format: "commit %H", Revs: []string{tip},
+		Paths: []string{"changelog/"}})
 	if err != nil {
 		return nil, nil, err
 	}

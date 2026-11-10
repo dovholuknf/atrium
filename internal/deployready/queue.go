@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // THE DEPLOY QUEUE: every landed commit that is not yet live, and which kind of deploy puts it live. Live is what each
@@ -95,8 +97,8 @@ func (c *Checker) Queue(ctx context.Context, hub string, rooms []Live) Queue {
 	q.Hub = hubFull
 
 	missing := func(live string) ([]string, error) {
-		out, err := c.Git.Git(ctx, c.Dir, "rev-list", "--no-merges", fmt.Sprintf("--max-count=%d", c.maxCommits()+1),
-			live+".."+tip)
+		out, err := c.Git.Git(ctx, c.Dir, gitexec.RevList{NoMerges: true, MaxCount: c.maxCommits() + 1,
+			Revs: []string{live + ".." + tip}})
 		if err != nil {
 			return nil, err
 		}
@@ -146,10 +148,10 @@ func (c *Checker) Queue(ctx context.Context, hub string, rooms []Live) Queue {
 	var order []string
 	for len(shas) > 0 {
 		n := min(len(shas), 100)
-		args := append([]string{"log", "--no-walk", "--reverse", "--no-renames", "--name-only",
-			"--format=%x1e%H%x1f%s"}, shas[:n]...)
+		op := gitexec.Log{NoWalk: true, Reverse: true, NoRenames: true, NameOnly: true, Format: "%x1e%H%x1f%s",
+			Revs: shas[:n]}
 		shas = shas[n:]
-		out, err := c.Git.Git(ctx, c.Dir, args...)
+		out, err := c.Git.Git(ctx, c.Dir, op)
 		if err != nil {
 			return fail("could not read the pending commits: %v", err)
 		}

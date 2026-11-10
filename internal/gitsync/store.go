@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The hub's own git store: bare repositories at `<git.store>/<host>/<owner>/<repo>.git`, one per
@@ -305,7 +307,7 @@ func (s *Store) reftable(ctx context.Context) bool {
 	if s.GitVersion != nil {
 		line, err = s.GitVersion(ctx)
 	} else {
-		line, err = s.h.runner().Git(ctx, "", "--version")
+		line, err = s.h.runner().Git(ctx, "", gitexec.Version{})
 	}
 	if err != nil {
 		return false
@@ -327,18 +329,23 @@ func (s *Store) reftable(ctx context.Context) bool {
 		return false
 	}
 	defer os.RemoveAll(tmp)
-	_, err = s.h.runner().GitEnv(ctx, "", s.env(), "init", "-q", "--bare", "--ref-format=reftable",
-		filepath.Join(tmp, "p.git"))
+	_, err = s.h.runner().GitEnv(ctx, "", s.env(), gitexec.Init{Quiet: true, Bare: true, RefFormat: "reftable",
+		Dir: filepath.Join(tmp, "p.git")})
 	return err == nil
 }
 
-func (s *Store) git(ctx context.Context, dir string, args ...string) (string, error) {
-	return s.h.runner().GitEnv(ctx, dir, s.env(), args...)
+func (s *Store) git(ctx context.Context, dir string, op gitexec.Op) (string, error) {
+	return s.h.runner().GitEnv(ctx, dir, s.env(), op)
+}
+
+// gitc is git with each "key=value" of config set for this command alone.
+func (s *Store) gitc(ctx context.Context, dir string, config []string, op gitexec.Op) (string, error) {
+	return s.h.runner().GitCall(ctx, dir, Call{Env: s.env(), Config: config}, op)
 }
 
 // tip is main's sha, or "" for a repository with no main.
 func (s *Store) tip(ctx context.Context, dir string) string {
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", MainRef+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: MainRef + "^{commit}", Quiet: true})
 	if err != nil {
 		return ""
 	}
@@ -485,7 +492,7 @@ func (s *Store) initRef(ctx context.Context, ref Ref) (InitResult, error) {
 	case existed:
 		// A bare repository the store did not make, such as a git_repos mirror. TAKEN, not changed:
 		// only the marker is written, so its HEAD and its refs stay as they are, and it is never seeded.
-		if out, err := s.git(ctx, dir, "rev-parse", "--is-bare-repository"); err != nil || strings.TrimSpace(out) != "true" {
+		if out, err := s.git(ctx, dir, gitexec.RevParseIsBare{}); err != nil || strings.TrimSpace(out) != "true" {
 			return res, conflict("something that is not a bare repository is already at %s", ref.Name())
 		}
 		if err := writeMarker(dir, KindAdopted); err != nil {
@@ -553,16 +560,16 @@ func (s *Store) create(ctx context.Context, dir string) (err error) {
 			gl.Unlock()
 		}
 	}()
-	args := []string{"init", "-q", "--bare", "--template=", "--initial-branch=main"}
+	init := gitexec.Init{Quiet: true, Bare: true, NoTemplate: true, InitialBranch: "main", Dir: dir}
 	if s.reftable(ctx) {
-		args = append(args, "--ref-format=reftable")
+		init.RefFormat = "reftable"
 	}
-	if _, err = s.git(ctx, "", append(args, dir)...); err != nil {
+	if _, err = s.git(ctx, "", init); err != nil {
 		return err
 	}
 	// Belt and braces: a git that ignored --initial-branch still ends with HEAD on main.
-	if cur, _ := s.git(ctx, dir, "symbolic-ref", "-q", "HEAD"); strings.TrimSpace(cur) != MainRef {
-		if _, err = s.git(ctx, dir, "symbolic-ref", "HEAD", MainRef); err != nil {
+	if cur, _ := s.git(ctx, dir, gitexec.SymbolicRef{Name: "HEAD"}); strings.TrimSpace(cur) != MainRef {
+		if _, err = s.git(ctx, dir, gitexec.SymbolicRefSet{Name: "HEAD", Target: MainRef}); err != nil {
 			return err
 		}
 	}
@@ -597,7 +604,7 @@ func (s *Store) seed(ctx context.Context, dir string, ref Ref) (string, string) 
 	defer cancel()
 	forge := s.forgeURL(ref)
 
-	out, err := s.git(ctx, dir, "ls-remote", "--symref", "--", forge, "HEAD")
+	out, err := s.git(ctx, dir, gitexec.LsRemote{Symref: true, Remote: forge, Refs: []string{"HEAD"}})
 	if err != nil {
 		return "", s.whyNot(ref, err)
 	}
@@ -606,12 +613,12 @@ func (s *Store) seed(ctx context.Context, dir string, ref Ref) (string, string) 
 		return "", "the forge's repository has no default branch yet, so " + PushMain
 	}
 	def := m[1]
-	if _, err := s.git(ctx, "", "check-ref-format", def); err != nil {
+	if _, err := s.git(ctx, "", gitexec.CheckRefFormat{Name: def}); err != nil {
 		return "", "the forge's default branch has a name atrium will not take, so " + PushMain
 	}
 	// THE FORGE'S OBJECTS ARE UNTRUSTED and the hub serves them on to rooms, so git checks each one.
-	if _, err := s.git(ctx, dir, "-c", "transfer.fsckObjects=true", "fetch", "-q", "--no-tags",
-		"--no-write-fetch-head", "--", forge, "+"+def+":"+MainRef); err != nil {
+	if _, err := s.gitc(ctx, dir, []string{"transfer.fsckObjects=true"}, gitexec.Fetch{Quiet: true, NoTags: true,
+		NoWriteFetchHead: true, Remote: forge, Refspecs: []string{"+" + def + ":" + MainRef}}); err != nil {
 		return "", s.whyNot(ref, err)
 	}
 	sha := s.tip(ctx, dir)
@@ -785,8 +792,8 @@ type head struct {
 
 // heads is every refs/heads in a repository, newest first.
 func (s *Store) heads(ctx context.Context, dir string) ([]head, error) {
-	out, err := s.git(ctx, dir, "for-each-ref", "--sort=refname",
-		"--format=%(refname)%00%(objectname)%00%(committerdate:unix)", "refs/heads")
+	out, err := s.git(ctx, dir, gitexec.ForEachRef{Sort: "refname",
+		Format: "%(refname)%00%(objectname)%00%(committerdate:unix)", Patterns: []string{"refs/heads"}})
 	if err != nil {
 		return nil, err
 	}

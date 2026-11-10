@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 func TestTheStorePathNeverLeavesTheRoot(t *testing.T) {
@@ -36,7 +38,7 @@ func TestABranchOrStorePathNeverReadsAsAnOption(t *testing.T) {
 
 func TestGitRefusesAnArgumentHoldingANul(t *testing.T) {
 	r := &Runner{root: context.Background()}
-	if _, err := r.Git(context.Background(), "", "rev-parse", "a\x00b"); err == nil || r.Spawned.Load() != 0 {
+	if _, err := r.Git(context.Background(), "", gitexec.RevParse{Rev: "a\x00b"}); err == nil || r.Spawned.Load() != 0 {
 		t.Errorf("a NUL argument was run: %v", err)
 	}
 }

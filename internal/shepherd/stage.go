@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -43,9 +44,9 @@ func (stageStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 	}
 	// Resuming resets the branch to main, which is safe: nothing has landed, and the picks are redone.
 	if have {
-		_, err = git(ctx, e, stage, "switch", "-C", st.Branch, main)
+		_, err = git(ctx, e, stage, gitexec.SwitchReset{Branch: st.Branch, Start: main})
 	} else {
-		_, err = git(ctx, e, e.Cfg.Repo, "worktree", "add", "-B", st.Branch, stage, main)
+		_, err = git(ctx, e, e.Cfg.Repo, gitexec.WorktreeAdd{Path: stage, NewBranch: st.Branch, Reset: true, Commitish: main})
 	}
 	if err != nil {
 		return Outcome{}, err
@@ -65,14 +66,14 @@ func (stageStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 		return stop(st, p, why), nil
 	}
 
-	r, err := e.Runner.Run(ctx, stage, "git", "cherry-pick", main+".."+st.Ref)
+	r, _, err := gitRun(ctx, e, stage, gitexec.CherryPick{Revs: []string{main + ".." + st.Ref}})
 	if err != nil {
 		return Outcome{}, fmt.Errorf("git cherry-pick: %w", err)
 	}
 	checks = append(checks, Check{Name: "cherry-pick", Code: r.Code, Tail: tail(r.Out(), 8)})
 	if r.Code != 0 {
 		// Leave nothing half-picked behind for the next phase to trip on.
-		_, _ = e.Runner.Run(ctx, stage, "git", "cherry-pick", "--abort")
+		_, _, _ = gitRun(ctx, e, stage, gitexec.CherryPickAbort{})
 		return finish(PhaseException, "the cherry-pick did not apply: a conflict a model or a person resolves")
 	}
 
@@ -81,7 +82,7 @@ func (stageStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 		return Outcome{}, err
 	}
 	if len(stripped) > 0 {
-		if _, err := git(ctx, e, stage, "commit", "-a", "--amend", "--no-edit"); err != nil {
+		if _, err := git(ctx, e, stage, gitexec.Commit{All: true, Amend: true, NoEdit: true}); err != nil {
 			return Outcome{}, err
 		}
 	}
@@ -151,7 +152,7 @@ func runTests(ctx context.Context, e *Env, stage string) (Check, error) {
 // stripBOMs removes a leading EF BB BF from every .md the branch added or changed. A BOM-prefixed changelog entry
 // breaks the build's changelog parse.
 func stripBOMs(ctx context.Context, e *Env, stage, main string) ([]string, error) {
-	out, err := git(ctx, e, stage, "diff", "--name-only", "--diff-filter=AM", main, "HEAD")
+	out, err := git(ctx, e, stage, gitexec.Diff{Revs: []string{main, "HEAD"}, NameOnly: true, DiffFilter: "AM"})
 	if err != nil {
 		return nil, err
 	}

@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -243,15 +242,11 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	}
 	// An existing local branch is checked out as it is, so a local commit is not overwritten by a fetch.
 	made := !branchExists(ctx, repoPath, branch)
-	args := []string{"worktree", "add", filepath.FromSlash(dest), branch}
+	add := gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), Commitish: branch}
 	if made {
-		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), prWorktreeRef(req.Number)}
+		add = gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), NewBranch: branch, Commitish: prWorktreeRef(req.Number)}
 	}
-	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and the values are RepoSlug segments or paths under a root
-	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
-	cmd.Dir = filepath.FromSlash(repoPath)
-	nowindow.Hide(cmd)
-	out, err := cmd.CombinedOutput()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(repoPath), Combined: true}, add)
 	steps.end()
 	if err != nil {
 		return res, http.StatusBadRequest, errors.New(
@@ -314,21 +309,17 @@ func undoPRWorktree(res prWorktreeResult) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	run := func(args ...string) {
-		// codeql[go/command-injection] git argv with no shell: the undo of a worktree add this request made, with its own fixed arguments
-		cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
-		cmd.Dir = filepath.FromSlash(res.Repo)
-		nowindow.Hide(cmd)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", logLine(res.Path), logLine(args[0]), err, strings.TrimSpace(string(out)))
+	run := func(op gitexec.Op) {
+		if out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(res.Repo), Combined: true}, op); err != nil {
+			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", logLine(res.Path), logLine(gitexec.Name(op)), err, strings.TrimSpace(string(out)))
 		}
 	}
-	run("worktree", "remove", "--force", filepath.FromSlash(res.Path))
+	run(gitexec.WorktreeRemove{Path: filepath.FromSlash(res.Path), Force: 1})
 	if res.CreatedBranch {
-		run("branch", "-D", res.Branch)
+		run(gitexec.BranchDelete{Branch: res.Branch})
 	}
 	if res.AddedRemote {
-		run("remote", "remove", res.Remote)
+		run(gitexec.RemoteRemove{Name: res.Remote})
 	}
 }
 
@@ -347,36 +338,34 @@ func credentialHelper(kind, cmd string) string {
 	return "!" + cmd + " auth git-credential"
 }
 
-// fetchArgs is the git argv for one PR head fetch. A helper is set for this one command only: the configured ones
+// fetchArgs is the -c config and the fetch for one PR head. A helper is set for this one command only: the configured ones
 // are reset, then the forge CLI's own is the only one asked. It answers from the CLI's login, so no token is read,
 // stored or put in the argv.
-func fetchArgs(spec forge.FetchSpec, dst, helper string) []string {
-	noGC := []string{"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
-	args := append([]string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}, noGC...)
+func fetchArgs(spec forge.FetchSpec, dst, helper string) ([]string, gitexec.Fetch) {
+	noGC := []string{"gc.auto=0", "maintenance.auto=false"}
+	config := append([]string{"protocol.allow=never", "protocol.https.allow=always"}, noGC...)
 	if spec.Hub != "" {
 		// The hub's store, through a loopback on this machine, which speaks http. No helper: it needs no credential.
-		args = append([]string{"-c", "protocol.allow=never", "-c", "protocol.http.allow=always"}, noGC...)
+		config = append([]string{"protocol.allow=never", "protocol.http.allow=always"}, noGC...)
 		helper = ""
 	}
 	if helper != "" {
-		args = append(args, "-c", "credential.helper=", "-c", "credential.helper="+helper)
+		config = append(config, "credential.helper=", "credential.helper="+helper)
 	}
-	return append(args, "fetch", "--no-tags", "--", spec.Remote, "+"+spec.Refspec+":"+dst)
+	return config, gitexec.Fetch{Remote: spec.Remote, Refspecs: []string{"+" + spec.Refspec + ":" + dst}, NoTags: true}
 }
 
 // fetchPRHead fetches the head into dst over https only, so the URL the forge gave cannot be another scheme. A
 // private repo is read through helper, see fetchArgs. What is logged is git's own output, which holds no token.
 func fetchPRHead(ctx context.Context, dir string, spec forge.FetchSpec, dst, helper string) error {
-	cmd := exec.CommandContext(ctx, "git", fetchArgs(spec, dst, helper)...)
-	cmd.Dir = dir
-	nowindow.Hide(cmd)
+	config, op := fetchArgs(spec, dst, helper)
 	allow := "https"
 	if spec.Hub != "" {
 		allow = "http"
 	}
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL="+allow)
-	cmd.WaitDelay = 5 * time.Second
-	if out, err := cmd.CombinedOutput(); err != nil {
+	o := gitexec.Opts{Dir: dir, Config: config, Env: []string{"GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=" + allow},
+		Combined: true, WaitDelay: 5 * time.Second}
+	if out, err := gitexec.Run(ctx, o, op); err != nil {
 		return errors.New(strings.TrimSpace(tailLines(string(out))))
 	}
 	return nil
@@ -414,21 +403,19 @@ func (s *Server) fetchAdvisoryFork(ctx context.Context, repoPath, host, org, rep
 		src, dst = "refs/pull/"+strconv.Itoa(f.pr)+"/head", "refs/remotes/"+remote+"/pull/"+strconv.Itoa(f.pr)
 	}
 	added := false
-	if _, err := gitIn(ctx, repoPath, "remote", "get-url", remote); err != nil {
-		if _, err := gitIn(ctx, repoPath, "remote", "add", remote, s.advisoryForkURL(host, org, repo, f.ghsa)); err != nil {
+	if _, err := gitIn(ctx, repoPath, gitexec.RemoteGetURL{Name: remote}); err != nil {
+		if _, err := gitIn(ctx, repoPath, gitexec.RemoteAdd{Name: remote, URL: s.advisoryForkURL(host, org, repo, f.ghsa)}); err != nil {
 			return "", false, err
 		}
 		added = true
 	}
-	cmd := exec.CommandContext(ctx, "git", fetchArgs(forge.FetchSpec{Remote: remote, Refspec: src}, dst, helper)...)
-	cmd.Dir = filepath.FromSlash(repoPath)
-	nowindow.Hide(cmd)
+	config, op := fetchArgs(forge.FetchSpec{Remote: remote, Refspec: src}, dst, helper)
 	// GIT_ALLOW_PROTOCOL overrides the protocol settings fetchArgs gives.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL="+s.advisoryForkProtocol)
-	cmd.WaitDelay = 5 * time.Second
-	if out, err := cmd.CombinedOutput(); err != nil {
+	o := gitexec.Opts{Dir: filepath.FromSlash(repoPath), Config: config,
+		Env: []string{"GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=" + s.advisoryForkProtocol}, Combined: true, WaitDelay: 5 * time.Second}
+	if out, err := gitexec.Run(ctx, o, op); err != nil {
 		if added {
-			_, _ = gitIn(ctx, repoPath, "remote", "remove", remote)
+			_, _ = gitIn(ctx, repoPath, gitexec.RemoteRemove{Name: remote})
 		}
 		return "", false, errors.New(strings.TrimSpace(tailLines(string(out))))
 	}

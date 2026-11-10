@@ -132,6 +132,20 @@ func (s *Server) boardID() string {
 	return buildID(board(s.BoardDir))
 }
 
+// stampBuild names the build on a page load, so the page knows the board it loaded rather than adopting whatever its
+// first health read answers, which may already be the next build. Pages only: a disk board rehashes per call. Accept
+// rather than Sec-Fetch-Dest, which a navigation passed on by sw.js does not carry.
+func stampBuild(build func() string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			w.Header().Set("Server-Timing", `build;desc="`+build()+`"`)
+			// A 304 would hand the page the cached response's header, the previous build's.
+			r.Header.Del("If-None-Match")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func webHandler(dir string) http.Handler {
 	fsys := board(dir)
 	files := http.FileServer(http.FS(fsys))

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The reset of claude/main onto the commits clint re-signed and pushed, without losing what landed in between.
@@ -52,13 +54,13 @@ func (s *Store) EpochPlan(ctx context.Context, name string) (EpochPlan, error) {
 func (s *Store) epochPlan(ctx context.Context, dir string) (EpochPlan, error) {
 	var p EpochPlan
 	for ref, into := range map[string]*string{ClaudeMainRef: &p.OldTip, MainRef: &p.Base} {
-		out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}")
+		out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true})
 		if err != nil {
 			return p, refuse("the repository has no %s, so there is nothing to reset", trimHead(ref))
 		}
 		*into = strings.TrimSpace(out)
 	}
-	out, err := s.git(ctx, dir, "cherry", p.Base, p.OldTip)
+	out, err := s.git(ctx, dir, gitexec.Cherry{Upstream: p.Base, Head: p.OldTip})
 	if err != nil {
 		return p, err
 	}
@@ -129,7 +131,7 @@ func (s *Store) EpochMove(ctx context.Context, name string, n int64, branch, exp
 			return "", "", refuse("%s does not have main under it, so it is not on the re-signed history", branch)
 		}
 	}
-	out, err := s.git(ctx, dir, "cherry", next, plan.OldTip)
+	out, err := s.git(ctx, dir, gitexec.Cherry{Upstream: next, Head: plan.OldTip})
 	if err != nil {
 		return "", "", err
 	}
@@ -142,10 +144,12 @@ func (s *Store) EpochMove(ctx context.Context, name string, n int64, branch, exp
 	if lost > 0 {
 		return "", "", refuse("%d commits of claude/main are not on %s, and the move would lose them", lost, nameOr(branch, "main"))
 	}
-	if _, err := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("epoch %d", n), fmt.Sprintf("%s%d", EpochRefPrefix, n), plan.OldTip); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.UpdateRef{Message: fmt.Sprintf("epoch %d", n),
+		Ref: fmt.Sprintf("%s%d", EpochRefPrefix, n), New: plan.OldTip}); err != nil {
 		return "", "", err
 	}
-	if _, err := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("epoch %d", n), ClaudeMainRef, next, plan.OldTip); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.UpdateRef{Message: fmt.Sprintf("epoch %d", n), Ref: ClaudeMainRef, New: next,
+		Old: plan.OldTip}); err != nil {
 		return "", "", err
 	}
 	return plan.OldTip, next, nil

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // PAGE CHANGED SINCE. docs/rnd/doc-debt-from-features.md sections 2.7 and 4 (phase 4). For a stale page a doc item names,
@@ -45,7 +47,7 @@ func (s *Store) PageChangedSince(ctx context.Context, name, since, path string) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ClaudeMainRef+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ClaudeMainRef + "^{commit}", Quiet: true})
 	if err != nil {
 		return none, false, err
 	}
@@ -61,7 +63,7 @@ func (s *Store) PageChangedSince(ctx context.Context, name, since, path string) 
 		return *c, true, nil
 	}
 	out, err = s.h.runner().GitEnv(ctx, dir, append(s.env(), "GIT_LITERAL_PATHSPECS=1"),
-		"log", "-1", "--format=%H %cI", since+".."+head, "--", path)
+		gitexec.Log{MaxCount: 1, Format: "%H %cI", Revs: []string{since + ".." + head}, Paths: []string{path}})
 	if err != nil {
 		return none, false, err
 	}

@@ -17,7 +17,7 @@ func landedHow(t *testing.T, x *bsFix, ref, tip string) (how string, unlanded in
 	ctx := context.Background()
 	r := NewRunner()
 	list := func(args ...string) []string {
-		out, err := r.Git(ctx, x.work, append([]string{"rev-list", "--no-merges"}, args...)...)
+		out, err := rawGit(x.work, nil, nil, append([]string{"rev-list", "--no-merges"}, args...)...)
 		if err != nil {
 			t.Fatal(err)
 		}

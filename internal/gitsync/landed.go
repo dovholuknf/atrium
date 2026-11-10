@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sort"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // THE LANDED RULE AS FUNCTIONS. Branch status (branchstatus.go) decides whether a commit is carried by main, and the
@@ -46,9 +48,9 @@ func readFacts(ctx context.Context, r *Runner, dir string, env []string, shas []
 
 // readMeta fills in subject and files, which cost no diff.
 func readMeta(ctx context.Context, r *Runner, dir string, env []string, shas []string, into map[string]commitFacts) error {
-	out, err := r.gitWith(ctx, dir, env, []byte(strings.Join(shas, "\n")+"\n"), 0,
-		"-c", "core.quotepath=off", "log", "--no-walk=unsorted", "--stdin", "--no-merges", "--no-renames", "--name-only",
-		"--format=%x00%H%x00%s")
+	out, err := r.GitCall(ctx, dir, Call{Env: env, Stdin: []byte(strings.Join(shas, "\n") + "\n"),
+		Config: []string{"core.quotepath=off"}}, gitexec.Log{NoWalkUnsorted: true, Stdin: true, NoMerges: true,
+		NoRenames: true, NameOnly: true, Format: "%x00%H%x00%s"})
 	if err != nil {
 		return err
 	}
@@ -74,8 +76,8 @@ func hashBatch(ctx context.Context, r *Runner, dir string, env []string, shas []
 	if len(shas) == 0 {
 		return nil, nil
 	}
-	diff, err := r.gitWith(ctx, dir, env, []byte(strings.Join(shas, "\n")+"\n"), hashCap,
-		"log", "--no-walk=unsorted", "--stdin", "-p", "--no-merges", "--no-renames", "--format=commit %H")
+	diff, err := r.GitCall(ctx, dir, Call{Env: env, Stdin: []byte(strings.Join(shas, "\n") + "\n"), Max: hashCap},
+		gitexec.Log{NoWalkUnsorted: true, Stdin: true, Patch: true, NoMerges: true, NoRenames: true, Format: "commit %H"})
 	if err != nil {
 		if !errors.Is(err, ErrOutputCap) {
 			return nil, err
@@ -99,7 +101,7 @@ func hashBatch(ctx context.Context, r *Runner, dir string, env []string, shas []
 	if strings.TrimSpace(diff) == "" {
 		return nil, nil
 	}
-	ids, err := r.GitInput(ctx, dir, []byte(diff), "patch-id", "--stable")
+	ids, err := r.GitInput(ctx, dir, []byte(diff), gitexec.PatchID{Stable: true})
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +137,7 @@ func LandedBy(ctx context.Context, r *Runner, dir string, env []string, ref stri
 		if _, done := own[t]; done {
 			continue
 		}
-		out, err := r.GitEnv(ctx, dir, env, "rev-list", "--no-merges", t, "^"+ref)
+		out, err := r.GitEnv(ctx, dir, env, gitexec.RevList{NoMerges: true, Revs: []string{t, "^" + ref}})
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +153,7 @@ func LandedBy(ctx context.Context, r *Runner, dir string, env []string, ref stri
 				order = append(order, c)
 			}
 		}
-		if mb, err := r.GitEnv(ctx, dir, env, "merge-base", ref, t); err == nil {
+		if mb, err := r.GitEnv(ctx, dir, env, gitexec.MergeBase{A: ref, B: t}); err == nil {
 			forks = append(forks, strings.TrimSpace(mb))
 		} else if exitCode(err) != 1 {
 			return nil, err
@@ -162,11 +164,11 @@ func LandedBy(ctx context.Context, r *Runner, dir string, env []string, ref stri
 	if len(order) == 0 {
 		return res, nil
 	}
-	spec := []string{"rev-list", "--no-merges", ref}
+	spec := []string{ref}
 	if base := oldestFork(ctx, r, dir, env, forks); base != "" {
 		spec = append(spec, "^"+base)
 	}
-	out, err := r.GitEnv(ctx, dir, env, spec...)
+	out, err := r.GitEnv(ctx, dir, env, gitexec.RevList{NoMerges: true, Revs: spec})
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +227,7 @@ func oldestFork(ctx context.Context, r *Runner, dir string, env []string, forks 
 	if len(forks) == 1 {
 		return forks[0]
 	}
-	out, err := r.GitEnv(ctx, dir, env, append([]string{"merge-base", "--octopus"}, forks...)...)
+	out, err := r.GitEnv(ctx, dir, env, gitexec.MergeBaseOctopus{Commits: forks})
 	if err != nil {
 		return ""
 	}

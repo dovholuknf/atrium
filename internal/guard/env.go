@@ -2,9 +2,8 @@ package guard
 
 import (
 	"context"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,7 +12,7 @@ import (
 // Env is everything the guard asks of the machine, so a test can answer it.
 type Env interface {
 	// Git runs git in dir and returns its stdout.
-	Git(dir string, args ...string) (string, error)
+	Git(dir string, op gitexec.Op) (string, error)
 	// Stat says whether path exists and is a directory.
 	Stat(path string) (isDir, ok bool)
 	// HasPrefix says whether dir holds an entry whose name starts with prefix.
@@ -34,14 +33,10 @@ type OSEnv struct {
 	AgentFunc func() string
 }
 
-func (e OSEnv) Git(dir string, args ...string) (string, error) {
+func (e OSEnv) Git(dir string, op gitexec.Op) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	nowindow.Hide(cmd)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: dir, Env: []string{"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0"}}, op)
 	return string(out), err
 }
 

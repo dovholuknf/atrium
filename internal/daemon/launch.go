@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
@@ -214,7 +215,7 @@ func namesSandbox(args []string) bool {
 
 // outsideGitDir is the git common dir of the worktree at cwd, which lies outside it, else "".
 func outsideGitDir(cwd string) string {
-	out, err := gitIn(cwd, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+	out, err := gitIn(cwd, gitexec.RevParseGitDirs{Absolute: true, GitDir: true, Common: true})
 	if err != nil {
 		return ""
 	}
@@ -763,6 +764,10 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	if err := d.resumeIsFree(req.Resume); err != nil {
 		return nil, err
 	}
+	cloneSrc, err := d.cloneCheck(req, h)
+	if err != nil {
+		return nil, err
+	}
 	// Resolved before anything exists, so an unknown name costs nothing. Its card
 	// becomes the launcher as if it had called `atrium_launch` itself.
 	reportTo := strings.TrimSpace(req.ReportTo)
@@ -855,6 +860,15 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	cwd = filepath.FromSlash(cwd)
 	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", cwd)
+	}
+	fork := ""
+	if cloneSrc != nil {
+		if fork, err = d.cloneInto(cloneSrc, cwd, homeDir.Tmp, req.CloneCarry, req.CloneFork); err != nil {
+			return nil, err
+		}
+		if len(req.Env) == 0 {
+			req.Env = cloneSrc.LaunchEnv
+		}
 	}
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
@@ -1062,6 +1076,9 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		opts.Autocompact = fmt.Sprintf("%dk", d.autocompactK(probe))
 	}
 	args, logged, err := runnerArgsWith(h, req.Resume, wanted, opts)
+	if fork != "" {
+		args, logged, err = forkArgs(h, fork, wanted, opts)
+	}
 	if err != nil {
 		return nil, err
 	}

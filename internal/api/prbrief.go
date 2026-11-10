@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // A PULL REQUEST CARD READS EVERYTHING LOCALLY. A room never talks to a forge, and the permission hook refuses a
@@ -55,10 +54,7 @@ func writePRBriefFile(ctx context.Context, wt prWorktreeResult, url string) bool
 func excludeFromStatus(ctx context.Context, worktree string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-path", "info/exclude")
-	cmd.Dir = filepath.FromSlash(worktree)
-	nowindow.Hide(cmd)
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(worktree)}, gitexec.RevParseGitPath{Path: "info/exclude"})
 	if err != nil {
 		return
 	}

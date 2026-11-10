@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"log"
@@ -257,7 +258,7 @@ func dirKey(p string) string {
 // newWorkBase is the ref a branch called name that exists nowhere yet starts from. See the header.
 func newWorkBase(ctx context.Context, repo, name, from string) (string, error) {
 	has := func(ref string) bool {
-		_, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		_, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true})
 		return err == nil
 	}
 	if from = strings.TrimSpace(from); from != "" {
@@ -366,10 +367,12 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		if _, err := exec.LookPath(shell); err != nil {
 			shell = "powershell"
 		}
-		// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
-		cmd = exec.CommandContext(ctx, shell, "-NoProfile", "-File", safepath.NoNUL(file),
-			// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
-			"-WorktreePath", safepath.NoNUL(filepath.FromSlash(path)), "-Org", safepath.NoNUL(org), "-Repo", safepath.NoNUL(repo), "-RemoteHost", safepath.NoNUL(host))
+		// -Name:value, since a RepoSlug segment may begin with '-' and would otherwise bind as a parameter name.
+		args := []string{"-NoProfile", "-File", safepath.NoNUL(file),
+			"-WorktreePath:" + safepath.NoNUL(filepath.FromSlash(path)), "-Org:" + safepath.NoNUL(org),
+			"-Repo:" + safepath.NoNUL(repo), "-RemoteHost:" + safepath.NoNUL(host)}
+		// codeql[go/command-injection] argv to pwsh -File, no shell evaluates it, and every value is a RepoSlug or ValidName segment
+		cmd = exec.CommandContext(ctx, shell, args...)
 	} else {
 		// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 		cmd = exec.CommandContext(ctx, "sh", safepath.NoNUL(file), safepath.NoNUL(filepath.FromSlash(path)), safepath.NoNUL(org), safepath.NoNUL(repo), safepath.NoNUL(host))

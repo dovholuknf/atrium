@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -139,7 +140,7 @@ func Audit(ctx context.Context, in Input) (*Result, error) {
 
 	res := &Result{}
 	for _, c := range []struct{ ref, from string }{{refHub, "hub"}, {refLocal, "local"}} {
-		out, err := run.Git(ctx, repo, "rev-parse", "--verify", "-q", c.ref+"^{commit}")
+		out, err := run.Git(ctx, repo, gitexec.RevParseVerify{Rev: c.ref + "^{commit}", Quiet: true})
 		if err != nil {
 			var ge *gitsync.Error
 			if errors.As(err, &ge) && ge.First() == "" {
@@ -154,7 +155,7 @@ func Audit(ctx context.Context, in Input) (*Result, error) {
 		return nil, &Refusal{"this repository has neither " + refHub + " nor " + refLocal + ", so nothing was measured"}
 	}
 
-	out, err := run.Git(ctx, repo, "worktree", "list", "--porcelain")
+	out, err := run.Git(ctx, repo, gitexec.WorktreeList{})
 	if err != nil {
 		return nil, &Refusal{"git could not list the worktrees: " + firstLine(err)}
 	}
@@ -300,7 +301,8 @@ func measure(ctx context.Context, run *gitsync.Runner, repo, ref string, lines [
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			out, err := run.Git(ctx, filepath.FromSlash(l.Path), "-c", "core.quotepath=off", "status", "--porcelain")
+			out, err := run.GitCall(ctx, filepath.FromSlash(l.Path), gitsync.Call{Config: []string{"core.quotepath=off"}},
+				gitexec.Status{})
 			if err != nil {
 				l.Unknown = "status: " + firstLine(err)
 				return
@@ -410,7 +412,7 @@ func verdict(l *Line, defBranch string, judge func(string) Judgment) {
 
 // defaultBranch is the branch origin's HEAD names, or empty when origin says none.
 func defaultBranch(ctx context.Context, run *gitsync.Runner, repo string) string {
-	out, err := run.Git(ctx, repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	out, err := run.Git(ctx, repo, gitexec.SymbolicRef{Name: "refs/remotes/origin/HEAD", Short: true})
 	if err != nil {
 		return ""
 	}

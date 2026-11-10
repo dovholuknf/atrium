@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The git policy: claude works only on its own claude/* branches and never
@@ -129,12 +131,12 @@ func (c *evalCtx) Gits() []*gitCall {
 				g.unknown = true
 				break
 			}
-			out, err := c.env.Git(g.dir, "config", "--get", "alias."+g.sub)
+			out, err := c.env.Git(g.dir, gitexec.ConfigGet{Key: "alias." + g.sub})
 			exp := strings.TrimSpace(out)
 			if err != nil || exp == "" {
 				if listed == nil {
 					listed = map[string]bool{}
-					lo, _ := c.env.Git(g.dir, "--list-cmds=builtins,main")
+					lo, _ := c.env.Git(g.dir, gitexec.ListCmds{Groups: []string{"builtins", "main"}})
 					for _, l := range strings.Fields(lo) {
 						listed[l] = true
 					}
@@ -307,11 +309,11 @@ func (c *evalCtx) hubOK(g *gitCall, remotes []string) bool {
 		return false
 	}
 	var urls []string
-	for _, args := range [][]string{
-		{"remote", "get-url", "--all", remote},
-		{"remote", "get-url", "--push", "--all", remote},
+	for _, op := range []gitexec.RemoteGetURL{
+		{Name: remote, All: true},
+		{Name: remote, Push: true, All: true},
 	} {
-		out, err := c.env.Git(g.dir, args...)
+		out, err := c.env.Git(g.dir, op)
 		if err != nil {
 			return false
 		}
@@ -476,7 +478,7 @@ func checkGitCurrentBranch(c *evalCtx, r *Rule) (bool, string) {
 // branch is the branch checked out in dir. Mid-rebase HEAD is detached, and the
 // branch being rebased is in head-name.
 func (c *evalCtx) branch(dir string) string {
-	out, err := c.env.Git(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := c.env.Git(dir, gitexec.RevParseAbbrevRef{Rev: "HEAD"})
 	if err != nil {
 		return ""
 	}
@@ -485,7 +487,7 @@ func (c *evalCtx) branch(dir string) string {
 		return b
 	}
 	for _, d := range []string{"rebase-merge", "rebase-apply"} {
-		hn, err := c.env.Git(dir, "rev-parse", "--git-path", d+"/head-name")
+		hn, err := c.env.Git(dir, gitexec.RevParseGitPath{Path: d + "/head-name"})
 		hn = strings.TrimSpace(hn)
 		if err != nil || hn == "" {
 			continue

@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/wtfree"
@@ -292,7 +292,7 @@ func inspectCullFrom(wt, into, tip string, prior *cullPlan) (*cullPlan, error) {
 	if prior != nil && prior.wt == wt && prior.common != "" {
 		p.common = prior.common
 	} else {
-		dirs, err := gitIn(wt, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+		dirs, err := gitIn(wt, gitexec.RevParseGitDirs{Absolute: true, GitDir: true, Common: true})
 		if err != nil {
 			return nil, fmt.Errorf("%s is not a git worktree: %w", wt, err)
 		}
@@ -306,7 +306,7 @@ func inspectCullFrom(wt, into, tip string, prior *cullPlan) (*cullPlan, error) {
 		}
 	}
 	var err error
-	p.branch, err = gitIn(wt, "symbolic-ref", "--short", "-q", "HEAD")
+	p.branch, err = gitIn(wt, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 	if err != nil || p.branch == "" {
 		return nil, fmt.Errorf("%s is not on a branch", wt)
 	}
@@ -346,17 +346,12 @@ func inspectCullFrom(wt, into, tip string, prior *cullPlan) (*cullPlan, error) {
 			}
 		}
 	}
-	statusArgs := []string{"status", "--porcelain=v1", "--untracked-files=all"}
 	for _, name := range linkedDirs {
 		if isLink(filepath.Join(wt, name)) {
 			p.links = append(p.links, name)
-			statusArgs = append(statusArgs, ":(exclude)"+name)
 		}
 	}
-	if len(p.links) > 0 {
-		statusArgs = append(statusArgs[:3], append([]string{"--", "."}, statusArgs[3:]...)...)
-	}
-	status, err := gitIn(wt, statusArgs...)
+	status, err := gitIn(wt, gitexec.Status{V1: true, Untracked: "all", Exclude: p.links})
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +379,7 @@ func resolveTip(wt, tip string) (string, error) {
 	if !isHexSha(tip) {
 		return "", fmt.Errorf("the tip %q is not a sha. give the 7 to 40 hex characters of the commit that was checked", tip)
 	}
-	full, err := gitIn(wt, "rev-parse", "--verify", tip+"^{commit}")
+	full, err := gitIn(wt, gitexec.RevParseVerify{Rev: tip + "^{commit}"})
 	if err != nil {
 		if strings.Contains(err.Error(), "ambiguous") {
 			return "", fmt.Errorf("the tip %s is ambiguous here, matching more than one object. give more of the sha", tip)
@@ -413,9 +408,7 @@ func isHexSha(s string) bool {
 func isAncestor(dir, commit, of string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cullGitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "merge-base", "--is-ancestor", commit, of)
-	nowindow.Hide(cmd)
-	out, err := cmd.CombinedOutput()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: dir, Combined: true}, gitexec.IsAncestor{Commit: commit, Of: of})
 	if err == nil {
 		return true, nil
 	}
@@ -444,7 +437,7 @@ func removeWorktree(p *cullPlan) error {
 			return fmt.Errorf("could not remove %s, so the worktree was kept: %v", briefFile, err)
 		}
 	}
-	if _, err := gitIn(p.common, "--git-dir="+p.common, "worktree", "remove", p.wt); err != nil {
+	if _, err := gitInCommon(p.common, gitexec.WorktreeRemove{Path: p.wt}); err != nil {
 		// On Windows git cannot delete a path past the limit and stays listed. The worktree was just read as merged
 		// and clean, so what is left is ignored files: delete them, then let git forget the folder.
 		if !filepath.IsAbs(p.wt) || wtfree.EqPath(p.wt, filepath.Dir(p.common)) {
@@ -454,13 +447,13 @@ func removeWorktree(p *cullPlan) error {
 			// Git checks for changes and locks before it deletes anything, so "failed to delete" means it passed those
 			// checks and had already taken the folder's .git, which leaves status nothing to read. Every other
 			// refusal, or a status that reports a line, keeps the folder.
-			out, _ := gitIn(p.wt, "status", "--porcelain=v1", "--untracked-files=all")
+			out, _ := gitIn(p.wt, gitexec.Status{V1: true, Untracked: "all"})
 			if out != "" || !strings.Contains(err.Error(), "failed to delete") {
 				return fmt.Errorf("git kept the worktree: %v", err)
 			}
 			_ = wtfree.RemoveAllSoon(wtfree.LongPath(p.wt))
 		}
-		_, _ = gitIn(p.common, "--git-dir="+p.common, "worktree", "prune")
+		_, _ = gitInCommon(p.common, gitexec.WorktreePrune{})
 		if wtfree.Listed(p.common, p.wt) {
 			return fmt.Errorf("git kept the worktree: %v", err)
 		}
@@ -494,7 +487,7 @@ func deleteMergedBranch(p *cullPlan, into string) error {
 		return fmt.Errorf("the worktree was removed and branch %s kept, because it no longer "+
 			"reads as merged into %s", p.branch, into)
 	}
-	if _, err := gitIn(p.common, "--git-dir="+p.common, "branch", "-D", p.branch); err != nil {
+	if _, err := gitInCommon(p.common, gitexec.BranchDelete{Branch: p.branch}); err != nil {
 		return fmt.Errorf("the worktree was removed and git kept branch %s: %v", p.branch, err)
 	}
 	return nil
@@ -515,8 +508,7 @@ func stillLanded(p *cullPlan, into string) (bool, error) {
 
 // readRefs gives the commit each named ref is on in one git call, leaving out a ref that is missing or not a commit.
 func readRefs(dir string, names ...string) (map[string]string, error) {
-	args := append([]string{"for-each-ref", "--format=%(refname) %(objecttype) %(objectname)"}, names...)
-	out, err := gitIn(dir, args...)
+	out, err := gitIn(dir, gitexec.ForEachRef{Format: "%(refname) %(objecttype) %(objectname)", Patterns: names})
 	if err != nil {
 		return nil, err
 	}

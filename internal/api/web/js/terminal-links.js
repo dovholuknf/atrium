@@ -1015,22 +1015,51 @@ addEventListener("keydown", e => {
 //
 // Reloading a popped-out terminal costs the scrollback and nothing else: the
 // card id is in the URL, the runner is untouched, and it reattaches on load.
-let boardBuild = "";
+let boardBuild = loadedBuild();
 // Set once the reload is asked for. The page keeps running until it unloads, and
 // the hub restart cover must not come down in that gap. See js/hubrestart.js,
 // which also puts the cover back up on the reloaded page.
 let boardReloading = false;
+let buildTarget = "";
+let buildWait = 0;
+let lastTypedAt = 0;
+const BUILD_IDLE_MS = 3000;
+for (const ev of ["keydown", "input", "paste", "compositionupdate"]) addEventListener(ev, () => { lastTypedAt = Date.now(); }, true);
+
+// The build the page response named. A first health read can land after a restart and name the next build instead.
+function loadedBuild() {
+  try {
+    const t = performance.getEntriesByType("navigation")[0].serverTiming.find(e => e.name === "build");
+    return t ? t.description : "";
+  } catch (e) { return ""; }
+}
+
 function checkBuild(build) {
   if (!build) return;
   if (!boardBuild) { boardBuild = build; return; }
-  if (build === boardBuild) return;
-  boardBuild = build;
+  buildTarget = build === boardBuild ? "" : build;
+  reloadWhenIdle();
+}
+
+function reloadWhenIdle() {
+  clearTimeout(buildWait);
+  if (!buildTarget || boardReloading) return;
+  if (typingNow()) { buildWait = setTimeout(reloadWhenIdle, 1000); return; }
   boardReloading = true;
   // This is THE reload that matters for coming back to where you were, so
   // where you are is written down here rather than trusted to have been
   // written earlier.
   rememberWhereYouAre();
   location.reload();
+}
+
+// A terminal's line lives in the runner and survives a reload, so only recent keys hold it. A box's text does not.
+function typingNow() {
+  if (Date.now() - lastTypedAt < BUILD_IDLE_MS) return true;
+  const box = el => el && !el.classList.contains("xterm-helper-textarea") && (el.isContentEditable || el.tagName === "TEXTAREA" ||
+    (el.tagName === "INPUT" && !/^(button|checkbox|radio|submit|reset|range|color|file)$/.test(el.type)));
+  if (box(document.activeElement)) return true;
+  return [...document.querySelectorAll("textarea")].some(t => box(t) && t.value.trim() && t.value !== t.defaultValue);
 }
 
 // Is the daemon there at all.

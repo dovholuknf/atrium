@@ -337,13 +337,13 @@ func TestCredentialHelperIsTheForgeCLIsOwn(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 	spec := forge.FetchSpec{Remote: "https://github.com/o/r.git", Refspec: "pull/7/head"}
-	args := strings.Join(fetchArgs(spec, "refs/atrium/pr/7", "!gh auth git-credential"), " ")
+	args := fetchLine(spec, "refs/atrium/pr/7", "!gh auth git-credential")
 	want := "-c credential.helper= -c credential.helper=!gh auth git-credential fetch --no-tags -- " +
 		"https://github.com/o/r.git +pull/7/head:refs/atrium/pr/7"
 	if !strings.Contains(args, want) || !strings.Contains(args, "protocol.https.allow=always") {
 		t.Errorf("%s", args)
 	}
-	if strings.Contains(strings.Join(fetchArgs(spec, "x", ""), " "), "credential") {
+	if strings.Contains(fetchLine(spec, "x", ""), "credential") {
 		t.Errorf("a forge with no helper changed the credentials")
 	}
 }
@@ -368,7 +368,7 @@ func TestAHubHeadIsFetchedWithNoCredential(t *testing.T) {
 	t.Parallel()
 	spec := forge.FetchSpec{Remote: "http://127.0.0.1:9/tok/git/hub/github/o/r.git", Refspec: "refs/atrium/pr/7",
 		Hub: "github/o/r"}
-	args := strings.Join(fetchArgs(spec, "refs/atrium/pr/7", "!gh auth git-credential"), " ")
+	args := fetchLine(spec, "refs/atrium/pr/7", "!gh auth git-credential")
 	if strings.Contains(args, "credential") || strings.Contains(args, "https.allow") ||
 		!strings.Contains(args, "protocol.http.allow=always") ||
 		!strings.HasSuffix(args, "-- "+spec.Remote+" +refs/atrium/pr/7:refs/atrium/pr/7") {

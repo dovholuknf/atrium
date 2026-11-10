@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The sync states, exactly as docs/fabric/git-sync-design.md section 6.2 has them.
@@ -130,7 +132,7 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		if err := os.MkdirAll(clone, 0o755); err != nil {
 			return failed(err.Error())
 		}
-		if _, err := g.Git(ctx, clone, "init", "--quiet"); err != nil {
+		if _, err := g.Git(ctx, clone, gitexec.Init{Quiet: true}); err != nil {
 			return failed(firstLine(err))
 		}
 	}
@@ -189,15 +191,15 @@ func (s *Syncer) fetch(ctx context.Context, g *Runner, clone, name string, hub f
 	}
 	defer fwd.Close()
 	url := fwd.URL + "/" + name + ".git"
-	if _, err := g.Git(ctx, clone, "fetch", "--no-tags", "--no-write-fetch-head", url,
-		"+refs/heads/"+IntegrationBranch+":refs/remotes/hub/"+IntegrationBranch); err != nil {
+	if _, err := g.Git(ctx, clone, gitexec.Fetch{NoTags: true, NoWriteFetchHead: true, Remote: url,
+		Refspecs: []string{"+refs/heads/" + IntegrationBranch + ":refs/remotes/hub/" + IntegrationBranch}}); err != nil {
 		d := firstLine(err)
 		if len(left) > 0 {
 			d += " (" + left[0] + ")"
 		}
 		return failed(d)
 	}
-	sha, err := g.Git(ctx, clone, "rev-parse", "--verify", "-q", "refs/remotes/hub/"+IntegrationBranch)
+	sha, err := g.Git(ctx, clone, gitexec.RevParseVerify{Rev: "refs/remotes/hub/" + IntegrationBranch, Quiet: true})
 	if err != nil {
 		return failed(firstLine(err))
 	}
@@ -211,7 +213,7 @@ func (s *Syncer) fetch(ctx context.Context, g *Runner, clone, name string, hub f
 		}
 	}
 	at := func(ref string) string {
-		out, err := g.Git(ctx, clone, "rev-parse", "--verify", "-q", ref)
+		out, err := g.Git(ctx, clone, gitexec.RevParseVerify{Rev: ref, Quiet: true})
 		if err != nil {
 			return ""
 		}
@@ -220,18 +222,18 @@ func (s *Syncer) fetch(ctx context.Context, g *Runner, clone, name string, hub f
 
 	// claude/main: git itself refuses when a worktree has it checked out.
 	if at("refs/heads/claude/main") != sha {
-		if _, err := g.Git(ctx, clone, "branch", "-f", "claude/main", sha); err != nil {
+		if _, err := g.Git(ctx, clone, gitexec.BranchForce{Branch: "claude/main", Start: sha}); err != nil {
 			refuse(err)
 		}
 	}
 	// hub-main: kept for worktrees and briefs that name it.
 	if at("refs/heads/hub-main") != sha {
-		head, _ := g.Git(ctx, clone, "symbolic-ref", "--short", "-q", "HEAD")
+		head, _ := g.Git(ctx, clone, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 		var err error
 		if strings.TrimSpace(head) == "hub-main" {
-			_, err = g.Git(ctx, clone, "reset", "--keep", "--quiet", sha)
+			_, err = g.Git(ctx, clone, gitexec.ResetKeep{Quiet: true, Commit: sha})
 		} else {
-			_, err = g.Git(ctx, clone, "branch", "-f", "hub-main", sha)
+			_, err = g.Git(ctx, clone, gitexec.BranchForce{Branch: "hub-main", Start: sha})
 		}
 		if err != nil {
 			refuse(err)
@@ -244,7 +246,7 @@ func (s *Syncer) fetch(ctx context.Context, g *Runner, clone, name string, hub f
 // nothing when it has no origin or the origin is this repository. Only owner/repo is compared,
 // since the name's host is a label (`github`) and the url's is a domain (`github.com`).
 func originMismatch(ctx context.Context, g *Runner, clone, name string) string {
-	out, err := g.Git(ctx, clone, "config", "--get", "remote.origin.url")
+	out, err := g.Git(ctx, clone, gitexec.ConfigGet{Key: "remote.origin.url"})
 	origin := strings.TrimSpace(out)
 	if err != nil || origin == "" {
 		return ""

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 )
 
@@ -14,10 +15,15 @@ const (
 
 type CullResult = shared.CullResult
 
-func gitIn(dir string, args ...string) (string, error) { return shared.GitIn(dir, args...) }
-func hasDotGit(dir string) bool                        { return shared.HasDotGit(dir) }
-func samePath(a, b string) bool                        { return shared.SamePath(a, b) }
-func plural(n int, noun string) string                 { return shared.Plural(n, noun) }
-func orDefault(s, def string) string                   { return shared.OrDefault(s, def) }
-func protectedBranch(branch, into string) bool         { return shared.ProtectedBranch(branch, into) }
-func processAlive(pid int) bool                        { return shared.ProcessAlive(pid) }
+func gitIn(dir string, op gitexec.Op) (string, error) { return shared.GitIn(dir, op) }
+func hasDotGit(dir string) bool                       { return shared.HasDotGit(dir) }
+func samePath(a, b string) bool                       { return shared.SamePath(a, b) }
+func plural(n int, noun string) string                { return shared.Plural(n, noun) }
+func orDefault(s, def string) string                  { return shared.OrDefault(s, def) }
+func protectedBranch(branch, into string) bool        { return shared.ProtectedBranch(branch, into) }
+func processAlive(pid int) bool                       { return shared.ProcessAlive(pid) }
+
+// gitInCommon runs op against the repository at common, from the repository rather than from inside a worktree.
+func gitInCommon(common string, op gitexec.Op) (string, error) {
+	return shared.GitWith(gitexec.Opts{Dir: common, GitDir: common}, op)
+}

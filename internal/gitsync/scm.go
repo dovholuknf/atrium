@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
@@ -128,7 +129,7 @@ type SCM struct {
 	// source is the URL git clones from. It is unexported, so only this package's tests set it:
 	// they point it at a local bare repository, and production always clones from the https URL.
 	source func(Ref) string
-	// extra is git config for the clone, `-c k=v` pairs, and is for the same tests.
+	// extra is git config for the clone, "k=v" pairs, and is for the same tests.
 	extra []string
 	// direct is where the fallback clone from origin goes, for the same tests.
 	direct func(Ref) string
@@ -193,7 +194,7 @@ func (c *SCM) credentialArgs(r Ref) []string {
 	}
 	for _, allowed := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
 		if strings.EqualFold(allowed, host) {
-			return []string{"-c", "credential.https://" + host + ".helper=" + h}
+			return []string{"credential.https://" + host + ".helper=" + h}
 		}
 	}
 	return nil
@@ -278,9 +279,9 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 		if c.direct != nil {
 			env = nil
 		}
-		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.http.allow=always")
+		args = append(args, "protocol.allow=never", "protocol.http.allow=always")
 	default:
-		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always")
+		args = append(args, "protocol.allow=never", "protocol.https.allow=always")
 	}
 	args = append(args, c.extra...)
 	if !viaHub {
@@ -288,18 +289,19 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 	}
 	// An argv slice, never a shell. `--` ends options, though the URL was built from checked
 	// parts and cannot start with a dash. The output is capped, and the runner bounds the time.
-	cloneArgs := append(args, "clone", "--no-tags", "--", src, dest)
-	_, err = g.GitCapped(ctx, filepath.Dir(dest), env, 64<<10, cloneArgs...)
+	_, err = g.GitCall(ctx, filepath.Dir(dest), Call{Env: env, Max: 64 << 10, Config: args},
+		gitexec.Clone{NoTags: true, URL: src, Dir: dest})
 	if err == nil && viaHub && !c.hasRefs(ctx, dest) {
 		// The hub could not read the repository, so its copy is empty. A worktree off it fails on HEAD.
 		_ = os.RemoveAll(dest)
 		src, env, viaHub = httpsURL(ref), []string{"GIT_ALLOW_PROTOCOL=https"}, false
-		args = []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}
+		args = []string{"protocol.allow=never", "protocol.https.allow=always"}
 		if c.direct != nil {
 			src, env, args = c.direct(ref), nil, nil
 		}
 		args = append(append(args, c.extra...), c.credentialArgs(ref)...)
-		_, err = g.GitCapped(ctx, filepath.Dir(dest), env, 64<<10, append(args, "clone", "--no-tags", "--", src, dest)...)
+		_, err = g.GitCall(ctx, filepath.Dir(dest), Call{Env: env, Max: 64 << 10, Config: args},
+			gitexec.Clone{NoTags: true, URL: src, Dir: dest})
 	}
 	if err != nil {
 		if errors.Is(err, ErrStopped) {
@@ -310,12 +312,12 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 	}
 	if viaHub {
 		// The loopback is gone once this returns, and origin names the forge as any clone's does.
-		if _, err := g.GitCapped(ctx, dest, nil, 4<<10, "remote", "set-url", "origin", httpsURL(ref)); err != nil {
+		if _, err := g.GitCapped(ctx, dest, nil, 4<<10, gitexec.RemoteSetURL{Name: "origin", URL: httpsURL(ref)}); err != nil {
 			_ = os.RemoveAll(dest)
 			return SCMResult{}, errors.New(CloneFailed)
 		}
 	}
-	if _, err := g.Git(ctx, dest, "config", cfgMade, "made"); err != nil {
+	if _, err := g.Git(ctx, dest, gitexec.ConfigSet{Key: cfgMade, Value: "made"}); err != nil {
 		return SCMResult{}, errors.New("could not mark the clone: " + firstLine(err))
 	}
 	res := SCMResult{Path: filepath.ToSlash(dest), State: "cloned"}
@@ -324,7 +326,7 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 }
 
 func (c *SCM) hasRefs(ctx context.Context, dir string) bool {
-	out, err := c.runner().Git(ctx, dir, "for-each-ref", "--count=1")
+	out, err := c.runner().Git(ctx, dir, gitexec.ForEachRef{Count: 1})
 	return err != nil || strings.TrimSpace(out) != ""
 }
 
@@ -346,7 +348,7 @@ func (c *SCM) existing(ctx context.Context, ref Ref, dest string) (SCMResult, er
 		if err := c.Yes(ctx, dest); err != nil {
 			return SCMResult{}, err
 		}
-		if _, err := g.Git(ctx, dest, "config", cfgAdopted, "yes"); err != nil {
+		if _, err := g.Git(ctx, dest, gitexec.ConfigSet{Key: cfgAdopted, Value: "yes"}); err != nil {
 			return SCMResult{}, errors.New("could not record the operator's yes in the clone: " + firstLine(err))
 		}
 	}
@@ -358,7 +360,7 @@ func (c *SCM) existing(ctx context.Context, ref Ref, dest string) (SCMResult, er
 }
 
 func (c *SCM) cfg(ctx context.Context, dir, key string) string {
-	out, err := c.runner().Git(ctx, dir, "config", "--local", "--get", key)
+	out, err := c.runner().Git(ctx, dir, gitexec.ConfigGet{Key: key, Local: true})
 	if err != nil {
 		return ""
 	}

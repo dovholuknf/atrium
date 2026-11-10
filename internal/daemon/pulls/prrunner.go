@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	prrender "github.com/dovholuknf/atrium/internal/base/prreview/render"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -767,7 +768,8 @@ func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 	if err := os.MkdirAll(src, 0o700); err != nil {
 		return err
 	}
-	remote, fetch := spec.Remote, []string{"fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", spec.Refspec}
+	remote := spec.Remote
+	fetch := gitexec.Fetch{Quiet: true, Depth: 1, Filter: "blob:none", Remote: "origin", Refspecs: []string{spec.Refspec}}
 	if spec.Hub != "" {
 		// THE HEAD IS IN THE HUB'S STORE, which serves whole fetches only, read through a loopback to the link.
 		if pr.r.hubSource == nil {
@@ -780,14 +782,18 @@ func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 		}
 		defer done()
 		opened("hub's store open")
-		remote, fetch = url, []string{"fetch", "-q", "--no-tags", "origin", spec.Refspec}
+		remote, fetch = url, gitexec.Fetch{Quiet: true, NoTags: true, Remote: "origin", Refspecs: []string{spec.Refspec}}
 	}
-	for i, args := range [][]string{
-		{"init", "-q"},
-		{"remote", "add", "origin", remote},
+	for i, op := range []gitexec.Op{
+		gitexec.Init{Quiet: true},
+		gitexec.RemoteAdd{Name: "origin", URL: remote},
 		fetch,
-		{"checkout", "-q", "--detach", "FETCH_HEAD"},
+		gitexec.CheckoutDetach{Commit: "FETCH_HEAD", Quiet: true},
 	} {
+		args, err := gitexec.Argv(gitexec.Opts{}, op)
+		if err != nil {
+			return err
+		}
 		var end func(string)
 		switch i {
 		case 2:
@@ -803,7 +809,8 @@ func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 			end([]string{"", "", "head fetched", "worktree made"}[i])
 		}
 	}
-	out, err := pr.r.run(pr.ctx, prCmd{Name: "git", Args: []string{"rev-parse", "HEAD"}, Dir: src,
+	revParse, _ := gitexec.Argv(gitexec.Opts{}, gitexec.RevParse{Rev: "HEAD"})
+	out, err := pr.r.run(pr.ctx, prCmd{Name: "git", Args: revParse, Dir: src,
 		Timeout: prGitTimeout, Limit: 1024})
 	if err != nil {
 		return err

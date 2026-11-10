@@ -9,14 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -193,9 +192,8 @@ var commitExists = func(dir, sha string) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "cat-file", "-e", sha+"^{commit}")
-	nowindow.Hide(cmd)
-	return cmd.Run() == nil
+	_, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir)}, gitexec.CatFileExists{Object: sha + "^{commit}"})
+	return err == nil
 }
 
 // commitInDir says whether `git rev-parse --verify <sha>^{commit}` resolves in a directory. A variable so a test does
@@ -206,9 +204,8 @@ var commitInDir = func(dir, sha string) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "rev-parse", "--verify", "--quiet", sha+"^{commit}")
-	nowindow.Hide(cmd)
-	return cmd.Run() == nil
+	_, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir)}, gitexec.RevParseVerify{Rev: sha + "^{commit}", Quiet: true})
+	return err == nil
 }
 
 // commitOnHub says whether the hub has a commit, asked as atrium_git_url asks: for every branch of the card's

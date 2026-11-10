@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The rules of a push, design 3.2. A push is refused whole when any updated ref breaks one.
@@ -171,7 +173,7 @@ func (rc *Receiver) checkNames(ctx context.Context, req pushRequest) map[string]
 		if rc.h.hk.inNameCheck != nil {
 			rc.h.hk.inNameCheck()
 		}
-		if _, err := rc.h.Store().git(ctx, "", "check-ref-format", u.Ref); err != nil {
+		if _, err := rc.h.Store().git(ctx, "", gitexec.CheckRefFormat{Name: u.Ref}); err != nil {
 			bad[u.Ref] = "git does not take " + label + " as a ref name"
 		}
 	}

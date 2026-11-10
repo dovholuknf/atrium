@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // fakeEnv answers from maps, for the rules that need no repository.
@@ -13,7 +15,7 @@ type fakeEnv struct {
 	agent string
 }
 
-func (e fakeEnv) Git(string, ...string) (string, error) { return "", errors.New("no git here") }
+func (e fakeEnv) Git(string, gitexec.Op) (string, error) { return "", errors.New("no git here") }
 func (e fakeEnv) Stat(p string) (bool, bool) {
 	d, ok := e.dirs[strings.ReplaceAll(p, "/", `\`)]
 	return d, ok

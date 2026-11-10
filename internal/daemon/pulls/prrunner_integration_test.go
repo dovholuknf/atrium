@@ -321,7 +321,7 @@ func TestPRRunnerHappyRun(t *testing.T) {
 	}
 	// The gh and git commands are the named ones.
 	joined := strings.Join(f.calls, "\n")
-	for _, want := range []string{"gh pr view 378 --repo openziti/tlsuv", "gh pr diff 378", "git fetch -q --depth 1 --filter=blob:none origin pull/378/head"} {
+	for _, want := range []string{"gh pr view 378 --repo openziti/tlsuv", "gh pr diff 378", "git fetch --quiet --depth 1 --filter=blob:none -- origin pull/378/head"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("no %q in:\n%s", want, joined)
 		}

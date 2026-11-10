@@ -25,12 +25,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // Git is what a check needs of git. *gitsync.Runner has both methods.
 type Git interface {
-	Git(ctx context.Context, dir string, args ...string) (string, error)
-	GitInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error)
+	Git(ctx context.Context, dir string, op gitexec.Op) (string, error)
+	GitInput(ctx context.Context, dir string, stdin []byte, op gitexec.Op) (string, error)
 }
 
 // Why a commit blocks a deploy.
@@ -365,7 +367,7 @@ func short(sha string) string {
 }
 
 func (c *Checker) rev(ctx context.Context, name string) (string, error) {
-	out, err := c.Git.Git(ctx, c.Dir, "rev-parse", "--verify", "--quiet", name+"^{commit}")
+	out, err := c.Git.Git(ctx, c.Dir, gitexec.RevParseVerify{Rev: name + "^{commit}", Quiet: true})
 	if err != nil {
 		return "", err
 	}
@@ -384,11 +386,10 @@ type candidate struct {
 // candidates are the commits in base..tip, oldest first: every non-merge commit, and a merge only when it carries a
 // change of its own (a conflict resolution, which --remerge-diff shows).
 func (c *Checker) candidates(ctx context.Context, base, tip string) ([]candidate, error) {
-	// ONE LOG NAMES THE RANGE, its parents and its subjects. The symmetric range marks a commit of the installed build
-	// that the tip lacks with `<`, which is the installed build not being an ancestor, so no separate ancestry check.
+	// The symmetric range marks with `<` a commit of the installed build the tip lacks, so no separate ancestry check.
 	limit := c.maxCommits()
-	out, err := c.Git.Git(ctx, c.Dir, "log", "--reverse", "--left-right", fmt.Sprintf("--max-count=%d", limit+1),
-		"--format=%m%x1f%H%x1f%P%x1f%s", base+"..."+tip)
+	out, err := c.Git.Git(ctx, c.Dir, gitexec.Log{Reverse: true, LeftRight: true, MaxCount: limit + 1,
+		Format: "%m%x1f%H%x1f%P%x1f%s", Revs: []string{base + "..." + tip}})
 	if err != nil {
 		return nil, err
 	}
@@ -415,10 +416,10 @@ func (c *Checker) candidates(ctx context.Context, base, tip string) ([]candidate
 		return nil, fmt.Errorf("more than the %d commits that are read", limit)
 	}
 	spec := base + ".." + tip
-	if err := c.fillRangeOf(ctx, spec, nonMerge); err != nil {
+	if err := c.fillRangeOf(ctx, spec, nonMerge, false); err != nil {
 		return nil, err
 	}
-	if err := c.fillMerges(ctx, merges, spec); err != nil {
+	if err := c.fillMerges(ctx, merges, spec, false, 0); err != nil {
 		return nil, err
 	}
 	var res []candidate
@@ -464,8 +465,7 @@ func (c *Checker) maxCommits() int {
 // fillRangeOf caches the patch-id and the paths of every non-merge commit of a range, in two git calls plus the
 // patch-id. No renames, so a move is a delete and an add in both the paths and the patch. A range whose commits are all
 // cached costs nothing, which is what makes the second pass fast. The caller has the range's non-merge commits.
-func (c *Checker) fillRangeOf(ctx context.Context, spec string, nonMerge []string, extra ...string) error {
-	limit := fmt.Sprintf("--max-count=%d", c.maxCommits())
+func (c *Checker) fillRangeOf(ctx context.Context, spec string, nonMerge []string, firstParent bool) error {
 	allKnown := true
 	for _, sha := range nonMerge {
 		if !c.known(sha) {
@@ -476,10 +476,9 @@ func (c *Checker) fillRangeOf(ctx context.Context, spec string, nonMerge []strin
 	if allKnown {
 		return nil
 	}
-	// ONE LOG gives the paths (the raw lines) and the patch under them, and what patch-id reads is the same log
-	// without the raw lines.
-	args := append([]string{"log", "--no-merges", "--no-renames", limit}, extra...)
-	text, err := c.Git.Git(ctx, c.Dir, append(args, "--raw", "-p", "--format=%x1ecommit %H", spec)...)
+	// One log gives the paths (the raw lines) and the patch, and patch-id reads it without the raw lines.
+	text, err := c.Git.Git(ctx, c.Dir, gitexec.Log{NoMerges: true, NoRenames: true, MaxCount: c.maxCommits(),
+		FirstParent: firstParent, Raw: true, Patch: true, Format: "%x1ecommit %H", Revs: []string{spec}})
 	if err != nil {
 		return err
 	}
@@ -523,7 +522,7 @@ func (c *Checker) patchIDs(ctx context.Context, patchText string) (map[string]st
 	if strings.TrimSpace(patchText) == "" {
 		return res, nil
 	}
-	out, err := c.Git.GitInput(ctx, c.Dir, []byte(patchText), "patch-id", "--stable")
+	out, err := c.Git.GitInput(ctx, c.Dir, []byte(patchText), gitexec.PatchID{Stable: true})
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +542,7 @@ func (c *Checker) patchIDs(ctx context.Context, patchText string) (map[string]st
 //
 // The merges of a range are read together, two git calls however many there are. One process per merge was most of
 // the time a cold pass took.
-func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec string, extra ...string) error {
+func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec string, firstParent bool, max int) error {
 	var todo []string
 	for sha := range merges {
 		if !c.known(sha) {
@@ -553,8 +552,11 @@ func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec s
 	if len(todo) == 0 {
 		return nil
 	}
-	base := append(append([]string{"log", "--merges", "--remerge-diff", "--no-renames"}, extra...), spec)
-	names, err := c.Git.Git(ctx, c.Dir, append([]string{base[0], "--name-only", "--format=%x1e%H"}, base[1:]...)...)
+	base := gitexec.Log{Merges: true, RemergeDiff: true, NoRenames: true, FirstParent: firstParent, MaxCount: max,
+		Revs: []string{spec}}
+	named := base
+	named.NameOnly, named.Format = true, "%x1e%H"
+	names, err := c.Git.Git(ctx, c.Dir, named)
 	if err != nil {
 		if ctx.Err() == nil && gitTooOld(err) {
 			for _, sha := range todo {
@@ -568,7 +570,9 @@ func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec s
 	var patches map[string]string
 	for _, p := range paths {
 		if len(p) > 0 {
-			text, err := c.Git.Git(ctx, c.Dir, append([]string{base[0], "-p"}, base[1:]...)...)
+			patched := base
+			patched.Patch = true
+			text, err := c.Git.Git(ctx, c.Dir, patched)
 			if err == nil {
 				patches, err = c.patchIDs(ctx, text)
 			}
@@ -637,10 +641,8 @@ func (c *Checker) verdictsOn(ctx context.Context, refs ...string) (map[string]di
 	if max <= 0 {
 		max = DefaultMaxVerdicts
 	}
-	args := append([]string{"log", "--no-merges", "--no-renames", "--name-only", "--date-order",
-		"--extended-regexp", "--grep=^Atrium-Verdict:", fmt.Sprintf("--max-count=%d", max),
-		"--format=%x1e%H%x1f%B%x1f"}, refs...)
-	out, err := c.Git.Git(ctx, c.Dir, args...)
+	out, err := c.Git.Git(ctx, c.Dir, gitexec.Log{NoMerges: true, NoRenames: true, NameOnly: true, DateOrder: true,
+		ExtendedRegexp: true, Grep: "^Atrium-Verdict:", MaxCount: max, Format: "%x1e%H%x1f%B%x1f", Revs: refs})
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -756,9 +758,9 @@ func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, string,
 	if !strings.Contains(spec, "..") {
 		rng = spec + "^!"
 	}
-	limit := fmt.Sprintf("--max-count=%d", c.maxCommits())
 	// One call names the range's commits and, by their parents, which are merges.
-	listed, err := c.Git.Git(ctx, c.Dir, "rev-list", "--first-parent", "--parents", limit, rng)
+	listed, err := c.Git.Git(ctx, c.Dir, gitexec.RevList{FirstParent: true, Parents: true, MaxCount: c.maxCommits(),
+		Revs: []string{rng}})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
@@ -779,10 +781,10 @@ func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, string,
 			nonMerge = append(nonMerge, f[0])
 		}
 	}
-	if err := c.fillRangeOf(ctx, rng, nonMerge, "--first-parent"); err != nil {
+	if err := c.fillRangeOf(ctx, rng, nonMerge, true); err != nil {
 		return nil, "", err
 	}
-	if err := c.fillMerges(ctx, merges, rng, "--first-parent", limit); err != nil {
+	if err := c.fillMerges(ctx, merges, rng, true, c.maxCommits()); err != nil {
 		return nil, "", err
 	}
 	var ids []string
@@ -837,7 +839,8 @@ var errNotAncestor = errors.New("not an ancestor")
 // revs names the branch tip and the installed build in one git. When that fails it asks one at a time, which costs
 // more and says which of the two it was.
 func (c *Checker) revs(ctx context.Context, installed string) (tip, inst string, err error) {
-	out, gerr := c.Git.Git(ctx, c.Dir, "rev-parse", "--quiet", "refs/heads/"+c.Branch+"^{commit}", installed+"^{commit}")
+	out, gerr := c.Git.Git(ctx, c.Dir, gitexec.RevParseRevs{Quiet: true,
+		Revs: []string{"refs/heads/" + c.Branch + "^{commit}", installed + "^{commit}"}})
 	if f := strings.Fields(out); gerr == nil && len(f) == 2 {
 		return f[0], f[1], nil
 	}

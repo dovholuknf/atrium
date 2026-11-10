@@ -409,12 +409,17 @@ func DescribeCwd(out *Resolved, stat func(string) (fs.FileInfo, error)) {
 // quoting problem for whichever shell got involved.
 func FillArgv(cmd string, args []string, vars map[string]string) (string, []string) {
 	sub := func(s string) string {
-		return placeholder.ReplaceAllStringFunc(s, func(m string) string {
+		filled := placeholder.ReplaceAllStringFunc(s, func(m string) string {
 			if v := vars[m[1:len(m)-1]]; v != "" {
 				return v
 			}
 			return m
 		})
+		// A value from a link never turns an argument into a flag: it stays unfilled.
+		if strings.HasPrefix(filled, "-") && !strings.HasPrefix(s, "-") {
+			return s
+		}
+		return filled
 	}
 	out := make([]string, 0, len(args))
 	for _, a := range args {

@@ -147,7 +147,7 @@ func (x *recvFix) run(dir string, w who, args ...string) (string, error) {
 		full = append(full, "-c", "http.extraHeader="+HeaderLaunchBranch+": "+w.branch,
 			"-c", "http.extraHeader="+HeaderKin+": "+w.kin)
 	}
-	out, err := Default.GitEnv(bg, dir, []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"},
+	out, err := rawGit(dir, []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}, nil,
 		append(full, args...)...)
 	var ge *Error
 	if errors.As(err, &ge) {
@@ -214,7 +214,7 @@ func (x *recvFix) refOn(name, ref string) string {
 	if ok != nil {
 		x.t.Fatal(ok)
 	}
-	out, err := Default.Git(bg, dir, "for-each-ref", "--format=%(objectname)", ref)
+	out, err := rawGit(dir, nil, nil, "for-each-ref", "--format=%(objectname)", ref)
 	if err != nil {
 		x.t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func (x *recvFix) refOn(name, ref string) string {
 func (x *recvFix) refsOn(name string) string {
 	x.t.Helper()
 	dir, _ := x.h.Store().Path(name)
-	out, err := Default.Git(bg, dir, "for-each-ref", "--format=%(refname) %(objectname)")
+	out, err := rawGit(dir, nil, nil, "for-each-ref", "--format=%(refname) %(objectname)")
 	if err != nil {
 		x.t.Fatal(err)
 	}
@@ -1255,7 +1255,7 @@ func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
 			t.Fatalf("%v pushed into a mirror:\n%s", w, out)
 		}
 	}
-	if refs, _ := Default.Git(bg, dir, "for-each-ref"); strings.TrimSpace(refs) != "" {
+	if refs, _ := rawGit(dir, nil, nil, "for-each-ref"); strings.TrimSpace(refs) != "" {
 		t.Fatalf("a mirror got refs: %s", refs)
 	}
 }
@@ -1285,7 +1285,7 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 			if err == nil || !strings.Contains(out, "is a mirror the hub keeps in step") {
 				t.Fatalf("%s pushed %s into an adopted mirror: %v\n%s", name, spec, err, out)
 			}
-			if refs, _ := Default.Git(bg, dir, "for-each-ref"); strings.TrimSpace(refs) != "" {
+			if refs, _ := rawGit(dir, nil, nil, "for-each-ref"); strings.TrimSpace(refs) != "" {
 				t.Fatalf("an adopted mirror got refs from %s: %s", name, refs)
 			}
 			if n := len(x.rows()); n != 0 {
@@ -1308,7 +1308,7 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 	if out, err := x.push(roomCard("sg4", "C1"), "github/m/mirror", "fix/x:refs/heads/fix/x"); err != nil {
 		t.Fatalf("a card's work branch into an adopted mirror: %v\n%s", err, out)
 	}
-	if got, _ := Default.Git(bg, dir, "rev-parse", "refs/heads/fix/x"); strings.TrimSpace(got) != sha {
+	if got, _ := rawGit(dir, nil, nil, "rev-parse", "refs/heads/fix/x"); strings.TrimSpace(got) != sha {
 		t.Fatalf("fix/x is %q, want %s", got, sha)
 	}
 	if rows := x.rows(); len(rows) != 1 || rows[0].Card != "C1" {

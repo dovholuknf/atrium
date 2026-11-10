@@ -3,6 +3,8 @@ package gitsync
 import (
 	"context"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // What the room does to a clone's remotes when it syncs it. docs/fabric/hub-forge-design.md 5.1 and 5.2.
@@ -34,7 +36,7 @@ func ensureRemotes(ctx context.Context, g *Runner, clone, forwarder string) stri
 // dropRetiredOriginPushURL unsets the `remote.origin.pushurl` values that are exactly retiredOriginPushURL and leaves
 // every other value where it is.
 func dropRetiredOriginPushURL(ctx context.Context, g *Runner, clone string) error {
-	out, err := g.Git(ctx, clone, "config", "--local", "--get-all", "remote.origin.pushurl")
+	out, err := g.Git(ctx, clone, gitexec.ConfigGetAll{Key: "remote.origin.pushurl", Local: true})
 	if err != nil {
 		return nil
 	}
@@ -47,6 +49,7 @@ func dropRetiredOriginPushURL(ctx context.Context, g *Runner, clone string) erro
 	if !found {
 		return nil
 	}
-	_, err = g.Git(ctx, clone, "config", "--local", "--unset-all", "remote.origin.pushurl", "^atrium-refused://origin-push$")
+	_, err = g.Git(ctx, clone, gitexec.ConfigUnsetAll{Local: true, Key: "remote.origin.pushurl",
+		ValueRegex: "^atrium-refused://origin-push$"})
 	return err
 }

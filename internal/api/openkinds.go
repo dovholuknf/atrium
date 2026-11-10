@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -17,7 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/forge"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -404,7 +403,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		if added {
 			defer func() {
 				if !made {
-					_, _ = gitIn(context.Background(), repoPath, "remote", "remove", opts.fork.remote())
+					_, _ = gitIn(context.Background(), repoPath, gitexec.RemoteRemove{Name: opts.fork.remote()})
 				}
 			}()
 		}
@@ -412,10 +411,10 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 	if opts.fetch {
 		stepsOf(ctx).begin("worktree", "making the worktree")
 	}
-	var args []string
+	var add gitexec.WorktreeAdd
 	switch {
 	case branchExists(ctx, repoPath, branch):
-		args = []string{"worktree", "add", filepath.FromSlash(dest), branch}
+		add = gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), Commitish: branch}
 	case fresh:
 		base := defaultBase(ctx, repoPath)
 		if opts.fetch || opts.from != "" {
@@ -425,7 +424,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 			}
 		}
 		res.Base = base
-		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), base}
+		add = gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), NewBranch: branch, Commitish: base}
 		res.CreatedBranch = true
 	default:
 		from := forkFrom
@@ -436,21 +435,15 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 			return res, http.StatusBadRequest, errors.New("the branch " + branch + " is not in " + repoPath +
 				" yet. push it, or fetch it there, then paste the link again")
 		}
-		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), from}
-		if opts.fork != nil && opts.fork.pr > 0 {
-			// A fork PR's head is no branch of the fork, so there is nothing to track.
-			args = []string{"worktree", "add", "--no-track", "-b", branch, filepath.FromSlash(dest), from}
-		}
+		// A fork PR's head is no branch of the fork, so there is nothing to track.
+		add = gitexec.WorktreeAdd{Path: filepath.FromSlash(dest), NewBranch: branch, Commitish: from,
+			NoTrack: opts.fork != nil && opts.fork.pr > 0}
 		res.CreatedBranch = true
 	}
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		return res, http.StatusInternalServerError, err
 	}
-	// codeql[go/command-injection] git argv with no shell: fixed subcommands, and a branch that passed checkBranchName cannot start with '-'
-	cmd := exec.CommandContext(ctx, "git", safepath.NoNULs(args)...)
-	cmd.Dir = filepath.FromSlash(repoPath)
-	nowindow.Hide(cmd)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(repoPath), Combined: true}, add); err != nil {
 		return prWorktreeResult{}, http.StatusBadRequest, errors.New(
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
 	}
@@ -466,9 +459,7 @@ func checkBranchName(ctx context.Context, name string) error {
 	if strings.TrimSpace(name) == "" || strings.HasPrefix(name, "-") || strings.Contains(name, "..") {
 		return fmt.Errorf("%q is not a branch name", name)
 	}
-	check := exec.CommandContext(ctx, "git", "check-ref-format", "--branch", name)
-	nowindow.Hide(check)
-	if err := check.Run(); err != nil {
+	if _, err := gitexec.Run(ctx, gitexec.Opts{}, gitexec.CheckRefFormat{Name: name, Branch: true}); err != nil {
 		return fmt.Errorf("%q is not a branch name git takes", name)
 	}
 	return nil
@@ -477,15 +468,11 @@ func checkBranchName(ctx context.Context, name string) error {
 // fetchOrigin fetches origin as the daemon, which has no one at a screen: the forge CLI's helper is the only one asked
 // and nothing may open a prompt, so a failed sign-in is fast and textual.
 func fetchOrigin(ctx context.Context, repo, helper string) (string, error) {
-	args := []string{}
+	o := gitexec.Opts{Dir: filepath.FromSlash(repo), Env: []string{"GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never"}, Combined: true}
 	if helper != "" {
-		args = append(args, "-c", "credential.helper=", "-c", "credential.helper="+helper)
+		o.Config = []string{"credential.helper=", "credential.helper=" + helper}
 	}
-	cmd := exec.CommandContext(ctx, "git", append(args, "fetch", "--prune", "origin")...)
-	cmd.Dir = filepath.FromSlash(repo)
-	nowindow.Hide(cmd)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never")
-	out, err := cmd.CombinedOutput()
+	out, err := gitexec.Run(ctx, o, gitexec.Fetch{Remote: "origin", Prune: true})
 	if err != nil {
 		return string(out), errors.New("git fetch: " + strings.TrimSpace(tailLines(string(out))))
 	}
@@ -495,10 +482,10 @@ func fetchOrigin(ctx context.Context, repo, helper string) (string, error) {
 // emptyCloneError is the plain error for a repo with no commits after the clone and the fetch, or nil when it has
 // some. A clone atrium made that is empty is removed, so the next try clones fresh instead of failing the same way.
 func emptyCloneError(ctx context.Context, dir, host, org, repo, fetchErr string) error {
-	if out, err := gitIn(ctx, dir, "for-each-ref", "--count=1", "refs/heads", "refs/remotes"); err != nil || strings.TrimSpace(out) != "" {
+	if out, err := gitIn(ctx, dir, gitexec.ForEachRef{Count: 1, Patterns: []string{"refs/heads", "refs/remotes"}}); err != nil || strings.TrimSpace(out) != "" {
 		return nil
 	}
-	if out, _ := gitIn(ctx, dir, "config", "--local", "atrium.clone"); strings.TrimSpace(out) == "made" {
+	if out, _ := gitIn(ctx, dir, gitexec.ConfigGet{Key: "atrium.clone", Local: true}); strings.TrimSpace(out) == "made" {
 		if err := os.RemoveAll(filepath.FromSlash(dir)); err != nil {
 			log.Printf("[atrium api] new %s: could not remove the empty clone: %v", logLine(dir), err)
 		}
@@ -514,7 +501,7 @@ func emptyCloneError(ctx context.Context, dir, host, org, repo, fetchErr string)
 // defaultBase is what a fresh branch starts from: the remote's default branch, else the clone's HEAD.
 func defaultBase(ctx context.Context, repo string) string {
 	for _, ref := range []string{"refs/remotes/origin/HEAD", "refs/remotes/hub/HEAD"} {
-		if _, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", ref); err == nil {
+		if _, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: ref, Quiet: true}); err == nil {
 			return ref
 		}
 	}
@@ -525,7 +512,7 @@ func defaultBase(ctx context.Context, repo string) string {
 func remoteBranch(ctx context.Context, repo, branch string) string {
 	for _, remote := range []string{"origin", "hub"} {
 		ref := "refs/remotes/" + remote + "/" + branch
-		if _, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", ref); err == nil {
+		if _, err := gitIn(ctx, repo, gitexec.RevParseVerify{Rev: ref, Quiet: true}); err == nil {
 			return ref
 		}
 	}

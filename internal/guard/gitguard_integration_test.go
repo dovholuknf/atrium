@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 const fakeAgent = "http://127.0.0.1:7777"
@@ -35,10 +37,11 @@ type gitAnswer struct {
 	err error
 }
 
-func (e testEnv) Git(dir string, args ...string) (string, error) {
+func (e testEnv) Git(dir string, op gitexec.Op) (string, error) {
 	if e.memo == nil {
-		return e.OSEnv.Git(dir, args...)
+		return e.OSEnv.Git(dir, op)
 	}
+	args, _ := gitexec.Argv(gitexec.Opts{}, op)
 	key := dir + "\x00" + strings.Join(args, "\x00")
 	e.memo.mu.Lock()
 	a, ok := e.memo.m[key]
@@ -47,7 +50,7 @@ func (e testEnv) Git(dir string, args ...string) (string, error) {
 		return a.out, a.err
 	}
 	gitSlots <- struct{}{}
-	out, err := e.OSEnv.Git(dir, args...)
+	out, err := e.OSEnv.Git(dir, op)
 	<-gitSlots
 	e.memo.mu.Lock()
 	e.memo.m[key] = gitAnswer{out, err}

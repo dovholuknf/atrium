@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The hub's store over smart HTTP: fetch and push, at `/git/hub/<host>/<owner>/<repo>.git/...`.
@@ -372,7 +374,7 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 		}
 		defer os.RemoveAll(tmp)
 		dir = filepath.Join(tmp, "p.git")
-		if _, err := rc.h.Store().git(r.Context(), "", "init", "-q", "--bare", "--template=", dir); err != nil {
+		if _, err := rc.h.Store().git(r.Context(), "", gitexec.Init{Quiet: true, Bare: true, NoTemplate: true, Dir: dir}); err != nil {
 			http.Error(w, "the hub could not prepare to serve that", http.StatusInternalServerError)
 			return
 		}
@@ -805,7 +807,8 @@ func (h *Hub) Reconcile(ctx context.Context) error {
 
 // readRefs is every branch and tag in a repository, by full name.
 func (rc *Receiver) readRefs(ctx context.Context, dir string) (map[string]string, error) {
-	out, err := rc.h.Store().git(ctx, dir, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags")
+	out, err := rc.h.Store().git(ctx, dir, gitexec.ForEachRef{Format: "%(refname) %(objectname)",
+		Patterns: []string{"refs/heads", "refs/tags"}})
 	if err != nil {
 		return nil, err
 	}

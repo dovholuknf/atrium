@@ -123,7 +123,7 @@ func TestARoomFetchesFromItsHubOverTheGitKind(t *testing.T) {
 		t.Fatalf("got %s want %s", got, x.sha)
 	}
 	// A name the hub does not list is a 404 through the link as well.
-	if _, err := gitsync.Default.Git(context.Background(), dst, "ls-remote", f.URL+"/github/o/other.git"); err == nil {
+	if _, err := rawGit(dst, nil, "ls-remote", f.URL+"/github/o/other.git"); err == nil {
 		t.Fatal("an unlisted repository was served")
 	}
 }

@@ -53,3 +53,13 @@ func TestFillArgvKeepsEveryArgumentSeparate(t *testing.T) {
 		t.Fatalf("a value with a space in it stopped being one argument: %q", args[4])
 	}
 }
+
+func TestFillArgvNeverMakesAFlagOfAValue(t *testing.T) {
+	t.Parallel()
+	_, args := FillArgv("gh", []string{"issue", "view", "{num}", "--repo", "{org}/{repo}", "-R{org}"},
+		map[string]string{"num": "--web", "org": "-x", "repo": "r"})
+	want := []string{"issue", "view", "{num}", "--repo", "{org}/{repo}", "-R-x"}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %q, want %q", args, want)
+	}
+}

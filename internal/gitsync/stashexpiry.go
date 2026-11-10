@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // A CLOSE'S STASH GOES AFTER A WHILE. `stash/<card short id>/<branch>` is what a close pushes with the stash answer
@@ -75,7 +77,8 @@ func (h *Hub) expireStashesIn(ctx context.Context, e Entry, cut time.Time) ([]Ex
 	l.Lock()
 	defer l.Unlock()
 	run := h.runner()
-	text, err := run.Git(ctx, e.Dir, "for-each-ref", "--format=%(refname) %(objectname) %(committerdate:unix)", stashPrefix)
+	text, err := run.Git(ctx, e.Dir, gitexec.ForEachRef{Format: "%(refname) %(objectname) %(committerdate:unix)",
+		Patterns: []string{stashPrefix}})
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +116,7 @@ func (h *Hub) expireStashesIn(ctx context.Context, e Entry, cut time.Time) ([]Ex
 			continue
 		}
 		// The old sha is given, so a stash pushed again between the listing and here is not taken.
-		if _, err := run.Git(ctx, e.Dir, "update-ref", "-d", ref, sha); err != nil {
+		if _, err := run.Git(ctx, e.Dir, gitexec.DeleteRef{Ref: ref, Old: sha}); err != nil {
 			return out, fmt.Errorf("%s: %w", ref, err)
 		}
 		card, _, _ := strings.Cut(strings.TrimPrefix(ref, stashPrefix), "/")

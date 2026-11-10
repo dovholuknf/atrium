@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The room's half of the merge queue: test one candidate the hub merged, and say how it went. See
@@ -256,17 +257,17 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 		return cannot("could not set up the merge repository %s: %v", wt, gitWhy(err))
 	}
 	ref := MergeRef(j.N)
-	if _, err := gitIn(ctx, "fetch", "--no-tags", "--quiet", url, "+"+ref+":"+ref); err != nil {
+	if _, err := gitIn(ctx, gitexec.Fetch{NoTags: true, Quiet: true, Remote: url, Refspecs: []string{"+" + ref + ":" + ref}}); err != nil {
 		return cannot("could not fetch the candidate: %v", gitWhy(err))
 	}
-	defer func() { _, _ = gitIn(context.Background(), "update-ref", "-d", ref) }()
-	if got, err := gitIn(ctx, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil || strings.TrimSpace(got) != j.Candidate {
+	defer func() { _, _ = gitIn(context.Background(), gitexec.DeleteRef{Ref: ref}) }()
+	if got, err := gitIn(ctx, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true}); err != nil || strings.TrimSpace(got) != j.Candidate {
 		return cannot("the hub's candidate for run %d is not %s", j.N, short(j.Candidate))
 	}
-	if _, err := gitIn(ctx, "checkout", "--quiet", "--detach", "--force", j.Candidate); err != nil {
+	if _, err := gitIn(ctx, gitexec.CheckoutDetach{Quiet: true, Force: true, Commit: j.Candidate}); err != nil {
 		return cannot("could not check out the candidate in %s: %v", wt, gitWhy(err))
 	}
-	if _, err := gitIn(ctx, "clean", "-ffdxq"); err != nil {
+	if _, err := gitIn(ctx, gitexec.Clean{Force: 2, Dirs: true, Ignored: true, Quiet: true}); err != nil {
 		return cannot("could not clean %s: %v", wt, gitWhy(err))
 	}
 	out, code, err := m.test(ctx, wt, j.Base)
@@ -308,7 +309,7 @@ func gitWhy(err error) string {
 // repo makes the merge repository at wt, the room's own for merge runs and no clone a person works in, and answers
 // how to run git in it. What a run left in its .git (config, hooks, attributes) is wiped first, and no hook or
 // fsmonitor runs, so one branch cannot change how a later one is checked out or tested.
-func (m *MergeRunner) repo(ctx context.Context, wt string) (func(ctx context.Context, args ...string) (string, error), error) {
+func (m *MergeRunner) repo(ctx context.Context, wt string) (func(ctx context.Context, op gitexec.Op) (string, error), error) {
 	dot := filepath.Join(wt, ".git")
 	if st, err := os.Stat(dot); err != nil || !st.IsDir() {
 		if err := os.RemoveAll(wt); err != nil {
@@ -328,12 +329,12 @@ func (m *MergeRunner) repo(ctx context.Context, wt string) (func(ctx context.Con
 		return nil, err
 	}
 	g := m.runner()
-	safe := []string{"-c", "core.hooksPath=" + filepath.ToSlash(none), "-c", "core.fsmonitor=false", "-c", "init.templateDir="}
-	if _, err := g.Git(ctx, "", append(safe, "init", "--quiet", wt)...); err != nil {
+	safe := Call{Config: []string{"core.hooksPath=" + filepath.ToSlash(none), "core.fsmonitor=false", "init.templateDir="}}
+	if _, err := g.GitCall(ctx, "", safe, gitexec.Init{Quiet: true, Dir: wt}); err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, args ...string) (string, error) {
-		return g.Git(ctx, wt, append(safe, args...)...)
+	return func(ctx context.Context, op gitexec.Op) (string, error) {
+		return g.GitCall(ctx, wt, safe, op)
 	}, nil
 }
 
@@ -534,14 +535,14 @@ func (m *MergeRunner) Prune(ctx context.Context, p MergePrune) (bool, string, er
 	}
 	g := m.runner()
 	ref := headsPrefix + p.Branch
-	tip, err := g.Git(ctx, clone, "rev-parse", "--verify", "-q", ref)
+	tip, err := g.Git(ctx, clone, gitexec.RevParseVerify{Rev: ref, Quiet: true})
 	if err != nil {
 		return false, "no such branch here", nil
 	}
 	if strings.TrimSpace(tip) != p.SHA {
 		return false, "the branch here is at " + short(strings.TrimSpace(tip)) + ", not the landed " + short(p.SHA), nil
 	}
-	list, err := g.Git(ctx, clone, "worktree", "list", "--porcelain")
+	list, err := g.Git(ctx, clone, gitexec.WorktreeList{})
 	if err != nil {
 		return false, "", err
 	}
@@ -554,7 +555,7 @@ func (m *MergeRunner) Prune(ctx context.Context, p MergePrune) (bool, string, er
 			return false, "checked out at " + path, nil
 		}
 	}
-	if _, err := g.Git(ctx, clone, "update-ref", "-d", ref, p.SHA); err != nil {
+	if _, err := g.Git(ctx, clone, gitexec.DeleteRef{Ref: ref, Old: p.SHA}); err != nil {
 		return false, "", err
 	}
 	return true, "", nil

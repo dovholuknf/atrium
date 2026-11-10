@@ -911,6 +911,11 @@ func (p *Proxy) serveAsset(w http.ResponseWriter, r *http.Request, name string) 
 	// The same server the room's own board uses: gzip, ETags, and the same
 	// caching rules. See internal/webasset.
 	_, assets := p.boardFor(r.Context())
+	// The build this page is, read by checkBuild in js/terminal-links.js. The same id health answers.
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		w.Header().Set("Server-Timing", `build;desc="`+p.buildFor(r.Context())+`"`)
+		r.Header.Del("If-None-Match")
+	}
 	if !assets.Serve(w, r, name) {
 		http.NotFound(w, r)
 	}

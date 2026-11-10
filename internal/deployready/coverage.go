@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // WHAT THE VERDICTS SAY OF ONE RANGE (item lifecycle L4). `Check` answers for the integration branch against an installed
@@ -53,7 +55,7 @@ func (c *Checker) Since(ctx context.Context, from, to string) (int, error) {
 	if from == to {
 		return 0, nil
 	}
-	if _, err := c.Git.Git(ctx, c.Dir, "merge-base", "--is-ancestor", from, to); err != nil {
+	if _, err := c.Git.Git(ctx, c.Dir, gitexec.IsAncestor{Commit: from, Of: to}); err != nil {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}

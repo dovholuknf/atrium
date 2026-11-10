@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // A pull request's head in the hub's store, for rooms. See docs/rnd/scm-forge-design.md, Built.
@@ -54,7 +56,7 @@ func (s *Store) FetchPR(ctx context.Context, name, remote, refspec, dst, base, h
 	if !strings.HasPrefix(dst, PRRefPrefix) {
 		return "", refuse("a pull request's head goes under %s", PRRefPrefix)
 	}
-	if _, err := s.git(ctx, "", "check-ref-format", dst); err != nil {
+	if _, err := s.git(ctx, "", gitexec.CheckRefFormat{Name: dst}); err != nil {
 		return "", refuse("%s is not a ref git will take", dst)
 	}
 	if strings.TrimSpace(refspec) == "" || strings.HasPrefix(refspec, "-") || strings.ContainsAny(refspec, ": \t\n") {
@@ -76,19 +78,20 @@ func (s *Store) FetchPR(ctx context.Context, name, remote, refspec, dst, base, h
 	defer cancel()
 	specs := []string{"+" + refspec + ":" + dst}
 	if base = strings.TrimSpace(base); base != "" && s.tip(ctx, dir) == "" {
-		if _, err := s.git(ctx, "", "check-ref-format", "refs/heads/"+base); err == nil {
+		if _, err := s.git(ctx, "", gitexec.CheckRefFormat{Name: "refs/heads/" + base}); err == nil {
 			specs = append(specs, "+refs/heads/"+base+":"+MainRef)
 		}
 	}
 	if base != "" && strings.HasPrefix(dst, PRRefPrefix) {
-		if _, err := s.git(ctx, "", "check-ref-format", "refs/heads/"+base); err == nil {
+		if _, err := s.git(ctx, "", gitexec.CheckRefFormat{Name: "refs/heads/" + base}); err == nil {
 			specs = append(specs, "+refs/heads/"+base+":"+PRBaseRefPrefix+strings.TrimPrefix(dst, PRRefPrefix))
 		}
 	}
-	if _, err := s.git(ctx, dir, prFetchArgs(remote, helper, specs)...); err != nil {
+	config, fetch := prFetch(remote, helper, specs)
+	if _, err := s.gitc(ctx, dir, config, fetch); err != nil {
 		return "", s.fetchFailed(ref, err)
 	}
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", dst+"^{commit}")
+	out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: dst + "^{commit}", Quiet: true})
 	if err != nil {
 		return "", &FetchError{Msg: "the fetch finished and " + dst + " is not there"}
 	}
@@ -96,14 +99,10 @@ func (s *Store) FetchPR(ctx context.Context, name, remote, refspec, dst, base, h
 	return strings.TrimSpace(out), nil
 }
 
-// prFetchArgs is the git argv of one PR head fetch.
-func prFetchArgs(remote, helper string, specs []string) []string {
-	args := []string{"-c", "transfer.fsckObjects=true"}
-	if helper != "" {
-		args = append(args, "-c", "credential.helper=", "-c", "credential.helper="+helper)
-	}
-	args = append(args, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--", remote)
-	return append(args, specs...)
+// prFetch is the config and the fetch of one PR head fetch.
+func prFetch(remote, helper string, specs []string) ([]string, gitexec.Fetch) {
+	return append([]string{"transfer.fsckObjects=true"}, credConfig(helper)...),
+		gitexec.Fetch{Quiet: true, NoTags: true, NoWriteFetchHead: true, Remote: remote, Refspecs: specs}
 }
 
 // fetchFailed says what went wrong in a sentence that names the hub, and marks a missing credential.
@@ -143,7 +142,7 @@ func (s *Store) PRMergeBase(ctx context.Context, name string, n int) string {
 		return ""
 	}
 	num := strconv.Itoa(n)
-	out, err := s.git(ctx, dir, "merge-base", PRRefPrefix+num, PRBaseRefPrefix+num)
+	out, err := s.git(ctx, dir, gitexec.MergeBase{A: PRRefPrefix + num, B: PRBaseRefPrefix + num})
 	if err != nil {
 		return ""
 	}

@@ -280,7 +280,7 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 		{"hub-main", "refs/heads/hub-main"},
 	} {
 		dst := reader(t)
-		if out, err := gitsync.Default.Git(context.Background(), dst, "fetch", x.url("sg3"), c.ref+":refs/heads/got"); err == nil {
+		if out, err := rawGit(dst, nil, "fetch", x.url("sg3"), c.ref+":refs/heads/got"); err == nil {
 			t.Errorf("%s: went through: %s", c.name, out)
 		}
 		if out := run(t, dst, "for-each-ref"); out != "" {
@@ -303,7 +303,7 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 		t.Fatalf("live branch at %s", got)
 	}
 	x.setLive()
-	if _, err := gitsync.Default.Git(context.Background(), dst, "fetch", x.url("sg3"), "refs/heads/fix/live:refs/heads/again"); err == nil {
+	if _, err := rawGit(dst, nil, "fetch", x.url("sg3"), "refs/heads/fix/live:refs/heads/again"); err == nil {
 		t.Fatal("a branch whose card ended is still served")
 	}
 }
@@ -337,7 +337,7 @@ func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
 		dst := reader(t)
 		a := append([]string{"fetch"}, args...)
 		a = append(a, x.url("sg3"), "refs/heads/claude/w1:refs/heads/got")
-		out, err := gitsync.Default.Git(context.Background(), dst, a...)
+		out, err := rawGit(dst, nil, a...)
 		if err == nil {
 			t.Errorf("%v went through: %s", args, out)
 		}
@@ -385,7 +385,7 @@ func TestADetachedOrUnknownRoomAnswers503(t *testing.T) {
 		t.Fatalf("detached: %d %q", code, body)
 	}
 	dst := reader(t)
-	out, err := gitsync.Default.Git(context.Background(), dst, "fetch", x.url("sg3"), "refs/heads/claude/w1")
+	out, err := rawGit(dst, nil, "fetch", x.url("sg3"), "refs/heads/claude/w1")
 	if err == nil || !strings.Contains(out+err.Error(), "sg3 is not connected") {
 		t.Fatalf("git was not shown the 503: %v %s", err, out)
 	}

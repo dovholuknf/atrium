@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // WHAT THE HUB'S MIRROR SAYS OF AN ITEM'S LANDING AND PUSHING, for the item lifecycle's `landed` and `pushed` steps and
@@ -148,7 +150,7 @@ func (s *Store) addedChangelog(ctx context.Context, dir, ref, workID string) (st
 
 // ancestorOfRef is isAncestor against a ref the repository may not have, which holds nothing.
 func (s *Store) ancestorOfRef(ctx context.Context, dir, sha, ref string) (bool, error) {
-	if _, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true}); err != nil {
 		if exitCode(err) == 1 {
 			return false, nil
 		}
@@ -174,7 +176,8 @@ func (s *Store) firstContaining(ctx context.Context, dir, sha, ref string) (stri
 }
 
 func (s *Store) firstContainingAt(ctx context.Context, dir, sha, tip string) (string, error) {
-	out, err := s.git(ctx, dir, "rev-list", "--reverse", "--first-parent", "--ancestry-path", sha+".."+tip)
+	out, err := s.git(ctx, dir, gitexec.RevList{Reverse: true, FirstParent: true, AncestryPath: true,
+		Revs: []string{sha + ".." + tip}})
 	if err != nil {
 		return "", err
 	}
@@ -182,7 +185,7 @@ func (s *Store) firstContainingAt(ctx context.Context, dir, sha, tip string) (st
 	if len(first) == 0 {
 		return sha, nil
 	}
-	parents, err := s.git(ctx, dir, "rev-list", "--parents", "-n", "1", first[0])
+	parents, err := s.git(ctx, dir, gitexec.RevList{Parents: true, MaxCount: 1, Revs: []string{first[0]}})
 	if err != nil {
 		return "", err
 	}
@@ -198,9 +201,9 @@ func (s *Store) firstContainingAt(ctx context.Context, dir, sha, tip string) (st
 func (s *Store) itemPaths(ctx context.Context, dir, sha, workID string) ([]string, error) {
 	if main, err := s.resolveTip(ctx, dir, MainRef); err == nil && main != "" && ValidSHA(sha) {
 		v, err := s.memo(ctx, "paths\x00"+dir+"\x00"+sha+"\x00"+main, true, func() (any, error) {
-			if base, err := s.git(ctx, dir, "merge-base", sha, main); err == nil {
+			if base, err := s.git(ctx, dir, gitexec.MergeBase{A: sha, B: main}); err == nil {
 				if b := strings.TrimSpace(base); ValidSHA(b) && b != sha {
-					return s.pathsOf(ctx, dir, "--no-merges", sha, "^"+b)
+					return s.pathsOf(ctx, dir, sha, "^"+b)
 				}
 			}
 			return []string(nil), nil
@@ -222,9 +225,10 @@ func (s *Store) itemPaths(ctx context.Context, dir, sha, workID string) ([]strin
 	return x.paths[workID], nil
 }
 
-// pathsOf lists the files changed by the commits `git log <args>` selects, each once.
-func (s *Store) pathsOf(ctx context.Context, dir string, args ...string) ([]string, error) {
-	out, err := s.git(ctx, dir, append([]string{"log", "--no-renames", "--name-only", "--format=", "--max-count=500"}, args...)...)
+// pathsOf lists the files changed by the commits other than merges `git log <revs>` selects, each once.
+func (s *Store) pathsOf(ctx context.Context, dir string, revs ...string) ([]string, error) {
+	out, err := s.git(ctx, dir, gitexec.Log{NoMerges: true, NoRenames: true, NameOnly: true, EmptyFormat: true,
+		MaxCount: 500, Revs: revs})
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +353,7 @@ func (s *Store) carriedAt(ctx context.Context, dir, sha, ref string) (bool, stri
 	if up, err := s.isAncestor(ctx, dir, sha, ref); err != nil || up {
 		return up, sha, err
 	}
-	base, err := s.git(ctx, dir, "merge-base", sha, ref)
+	base, err := s.git(ctx, dir, gitexec.MergeBase{A: sha, B: ref})
 	if err != nil {
 		if exitCode(err) == 1 {
 			return false, "", nil
@@ -394,15 +398,15 @@ func (s *Store) patchIDs(ctx context.Context, dir, spec string) ([]idCommit, err
 }
 
 func (s *Store) patchIDsOf(ctx context.Context, dir, spec string) ([]idCommit, error) {
-	out, err := s.h.runner().GitCapped(ctx, dir, s.env(), 16<<20, "log", "-p", "--no-merges", "--no-renames",
-		"--max-count=500", "--format=commit %H", spec)
+	out, err := s.h.runner().GitCapped(ctx, dir, s.env(), 16<<20, gitexec.Log{Patch: true, NoMerges: true,
+		NoRenames: true, MaxCount: 500, Format: "commit %H", Revs: []string{spec}})
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(out) == "" {
 		return nil, nil
 	}
-	ids, err := s.h.runner().GitInput(ctx, dir, []byte(out), "patch-id", "--stable")
+	ids, err := s.h.runner().GitInput(ctx, dir, []byte(out), gitexec.PatchID{Stable: true})
 	if err != nil {
 		return nil, err
 	}

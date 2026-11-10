@@ -4,6 +4,8 @@ import (
 	"context"
 	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 var shaPrefixRe = regexp.MustCompile(`^[0-9a-f]{7,39}$`)
@@ -53,7 +55,7 @@ func (s *Store) ItemFacts(ctx context.Context, name, branch, sha string) (ItemFa
 		if !shaPrefixRe.MatchString(sha) {
 			return f, nil
 		}
-		out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", sha+"^{commit}")
+		out, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: sha + "^{commit}", Quiet: true})
 		if err != nil {
 			return f, nil
 		}
@@ -92,13 +94,13 @@ func (s *Store) CoveredBy(ctx context.Context, name, base, sha string) (bool, er
 // covered says whether every commit of `sha` not reachable from ref has a patch-equivalent in ref. A ref the
 // repository lacks covers nothing.
 func (s *Store) covered(ctx context.Context, dir, ref, sha string) (bool, error) {
-	if _, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
+	if _, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: ref + "^{commit}", Quiet: true}); err != nil {
 		if exitCode(err) == 1 {
 			return false, nil
 		}
 		return false, err
 	}
-	out, err := s.git(ctx, dir, "cherry", ref, sha)
+	out, err := s.git(ctx, dir, gitexec.Cherry{Upstream: ref, Head: sha})
 	if err != nil {
 		return false, err
 	}

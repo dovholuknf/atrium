@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -610,7 +611,7 @@ type countGit struct {
 	hang  bool
 }
 
-func (g *countGit) Git(ctx context.Context, dir string, args ...string) (string, error) {
+func (g *countGit) Git(ctx context.Context, dir string, op gitexec.Op) (string, error) {
 	g.mu.Lock()
 	g.calls++
 	hang := g.hang
@@ -619,14 +620,14 @@ func (g *countGit) Git(ctx context.Context, dir string, args ...string) (string,
 		<-ctx.Done()
 		return "", ctx.Err()
 	}
-	return g.inner.Git(ctx, dir, args...)
+	return g.inner.Git(ctx, dir, op)
 }
 
-func (g *countGit) GitInput(ctx context.Context, dir string, in []byte, args ...string) (string, error) {
+func (g *countGit) GitInput(ctx context.Context, dir string, in []byte, op gitexec.Op) (string, error) {
 	g.mu.Lock()
 	g.calls++
 	g.mu.Unlock()
-	return g.inner.GitInput(ctx, dir, in, args...)
+	return g.inner.GitInput(ctx, dir, in, op)
 }
 
 func (g *countGit) count() int {
@@ -683,16 +684,16 @@ type failMergeGit struct {
 	fired bool
 }
 
-func (g *failMergeGit) Git(ctx context.Context, dir string, args ...string) (string, error) {
-	if !g.fired && strings.Contains(strings.Join(args, " "), "--remerge-diff") {
+func (g *failMergeGit) Git(ctx context.Context, dir string, op gitexec.Op) (string, error) {
+	if l, ok := op.(gitexec.Log); ok && !g.fired && l.RemergeDiff {
 		g.fired = true
 		return "", g.err
 	}
-	return g.inner.Git(ctx, dir, args...)
+	return g.inner.Git(ctx, dir, op)
 }
 
-func (g *failMergeGit) GitInput(ctx context.Context, dir string, in []byte, args ...string) (string, error) {
-	return g.inner.GitInput(ctx, dir, in, args...)
+func (g *failMergeGit) GitInput(ctx context.Context, dir string, in []byte, op gitexec.Op) (string, error) {
+	return g.inner.GitInput(ctx, dir, in, op)
 }
 
 // resolvedMergeRepo is a repo whose newest commit is a merge that resolved a conflict. Returns the base.

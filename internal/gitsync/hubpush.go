@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // The remote names are HubRemote and HubRemoteAtrium (hubremote.go).
@@ -67,7 +69,7 @@ func hubPushTarget(ctx context.Context, r *Runner, dir, forwarderBase string) (u
 	want := forwarderBase + strings.TrimPrefix(HubRemotePrefix, "/git/")
 	var seen []string
 	for _, n := range []string{HubRemote, HubRemoteAtrium} {
-		out, gerr := r.Git(ctx, dir, "remote", "get-url", "--push", "--all", n)
+		out, gerr := r.Git(ctx, dir, gitexec.RemoteGetURL{Name: n, Push: true, All: true})
 		if gerr != nil {
 			continue
 		}
@@ -97,7 +99,7 @@ func hubPushTarget(ctx context.Context, r *Runner, dir, forwarderBase string) (u
 }
 
 func hasEmptyConfig(ctx context.Context, r *Runner, dir, key string) bool {
-	out, err := r.Git(ctx, dir, "config", "--get-all", key)
+	out, err := r.Git(ctx, dir, gitexec.ConfigGetAll{Key: key})
 	if err != nil {
 		return false
 	}
@@ -117,12 +119,12 @@ var errNoHubRemote = errors.New("this clone has no hub remote, and atrium cannot
 // sits under one of `roots` (`<root>/<host>/<owner>/<repo>`). dir may be a worktree: the clone is the one its common
 // git directory is in. "" when neither says, or what they say is not a name the hub takes.
 func HubNameOf(ctx context.Context, r *Runner, dir string, roots ...string) string {
-	if u, err := r.Git(ctx, dir, "remote", "get-url", "origin"); err == nil {
+	if u, err := r.Git(ctx, dir, gitexec.RemoteGetURL{Name: "origin"}); err == nil {
 		if ref, err := ParseURL(strings.TrimSpace(u)); err == nil {
 			return ref.Name()
 		}
 	}
-	common, err := r.Git(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := r.Git(ctx, dir, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil {
 		return ""
 	}
@@ -225,16 +227,16 @@ func pushSpecToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, br
 	if del {
 		spec = ":refs/heads/" + branch
 	}
-	args := []string{"-c", "push.followTags=false"}
+	config := []string{"push.followTags=false"}
 	if !byURL {
-		args = append(args, "-c", "remote."+remote+".mirror=false", "-c", "remote."+remote+".proxy=")
+		config = append(config, "remote."+remote+".mirror=false", "remote."+remote+".proxy=")
 	}
 	// The clone's own config does not get to put a proxy between the token and the forwarder. A remote's proxy
 	// and a url-scoped one beat http.proxy, so both of those are cleared, the url-scoped one at the exact URL,
 	// which is the most specific key there is.
-	args = append(args, "-c", "http."+target+".proxy=", "-c", "http."+forwarderBase+".proxy=",
-		"push", "--porcelain", "--no-verify", "--no-recurse-submodules", remote, spec)
-	out, err := r.GitEnv(ctx, dir, PushEnv(forwarderBase, token, 0), args...)
+	config = append(config, "http."+target+".proxy=", "http."+forwarderBase+".proxy=")
+	out, err := r.GitCall(ctx, dir, Call{Env: PushEnv(forwarderBase, token, 0), Config: config}, gitexec.Push{Porcelain: true,
+		NoVerify: true, NoRecurseSubmodules: true, Remote: remote, Refspecs: []string{spec}})
 	if err != nil {
 		var ge *Error
 		if errors.As(err, &ge) && strings.TrimSpace(ge.Stderr) != "" {

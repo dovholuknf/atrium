@@ -6,14 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -608,10 +607,7 @@ func worktreesOf(repo string) []projectWorktree {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeListTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
-	cmd.Dir = filepath.FromSlash(repo)
-	nowindow.Hide(cmd)
-	out, err := cmd.Output()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(repo)}, gitexec.WorktreeList{})
 	if err != nil {
 		// A repository git will not talk about contributes no worktrees. It is
 		// still a repository and still a directory to start in, so this is not

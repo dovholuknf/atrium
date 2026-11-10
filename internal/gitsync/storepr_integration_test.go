@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // prHead pushes a commit to the fake forge under refs/pull/<n>/head, as GitHub keeps a pull request's head.
@@ -141,7 +143,11 @@ func TestFetchFailedMarksAMissingCredential(t *testing.T) {
 
 func TestPRFetchArgsSetTheHelperForThisCommandOnly(t *testing.T) {
 	t.Parallel()
-	args := prFetchArgs("https://github.com/o/r", "!gh auth git-credential", []string{"+a:b"})
+	config, fetch := prFetch("https://github.com/o/r", "!gh auth git-credential", []string{"+a:b"})
+	args, err := gitexec.Argv(gitexec.Opts{Config: config}, fetch)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The configured helpers are reset first, then the CLI's own is the only one.
 	i := slices.Index(args, "credential.helper=")
 	j := slices.Index(args, "credential.helper=!gh auth git-credential")
@@ -151,7 +157,8 @@ func TestPRFetchArgsSetTheHelperForThisCommandOnly(t *testing.T) {
 	if slices.Index(args, "--") > slices.Index(args, "https://github.com/o/r") {
 		t.Fatalf("the remote is not after --: %q", args)
 	}
-	for _, a := range prFetchArgs("x", "", []string{"+a:b"}) {
+	none, _ := prFetch("x", "", []string{"+a:b"})
+	for _, a := range none {
 		if strings.HasPrefix(a, "credential.helper") {
 			t.Fatalf("no helper asked, and one is set: %q", a)
 		}
