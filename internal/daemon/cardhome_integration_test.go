@@ -127,6 +127,38 @@ func TestARepoLaunchMakesWorkAsAWorktree(t *testing.T) {
 	}
 }
 
+func TestACardHomeKeysToItsCloneOrigin(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	cullGit(t, repo, "remote", "add", "origin", "https://github.com/openziti/ziti-sdk-csharp.git")
+	req := shared.LaunchRequest{Repo: repo, Title: "csharp gaps"}
+	if _, _, err := d.LaunchHome(store.CardHomeWorktree, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Host != "github" || req.Org != "openziti" {
+		t.Fatalf("launch place host %q org %q", req.Host, req.Org)
+	}
+
+	task, row, _ := worktreeHome(t, d, repo)
+	if task.Host != "" || task.Org != "" {
+		t.Fatalf("a registered card already has host %q org %q", task.Host, task.Org)
+	}
+	if n := d.BackfillHomeOrigins(); n != 1 {
+		t.Fatalf("backfilled %d, want 1 (row %+v)", n, row)
+	}
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Host != "github" || got.Org != "openziti" || got.Repo != "repo" {
+		t.Fatalf("card host %q org %q repo %q, want github openziti and the clone's name", got.Host, got.Org, got.Repo)
+	}
+	if n := d.BackfillHomeOrigins(); n != 0 {
+		t.Fatalf("a second backfill changed %d card(s)", n)
+	}
+}
+
 func TestCwdWithARepoIsRefused(t *testing.T) {
 	t.Parallel()
 	if err := home.HomeLaunchRefusal(shared.LaunchRequest{Repo: "github.com/o/r"}, "/x"); err == nil {

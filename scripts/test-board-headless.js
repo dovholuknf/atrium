@@ -19479,8 +19479,9 @@ async function repoColorsSection(browser, base) {
       "/Users/me/git/github/openziti/ziti/main",
       "/Users/me/git/github/openziti/ziti-worktrees/fix-x",
       "/Users/me/git/gitlab.com/Foo/Bar/wt"
-    ].map(w => repoKeyOf({ worktree: w })).concat(repoKeyOf({ repo: "github.com/a/b.git" }), repoKeyOf({ worktree: "/tmp/one" })));
-    const want = ["github/openziti/ziti", "github/openziti/ziti", "gitlab/foo/bar", "github/a/b", ""];
+    ].map(w => repoKeyOf({ worktree: w })).concat(repoKeyOf({ repo: "github.com/a/b.git" }), repoKeyOf({ worktree: "/tmp/one" }),
+      repoKeyOf({ worktree: "D:/worktrees/claude/cards/csharp-gaps-i5entn/work", repo: "ziti-sdk-csharp", host: "github", org: "openziti" })));
+    const want = ["github/openziti/ziti", "github/openziti/ziti", "gitlab/foo/bar", "github/a/b", "", "github/openziti/ziti-sdk-csharp"];
     if (JSON.stringify(keys) !== JSON.stringify(want)) fail(tag + "repo keys " + JSON.stringify(keys));
 
     const r = await p.evaluate(() => {

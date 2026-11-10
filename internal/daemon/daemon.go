@@ -1375,6 +1375,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	} else if n > 0 {
 		log.Printf("[atrium] named %d card(s) from their repository and branch", n)
 	}
+	if n := d.BackfillHomeOrigins(); n > 0 {
+		log.Printf("[atrium] gave %d card home(s) the forge repo their clone's origin names", n)
+	}
 	// Resident sessions named before a name became a default alias: saorch
 	// takes `@saorch`. Once, ever. See store.BackfillDefaultAliases.
 	if n, err := d.st.BackfillDefaultAliases(); err != nil {
