@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,21 +31,82 @@ func TestChatLaunchIsSuperleanWithAPromptThatSaysSo(t *testing.T) {
 	if tags := leanTags(mcp, kit); !reflect.DeepEqual(tags, []string{LeanTag, SuperleanTag, ChatTag}) {
 		t.Fatalf("tags %v", tags)
 	}
-	args, err := leanArgs([]string{"hello"}, nil, "", nil, kit, "", nil, testHooks())
+	args, servers := chatArgs(t, kit, chatStdioMCP)
+	if !slices.Contains(args, "--tools=") {
+		t.Fatalf("want an empty --tools=: %q", args)
+	}
+	if chatFlag(args, "--system-prompt") != chatSystemPrompt || slices.Contains(args, "--append-system-prompt") {
+		t.Fatalf("prompt flags %q", args)
+	}
+	if !strings.Contains(chatSystemPrompt, "only atrium tool you have is atrium_need") {
+		t.Fatal(chatSystemPrompt)
+	}
+	if len(servers) != 1 || !reflect.DeepEqual(servers["atrium-control"]["args"], []any{"control", "--chat"}) {
+		t.Fatalf("servers %v", servers)
+	}
+	if args[len(args)-1] != "hello" {
+		t.Fatalf("prompt not last: %q", args)
+	}
+}
+
+const chatStdioMCP = `{"mcpServers":{"atrium-control":{"type":"stdio","command":"C:/a/atrium.exe","args":["control"]},` +
+	`"mercurius":{"type":"http","url":"http://127.0.0.1:8088/mcp"},"other":{"type":"stdio","command":"x"}}}`
+
+func chatArgs(t *testing.T, kit leanKit, config string) ([]string, map[string]map[string]any) {
+	t.Helper()
+	read := func(string) ([]byte, error) { return []byte(config), nil }
+	args, err := leanArgs([]string{"--mcp-config", "C:/t/mcp.json", "--model", "m", "hello"}, nil, "", nil, kit, "", read, testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var tools, prompt string
+	var doc struct {
+		MCPServers map[string]map[string]any `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(chatFlag(args, "--mcp-config")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	return args, doc.MCPServers
+}
+
+func chatFlag(args []string, flag string) string {
 	for i, a := range args {
-		if strings.HasPrefix(a, "--tools=") {
-			tools = a
+		if v, ok := strings.CutPrefix(a, flag); ok && strings.HasSuffix(flag, "=") {
+			return v
 		}
-		if a == "--append-system-prompt" {
-			prompt = args[i+1]
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
 		}
 	}
-	if tools != "--tools=" || prompt != chatSystemPrompt || !strings.Contains(prompt, "only atrium tool you have is atrium_need") {
-		t.Fatalf("tools %q prompt %q", tools, prompt)
+	return ""
+}
+
+func TestChatAfterAGrantKeepsItsShapePlusTheGrant(t *testing.T) {
+	task := &store.Task{Tags: []string{LeanTag, SuperleanTag, ChatTag, "atrium:tool:Read"}}
+	_, _, kit, _ := leanOptions(shared.LaunchRequest{}, task, "")
+	args, servers := chatArgs(t, kit, chatStdioMCP)
+	if chatFlag(args, "--tools=") != "Read" || chatFlag(args, "--system-prompt") != chatSystemPrompt {
+		t.Fatalf("args %q", args)
+	}
+	if len(servers) != 1 || !reflect.DeepEqual(servers["atrium-control"]["args"], []any{"control", "--chat"}) {
+		t.Fatalf("servers %v", servers)
+	}
+}
+
+func TestChatLeavesAHubRelayToTheHubsChatClass(t *testing.T) {
+	relay := `{"mcpServers":{"atrium-control":{"type":"stdio","command":"atrium","args":["mcp-relay"]}}}`
+	_, servers := chatArgs(t, leanKit{Superlean: true, Chat: true}, relay)
+	if !reflect.DeepEqual(servers["atrium-control"]["args"], []any{"mcp-relay"}) {
+		t.Fatalf("servers %v", servers)
+	}
+}
+
+func TestSuperleanIsUntouchedByChat(t *testing.T) {
+	args, servers := chatArgs(t, leanKit{Superlean: true}, chatStdioMCP)
+	if chatFlag(args, "--append-system-prompt") != superleanSystemPrompt || slices.Contains(args, "--system-prompt") {
+		t.Fatalf("args %q", args)
+	}
+	if !reflect.DeepEqual(servers["atrium-control"]["args"], []any{"control"}) {
+		t.Fatalf("servers %v", servers)
 	}
 }
 

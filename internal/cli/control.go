@@ -55,7 +55,7 @@ const restartDelay = 4 * time.Second
 const stopGrace = 20 * time.Second
 
 func newControl() *cobra.Command {
-	var restartNow bool
+	var restartNow, chat bool
 	var db, delay string
 
 	c := &cobra.Command{
@@ -74,6 +74,9 @@ func newControl() *cobra.Command {
 				return runRestart(db, delay)
 			}
 			go warnIfControlOlderThanRoom(cmd.ErrOrStderr())
+			if chat {
+				return chatControlServer().Run(cmd.Context(), &mcp.StdioTransport{})
+			}
 			return controlServer().Run(cmd.Context(), &mcp.StdioTransport{})
 		},
 	}
@@ -83,6 +86,7 @@ func newControl() *cobra.Command {
 	c.Flags().BoolVar(&restartNow, "restart-now", false, "internal: perform the restart")
 	c.Flags().StringVar(&db, "db", "", "internal: database the restarted daemon should open")
 	c.Flags().StringVar(&delay, "delay", "", "internal: how long to wait first")
+	c.Flags().BoolVar(&chat, "chat", false, "serve atrium_need and nothing else, for a chat: true card")
 	_ = c.Flags().MarkHidden("restart-now")
 	_ = c.Flags().MarkHidden("db")
 	_ = c.Flags().MarkHidden("delay")
@@ -91,6 +95,13 @@ func newControl() *cobra.Command {
 }
 
 // ── the server ──────────────────────────────────────────────────────────────
+
+// chatControlServer is a chat card's whole atrium-control: atrium_need.
+func chatControlServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
+	addNeedTool(s)
+	return s
+}
 
 // controlServer builds the MCP server with both tools attached.
 func controlServer() *mcp.Server {

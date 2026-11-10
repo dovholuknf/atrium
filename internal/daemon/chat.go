@@ -1,6 +1,11 @@
 package daemon
 
-import "github.com/dovholuknf/atrium/internal/small"
+import (
+	"encoding/json"
+	"slices"
+
+	"github.com/dovholuknf/atrium/internal/small"
+)
 
 // ChatTag marks a card launched with `chat: true`: a superlean session with no tools of its own and only atrium_need
 // from atrium-control, which grows by atrium_need as `atrium:tool:<name>` tags.
@@ -24,4 +29,29 @@ func chatTools(k leanKit) []string {
 		}
 	}
 	return out
+}
+
+// chatServers is servers with a stdio `atrium control` given `--chat`, so it serves atrium_need alone. A relay to the
+// hub is left as it is: the hub shows a card tagged ChatTag atrium_need alone.
+func chatServers(servers string) string {
+	var doc struct {
+		MCPServers map[string]map[string]any `json:"mcpServers"`
+	}
+	if json.Unmarshal([]byte(servers), &doc) != nil {
+		return servers
+	}
+	c, ok := doc.MCPServers["atrium-control"]
+	if !ok {
+		return servers
+	}
+	args, _ := c["args"].([]any)
+	if len(args) == 0 || args[0] != "control" || slices.Contains(args, any("--chat")) {
+		return servers
+	}
+	c["args"] = append(args, "--chat")
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return servers
+	}
+	return string(b)
 }

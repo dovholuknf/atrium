@@ -379,6 +379,9 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	if err != nil {
 		return nil, err
 	}
+	if kit.Chat {
+		servers = chatServers(servers)
+	}
 	settings, err := leanSettings(userSettings, stopHook, kit.Agents, hk)
 	if err != nil {
 		return nil, err
@@ -399,6 +402,10 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 		"--strict-mcp-config", "--mcp-config", servers,
 		"--disallowedTools", strings.Join(leanDisallowedFor(kit), ","),
 		"--append-system-prompt", systemPrompt,
+	}
+	if kit.Chat && !kit.Interview {
+		// Replaces Claude Code's default prompt, which is most of a chat card's first request.
+		out[len(out)-2] = "--system-prompt"
 	}
 	// A caller's own --tools in args wins: two on one command line leave the answer to Claude Code's parser.
 	if kit.Superlean && !hasToolsFlag(kept) {
