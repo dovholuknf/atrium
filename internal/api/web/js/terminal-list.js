@@ -1143,6 +1143,21 @@ function termTintOf(inherit) {
   return Object.assign({}, inherit, { background: rgbHex(mixRGB(layer, own, TERM_SHADE)) });
 }
 
+// The tint a nested child wears, from its nearest coloured launcher as `termNest` nests it, so its pane matches its row.
+function termInheritedTheme(t) {
+  const list = typeof lastTasks === "undefined" || !lastTasks ? [] : lastTasks;
+  const byBare = new Map(list.map(c => [bareId(c.id), c]));
+  const seen = new Set();
+  for (let c = byBare.get(bareId(t.id)) || t; c && nestsUnderLauncher(c) && !c.pinned && !seen.has(c.id);) {
+    seen.add(c.id);
+    const up = launcherOf(c, list, byBare);
+    const own = up && themeSource(up);
+    if (own) return termTintOf(own);
+    c = up;
+  }
+  return null;
+}
+
 function termRowWear(t, inherit) {
   const tint = !themeSource(t) && inherit ? termTintOf(inherit) : null;
   const given = themeSource(t) || tint;

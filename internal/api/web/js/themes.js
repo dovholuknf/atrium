@@ -208,7 +208,7 @@ async function loadThemes() {
 // `themePreview` is the theme picker's, below.
 let themePreview = null;
 function themeFor(t) {
-  return themeSource(t) || plainTheme();
+  return themeSource(t) || (typeof termInheritedTheme === "function" && t && termInheritedTheme(t)) || plainTheme();
 }
 
 // The palette a card nobody coloured gets in its terminal: the atrium table with the skin's own surface, text and accent

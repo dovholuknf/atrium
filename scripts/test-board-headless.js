@@ -23321,7 +23321,8 @@ async function selectedFitsSection(browser, base) {
 // A CHILD ROW STAYS IN ITS COLUMN. A parent with a child, drawn pinned and again in a group, the child attached and
 // not, on a wide window and on one under 900px, where the header's `.tab` rule also reaches a row: every child row
 // ends inside the box the rows scroll in, as a top level row does. Attached, with orch also in a folded DIRECTORS
-// group, one bridge runs into the pane, from the first copy, and none from the other copy or the heading.
+// group, one bridge runs into the pane, from the first copy, and none from the other copy or the heading. The attached
+// child's pane wears the tint its row does.
 async function childFitsSection(browser, base) {
   for (const vw of [1400, 800]) await childFitsAt(browser, base, vw);
   if (!bad) console.log("childFits ok");
@@ -23346,6 +23347,7 @@ async function childFitsAt(browser, base, vw) {
           display_title: "walk-mini-bar-cap with a name long enough to fill the row " + "and then run on past the list column".repeat(3) }),
         card("lone", "2026-09-03T10:00:00Z", { pinned: true })];
       boardCards = async () => cards;
+      lastTasks = cards;
       if (!termSubsOn()) toggleTermShow("subagents");
       term = term || { options: {}, dispose() {} };
       termTask = cards[2];
@@ -23380,6 +23382,15 @@ async function childFitsAt(browser, base, vw) {
         if (pick === "kid" && !g.kids.every(k => k.on)) fail(tag + "the child is not drawn attached: " + JSON.stringify(g));
         if (pick === "kid" && vw > 900 && (g.bridges.length !== 1 || g.bridges[0] !== g.kids[0].top)) {
           fail(tag + "want one bridge, from the first copy of the child: " + JSON.stringify(g));
+        }
+        if (pick === "kid") {
+          const bg = await p.evaluate(() => {
+            paintPaneBg(themeFor(termTask));
+            const row = document.querySelector('#term-list .card.tab.on[data-id="kid"]');
+            return { row: row && getComputedStyle(row).getPropertyValue("--tabbg").trim(),
+              pane: getComputedStyle(document.getElementById("term-pane")).getPropertyValue("--term-bg").trim() };
+          });
+          if (!bg.row || bg.row !== bg.pane) fail(tag + "the pane is not in the child row's colours: " + JSON.stringify(bg));
         }
         if (g.kids.some(k => k.right > g.col)) fail(tag + "a child row runs past its column: " + JSON.stringify(g));
         if (g.tops.some(r => r > g.col)) fail(tag + "a top level row runs past its column: " + JSON.stringify(g));
