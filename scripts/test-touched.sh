@@ -98,7 +98,7 @@ done <<<"$actions"
 if [ -n "$units" ] || [ ${#nodes[@]} -gt 0 ]; then
   # Playwright: NODE_PATH, then this checkout, then any worktree beside it that has it, as merge-check.ps1 looks.
   if ! node -e 'require.resolve("playwright")' >/dev/null 2>&1 && ! node -e 'require.resolve("@playwright/test")' >/dev/null 2>&1; then
-    for nm in "${ATRIUM_NODE_PATH:-}" "$here/node_modules" "$here"/../*/node_modules; do
+    for nm in "${ATRIUM_NODE_PATH:-}" "$here/node_modules" "$here"/../*/node_modules "$HOME/.local/share/atrium-tools/playwright/node_modules"; do
       if [ -n "$nm" ] && { [ -d "$nm/playwright" ] || [ -d "$nm/@playwright/test" ]; }; then
         export NODE_PATH="$(cd "$nm" && pwd)"; echo "test-touched: playwright from $NODE_PATH"; break
       fi

@@ -524,7 +524,7 @@ $rc = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'room-check.ps1') -Raw
 Check 'room-check: dot-sources room-account.ps1, probes, and says the account row' @(($rc -match "room-account\.ps1"), ($rc -match "Row 'account' \`$av\.Status \`$av\.Detail"), ($rc -match 'Get-AccountResult')) @($true, $true, $true)
 Check 'room-check: the row is advice, it is not counted as unmet' (($rc -split "`n" | Where-Object { $_ -match "Row 'account'" -and $_ -match 'Unmet' }).Count) 0
 $sizes = & $pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-toolchain.ps1') x -PayloadSizes
-Check 'script hook: the old payloads are listed as before and still under 7800' (@($sizes | Where-Object { $_ -match '^payload \w+ (\d+)$' -and [int]$Matches[1] -le 7800 }).Count) (4 + $script:CActs.Count)
+Check 'script hook: the old payloads are listed as before and still under 7800' (@($sizes | Where-Object { $_ -match '^payload \w+ (\d+)$' -and [int]$Matches[1] -le 7800 }).Count) (5 + $script:CActs.Count)
 
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue

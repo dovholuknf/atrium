@@ -335,7 +335,7 @@ $sizes = & $pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-toolchain.ps1')
 foreach ($l in $sizes) {
     if ($l -match '^payload (\w+) (\d+)$') { Check "script hook: $($Matches[1]) is $($Matches[2]), under 7800" ([int]$Matches[2] -le 7800) $true }
 }
-Check 'script hook: every act is listed (4 old + C)' @($sizes | Where-Object { $_ -match '^payload ' }).Count (4 + $script:CActs.Count)
+Check 'script hook: every act is listed (5 old + C)' @($sizes | Where-Object { $_ -match '^payload ' }).Count (5 + $script:CActs.Count)
 # the check itself: a payload that grows over the limit is caught
 $big = (Get-CPayload 'cgit' @{ PathPre = 'x' }) + "`n# " + ((1..400 | ForEach-Object { [guid]::NewGuid().ToString('N') }) -join '')
 Check 'limit: a payload that is too long is over it' ((New-EncodedCommand $big).Length -gt $script:EncodedLimit) $true

@@ -17,7 +17,7 @@
   (TestTheGate*). Anything else failing is real. Exit is non-zero on any real failure.
 
   Playwright is found, in order: -NodePath, $env:ATRIUM_NODE_PATH, $env:NODE_PATH, the merge worktree, this
-  checkout, any sibling worktree, D:/tmp. See scripts/setup-merge-worktree.ps1.
+  checkout, any sibling worktree, D:/tmp, room-toolchain.ps1's ~/.local/share/atrium-tools/playwright. See scripts/setup-merge-worktree.ps1.
 
 .EXAMPLE
   pwsh scripts/merge-check.ps1                 # after a merge commit: Base is HEAD^1
@@ -68,7 +68,7 @@ function Find-NodePath {
   $cands += (Join-Path $repo 'node_modules')
   $cands += @(Get-ChildItem -Directory -LiteralPath $WorktreeRoot -ErrorAction SilentlyContinue |
       ForEach-Object { Join-Path $_.FullName 'node_modules' })
-  $cands += 'D:/tmp/node_modules', 'D:/tmp'
+  $cands += 'D:/tmp/node_modules', 'D:/tmp', (Join-Path $HOME '.local/share/atrium-tools/playwright/node_modules')
   foreach ($c in $cands) {
     foreach ($one in ($c -split [IO.Path]::PathSeparator)) {
       if ($one -and (Test-PlaywrightDir $one)) { return (Resolve-Path -LiteralPath $one).Path }
