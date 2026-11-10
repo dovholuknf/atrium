@@ -20,7 +20,7 @@
       "id": "only-atrium-subagents",
       "check": "subagent",
       "tools": ["Task", "Agent"],
-      "params": {"env": "ATRIUM_ONLY_SUBAGENTS", "allow": ["explore", "plan"]},
+      "params": {"env": "ATRIUM_ONLY_SUBAGENTS", "allow": ["explore", "plan", "web-fetch"]},
       "reason": "Plain Claude subagents are off here (ATRIUM_ONLY_SUBAGENTS). Run substantive agent work as a REAL atrium session instead, so it is watchable on the board and kept in history. HARD RULE, check FIRST: call the atrium-control MCP tool atrium_peers and count the running sessions YOU launched (sessions the user started do not count); if you launched 10 or more (the concurrency cap), do NOT launch another -- wait for one to finish or ask clint, do not spawn past the cap. Otherwise: (1) make/prepare the working directory first -- it must already exist; (2) call atrium_launch with cwd, a short title, a one-line why, and a FULL prompt containing the ENTIRE task (the new session inherits NONE of this conversation's context, so spell it all out); (3) use the returned card id with atrium_task / atrium_say to follow up. If a normal one-shot subagent is genuinely wanted this session, the user can set ATRIUM_ONLY_SUBAGENTS=0 and retry."
     },
     {

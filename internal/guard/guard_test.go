@@ -82,6 +82,7 @@ var calls = []call{
 	{tool: "Task", subtype: "", want: "only-atrium-subagents"},
 	{tool: "Agent", subtype: "Explore", want: ""},
 	{tool: "Agent", subtype: "plan", want: ""},
+	{tool: "Agent", subtype: "web-fetch", want: ""},
 	{tool: "Agent", subtype: "my-reviewer", want: "only-atrium-subagents", note: "no agent file"},
 	{tool: "Agent", subtype: "../x", want: "only-atrium-subagents", note: "not a name"},
 	// co-author trailer
