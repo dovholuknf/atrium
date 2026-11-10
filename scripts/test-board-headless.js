@@ -1001,6 +1001,15 @@ async function groupDragSection(browser, base) {
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: slow(15000) });
 
+    const cur = await dp.evaluate(() => {
+      const h = document.querySelector('#term-list .tgroup.movable[data-ghead="spare"]');
+      const add = h && h.querySelector(".tgadd");
+      return add && { head: getComputedStyle(h).cursor, add: getComputedStyle(add).cursor };
+    });
+    if (!cur || cur.head !== "grab" || cur.add !== "default") {
+      fail("a movable heading is not grab with an arrow over its +: " + JSON.stringify(cur));
+    }
+
     // A heading dragged above another moves the whole group and writes the order.
     await dp.locator('#term-list .tgroup[data-ghead="spare"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="active"]'), { targetPosition: { x: 10, y: 2 } });

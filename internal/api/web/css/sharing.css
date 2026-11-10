@@ -534,7 +534,7 @@
      count that is not there. */
   .tgroup .tgcount { font: inherit; color: inherit; opacity: .65; margin-left: 6px; }
   .tgroup:hover .tgcount { opacity: 1; }
-  .tgroup .tgadd { margin-left: 6px; padding: 0 5px; border-radius: var(--r-sm); font-size: 14px; line-height: 1.2; opacity: .45; }
+  .tgroup .tgadd { cursor: default; margin-left: 6px; padding: 0 5px; border-radius: var(--r-sm); font-size: 14px; line-height: 1.2; opacity: .45; }
   .tgroup:hover .tgadd { opacity: .9; }
   .tgroup .tgadd:hover { opacity: 1; background: var(--lift-strong); color: var(--head); }
   /* A group's own colour, from the same `--ghue` the stack's and the board's headings use, so one group reads as
