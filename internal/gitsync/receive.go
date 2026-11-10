@@ -590,7 +590,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		}
 	}
 
-	dec := rc.decide(ctx, name, who, req, cur, names, asked)
+	dec := rc.decide(ctx, name, dir, who, req, cur, names, asked)
 	if len(dec.bad) > 0 {
 		rc.h.audit(who.Room, "git-hub-push-refused", fmt.Sprintf("%s refs=%d card=%s", name, len(req.Updates), who.Card))
 		resp.reset()

@@ -2207,3 +2207,35 @@ func TestAPushThatMakesGitProbeLandsThroughTheReceiver(t *testing.T) {
 		t.Fatalf("fix/x is %q on the hub, want %q", got, sha)
 	}
 }
+
+// The orchestrator deletes another card's claude/* branch only once its tip is in main or claude/main.
+func TestOrchestratorDeletesAnotherCardsMergedBranchOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+	})
+	x.seedMain(hubRepo)
+	x.branch("claude/done", "d.txt")
+	x.branch("claude/open", "o.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/done:refs/heads/claude/done", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(operator, hubRepo, "claude/done:refs/heads/main"))
+	for _, c := range []struct {
+		who  who
+		spec string
+	}{
+		{roomCard("sg4", "C2"), ":refs/heads/claude/done"},
+		{roomCard("sg4", "ORCH"), ":refs/heads/claude/open"},
+	} {
+		out, err := x.push(c.who, hubRepo, c.spec)
+		if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+			t.Errorf("%s by %+v: %v\n%s", c.spec, c.who, err, out)
+		}
+	}
+	x.must(x.push(roomCard("sg4", "ORCH"), hubRepo, ":refs/heads/claude/done"))
+	if got := x.refOn(hubRepo, "refs/heads/claude/done"); got != "" {
+		t.Errorf("claude/done is still there at %s", got)
+	}
+}

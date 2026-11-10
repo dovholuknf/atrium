@@ -64,6 +64,9 @@ type Hub struct {
 	// Cards asks a room about one card, for letting go of a branch whose owner is finished. Nil, and an owner is
 	// never let go by a push, only by the operator.
 	Cards CardLookup
+	// IsOrchestrator says whether a card holds the orchestrator role, which may delete a branch already merged into
+	// main or claude/main whoever pushed it. Nil is nobody.
+	IsOrchestrator func(room, card string) bool
 	// CreateOnPush says whether a card's first push of a repository the hub lacks may make it: the
 	// `git.create_on_push` setting. Nil is off. Read on every push.
 	CreateOnPush func() bool
