@@ -2114,8 +2114,9 @@ function wireTerminalDrops(screen) {
 async function copyTermName() {
   const name = document.getElementById("t-title").textContent.trim();
   if (!name) return;
+  const handle = typeof termTask !== "undefined" && termTask && termTask.alias ? fullHandle(termTask) : name;
   // The icon flashes a check, no toast.
-  await copyAliasHandle(document.getElementById("t-copy"), name.replace(/^@/, ""), name);
+  await copyAliasHandle(document.getElementById("t-copy"), name.replace(/^@/, ""), handle);
 }
 
 // A path, onto the clipboard.
