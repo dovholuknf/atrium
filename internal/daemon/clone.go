@@ -19,7 +19,7 @@ import (
 )
 
 // CLONING A CARD: a new card on this room, in a new worktree from the original's commit, with its uncommitted changes
-// and, on claude, a fork of its conversation. The original's folder and conversation are only read.
+// and, on a runner with a fork recipe, a fork of its conversation. The original's folder and conversation are only read.
 
 // cloneSource is what the board's clone form is filled from, `GET /v1/tasks/{id}/clone`. NoFork is why the clone
 // cannot fork the conversation, "" when it can.
@@ -42,10 +42,10 @@ func cloneRefusal(t *store.Task) error {
 	return nil
 }
 
-// forkRefusal is why a clone of t cannot fork its conversation, "" when it can. `--fork-session` is claude's.
+// forkRefusal is why a clone of t cannot fork its conversation, "" when it can. A runner forks by its fork recipe.
 func (d *Daemon) forkRefusal(t *store.Task) string {
-	if h, err := d.st.Harness(t.Runner); err != nil || !shared.IsClaude(h) {
-		return "only a claude conversation can be forked for now"
+	if h, err := d.st.Harness(t.Runner); err != nil || len(h.ForkArgs) == 0 {
+		return "this runner has no recipe to fork a conversation, so the clone starts fresh"
 	}
 	if !moveConvName.MatchString(d.ConversationOf(t)) {
 		return "atrium never learned this session's id, so there is no conversation to fork"
@@ -141,15 +141,15 @@ func (d *Daemon) cloneCheck(req shared.LaunchRequest, h *store.Harness) (*store.
 		if why := d.forkRefusal(src); why != "" {
 			return nil, errors.New(why)
 		}
-		if !shared.IsClaude(h) {
-			return nil, errors.New("a forked conversation runs on claude")
+		if h.ID != src.Runner {
+			return nil, fmt.Errorf("a forked conversation runs on %s, the runner that holds it", src.Runner)
 		}
 	}
 	return src, nil
 }
 
-// cloneInto carries the original's uncommitted changes into the new worktree at cwd and copies its conversation
-// where claude looks for it from cwd. Answers the conversation to fork, "" for none.
+// cloneInto carries the original's uncommitted changes into the new worktree at cwd and, where the runner's fork recipe
+// says it looks by folder, copies its conversation where it looks for it from cwd. Answers the conversation to fork, "" for none.
 func (d *Daemon) cloneInto(src *store.Task, cwd, tmp string, carry, fork bool) (string, error) {
 	if carry {
 		if err := carryChanges(src.Worktree, cwd, tmp); err != nil {
@@ -160,8 +160,10 @@ func (d *Daemon) cloneInto(src *store.Task, cwd, tmp string, carry, fork bool) (
 		return "", nil
 	}
 	conv := d.ConversationOf(src)
-	if err := copySession(src.Worktree, cwd, conv); err != nil {
-		return "", fmt.Errorf("could not copy the conversation to fork: %w", err)
+	if h, err := d.st.Harness(src.Runner); err == nil && h.ForkCopy == "claude" {
+		if err := copySession(src.Worktree, cwd, conv); err != nil {
+			return "", fmt.Errorf("could not copy the conversation to fork: %w", err)
+		}
 	}
 	return conv, nil
 }
@@ -241,15 +243,18 @@ func copySession(fromCwd, toCwd, conv string) error {
 	return copyInside(from, to, conv+".jsonl")
 }
 
-// forkArgs is a clone's command line: the resume arguments on conv, `--fork-session`, and the opening prompt, which a
-// fork takes and a resume refuses.
+// forkArgs is a clone's command line: the fork recipe's arguments on conv, and the opening prompt, which a fork takes
+// and a resume refuses.
 func forkArgs(h *store.Harness, conv, prompt string, o launchOptions) ([]string, string, error) {
-	args, _, err := runnerArgsWith(h, conv, "", o)
+	if len(h.ForkArgs) == 0 {
+		return nil, "", fmt.Errorf("%s has no recipe to fork a conversation", h.Label)
+	}
+	forking := *h
+	forking.ResumeArgs = h.ForkArgs
+	args, _, err := runnerArgsWith(&forking, conv, "", o)
 	if err != nil {
 		return nil, "", err
 	}
-	n := len(h.ResumeArgs)
-	args = append(append(append([]string{}, args[:n]...), "--fork-session"), args[n:]...)
 	logged := shellJoin(append([]string{h.Cmd}, args...))
 	if p := strings.TrimSpace(prompt); p != "" {
 		if len(h.PromptArgs) == 0 {

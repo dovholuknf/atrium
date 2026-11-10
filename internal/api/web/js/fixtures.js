@@ -869,6 +869,8 @@ async function editHarness(id, room, seed) {
   document.getElementById("h-cmd").value = h.cmd || "";
   document.getElementById("h-args").value = (h.args || []).join("\n");
   document.getElementById("h-resume").value = (h.resume_args || []).join("\n");
+  document.getElementById("h-fork").value = (h.fork_args || []).join("\n");
+  document.getElementById("harness").dataset.forkCopy = h.fork_copy || "";
   document.getElementById("h-prompt").value = (h.prompt_args || []).join("\n");
   document.getElementById("h-model").value = (h.model_args || []).join("\n");
   document.getElementById("h-effort").value = (h.effort_args || []).join("\n");
@@ -912,6 +914,8 @@ function harnessFromForm() {
     cmd: document.getElementById("h-cmd").value.trim(),
     args: linesToList(document.getElementById("h-args").value),
     resume_args: linesToList(document.getElementById("h-resume").value),
+    fork_args: linesToList(document.getElementById("h-fork").value),
+    fork_copy: dlg.dataset.forkCopy || "",
     prompt_args: linesToList(document.getElementById("h-prompt").value),
     model_args: linesToList(document.getElementById("h-model").value),
     effort_args: linesToList(document.getElementById("h-effort").value),

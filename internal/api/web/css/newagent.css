@@ -38,8 +38,6 @@ dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
 #na.tw-mode .two .notw, #na.tw-mode .dlg-body > .notw, #na.tw-mode .howline .notw { display: none; }
 #na:not(.tw-mode) .dlg-foot .onlytw { display: none; }
 #na.tw-mode .dlg-head h2 { color: var(--warn); }
-#na:not(.clone-mode) .onlyclone, #na.clone-mode .notclone { display: none; }
-#na textarea#na-brief { font: var(--fs-sm)/1.45 var(--mono); resize: vertical; min-height: 72px; max-height: 220px; }
 #na .eyebrow .help { margin-left: 7px; letter-spacing: 0; }
 #na input#na-repo:disabled { opacity: 1; color: var(--head); cursor: default; }
 #na .how input.cl, #na .how select.cl { font: var(--fs-sm) var(--mono); padding: 4px 8px; min-width: 0; flex: 1; }

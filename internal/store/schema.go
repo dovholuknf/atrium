@@ -2521,6 +2521,19 @@ var migrations = []struct {
 					(n.created_at > task.created_at OR (n.created_at = task.created_at AND n.id > task.id)))`,
 		},
 	},
+	{
+		// How a clone forks a runner's conversation. Claude's is its resume list with --fork-session after the
+		// id, so an operator's own list is kept. Guarded on an empty value, so a recipe written by hand stays.
+		name: "0117_harness_fork",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN fork_args TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE harness ADD COLUMN fork_copy TEXT NOT NULL DEFAULT ''`,
+			`UPDATE harness SET fork_args = replace(resume_args, '"{resume}"', '"{resume}","--fork-session"'), fork_copy = 'claude'
+			   WHERE id = 'claude' AND fork_args = '[]' AND resume_args LIKE '%"{resume}"%'`,
+			`UPDATE harness SET fork_args = '["fork","--no-alt-screen","{resume}"]'
+			   WHERE id = 'codex' AND fork_args = '[]' AND resume_args = '["resume","--no-alt-screen","{resume}"]'`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

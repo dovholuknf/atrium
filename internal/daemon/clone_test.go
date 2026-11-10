@@ -11,30 +11,44 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-func TestForkArgsPutForkSessionAfterTheResumeArgsAndKeepThePrompt(t *testing.T) {
+func TestForkArgsAreTheRecipeOnTheIdAndKeepThePrompt(t *testing.T) {
 	h := &store.Harness{Label: "claude", Cmd: "claude", Args: []string{"--base"},
 		ResumeArgs: []string{"--resume", "{resume}", "--strict-mcp-config"},
+		ForkArgs:   []string{"--resume", "{resume}", "--fork-session", "--strict-mcp-config"},
 		ModelArgs:  []string{"--model", "{model}"}, PromptArgs: []string{"{prompt}"}}
 	args, logged, err := forkArgs(h, "conv-1", "carry on", launchOptions{Model: "opus", Args: []string{"--verbose"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"--resume", "conv-1", "--strict-mcp-config", "--fork-session", "--model", "opus", "--verbose", "carry on"}
+	want := []string{"--resume", "conv-1", "--fork-session", "--strict-mcp-config", "--model", "opus", "--verbose", "carry on"}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("args = %q, want %q", args, want)
 	}
 	if strings.Contains(logged, "carry on") || !strings.Contains(logged, "--fork-session") {
 		t.Fatalf("logged = %q: want the fork and not the prompt", logged)
 	}
-	if args, _, err = forkArgs(h, "conv-1", "", launchOptions{}); err != nil || args[len(args)-1] != "--fork-session" {
+	if args, _, err = forkArgs(h, "conv-1", "", launchOptions{}); err != nil || args[len(args)-1] != "--strict-mcp-config" {
 		t.Fatalf("no prompt: args = %q, err %v", args, err)
 	}
 }
 
 func TestForkArgsRefuseAPromptARunnerCannotTake(t *testing.T) {
-	h := &store.Harness{Label: "claude", Cmd: "claude", ResumeArgs: []string{"--resume", "{resume}"}}
+	h := &store.Harness{Label: "claude", Cmd: "claude", ForkArgs: []string{"--resume", "{resume}", "--fork-session"}}
 	if _, _, err := forkArgs(h, "conv-1", "hi", launchOptions{}); err == nil {
 		t.Fatal("a prompt with no prompt arguments was not refused")
+	}
+}
+
+func TestForkArgsOfCodexAreItsForkSubcommand(t *testing.T) {
+	h := &store.Harness{Label: "codex", Cmd: "codex", Args: []string{"--no-alt-screen"},
+		ResumeArgs: []string{"resume", "--no-alt-screen", "{resume}"},
+		ForkArgs:   []string{"fork", "--no-alt-screen", "{resume}"}, PromptArgs: []string{"{prompt}"}}
+	args, _, err := forkArgs(h, "0199-abc", "go on", launchOptions{})
+	if want := []string{"fork", "--no-alt-screen", "0199-abc", "go on"}; err != nil || !reflect.DeepEqual(args, want) {
+		t.Fatalf("args = %q, err %v, want %q", args, err, want)
+	}
+	if _, _, err := forkArgs(&store.Harness{Label: "x", Cmd: "x"}, "c", "", launchOptions{}); err == nil {
+		t.Fatal("a runner with no recipe forked")
 	}
 }
 
