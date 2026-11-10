@@ -23,6 +23,8 @@ var WorkerTools = map[string]bool{
 	"atrium_need": true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.
 	"atrium_publish": true,
+	// And read the prompt library, which a brief may name. See prompt_mcp.go.
+	"atrium_prompt": true,
 	// Workers hand files between rooms. See files_mcp.go.
 	"atrium_put":    true,
 	"atrium_get":    true,

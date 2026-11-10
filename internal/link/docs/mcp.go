@@ -102,6 +102,7 @@ type Room struct {
 func (c *MCP) RegisterDocs(s *mcp.Server, class ctl.Class) {
 	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_publish", Description: publishToolDesc},
 		ctl.Audited(c, "ctl-publish", DescribePublish, c.PublishHandler))
+	c.RegisterPrompts(s, class)
 }
 
 // AddRoomPublishTool is atrium_publish on a room's stdio server. The tool is the hub's: call asks the hub over the room's
