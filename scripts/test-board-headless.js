@@ -9652,6 +9652,23 @@ async function keepaliveSection(browser, base) {
     if (coldRow.slot !== "❄") fail("a cold idle row's state slot is not the snowflake: " + JSON.stringify(coldRow));
     if (coldRow.chips.join("|") !== "chip room") fail("a cold idle row draws a chip besides the room's: " + JSON.stringify(coldRow));
 
+    const pinHead = await kp.evaluate(rowsIn => {
+      const real = workingNow;
+      workingNow = t => t.id === "pin-run";
+      try {
+        const head = (list, folded) => {
+          const el = document.createElement("div");
+          el.innerHTML = termBucketHTML(list, list.length, folded, 0);
+          const run = el.querySelector(".pinnedhead .tkidrun");
+          return run ? run.textContent.trim() : "";
+        };
+        return { folded: head(rowsIn, true), open: head(rowsIn, false), none: head(rowsIn.slice(1), true) };
+      } finally { workingNow = real; }
+    }, [{ id: "pin-run", pinned: true }, { id: "pin-idle", pinned: true }]);
+    if (pinHead.folded !== "1" || pinHead.open !== "" || pinHead.none !== "") {
+      fail("the folded pinned heading's running badge is wrong: " + JSON.stringify(pinHead));
+    }
+
     // The card menu's switch: offered on a Claude card, reads its state, and
     // posts to that card. Not offered on a card with no switch.
     const menu = await kp.evaluate(async cards => {

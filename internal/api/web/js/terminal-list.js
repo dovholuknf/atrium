@@ -2281,12 +2281,14 @@ function termBucketHTML(pinned, total, folded, deadHidden) {
     : `<div class="empty bucketdrop">drag a terminal here to keep it</div>`;
   const count = hidden > 0 ? `${pinned.length}/${total}` : `${pinned.length}`;
   const tip = hidden > 0 ? ` (${hidden} hidden by the search)` : "";
+  const run = folded ? termRunningIn(pinned) : 0;
   return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
       <button class="tgroup pinnedhead${folded && pinned.some(termHoldsOn) ? " carries" : ""}" onclick="toggleTermGroup('${PINNED_FOLD}')"
         data-tip="${folded ? "show" : "hide"} the pinned terminals${tip}"
         ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
         ><span class="tgname">pinned</span
-        ><span class="tgcount">${count}</span></button>
+        ><span class="tgcount">${count}</span>${run
+          ? `<span class="chip tkidrun" data-tip="${run} running"><i class="tkidspin"></i>${run}</span>` : ""}</button>
       ${rows || empty}
     </div>`;
 }
