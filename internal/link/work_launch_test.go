@@ -89,3 +89,17 @@ func TestTheWorkTagRoundTrips(t *testing.T) {
 		t.Fatal("the isolated tag is not an attachment")
 	}
 }
+
+func TestABareItemIdTagBecomesTheWorkTag(t *testing.T) {
+	call := func(_ context.Context, _, path string, _, _ any) error {
+		if path == "/_hub/backlog/f-held" {
+			return nil
+		}
+		return fakeStatus{code: http.StatusNotFound}
+	}
+	got := WithItemTags(context.Background(), call, []string{"pr", "f-thing", "f-held", "ziti-sdk-c"}, "f-thing")
+	want := []string{"pr", "ziti-sdk-c", WorkTagPrefix + "f-thing"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("tags = %v, want %v", got, want)
+	}
+}

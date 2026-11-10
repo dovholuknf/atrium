@@ -63,3 +63,16 @@ func TestFillArgvNeverMakesAFlagOfAValue(t *testing.T) {
 		t.Fatalf("got %q, want %q", args, want)
 	}
 }
+
+func TestATagsTemplateHoldsNoPerItemPlaceholder(t *testing.T) {
+	t.Parallel()
+	for _, tags := range []string{"zendesk,support,zendesk-{num}", "{id}", "pr-{N}", "discourse,{slug}"} {
+		if _, err := CheckRecogniser(Recogniser{ID: "x", Pattern: ".", Tags: tags}); err == nil {
+			t.Fatalf("tags %q were saved", tags)
+		}
+	}
+	if _, err := CheckRecogniser(Recogniser{ID: "x", Pattern: ".", Tags: "pull-request,{repo},{org},{host}",
+		Title: "#{num}"}); err != nil {
+		t.Fatalf("broad tags refused: %v", err)
+	}
+}

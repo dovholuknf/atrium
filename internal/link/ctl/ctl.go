@@ -99,7 +99,7 @@ type LaunchInput struct {
 	// read first, so it survives compaction and can be re-read.
 	Brief  string   `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory on the room and read before it starts, so it survives compaction and can be re-read"`
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
-	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	Tags   []string `json:"tags,omitempty" jsonschema:"a pile or topic shared by many cards, like pr, zendesk or a repo name such as ziti-sdk-c. not an item id (pass item), not a ticket number, not a role"`
 	// Resident marks a long-lived card. See ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// Theme names the terminal palette the new session comes up in. Empty leaves

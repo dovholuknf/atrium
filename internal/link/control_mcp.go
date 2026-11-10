@@ -1803,7 +1803,11 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		callerTags = append(append([]string{}, in.Tags...), ResidentTag)
 	}
 	tags := WithLauncherDept(AgentLaunchTags(callerTags), launcherTags)
-	tags = WithWorkTag(tags, workID)
+	if workID != "" {
+		tags = WithItemTags(ctx, func(ctx context.Context, method, path string, body, out any) error {
+			return c.Ask(ctx, method, path, "", body, out)
+		}, tags, workID)
+	}
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/runtime/a2a-reliability-design.md.

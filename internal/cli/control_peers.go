@@ -674,7 +674,7 @@ type LaunchInput struct {
 	Brief string `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory and read before it starts, so it survives compaction and can be re-read"`
 	// Runner names a configured harness. Empty means claude.
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
-	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	Tags   []string `json:"tags,omitempty" jsonschema:"a pile or topic shared by many cards, like pr, zendesk or a repo name such as ziti-sdk-c. not an item id (pass item), not a ticket number, not a role"`
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// Item names the backlog item the worker works on. See link.WorkTagPrefix.

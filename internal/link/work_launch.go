@@ -66,6 +66,21 @@ func WithWorkTag(tags []string, id string) []string {
 	return append(append([]string{}, tags...), WorkTagPrefix+id)
 }
 
+// WithItemTags is WithWorkTag after taking out each tag that is the bare id of a backlog item the hub holds, so an item
+// is named by its work tag alone. A bare id the hub does not answer for stays as given.
+func WithItemTags(ctx context.Context, call HubCall, tags []string, id string) []string {
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		bare := strings.TrimSpace(t)
+		if backlogIDRe.MatchString(bare) && (bare == id ||
+			call(ctx, http.MethodGet, "/_hub/backlog/"+url.PathEscape(bare), nil, &hubstore.BacklogItem{}) == nil) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return WithWorkTag(out, id)
+}
+
 // ItemSpec is what an item argument says: an id of a backlog item, or a title to file one under.
 type ItemSpec struct {
 	ID    string
