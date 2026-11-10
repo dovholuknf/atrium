@@ -196,13 +196,14 @@ func (rc *Receiver) askCard(ctx context.Context, room, card string) ownerVerdict
 	return ownerVerdict{err: err}
 }
 
-// orchDeletesMerged says whether the pusher holds the orchestrator role and the branch's tip is already in main or
-// claude/main, so deleting it loses no commit. A branch it does not hold is still the owner's alone.
+// orchDeletesMerged says whether the pusher holds the orchestrator role and the branch's tip is already in main,
+// claude/main or the forge's main, so deleting it loses no commit. A branch it does not hold is still the owner's
+// alone.
 func (rc *Receiver) orchDeletesMerged(ctx context.Context, dir string, p Pusher, tip string) bool {
 	if rc.h.IsOrchestrator == nil || !rc.h.IsOrchestrator(p.Room, p.Card) {
 		return false
 	}
-	for _, into := range []string{MainRef, ClaudeMainRef} {
+	for _, into := range []string{MainRef, ClaudeMainRef, ForgeRefPrefix + "main"} {
 		if ok, err := rc.h.Store().isAncestor(ctx, dir, tip, into); err == nil && ok {
 			return true
 		}
