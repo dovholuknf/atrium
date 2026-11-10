@@ -12282,8 +12282,10 @@ async function walkBranchSection(browser, base) {
   const { execFileSync } = require("child_process");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkbranch-"));
   const repo = path.join(tmp, "repo");
-  const git = (...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...a], { cwd: repo }).toString();
+  const hooks = path.join(tmp, "hooks");
+  const git = (...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + hooks, ...a], { cwd: repo }).toString();
   fs.mkdirSync(repo);
+  fs.mkdirSync(hooks);
   git("init", "-q", "-b", "main");
   fs.writeFileSync(path.join(repo, "base.txt"), "base\n");
   git("add", "."); git("commit", "-q", "-m", "base");
