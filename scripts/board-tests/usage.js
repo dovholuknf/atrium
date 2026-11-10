@@ -266,7 +266,7 @@ async function cacheChipSection(browser, base) {
 
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector(".term-list .card", { timeout: slow(10000) });
-    await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 1, null, { timeout: slow(10000) });
     check("terminals list", await texts(".term-list .card"), ["cc-warm", "cc-cold", "cc-stop", "cc-off", "cc-none"]);
     if (shots) await p.screenshot({ path: path.join(shots, "u-032-terms-1400x900.png") });
 
@@ -348,7 +348,7 @@ async function cacheChipSection(browser, base) {
     for (const view of ["stack", "terms"]) {
       await q.evaluate(v => switchView(v), view);
       const sel = view === "terms" ? ".term-list .card" : "#stack-list .stackrow";
-      await q.waitForFunction(s => document.querySelectorAll(s + " .chip.cache").length >= 6, sel, { timeout: slow(10000) });
+      await q.waitForFunction(([s, n]) => document.querySelectorAll(s + " .chip.cache").length >= n, [sel, view === "terms" ? 1 : 6], { timeout: slow(10000) });
       if (shots) { fs.mkdirSync(shots, { recursive: true }); await q.screenshot({ path: path.join(shots, "u-032-" + view + "-390x844.png") }); }
       const r = await q.evaluate(s => {
         const vw = document.documentElement.clientWidth, bad = [], shorts = [];

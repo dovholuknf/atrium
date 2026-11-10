@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 // A runner's login, read for its expiry and for whether one exists, and nothing else. The credential files hold
@@ -71,7 +73,9 @@ var errKeychainMissing = errors.New("keychain item not found")
 func readKeychain() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), keychainMax)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", keychainClaude, "-w").Output()
+	cmd := exec.CommandContext(ctx, "security", "find-generic-password", "-s", keychainClaude, "-w")
+	nowindow.Hide(cmd)
+	out, err := cmd.Output()
 	var ee *exec.ExitError
 	if errors.As(err, &ee) && ee.ExitCode() == securityNotFound {
 		return nil, errKeychainMissing

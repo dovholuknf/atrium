@@ -9615,7 +9615,7 @@ async function keepaliveSection(browser, base) {
       const out = cards.map(t => {
         const row = document.createElement("div");
         row.className = "card tab";
-        row.innerHTML = `<span>${esc(t.display_title)}</span>` + termRowChips(t);
+        row.innerHTML = `<span>${esc(t.display_title)}</span>` + termStateSlot(t) + termRowChips(t);
         list.appendChild(row);
         const card = document.createElement("div");
         card.innerHTML = cardHTML(t);
@@ -10457,10 +10457,11 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
-    await p.waitForFunction(r => ["held", "questions", "unseen", "cache", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
+    await p.waitForFunction(r => ["held", "questions", "unseen", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
     await settleStyle(p);
-    // The row's badges, by what they are. Every one must be on the row for the test to mean anything.
-    const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.cache", "chip.room"]
+    // The row's badges, by what they are. Every one must be on the row for the test to mean anything. The cache dial is the
+    // state slot's, and a working card draws the spinner there.
+    const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.room"]
       .map(c => row + " ." + c.split(".").join("."));
     const hovered = [];
     for (const sel of badges.concat([row + " .chip:not(.held):not(.questions):not(.unseen):not(.cache):not(.room)", row + " .tname", row])) {
