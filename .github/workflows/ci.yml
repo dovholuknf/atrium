@@ -15,6 +15,10 @@ name: ci
 
 run-name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name && format('ci {0}', inputs.name) || format('ci {0} {1}', inputs.os, inputs.suite)) || github.event_name == 'push' && github.event.head_commit.message || 'ci' }}
 
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 on:
   push:
     branches: ["**", "!dependabot/**"]
@@ -361,7 +365,8 @@ jobs:
   # The one check main requires for auto-merge: red unless every job passed or was left out on purpose.
   ci-ok:
     needs: [select, rollup]
-    if: always()
+    # A run superseded by cancel-in-progress ends without running this: its outputs are empty and it would fail.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -377,7 +382,7 @@ jobs:
   # only carries it to the hub over ziti.
   notify:
     needs: [select, rollup]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
