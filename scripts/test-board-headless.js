@@ -28902,6 +28902,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("pasteRepoName", () => pasteRepoNameSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
     await unit("roomsMenuScroll", bu("roomsMenuScroll"));
+    await unit("roomsThemes", bu("roomsThemes"));
     await unit("notifyTrayFill", () => notifyTrayFillSection(browser, base));
     await unit("notifyTrayWrap", () => notifyTrayWrapSection(browser, base));
     await unit("homesChips", bu("homesChips"));
