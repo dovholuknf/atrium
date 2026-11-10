@@ -170,19 +170,13 @@
     const offer = f && !f.why;
     box.innerHTML = '<p class="rmenu-name"></p><p class="rmenu-ask" style="white-space: pre-line"></p>' +
       (offer ? '<label class="rmenu-tick"><input type="checkbox" class="rmenu-adopt"> <span></span></label>' : "") +
-      '<button type="button" class="rmenu-go rmenu-danger" data-ans="go">stop session</button>' +
+      '<button type="button" class="rmenu-go rmenu-danger" data-ans="go">stop</button>' +
       '<button type="button" class="rmenu-x" data-close="1">cancel</button>';
-    box.querySelector(".rmenu-name").textContent = "Stop the " + window.mUtil.cardName(t).main + " session?";
-    let said = "The agent stops. Its card, files and history stay.";
-    if (f && f.main) {
-      said = "The agent stops. Its checkout " + f.path + (f.branch ? " and branch " + f.branch : "") +
-        " stay on disk. It is the repository's main checkout, so atrium does not offer to delete it.";
-    } else if (f) {
-      said = "The agent stops. Its " + (f.branch ? "worktree and branch stay" : "worktree stays") + " on disk.";
-      if (f.why && f.repo) {
-        said += " Atrium does not offer to delete it: " + f.why + ". To delete it yourself:\n" +
-          "git -C " + f.repo + " worktree remove " + f.path + (f.branch ? "\ngit -C " + f.repo + " branch -d " + f.branch : "");
-      }
+    box.querySelector(".rmenu-name").textContent = "Stop " + window.mUtil.cardName(t).main + "?";
+    let said = "Its files stay.";
+    if (f && !f.main && f.why && f.repo) {
+      said += " Atrium does not offer to delete it: " + f.why + ". To delete it yourself:\n" +
+        "git -C " + f.repo + " worktree remove " + f.path + (f.branch ? "\ngit -C " + f.repo + " branch -d " + f.branch : "");
     }
     box.querySelector(".rmenu-ask").textContent = said;
     if (offer) box.querySelector(".rmenu-tick span").textContent = "Also delete worktree " + f.path + (f.branch ? " and branch " + f.branch : "");

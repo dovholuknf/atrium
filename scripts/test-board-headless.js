@@ -14195,7 +14195,7 @@ async function termMenuSection(browser, base) {
     closes.length = 0;
 
     // A FOLDER ATRIUM DID NOT CREATE: the preview names it as foreign. The menu says it stays, offers a tick to delete it
-    // too, and stops the session only on "stop session". CLOSE_SHOT=<dir> writes the picture.
+    // too, and stops the session only on "stop". CLOSE_SHOT=<dir> writes the picture.
     freed = [];
     foreign = { path: "/g/gwt-wt", branch: "feat/x", repo: "/g/repo", dirty: 0, unpushed: 0 };
     await openMenu("land-tm-run");
@@ -14203,11 +14203,11 @@ async function termMenuSection(browser, base) {
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
       .catch(() => fail("termMenu: a clean up that frees nothing did not say so."));
     const fw = await dialogUp().first().textContent();
-    if (!/The agent stops\. Its worktree and branch stay on disk\./.test(fw) || !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(fw)) {
+    if (!/Stop land tm-run\?/.test(fw) || !(await p.evaluate(() => document.querySelector("#ask .dlg-eyebrow").hidden)) || !/Its files stay\./.test(fw) || !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(fw)) {
       fail("termMenu: the foreign worktree wording is " + JSON.stringify(fw));
     }
     const fb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
-    if (fb !== "cancel,stop session") fail("termMenu: the foreign worktree buttons are " + fb);
+    if (fb !== "cancel,stop") fail("termMenu: the foreign worktree buttons are " + fb);
     if (process.env.CLOSE_SHOT) await p.locator("dialog#ask").screenshot({ path: process.env.CLOSE_SHOT + "/board-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
     await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
@@ -14215,7 +14215,7 @@ async function termMenuSection(browser, base) {
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
-    await p.locator("dialog[open] button", { hasText: "stop session" }).click();
+    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
     await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
     await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^terminated /.test(b.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (closes.length !== 1 || closes[0].confirm !== true || closes[0].adopt !== false) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
@@ -14227,7 +14227,7 @@ async function termMenuSection(browser, base) {
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
-    await p.locator("dialog[open] button", { hasText: "stop session" }).click();
+    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
     await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^could not terminate /.test(b.textContent)),
       null, { timeout: slow(5000) }).catch(() => fail("termMenu: a session that did not stop was not toasted as could not terminate."));
     closeReply = { closed: true, items: [] };
@@ -14238,7 +14238,7 @@ async function termMenuSection(browser, base) {
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("#ask-adopt").check();
-    await p.locator("dialog[open] button", { hasText: "stop session" }).click();
+    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
     await p.waitForFunction(() => /feat\/x has work found nowhere else/.test((document.getElementById("ask-title") || {}).textContent || ""),
       null, { timeout: slow(5000) }).catch(() => fail("termMenu: the tick on a folder with work did not ask."));
     const wb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
@@ -28733,6 +28733,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
     await unit("launchGroupPlus", bu("launchGroupPlus"));
+    await unit("launchNewAgentGroups", bu("launchNewAgentGroups"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
     await unit("launchThrowaway", bu("launchThrowaway"));
     await unit("launchSetup", bu("launchSetup"));
@@ -31553,7 +31554,7 @@ async function mOpenQSection(browser) {
 }
 
 // The phone's terminate and clean up on a card whose folder atrium did not create: the preview names it as foreign, the
-// sheet says it stays, offers a tick to delete it too, and closes only on "stop session". CLOSE_SHOT=<dir> writes the
+// sheet says it stays, offers a tick to delete it too, and closes only on "stop". CLOSE_SHOT=<dir> writes the
 // picture.
 async function mCleanUpForeignSection(browser) {
   const tag = "mCleanUpForeign: ";
@@ -31575,14 +31576,14 @@ async function mCleanUpForeignSection(browser) {
     const menu = async () => {
       await p.evaluate(() => window.mResume.open("gwt-1"));
       await p.locator("#m-rmenu .rmenu-item", { hasText: "terminate and clean up" }).tap();
-      await p.waitForFunction(() => /The agent stops/.test((document.getElementById("m-rmenu") || {}).textContent || ""), null, { timeout: slow(5000) });
+      await p.waitForFunction(() => /Its files stay/.test((document.getElementById("m-rmenu") || {}).textContent || ""), null, { timeout: slow(5000) });
     };
     await menu();
     const say = await p.$eval("#m-rmenu", e => ({ hidden: e.hidden, text: e.textContent, btns: [...e.querySelectorAll("button")].map(b => b.textContent.trim()).join() }));
     if (say.hidden) fail(tag + "the question is not showing");
-    if (!/The agent stops\. Its worktree and branch stay on disk\./.test(say.text) ||
+    if (!/Stop gwt card\?/.test(say.text) || !/Its files stay\./.test(say.text) ||
       !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(say.text)) fail(tag + "the wording is " + JSON.stringify(say.text));
-    if (say.btns !== "stop session,cancel") fail(tag + "the buttons are " + say.btns);
+    if (say.btns !== "stop,cancel") fail(tag + "the buttons are " + say.btns);
     if (process.env.CLOSE_SHOT) await p.screenshot({ path: process.env.CLOSE_SHOT + "/phone-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
     await p.tap("#m-rmenu .rmenu-x");
     if (closes.length) fail(tag + "cancel still closed the card");

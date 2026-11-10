@@ -404,16 +404,15 @@
     border-radius: var(--r-sm); padding: 9px 16px; transition: all .14s;
   }
   /* Only where a pointer can really hover. A touch leaves `:hover` on the last thing tapped, so on a phone
-     the button stayed lit and lifted until the next tap elsewhere (u-029). */
+     the button stayed lit until the next tap elsewhere (u-029). */
   @media (hover: hover) {
     button:hover {
       color: var(--head); border-color: var(--blue);
-      background: var(--btn-hover); transform: translateY(-1px);
+      background: var(--btn-hover);
     }
   }
-  button:active { transform: translateY(0); }
   /* A control that cannot do anything has to look like it cannot. Without this
-     a disabled button keeps full contrast, the hover lift and the pointer
+     a disabled button keeps full contrast, the hover look and the pointer
      cursor. The picker is where it shows: `up` and `use this one` are both
      disabled at a root. */
   button:disabled,

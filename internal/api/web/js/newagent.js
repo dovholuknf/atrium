@@ -125,7 +125,8 @@ function naListItems() {
   if (p && !rows.some(r => launchRepoKey(r.ref) === launchRepoKey(p.ref))) items.push({ ref: p.ref, name: naShort(p.ref), meta: "fetch it" });
   if (here.length) items.push({ sec: q ? "repos" : "recent" }, ...here.map(r => ({ ref: r.ref, name: r.name, meta: "" })));
   if (hub.length) items.push({ sec: "on the hub, not here" }, ...hub.map(r => ({ ref: r.ref, name: r.name, meta: "clone" })));
-  if (!items.length) items.push({ empty: (rows.length ? "nothing matches. " : "no repos yet. ") + "type owner/repo, or paste a GitHub link here: a repo, an issue, a pull request or a branch" });
+  if (!items.length) items.push({ empty: rows.length ? "no matches. paste a full repo link works" : "no repos yet" });
+  items.push({ ref: "", none: true, name: "no repo", meta: "its own folder" });
   return items;
 }
 function naHL(name, q) {
@@ -141,14 +142,14 @@ function naPaintList() {
   if (!naS.listOpen) return;
   const q = naEl("na-repo").value.trim();
   const items = naListItems();
-  const picks = items.filter(i => i.ref);
+  const picks = items.filter(i => i.ref || i.none);
   naS.listIdx = Math.max(0, Math.min(naS.listIdx, picks.length - 1));
   let n = -1;
   el.innerHTML = items.map(i => {
     if (i.empty) return `<div class="empty">${esc(i.empty)}</div>`;
     if (i.sec) return `<div class="sec">${esc(i.sec)}</div>`;
     n++;
-    return `<div class="cb-opt ${n === naS.listIdx ? "on" : ""}" data-n="${n}"><span class="nm">${naHL(i.name, q)}</span><span class="meta">${esc(i.meta)}</span></div>`;
+    return `<div class="cb-opt ${n === naS.listIdx ? "on" : ""}${i.none ? " none" : ""}" data-n="${n}"><span class="nm">${i.none ? esc(i.name) : naHL(i.name, q)}</span><span class="meta">${esc(i.meta)}</span></div>`;
   }).join("");
   el.querySelectorAll(".cb-opt").forEach(o => o.onmousedown = e => { e.preventDefault(); naPick(picks[+o.dataset.n]); });
   const on = el.querySelector(".cb-opt.on");
@@ -157,6 +158,7 @@ function naPaintList() {
 function naPick(it) {
   naS.listOpen = false;
   if (!it) { naRender(); return; }
+  if (it.none) { naS.check = null; naSetRepo("", null); naEl("na-what").focus(); return; }
   const p = naParse(naEl("na-repo").value);
   naSetRepo(it.ref, p && launchRepoKey(p.ref) === launchRepoKey(it.ref) ? p.link : null);
   naEl("na-what").focus();
@@ -255,15 +257,18 @@ function naPaintGroups(root, sel, set) {
   const q = root.dataset.q || "", tagsOn = root.dataset.tags === "1";
   const all = naGroupChoices(sel, tagsOn).filter(g => g.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => (sel.includes(b) - sel.includes(a)) || naGroupCount(b) - naGroupCount(a) || a.localeCompare(b));
+  const make = groupNameOf(q);
+  const fresh = make && isPickableGroup(make) && !all.some(g => groupNameOf(g) === make) ? make : "";
   root.innerHTML =
     `<button type="button" class="gp-field" aria-expanded="${open}" aria-haspopup="listbox">` +
       (sel.length ? sel.map(g => `<span class="chip accent">${esc(g)}</span>`).join("") : `<span class="ph">no group</span>`) +
       `<span class="caret">▾</span></button>` +
-    `<button type="button" class="gp-add" aria-label="a new group" data-tip="a new group">+</button>` +
-    (open ? `<div class="gp-list" role="listbox"><div class="gp-tools"><input type="text" class="gp-q" placeholder="filter" value="${esc(q)}">` +
-      `<label class="check"><input type="checkbox" class="gp-tg" ${tagsOn ? "checked" : ""}><span>include tags</span></label></div>` + (all.length ? all.map(g =>
+    (open ? `<div class="gp-list" role="listbox"><div class="gp-tools"><input type="text" class="gp-q" placeholder="find or make a group" value="${esc(q)}">` +
+      `<label class="check"><input type="checkbox" class="gp-tg" ${tagsOn ? "checked" : ""}><span>include tags</span></label></div>` +
+      (fresh ? `<div class="gp-make" role="option"><span>${esc(fresh)}</span><kbd>&#9166;</kbd><span class="n">new group</span></div>` : "") +
+      (all.length ? all.map(g =>
       `<label class="check"><input type="checkbox" data-g="${esc(g)}" ${sel.includes(g) ? "checked" : ""}><span>${esc(g)}</span>` +
-      `<span class="n">${naGroupCount(g) || ""}</span></label>`).join("") : `<div class="empty">no groups yet. + makes one.</div>`) + `</div>` : "");
+      `<span class="n">${naGroupCount(g) || ""}</span></label>`).join("") : fresh ? "" : `<div class="empty">no groups yet</div>`) + `</div>` : "");
   naSyncPop();
   root.querySelector(".gp-field").onclick = () => {
     root.dataset.open = open ? "" : "1";
@@ -273,39 +278,27 @@ function naPaintGroups(root, sel, set) {
     if (c) c.focus();
   };
   const qi = root.querySelector(".gp-q");
+  const take = () => {
+    const g = fresh || all.find(x => groupNameOf(x) === make);
+    if (!g) return;
+    root.dataset.q = "";
+    set(sel.includes(g) ? sel : [...sel, g]);
+    const n = root.querySelector(".gp-q");
+    if (n) n.focus();
+  };
   if (qi) {
     qi.oninput = () => { root.dataset.q = qi.value; root._paint(); const n = root.querySelector(".gp-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    qi.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); take(); } };
     root.querySelector(".gp-tg").onchange = e => { root.dataset.tags = e.target.checked ? "1" : ""; root._paint(); };
   }
+  const mk = root.querySelector(".gp-make");
+  if (mk) mk.onmousedown = e => { e.preventDefault(); take(); };
   root.querySelectorAll(".gp-list input[data-g]").forEach(c => c.onchange = () => {
     const g = c.dataset.g;
     set(c.checked ? [...sel, g] : sel.filter(x => x !== g));
     const again = root.querySelector(`.gp-list input[data-g="${CSS.escape(g)}"]`);
     if (again) again.focus();
   });
-  root.querySelector(".gp-add").onclick = () => {
-    root.dataset.open = "";
-    const i = document.createElement("input");
-    i.type = "text"; i.placeholder = "new group"; i.className = "gp-new";
-    const list = root.querySelector(".gp-list");
-    if (list) list.remove();
-    naSyncPop();
-    root.querySelector(".gp-add").replaceWith(i);
-    i.focus();
-    let done = false;
-    const finish = keep => {
-      if (done) return;
-      done = true;
-      const v = i.value.trim();
-      if (keep && v) set(sel.includes(v) ? sel : [...sel, v]);
-      else root._paint();
-    };
-    i.onkeydown = e => {
-      if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); finish(true); }
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
-    };
-    i.onblur = () => finish(true);
-  };
   root.onkeydown = e => {
     if (e.key === "Escape" && root.dataset.open === "1") {
       e.preventDefault(); e.stopPropagation();
@@ -416,8 +409,7 @@ function naRender() {
   } else if (naS.ref && !row.here) {
     res.innerHTML = `<span class="kind clone">clone</span><span class="txt">on the hub, not on ${room}: cloned first</span>`;
   } else {
-    res.innerHTML = naS.ref ? `<span class="txt" style="color:var(--dim)">a new worktree under the card root</span>`
-      : `<span class="txt" style="color:var(--dim)">or paste a GitHub link here: a repo, an issue, a pull request or a branch. it fills in the name and branch</span>`;
+    res.innerHTML = naS.ref ? `<span class="txt" style="color:var(--dim)">a new worktree under the card root</span>` : "";
   }
 
   naPaintGroups(naEl("na-groups"), naS.groups, gs => { naS.groups = gs; naRender(); });
@@ -496,7 +488,7 @@ document.addEventListener("click", e => {
   naOpenInGroup(b.dataset.gnew);
 }, true);
 
-naEl("na-repo").addEventListener("focus", () => { naS.listOpen = true; naS.listIdx = 0; naRender(); });
+naEl("na-repo").addEventListener("click", () => { naS.listOpen = true; naS.listIdx = 0; naRender(); });
 naEl("na-repo").addEventListener("blur", () => {
   setTimeout(() => {
     if (!naS || !naS.listOpen) return;
@@ -515,7 +507,7 @@ naEl("na-repo").addEventListener("input", () => {
   naRender();
 });
 naEl("na-repo").addEventListener("keydown", e => {
-  const picks = naListItems().filter(i => i.ref);
+  const picks = naListItems().filter(i => i.ref || i.none);
   if (e.key === "ArrowDown") { e.preventDefault(); naS.listOpen = true; naS.listIdx = Math.min(naS.listIdx + 1, picks.length - 1); naPaintList(); }
   else if (e.key === "ArrowUp") { e.preventDefault(); naS.listIdx = Math.max(naS.listIdx - 1, 0); naPaintList(); }
   else if (e.key === "Enter" && naS.listOpen && !(e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); naPick(picks[naS.listIdx]); }
@@ -568,11 +560,20 @@ function naCloneItem(id, t) {
   };
 }
 async function openCloneCard(id, t) {
-  let src;
-  try { src = await api(`/v1/tasks/${id}/clone`); } catch (e) { toast("cannot clone", e.message); return; }
   const tags = t.tags || [], tagged = k => tags.filter(g => g.startsWith(k)).map(g => g.slice(k.length));
   const title = (t.overrides && t.overrides.title) || t.title || t.display_title || id;
   const setup = tags.includes("atrium:superlean") ? "superlean" : tags.includes("atrium:lean") ? "lean" : "full";
+  let src;
+  try { src = await api(`/v1/tasks/${id}/clone`); } catch (e) {
+    if (t.repo) { toast("cannot clone", e.message); return; }
+    // A card with no repo has no checkout to copy, so its duplicate is a new empty home with the same settings.
+    await openNewAgent(false, "", {
+      state: { ref: "", title, titleTouched: true, groups: tags.filter(isPickableGroup),
+        how: { room: roomOf(id), harness: t.runner, model: t.model || "", effort: t.effort || "", setup } },
+      src: { id: id.replace(/^.*~/, ""), title, runner: t.runner, home: true }
+    });
+    return;
+  }
   await openNewAgent(false, "", {
     state: {
       ref: src.repo || t.repo || "", title: "", titleTouched: true,
@@ -660,6 +661,7 @@ async function naLaunch(tw) {
     if (!tw) {
       naWrite(NA_GROUPS_KEY, naS.groups);
       naWrite(NA_RECENT_GROUPS_KEY, [...new Set([...naS.groups, ...naRead(NA_RECENT_GROUPS_KEY, [])])].slice(0, 12));
+      naNameGroups(naS.groups);
     }
     naEl("na").close();
     if (typeof rememberLaunchRoom === "function") rememberLaunchRoom(room, task && task.id);
@@ -669,6 +671,17 @@ async function naLaunch(tw) {
     if (task.supervised) { switchView("terms"); openTerm(task); return; }
     switchView("board");
   }, "starting…");
+}
+
+// The custom grouping draws only the groups on its list, so a group picked here joins it.
+function naNameGroups(gs) {
+  if (typeof groupingPrefs !== "function") return;
+  const p = groupingPrefs("terms"), groups = Array.isArray(p.groups) ? p.groups.slice() : [];
+  const fresh = gs.map(groupNameOf).filter(g => g && !groups.includes(g));
+  if (!fresh.length) return;
+  const made = Object.assign({}, p.made);
+  fresh.forEach(g => { groups.push(g); made[g] = Date.now(); });
+  setGrouping({ groups, made }, "terms");
 }
 
 // The open verb makes the card and knows nothing of groups, so they are patched on after.
@@ -706,6 +719,7 @@ naEl("nk-go").onclick = () => busyWhile("nk-go", async () => {
     return;
   }
   naEl("na-keep").close();
+  naNameGroups(naKeepGroups);
   toast(res.when === "now" ? "kept" : "kept when the session ends", naKeepGroups.length ? "in " + naKeepGroups.join(", ") : res.to);
   if (typeof refresh === "function") refresh();
 }, "keeping…");

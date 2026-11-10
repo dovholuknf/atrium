@@ -944,7 +944,7 @@
     color: var(--head); background: rgba(var(--stroke-rgb),.16); border: 1px solid rgba(var(--stroke-rgb),.5);
     transition: background .14s, box-shadow .14s, transform .14s;
   }
-  .qa-send:hover, .qa-b:hover { background: rgba(var(--teal-rgb),.18); transform: translateY(-1px); }
+  .qa-send:hover, .qa-b:hover { background: rgba(var(--teal-rgb),.18); }
   .qa-send.ready, .qa-b.send {
     color: var(--bg1); background: linear-gradient(135deg, var(--teal), rgba(var(--teal-rgb),.7)); border-color: var(--teal);
     box-shadow: 0 2px 14px rgba(var(--teal-rgb),.4);

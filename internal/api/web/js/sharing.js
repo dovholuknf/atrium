@@ -954,19 +954,15 @@ function setClosing(id, on) {
 // A cancel changes nothing.
 const CLEANUP_ASK_KEY = "cleanup-unsaved";
 
-function cleanUpCard(id, t) { return oneAtATime("close:" + id, () => cleanUpNow(id, t)); }
+function cleanUpCard(id, t, asked) { return oneAtATime("close:" + id, () => cleanUpNow(id, t, asked)); }
 
 // closeNotDone is a close that left a row on the card it tried and failed to free. A row kept on purpose has no error.
 function closeNotDone(out) { return (out.items || []).some(it => it.action === "keep" && it.error); }
 
 // stopBody is the stop question's text for the card's folder atrium did not make (pv.foreign), or for none.
 function stopBody(f) {
-  if (!f) return "The agent stops. Its card, files and history stay.";
-  if (f.main) {
-    return `The agent stops. Its checkout <b>${esc(f.path)}</b>` + (f.branch ? ` and branch <b>${esc(f.branch)}</b>` : "") +
-      ` stay on disk. It is the repository's main checkout, so atrium does not offer to delete it.`;
-  }
-  const said = "The agent stops. Its " + (f.branch ? "worktree and branch stay" : "worktree stays") + " on disk.";
+  const said = "Its files stay.";
+  if (!f || f.main) return said;
   if (!f.why) {
     return said + `<div class="field"><label class="check"><input type="checkbox" id="ask-adopt">` +
       `<span>Also delete worktree <b>${esc(f.path)}</b>` + (f.branch ? ` and branch <b>${esc(f.branch)}</b>` : "") +
@@ -980,7 +976,7 @@ function stopBody(f) {
     cmds.map(c => `<code>${esc(c)}</code>`).join("");
 }
 
-async function cleanUpNow(id, t) {
+async function cleanUpNow(id, t, asked) {
   let pv;
   try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
   catch (e) { toast("could not read what cleaning up frees", e.message); return; }
@@ -989,11 +985,12 @@ async function cleanUpNow(id, t) {
   const f = pv.foreign;
   const answers = {};
   let adopt = false;
-  if (f || (!(pv.items || []).length && !(pv.asks || []).length)) {
+  if (!asked && (f || (!(pv.items || []).length && !(pv.asks || []).length))) {
     const ok = await askUser({
-      title: `Stop the ${title} session?`,
+      plain: true,
+      title: `Stop ${title}?`,
       body: stopBody(f),
-      buttons: [{ label: "cancel", value: null }, { label: "stop session", value: true, style: "go" }]
+      buttons: [{ label: "cancel", value: null }, { label: "stop", value: true, style: "go" }]
     });
     if (!ok) return;
     const tick = document.getElementById("ask-adopt");

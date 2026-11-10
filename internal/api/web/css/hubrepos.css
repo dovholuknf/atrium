@@ -67,7 +67,7 @@
   @media (hover: hover) { #hubrepos .hr-seg button[aria-pressed="false"]:hover { background: var(--lift); color: var(--head); border: 0; transform: none; } }
 
   @media (hover: hover) {
-    #hubrepos .hr-go:hover { color: var(--bg-0); border: 0; transform: translateY(-2px); background: linear-gradient(180deg, color-mix(in srgb, var(--teal) 100%, #fff 12%), var(--teal));
+    #hubrepos .hr-go:hover { color: var(--bg-0); border: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--teal) 100%, #fff 12%), var(--teal));
       box-shadow: 0 14px 32px color-mix(in srgb, var(--teal) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.4); }
     #hubrepos .hr-clone .hr-copy:hover { background: var(--ac, var(--teal)); color: var(--bg-0); border: 0; transform: none; filter: brightness(1.08); }
     #hubrepos .hr-cr .hr-copy:hover { background: color-mix(in srgb, var(--ac) 24%, var(--card-0)); color: var(--ac); border-color: var(--ac); transform: none; }
@@ -90,7 +90,7 @@
   .hr-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 24px; align-items: stretch; }
   .hr-repo { text-align: left; font-family: var(--sans); position: relative; display: flex; flex-direction: column; min-width: 0; border-radius: 20px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--ac) 30%, var(--stroke-dim));
     background: linear-gradient(180deg, var(--card-0), var(--card-1)); box-shadow: var(--shadow-card); transition: transform .18s ease, box-shadow .18s ease; }
-  .hr-repo:hover { transform: translateY(-4px); box-shadow: var(--shadow-lift); }
+  .hr-repo:hover { box-shadow: var(--shadow-lift); }
   .hr-repo.is-empty { border-style: dashed; }
   .hr-cardhead { display: flex; gap: 18px; align-items: center; padding: 24px 26px 20px;
     background: radial-gradient(420px 160px at 0% 0%, color-mix(in srgb, var(--ac) 30%, transparent), transparent 75%), linear-gradient(180deg, color-mix(in srgb, var(--ac) 9%, transparent), transparent); }
@@ -210,7 +210,7 @@
   .hr-rail2 { display: flex; gap: 14px; overflow-x: auto; padding: 4px 4px 18px; scrollbar-width: thin; }
   #hubrepos .hr-chipbtn { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 20px 10px 10px; border-radius: 16px; text-align: left; font: inherit; color: var(--body);
     border: 1px solid var(--stroke-dim); background: linear-gradient(180deg, var(--card-0), var(--card-1)); transform: none; transition: transform .15s ease, border-color .15s ease; }
-  @media (hover: hover) { #hubrepos .hr-chipbtn:hover { transform: translateY(-2px); border-color: var(--ac); color: var(--body); background: linear-gradient(180deg, var(--card-0), var(--card-1)); } }
+  @media (hover: hover) { #hubrepos .hr-chipbtn:hover { border-color: var(--ac); color: var(--body); background: linear-gradient(180deg, var(--card-0), var(--card-1)); } }
   #hubrepos .hr-chipbtn.sel { background: linear-gradient(135deg, color-mix(in srgb, var(--ac) 30%, var(--card-0)), var(--card-1)); border-color: var(--ac); }
   .hr-chipbtn.all { padding: 10px 22px; }
   .hr-ct2 { display: flex; flex-direction: column; gap: 3px; text-align: left; }
@@ -224,7 +224,7 @@
   .hr-it { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 16px 20px 16px 24px; margin-bottom: 14px; border-radius: 18px; border: 1px solid var(--stroke-dim); overflow: hidden;
     background: linear-gradient(180deg, var(--card-0), var(--card-1)); transition: transform .15s ease, border-color .15s ease; }
   .hr-it:before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--ac); }
-  .hr-it:hover { transform: translateY(-2px); border-color: var(--stroke); }
+  .hr-it:hover { border-color: var(--stroke); }
   .hr-it.hot { background: linear-gradient(90deg, color-mix(in srgb, var(--ac) 18%, var(--card-0)), var(--card-1) 60%); }
   .hr-itmain { min-width: 0; }
   .hr-l1 { font-size: var(--fs-md); color: var(--label); display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; } .hr-l1 b { color: var(--head); font-weight: 750; }
