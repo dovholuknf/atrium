@@ -12276,6 +12276,181 @@ async function walkContextSection(browser, base) {
   console.log("walkContext: ok");
 }
 
+// A card with no findings walks its branch against the base, a file at a time, and a refusal is written in the pane.
+// A real two-commit branch in a made-up repo, its patch read by git. WALK_SHOTS=<dir> WALK_SHOT=before|after writes PNGs.
+async function walkBranchSection(browser, base) {
+  const { execFileSync } = require("child_process");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkbranch-"));
+  const repo = path.join(tmp, "repo");
+  const git = (...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...a], { cwd: repo }).toString();
+  fs.mkdirSync(repo);
+  git("init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "base.txt"), "base\n");
+  git("add", "."); git("commit", "-q", "-m", "base");
+  git("switch", "-q", "-c", "feature");
+  fs.writeFileSync(path.join(repo, "one.txt"), "one\n");
+  git("add", "."); git("commit", "-q", "-m", "one");
+  fs.writeFileSync(path.join(repo, "base.txt"), "base\nchanged\n");
+  fs.writeFileSync(path.join(repo, "two.txt"), "two\nmore\n");
+  git("add", "."); git("commit", "-q", "-m", "two");
+  const patch = git("diff", git("merge-base", "main", "HEAD").trim(), "HEAD");
+  const ids = { ok: "land-wbranchok", bad: "land-wbranchbad" };
+  for (const k of Object.values(ids)) {
+    fs.mkdirSync(path.join(tmp, k, "findings"), { recursive: true });
+    mock.walkDirs[k] = path.join(tmp, k);
+  }
+  mock.walkBranch[ids.ok] = { code: 200, body: { branch: "feature", base: "main", diff: patch } };
+  // The button's probe is answered, and the base is gone for every read after it.
+  mock.walkBranch[ids.bad] = { code: 200, body: { branch: "feature", base: "main", diff: patch },
+    then: { code: 409, body: { error: "no base to compare feature with: looked for origin/HEAD, origin/main, main" } } };
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(ids.ok, { supervised: true, worktree: "/walk/ok" }), landCard(ids.bad, { supervised: true, worktree: "/walk/bad" })];
+  mock.landPerms = [];
+  const errors = [];
+  const shotDir = process.env.WALK_SHOTS || "";
+  const shotTag = process.env.WALK_SHOT || "after";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const S = "#walk-drawer ";
+  const open = async (p, id) => {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(p, { unit: "walkBranch", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+  };
+  const shot = async (p, name) => {
+    if (!shotDir) return;
+    fs.mkdirSync(shotDir, { recursive: true });
+    await settleStyle(p).catch(() => {});
+    await p.screenshot({ path: path.join(shotDir, shotTag + "-" + name + ".png") });
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await open(p, ids.ok);
+    await p.click("#t-walk");
+    await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) })
+      .catch(() => fail("walkBranch: no files listed for a card with no findings"));
+    const rows = await p.$$eval(S + ".wk-row .wk-fn", els => els.map(e => e.textContent));
+    if (rows.join() !== "base.txt,one.txt,two.txt") fail("walkBranch: the files are " + rows.join());
+    if (await p.$eval("#walk-title", e => e.textContent) !== "feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
+    await shot(p, "first-file");
+    const lay = await p.evaluate(() => {
+      const d = document.getElementById("walk-drawer"), f = document.getElementById("walk-files"), r = document.getElementById("walk-rail");
+      const pane = document.getElementById("term-pane").getBoundingClientRect(), dr = d.getBoundingClientRect();
+      return { b: d.classList.contains("wk-b"), railIn: r.parentElement.id, filesShown: !f.hidden,
+        inPane: dr.left >= pane.left - 1 && dr.right <= pane.right + 1 && dr.bottom < pane.bottom };
+    });
+    if (!lay.b || !lay.inPane) fail("walkBranch: the diff is not over the top of the terminal pane: " + JSON.stringify(lay));
+    if (lay.filesShown !== (lay.railIn === "walk-files")) fail("walkBranch: the file list is not where it says: " + JSON.stringify(lay));
+    await p.click(S + '.wk-row[data-i="2"]');
+    const lines = await p.$$eval(S + ".wk-code .wk-l.add .wk-tx", els => els.map(e => e.textContent));
+    if (lines.join() !== "two,more") fail("walkBranch: two.txt shows " + JSON.stringify(lines));
+    await shot(p, "second-file");
+    const chg = () => p.$eval("#walk-chg", e => e.textContent);
+    const total = Number(/of (\d+)/.exec(await chg())[1]);
+    if (!total) fail("walkBranch: no changes counted: " + await chg());
+    await p.click('#walk-nav [data-act="nc"]');
+    if (!/^change 1 of /.test(await chg()) || !await p.$(S + ".wk-l.at")) fail("walkBranch: next change did not land on the first change: " + await chg());
+    await p.keyboard.press("p");
+    await p.click('#walk-nav [data-act="pc"]');
+    if (!/^change 1 of /.test(await chg())) fail("walkBranch: previous change went past the first: " + await chg());
+    for (let i = 0; i < total + 1; i++) await p.click('#walk-nav [data-act="nc"]');
+    if (!new RegExp("^change " + total + " of ").test(await chg())) fail("walkBranch: next change did not stop at the last: " + await chg());
+    await p.click(S + ".wk-l.add .wk-ln[data-ln]");
+    await p.fill("#walk-new", "check this line");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(S + ".cmt[data-cid]", { timeout: slow(5000) }).catch(() => fail("walkBranch: Enter did not save the comment"));
+    const kept = () => (mock.walkState[ids.ok] && mock.walkState[ids.ok].comments || []).length;
+    for (let i = 0; i < 100 && !kept(); i++) await p.waitForTimeout(50);
+    if (kept() !== 1) fail("walkBranch: the comment was not kept for the card: " + JSON.stringify(mock.walkState[ids.ok]));
+    if (!await p.$("#walk-bottom .wb-toggle")) fail("walkBranch: no bar along the bottom");
+    await p.click('#walk-bottom [data-wp="toggle"]');
+    await p.waitForSelector("#walk-bottom.wb-thread .sc", { timeout: slow(5000) }).catch(() => fail("walkBranch: the thread did not open with its scope chips"));
+    await p.click('#walk-bottom .sc[data-k="file"]');
+    if (await p.$eval('#walk-bottom .sc[data-k="file"]', e => e.getAttribute("aria-pressed")) !== "false") fail("walkBranch: a scope chip did not turn off");
+    await shot(p, "thread-open");
+    await p.click('#walk-bottom [data-mode="terminal"]');
+    await shot(p, "terminal-bottom");
+    const anchor = await p.evaluate(() => walkForges.github.anchor({ url: "https://github.com/a/b/pull/1" }, { file: "x/y.cs", line: 5 }));
+    const want = "https://github.com/a/b/pull/1/files#diff-" + require("crypto").createHash("sha256").update("x/y.cs").digest("hex") + "R5";
+    if (anchor !== want) fail("walkBranch: the GitHub anchor is " + anchor);
+    const glab = await p.evaluate(() => walkForges.gitlab.cmd({ repo: "g/p", num: "3" }, { file: "x/y.cs", line: 5, text: "hi" }, "abc"));
+    if (!/^glab api projects\/g%2Fp\/merge_requests\/3\/discussions /.test(glab) || !/new_line\]=5/.test(glab)) fail("walkBranch: the GitLab command is " + glab);
+    const out = await p.evaluate(() => walkPrExport());
+    if (out.atrium !== "walk" || out.comments.length !== 1 || out.comments[0].text !== "check this line") fail("walkBranch: the export is " + JSON.stringify(out));
+    const mine = out.comments[0];
+    const doc = { atrium: "walk", v: 1, pr: { url: "" }, comments: [mine, { id: "x1", file: "two.txt", line: 2, who: "you", text: "and this one", turns: [] }], thread: [] };
+    await p.click("#walk-share");
+    await p.fill("#walk-share-paste", JSON.stringify(doc));
+    await p.click('#walk-share-pop [data-wp="share-import"]');
+    await p.waitForFunction(() => document.querySelectorAll("#walk-item .cmt[data-cid]").length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail("walkBranch: importing a walk.json did not merge its new comment, once"));
+    mock.walkOpen.card = ids.ok;
+    const other = { atrium: "walk", v: 1, pr: { url: "https://github.com/acme/widgets/pull/7", repo: "acme/widgets", num: "7" },
+      comments: [{ id: "o1", file: "a.cs", line: 3, who: "you", text: "from another dev", turns: [{ who: "you", text: "why?" }] }], thread: [{ q: "is it safe", scope: "", at: 1 }] };
+    await p.waitForFunction(() => !walkPr.timer, null, { timeout: slow(5000) });
+    await p.evaluate(t => walkPrImportText(t), JSON.stringify(other));
+    for (let i = 0; i < 100 && !mock.walkOpen.calls.length; i++) await p.waitForTimeout(50);
+    const call = mock.walkOpen.calls[0] || {};
+    if (call.url !== other.pr.url || !/from another dev/.test(call.why || "") || !/is it safe/.test(call.why || "")) fail("walkBranch: importing another PR's walk opened " + JSON.stringify(call));
+    for (let i = 0; i < 100 && !(mock.walkState[ids.ok] && mock.walkState[ids.ok].comments.some(c => c.id === "o1")); i++) await p.waitForTimeout(50);
+    if (!(mock.walkState[ids.ok].comments || []).some(c => c.id === "o1")) fail("walkBranch: the imported walk was not kept on the new card");
+    mock.walkOpen.card = "";
+    await p.waitForSelector("#walk-bottom.wb-term", { timeout: slow(5000) }).catch(() => fail("walkBranch: the terminal switch did nothing"));
+    mock.walkAgent.add = [{ id: "ag1", file: "two.txt", line: 2, who: "agent", text: "agent asks why", turns: [{ who: "agent", text: "agent reply", id: "t1" }], post: null }];
+    await p.evaluate(() => walkPrSync());
+    await p.waitForFunction(() => walkPrAgentComments().length === 1 && /agent reply/.test(document.getElementById("walk-item").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("walkBranch: the agent's comment and its reply did not reach the bubbles"));
+    const forge = await p.evaluate(() => { walkPr.prUrl = "https://github.com/acme/widgets/pull/7"; const f = walkPrForge(); return f && f.kind + " " + f.num; });
+    if (forge !== "github 7") fail("walkBranch: the walk's own pull request url gave " + forge);
+    await p.close();
+
+    // The walk is kept: a page that never saw the comment shows it.
+    const pr = await ctx.newPage();
+    pr.on("pageerror", e => errors.push(String(e)));
+    await open(pr, ids.ok);
+    await pr.click("#t-walk");
+    await pr.waitForFunction(() => typeof walkPr !== "undefined" && walkPr.s && walkPr.s.comments.some(c => c.id === "o1"), null, { timeout: slow(10000) })
+      .catch(() => fail("walkBranch: a reload lost the walk"));
+    await pr.close();
+
+    // The base goes away after the button showed: the pane says so in words.
+    const pb = await ctx.newPage();
+    pb.on("pageerror", e => errors.push(String(e)));
+    await open(pb, ids.bad);
+    await pb.click("#t-walk");
+    await pb.waitForFunction(() => /no base to compare feature with/.test((document.querySelector("#walk-item") || {}).textContent || ""),
+      null, { timeout: slow(10000) }).catch(() => fail("walkBranch: a refused diff left the pane without the reason"));
+    await shot(pb, "error");
+    await pb.close();
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    for (const k of Object.values(ids)) { delete mock.walkDirs[k]; delete mock.walkBranch[k]; }
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkBranch: the page threw: " + errors.join(" | "));
+  console.log("walkBranch: ok");
+}
+
 // b-walk-own-view: the walk in a tab of its own (walk.html) over a made-up findings folder, and the drawer's way there.
 const WALK_VIEW_FILES = {
   "01-high-a.go-L3.txt": "https://github.com/x/y/pull/9\nHIGH pkg/a.go line 3: x := 1\nhttps://github.com/x/y/pull/9/files#diff-1R3\n\n" +
@@ -26631,7 +26806,7 @@ async function main() {
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -28482,6 +28657,7 @@ async function main() {
     await unit("questionsClick", () => questionsClickSection(browser, base));
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
+    await unit("walkBranch", () => walkBranchSection(browser, base));
     await unit("walkView", () => walkViewSection(browser, base));
     await unit("walkReply", () => walkReplySection(browser, base));
     await unit("walkNoResize", () => walkNoResizeSection(browser, base));

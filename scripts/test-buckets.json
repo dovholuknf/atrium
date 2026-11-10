@@ -44,6 +44,7 @@
         "internal/api/web/js/peek-debug.js",
         "internal/api/web/js/walk.js",
         "internal/api/web/js/walk-view.js",
+        "internal/api/web/js/walk-pr.js",
         "internal/api/web/walk.html",
         "internal/api/web/js/switcher.js",
         "internal/api/web/js/resume-opening.js",
@@ -438,6 +439,7 @@
     "cli": {"package": "./internal/cli", "sources": ["internal/cli/*.go"], "tests": ["internal/cli/*_test.go"]},
     "api/subscriptions": {"package": "./internal/api", "sources": ["internal/api/subscriptions.go"], "tests": ["internal/api/subscriptions_*test.go"]},
     "api/scratch": {"package": "./internal/api", "sources": ["internal/api/scratch.go", "internal/api/tangent.go"], "tests": ["internal/api/scratch_*test.go", "internal/api/tangent_*test.go"]},
+    "api/walkdiff": {"package": "./internal/api", "sources": ["internal/api/walkdiff.go", "internal/api/walkstate.go", "internal/api/walkagent.go"], "tests": ["internal/api/walkdiff_*test.go", "internal/api/walkstate_*test.go"]},
     "api/rest": {"package": "./internal/api", "rest": true, "ceiling": 29, "sources": [], "tests": []},
     "hub/rest": {"package": "./internal/link", "rest": true, "ceiling": 27, "sources": [], "tests": []}
   }

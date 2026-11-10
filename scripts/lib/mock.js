@@ -389,6 +389,14 @@ const HTML = wholeBoard();
 // internal/api/filetext.go does: a write quotes the hash it read, and a stale one is a 409 that hands back what
 // is there now. `walkDirs` is card id -> a TEMPORARY COPY, never a real review folder. See `walkSection`.
 mock.walkDirs = {};
+// What `GET /v1/tasks/{id}/diff` answers for a card, as { code, body }, and `then` for the answers after this one.
+mock.walkBranch = {};
+// What `GET/PUT /v1/tasks/{id}/walk` keeps for a card: the saved walk as the object the board put.
+mock.walkState = {};
+// `pr` is the pull request URL a walk answers with, and `add` the comments `POST /walk/agent` folds in.
+mock.walkAgent = { pr: "", add: [] };
+// `POST /v1/open` as the walk's import uses it: the bodies it got, and the card it answers with (empty: not served).
+mock.walkOpen = { card: "", calls: [] };
 // The says a walk card got (POST /message), as { id, text }, so the walk's reply box can be checked.
 mock.walkSays = [];
 const walkHash = b => crypto.createHash("sha256").update(b).digest("hex");
@@ -403,6 +411,42 @@ function walkRoute(req, res, url) {
       mock.walkSays.push({ id: say[1], text: String(body.text || "") });
       sendJSON(res, { ok: true, queued: true });
     });
+    return true;
+  }
+  if (url === "/v1/open" && req.method === "POST" && mock.walkOpen.card) {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      try { mock.walkOpen.calls.push(JSON.parse(raw)); } catch (e) {}
+      sendJSON(res, { card: mock.walkOpen.card, created: true });
+    });
+    return true;
+  }
+  const ws = /^\/v1\/tasks\/([^/]+)\/walk$/.exec(url);
+  if (ws && mock.walkBranch[ws[1]]) {
+    if (req.method === "GET") { sendJSON(res, { state: mock.walkState[ws[1]] || null, pr_url: mock.walkAgent.pr || undefined }); return true; }
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      try { mock.walkState[ws[1]] = JSON.parse(raw); } catch (e) {}
+      sendJSON(res, { ok: true });
+    });
+    return true;
+  }
+  const ag = /^\/v1\/tasks\/([^/]+)\/walk\/agent$/.exec(url);
+  if (ag && req.method === "POST" && mock.walkBranch[ag[1]]) {
+    const st = mock.walkState[ag[1]] || { comments: [] };
+    for (const c of mock.walkAgent.add) if (!st.comments.some(x => x.id === c.id)) st.comments.push(c);
+    mock.walkState[ag[1]] = st;
+    sendJSON(res, { state: st });
+    return true;
+  }
+  const br = /^\/v1\/tasks\/([^/]+)\/diff$/.exec(url);
+  if (br && req.method === "GET" && mock.walkBranch[br[1]]) {
+    const a = mock.walkBranch[br[1]];
+    if (a.then) mock.walkBranch[br[1]] = a.then;
+    res.writeHead(a.code, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(a.body));
     return true;
   }
   const m = /^\/v1\/tasks\/([^/]+)\/files\/(list|text)$/.exec(url);

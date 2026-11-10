@@ -483,7 +483,7 @@ Exports honor whatever filter is applied.">?</span>
           <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
                finding. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
-            data-tip="walk this card's findings beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
+            data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
             aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it"><svg
             viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
@@ -607,19 +607,25 @@ Exports honor whatever filter is applied.">?</span>
              re-entry that spun the board. `.term-body` is only a row to hold both. See js/walk.js. -->
         <div class="term-body">
           <aside id="walk-drawer" class="walk" hidden tabindex="-1" aria-label="walk the findings">
-            <div class="walk-head">
-              <strong id="walk-title"></strong>
+            <div class="walk-head term-bar">
+              <a id="walk-pr" class="wk-pr" target="_blank" rel="noopener"><strong id="walk-title"></strong></a>
               <span class="by" id="walk-note"></span>
               <span class="walk-bar" id="walk-bar"></span>
               <span class="by" id="walk-count"></span>
               <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
+              <button type="button" id="walk-share" hidden onclick="walkShareToggle()"
+                data-tip="export this walk so another dev can open it, or open one you were sent">share walk</button>
               <button type="button" id="walk-popout" onclick="walkPopOut()"
                 data-tip="open the walk in a tab of its own">⧉ own tab</button>
               <button type="button" class="go" onclick="walkDone()"
                 data-tip="type walk done into the walker and submit it">walk done</button>
               <button type="button" class="icon" onclick="walkClose()"
                 aria-label="close the walk" data-tip="close the walk">&times;</button>
+            </div>
+            <div class="walk-nav" id="walk-nav" hidden>
+              <span class="navgrp"><button type="button" data-act="pc" data-tip="previous change (p)">&#8249; previous <kbd>p</kbd></button><span class="by" id="walk-chg"></span><button type="button" data-act="nc" data-tip="next change (n)">next <kbd>n</kbd> &#8250;</button></span>
+              <span class="navgrp"><button type="button" data-act="pm" data-tip="previous agent comment ([)">&#8249; previous <kbd>[</kbd></button><span class="by" id="walk-cmt"></span><button type="button" data-act="nm" data-tip="next agent comment (])">next <kbd>]</kbd> &#8250;</button></span>
             </div>
             <div class="walk-body">
               <nav id="walk-rail" class="walk-rail" role="listbox" aria-label="findings"></nav>
@@ -834,7 +840,7 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
       <div id="pulls-pop" class="pulls-pop" hidden>
         <input id="pulls-pop-url" type="text" placeholder="https://github.com/org/repo/pull/123" aria-label="pull request URL">
         <input id="pulls-pop-why" type="text" placeholder="why (optional)" aria-label="why">
-        <div class="pulls-pop-row"><button id="pulls-pop-cancel" type="button">cancel</button><button id="pulls-pop-go" type="button" class="go">Open</button></div>
+        <div class="pulls-pop-row"><label class="pulls-pop-walk" data-tip="open a walk.json somebody sent you: it starts a walker on that PR with their comments as context">open a walk.json<input type="file" id="pulls-pop-walk" accept=".json,application/json" hidden></label><button id="pulls-pop-cancel" type="button">cancel</button><button id="pulls-pop-go" type="button" class="go">Open</button></div>
       </div>
     </div>
     <div id="pulls-attn" class="pulls-attn" role="group" aria-label="what needs doing">
@@ -4090,6 +4096,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/m/js/files.js"></script>
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
+<script src="/js/walk-pr.js"></script>
 <script src="/js/turn-limits.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>

@@ -10,7 +10,7 @@ import (
 func TestPRBriefNamesTheLocalFactsAndAsksForNoRemoteCall(t *testing.T) {
 	got := prBrief(&forge.PR{Title: "Fix it", BaseRef: "main", MergeBase: "abc123"}, true)
 	for _, want := range []string{"Title: Fix it", "Base branch: main", "Merge base: abc123", "git diff abc123 HEAD",
-		prBriefFile, "Do not fetch, pull or run gh"} {
+		prBriefFile, walkAgentFile, `{"reply":"<id>"`, "Do not fetch, pull or run gh"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the brief lacks %q: %s", want, got)
 		}

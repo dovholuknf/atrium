@@ -90,5 +90,7 @@ func prBrief(pr *forge.PR, hasFile bool) string {
 	if hasFile {
 		b.WriteString("\nThe description and the discussion are in " + prBriefFile + " in the worktree.")
 	}
+	b.WriteString("\nTo leave a review comment, append one JSON line to " + walkAgentFile + ` in the worktree: {"file":"path","line":N,"text":"..."}, N being a line of the new file.` +
+		` To answer a comment the walker asked about, whose id is in the scope line typed to you, append {"reply":"<id>","text":"..."}. The board reads that file.`)
 	return b.String()
 }
