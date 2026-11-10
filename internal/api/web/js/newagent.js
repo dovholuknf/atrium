@@ -236,12 +236,13 @@ function naPaintConflicts() {
   el.innerHTML = "";
 }
 
-function naGroupChoices(sel) {
+function naGroupChoices(sel, tagsOn) {
   const p = typeof groupingPrefs === "function" ? groupingPrefs() : {};
   const named = p.mode === "custom" && Array.isArray(p.groups) ? p.groups : [];
-  const tags = [];
-  (lastTasks || []).forEach(t => (t.tags || []).forEach(g => { if (!String(g).includes(":")) tags.push(g); }));
-  return [...new Set([...sel, ...naRead(NA_RECENT_GROUPS_KEY, []), ...named, ...tags])];
+  const tags = [], now = Date.now();
+  if (tagsOn) (lastTasks || []).filter(t => cardState(t) !== "off" || cardIdleSeconds(t, now) < 30 * 86400)
+    .forEach(t => (t.tags || []).forEach(g => tags.push(g)));
+  return [...new Set([...sel, ...naRead(NA_RECENT_GROUPS_KEY, []), ...named, ...tags])].filter(isPickableGroup);
 }
 function naGroupCount(g) { return (lastTasks || []).filter(t => (t.tags || []).includes(g)).length; }
 function naSyncPop() {
@@ -251,23 +252,32 @@ function naSyncPop() {
 function naPaintGroups(root, sel, set) {
   root._paint = () => naPaintGroups(root, sel, set);
   const open = root.dataset.open === "1";
-  const all = naGroupChoices(sel);
+  const q = root.dataset.q || "", tagsOn = root.dataset.tags === "1";
+  const all = naGroupChoices(sel, tagsOn).filter(g => g.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => (sel.includes(b) - sel.includes(a)) || naGroupCount(b) - naGroupCount(a) || a.localeCompare(b));
   root.innerHTML =
     `<button type="button" class="gp-field" aria-expanded="${open}" aria-haspopup="listbox">` +
       (sel.length ? sel.map(g => `<span class="chip accent">${esc(g)}</span>`).join("") : `<span class="ph">no group</span>`) +
       `<span class="caret">▾</span></button>` +
     `<button type="button" class="gp-add" aria-label="a new group" data-tip="a new group">+</button>` +
-    (open ? `<div class="gp-list" role="listbox">` + (all.length ? all.map(g =>
+    (open ? `<div class="gp-list" role="listbox"><div class="gp-tools"><input type="text" class="gp-q" placeholder="filter" value="${esc(q)}">` +
+      `<label class="check"><input type="checkbox" class="gp-tg" ${tagsOn ? "checked" : ""}><span>include tags</span></label></div>` + (all.length ? all.map(g =>
       `<label class="check"><input type="checkbox" data-g="${esc(g)}" ${sel.includes(g) ? "checked" : ""}><span>${esc(g)}</span>` +
       `<span class="n">${naGroupCount(g) || ""}</span></label>`).join("") : `<div class="empty">no groups yet. + makes one.</div>`) + `</div>` : "");
   naSyncPop();
   root.querySelector(".gp-field").onclick = () => {
     root.dataset.open = open ? "" : "1";
+    root.dataset.q = "";
     root._paint();
-    const c = !open && root.querySelector(".gp-list input");
+    const c = !open && root.querySelector(".gp-q");
     if (c) c.focus();
   };
-  root.querySelectorAll(".gp-list input").forEach(c => c.onchange = () => {
+  const qi = root.querySelector(".gp-q");
+  if (qi) {
+    qi.oninput = () => { root.dataset.q = qi.value; root._paint(); const n = root.querySelector(".gp-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    root.querySelector(".gp-tg").onchange = e => { root.dataset.tags = e.target.checked ? "1" : ""; root._paint(); };
+  }
+  root.querySelectorAll(".gp-list input[data-g]").forEach(c => c.onchange = () => {
     const g = c.dataset.g;
     set(c.checked ? [...sel, g] : sel.filter(x => x !== g));
     const again = root.querySelector(`.gp-list input[data-g="${CSS.escape(g)}"]`);
@@ -551,7 +561,7 @@ async function openCloneCard(id, t) {
     state: {
       ref: src.repo || t.repo || "", title: "", titleTouched: true,
       branch: (t.branch || "claude/" + naSlug(title, 38)) + "-clone", branchTouched: true,
-      groups: tags.filter(g => !g.startsWith("atrium:")),
+      groups: tags.filter(isPickableGroup),
       how: { room: roomOf(id), harness: t.runner, model: t.model || "", effort: t.effort || "", setup }
     },
     src: {

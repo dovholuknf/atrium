@@ -104,6 +104,12 @@ function isPickedTag(tag) { return !MACHINE_TAG.test(String(tag).trim().toLowerC
 // The group name a person typed, as the tag it becomes: trimmed and lower case.
 function groupNameOf(raw) { return String(raw || "").trim().toLowerCase(); }
 
+// A group a person can pick: no colon (those are system tags) and not the pull-request tag.
+function isPickableGroup(g) {
+  const s = String(g);
+  return !s.includes(":") && s !== "pull-request";
+}
+
 // A DOER IS AN AGENT-LAUNCHED SESSION, see the note in js/terminal-list.js. Matched exactly as the daemon's `hasOriginTag` does.
 const DOER_TAG = "origin:agent";
 function isDoer(t) {

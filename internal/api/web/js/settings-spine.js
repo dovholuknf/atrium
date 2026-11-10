@@ -1210,7 +1210,7 @@ patchOnChange("d-tags", v => ({ tags: v.split(",").map(s => s.trim()).filter(Boo
 // up being groups.
 function knownTags() {
   const seen = new Set();
-  (allStack || []).forEach(t => (t.tags || []).forEach(x => seen.add(x)));
+  (allStack || []).forEach(t => (t.tags || []).forEach(x => { if (isPickableGroup(x)) seen.add(x); }));
   return [...seen].sort();
 }
 
