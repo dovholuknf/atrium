@@ -78,9 +78,41 @@ func StopTree(pid int) error {
 		if _, serr := StartTime(pid); errors.Is(serr, ErrGone) {
 			return nil
 		}
+		if terminateTree(pid) == nil {
+			return nil
+		}
 		return errors.New("taskkill: " + string(out))
 	}
 	return nil
+}
+
+// terminateTree ends pid and its tree with TerminateProcess, for a token taskkill.exe is denied on while the handle is
+// not. A pid whose start time changed since Tree read it is someone else's and is left alone.
+func terminateTree(pid int) error {
+	var first error
+	for p, at := range Tree(pid) {
+		if now, err := StartTime(p); err != nil || now != at {
+			continue
+		}
+		// codeql[go/incorrect-integer-conversion] p came from a process snapshot, so it fits a uint32
+		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(p))
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
+		}
+		if err := windows.TerminateProcess(h, 1); err != nil && first == nil {
+			first = err
+		} else if err == nil {
+			_, _ = windows.WaitForSingleObject(h, 5000)
+		}
+		_ = windows.CloseHandle(h)
+	}
+	if _, err := StartTime(pid); !errors.Is(err, ErrGone) && first == nil {
+		first = errors.New("still running")
+	}
+	return first
 }
 
 // Excluded is the TCP port ranges Windows has reserved (Hyper-V, WSL). A bind there fails with WSAEACCES, and a
