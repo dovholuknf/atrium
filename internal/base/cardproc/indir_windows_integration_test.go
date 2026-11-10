@@ -21,6 +21,9 @@ func TestStopInDirFindsAProcessWhoseCwdIsSpelledThroughAJunction(t *testing.T) {
 		t.Skipf("no junction: %v %s", err, out)
 	}
 	t.Cleanup(func() { _ = os.Remove(link) })
+	if _, err := os.Stat(link); err != nil {
+		t.Skipf("the OS refuses to traverse a junction this account made (Windows redirection guard): %v", err)
+	}
 	stopInDirEnds(t, dir, link)
 }
 
