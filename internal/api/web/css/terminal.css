@@ -269,7 +269,7 @@
      name. */
   .term-list .card .title {
     display: flex; align-items: center; gap: 4px; line-height: 1.3;
-    flex: 1 1 auto; min-width: 0; white-space: nowrap;
+    flex: 1 1 auto; min-width: 40px; white-space: nowrap;
   }
   .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; }
   .term-list .card .title .rmark { flex: none; }
@@ -281,7 +281,7 @@
   /* THE NAME, primary. It gives way to nothing and truncates at the end, keeping
      the front where the words that name it are. */
   .term-list .card .title .tname {
-    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--head); font-weight: 600;
   }
   /* An unnamed card has no name of its own, so its one line IS the address. Front
@@ -309,7 +309,7 @@
   /* THE CHIPS TAKE THEIR OWN WIDTH and the title ellipsizes before them. They used to shrink with the title while no
      chip inside could, so the box got narrower than what it held and, justified to the end, the overflow ran out the
      left edge and drew over the name. The name wins: the chips take at most 45% of the row and clip inside it, the cycle chip giving first. */
-  .term-list .card .card-line > .chips { flex: 0 0 auto; max-width: 45%; min-width: 0; overflow: hidden; flex-wrap: nowrap; }
+  .term-list .card .card-line > .chips { flex: 0 1 auto; max-width: 60%; min-width: 0; overflow: hidden; flex-wrap: nowrap; }
   /* The room chip never shrinks, it tells two rooms apart. The title gives way first, then the cycle chip. */
   .term-list .card .card-line > .chips .chip.room { flex: none; overflow: visible; text-overflow: clip; }
   .term-list .card .card-line > .chips .chip.cycle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -828,13 +828,6 @@
   .tl-limit { display: flex; align-items: center; gap: var(--sp-4); padding: 3px 12px; font-size: var(--fs-sm); }
   .tl-limit-text { flex: 1; min-width: 0; color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tl-limit-dismiss { flex: 0 0 auto; padding: 0 8px; min-height: 0; line-height: 1.5; font-size: var(--fs-sm); }
-  /* The merge queue: what wants a person, then one line of the queue. See js/merge.js. */
-  .term-merge { flex: 0 0 auto; border-bottom: 1px solid var(--stroke); }
-  .mq-row { display: flex; align-items: center; gap: var(--sp-4); padding: 3px 12px; font-size: var(--fs-sm); }
-  .mq-row.mq-red, .mq-row.mq-refused, .mq-row.mq-conflict, .mq-row.mq-held { background: rgba(var(--danger-rgb),.08); }
-  .mq-text { flex: 1; min-width: 0; color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mq-row.mq-sum .mq-text { color: var(--dim); }
-  .mq-row button { flex: 0 0 auto; padding: 0 8px; min-height: 0; line-height: 1.5; font-size: var(--fs-sm); }
   .term-perm.tiles { flex-direction: column; align-items: stretch; border-bottom: 0; background: none; }
   .term-perm .held-tile {
     display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap;

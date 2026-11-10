@@ -1146,7 +1146,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	// retag writes req.Tags even when it came out empty, which is a lean card
 	// whose only tag was the lean one.
 	retag := false
-	if req.Lean != nil || req.Superlean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+	if req.Lean != nil || req.Superlean != nil || req.Chat || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 		base := req.Tags
 		if task != nil {
 			// The card's own tags stay under whatever the launch carried.
@@ -1445,7 +1445,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		tags := req.Tags
 		if cur, err := d.st.Get(created.ID); err == nil {
 			kept := cur.Tags
-			if req.Lean != nil || req.Superlean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+			if req.Lean != nil || req.Superlean != nil || req.Chat || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 				kept, _ = withoutLeanTags(kept)
 			}
 			tags = mergeTags(kept, req.Tags)

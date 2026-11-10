@@ -10,11 +10,11 @@ import (
 )
 
 func TestNeedTagsAddsMCPAgentAndSkillAndRefusesTheRest(t *testing.T) {
-	tags, refused := needTags([]string{"mcp:mercurius", " skill:x ", "agent:y", "go", "tool:WebFetch", "mcp:"})
+	tags, refused := needTags([]string{"mcp:mercurius", " skill:x ", "agent:y", "go", "tool:Bogus", "mcp:"})
 	if want := []string{"atrium:mcp:mercurius", "atrium:skill:x", "atrium:agent:y"}; !reflect.DeepEqual(tags, want) {
 		t.Fatalf("tags %v, want %v", tags, want)
 	}
-	if want := []string{"go", "tool:WebFetch", "mcp:"}; !reflect.DeepEqual(refused, want) {
+	if want := []string{"go", "tool:Bogus", "mcp:"}; !reflect.DeepEqual(refused, want) {
 		t.Fatalf("refused %v, want %v", refused, want)
 	}
 }

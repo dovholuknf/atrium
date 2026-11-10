@@ -3,6 +3,7 @@
 package gitsync
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,7 +43,7 @@ func TestSCMClonePathUsesTheDefaultRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	root, dest, err := c.ClonePath(ref)
-	real, _ := filepath.EvalSymlinks(home)
+	real, _ := safepath.Real(home)
 	if err != nil || root != filepath.Join(home, "git") || dest != filepath.Join(real, "git", "github", "o", "r") {
 		t.Fatalf("with ~/git = %q %q %v", root, dest, err)
 	}

@@ -84,6 +84,11 @@ type Runner struct {
 	Kind     string `json:"kind"`
 	Resolves bool   `json:"resolves"`
 	Enabled  bool   `json:"-"`
+	// Login is `in`, `out` or `unknown`, and empty for a kind with no login store. Never a token.
+	Login        string `json:"login,omitempty"`
+	LoginExpires string `json:"login_expires_at,omitempty"`
+	LoginRenews  bool   `json:"login_renews,omitempty"`
+	LoginFix     string `json:"login_fix,omitempty"`
 }
 
 // Snapshot is the event.

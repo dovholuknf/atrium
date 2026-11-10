@@ -2112,7 +2112,8 @@ function sendPaste(d) {
     if (bytes > pasteFrameMax) {
       pasteHeld = null;
       if (pasteFlight === f) pasteEnd();
-      toast("that paste is too big", `${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
+      pasteFail("paste failed: too big");
+      toast("that paste is too big",`${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
       return;
     }
     // THE TERMINAL CHANGED UNDER IT: a switch to another card or a reconnect.
@@ -2121,7 +2122,8 @@ function sendPaste(d) {
     if (termSock !== sock) {
       pasteHeld = null;
       if (pasteFlight === f) pasteEnd();
-      toast("that paste did not go", "the terminal changed before it left");
+      pasteFail("paste failed: the terminal changed");
+      toast("that paste did not go","the terminal changed before it left");
       return;
     }
     sendFrame(s);
@@ -2264,9 +2266,22 @@ function showPasting(say) {
     el.setAttribute("role", "status");
     host.appendChild(el);
   }
-  setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span>`);
+  clearTimeout(pasteFailTimer);
+  el.classList.remove("failed");
+  setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span><span class="rail"><i></i></span>`);
   el.hidden = false;
   placeToasts();
+}
+
+// A paste that did not leave says so in the same bar, red, for a few seconds.
+let pasteFailTimer = 0;
+function pasteFail(say) {
+  showPasting(say);
+  const el = document.getElementById("t-pasting");
+  if (!el) return;
+  el.classList.add("failed");
+  setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span>`);
+  pasteFailTimer = setTimeout(() => { if (!pasteFlight) pasteEnd("failed"); }, 5000);
 }
 
 // `handOn` is a paste taking over from a wait or from an older paste: the box

@@ -439,6 +439,11 @@ func TestLaunchStampsTheOriginTag(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{}})
 			return
 		}
+		// A tag shaped like an item id is folded into the work tag when the hub knows it, and ticket-42 is no item.
+		if strings.HasPrefix(r.URL.Path, "/_hub/backlog/") {
+			http.NotFound(w, r)
+			return
+		}
 		var body struct {
 			Tags []string `json:"tags"`
 		}
@@ -458,7 +463,6 @@ func TestLaunchStampsTheOriginTag(t *testing.T) {
 	if !hasOriginTag(gotTags) {
 		t.Errorf("the room got tags %v, want the origin marker stamped on", gotTags)
 	}
-	// The caller's own tags survive alongside the marker.
 	var kept bool
 	for _, tag := range gotTags {
 		if tag == "ticket-42" {

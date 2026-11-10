@@ -1210,7 +1210,7 @@ patchOnChange("d-tags", v => ({ tags: v.split(",").map(s => s.trim()).filter(Boo
 // up being groups.
 function knownTags() {
   const seen = new Set();
-  (allStack || []).forEach(t => (t.tags || []).forEach(x => seen.add(x)));
+  (allStack || []).forEach(t => (t.tags || []).forEach(x => { if (isPickableGroup(x)) seen.add(x); }));
   return [...seen].sort();
 }
 
@@ -1995,9 +1995,6 @@ function connect() {
   es.addEventListener("backlog", () => {
     if (typeof onBacklogEvent === "function") onBacklogEvent();
   });
-  es.addEventListener("merge", () => {
-    if (typeof onMergeEvent === "function") onMergeEvent();
-  });
   es.addEventListener("item", () => {
     if (typeof onItemEvent === "function") onItemEvent();
   });
@@ -2060,21 +2057,12 @@ function connect() {
   es.addEventListener("rooms", e => {
     let d = null;
     try { d = JSON.parse(e.data); } catch (err) {}
-    // RE-SEED THE ALERT BASELINE BEFORE THE REFRESH RUNS, not after. A room
-    // attaching or detaching churns the whole card set: the incoming room's
-    // idle cards enter the aggregate as new ids, and the count crossing 1<->2
-    // flips every id between `room~id` and bare. `loadHubRooms` also reseeds,
-    // but only after an awaited `/_hub/rooms` fetch and never at all when the
-    // 2s throttle drops the call, so `refreshSoon`'s `check` could win the race
-    // and announce the incoming room's two-hour-idle cards as freshly ready.
-    // This event only fires on a membership change, so the set is by definition
-    // not stable and reseeding is exactly right. Guarded like loadHubRooms, in
-    // case notify.js is absent.
+    // Before the refresh: a room coming or going churns every id, and a late reseed announces its idle cards as new.
     if (typeof alerting !== "undefined" && alerting.reseed) alerting.reseed();
-    // Paints from the payload, and fetches only when it has no `attached` (an older hub).
     paintHubRoomsEvent(d);
-    // The cards belong to the rooms that are gone or newly here.
     refreshSoon();
+    // The hub lends `/v1/themes` from its first attached room, so a board loaded before that room was back lacks its themes.
+    loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); repaintWearers(); });
   });
   es.addEventListener("overlays", e => {
     let next;

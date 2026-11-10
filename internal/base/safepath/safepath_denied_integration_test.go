@@ -31,7 +31,7 @@ func TestADeniedAncestorIsWalkedPastLikeAMissingOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a home under a root whose ancestor is denied was refused: %v", err)
 	}
-	want, _ := filepath.EvalSymlinks(base)
+	want, _ := Real(base)
 	if !strings.EqualFold(got, filepath.Join(want, "work", "cards", "second-room-hooks")) {
 		t.Fatalf("resolved to %s", got)
 	}

@@ -1098,15 +1098,16 @@ function termTree(list) {
 // outlives the status change that filed the card, so a card in `done` can
 // still be carrying a stale `thinking`.
 function termRunnerMark(t) {
-  const mark = runnerMark(t.runner);
-  const a = t.activity;
-  // The row carries the one tooltip, so the mark says nothing of its own.
-  const bare = mark.replace(/ data-tip="[^"]*"/, "");
-  if (!workingNow(t)) return bare;
-  // Inserted into the class list the shared builder produced, rather than the
-  // builder growing a parameter. `runnerMark` is the board's and is called
-  // from three places that do not want this.
-  return bare.replace('class="rmark"', `class="rmark working ${esc(a.what)}"`);
+  return runnerMark(t.runner).replace(/ data-tip="[^"]*"/, "");
+}
+
+// THE ONE STATE SLOT, beside the runner mark: the spinner while it works, else the cache countdown pie while the cache is
+// warm and a refresh is coming, else the snowflake once the cache is cold.
+function termStateSlot(t) {
+  if (workingNow(t)) return `<span class="tstate"><i class="tkidspin"></i></span>`;
+  const chip = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
+  if (/class="chip keepalive cache[^"]*\bpie\b/.test(chip)) return `<span class="tstate">${chip}</span>`;
+  return `<span class="tstate">${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}</span>`;
 }
 
 // One entry in the switcher.
@@ -1121,16 +1122,30 @@ function termRunnerMark(t) {
 //
 // The class and the custom properties a row is drawn with: `--tabc` and `--tabbg` for the bridge, and the worn palette.
 // A shut group's heading wears the same when it stands in for the attached row.
-function termRowWear(t) {
-  const given = themeSource(t);
-  const th = given || themeFor(t);
-  const on = termTask && t.id === termTask.id;
-  const wear = given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
-  return { cls: wear.cls, vars: (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
-    (wear.style ? ";" + wear.style : "") };
+// A CHILD WITH NO COLOUR OF ITS OWN IS TINTED FROM ITS PARENT. `launcherColor` never hands a worker its launcher's theme, so a
+// child of a green orchestrator was the plain card. `inherit` is the parent's theme, with a thin white overlay (a dark one on a light
+// parent) so the child reads as a shade of its parent and keeps the parent's foreground.
+const TERM_SHADE = 0.1;
+function termTintOf(inherit) {
+  const own = hexRGB(inherit.background);
+  if (!own) return null;
+  const light = 0.299 * own.r + 0.587 * own.g + 0.114 * own.b > 150;
+  const layer = light ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
+  return Object.assign({}, inherit, { background: rgbHex(mixRGB(layer, own, TERM_SHADE)) });
 }
 
-function termRow(t, deep, kid) {
+function termRowWear(t, inherit) {
+  const tint = !themeSource(t) && inherit ? termTintOf(inherit) : null;
+  const given = themeSource(t) || tint;
+  const th = given || themeFor(t);
+  const on = termTask && t.id === termTask.id;
+  const wear = tint ? ((termCold(t) ? termWearOn.exited : termWearOn.idle) ? wearOf(tint) || NO_WEAR : NO_WEAR)
+    : given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
+  return { cls: wear.cls, vars: (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
+    (tint ? `;--tabedge:${inherit.cursor || inherit.foreground}` : "") + (wear.style ? ";" + wear.style : "") };
+}
+
+function termRow(t, deep, kid, inherit) {
   // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a row of
   // tabs onto the panes behind it rather than as a list of names. Amber for
   // waiting said something the board already says better and cost the one
@@ -1141,7 +1156,7 @@ function termRow(t, deep, kid) {
   // A COLLAPSED PARENT HOLDING THE ATTACHED CARD CARRIES ITS BRIDGE, as a shut group does (`termGroupHead`). The attached
   // card is one of its hidden children, at any depth, so the row wears that card's colours and stands in for it.
   const carries = !on && termKidTotal(t) > 0 && termKidsShut(t) && termHoldsOn(t);
-  const wear = termRowWear(carries ? termTask : t);
+  const wear = carries ? termRowWear(termTask) : termRowWear(t, inherit);
   if (on) themeTrace("row", t);
   const style = wear.vars;
   const full = terminalLabel(t) || t.display_title;
@@ -1172,7 +1187,8 @@ function termRow(t, deep, kid) {
   const shut = termKidTotal(t) > 0 && termKidsShut(t);
   // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
   const shown = shut ? [] : allKids;
-  const kids = shown.map(k => termRow(k, false, true)).join("");
+  const down = themeSource(t) || inherit;
+  const kids = shown.map(k => termRow(k, false, true, down)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${carries ? "carries" : ""}${kid ? " kid" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
@@ -1197,7 +1213,7 @@ function termRow(t, deep, kid) {
             aria-label="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             data-tip="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}<span
+            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}${termStateSlot(t)}<span
             class="tstack"><span
             class="tname${secondary ? "" : " aspath"}"
             >${esc(primary)}</span>${
@@ -1348,7 +1364,6 @@ function termRowChips(t, lead) {
   // run. See js/seen.js.
   const stuck = typeof stuckMark === "function" ? stuckMark(t) : "";
   const ncx = typeof newContextChip === "function" ? newContextChip(t) : "";
-  const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
   // A card atrium is launching has no runner yet, which is not the same as one joined from another terminal.
   const joined = t.starting && !t.supervised ? `<span class="chip">starting</span>`
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
@@ -1358,7 +1373,7 @@ function termRowChips(t, lead) {
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
   const keep = typeof naKeepChip === "function" ? naKeepChip(t) : "";
-  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1586,7 +1601,10 @@ function termFlatGroupsHTML(list, g, folded) {
     // `untagged` is the absence of a group and gets no menu.
     const menu = name && name !== UNTAGGED ? name : "";
     const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
-    if (off) return head;
+    if (off) {
+      if (mine) termFoldedRows.set(name, by.get(name));
+      return head;
+    }
     const rows = by.get(name);
     // `untagged` in custom mode is where a row is dragged to take it OUT of
     // the group it came from. See `wireUngroupDrop`.
@@ -1690,6 +1708,7 @@ function termHeading(name, path, count, folded, group, style, movable, rows, emp
   const carries = folded && rows && rows.some(termHoldsOn);
   // It wears the attached row's colours, so the heading, the bridge and the pane frame are one colour.
   const wear = carries ? termRowWear(termTask) : null;
+  const run = folded && rows ? termRunningIn(rows) : 0;
   if (wear) style = ` style="${(style || "").replace(/^ style="|"$/g, "")};${wear.vars}"`;
   return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" + wear.cls : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
@@ -1698,7 +1717,17 @@ function termHeading(name, path, count, folded, group, style, movable, rows, emp
       >${movable ? `<span class="tgrip" aria-hidden="true">&#10303;</span>` : ""}<span
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
-      ><span class="tgcount">${shown}</span></button>`;
+      ><span class="tgcount">${shown}</span>${
+      group ? `<span class="tgadd" role="button" aria-label="new agent in ${esc(group)}" data-tip="new agent in ${esc(group)}" data-gnew="${esc(group)}">+</span>` : ""}${
+      run ? `<span class="chip tkidrun" data-tip="${run} running"><i class="tkidspin"></i>${run}</span>` : ""}</button>`;
+}
+
+// How many cards in these rows, or under them at any depth, are running. A folded group draws none of them.
+function termRunningIn(rows) {
+  const seen = new Map();
+  const walk = t => { if (!seen.has(t.id)) { seen.set(t.id, t); (termKids.get(t.id) || []).forEach(walk); } };
+  rows.forEach(walk);
+  return [...seen.values()].filter(workingNow).length;
 }
 
 // Is the attached session this row, or one drawn inside it.
@@ -2252,12 +2281,14 @@ function termBucketHTML(pinned, total, folded, deadHidden) {
     : `<div class="empty bucketdrop">drag a terminal here to keep it</div>`;
   const count = hidden > 0 ? `${pinned.length}/${total}` : `${pinned.length}`;
   const tip = hidden > 0 ? ` (${hidden} hidden by the search)` : "";
+  const run = folded ? termRunningIn(pinned) : 0;
   return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
       <button class="tgroup pinnedhead${folded && pinned.some(termHoldsOn) ? " carries" : ""}" onclick="toggleTermGroup('${PINNED_FOLD}')"
         data-tip="${folded ? "show" : "hide"} the pinned terminals${tip}"
         ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
         ><span class="tgname">pinned</span
-        ><span class="tgcount">${count}</span></button>
+        ><span class="tgcount">${count}</span>${run
+          ? `<span class="chip tkidrun" data-tip="${run} running"><i class="tkidspin"></i>${run}</span>` : ""}</button>
       ${rows || empty}
     </div>`;
 }
@@ -2293,12 +2324,19 @@ function wireTermDrag(host) {
       // Firefox refuses to start a drag with nothing set.
       e.dataTransfer.setData("text/plain", termDragID);
       e.dataTransfer.setData("application/x-atrium-card", termDragID);
+      // A FOLDED HEADING TAKES THE DROP ACROSS THE WHOLE ROW. Widened a tick later, because changing the layout
+      // inside `dragstart` can cancel the drag in Chrome.
+      setTimeout(() => { if (termDragEl === el) host.classList.add("rowdrag"); });
     };
     el.ondragend = () => {
       const aborted = !!termDragID;
       termDragID = "";
       termDragEl = null;
       host.querySelectorAll(".dropover").forEach(x => x.classList.remove("dropover"));
+      host.querySelectorAll(".tdropslot").forEach(x => x.remove());
+      host.querySelectorAll(".tgroup[data-ghead]").forEach(termUnpeek);
+      host.classList.remove("rowdrag");
+      termSortNote(null);
       // AN ABANDONED DRAG PUTS THE STRIP BACK. `dragover` moves the row as the
       // pointer travels, so letting go outside the bucket leaves the list
       // showing an order that was never written. The poll would correct it
@@ -2399,9 +2437,15 @@ function wireGroupDrop(nest) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     nest.classList.add("dropover");
+    termDropSlot(nest, name, e);
   };
   nest.ondragleave = e => {
-    if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
+    if (nest.contains(e.relatedTarget)) return;
+    nest.classList.remove("dropover");
+    nest.querySelectorAll(":scope > .tdropslot").forEach(x => x.remove());
+    termSortNote(null);
+    const head = nest.previousElementSibling;
+    if (nest.classList.contains("tpeek") && !(head && head.contains(e.relatedTarget))) termUnpeek(head);
   };
   nest.ondrop = async e => {
     if (termHeadDrag) return headDrop(e);
@@ -2409,16 +2453,92 @@ function wireGroupDrop(nest) {
     // The pinned bucket has a drop of its own and this one has already done it.
     e.stopPropagation();
     nest.classList.remove("dropover");
-    const el = termDragEl;
-    termDragEl = null;
-    termDragID = "";
-    if (!el) return;
-    const id = el.dataset.id;
-    const t = lastTasks.find(x => x.id === id);
-    const tags = (t && t.tags) || [];
-    if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
-    repaintTermList();
+    await fileIntoGroup(name);
   };
+}
+
+// The dragged row goes into the group named, keeping any group it was already in, and the strip repaints.
+async function fileIntoGroup(name) {
+  const el = termDragEl;
+  termDragEl = null;
+  termDragID = "";
+  if (!el) return;
+  const id = el.dataset.id;
+  const t = lastTasks.find(x => x.id === id);
+  const tags = (t && t.tags) || [];
+  if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
+  repaintTermList();
+}
+
+// WHERE THE DRAGGED ROW WILL LAND, drawn as an empty slot in the group. The group's rows keep the strip's sort and
+// there is no order by hand outside the pinned bucket, so the slot goes where `termOrder` puts the card, not under
+// the pointer, and it names the sort. A row over a list it is already in draws nothing there and the pointer
+// carries the sort instead.
+function termDropSlot(nest, name, e) {
+  let slot = nest.querySelector(":scope > .tdropslot");
+  const t = termDragEl && lastTasks.find(x => x.id === termDragEl.dataset.id);
+  const rows = [...nest.querySelectorAll(":scope > .card.tab:not(.kid)")];
+  const there = rows.map(r => lastTasks.find(x => x.id === r.dataset.id)).filter(Boolean);
+  const here = !!t && (there.includes(t) || (t.tags || []).includes(name));
+  termSortNote(here ? e : null);
+  if (!t || here) { if (slot) slot.remove(); return; }
+  const list = termOrder(there.concat(t));
+  const next = list[list.indexOf(t) + 1];
+  const before = next ? rows.find(r => r.dataset.id === next.id) : null;
+  if (!slot) {
+    slot = document.createElement("div");
+    slot.className = "tdropslot";
+    slot.textContent = termSortWords();
+  }
+  if (slot.parentNode !== nest || slot.nextSibling !== before) nest.insertBefore(slot, before);
+}
+
+function termSortWords() {
+  return termSortStarted ? "newest first" : sortByActivity ? "sorted by activity" : "sorted by name";
+}
+
+// The badge above the pointer, clear of the drag image, while a row is over its own list. No event hides it.
+function termSortNote(e) {
+  let note = document.getElementById("tdragnote");
+  if (!e) { if (note) note.hidden = true; return; }
+  if (!note) {
+    note = document.createElement("div");
+    note.id = "tdragnote";
+    document.body.appendChild(note);
+  }
+  note.textContent = termSortWords();
+  note.style.left = (e.clientX + 14) + "px";
+  note.style.top = (e.clientY - 44) + "px";
+  note.hidden = false;
+}
+
+// The rows of each folded group of yours as last drawn, so a drag over its heading can open it for a look.
+let termFoldedRows = new Map();
+
+// A FOLDED GROUP OPENS WHILE A ROW IS OVER IT, to show the slot where the row lands, and folds again when the drag
+// leaves or drops. The fold that is stored never changes, so the next paint draws it folded.
+function termPeek(head, name) {
+  const nest = document.createElement("div");
+  nest.className = "tnest tpeek" + (head.classList.contains("hued") ? " hued" : "");
+  const hue = head.style.getPropertyValue("--ghue");
+  if (hue) nest.style.setProperty("--ghue", hue);
+  nest.dataset.group = name;
+  const rows = termFoldedRows.get(name) || [];
+  nest.innerHTML = rows.length ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint(name);
+  head.after(nest);
+  wireGroupDrop(nest);
+  const caret = head.querySelector(".tcaret");
+  if (caret) caret.innerHTML = "&#9662;";
+  return nest;
+}
+
+function termUnpeek(head) {
+  head.classList.remove("dropover");
+  const nest = head.nextElementSibling;
+  if (!nest || !nest.classList.contains("tpeek")) return;
+  nest.remove();
+  const caret = head.querySelector(".tcaret");
+  if (caret) caret.innerHTML = "&#9656;";
 }
 
 // `untagged` as a drop target, in custom mode. A row dragged here from one of
@@ -2428,13 +2548,18 @@ function wireGroupDrop(nest) {
 // not in a group has nothing to leave, and the drop puts the strip back.
 function wireUngroupDrop(nest) {
   nest.ondragover = e => {
-    if (!termDragEl || !termDragEl.closest(".tnest[data-group]")) return;
+    if (!termDragEl) return;
+    termDropSlot(nest, "", e);
+    if (!termDragEl.closest(".tnest[data-group]")) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     nest.classList.add("dropover");
   };
   nest.ondragleave = e => {
-    if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
+    if (nest.contains(e.relatedTarget)) return;
+    nest.classList.remove("dropover");
+    nest.querySelectorAll(":scope > .tdropslot").forEach(x => x.remove());
+    termSortNote(null);
   };
   nest.ondrop = async e => {
     e.preventDefault();
@@ -2484,8 +2609,33 @@ function wireHeadDrag(host, el) {
     // order that was written, for the reason an abandoned row drag does.
     if (aborted) repaintTermList();
   };
-  el.ondragover = e => { if (termHeadDrag) headDragOver(e, el.dataset.ghead); };
-  el.ondrop = e => { if (termHeadDrag) headDrop(e); };
+  el.ondragover = e => {
+    if (termHeadDrag) return headDragOver(e, el.dataset.ghead);
+    // A FOLDED GROUP TAKES A ROW on its heading and stays folded. An open one takes it in the nest below.
+    if (!termDragEl) return;
+    let nest = headBlock(el.dataset.ghead).nest;
+    if (nest && !nest.classList.contains("tpeek")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!nest) nest = termPeek(el, el.dataset.ghead);
+    el.classList.add("dropover");
+    nest.classList.add("dropover");
+    termDropSlot(nest, el.dataset.ghead, e);
+  };
+  el.ondragleave = e => {
+    const nest = el.nextElementSibling;
+    if (el.contains(e.relatedTarget) || !nest || !nest.classList.contains("tpeek")) return;
+    if (!nest.contains(e.relatedTarget)) termUnpeek(el);
+  };
+  el.ondrop = e => {
+    if (termHeadDrag) return headDrop(e);
+    const nest = headBlock(el.dataset.ghead).nest;
+    if (!termDragEl || (nest && !nest.classList.contains("tpeek"))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove("dropover");
+    fileIntoGroup(el.dataset.ghead);
+  };
 }
 
 // A group's heading and, when it is open, the nest drawn under it.

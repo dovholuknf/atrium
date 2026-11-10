@@ -147,7 +147,7 @@ func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *
 // class. See ctlclass.go, which says why this is tidiness and not a boundary.
 func (c *controlMCP) handler() http.Handler {
 	servers := map[ctl.Class]*mcp.Server{}
-	for _, class := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassFullResident, ctl.ClassWorkerResident, ctl.ClassWorkerItem, ctl.ClassWorkerReview} {
+	for _, class := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassFullResident, ctl.ClassWorkerResident, ctl.ClassWorkerItem, ctl.ClassWorkerReview, ctl.ClassChat} {
 		servers[class] = c.server(class)
 		if class != ctl.ClassFull && class != ctl.ClassFullResident {
 			servers[class|ctl.Elevated] = c.server(class | ctl.Elevated)
@@ -1409,6 +1409,9 @@ const DirectorTag = "atrium:director"
 // ElevatedTag gives a worker card the launch tools. atrium_need with tool:atrium_launch puts it on.
 const ElevatedTag = "atrium:elevated"
 
+// ChatTag marks a card launched with chat: true, which is shown atrium_need and no other control tool.
+const ChatTag = "atrium:chat"
+
 // ResidentTag marks a long-lived card: atrium_done and atrium_blocked report a task and leave it open.
 const ResidentTag = "atrium:resident"
 
@@ -1803,7 +1806,11 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		callerTags = append(append([]string{}, in.Tags...), ResidentTag)
 	}
 	tags := WithLauncherDept(AgentLaunchTags(callerTags), launcherTags)
-	tags = WithWorkTag(tags, workID)
+	if workID != "" {
+		tags = WithItemTags(ctx, func(ctx context.Context, method, path string, body, out any) error {
+			return c.Ask(ctx, method, path, "", body, out)
+		}, tags, workID)
+	}
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/runtime/a2a-reliability-design.md.
@@ -1855,6 +1862,9 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	if in.Isolated {
 		reqBody["item"] = true
+	}
+	if in.Chat {
+		reqBody["chat"] = true
 	}
 	if in.Repo != "" {
 		reqBody["repo"] = strings.TrimSpace(in.Repo)
@@ -2516,7 +2526,8 @@ func loopbackBase(addr string) string {
 
 // NeedToolDesc is atrium_need's description, shared with a room's stdio server.
 const NeedToolDesc = "Say what you lack and why: `mcp:<name>`, `agent:<name>`, `skill:<name>`, `tool:Skill`, " +
-	"`tool:Agent` or `tool:atrium_launch`. `why` is one line, shown to the human with what you were given.\n\n" +
+	"`tool:Agent`, `tool:atrium_launch` or, on a chat card, `tool:Read`, `tool:Edit`, `tool:Write`, `tool:Grep`, `tool:Glob`, " +
+	"`tool:Bash`, `tool:PowerShell` or `tool:WebFetch`. `why` is one line, shown to the human with what you were given.\n\n" +
 	"Atrium adds it to your card, restarts you on this conversation and types `continue` once you are back. " +
 	"End your turn after calling this. Anything else, such as another tool or a program on PATH, is logged and " +
 	"refused: ask your launcher with `atrium_say`. Every call is logged on your card."

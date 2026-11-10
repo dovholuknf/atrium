@@ -674,7 +674,7 @@ type LaunchInput struct {
 	Brief string `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory and read before it starts, so it survives compaction and can be re-read"`
 	// Runner names a configured harness. Empty means claude.
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
-	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	Tags   []string `json:"tags,omitempty" jsonschema:"a pile or topic shared by many cards, like pr, zendesk or a repo name such as ziti-sdk-c. not an item id (pass item), not a ticket number, not a role"`
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// Item names the backlog item the worker works on. See link.WorkTagPrefix.
@@ -694,6 +694,7 @@ type LaunchInput struct {
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
 	// Superlean, as the hub's atrium_launch takes it. Passed as the kit is.
 	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. claude only, never an interview. default false"`
+	Chat      bool `json:"chat,omitempty" jsonschema:"start a claude CHAT: lean, with no tools at all and only atrium_need from atrium-control, and a one paragraph prompt that says so. it asks you for a tool when it needs one, and atrium_need adds it and restarts it on the same conversation. implies superlean. claude only, never an interview. default false"`
 	// Room launches on another room, as the hub's atrium_launch does.
 	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. cwd is then a path on that room's machine and brief is written there. its reports and notices still reach you, as your-handle@your-room"`
 	// Scratch, Lean, MCP and Theme are the hub's atrium_launch fields of the same name, for a launch on this room.
@@ -847,6 +848,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	}
 	if in.Superlean {
 		req["superlean"] = true
+	}
+	if in.Chat {
+		req["chat"] = true
 	}
 	if in.Scratch {
 		req["scratch"] = true

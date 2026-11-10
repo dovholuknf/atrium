@@ -38,8 +38,6 @@ dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
 #na.tw-mode .two .notw, #na.tw-mode .dlg-body > .notw, #na.tw-mode .howline .notw { display: none; }
 #na:not(.tw-mode) .dlg-foot .onlytw { display: none; }
 #na.tw-mode .dlg-head h2 { color: var(--warn); }
-#na:not(.clone-mode) .onlyclone, #na.clone-mode .notclone { display: none; }
-#na textarea#na-brief { font: var(--fs-sm)/1.45 var(--mono); resize: vertical; min-height: 72px; max-height: 220px; }
 #na .eyebrow .help { margin-left: 7px; letter-spacing: 0; }
 #na input#na-repo:disabled { opacity: 1; color: var(--head); cursor: default; }
 #na .how input.cl, #na .how select.cl { font: var(--fs-sm) var(--mono); padding: 4px 8px; min-width: 0; flex: 1; }
@@ -85,6 +83,8 @@ dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
 #na .cb-opt .meta { color: var(--dim); font-size: var(--fs-xs); margin-left: auto; white-space: nowrap; }
 #na .cb-opt.on, #na .cb-opt:hover { background: var(--lift-strong); }
 #na .cb-opt.on { box-shadow: inset 2px 0 0 var(--teal); }
+#na .cb-opt.none { border-top: 1px solid rgba(var(--stroke-dim-rgb),.8); margin-top: 4px; }
+#na .cb-opt.none .nm { font-family: var(--sans); color: var(--label); }
 
 #na .resolved { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--label);
   min-height: 22px; }
@@ -109,16 +109,19 @@ dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
 .gpick .gp-field .ph { color: var(--dimmest); }
 .gpick .gp-field .caret { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--label);
   font-size: var(--fs-xs); }
-.gpick .gp-add { flex: none; padding: 0 13px; font-size: var(--fs-lg); color: var(--label); background: transparent;
-  border: 1px solid rgba(var(--stroke-dim-rgb),.8); border-radius: var(--r-md); }
-.gpick .gp-add:hover { color: var(--head); border-color: var(--stroke); background: var(--lift); transform: none; }
-.gpick input.gp-new { flex: 0 0 140px; width: 140px; padding: 7px 10px; }
 .gpick .gp-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 6; max-height: 260px; overflow-y: auto;
   background: var(--card-1); border: 1px solid var(--stroke); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
   padding: 4px; }
 .gpick .gp-list label.check { padding: 6px 8px; border-radius: var(--r-sm); font-size: var(--fs-md); gap: 9px; }
 .gpick .gp-list label.check:hover { background: var(--lift-strong); color: var(--head); }
 .gpick .gp-list label.check .n { margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs); }
+.gpick .gp-tools { display: flex; align-items: center; gap: 8px; padding: 2px 2px 6px; }
+.gpick .gp-tools input.gp-q { flex: 1; min-width: 0; padding: 5px 8px; }
+.gpick .gp-tools label.check { font-size: var(--fs-xs); color: var(--label); white-space: nowrap; }
+.gpick .gp-make { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer;
+  font-size: var(--fs-md); color: var(--head); background: var(--lift-strong); box-shadow: inset 2px 0 0 var(--teal); }
+.gpick .gp-make kbd { font-size: var(--fs-xs); }
+.gpick .gp-make .n { margin-left: auto; color: var(--dim); font-size: var(--fs-xs); }
 .gpick .gp-list .empty { color: var(--dim); font-size: var(--fs-sm); padding: 6px 8px; }
 
 #na .conf { display: grid; gap: 8px; margin: -4px 0 14px; }

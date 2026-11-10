@@ -241,3 +241,37 @@ func styleFiles(t *testing.T) []scriptFile {
 	}
 	return out
 }
+
+func TestSharedNamesAreQualifiedWithTheirRoom(t *testing.T) {
+	t.Parallel()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not on PATH")
+	}
+	src, err := os.ReadFile(filepath.Join("web", "js", "alias.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(src) + `
+const L = [
+  { room: "m1mini", alias: "push-to-agent", display_title: "push" },
+  { room: "claude-sg4", alias: "push-to-agent", display_title: "push" },
+  { room: "sg3", alias: "solo", display_title: "other" },
+];
+const out = [
+  shownName(L[0], "alias", L), shownName(L[1], "alias", L), shownName(L[2], "alias", L),
+  shownName(L[0], "display_title", L), shownName(L[2], "display_title", L),
+  shownName(L[0], "alias", [L[0]]),
+  fullHandle(L[2]), fullHandle({ alias: "x", room: "" }),
+];
+console.log(out.join("|"));
+`
+	out, err := exec.Command(node, "-e", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+	want := "push-to-agent@m1mini|push-to-agent@claude-sg4|solo|push@m1mini|other|push-to-agent|solo@sg3|@x"
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}

@@ -223,6 +223,7 @@
   "revealFolds": 900,
   "revealKeepsCollapse": 800,
   "roomsDash": 10559,
+  "roomsLogin": 4000,
   "roomsMachine": 3924,
   "roomsSetup": 1184,
   "sayEnter": 712,
@@ -280,6 +281,7 @@
   "usageWeekReset": 2026,
   "walk": 13902,
   "walkContext": 6808,
+  "walkBranch": 5000,
   "websiteSkin": 2732,
   "worn": 5699
  }

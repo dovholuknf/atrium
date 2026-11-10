@@ -68,7 +68,7 @@ func newPublishHarness(t *testing.T) *publishHarness {
 				return
 			}
 			if !h.noHeader {
-				root, _ := filepath.EvalSymlinks(work)
+				root, _ := safepath.Real(work)
 				rel, _ := filepath.Rel(root, real)
 				w.Header().Set(docs.RealPathHeader, url.PathEscape(filepath.ToSlash(rel)))
 			}
@@ -420,6 +420,97 @@ func TestPublishIsAWorkerToolAndSaysItIsASpeedBump(t *testing.T) {
 			if !strings.Contains(strings.ToLower(found.Description), strings.ToLower(want)) {
 				t.Errorf("the description does not say %q", want)
 			}
+		}
+	}
+}
+
+func (h *publishHarness) prompt(in docs.PromptInput) (docs.PromptOutput, error) {
+	_, out, err := h.c.docsMCP().PromptHandler(context.Background(), ctlReq("r-031", "sg4"), in)
+	return out, err
+}
+
+func TestPromptListNamesTheBuiltinWithItsSummaryOnly(t *testing.T) {
+	h := newPublishHarness(t)
+	out, err := h.prompt(docs.PromptInput{Action: "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *docs.PromptSummary
+	for i := range out.Prompts {
+		if out.Prompts[i].Name == "explainer-viz" {
+			found = &out.Prompts[i]
+		}
+	}
+	if found == nil || !strings.HasPrefix(found.Summary, "Build a stepped") || out.Text != "" {
+		t.Fatalf("list %+v", out)
+	}
+	got, err := h.prompt(docs.PromptInput{Action: "get", Name: "explainer-viz"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Builtin || got.Version != 0 || !strings.Contains(got.Text, "var(--token)") {
+		t.Fatalf("get %+v", got.Name)
+	}
+}
+
+func TestAHubPromptReplacesTheBuiltinAndKeepsItsVersions(t *testing.T) {
+	h := newPublishHarness(t)
+	pub, err := h.publish(publishInput{Title: "prompt explainer-viz", Content: "Version one.\n\nbody one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pub.Slug != "prompt-explainer-viz" {
+		t.Fatalf("slug %q", pub.Slug)
+	}
+	if _, err := h.publish(publishInput{Slug: pub.Slug, Content: "# Version two.\nbody two"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.publish(publishInput{Title: "prompt review", Content: "Review a branch."}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.publish(publishInput{Title: "not a prompt", Content: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	l, err := h.prompt(docs.PromptInput{Action: "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"explainer-viz": "Version two.", "review": "Review a branch."}
+	if len(l.Prompts) != len(want) {
+		t.Fatalf("list %+v", l.Prompts)
+	}
+	for _, p := range l.Prompts {
+		if want[p.Name] != p.Summary {
+			t.Errorf("%s summary %q, want %q", p.Name, p.Summary, want[p.Name])
+		}
+	}
+
+	g, err := h.prompt(docs.PromptInput{Action: "get", Name: "explainer-viz"})
+	if err != nil || g.Builtin || g.Version != 2 || !strings.Contains(g.Text, "body two") {
+		t.Fatalf("newest %+v %v", g, err)
+	}
+	g, err = h.prompt(docs.PromptInput{Action: "get", Name: "explainer-viz", Version: 1})
+	if err != nil || g.Version != 1 || !strings.Contains(g.Text, "body one") {
+		t.Fatalf("version 1 %+v %v", g, err)
+	}
+}
+
+func TestPromptRefusals(t *testing.T) {
+	h := newPublishHarness(t)
+	for _, c := range []struct {
+		in     docs.PromptInput
+		status int
+	}{
+		{docs.PromptInput{Action: "put"}, 400},
+		{docs.PromptInput{Action: "get"}, 400},
+		{docs.PromptInput{Action: "get", Name: "../etc"}, 400},
+		{docs.PromptInput{Action: "get", Name: "nope"}, 404},
+		{docs.PromptInput{Action: "get", Name: "explainer-viz", Version: 3}, 404},
+	} {
+		_, err := h.prompt(c.in)
+		if r := refusalOf(t, err); r.Status != c.status {
+			t.Errorf("%+v: status %d (%v)", c.in, r.Status, err)
 		}
 	}
 }

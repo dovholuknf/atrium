@@ -40,6 +40,13 @@ type Harness struct {
 	// ResumeArgs replaces Args when picking a conversation back up. {resume}
 	// is substituted with the runner's own session id.
 	ResumeArgs []string `json:"resume_args"`
+	// ForkArgs replaces ResumeArgs when a clone forks a conversation. {resume} is the original's session id. Empty
+	// means this runner has no fork recipe and a clone of its card starts fresh.
+	ForkArgs []string `json:"fork_args"`
+	// ForkCopy says where the runner keeps a session, so a fork can find it from the clone's folder. "claude" is a
+	// transcript under a project folder named for the cwd, copied to the clone's. Empty is a session found by its id
+	// from any folder, so nothing is copied.
+	ForkCopy string `json:"fork_copy"`
 	// PromptArgs are appended to Args to hand the runner an opening
 	// instruction. {prompt} is substituted with the text.
 	//
@@ -130,6 +137,11 @@ type Harness struct {
 	// empty. A bare shell has no version and ollama ships as a platform
 	// installer, so empty is the right answer for both and means "do not ask".
 	Package string `json:"package"`
+	// LoginRead names the reader for this runner's login store, so the room can say when the login is out or about
+	// to expire. "claude" and "codex" are the readers there are. Empty means the room reads nothing and says nothing.
+	LoginRead string `json:"login_read"`
+	// LoginFix is the command a person runs on the room to log this runner in, shown and copied as written.
+	LoginFix string `json:"login_fix"`
 	// RulesSource names the importer that can read this runner's own
 	// permission config. Empty means atrium's JSON is the only exchange format.
 	RulesSource string    `json:"rules_source"`
@@ -166,14 +178,17 @@ func DefaultHarnesses() []Harness {
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
 			LaunchMode: LaunchPTY, Args: []string{"--strict-mcp-config"},
 			ResumeArgs:      []string{"--resume", "{resume}", "--strict-mcp-config"},
+			ForkArgs:        []string{"--resume", "{resume}", "--fork-session", "--strict-mcp-config"},
+			ForkCopy:        "claude",
 			ExitKeys:        []string{"ctrl-d", "ctrl-d"},
 			PromptArgs:      []string{"{prompt}"},
 			ModelArgs:       []string{"--model", "{model}"},
 			EffortArgs:      []string{"--effort", "{effort}"},
 			AutocompactArgs: []string{"--autocompact", "{autocompact}"},
 			RulesSource:     "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true, QueuesMidTurn: true,
-			Package: "@anthropic-ai/claude-code",
-			Notes:   "resume needs a session id, which only a runner that reports one can supply",
+			Package:   "@anthropic-ai/claude-code",
+			LoginRead: "claude", LoginFix: "claude auth login",
+			Notes: "resume needs a session id, which only a runner that reports one can supply",
 		},
 		{
 			// `codex resume <SESSION_ID>` takes the same uuid codex puts in
@@ -190,12 +205,16 @@ func DefaultHarnesses() []Harness {
 			// --no-alt-screen keeps codex in the normal buffer, the only one xterm.js scrolls back.
 			Args:       []string{"--no-alt-screen"},
 			ResumeArgs: []string{"resume", "--no-alt-screen", "{resume}"},
+			// `codex fork <SESSION_ID>` opens a copy of the session. codex finds it by id under
+			// $CODEX_HOME/sessions from any folder, so nothing is copied.
+			ForkArgs:   []string{"fork", "--no-alt-screen", "{resume}"},
 			PromptArgs: []string{"{prompt}"},
 			ModelArgs:  []string{"--model", "{model}"},
 			// A config override, because codex has no effort flag. The key is
 			// in codex-cli 0.156.1.
 			EffortArgs:     []string{"-c", "model_reasoning_effort={effort}"},
 			BracketedPaste: true, MidTurnInput: true, Package: "@openai/codex",
+			LoginRead: "codex", LoginFix: "codex login --device-auth",
 			RulesSource: "", Notes: "hooks live in $CODEX_HOME/hooks.json, not in atrium's " +
 				"settings, and codex will not run one it has not been shown once",
 		},
@@ -232,7 +251,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	var (
 		h                                      Harness
 		args, env, resume, exit, prompt, model string
-		effort, autocompact                    string
+		effort, autocompact, fork              string
 		created                                string
 		enabled                                int
 		bracketed, midTurn, queuesMid          int
@@ -240,7 +259,8 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
 		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn,
-		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK, &queuesMid); err != nil {
+		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK, &queuesMid, &fork, &h.ForkCopy,
+		&h.LoginRead, &h.LoginFix); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -251,6 +271,9 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(resume, "[]")), &h.ResumeArgs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(orDefault(fork, "[]")), &h.ForkArgs); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(prompt, "[]")), &h.PromptArgs); err != nil {
@@ -288,7 +311,8 @@ func orDefault(s, def string) string {
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
 	model_args, bracketed_paste, package, bin_path, mid_turn_input,
-	effort_args, model_env, effort_env, autocompact_args, context_limit_k, queues_mid_turn`
+	effort_args, model_env, effort_env, autocompact_args, context_limit_k, queues_mid_turn, fork_args, fork_copy,
+	login_read, login_fix`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -380,6 +404,10 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	fork, err := json.Marshal(orEmptySlice(h.ForkArgs))
+	if err != nil {
+		return nil, err
+	}
 	if h.Env == nil {
 		h.Env = map[string]string{}
 	}
@@ -419,7 +447,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			queuesMid = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -435,13 +463,16 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				effort_env = excluded.effort_env,
 				autocompact_args = excluded.autocompact_args,
 				context_limit_k = excluded.context_limit_k,
-				queues_mid_turn = excluded.queues_mid_turn`,
+				queues_mid_turn = excluded.queues_mid_turn,
+				fork_args = excluded.fork_args, fork_copy = excluded.fork_copy,
+				login_read = excluded.login_read, login_fix = excluded.login_fix`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
 			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn,
 			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv), string(autocompact),
-			h.ContextLimitK, queuesMid)
+			h.ContextLimitK, queuesMid, string(fork), strings.TrimSpace(h.ForkCopy),
+			strings.TrimSpace(h.LoginRead), strings.TrimSpace(h.LoginFix))
 		return err
 	})
 	if err != nil {

@@ -406,8 +406,6 @@ Exports honor whatever filter is applied.">?</span>
     <div id="fd-terms"></div>
     <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
     <div class="term-limits" id="term-limits" hidden></div>
-    <!-- The merge queue: what wants a person, and a link to the queue. Hub only. See js/merge.js. -->
-    <div class="term-merge" id="term-merge" hidden></div>
     <div class="term-layout" id="term-layout">
       <!-- The way back when the list is hidden. Before the list in the DOM so
            hovering it can reveal the list with a sibling selector, which keeps
@@ -485,7 +483,7 @@ Exports honor whatever filter is applied.">?</span>
           <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
                finding. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
-            data-tip="walk this card's findings beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
+            data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
             aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it"><svg
             viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
@@ -609,19 +607,25 @@ Exports honor whatever filter is applied.">?</span>
              re-entry that spun the board. `.term-body` is only a row to hold both. See js/walk.js. -->
         <div class="term-body">
           <aside id="walk-drawer" class="walk" hidden tabindex="-1" aria-label="walk the findings">
-            <div class="walk-head">
-              <strong id="walk-title"></strong>
+            <div class="walk-head term-bar">
+              <a id="walk-pr" class="wk-pr" target="_blank" rel="noopener"><strong id="walk-title"></strong></a>
               <span class="by" id="walk-note"></span>
               <span class="walk-bar" id="walk-bar"></span>
               <span class="by" id="walk-count"></span>
               <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
+              <button type="button" id="walk-share" hidden onclick="walkShareToggle()"
+                data-tip="export this walk so another dev can open it, or open one you were sent">share walk</button>
               <button type="button" id="walk-popout" onclick="walkPopOut()"
                 data-tip="open the walk in a tab of its own">⧉ own tab</button>
               <button type="button" class="go" onclick="walkDone()"
                 data-tip="type walk done into the walker and submit it">walk done</button>
               <button type="button" class="icon" onclick="walkClose()"
                 aria-label="close the walk" data-tip="close the walk">&times;</button>
+            </div>
+            <div class="walk-nav" id="walk-nav" hidden>
+              <span class="navgrp"><button type="button" data-act="pc" data-tip="previous change (p)">&#8249; previous <kbd>p</kbd></button><span class="by" id="walk-chg"></span><button type="button" data-act="nc" data-tip="next change (n)">next <kbd>n</kbd> &#8250;</button></span>
+              <span class="navgrp"><button type="button" data-act="pm" data-tip="previous agent comment ([)">&#8249; previous <kbd>[</kbd></button><span class="by" id="walk-cmt"></span><button type="button" data-act="nm" data-tip="next agent comment (])">next <kbd>]</kbd> &#8250;</button></span>
             </div>
             <div class="walk-body">
               <nav id="walk-rail" class="walk-rail" role="listbox" aria-label="findings"></nav>
@@ -836,7 +840,7 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
       <div id="pulls-pop" class="pulls-pop" hidden>
         <input id="pulls-pop-url" type="text" placeholder="https://github.com/org/repo/pull/123" aria-label="pull request URL">
         <input id="pulls-pop-why" type="text" placeholder="why (optional)" aria-label="why">
-        <div class="pulls-pop-row"><button id="pulls-pop-cancel" type="button">cancel</button><button id="pulls-pop-go" type="button" class="go">Open</button></div>
+        <div class="pulls-pop-row"><label class="pulls-pop-walk" data-tip="open a walk.json somebody sent you: it starts a walker on that PR with their comments as context">open a walk.json<input type="file" id="pulls-pop-walk" accept=".json,application/json" hidden></label><button id="pulls-pop-cancel" type="button">cancel</button><button id="pulls-pop-go" type="button" class="go">Open</button></div>
       </div>
     </div>
     <div id="pulls-attn" class="pulls-attn" role="group" aria-label="what needs doing">
@@ -1224,23 +1228,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button type="button" id="tabsdlg-reset">reset to default</button>
     <div class="grow"></div>
     <button type="button" id="tabsdlg-close" class="go">done</button>
-  </div>
-</dialog>
-
-<!-- The merge queue and its history, newest first. Hub only. See js/merge.js. -->
-<dialog id="mergedlg" class="wide">
-  <div class="dlg-head">
-    <div class="grow"><div class="dlg-eyebrow">hub</div><h2>merge queue</h2></div>
-  </div>
-  <div class="dlg-body">
-    <div id="mergedlg-list" class="mergedlg-list"></div>
-    <span class="hintline" id="mergedlg-using"></span>
-  </div>
-  <div class="dlg-foot">
-    <select id="mergedlg-room" aria-label="the room that runs the tests"></select>
-    <button type="button" data-mq="room">set the merge room</button>
-    <div class="grow"></div>
-    <button type="button" data-mq="close" class="go">done</button>
   </div>
 </dialog>
 
@@ -3193,6 +3180,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="hintline">used instead of the arguments above when picking a conversation back up.
           put <code>{resume}</code> where the session id goes.</span>
       </div>
+      <div class="field">
+        <label class="eyebrow" for="h-fork">fork arguments, one per line <span class="help" tabindex="0"
+          data-tip="Used when a clone forks a conversation. Empty means a clone of this runner's card starts fresh. Put {resume} where the session id goes.">?</span></label>
+        <textarea id="h-fork" rows="2" spellcheck="false"
+          placeholder="--resume&#10;{resume}&#10;--fork-session"></textarea>
+      </div>
       <!-- Opening prompt arguments. Empty means the runner cannot accept a prompt. -->
       <div class="field">
         <label class="eyebrow" for="h-prompt">prompt arguments, one per line</label>
@@ -3298,6 +3291,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="">none, use atrium json</option>
           <option value="claude">claude code settings.json</option>
         </select>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-login-read">login store <span class="help" tabindex="0"
+          data-tip="Where the room reads this runner's login, to say when it is out or about to expire. None means the room says nothing about it.">?</span></label>
+        <select id="h-login-read">
+          <option value="">none</option>
+          <option value="claude">claude code credentials</option>
+          <option value="codex">codex auth.json</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-login-fix">login command <span class="help" tabindex="0"
+          data-tip="What to run on the room to log this runner in. The login alert shows it with a copy button.">?</span></label>
+        <input type="text" id="h-login-fix" spellcheck="false" placeholder="claude auth login">
       </div>
       <div class="field">
         <label class="eyebrow" for="h-prepare">prepare</label>
@@ -3542,10 +3549,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body">
     <div class="two">
       <div class="field notw">
-        <label class="eyebrow" for="na-repo">repo</label>
+        <label class="eyebrow" for="na-repo">repo <span class="help" tabindex="0" data-tip="owner/repo, or a GitHub link: a repo, an issue, a pull request or a branch. it fills in the name and branch">?</span></label>
         <div class="cb">
           <input type="text" id="na-repo" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false"
-            placeholder="owner/repo, or paste a GitHub link">
+            placeholder="none">
           <button class="clr" id="na-repo-clr" hidden aria-label="clear">&times;</button>
           <div class="cb-list" id="na-repo-list" hidden></div>
         </div>
@@ -3566,11 +3573,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field what">
       <textarea id="na-what" rows="1" spellcheck="true" placeholder="what should it do? optional"></textarea>
     </div>
-    <div class="field onlyclone">
-      <label class="eyebrow" for="na-brief">brief<span class="help" tabindex="0"
-        data-tip="The original's BRIEF.md, written into the clone's folder before it starts. Edit it here or empty it.">?</span></label>
-      <textarea id="na-brief" rows="4" spellcheck="true" placeholder="no BRIEF.md"></textarea>
-    </div>
     <div class="field notw">
       <label class="eyebrow">the card it makes</label>
       <div id="na-preview"></div>
@@ -3580,7 +3582,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="sum" id="na-sum"></span>
       <button type="button" class="linkbtn" id="na-change" aria-expanded="false">change</button>
       <span class="grow"></span>
-      <button type="button" class="twbtn notw notclone" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends. keep it from the card if it matters">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
+      <button type="button" class="twbtn notw" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends. keep it from the card if it matters">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
     </div>
     <div class="how" id="na-how" hidden></div>
     <div class="na-note" id="na-note"></div>
@@ -4094,8 +4096,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/m/js/files.js"></script>
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
+<script src="/js/walk-pr.js"></script>
 <script src="/js/turn-limits.js"></script>
-<script src="/js/merge.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>

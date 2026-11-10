@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -977,7 +978,7 @@ func TestTheScrubTakesOutResolvedAndDifferentlyCasedPaths(t *testing.T) {
 		t.Skip("no symlinks here: " + err.Error())
 	}
 	x.h.Dir = link
-	resolved, err := filepath.EvalSymlinks(real)
+	resolved, err := safepath.Real(real)
 	if err != nil {
 		t.Fatal(err)
 	}

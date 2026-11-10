@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"os"
 	"os/exec"
@@ -123,6 +124,38 @@ func TestARepoLaunchMakesWorkAsAWorktree(t *testing.T) {
 	if row.Kind != store.CardHomeWorktree || row.Branch != "claude/fix-the-thing" || row.Base != "claude/main" ||
 		filepath.ToSlash(row.Clone) != filepath.ToSlash(repo) {
 		t.Fatalf("row %+v", row)
+	}
+}
+
+func TestACardHomeKeysToItsCloneOrigin(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	cullGit(t, repo, "remote", "add", "origin", "https://github.com/openziti/ziti-sdk-csharp.git")
+	req := shared.LaunchRequest{Repo: repo, Title: "csharp gaps"}
+	if _, _, err := d.LaunchHome(store.CardHomeWorktree, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Host != "github" || req.Org != "openziti" {
+		t.Fatalf("launch place host %q org %q", req.Host, req.Org)
+	}
+
+	task, row, _ := worktreeHome(t, d, repo)
+	if task.Host != "" || task.Org != "" {
+		t.Fatalf("a registered card already has host %q org %q", task.Host, task.Org)
+	}
+	if n := d.BackfillHomeOrigins(); n != 1 {
+		t.Fatalf("backfilled %d, want 1 (row %+v)", n, row)
+	}
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Host != "github" || got.Org != "openziti" || got.Repo != "repo" {
+		t.Fatalf("card host %q org %q repo %q, want github openziti and the clone's name", got.Host, got.Org, got.Repo)
+	}
+	if n := d.BackfillHomeOrigins(); n != 0 {
+		t.Fatalf("a second backfill changed %d card(s)", n)
 	}
 }
 
@@ -383,7 +416,7 @@ func TestALaunchOnABranchAnotherCardHoldsIsRefused(t *testing.T) {
 
 // sameFolder is whether two spellings name one folder: a temp dir can be a symlink or an 8.3 name.
 func sameFolder(a, b string) bool {
-	ra, ea := filepath.EvalSymlinks(filepath.FromSlash(a))
-	rb, eb := filepath.EvalSymlinks(filepath.FromSlash(b))
+	ra, ea := safepath.Real(filepath.FromSlash(a))
+	rb, eb := safepath.Real(filepath.FromSlash(b))
 	return ea == nil && eb == nil && strings.EqualFold(ra, rb)
 }

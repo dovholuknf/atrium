@@ -222,6 +222,44 @@ func (d *Service) ResolveRepo(ctx context.Context, repo string) (string, error) 
 	return dest, nil
 }
 
+// OriginRef is the forge repo a clone's origin names. A card home's work/ is under the card root, so its path says no
+// `host/owner/repo` and the room's git reading keeps only the clone's folder name. The board keys repo colours on this.
+func OriginRef(clone string) (gitsync.Ref, bool) {
+	out, err := shared.GitIn(clone, gitexec.RemoteGetURL{Name: "origin"})
+	if err != nil {
+		return gitsync.Ref{}, false
+	}
+	ref, err := gitsync.ParseURL(strings.TrimSpace(out))
+	return ref, err == nil
+}
+
+// BackfillHomeOrigins gives each worktree home's card the host and org of its clone's origin, for cards launched before
+// LaunchHome recorded them. A card that already has either is left alone.
+func (d *Service) BackfillHomeOrigins() int {
+	rows, err := d.St.CardHomesOpen()
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, row := range rows {
+		if row.Kind != store.CardHomeWorktree || row.Card == "" || row.Clone == "" {
+			continue
+		}
+		t, err := d.St.Get(row.Card)
+		if err != nil || t.Host != "" || t.Org != "" {
+			continue
+		}
+		ref, ok := OriginRef(filepath.FromSlash(row.Clone))
+		if !ok {
+			continue
+		}
+		if d.St.SetPlace(t.ID, store.Place{Host: ref.Host, Org: ref.Owner}) == nil {
+			n++
+		}
+	}
+	return n
+}
+
 var BranchOK = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 // addHomeWorktree puts `<home>/work` on a branch of the clone, made from base when the branch is new. Argv, never a shell.
@@ -664,6 +702,9 @@ func (d *Service) LaunchHome(kind string, req *shared.LaunchRequest) (store.Card
 			return store.CardHome{}, HomeDirs{}, err
 		}
 		req.Branch = branch
+		if ref, ok := OriginRef(clone); ok && req.Host == "" && req.Org == "" {
+			req.Host, req.Org = ref.Host, ref.Owner
+		}
 	}
 	if kind == store.CardHomeScratch && !small.HasTag(req.Tags, shared.KeepOpenTag) {
 		req.Tags = append(append([]string{}, req.Tags...), shared.KeepOpenTag)

@@ -168,11 +168,21 @@ func CheckRecogniser(r Recogniser) (Recogniser, error) {
 	if r.DefaultRepo != "" && !RepoSlug(r.DefaultRepo) {
 		return r, errors.New("the default repo is host/org/repo, like github.com/openziti/ziti, or empty for none")
 	}
+	for _, m := range placeholder.FindAllStringSubmatch(r.Tags, -1) {
+		if perItemPlaceholders[strings.ToLower(m[1])] {
+			return r, fmt.Errorf("the tags template holds {%s}, one tag per item. tags are broad piles shared by many cards, "+
+				"like pull-request, zendesk or {repo}. the item belongs in the title", m[1])
+		}
+	}
 	if r.FetchArgs == nil {
 		r.FetchArgs = []string{}
 	}
 	return r, nil
 }
+
+// perItemPlaceholders name one ticket, pull request, topic or branch, which a tags template may not hold.
+var perItemPlaceholders = map[string]bool{"id": true, "num": true, "n": true, "number": true, "pr": true, "issue": true,
+	"ticket": true, "topic": true, "slug": true, "ghsa": true, "ref": true, "branch": true}
 
 // PRTag is the tag that makes a recogniser's link a pull request, which the open verb reviews.
 const PRTag = "pull-request"

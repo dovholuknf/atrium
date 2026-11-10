@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchNewAgent, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
+// Units: launchNewAgent, launchGroupPlus, launchNewAgentGroups, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -612,9 +612,14 @@ async function launchNewAgentSection(browser, base) {
     if (process.env.NEWAGENT_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.NEWAGENT_SHOTS + "/newagent-branch.png" });
     await p.click('#na-conf button[data-v="reuse"]');
     if ((await seen()).branch !== "claude/allowlist") fail("launchNewAgent: continue on it " + JSON.stringify(await seen()));
-    await p.click("#na-groups .gp-add");
-    await p.fill("#na-groups input.gp-new", "research");
-    await p.press("#na-groups input.gp-new", "Enter");
+    await p.click("#na-groups .gp-field");
+    await p.fill("#na-groups input.gp-q", "Research");
+    if ((await p.locator("#na-groups .gp-list").textContent()).includes("makes one")) fail("launchNewAgent: the group list still says + makes one");
+    if (await p.locator("#na-groups .gp-add").count()) fail("launchNewAgent: the + beside the groups is still there");
+    await p.press("#na-groups input.gp-q", "Enter");
+    if (JSON.stringify(await p.locator("#na-groups .gp-field .chip").allTextContents()) !== '["research"]')
+      fail("launchNewAgent: Enter in the group filter did not make and pick the group " + JSON.stringify(await p.locator("#na-groups .gp-field .chip").allTextContents()));
+    await p.keyboard.press("Escape");
     await p.fill("#na-what", "the per-identity allowlist");
     const pv = () => p.evaluate(() => ({ name: document.querySelector("#na-preview .tname").textContent, where: document.querySelector("#na-preview .tpath").textContent,
       star: document.getElementById("na-pin").textContent, mark: !!document.querySelector("#na-preview .rmark svg"),
@@ -686,8 +691,169 @@ async function launchNewAgentSection(browser, base) {
   if (!bad) console.log("launchNewAgent ok");
 }
 
+// GROUPS AND HOMES FROM THE NEW AGENT DIALOG: "no repo" in the repo list launches a home card, a group made in the
+// dialog is on the card and is drawn in a custom-grouped Terminals at once, a card with no repo duplicates as a new
+// home with its settings, and "delete group..." untags the group's cards or closes them, then the group is gone.
+// NEWAGENT_GROUP_SHOTS=<dir> writes the pictures.
+async function launchNewAgentGroupsSection(browser, base) {
+  const tag = "launchNewAgentGroups: ";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const launches = [], patches = [], closes = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    const json = (r, body, status) => r.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(body) });
+    await p.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+      localStorage.removeItem("atrium.newagent.groups");
+    });
+    await p.route(/\/v1\/checkouts(\?|$)/, r => json(r, { checkouts: [{ slug: "github/openziti/mcp-gateway", path: "/src/mcp-gateway", repo: "mcp-gateway" }] }));
+    await p.route(/\/v1\/launch(\?|$)/, r => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      launches.push(b);
+      return json(r, { id: "new" + launches.length, status: "running", tags: b.tags || [] });
+    });
+    await p.route(/\/v1\/tasks\/home1\/clone$/, r => json(r, { error: "cannot clone /cards/home1/work is not a git checkout with a commit" }, 400));
+    await p.route(/\/v1\/tasks\/filed1\/close$/, r => {
+      if (r.request().method() === "GET") return json(r, { items: [], asks: [], kept: [], warnings: [] });
+      closes.push(JSON.parse(r.request().postData() || "{}"));
+      return json(r, { closed: true, items: [] });
+    });
+    await p.route(/\/v1\/tasks\/filed1$/, r => {
+      if (r.request().method() === "PATCH") { patches.push(JSON.parse(r.request().postData() || "{}")); return json(r, {}); }
+      return r.fallback();
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openNewAgent === "function" && typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
+    const shot = async (sel, name) => { if (process.env.NEWAGENT_GROUP_SHOTS) await p.locator(sel).first().screenshot({ path: process.env.NEWAGENT_GROUP_SHOTS + "/" + name + ".png" }); };
+    const closed = what => p.waitForFunction(() => !document.getElementById("na").open, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the dialog stayed open after " + what));
+
+    // "none" matches no repo, and "no repo" is still there to pick: it launches a home card.
+    await p.evaluate(() => openNewAgent(false));
+    if (!(await p.locator("#na-repo-list").isHidden())) fail(tag + "opening the dialog opened the repo list");
+    if (await p.getAttribute("#na-repo", "placeholder") !== "none") fail(tag + "the empty repo field does not read none");
+    await p.fill("#na-repo", "none");
+    await p.waitForSelector("#na-repo-list .cb-opt.none");
+    const list = await p.locator("#na-repo-list").textContent();
+    if (!list.includes("no matches. paste a full repo link works")) fail(tag + "the empty repo list says " + JSON.stringify(list));
+    await shot("dialog#na", "repo-none-list");
+    await p.press("#na-repo", "Enter");
+    if (await p.inputValue("#na-repo") !== "") fail(tag + "no repo left the field at " + JSON.stringify(await p.inputValue("#na-repo")));
+    await p.fill("#na-title", "ryan");
+    await p.click("#na-groups .gp-field");
+    await p.fill("#na-groups input.gp-q", "ryan");
+    await shot("dialog#na", "group-typed");
+    await p.press("#na-groups input.gp-q", "Enter");
+    await p.keyboard.press("Escape");
+    await shot("dialog#na", "group-picked");
+    await p.click("#na-go");
+    await closed("a home launch");
+    let b = launches[0] || {};
+    if (b.home !== true || b.repo || b.title !== "ryan" || JSON.stringify(b.tags) !== '["ryan"]') fail(tag + "the home launch sent " + JSON.stringify(b));
+
+    // The group made in the dialog is one of the Terminals' groups, so its heading is drawn now and not on a later poll.
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForFunction(() => [...document.querySelectorAll("#term-list .tgroup .tgname")].some(e => e.textContent.trim() === "ryan"),
+      null, { timeout: slow(5000) }).catch(() => fail(tag + "Terminals drew no ryan heading"));
+    const named = await p.evaluate(() => groupingPrefs("terms").groups);
+    if (JSON.stringify(named) !== '["active","ryan"]') fail(tag + "the Terminals groups are " + JSON.stringify(named));
+    await shot("#term-list", "terms-ryan");
+
+    // A card with no repo duplicates as a new home with its title, groups and runner.
+    const runner = await p.evaluate(() => launchableHarnesses("").find(h => hookTargetFor(h) === "claude").id);
+    await p.evaluate(r => openCloneCard("home1", { id: "home1", title: "ryan", tags: ["ryan", "atrium:lean"], runner: r, worktree: "/cards/home1/work" }), runner);
+    await p.waitForFunction(() => document.getElementById("na").open, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "duplicating a card with no repo did not open the dialog"));
+    if (await p.textContent("#na-h") !== "duplicate agent") fail(tag + "the duplicate dialog is headed " + await p.textContent("#na-h"));
+    await p.click("#na-go");
+    await closed("a home duplicate");
+    b = launches[1] || {};
+    if (b.home !== true || b.repo || b.title !== "ryan" || JSON.stringify(b.tags) !== '["ryan"]' || b.harness !== runner || b.lean !== true)
+      fail(tag + "the home duplicate sent " + JSON.stringify(b));
+
+    // Delete a group, untagging its cards: the default.
+    await p.evaluate(() => switchView("terms"));
+    const del = async () => {
+      await p.locator("#term-list .tgroup", { hasText: "active" }).first().click({ button: "right" });
+      await p.locator("#cardmenu button", { hasText: "delete group" }).click();
+      await p.waitForFunction(() => document.getElementById("ask").open, null, { timeout: slow(5000) });
+    };
+    await del();
+    const ask = await p.evaluate(() => ({ title: document.getElementById("ask-title").textContent, kicker: document.querySelector("#ask .dlg-eyebrow").hidden,
+      picked: (document.querySelector('input[name="ask-delgroup"]:checked') || {}).value,
+      btns: [...document.querySelectorAll("#ask-actions button")].map(x => x.textContent).join() }));
+    if (ask.title !== "Delete active?" || !ask.kicker || ask.picked !== "untag" || ask.btns !== "cancel,delete") fail(tag + "the delete dialog " + JSON.stringify(ask));
+    await shot("dialog#ask", "delete-group");
+    await p.locator("#ask-actions button", { hasText: "delete" }).click();
+    await p.waitForFunction(() => !groupingPrefs("terms").groups.includes("active"), null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the deleted group is still a group"));
+    if (patches.length !== 1 || (patches[0].tags || []).includes("active") || closes.length) fail(tag + "untag wrote " + JSON.stringify({ patches, closes }));
+
+    // Delete a group, closing its cards.
+    await p.evaluate(() => setGrouping({ groups: ["active", "ryan"] }, "terms"));
+    await p.waitForFunction(() => [...document.querySelectorAll("#term-list .tgroup .tgname")].some(e => e.textContent.trim() === "active"), null, { timeout: slow(5000) });
+    await del();
+    await p.check('input[name="ask-delgroup"][value="close"]');
+    await p.locator("#ask-actions button", { hasText: "delete" }).click();
+    await p.waitForFunction(() => !groupingPrefs("terms").groups.includes("active"), null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the deleted group is still a group after a close"));
+    if (closes.length !== 1 || closes[0].confirm !== true || patches.length !== 1) fail(tag + "close wrote " + JSON.stringify({ patches, closes }));
+    if (await p.evaluate(() => document.getElementById("ask").open)) fail(tag + "closing the group's cards asked the stop question again");
+    if (errors.length) fail(tag + "page errors " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("launchNewAgentGroups ok");
+}
+
+// THE + ON A GROUP HEADING in Terminals opens the new agent dialog with that group picked, and does not fold the group.
+// GROUP_PLUS_SHOTS=<dir> writes the heading and the dialog.
+async function launchGroupPlusSection(browser, base) {
+  const tag = "launchGroupPlus: ";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+      localStorage.removeItem("atrium.newagent.groups");
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof naOpenInGroup === "function" && typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    const plus = p.locator('#term-list .tgroup .tgadd[data-gnew="active"]');
+    await plus.waitFor({ state: "visible", timeout: slow(5000) }).catch(() => fail(tag + "the active heading has no +"));
+    if (process.env.GROUP_PLUS_SHOTS) await p.locator("#term-list").screenshot({ path: process.env.GROUP_PLUS_SHOTS + "/heading.png" });
+    await plus.click();
+    await p.waitForFunction(() => document.getElementById("na").open, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the + did not open the dialog"));
+    const picked = await p.locator("#na-groups .gp-field .chip").allTextContents();
+    if (JSON.stringify(picked) !== '["active"]') fail(tag + "the dialog opened with groups " + JSON.stringify(picked));
+    if (process.env.GROUP_PLUS_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.GROUP_PLUS_SHOTS + "/dialog.png" });
+    await p.click("#na-x");
+    if (!(await p.locator('#term-list .tnest[data-group="active"]').count())) fail(tag + "pressing the + folded the group");
+    if (errors.length) fail(tag + "page errors " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("launchGroupPlus ok");
+}
+
 const units = [
   { name: "launchNewAgent", run: ({ browser, base }) => launchNewAgentSection(browser, base) },
+  { name: "launchGroupPlus", run: ({ browser, base }) => launchGroupPlusSection(browser, base) },
+  { name: "launchNewAgentGroups", run: ({ browser, base }) => launchNewAgentGroupsSection(browser, base) },
   { name: "launchRepoUrls", run: ({ browser, base }) => launchRepoUrlsSection(browser, base) },
   { name: "launchLink", run: ({ browser, base }) => launchLinkSection(browser, base) },
   { name: "launchThrowaway", run: ({ browser, base }) => launchThrowawaySection(browser, base) },
@@ -695,7 +861,7 @@ const units = [
   { name: "launchPresets", run: ({ browser, base }) => launchPresetsSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
 ];
-const sections = { launchNewAgent: launchNewAgentSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
+const sections = { launchNewAgent: launchNewAgentSection, launchGroupPlus: launchGroupPlusSection, launchNewAgentGroups: launchNewAgentGroupsSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

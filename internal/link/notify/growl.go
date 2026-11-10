@@ -89,7 +89,7 @@ var growlLadderDefault = map[string]bool{ReasonPermission: true, "halt": true, "
 
 // growlLadderReasons is every reason the setting may name.
 var growlLadderReasons = []string{ReasonPermission, ReasonQuestion, reasonBlocked, "halt", "deploy-hold", reasonRoomCPU,
-	reasonRunnerMissing}
+	reasonRunnerMissing, reasonRunnerLogin}
 
 const (
 	growlTick         = 30 * time.Second
@@ -112,7 +112,7 @@ var growlBackoff = []time.Duration{
 // growlUrgency orders the stack, most urgent first.
 var growlUrgency = map[string]int{
 	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5, ReasonCI: 6, reasonRoomCPU: 7,
-	reasonRunnerMissing: 8,
+	reasonRunnerMissing: 8, reasonRunnerLogin: 8,
 }
 
 // The card reasons R1 derives. Passed to the store, which touches no other
@@ -126,6 +126,7 @@ const reasonBlocked = "blocked"
 const (
 	reasonRoomCPU       = "room-cpu"
 	reasonRunnerMissing = "runner-missing"
+	reasonRunnerLogin   = "runner-login"
 )
 
 // ErrGrowlNotFound and ErrGrowlStale are what a GrowlStore answers an action
@@ -208,6 +209,15 @@ type roomAlert struct {
 	CPUPct         float64     `json:"cpu_pct"`
 	Procs          []alertProc `json:"procs"`
 	RunnersMissing []string    `json:"runners_missing"`
+	LoginsDue      []loginDue  `json:"logins_due"`
+}
+
+// loginDue is a runner whose login the room says is out or about to expire. No token ever reaches the hub.
+type loginDue struct {
+	Kind      string `json:"kind"`
+	State     string `json:"state"`
+	ExpiresAt string `json:"expires_at"`
+	Fix       string `json:"fix"`
 }
 
 // alertProc is roomstats.Proc as the hub reads it.
@@ -220,6 +230,37 @@ type alertProc struct {
 	Cwd     string  `json:"cwd"`
 	Kind    string  `json:"kind"`
 	Card    string  `json:"card"`
+}
+
+// loginWords says in plain words which login to renew on room and the command its runner row names to run there.
+func loginWords(room string, ds []loginDue) string {
+	var out []string
+	for _, d := range ds {
+		line := d.Kind + " is not logged in"
+		if d.State != "out" {
+			when := d.ExpiresAt
+			if t, err := time.Parse(time.RFC3339, d.ExpiresAt); err == nil {
+				when = t.UTC().Format("2006-01-02 15:04 UTC")
+			}
+			line = d.Kind + " login expires " + when
+		}
+		if d.Fix != "" {
+			line += ". On " + room + " run: " + d.Fix
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "; ")
+}
+
+// loginFixes is each command to copy, one per line, for the growler's copy buttons.
+func loginFixes(ds []loginDue) string {
+	var out []string
+	for _, d := range ds {
+		if d.Fix != "" {
+			out = append(out, d.Fix)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // pendingPerm is one request a room is holding, as its /v1/permissions says.
@@ -720,6 +761,13 @@ func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 			record(room, reasonRunnerMissing, len(a.RunnersMissing) > 0, GrowlRow{
 				ID: room + "|runner-missing|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: reasonRunnerMissing,
 				Title: room + ": enabled runner not found", Body: Clip(strings.Join(a.RunnersMissing, ", ")),
+			})
+		}
+		if a := got[i].alert; a.ok {
+			record(room, reasonRunnerLogin, len(a.LoginsDue) > 0, GrowlRow{
+				ID: room + "|runner-login|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: reasonRunnerLogin,
+				Title: room + ": a runner needs a login", Body: Clip(loginWords(room, a.LoginsDue)),
+				Subject: loginFixes(a.LoginsDue),
 			})
 		}
 		if h := got[i].hold; h.ok {

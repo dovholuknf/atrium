@@ -1553,8 +1553,32 @@ function groupMenu(e, name) {
     { label: "recolor…", act: () => pickGroupHue(name) },
     set[name] !== undefined
       ? { label: "back to the automatic color", act: () => setGroupHue(name, null) }
-      : null
+      : null,
+    name !== UNTAGGED ? { label: "delete group…", act: () => deleteGroupAsk(name) } : null
   ]);
+}
+
+// Delete a group: its tag comes off every card, or every card in it is closed and cleaned up, then the group is gone.
+async function deleteGroupAsk(name) {
+  const cards = cardList().filter(t => (t.tags || []).includes(name));
+  const n = cards.length, them = n === 1 ? "its card" : `its ${n} cards`;
+  const how = await askUser({
+    plain: true,
+    title: `Delete ${name}?`,
+    body: n ? `<div class="field ask-pick"><label class="check"><input type="radio" name="ask-delgroup" value="untag" checked>` +
+      `<span>untag ${them}</span></label><label class="check"><input type="radio" name="ask-delgroup" value="close">` +
+      `<span>close ${them}</span></label></div>` : "",
+    buttons: [{ label: "cancel", value: null }, { label: "delete", value: true, style: "no" }]
+  });
+  if (!how) return;
+  const pick = document.querySelector('input[name="ask-delgroup"]:checked');
+  const close = !!(n && pick && pick.value === "close");
+  for (const t of cards) {
+    if (close) await cleanUpCard(t.id, t, true);
+    else await patchTask(t.id, { tags: (t.tags || []).filter(x => x !== name) });
+  }
+  if ((groupingPrefs().groups || []).includes(name)) removeCustomGroup(name);
+  refresh();
 }
 
 // Add a new group to the `custom` view.

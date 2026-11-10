@@ -2521,6 +2521,32 @@ var migrations = []struct {
 					(n.created_at > task.created_at OR (n.created_at = task.created_at AND n.id > task.id)))`,
 		},
 	},
+	{
+		// How a clone forks a runner's conversation. Claude's is its resume list with --fork-session after the
+		// id, so an operator's own list is kept. Guarded on an empty value, so a recipe written by hand stays.
+		name: "0117_harness_fork",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN fork_args TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE harness ADD COLUMN fork_copy TEXT NOT NULL DEFAULT ''`,
+			`UPDATE harness SET fork_args = replace(resume_args, '"{resume}"', '"{resume}","--fork-session"'), fork_copy = 'claude'
+			   WHERE id = 'claude' AND fork_args = '[]' AND resume_args LIKE '%"{resume}"%'`,
+			`UPDATE harness SET fork_args = '["fork","--no-alt-screen","{resume}"]'
+			   WHERE id = 'codex' AND fork_args = '[]' AND resume_args = '["resume","--no-alt-screen","{resume}"]'`,
+		},
+	},
+	{
+		// Where the room reads a runner's login and what fixes it, f-runner-login-expiry. Seeded for the two rows
+		// that have a reader, guarded on an empty value so a row edited by hand stays.
+		name: "0118_harness_login",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN login_read TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE harness ADD COLUMN login_fix TEXT NOT NULL DEFAULT ''`,
+			`UPDATE harness SET login_read = 'claude', login_fix = 'claude auth login'
+			   WHERE id = 'claude' AND login_read = '' AND login_fix = ''`,
+			`UPDATE harness SET login_read = 'codex', login_fix = 'codex login --device-auth'
+			   WHERE id = 'codex' AND login_read = '' AND login_fix = ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

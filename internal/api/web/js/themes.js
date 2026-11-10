@@ -281,7 +281,8 @@ function launcherColor(t, mine) {
 }
 
 // `provider/org/repo`, lowercase, or "" when the card has no repo to speak of. From the worktree path
-// `.../github/openziti/ziti-worktrees/branch` or, failing that, the card's own `repo`. NEVER the branch, worktree
+// `.../github/openziti/ziti-worktrees/branch`, else the card's `host` and `org` (a card home's clone origin) with its repo's
+// name, else the card's own `repo`. NEVER the branch, worktree
 // folder or title, and a `-worktrees` folder is its repo.
 function repoKeyOf(t) {
   if (!t) return "";
@@ -290,6 +291,8 @@ function repoKeyOf(t) {
   const path = String(t.worktree || "").replace(/\\/g, "/");
   const m = path.match(/\/((?:github|gitlab|bitbucket)[^/]*)\/([^/]+)\/([^/]+)/i);
   if (m) return clean(m[1], m[2], m[3]);
+  const name = String(t.repo || "").trim().replace(/\\/g, "/").split("/").filter(Boolean).pop() || "";
+  if (t.host && t.org && name) return clean(String(t.host), String(t.org), name);
   const parts = String(t.repo || "").trim().replace(/^[a-z+]+:\/\//i, "").split("/").filter(Boolean);
   if (parts.length >= 3) return clean(parts[0], parts[1], parts[2]);
   if (parts.length === 2) return clean("github", parts[0], parts[1]);

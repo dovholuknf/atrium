@@ -46,6 +46,9 @@ func launchAcrossRoom(ctx context.Context, in LaunchInput, harness, room string)
 	if in.Superlean {
 		req["superlean"] = true
 	}
+	if in.Chat {
+		req["chat"] = true
+	}
 	var res struct {
 		Local   bool   `json:"local"`
 		Card    string `json:"card"`

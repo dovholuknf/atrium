@@ -43,6 +43,8 @@ type leanKit struct {
 	Interview bool
 	// Superlean cuts the tool list, mercurius and the worker prompt further. Not a kit: empty() ignores it.
 	Superlean bool
+	// Chat starts with no built-in tools, and only the built-ins granted in Tools. Not a kit: empty() ignores it.
+	Chat bool
 	// Tools is the Skill or Agent tool granted with no file named. Not a kit: empty() ignores it.
 	Tools []string
 }

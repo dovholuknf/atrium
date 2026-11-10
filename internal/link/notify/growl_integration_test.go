@@ -691,3 +691,27 @@ func TestGrowlRoomAlert(t *testing.T) {
 		t.Fatalf("the next spell did not raise again: %+v", rows)
 	}
 }
+
+// A RUNNER LOGIN DUE GROWLS IN PLAIN WORDS WITH WHAT TO DO, and ends when the room stops saying it.
+func TestGrowlRunnerLoginDue(t *testing.T) {
+	rig := newGrowlRig(t)
+	rig.alert = roomAlert{ok: true, LoginsDue: []loginDue{
+		{Kind: "claude", State: "expiring", ExpiresAt: "2026-11-11T09:30:00Z", Fix: "claude auth login"},
+		{Kind: "codex", State: "out"}}}
+	rig.g.tick(context.Background())
+	rows := rig.live(t)
+	if len(rows) != 1 {
+		t.Fatalf("growlers %+v", rows)
+	}
+	g := rows[0]
+	if g.Reason != "runner-login" || g.Title != "sparta: a runner needs a login" ||
+		g.Body != "claude login expires 2026-11-11 09:30 UTC. On sparta run: claude auth login; codex is not logged in" ||
+		g.Subject != "claude auth login" {
+		t.Fatalf("growler %+v", g)
+	}
+	rig.alert = roomAlert{ok: true}
+	rig.g.tick(context.Background())
+	if rows := rig.live(t); len(rows) != 0 {
+		t.Fatalf("a renewed login kept %+v", rows)
+	}
+}

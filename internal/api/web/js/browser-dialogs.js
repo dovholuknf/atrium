@@ -185,7 +185,7 @@ function answerOf(opts, btnValue, input, choices) {
   return btnValue;
 }
 
-// opts: { title, body (html) or bodyText (text), buttons: [{label, value, style}], input, value }
+// opts: { title, body (html) or bodyText (text), buttons: [{label, value, style}], input, value, plain (no kicker) }
 function askUser(opts) {
   return new Promise(resolve => {
     // A question asked while another one is up.
@@ -213,6 +213,7 @@ function askUser(opts) {
       resolve(v);
     };
     document.getElementById("ask-title").textContent = opts.title || "";
+    askDlg.querySelector(".dlg-eyebrow").hidden = !!opts.plain;
     const askBody = document.getElementById("ask-body");
     if (opts.bodyText != null) askBody.textContent = opts.bodyText;
     else askBody.innerHTML = opts.body || "";

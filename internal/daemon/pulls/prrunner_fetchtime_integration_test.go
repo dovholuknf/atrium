@@ -72,7 +72,7 @@ func TestPRFetchSourceTimedAgainstALocalRemote(t *testing.T) {
 	remote := t.TempDir()
 	git := func(dir string, args ...string) string {
 		t.Helper()
-		cmd := exec.Command("git", append([]string{"-c", "user.email=a@b", "-c", "user.name=a"}, args...)...)
+		cmd := exec.Command("git", append([]string{"-c", "user.email=a@b", "-c", "user.name=a", "-c", "commit.gpgsign=false"}, args...)...)
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		if err != nil {

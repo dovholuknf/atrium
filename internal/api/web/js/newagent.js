@@ -125,7 +125,8 @@ function naListItems() {
   if (p && !rows.some(r => launchRepoKey(r.ref) === launchRepoKey(p.ref))) items.push({ ref: p.ref, name: naShort(p.ref), meta: "fetch it" });
   if (here.length) items.push({ sec: q ? "repos" : "recent" }, ...here.map(r => ({ ref: r.ref, name: r.name, meta: "" })));
   if (hub.length) items.push({ sec: "on the hub, not here" }, ...hub.map(r => ({ ref: r.ref, name: r.name, meta: "clone" })));
-  if (!items.length) items.push({ empty: (rows.length ? "nothing matches. " : "no repos yet. ") + "type owner/repo, or paste a GitHub link here: a repo, an issue, a pull request or a branch" });
+  if (!items.length) items.push({ empty: rows.length ? "no matches. paste a full repo link works" : "no repos yet" });
+  items.push({ ref: "", none: true, name: "no repo", meta: "its own folder" });
   return items;
 }
 function naHL(name, q) {
@@ -141,14 +142,14 @@ function naPaintList() {
   if (!naS.listOpen) return;
   const q = naEl("na-repo").value.trim();
   const items = naListItems();
-  const picks = items.filter(i => i.ref);
+  const picks = items.filter(i => i.ref || i.none);
   naS.listIdx = Math.max(0, Math.min(naS.listIdx, picks.length - 1));
   let n = -1;
   el.innerHTML = items.map(i => {
     if (i.empty) return `<div class="empty">${esc(i.empty)}</div>`;
     if (i.sec) return `<div class="sec">${esc(i.sec)}</div>`;
     n++;
-    return `<div class="cb-opt ${n === naS.listIdx ? "on" : ""}" data-n="${n}"><span class="nm">${naHL(i.name, q)}</span><span class="meta">${esc(i.meta)}</span></div>`;
+    return `<div class="cb-opt ${n === naS.listIdx ? "on" : ""}${i.none ? " none" : ""}" data-n="${n}"><span class="nm">${i.none ? esc(i.name) : naHL(i.name, q)}</span><span class="meta">${esc(i.meta)}</span></div>`;
   }).join("");
   el.querySelectorAll(".cb-opt").forEach(o => o.onmousedown = e => { e.preventDefault(); naPick(picks[+o.dataset.n]); });
   const on = el.querySelector(".cb-opt.on");
@@ -157,6 +158,7 @@ function naPaintList() {
 function naPick(it) {
   naS.listOpen = false;
   if (!it) { naRender(); return; }
+  if (it.none) { naS.check = null; naSetRepo("", null); naEl("na-what").focus(); return; }
   const p = naParse(naEl("na-repo").value);
   naSetRepo(it.ref, p && launchRepoKey(p.ref) === launchRepoKey(it.ref) ? p.link : null);
   naEl("na-what").focus();
@@ -236,12 +238,13 @@ function naPaintConflicts() {
   el.innerHTML = "";
 }
 
-function naGroupChoices(sel) {
+function naGroupChoices(sel, tagsOn) {
   const p = typeof groupingPrefs === "function" ? groupingPrefs() : {};
   const named = p.mode === "custom" && Array.isArray(p.groups) ? p.groups : [];
-  const tags = [];
-  (lastTasks || []).forEach(t => (t.tags || []).forEach(g => { if (!String(g).includes(":")) tags.push(g); }));
-  return [...new Set([...sel, ...naRead(NA_RECENT_GROUPS_KEY, []), ...named, ...tags])];
+  const tags = [], now = Date.now();
+  if (tagsOn) (lastTasks || []).filter(t => cardState(t) !== "off" || cardIdleSeconds(t, now) < 30 * 86400)
+    .forEach(t => (t.tags || []).forEach(g => tags.push(g)));
+  return [...new Set([...sel, ...naRead(NA_RECENT_GROUPS_KEY, []), ...named, ...tags])].filter(isPickableGroup);
 }
 function naGroupCount(g) { return (lastTasks || []).filter(t => (t.tags || []).includes(g)).length; }
 function naSyncPop() {
@@ -251,51 +254,51 @@ function naSyncPop() {
 function naPaintGroups(root, sel, set) {
   root._paint = () => naPaintGroups(root, sel, set);
   const open = root.dataset.open === "1";
-  const all = naGroupChoices(sel);
+  const q = root.dataset.q || "", tagsOn = root.dataset.tags === "1";
+  const all = naGroupChoices(sel, tagsOn).filter(g => g.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => (sel.includes(b) - sel.includes(a)) || naGroupCount(b) - naGroupCount(a) || a.localeCompare(b));
+  const make = groupNameOf(q);
+  const fresh = make && isPickableGroup(make) && !all.some(g => groupNameOf(g) === make) ? make : "";
   root.innerHTML =
     `<button type="button" class="gp-field" aria-expanded="${open}" aria-haspopup="listbox">` +
       (sel.length ? sel.map(g => `<span class="chip accent">${esc(g)}</span>`).join("") : `<span class="ph">no group</span>`) +
       `<span class="caret">▾</span></button>` +
-    `<button type="button" class="gp-add" aria-label="a new group" data-tip="a new group">+</button>` +
-    (open ? `<div class="gp-list" role="listbox">` + (all.length ? all.map(g =>
+    (open ? `<div class="gp-list" role="listbox"><div class="gp-tools"><input type="text" class="gp-q" placeholder="find or make a group" value="${esc(q)}">` +
+      `<label class="check"><input type="checkbox" class="gp-tg" ${tagsOn ? "checked" : ""}><span>include tags</span></label></div>` +
+      (fresh ? `<div class="gp-make" role="option"><span>${esc(fresh)}</span><kbd>&#9166;</kbd><span class="n">new group</span></div>` : "") +
+      (all.length ? all.map(g =>
       `<label class="check"><input type="checkbox" data-g="${esc(g)}" ${sel.includes(g) ? "checked" : ""}><span>${esc(g)}</span>` +
-      `<span class="n">${naGroupCount(g) || ""}</span></label>`).join("") : `<div class="empty">no groups yet. + makes one.</div>`) + `</div>` : "");
+      `<span class="n">${naGroupCount(g) || ""}</span></label>`).join("") : fresh ? "" : `<div class="empty">no groups yet</div>`) + `</div>` : "");
   naSyncPop();
   root.querySelector(".gp-field").onclick = () => {
     root.dataset.open = open ? "" : "1";
+    root.dataset.q = "";
     root._paint();
-    const c = !open && root.querySelector(".gp-list input");
+    const c = !open && root.querySelector(".gp-q");
     if (c) c.focus();
   };
-  root.querySelectorAll(".gp-list input").forEach(c => c.onchange = () => {
+  const qi = root.querySelector(".gp-q");
+  const take = () => {
+    const g = fresh || all.find(x => groupNameOf(x) === make);
+    if (!g) return;
+    root.dataset.q = "";
+    set(sel.includes(g) ? sel : [...sel, g]);
+    const n = root.querySelector(".gp-q");
+    if (n) n.focus();
+  };
+  if (qi) {
+    qi.oninput = () => { root.dataset.q = qi.value; root._paint(); const n = root.querySelector(".gp-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    qi.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); take(); } };
+    root.querySelector(".gp-tg").onchange = e => { root.dataset.tags = e.target.checked ? "1" : ""; root._paint(); };
+  }
+  const mk = root.querySelector(".gp-make");
+  if (mk) mk.onmousedown = e => { e.preventDefault(); take(); };
+  root.querySelectorAll(".gp-list input[data-g]").forEach(c => c.onchange = () => {
     const g = c.dataset.g;
     set(c.checked ? [...sel, g] : sel.filter(x => x !== g));
     const again = root.querySelector(`.gp-list input[data-g="${CSS.escape(g)}"]`);
     if (again) again.focus();
   });
-  root.querySelector(".gp-add").onclick = () => {
-    root.dataset.open = "";
-    const i = document.createElement("input");
-    i.type = "text"; i.placeholder = "new group"; i.className = "gp-new";
-    const list = root.querySelector(".gp-list");
-    if (list) list.remove();
-    naSyncPop();
-    root.querySelector(".gp-add").replaceWith(i);
-    i.focus();
-    let done = false;
-    const finish = keep => {
-      if (done) return;
-      done = true;
-      const v = i.value.trim();
-      if (keep && v) set(sel.includes(v) ? sel : [...sel, v]);
-      else root._paint();
-    };
-    i.onkeydown = e => {
-      if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); finish(true); }
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
-    };
-    i.onblur = () => finish(true);
-  };
   root.onkeydown = e => {
     if (e.key === "Escape" && root.dataset.open === "1") {
       e.preventDefault(); e.stopPropagation();
@@ -318,8 +321,7 @@ function naSummary() {
   if (naCanModel(h) && how.model) parts.push(esc(naModelLabel(how.model)));
   if (naCanEffort(h) && how.effort) parts.push(esc(how.effort) + " effort");
   if (naIsClaude(h)) parts.push(esc((NA_SETUPS.find(s => s[0] === how.setup) || NA_SETUPS[0])[1]));
-  if (naS.clone) parts.push(naS.clone.fork && !naCloneNoFork(naS.clone) ? "forks its conversation" : "a new conversation");
-  return parts.join(" · ") + (naS.clone || naSameAsDefault() ? "" : ' <span class="ch">• changed</span>');
+  return parts.join(" · ") + (naSameAsDefault() ? "" : ' <span class="ch">• changed</span>');
 }
 function naModelLabel(id) {
   const m = (modelPicker || []).find(x => (x.ID || x.model) === id);
@@ -330,19 +332,18 @@ function naPaintHow() {
   const rows = [];
   const seg = (k, opts) => `<div class="seg" data-k="${k}">` + opts.map(([v, label, sub]) =>
     `<button type="button" data-v="${esc(v)}" class="${(how[k] || "") === v ? "on" : ""}">${esc(label)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</button>`).join("") + `</div>`;
-  const c = naS.clone, rooms = c ? naRooms().filter(r => r === how.room) : naRooms();
+  const rooms = naRooms();
   if (rooms.length) rows.push(["room", seg("room", rooms.map(r => [r, r]))]);
-  const usable = launchableHarnesses(how.room || "").filter(x => !c || naIsClaude(x));
+  const usable = launchableHarnesses(how.room || "");
   rows.push(["runner", usable.length ? seg("harness", usable.map(x => [x.id, x.label || x.id]))
     : `<span class="none">no runner on ${esc(naRoomName())} is turned on and installed</span>`]);
   if (naCanModel(h)) rows.push(["model", seg("model", [["", "default"]].concat((modelPicker || []).map(m => [m.ID || m.model, m.Label || m.label || m.ID || m.model])))]);
   if (naCanEffort(h)) rows.push(["effort", seg("effort", NA_EFFORTS.map(v => [v, v || "default"]))]);
   if (naIsClaude(h)) rows.push(["setup", seg("setup", NA_SETUPS)]);
-  if (c) naCloneRows(rows, c);
-  const same = !!c || naSameAsDefault();
+  const same = naSameAsDefault();
   const save = `<div class="savebar">` + (naS.savedFlash ? `<span class="ok">✓ saved: every new agent starts like this</span>`
     : same ? "" : `<span>changed for this launch only</span>`) +
-    `<button type="button" id="na-save" ${same ? "disabled" : ""}${c ? " hidden" : ""}>save as default</button></div>`;
+    `<button type="button" id="na-save" ${same ? "disabled" : ""}>save as default</button></div>`;
   el.innerHTML = rows.map(([k, body], i) => `<span class="k">${k}</span><div class="rowend">${body}${i === rows.length - 1 ? save : ""}</div>`).join("");
   el.querySelectorAll(".seg[data-k]").forEach(sg => sg.querySelectorAll("button").forEach(b => b.onclick = () => {
     naS.how[sg.dataset.k] = b.dataset.v;
@@ -355,7 +356,6 @@ function naPaintHow() {
     naS.savedFlash = false;
     naRender();
   }));
-  if (c) naCloneWire(el, c);
   naEl("na-save").onclick = () => {
     naWrite(NA_HOW_KEY, Object.assign({}, naS.how));
     naS.savedFlash = true;
@@ -391,18 +391,12 @@ function naRender() {
   if (!naS) return;
   const d = naEl("na");
   d.classList.toggle("tw-mode", naS.tw);
-  d.classList.toggle("clone-mode", !!naS.clone);
-  naEl("na-h").textContent = naS.clone ? "clone card" : naS.tw ? "⚡ quick throwaway" : "new agent";
-  naEl("na-repo").disabled = !!naS.clone;
-  naEl("na-repo-clr").hidden = !naEl("na-repo").value || !!naS.clone;
+  naEl("na-h").textContent = naS.clone ? "duplicate agent" : naS.tw ? "⚡ quick throwaway" : "new agent";
+  naEl("na-repo-clr").hidden = !naEl("na-repo").value;
 
   const res = naEl("na-resolved"), r = naS.link, room = esc(naRoomName());
   const row = naS.ref ? naRowOf(naS.ref) : null;
-  if (naS.clone) {
-    const c = naS.clone;
-    res.innerHTML = `<span class="kind branch">clone</span><span class="txt">of <b>${esc(c.title)}</b> at <code>${esc(c.head.slice(0, 9))}</code>` +
-      (c.dirty.length ? `, ${c.dirty.length} uncommitted ${c.dirty.length === 1 ? "file" : "files"}` : "") + `</span>`;
-  } else if (r && r.num) {
+  if (r && r.num) {  } else if (r && r.num) {
     const k = r.kind === "pr" ? "pr" : "issue";
     res.innerHTML = r.reading ? `<span class="spin"></span><span class="txt">reading ${esc(naShort(naS.ref))}#${r.num}…</span>`
       : `<span class="kind ${k}">${k} #${r.num}</span><span class="txt">${esc(r.title || r.problem || "")}${r.title ? " · " : ""}${r.title ? "the room names its branch" : ""}</span>`;
@@ -415,8 +409,7 @@ function naRender() {
   } else if (naS.ref && !row.here) {
     res.innerHTML = `<span class="kind clone">clone</span><span class="txt">on the hub, not on ${room}: cloned first</span>`;
   } else {
-    res.innerHTML = naS.ref ? `<span class="txt" style="color:var(--dim)">a new worktree under the card root</span>`
-      : `<span class="txt" style="color:var(--dim)">or paste a GitHub link here: a repo, an issue, a pull request or a branch. it fills in the name and branch</span>`;
+    res.innerHTML = naS.ref ? `<span class="txt" style="color:var(--dim)">a new worktree under the card root</span>` : "";
   }
 
   naPaintGroups(naEl("na-groups"), naS.groups, gs => { naS.groups = gs; naRender(); });
@@ -431,7 +424,7 @@ function naRender() {
   naPaintConflicts();
   naEl("na-need").hidden = !!t.trim();
   if (t.trim()) naEl("na-title").classList.remove("missing");
-  naEl("na-reset").hidden = !(naS.titleTouched || naS.branchTouched) || !naS.ref || !!naS.clone;
+  naEl("na-reset").hidden = !(naS.titleTouched || naS.branchTouched) || !naS.ref;
 
   naPaintPreview(t, br);
   naEl("na-sum").innerHTML = naSummary();
@@ -439,7 +432,7 @@ function naRender() {
   naEl("na-change").setAttribute("aria-expanded", String(naS.howOpen));
   naEl("na-how").hidden = !naS.howOpen;
   if (naS.howOpen) naPaintHow();
-  naEl("na-go").firstElementChild.textContent = naS.clone ? "launch clone" : naS.tw ? "start throwaway" : "launch";
+  naEl("na-go").firstElementChild.textContent = naS.tw ? "start throwaway" : "launch";
   naEl("na-go").disabled = !naHarness();
   naPaintList();
 }
@@ -462,10 +455,8 @@ async function openNewAgent(tw, prefill, clone) {
     groups: naRead(NA_GROUPS_KEY, []), how: naDefaultHow(), howOpen: false, savedFlash: false,
     listOpen: false, listIdx: 0, brChoice: "new", check: null, pinned: false, clone: null
   };
-  if (clone) Object.assign(naS, clone.state, { howOpen: true, clone: clone.src });
-  naEl("na-what").value = "";
-  naEl("na-what").placeholder = clone ? "anything to tell it first? optional" : "what should it do? optional";
-  naEl("na-brief").value = clone ? clone.src.brief : "";
+  if (clone) Object.assign(naS, clone.state, { clone: clone.src });
+  naEl("na-what").value = clone ? "copy of " + clone.src.title : "";
   naEl("na-repo").value = clone ? naShort(naS.ref) : "";
   naEl("na-title").classList.remove("missing");
   naEl("na-groups").dataset.open = "";
@@ -481,7 +472,23 @@ async function openNewAgent(tw, prefill, clone) {
   else naEl("na-repo").focus();
 }
 
-naEl("na-repo").addEventListener("focus", () => { naS.listOpen = true; naS.listIdx = 0; naRender(); });
+async function naOpenInGroup(g) {
+  await openNewAgent(false);
+  if (!naS) return;
+  naS.groups = [g];
+  naRender();
+}
+
+// Capture, so the heading's own click (fold) never sees a press on its +.
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest(".tgroup .tgadd");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  naOpenInGroup(b.dataset.gnew);
+}, true);
+
+naEl("na-repo").addEventListener("click", () => { naS.listOpen = true; naS.listIdx = 0; naRender(); });
 naEl("na-repo").addEventListener("blur", () => {
   setTimeout(() => {
     if (!naS || !naS.listOpen) return;
@@ -500,7 +507,7 @@ naEl("na-repo").addEventListener("input", () => {
   naRender();
 });
 naEl("na-repo").addEventListener("keydown", e => {
-  const picks = naListItems().filter(i => i.ref);
+  const picks = naListItems().filter(i => i.ref || i.none);
   if (e.key === "ArrowDown") { e.preventDefault(); naS.listOpen = true; naS.listIdx = Math.min(naS.listIdx + 1, picks.length - 1); naPaintList(); }
   else if (e.key === "ArrowUp") { e.preventDefault(); naS.listIdx = Math.max(naS.listIdx - 1, 0); naPaintList(); }
   else if (e.key === "Enter" && naS.listOpen && !(e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); naPick(picks[naS.listIdx]); }
@@ -546,71 +553,54 @@ naEl("na").addEventListener("keydown", e => {
 function naCloneItem(id, t) {
   const why = t.worktree ? "" : "this card has no folder to copy";
   return {
-    label: "clone card", limited: !!why, tip: why,
+    label: "duplicate agent", limited: !!why, tip: why,
     help: "Opens the new agent form filled in from this card: a new worktree on a new branch from its commit, its " +
-      "uncommitted changes, its runner settings and BRIEF.md, and on claude a fork of its conversation. This card is untouched.",
+      "uncommitted changes, its runner settings and BRIEF.md, and, on a runner that can, a fork of its conversation. This card is untouched.",
     act: () => why ? toast("cannot clone", why) : openCloneCard(id, t)
   };
 }
 async function openCloneCard(id, t) {
-  let src;
-  try { src = await api(`/v1/tasks/${id}/clone`); } catch (e) { toast("cannot clone", e.message); return; }
   const tags = t.tags || [], tagged = k => tags.filter(g => g.startsWith(k)).map(g => g.slice(k.length));
   const title = (t.overrides && t.overrides.title) || t.title || t.display_title || id;
   const setup = tags.includes("atrium:superlean") ? "superlean" : tags.includes("atrium:lean") ? "lean" : "full";
+  let src;
+  try { src = await api(`/v1/tasks/${id}/clone`); } catch (e) {
+    if (t.repo) { toast("cannot clone", e.message); return; }
+    // A card with no repo has no checkout to copy, so its duplicate is a new empty home with the same settings.
+    await openNewAgent(false, "", {
+      state: { ref: "", title, titleTouched: true, groups: tags.filter(isPickableGroup),
+        how: { room: roomOf(id), harness: t.runner, model: t.model || "", effort: t.effort || "", setup } },
+      src: { id: id.replace(/^.*~/, ""), title, runner: t.runner, home: true }
+    });
+    return;
+  }
   await openNewAgent(false, "", {
     state: {
-      ref: src.repo || t.repo || "", title: title + " (clone)", titleTouched: true,
+      ref: src.repo || t.repo || "", title: "", titleTouched: true,
       branch: (t.branch || "claude/" + naSlug(title, 38)) + "-clone", branchTouched: true,
-      groups: tags.filter(g => !g.startsWith("atrium:")),
+      groups: tags.filter(isPickableGroup),
       how: { room: roomOf(id), harness: t.runner, model: t.model || "", effort: t.effort || "", setup }
     },
     src: {
-      id: id.replace(/^.*~/, ""), title, noFork: src.no_fork || "", head: src.head || "", dirty: src.dirty || [], brief: src.brief || "",
-      base: src.head || "", argv: t.launch_args || [], args: (t.launch_args || []).join(" "), env: t.launch_env_keys || [], theme: t.theme || "",
-      agents: tagged("atrium:agent:").join(", "), skills: tagged("atrium:skill:").join(", "), fork: !src.no_fork, carry: true
+      id: id.replace(/^.*~/, ""), title, runner: t.runner, noFork: src.no_fork || "", head: src.head || "", dirty: src.dirty || [], brief: src.brief || "",
+      base: src.head || "", argv: t.launch_args || [], theme: t.theme || "",
+      agents: tagged("atrium:agent:").join(","), skills: tagged("atrium:skill:").join(",")
     }
   });
 }
-function naCloneRows(rows, c) {
-  const q = tip => `<span class="help" tabindex="0" data-tip="${esc(tip)}">?</span>`;
-  const seg = (k, opts) => `<div class="seg" data-ck="${k}">` + opts.map(([v, label]) =>
-    `<button type="button" data-v="${v}" class="${String(c[k]) === v ? "on" : ""}">${esc(label)}</button>`).join("") + `</div>`;
-  const input = (k, cls, ph) => `<input class="cl ${cls}" data-ck="${k}" spellcheck="false" value="${esc(c[k])}" placeholder="${esc(ph)}">`;
-  const noFork = naCloneNoFork(c);
-  if (noFork) c.fork = false;
-  if (naIsClaude(naHarness()) && naS.how.setup !== "full") {
-    rows.push(["agents", input("agents", "", "none") + q("The agents the lean session keeps, by name, comma separated.")]);
-    rows.push(["skills", input("skills", "", "none") + q("The skills the lean session keeps, by name, comma separated.")]);
-  }
-  rows.push(["args", input("args", "", "none") + q("Extra arguments for the runner, the same as the original's.")]);
-  rows.push(["env", (c.env.length ? c.env.map(n => `<span class="chip"><code>${esc(n)}</code></span>`).join("") : `<span class="none">none</span>`) +
-    q("The original's environment, by name. The values stay on the room and are copied there.")]);
-  rows.push(["theme", `<select class="cl" data-ck="theme">${themeOptionsWith(c.theme, "the project default")}</select>`]);
-  rows.push(["base", input("base", "sha", "a commit") + q("The commit the new branch starts from: the original's HEAD when this opened.")]);
-  rows.push(["changes", c.dirty.length ? seg("carry", [["true", "carry " + c.dirty.length + (c.dirty.length === 1 ? " file" : " files")], ["false", "leave them"]]) +
-    q("Uncommitted in the original: " + c.dirty.join(", ") + ". Copied into the clone's worktree. The original keeps them too.")
-    : `<span class="none">none uncommitted</span>`]);
-  rows.push(["memory", seg("fork", [["true", "fork its conversation"], ["false", "start fresh"]]).replace('data-v="true"',
-    'data-v="true"' + (noFork ? ` disabled data-tip="${esc(noFork)}"` : "")) +
-    q("A fork resumes a copy of the original's conversation, so the clone knows what it knew. The original's conversation is untouched.")]);
-}
 function naCloneNoFork(c) {
-  return c.noFork || (naIsClaude(naHarness()) ? "" : "only a claude conversation can be forked for now");
+  const h = naHarness();
+  if (c.noFork) return c.noFork;
+  if (!h || h.id !== c.runner) return "a conversation can only be forked on the runner that holds it";
+  return (h.fork_args || []).length ? "" : "this runner has no recipe to fork a conversation";
 }
 function naCloneBody(body, c) {
-  const list = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
-  Object.assign(body, { clone_of: c.id, clone_carry: !!(c.carry && c.dirty.length), clone_fork: !!c.fork && !naCloneNoFork(c),
-    base: c.base.trim(), theme: c.theme, brief: naEl("na-brief").value,
-    args: c.args.trim() === c.argv.join(" ") ? c.argv : c.args.split(/\s+/).filter(Boolean) });
-  if ((body.lean || body.superlean) && list(c.agents).length) body.lean_agents = list(c.agents);
-  if ((body.lean || body.superlean) && list(c.skills).length) body.lean_skills = list(c.skills);
+  const list = k => (c[k] || "").split(",").filter(Boolean);
+  Object.assign(body, { clone_of: c.id, clone_carry: c.dirty.length > 0, clone_fork: !naCloneNoFork(c),
+    base: c.base, theme: c.theme, brief: c.brief, args: c.argv });
+  if ((body.lean || body.superlean) && list("agents").length) body.lean_agents = list("agents");
+  if ((body.lean || body.superlean) && list("skills").length) body.lean_skills = list("skills");
 }
-function naCloneWire(el, c) {
-  el.querySelectorAll(".seg[data-ck] button").forEach(b => b.onclick = () => { c[b.parentElement.dataset.ck] = b.dataset.v === "true"; naRender(); });
-  el.querySelectorAll("input[data-ck], select[data-ck]").forEach(i => i.oninput = () => { c[i.dataset.ck] = i.value; });
-}
-
 function naBody(h) {
   const how = naS.how, body = { harness: h.id, prompt: naEl("na-what").value.trim() };
   if (naCanModel(h) && how.model) body.model = how.model;
@@ -671,6 +661,7 @@ async function naLaunch(tw) {
     if (!tw) {
       naWrite(NA_GROUPS_KEY, naS.groups);
       naWrite(NA_RECENT_GROUPS_KEY, [...new Set([...naS.groups, ...naRead(NA_RECENT_GROUPS_KEY, [])])].slice(0, 12));
+      naNameGroups(naS.groups);
     }
     naEl("na").close();
     if (typeof rememberLaunchRoom === "function") rememberLaunchRoom(room, task && task.id);
@@ -680,6 +671,17 @@ async function naLaunch(tw) {
     if (task.supervised) { switchView("terms"); openTerm(task); return; }
     switchView("board");
   }, "starting…");
+}
+
+// The custom grouping draws only the groups on its list, so a group picked here joins it.
+function naNameGroups(gs) {
+  if (typeof groupingPrefs !== "function") return;
+  const p = groupingPrefs("terms"), groups = Array.isArray(p.groups) ? p.groups.slice() : [];
+  const fresh = gs.map(groupNameOf).filter(g => g && !groups.includes(g));
+  if (!fresh.length) return;
+  const made = Object.assign({}, p.made);
+  fresh.forEach(g => { groups.push(g); made[g] = Date.now(); });
+  setGrouping({ groups, made }, "terms");
 }
 
 // The open verb makes the card and knows nothing of groups, so they are patched on after.
@@ -717,6 +719,7 @@ naEl("nk-go").onclick = () => busyWhile("nk-go", async () => {
     return;
   }
   naEl("na-keep").close();
+  naNameGroups(naKeepGroups);
   toast(res.when === "now" ? "kept" : "kept when the session ends", naKeepGroups.length ? "in " + naKeepGroups.join(", ") : res.to);
   if (typeof refresh === "function") refresh();
 }, "keeping…");

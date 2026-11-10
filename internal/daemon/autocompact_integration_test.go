@@ -156,6 +156,9 @@ func fakeClaude(t *testing.T, help string) string {
 		if err := os.WriteFile(p, []byte("@type \""+txt+"\"\r\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		if out, err := exec.Command(p, "--help").CombinedOutput(); err != nil {
+			t.Skipf("this account cannot run a .cmd it wrote here: %v %s", err, out)
+		}
 		return p
 	}
 	p := filepath.Join(dir, "claude")

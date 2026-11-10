@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ func claudeTrustKeys(cwd, goos string) []string {
 		return nil
 	}
 	add(abs)
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
+	if real, err := safepath.Real(abs); err == nil {
 		add(real)
 	}
 	return keys

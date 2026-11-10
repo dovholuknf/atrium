@@ -1001,6 +1001,15 @@ async function groupDragSection(browser, base) {
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: slow(15000) });
 
+    const cur = await dp.evaluate(() => {
+      const h = document.querySelector('#term-list .tgroup.movable[data-ghead="spare"]');
+      const add = h && h.querySelector(".tgadd");
+      return add && { head: getComputedStyle(h).cursor, add: getComputedStyle(add).cursor };
+    });
+    if (!cur || cur.head !== "grab" || cur.add !== "default") {
+      fail("a movable heading is not grab with an arrow over its +: " + JSON.stringify(cur));
+    }
+
     // A heading dragged above another moves the whole group and writes the order.
     await dp.locator('#term-list .tgroup[data-ghead="spare"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="active"]'), { targetPosition: { x: 10, y: 2 } });
@@ -9615,7 +9624,7 @@ async function keepaliveSection(browser, base) {
       const out = cards.map(t => {
         const row = document.createElement("div");
         row.className = "card tab";
-        row.innerHTML = `<span>${esc(t.display_title)}</span>` + termRowChips(t);
+        row.innerHTML = `<span>${esc(t.display_title)}</span>` + termStateSlot(t) + termRowChips(t);
         list.appendChild(row);
         const card = document.createElement("div");
         card.innerHTML = cardHTML(t);
@@ -9641,6 +9650,33 @@ async function keepaliveSection(browser, base) {
       await kp.locator("#ka-rows").screenshot({ path: require("path").join(process.env.KA_ROW_SHOTS, "keepalive-rows.png") });
     }
     await kp.evaluate(() => document.getElementById("ka-rows").remove());
+
+    const coldRow = await kp.evaluate(t => {
+      const row = document.createElement("div");
+      row.innerHTML = termStateSlot(t) + termRowChips(t);
+      return { slot: row.querySelector(".tstate").textContent.trim(),
+        chips: [...row.querySelectorAll(".chips .chip")].map(c => c.className) };
+    }, Object.assign({}, T1, { id: "claude-sg4~ka-cold-idle", seen: { unseen: true },
+      keepalive: { state: "on", refreshes: 0, warm_until: soon(-60 * 60000) } }));
+    if (coldRow.slot !== "❄") fail("a cold idle row's state slot is not the snowflake: " + JSON.stringify(coldRow));
+    if (coldRow.chips.join("|") !== "chip room") fail("a cold idle row draws a chip besides the room's: " + JSON.stringify(coldRow));
+
+    const pinHead = await kp.evaluate(rowsIn => {
+      const real = workingNow;
+      workingNow = t => t.id === "pin-run";
+      try {
+        const head = (list, folded) => {
+          const el = document.createElement("div");
+          el.innerHTML = termBucketHTML(list, list.length, folded, 0);
+          const run = el.querySelector(".pinnedhead .tkidrun");
+          return run ? run.textContent.trim() : "";
+        };
+        return { folded: head(rowsIn, true), open: head(rowsIn, false), none: head(rowsIn.slice(1), true) };
+      } finally { workingNow = real; }
+    }, [{ id: "pin-run", pinned: true }, { id: "pin-idle", pinned: true }]);
+    if (pinHead.folded !== "1" || pinHead.open !== "" || pinHead.none !== "") {
+      fail("the folded pinned heading's running badge is wrong: " + JSON.stringify(pinHead));
+    }
 
     // The card menu's switch: offered on a Claude card, reads its state, and
     // posts to that card. Not offered on a card with no switch.
@@ -10457,10 +10493,11 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
-    await p.waitForFunction(r => ["held", "questions", "unseen", "cache", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
+    await p.waitForFunction(r => ["held", "questions", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
     await settleStyle(p);
-    // The row's badges, by what they are. Every one must be on the row for the test to mean anything.
-    const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.cache", "chip.room"]
+    // The row's badges, by what they are. Every one must be on the row for the test to mean anything. The cache dial is the
+    // state slot's, and a working card draws the spinner there.
+    const badges = ["chip.held", "chip.questions", "chip.room"]
       .map(c => row + " ." + c.split(".").join("."));
     const hovered = [];
     for (const sel of badges.concat([row + " .chip:not(.held):not(.questions):not(.unseen):not(.cache):not(.room)", row + " .tname", row])) {
@@ -12237,6 +12274,183 @@ async function walkContextSection(browser, base) {
   }
   if (errors.length) fail("walkContext: the page threw: " + errors.join(" | "));
   console.log("walkContext: ok");
+}
+
+// A card with no findings walks its branch against the base, a file at a time, and a refusal is written in the pane.
+// A real two-commit branch in a made-up repo, its patch read by git. WALK_SHOTS=<dir> WALK_SHOT=before|after writes PNGs.
+async function walkBranchSection(browser, base) {
+  const { execFileSync } = require("child_process");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkbranch-"));
+  const repo = path.join(tmp, "repo");
+  const hooks = path.join(tmp, "hooks");
+  const git = (...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + hooks, ...a], { cwd: repo }).toString();
+  fs.mkdirSync(repo);
+  fs.mkdirSync(hooks);
+  git("init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "base.txt"), "base\n");
+  git("add", "."); git("commit", "-q", "-m", "base");
+  git("switch", "-q", "-c", "feature");
+  fs.writeFileSync(path.join(repo, "one.txt"), "one\n");
+  git("add", "."); git("commit", "-q", "-m", "one");
+  fs.writeFileSync(path.join(repo, "base.txt"), "base\nchanged\n");
+  fs.writeFileSync(path.join(repo, "two.txt"), "two\nmore\n");
+  git("add", "."); git("commit", "-q", "-m", "two");
+  const patch = git("diff", git("merge-base", "main", "HEAD").trim(), "HEAD");
+  const ids = { ok: "land-wbranchok", bad: "land-wbranchbad" };
+  for (const k of Object.values(ids)) {
+    fs.mkdirSync(path.join(tmp, k, "findings"), { recursive: true });
+    mock.walkDirs[k] = path.join(tmp, k);
+  }
+  mock.walkBranch[ids.ok] = { code: 200, body: { branch: "feature", base: "main", diff: patch } };
+  // The button's probe is answered, and the base is gone for every read after it.
+  mock.walkBranch[ids.bad] = { code: 200, body: { branch: "feature", base: "main", diff: patch },
+    then: { code: 409, body: { error: "no base to compare feature with: looked for origin/HEAD, origin/main, main" } } };
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(ids.ok, { supervised: true, worktree: "/walk/ok" }), landCard(ids.bad, { supervised: true, worktree: "/walk/bad" })];
+  mock.landPerms = [];
+  const errors = [];
+  const shotDir = process.env.WALK_SHOTS || "";
+  const shotTag = process.env.WALK_SHOT || "after";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const S = "#walk-drawer ";
+  const open = async (p, id) => {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(p, { unit: "walkBranch", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+  };
+  const shot = async (p, name) => {
+    if (!shotDir) return;
+    fs.mkdirSync(shotDir, { recursive: true });
+    await settleStyle(p).catch(() => {});
+    await p.screenshot({ path: path.join(shotDir, shotTag + "-" + name + ".png") });
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await open(p, ids.ok);
+    await p.click("#t-walk");
+    await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) })
+      .catch(() => fail("walkBranch: no files listed for a card with no findings"));
+    const rows = await p.$$eval(S + ".wk-row .wk-fn", els => els.map(e => e.textContent));
+    if (rows.join() !== "base.txt,one.txt,two.txt") fail("walkBranch: the files are " + rows.join());
+    if (await p.$eval("#walk-title", e => e.textContent) !== "feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
+    await shot(p, "first-file");
+    const lay = await p.evaluate(() => {
+      const d = document.getElementById("walk-drawer"), f = document.getElementById("walk-files"), r = document.getElementById("walk-rail");
+      const pane = document.getElementById("term-pane").getBoundingClientRect(), dr = d.getBoundingClientRect();
+      return { b: d.classList.contains("wk-b"), railIn: r.parentElement.id, filesShown: !f.hidden,
+        inPane: dr.left >= pane.left - 1 && dr.right <= pane.right + 1 && dr.bottom < pane.bottom };
+    });
+    if (!lay.b || !lay.inPane) fail("walkBranch: the diff is not over the top of the terminal pane: " + JSON.stringify(lay));
+    if (lay.filesShown !== (lay.railIn === "walk-files")) fail("walkBranch: the file list is not where it says: " + JSON.stringify(lay));
+    await p.click(S + '.wk-row[data-i="2"]');
+    const lines = await p.$$eval(S + ".wk-code .wk-l.add .wk-tx", els => els.map(e => e.textContent));
+    if (lines.join() !== "two,more") fail("walkBranch: two.txt shows " + JSON.stringify(lines));
+    await shot(p, "second-file");
+    const chg = () => p.$eval("#walk-chg", e => e.textContent);
+    const total = Number(/of (\d+)/.exec(await chg())[1]);
+    if (!total) fail("walkBranch: no changes counted: " + await chg());
+    await p.click('#walk-nav [data-act="nc"]');
+    if (!/^change 1 of /.test(await chg()) || !await p.$(S + ".wk-l.at")) fail("walkBranch: next change did not land on the first change: " + await chg());
+    await p.keyboard.press("p");
+    await p.click('#walk-nav [data-act="pc"]');
+    if (!/^change 1 of /.test(await chg())) fail("walkBranch: previous change went past the first: " + await chg());
+    for (let i = 0; i < total + 1; i++) await p.click('#walk-nav [data-act="nc"]');
+    if (!new RegExp("^change " + total + " of ").test(await chg())) fail("walkBranch: next change did not stop at the last: " + await chg());
+    await p.click(S + ".wk-l.add .wk-ln[data-ln]");
+    await p.fill("#walk-new", "check this line");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(S + ".cmt[data-cid]", { timeout: slow(5000) }).catch(() => fail("walkBranch: Enter did not save the comment"));
+    const kept = () => (mock.walkState[ids.ok] && mock.walkState[ids.ok].comments || []).length;
+    for (let i = 0; i < 100 && !kept(); i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
+    if (kept() !== 1) fail("walkBranch: the comment was not kept for the card: " + JSON.stringify(mock.walkState[ids.ok]));
+    if (!await p.$("#walk-bottom .wb-toggle")) fail("walkBranch: no bar along the bottom");
+    await p.click('#walk-bottom [data-wp="toggle"]');
+    await p.waitForSelector("#walk-bottom.wb-thread .sc", { timeout: slow(5000) }).catch(() => fail("walkBranch: the thread did not open with its scope chips"));
+    await p.click('#walk-bottom .sc[data-k="file"]');
+    if (await p.$eval('#walk-bottom .sc[data-k="file"]', e => e.getAttribute("aria-pressed")) !== "false") fail("walkBranch: a scope chip did not turn off");
+    await shot(p, "thread-open");
+    await p.click('#walk-bottom [data-mode="terminal"]');
+    await shot(p, "terminal-bottom");
+    const anchor = await p.evaluate(() => walkForges.github.anchor({ url: "https://github.com/a/b/pull/1" }, { file: "x/y.cs", line: 5 }));
+    const want = "https://github.com/a/b/pull/1/files#diff-" + require("crypto").createHash("sha256").update("x/y.cs").digest("hex") + "R5";
+    if (anchor !== want) fail("walkBranch: the GitHub anchor is " + anchor);
+    const glab = await p.evaluate(() => walkForges.gitlab.cmd({ repo: "g/p", num: "3" }, { file: "x/y.cs", line: 5, text: "hi" }, "abc"));
+    if (!/^glab api projects\/g%2Fp\/merge_requests\/3\/discussions /.test(glab) || !/new_line\]=5/.test(glab)) fail("walkBranch: the GitLab command is " + glab);
+    const out = await p.evaluate(() => walkPrExport());
+    if (out.atrium !== "walk" || out.comments.length !== 1 || out.comments[0].text !== "check this line") fail("walkBranch: the export is " + JSON.stringify(out));
+    const mine = out.comments[0];
+    const doc = { atrium: "walk", v: 1, pr: { url: "" }, comments: [mine, { id: "x1", file: "two.txt", line: 2, who: "you", text: "and this one", turns: [] }], thread: [] };
+    await p.click("#walk-share");
+    await p.fill("#walk-share-paste", JSON.stringify(doc));
+    await p.click('#walk-share-pop [data-wp="share-import"]');
+    await p.waitForFunction(() => document.querySelectorAll("#walk-item .cmt[data-cid]").length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail("walkBranch: importing a walk.json did not merge its new comment, once"));
+    mock.walkOpen.card = ids.ok;
+    const other = { atrium: "walk", v: 1, pr: { url: "https://github.com/acme/widgets/pull/7", repo: "acme/widgets", num: "7" },
+      comments: [{ id: "o1", file: "a.cs", line: 3, who: "you", text: "from another dev", turns: [{ who: "you", text: "why?" }] }], thread: [{ q: "is it safe", scope: "", at: 1 }] };
+    await p.waitForFunction(() => !walkPr.timer, null, { timeout: slow(5000) });
+    await p.evaluate(t => walkPrImportText(t), JSON.stringify(other));
+    for (let i = 0; i < 100 && !mock.walkOpen.calls.length; i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
+    const call = mock.walkOpen.calls[0] || {};
+    if (call.url !== other.pr.url || !/from another dev/.test(call.why || "") || !/is it safe/.test(call.why || "")) fail("walkBranch: importing another PR's walk opened " + JSON.stringify(call));
+    for (let i = 0; i < 100 && !(mock.walkState[ids.ok] && mock.walkState[ids.ok].comments.some(c => c.id === "o1")); i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
+    if (!(mock.walkState[ids.ok].comments || []).some(c => c.id === "o1")) fail("walkBranch: the imported walk was not kept on the new card");
+    mock.walkOpen.card = "";
+    await p.waitForSelector("#walk-bottom.wb-term", { timeout: slow(5000) }).catch(() => fail("walkBranch: the terminal switch did nothing"));
+    mock.walkAgent.add = [{ id: "ag1", file: "two.txt", line: 2, who: "agent", text: "agent asks why", turns: [{ who: "agent", text: "agent reply", id: "t1" }], post: null }];
+    await p.evaluate(() => walkPrSync());
+    await p.waitForFunction(() => walkPrAgentComments().length === 1 && /agent reply/.test(document.getElementById("walk-item").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("walkBranch: the agent's comment and its reply did not reach the bubbles"));
+    const forge = await p.evaluate(() => { walkPr.prUrl = "https://github.com/acme/widgets/pull/7"; const f = walkPrForge(); return f && f.kind + " " + f.num; });
+    if (forge !== "github 7") fail("walkBranch: the walk's own pull request url gave " + forge);
+    await p.close();
+
+    // The walk is kept: a page that never saw the comment shows it.
+    const pr = await ctx.newPage();
+    pr.on("pageerror", e => errors.push(String(e)));
+    await open(pr, ids.ok);
+    await pr.click("#t-walk");
+    await pr.waitForFunction(() => typeof walkPr !== "undefined" && walkPr.s && walkPr.s.comments.some(c => c.id === "o1"), null, { timeout: slow(10000) })
+      .catch(() => fail("walkBranch: a reload lost the walk"));
+    await pr.close();
+
+    // The base goes away after the button showed: the pane says so in words.
+    const pb = await ctx.newPage();
+    pb.on("pageerror", e => errors.push(String(e)));
+    await open(pb, ids.bad);
+    await pb.click("#t-walk");
+    await pb.waitForFunction(() => /no base to compare feature with/.test((document.querySelector("#walk-item") || {}).textContent || ""),
+      null, { timeout: slow(10000) }).catch(() => fail("walkBranch: a refused diff left the pane without the reason"));
+    await shot(pb, "error");
+    await pb.close();
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    for (const k of Object.values(ids)) { delete mock.walkDirs[k]; delete mock.walkBranch[k]; }
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkBranch: the page threw: " + errors.join(" | "));
+  console.log("walkBranch: ok");
 }
 
 // b-walk-own-view: the walk in a tab of its own (walk.html) over a made-up findings folder, and the drawer's way there.
@@ -14153,7 +14367,7 @@ async function termMenuSection(browser, base) {
 
     // a running card: the whole menu, in order.
     let m = await openMenu("land-tm-run");
-    const want = ["restart", "new context", "---", "settings", "---", "clone card", "stop", "terminate and clean up"];
+    const want = ["restart", "new context", "---", "settings", "---", "duplicate agent", "stop", "terminate and clean up"];
     if (JSON.stringify(m.labels) !== JSON.stringify(want)) fail("termMenu: a running card's menu is " + JSON.stringify(m.labels));
     // settings has no (?) in the interview's table, so it is the only item allowed without one.
     if (m.noHelp.some(l => l !== "settings")) fail("termMenu: items without their (?): " + JSON.stringify(m.noHelp));
@@ -14194,7 +14408,7 @@ async function termMenuSection(browser, base) {
     closes.length = 0;
 
     // A FOLDER ATRIUM DID NOT CREATE: the preview names it as foreign. The menu says it stays, offers a tick to delete it
-    // too, and stops the session only on "stop session". CLOSE_SHOT=<dir> writes the picture.
+    // too, and stops the session only on "stop". CLOSE_SHOT=<dir> writes the picture.
     freed = [];
     foreign = { path: "/g/gwt-wt", branch: "feat/x", repo: "/g/repo", dirty: 0, unpushed: 0 };
     await openMenu("land-tm-run");
@@ -14202,11 +14416,11 @@ async function termMenuSection(browser, base) {
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
       .catch(() => fail("termMenu: a clean up that frees nothing did not say so."));
     const fw = await dialogUp().first().textContent();
-    if (!/The agent stops\. Its worktree and branch stay on disk\./.test(fw) || !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(fw)) {
+    if (!/Stop land tm-run\?/.test(fw) || !(await p.evaluate(() => document.querySelector("#ask .dlg-eyebrow").hidden)) || !/Its files stay\./.test(fw) || !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(fw)) {
       fail("termMenu: the foreign worktree wording is " + JSON.stringify(fw));
     }
     const fb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
-    if (fb !== "cancel,stop session") fail("termMenu: the foreign worktree buttons are " + fb);
+    if (fb !== "cancel,stop") fail("termMenu: the foreign worktree buttons are " + fb);
     if (process.env.CLOSE_SHOT) await p.locator("dialog#ask").screenshot({ path: process.env.CLOSE_SHOT + "/board-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
     await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
@@ -14214,7 +14428,7 @@ async function termMenuSection(browser, base) {
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
-    await p.locator("dialog[open] button", { hasText: "stop session" }).click();
+    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
     await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
     await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^terminated /.test(b.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (closes.length !== 1 || closes[0].confirm !== true || closes[0].adopt !== false) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
@@ -14226,7 +14440,7 @@ async function termMenuSection(browser, base) {
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
-    await p.locator("dialog[open] button", { hasText: "stop session" }).click();
+    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
     await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^could not terminate /.test(b.textContent)),
       null, { timeout: slow(5000) }).catch(() => fail("termMenu: a session that did not stop was not toasted as could not terminate."));
     closeReply = { closed: true, items: [] };
@@ -14237,7 +14451,7 @@ async function termMenuSection(browser, base) {
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("#ask-adopt").check();
-    await p.locator("dialog[open] button", { hasText: "stop session" }).click();
+    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
     await p.waitForFunction(() => /feat\/x has work found nowhere else/.test((document.getElementById("ask-title") || {}).textContent || ""),
       null, { timeout: slow(5000) }).catch(() => fail("termMenu: the tick on a folder with work did not ask."));
     const wb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
@@ -19479,8 +19693,9 @@ async function repoColorsSection(browser, base) {
       "/Users/me/git/github/openziti/ziti/main",
       "/Users/me/git/github/openziti/ziti-worktrees/fix-x",
       "/Users/me/git/gitlab.com/Foo/Bar/wt"
-    ].map(w => repoKeyOf({ worktree: w })).concat(repoKeyOf({ repo: "github.com/a/b.git" }), repoKeyOf({ worktree: "/tmp/one" })));
-    const want = ["github/openziti/ziti", "github/openziti/ziti", "gitlab/foo/bar", "github/a/b", ""];
+    ].map(w => repoKeyOf({ worktree: w })).concat(repoKeyOf({ repo: "github.com/a/b.git" }), repoKeyOf({ worktree: "/tmp/one" }),
+      repoKeyOf({ worktree: "D:/worktrees/claude/cards/csharp-gaps-i5entn/work", repo: "ziti-sdk-csharp", host: "github", org: "openziti" })));
+    const want = ["github/openziti/ziti", "github/openziti/ziti", "gitlab/foo/bar", "github/a/b", "", "github/openziti/ziti-sdk-csharp"];
     if (JSON.stringify(keys) !== JSON.stringify(want)) fail(tag + "repo keys " + JSON.stringify(keys));
 
     const r = await p.evaluate(() => {
@@ -26593,7 +26808,7 @@ async function main() {
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -26712,7 +26927,7 @@ async function main() {
       fail("the card with two open questions did not draw `? 2`: " + JSON.stringify(seenMarks));
     }
     if (seenMarks.plain !== 0) fail("a card with no seen state drew a seen mark");
-    if (seenMarks.tab === false) fail("the terminal strip row did not draw the unread dot");
+    if (seenMarks.tab === true) fail("the terminal strip row drew the unread dot");
     mock.tasksMode = "first";
     await page.evaluate(() => runRefresh());
     });
@@ -28444,6 +28659,7 @@ async function main() {
     await unit("questionsClick", () => questionsClickSection(browser, base));
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
+    await unit("walkBranch", () => walkBranchSection(browser, base));
     await unit("walkView", () => walkViewSection(browser, base));
     await unit("walkReply", () => walkReplySection(browser, base));
     await unit("walkNoResize", () => walkNoResizeSection(browser, base));
@@ -28485,6 +28701,7 @@ async function main() {
     await unit("pollsGone", bu("pollsGone"));
     await unit("findingsProbe", bu("findingsProbe"));
     await unit("roomsMachine", bu("roomsMachine"));
+    await unit("roomsLogin", bu("roomsLogin"));
     await unit("mHome", () => mHomeSection(browser));
     await unit("mResume", () => mResumeSection(browser));
     await unit("mCard", () => mCardSection(browser));
@@ -28695,7 +28912,7 @@ async function main() {
     await unit("backlogShow", bu("backlogShow"));
     await unit("backlogGroup", bu("backlogGroup"));
     await unit("backlogNewItem", bu("backlogNewItem"));
-    await unit("mergeStrip", bu("mergeStrip"));
+    await unit("mergeStripGone", bu("mergeStripGone"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
     await unit("interviewTop", bu("interviewTop"));
@@ -28729,6 +28946,8 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("dropdownsInstant", bu("dropdownsInstant"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
+    await unit("launchGroupPlus", bu("launchGroupPlus"));
+    await unit("launchNewAgentGroups", bu("launchNewAgentGroups"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
     await unit("launchThrowaway", bu("launchThrowaway"));
     await unit("launchSetup", bu("launchSetup"));
@@ -28861,6 +29080,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("pasteRepoName", () => pasteRepoNameSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
     await unit("roomsMenuScroll", bu("roomsMenuScroll"));
+    await unit("roomsThemes", bu("roomsThemes"));
     await unit("notifyTrayFill", () => notifyTrayFillSection(browser, base));
     await unit("notifyTrayWrap", () => notifyTrayWrapSection(browser, base));
     await unit("homesChips", bu("homesChips"));
@@ -31549,7 +31769,7 @@ async function mOpenQSection(browser) {
 }
 
 // The phone's terminate and clean up on a card whose folder atrium did not create: the preview names it as foreign, the
-// sheet says it stays, offers a tick to delete it too, and closes only on "stop session". CLOSE_SHOT=<dir> writes the
+// sheet says it stays, offers a tick to delete it too, and closes only on "stop". CLOSE_SHOT=<dir> writes the
 // picture.
 async function mCleanUpForeignSection(browser) {
   const tag = "mCleanUpForeign: ";
@@ -31571,14 +31791,14 @@ async function mCleanUpForeignSection(browser) {
     const menu = async () => {
       await p.evaluate(() => window.mResume.open("gwt-1"));
       await p.locator("#m-rmenu .rmenu-item", { hasText: "terminate and clean up" }).tap();
-      await p.waitForFunction(() => /The agent stops/.test((document.getElementById("m-rmenu") || {}).textContent || ""), null, { timeout: slow(5000) });
+      await p.waitForFunction(() => /Its files stay/.test((document.getElementById("m-rmenu") || {}).textContent || ""), null, { timeout: slow(5000) });
     };
     await menu();
     const say = await p.$eval("#m-rmenu", e => ({ hidden: e.hidden, text: e.textContent, btns: [...e.querySelectorAll("button")].map(b => b.textContent.trim()).join() }));
     if (say.hidden) fail(tag + "the question is not showing");
-    if (!/The agent stops\. Its worktree and branch stay on disk\./.test(say.text) ||
+    if (!/Stop gwt card\?/.test(say.text) || !/Its files stay\./.test(say.text) ||
       !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(say.text)) fail(tag + "the wording is " + JSON.stringify(say.text));
-    if (say.btns !== "stop session,cancel") fail(tag + "the buttons are " + say.btns);
+    if (say.btns !== "stop,cancel") fail(tag + "the buttons are " + say.btns);
     if (process.env.CLOSE_SHOT) await p.screenshot({ path: process.env.CLOSE_SHOT + "/phone-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
     await p.tap("#m-rmenu .rmenu-x");
     if (closes.length) fail(tag + "cancel still closed the card");

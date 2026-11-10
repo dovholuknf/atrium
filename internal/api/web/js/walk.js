@@ -69,6 +69,7 @@ function dockReset() {
   dock.tenant = null;
   dock.editing = null;
   dock.conflict = null;
+  dock.error = "";
   dock.menu = false;
   walkSheet(false);
   const drawer = document.getElementById("walk-drawer");
@@ -147,9 +148,12 @@ async function dockLoad() {
     got = await t.load(termTask, dock);
   } catch (e) {
     dock.loading = false;
+    dock.error = (e && e.message) || "the walk could not be read";
+    if (gen === dock.gen && !dock.items.length) dockPaint();
     return;
   }
   dock.loading = false;
+  dock.error = "";
   if (dock.again) { dock.again = false; dockResync(); }
   if (gen !== dock.gen) return;
   const was = dock.cur;
@@ -189,6 +193,19 @@ function dockPaint() {
   if (!dock.open || !drawer) return;
   const head = t.header(dock);
   document.getElementById("walk-title").textContent = head.title;
+  const prA = document.getElementById("walk-pr");
+  if (prA && head.url) { prA.href = head.url; prA.dataset.tip = "open it on the forge, in a new tab"; }
+  else if (prA) { prA.removeAttribute("href"); delete prA.dataset.tip; }
+  const share = document.getElementById("walk-share");
+  if (share) share.hidden = !walkB() || typeof walkPrExport !== "function";
+  const nav = document.getElementById("walk-nav");
+  if (nav) {
+    nav.hidden = !walkB();
+    if (!nav.hidden) {
+      document.getElementById("walk-chg").textContent = walkChangeAt(dock);
+      if (typeof walkPrCommentAt === "function") document.getElementById("walk-cmt").textContent = walkPrCommentAt();
+    }
+  }
   document.getElementById("walk-note").textContent = head.note;
   setHTML(document.getElementById("walk-bar"), barHtml);
   document.getElementById("walk-count").textContent = t.summary(dock.items);
@@ -200,9 +217,10 @@ function dockPaint() {
   if (!dock.editing) {
     const pane = document.getElementById("walk-item");
     const cur = dockCurrent();
-    if (!cur) setHTML(pane, `<div class="empty">${esc(t.empty)}</div>`);
+    if (!cur) setHTML(pane, `<div class="empty${dock.error ? " err" : ""}">${esc(dock.error || t.empty)}</div>`);
     else setHTML(pane, t.pane(cur, dock));
   }
+  walkPlace();
 }
 
 // ── the tenant: findings in a review folder ────────────
@@ -412,11 +430,81 @@ function walkPrItem(f) {
   return it;
 }
 
+// The branch's patch as one entry per file, deleted and binary files included, which walkParseDiff skips.
+function walkSplitDiff(text) {
+  const out = [];
+  let f = null, n = 0;
+  for (const l of String(text || "").split("\n")) {
+    const g = /^diff --git a\/(.+?) b\/(.+)$/.exec(l);
+    if (g) { f = { path: g[2], from: g[1], status: "modified", add: 0, del: 0, lines: [], inHunk: false }; out.push(f); continue; }
+    if (!f) continue;
+    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l);
+    if (h) { n = Number(h[1]); f.inHunk = true; f.lines.push({ t: "@", n: null, text: l }); continue; }
+    if (!f.inHunk) {
+      if (l.startsWith("new file")) f.status = "added";
+      else if (l.startsWith("deleted file")) f.status = "deleted";
+      else if (l.startsWith("rename from")) f.status = "renamed";
+      else if (l.startsWith("Binary files") || l.startsWith("GIT binary patch")) f.status = "binary";
+      continue;
+    }
+    if (l.startsWith("+")) { f.add++; f.lines.push({ t: "+", n: n++, text: l.slice(1) }); }
+    else if (l.startsWith("-")) { f.del++; f.lines.push({ t: "-", n: null, text: l.slice(1) }); }
+    else if (l.startsWith(" ")) f.lines.push({ t: " ", n: n++, text: l.slice(1) });
+  }
+  return out;
+}
+
+const walkFileLines = 2000;
+
+// A change is a run of added or removed lines, as the file's line index of its first one.
+function walkChanges(items) {
+  const out = [];
+  items.forEach(it => {
+    if (it.kind !== "file") return;
+    let inRun = false;
+    it.file.lines.slice(0, walkFileLines).forEach((l, li) => {
+      const ch = l.t === "+" || l.t === "-";
+      if (ch && !inRun) out.push({ key: it.key, li });
+      inRun = ch;
+    });
+  });
+  return out;
+}
+
+function walkChangeIdx(list) {
+  const at = walkTenant.at;
+  return at ? list.findIndex(c => c.key === at.key && c.li === at.li) : -1;
+}
+
+function walkChangeAt(d) {
+  const list = walkChanges(d.items), i = walkChangeIdx(list);
+  return "change " + (i < 0 ? "-" : i + 1) + " of " + list.length;
+}
+
+function walkChange(dir) {
+  const list = walkChanges(dock.items);
+  if (!list.length) return;
+  let i = walkChangeIdx(list);
+  if (i < 0) i = dir > 0 ? -1 : list.length;
+  const c = list[Math.max(0, Math.min(list.length - 1, i + dir))];
+  walkTenant.at = { key: c.key, li: c.li };
+  if (dock.cur !== c.key) dockSelect(c.key); else dockPaint();
+  const el = document.querySelector("#walk-item .wk-l.at");
+  if (el) el.scrollIntoView({ block: "center" });
+}
+
+// A file of the patch as a drawer item, with no finding behind it.
+function walkFileItem(f, i) {
+  return { kind: "file", file: f, key: "file:" + f.path, num: String(i + 1).padStart(2, "0"), sev: "nit", sevText: f.status.toUpperCase(),
+    path: f.path, line: 0, label: f.path, state: "", stateAt: "", stateUrl: "", thread: [], leak: false, group: "", isNew: false };
+}
+
 const walkTenant = {
   name: "walk",
   empty: "no findings in this folder",
   diff: null,          // Map from walkParseDiff, or null
   diffNote: "",        // why there is none
+  at: null,            // the change the walk stands on, { key, li }
   cache: new Map(),    // file name -> item, so an unchanged mtime costs nothing
   ctx: { key: "", above: 3, below: 3 },
   head: new Map(),     // diff path -> { lines } once `src/<path>` is read, null while it is not there
@@ -426,7 +514,7 @@ const walkTenant = {
 
   reset() {
     this.prId = "";
-    this.diff = null; this.diffNote = ""; this.cache = new Map(); this.head = new Map();
+    this.diff = null; this.diffNote = ""; this.cache = new Map(); this.head = new Map(); this.at = null;
     this.ctx = { key: "", above: 3, below: 3 };
   },
 
@@ -435,7 +523,17 @@ const walkTenant = {
     if (row) { this.prId = row.id; return true; }
     if (!task.worktree) return false;
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
-    return (res.entries || []).some(e => !e.dir && walkParseName(e.name));
+    if ((res.entries || []).some(e => !e.dir && walkParseName(e.name))) return true;
+    const br = await api(`/v1/tasks/${task.id}/diff`);
+    return !!(br && br.diff);
+  },
+
+  // No findings: the branch against its base, a file at a time.
+  async loadFiles(task) {
+    const br = await api(`/v1/tasks/${task.id}/diff`);
+    this.branch = br;
+    if (typeof walkPrLoad === "function") await walkPrLoad(task.id);
+    return { items: walkSplitDiff(br.diff).map(walkFileItem) };
   },
 
   async opened(d) {
@@ -465,6 +563,7 @@ const walkTenant = {
       else if (d.items.length) it.isNew = true;
     }
     walkPanelAsk(this.prId);
+    if (!next.length) return this.loadFiles(termTask);
     return { items: next };
   },
 
@@ -491,6 +590,7 @@ const walkTenant = {
       next.push(it);
     }
     this.cache = cache;
+    if (!next.length) return this.loadFiles(task);
     walkUniqueKeys(next);
     for (const it of next) {
       const before = prevByKey.get(it.key);
@@ -531,6 +631,12 @@ const walkTenant = {
   header(d) {
     const first = d.items[0];
     let title = "findings";
+    if (first && first.kind === "file") {
+      const b = this.branch || {};
+      const row = walkPrOf(d.taskId);
+      return { title: `${b.branch || "branch"} vs ${b.base || "base"}`, note: b.truncated ? "patch cut short" : "", more: "",
+        url: row && row.url || "" };
+    }
     if (first) {
       const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(first.prUrl);
       if (m) title = `${m[1]} #${m[2]}`;
@@ -542,6 +648,7 @@ const walkTenant = {
   },
 
   summary(items) {
+    if (items.length && items[0].kind === "file") return items.length + (items.length === 1 ? " file" : " files");
     const n = s => items.filter(i => i.state === s).length;
     const a = n("accepted"), p = n("posted"), d = n("dismissed"), f = n("deferred");
     return `${p + d} of ${items.length}` + (a || p || d || f
@@ -553,6 +660,11 @@ const walkTenant = {
   },
 
   railRow(it, i, d) {
+    if (it.kind === "file") {
+      return `<button type="button" class="wk-row${it.key === d.cur ? " cur" : ""}" data-i="${i}" role="option"
+        aria-selected="${it.key === d.cur}" data-tip="${esc(it.path)}"><span class="wk-n">${esc(it.num)}</span><span class="wk-fn">${
+        esc(it.path.split("/").pop())}</span>${typeof walkPrCommentCount === "function" && walkPrCommentCount(it.path) ? `<span class="wk-tc">${walkPrCommentCount(it.path)}</span>` : ""}<span class="wk-fc">+${it.file.add} -${it.file.del}</span></button>`;
+    }
     const glyph = it.state === "posted" ? "✓" : it.state === "accepted" ? "●" : it.state === "dismissed" ? "─" : it.state === "deferred" ? "…" : "";
     const prev = d.items[i - 1];
     return `<button type="button" class="wk-row s-${it.sev}${it.key === d.cur ? " cur" : ""}${it.state ? " " + it.state : ""}${
@@ -569,6 +681,7 @@ const walkTenant = {
 
   // The finding: header, code at the head, comment as raw markdown, Evidence folded, the keys.
   pane(it, d) {
+    if (it.kind === "file") return this.filePane(it);
     if (d.conflict && d.conflict.key === it.key) return this.compare(it, d.conflict);
     const files = it.diff !== undefined ? it.diff : this.diff;
     const loc = walkLocate(it, files);
@@ -605,6 +718,20 @@ const walkTenant = {
         </div>` : ""}
       </div>
       ${this.threadHtml(it)}`;
+  },
+
+  // One file of the branch's patch, all its hunks. j and k step to the next file.
+  filePane(it) {
+    const f = it.file;
+    const at = this.at && this.at.key === it.key ? this.at.li : -1;
+    const hook = typeof walkPrAfterLine === "function";
+    const rows = f.lines.slice(0, walkFileLines).map((l, li) => `<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : l.t === "@" ? " hk" : ""}${li === at ? " at" : ""}" data-li="${li}"><span class="wk-ln"${l.n !== null && l.t !== "-" ? ` data-ln="${l.n}" data-tip="comment on line ${l.n}"` : ""}>${
+      l.n === null ? "" : l.n}</span><span class="wk-mk">${l.t === "@" ? "" : l.t === " " ? "" : l.t}</span><span class="wk-tx">${esc(l.text) || "&nbsp;"}</span></div>${
+      hook && l.n !== null && l.t !== "-" ? walkPrAfterLine(f.path, l.n) : ""}`).join("");
+    const cut = f.lines.length > walkFileLines ? `<div class="wk-warn">${f.lines.length - walkFileLines} more lines, not shown</div>` : "";
+    const none = f.lines.length ? "" : `<div class="wk-warn">${f.status === "binary" ? "a binary file, no lines to show" : "no line changes (a rename or a mode change)"}</div>`;
+    return `<div class="wk-fhead"><span class="wk-num">${esc(it.num)}</span><span class="wk-sev s-nit">${esc(it.sevText)}</span><span class="wk-where">${
+      esc(f.path)}${f.from !== f.path ? " (was " + esc(f.from) + ")" : ""} · +${f.add} -${f.del}</span></div>${none}<div class="wk-code">${rows}</div>${cut}`;
   },
 
   // The talk with the review card about this finding: the `Thread:` lines, oldest first, and a box to say more.
@@ -730,7 +857,7 @@ function walkKeydown(e) {
   const key = k === "Enter" ? "C" : k;
   if (k === "Enter" && t && (t.tagName === "BUTTON" || t.tagName === "A")) return;
   if (k === "Escape" && dock.menu) { e.preventDefault(); walkMenu(false); return; }
-  if (!"aAecCopsdyfujkgm".includes(key) || key.length !== 1) return;
+  if (!"aAecCopsdyfujkgmn[]".includes(key) || key.length !== 1) return;
   if (dock.editing || dock.conflict) return;
   e.preventDefault();
   e.stopPropagation();
@@ -740,13 +867,17 @@ function walkKeydown(e) {
 async function walkAct(k) {
   if (k === "j") return dockStep(1);
   if (k === "k") return dockStep(-1);
+  if (walkB() && (k === "n" || k === "p" || k === "nc" || k === "pc")) return walkChange(k === "n" || k === "nc" ? 1 : -1);
+  if (walkB() && typeof walkPrStepComment === "function" && (k === "]" || k === "[" || k === "nm" || k === "pm")) {
+    return walkPrStepComment(k === "]" || k === "nm" ? 1 : -1);
+  }
   if (k === "g") {
     const it = dock.items.find(i => !i.state);
     if (it) dockSelect(it.key);
     return;
   }
   const it = dockCurrent();
-  if (!it) return;
+  if (!it || it.kind === "file") return;
   if (k === "keep") return walkKeepMine(it);
   if (k === "take") return walkTakeTheirs(it);
   if (dock.editing || dock.conflict) return;
@@ -1133,7 +1264,7 @@ async function walkReply() {
 
 function walkApplyWidth() {
   const d = document.getElementById("walk-drawer");
-  if (!d || d.classList.contains("solo")) return;
+  if (!d || d.classList.contains("solo") || d.classList.contains("wk-b")) return;
   let w = 0;
   try { w = Number(localStorage.getItem("atrium.walk.w")) || 0; } catch (e) {}
   if (window.matchMedia("(max-width: 900px)").matches) w = 0;
@@ -1152,10 +1283,28 @@ function walkListSpot() {
   return { lay, list };
 }
 
+// The branch walk: the files replace the card list's column and the diff lies over the top of the terminal.
+function walkB() { return dock.open && dock.items.length > 0 && dock.items[0].kind === "file"; }
+
 function walkPlace() {
   const d = document.getElementById("walk-drawer");
   if (!d || !walkHome) return;
-  const spot = d.hidden ? null : walkListSpot();
+  const b = walkB();
+  const lspot = d.hidden ? null : walkListSpot();
+  const spot = b ? null : lspot;
+  d.classList.toggle("wk-b", b);
+  const files = document.getElementById("walk-files");
+  const rail = document.getElementById("walk-rail");
+  const railTo = b && lspot ? files : d.querySelector(".walk-body");
+  if (files && rail && rail.parentElement !== railTo) railTo.insertBefore(rail, railTo.firstChild);
+  if (files) {
+    files.hidden = railTo !== files;
+    if (!files.hidden) {
+      const l = lspot.list;
+      Object.assign(files.style, { left: l.offsetLeft + "px", top: l.offsetTop + "px",
+        width: l.offsetWidth + "px", height: l.offsetHeight + "px" });
+    }
+  }
   const to = spot ? spot.lay : walkHome;
   if (d.parentElement !== to) {
     const had = d.contains(document.activeElement);
@@ -1172,6 +1321,7 @@ function walkPlace() {
     Object.assign(d.style, { left: "", top: "", height: "" });
     walkApplyWidth();
   }
+  if (typeof walkPrBottom === "function") walkPrBottom();
   if (typeof placeToasts === "function") placeToasts();
 }
 
@@ -1207,11 +1357,15 @@ function walkGripDown(e) {
   const list = document.getElementById("term-list");
   if (window.ResizeObserver && list) new ResizeObserver(replace).observe(list);
   if (lay) new MutationObserver(replace).observe(lay, { attributes: true, attributeFilter: ["class"] });
+  const files = document.createElement("aside");
+  files.id = "walk-files"; files.className = "walk-files"; files.hidden = true; files.tabIndex = -1;
+  if (lay) lay.appendChild(files);
   drawer.addEventListener("keydown", walkKeydown);
-  drawer.addEventListener("click", e => {
+  files.addEventListener("keydown", walkKeydown);
+  const onClick = e => {
     // Found before the menu shuts: walk.html repaints by innerHTML, which takes the clicked node out of the page.
     const el = e.target.closest("[data-act],[data-i],[data-more],[data-ev]");
-    const inDrawer = el && drawer.contains(el);
+    const inDrawer = el && (drawer.contains(el) || files.contains(el));
     if (dock.menu && !e.target.closest('.wk-menu,[data-act="m"]')) { dock.menu = false; dockPaint(); }
     if (!inDrawer) return;
     if (el.dataset.i !== undefined) {
@@ -1238,7 +1392,9 @@ function walkGripDown(e) {
     if (a === "send") return void walkReply();
     if (a !== "m" && dock.menu) { dock.menu = false; dockPaint(); }
     walkAct(a);
-  });
+  };
+  drawer.addEventListener("click", onClick);
+  files.addEventListener("click", onClick);
   drawer.addEventListener("input", e => {
     const it = dockCurrent();
     if (it && e.target && e.target.id === "walk-reply") walkTenant.drafts.set(it.key, e.target.value);

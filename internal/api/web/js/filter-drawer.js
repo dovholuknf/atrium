@@ -501,7 +501,8 @@ function setCardLabel(mode, tab) {
 function cardLead(t, tab) {
   const title = String((t && t.display_title) || "").trim();
   const alias = fdLabelMode(tab) === "alias" ? String((t && t.alias) || "").trim() : "";
-  return alias ? { main: alias, other: title } : { main: title, other: "" };
+  if (typeof shownName !== "function") return alias ? { main: alias, other: title } : { main: title, other: "" };
+  return alias ? { main: shownName(t, "alias"), other: title } : { main: shownName(t, "display_title"), other: "" };
 }
 function cardLeadTip(t, tab) {
   const l = cardLead(t, tab);

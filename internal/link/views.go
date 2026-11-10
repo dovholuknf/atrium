@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"html"
 	"io/fs"
 	"net"
@@ -295,7 +296,7 @@ func realDir(p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	real, err := safepath.Real(abs)
 	if err != nil {
 		return "", err
 	}

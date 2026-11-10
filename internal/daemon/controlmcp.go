@@ -56,6 +56,9 @@ func wireControlMCP(st *store.Store, home, exe string) error {
 	if !slices.Contains(h.ResumeArgs, "--mcp-config") {
 		h.ResumeArgs = append(h.ResumeArgs, "--mcp-config", path)
 	}
+	if len(h.ForkArgs) > 0 && !slices.Contains(h.ForkArgs, "--mcp-config") {
+		h.ForkArgs = append(h.ForkArgs, "--mcp-config", path)
+	}
 	_, err = st.SaveHarness(*h)
 	return err
 }

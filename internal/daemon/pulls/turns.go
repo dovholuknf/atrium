@@ -305,7 +305,7 @@ func InsideWorktreeVia(worktree string, calls []editCall, resolve func(worktree,
 	if worktree == "" {
 		return nil, len(distinctPaths(calls))
 	}
-	realRoot, err := filepath.EvalSymlinks(filepath.FromSlash(worktree))
+	realRoot, err := safepath.Real(filepath.FromSlash(worktree))
 	if err != nil {
 		return nil, len(distinctPaths(calls))
 	}

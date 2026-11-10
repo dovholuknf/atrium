@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,7 +41,7 @@ func readyPR(t *testing.T) (*Server, *store.Store, string, string) {
 // realSlash is p resolved and in slashes: a temp dir can be a short 8.3 name (C:\Users\RUNNER~1) that the server
 // hands back as the long one.
 func realSlash(p string) string {
-	if r, err := filepath.EvalSymlinks(filepath.FromSlash(p)); err == nil {
+	if r, err := safepath.Real(filepath.FromSlash(p)); err == nil {
 		p = r
 	}
 	return filepath.ToSlash(p)

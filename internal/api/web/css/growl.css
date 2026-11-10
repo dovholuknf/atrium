@@ -17,6 +17,8 @@
   :is(#growl, #growl-phone) .gr-off { color: var(--warn, #e0a53a); font-size: var(--fs-xs, 11.5px); }
   :is(#growl, #growl-phone) .gr-line, :is(#growl, #growl-phone) .gr-cmd { overflow-wrap: anywhere; }
   :is(#growl, #growl-phone) .gr-cmd { display: block; color: var(--label, #7fa6c4); }
+  :is(#growl, #growl-phone) .gr-fix { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  :is(#growl, #growl-phone) .gr-fix code { min-width: 0; overflow-wrap: anywhere; color: var(--label, #7fa6c4); }
   :is(#growl, #growl-phone) .gr-acts, :is(#growl, #growl-phone) .gr-snooze {
     display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); align-items: center;
   }

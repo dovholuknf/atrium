@@ -27,6 +27,9 @@ func TestInstalledVersionFollowsALauncherSymlinkIntoAnotherPrefix(t *testing.T) 
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
+	if _, err := os.Stat(link); err != nil {
+		t.Skipf("the OS refuses to follow a symlink this account made: %v", err)
+	}
 	if got := InstalledVersion(link, "@openai/codex"); got != "0.163.0" {
 		t.Errorf("InstalledVersion = %q, want 0.163.0", got)
 	}

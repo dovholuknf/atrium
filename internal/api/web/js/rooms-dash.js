@@ -230,6 +230,16 @@ function limitBars(cards) {
     limitBar("week", highestSeen(cards, "weekly")) + `</div>`;
 }
 
+// runnerLoginTip is ". logged in, expires ..." for a runner the room read a login for, and nothing for one it did not.
+function runnerLoginTip(r) {
+  if (r.login === "out") return ". not logged in";
+  if (r.login === "unknown") return ". login could not be read";
+  if (r.login !== "in") return "";
+  const t = r.login_expires_at ? new Date(r.login_expires_at) : null;
+  const at = t && !isNaN(t) ? `, token expires ${t.toLocaleString()}${r.login_renews ? " and renews itself" : ""}` : "";
+  return ". logged in" + at;
+}
+
 // agentsBand is the first band, from cards alone.
 function agentsBand(key, q, a, runners) {
   const need = a.needs_you
@@ -244,7 +254,7 @@ function agentsBand(key, q, a, runners) {
   else {
     kinds = `<div class="rd-row rd-kinds">` + runners.map(r =>
       `<span class="${r.resolves ? "" : "off"}" data-tip="${esc(r.kind)}${r.resolves
-        ? "" : ": its binary does not resolve on this machine"}">${esc(r.kind)}</span>`)
+        ? "" : ": its binary does not resolve on this machine"}${runnerLoginTip(r)}">${esc(r.kind)}</span>`)
       .join(`<i>&middot;</i>`) + `</div>`;
   }
   return `<div class="rd-band agents"><div class="rd-h">agents</div>
@@ -355,9 +365,29 @@ function machineBand(key, m, d, s) {
 
 // ── the tiles ───────────────────────────────────────────────────────────────
 
-// roomAlertBadge is the room alert, f-room-cpu-alert: hot with no agents, or an enabled runner not found. The
+// loginDueWords is one runner's login problem in plain words, with the command its runner row names to run on room.
+// The room sends no token, only the kind, whether it is out, when it expires and the fix.
+function loginDueWords(d, room) {
+  const fix = d.fix ? `. On ${room} run: ${d.fix}` : "";
+  if (d.state === "out") return `${d.kind} is not logged in${fix}`;
+  const t = new Date(d.expires_at);
+  const left = Math.round((t - Date.now()) / 86400000);
+  const when = t - Date.now() <= 0 ? "has expired" : left <= 0 ? "expires today" : `expires in ${left} day${left === 1 ? "" : "s"}`;
+  return `${d.kind} login ${when}${fix}`;
+}
+
+// loginCopy is the copy button beside a login alert, one per runner whose row names a fix. Its click stops at the
+// button, so copying is never also picking the room.
+function loginCopy(d, room) {
+  if (!d.fix) return "";
+  return `<button type="button" class="copybit rd-login-copy" data-copy="${esc(d.fix)}"
+    data-tip="${esc(`copy ${d.fix}, to run on ${room}`)}" aria-label="${esc("copy " + d.fix)}"
+    onclick="event.stopPropagation();copyAliasHandle(this,'',this.dataset.copy)">${copyIcon()}</button>`;
+}
+
+// roomAlertBadge is the room alert, f-room-cpu-alert: hot with no agents, an enabled runner not found, or a login to renew. The
 // growler carries the detail and the kill, so the badge only says which.
-function roomAlertBadge(al) {
+function roomAlertBadge(al, room) {
   if (!al) return "";
   const what = [], tip = [];
   if (al.hot_since) {
@@ -368,7 +398,12 @@ function roomAlertBadge(al) {
     what.push("runner missing");
     tip.push("enabled runner not found: " + al.runners_missing.join(", "));
   }
-  return what.length ? `<span class="chip bad rd-alert" data-tip="${esc(tip.join(". "))}">${what.join(", ")}</span>` : "";
+  if (al.logins_due && al.logins_due.length) {
+    what.push("login needed");
+    tip.push(al.logins_due.map(d => loginDueWords(d, room)).join(". "));
+  }
+  const copies = (al.logins_due || []).map(d => loginCopy(d, room)).join("");
+  return what.length ? `<span class="chip bad rd-alert" data-tip="${esc(tip.join(". "))}">${what.join(", ")}</span>${copies}` : "";
 }
 
 // roomTileHTML is one room as a tile.
@@ -406,7 +441,7 @@ function roomTileHTML(room, snap, on) {
     <div class="rt-head">
       <span class="dot live"></span><strong>${name}</strong>
       <span class="rt-meta" data-tip="${meta.join(" &middot; ")}">${meta.join(" &middot; ")}</span>
-      ${roomAlertBadge(s.alert)}${notHub}${typeof transportBadge === "function" ? transportBadge(room.via || room.transport, room.fallback) : ""}
+      ${roomAlertBadge(s.alert, room.name)}${notHub}${typeof transportBadge === "function" ? transportBadge(room.via || room.transport, room.fallback) : ""}
       ${typeof sshBadge === "function" ? sshBadge(room) : ""}
       ${typeof loginBadge === "function" ? loginBadge(room) : ""}
       <span class="grow"></span>

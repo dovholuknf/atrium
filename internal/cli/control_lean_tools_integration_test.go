@@ -41,3 +41,28 @@ func TestStdioControlServesEveryToolTheLeanPromptsName(t *testing.T) {
 		}
 	}
 }
+
+func TestStdioChatControlServesAtriumNeedAlone(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := chatControlServer().Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tools) != 1 || res.Tools[0].Name != "atrium_need" {
+		t.Fatalf("tools %v", res.Tools)
+	}
+	if f := newControl().Flags().Lookup("chat"); f == nil {
+		t.Fatal("atrium control has no --chat")
+	}
+}

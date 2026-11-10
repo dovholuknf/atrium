@@ -98,8 +98,17 @@ function groupIsNew(name, made, now) {
   const at = made && made[name];
   return typeof at === "number" && (now === undefined ? Date.now() : now) - at < GROUP_NEW_MS;
 }
+// A TAG A PERSON PICKED, as opposed to the machine's: `atrium:*`, `origin:*`, `dept:*`, `link:*`, `pr:*`, `pull-request` and model names.
+const MACHINE_TAG = /^(atrium:|origin:|dept:|link:|pr:|claude-)|^(pull-request|sonnet|opus|haiku)$/;
+function isPickedTag(tag) { return !MACHINE_TAG.test(String(tag).trim().toLowerCase()); }
 // The group name a person typed, as the tag it becomes: trimmed and lower case.
 function groupNameOf(raw) { return String(raw || "").trim().toLowerCase(); }
+
+// A group a person can pick: no colon (those are system tags) and not the pull-request tag.
+function isPickableGroup(g) {
+  const s = String(g);
+  return !s.includes(":") && s !== "pull-request";
+}
 
 // A DOER IS AN AGENT-LAUNCHED SESSION, see the note in js/terminal-list.js. Matched exactly as the daemon's `hasOriginTag` does.
 const DOER_TAG = "origin:agent";

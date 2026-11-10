@@ -799,7 +799,7 @@ function tagChips(t) {
   // The room the card is on, first, and only when looking at several. It is a
   // tag because that is what it is: something true about the card that you may
   // want to see only cards of. See `js/rooms.js`.
-  return roomChip(t) + (t.tags || []).map(tag =>
+  return roomChip(t) + (t.tags || []).filter(isPickedTag).map(tag =>
     `<span class="chip tag" style="--ghue:${groupHue(tag)}"
        data-tip="show only ${esc(tag)}"
        onclick="event.stopPropagation();filterByTag('${esc(tag).replace(/'/g, "&#39;")}')"

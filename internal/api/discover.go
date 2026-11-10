@@ -44,6 +44,7 @@ type candidate struct {
 	// atrium is broken, so unknown is left empty and said out loud.
 	Args       []string `json:"args"`
 	ResumeArgs []string `json:"resume_args"`
+	ForkArgs   []string `json:"fork_args"`
 	// ExitKeys is how this runner is asked to quit. Known for the ones here,
 	// since it is the same everywhere the tool runs.
 	ExitKeys []string `json:"exit_keys"`
@@ -62,7 +63,16 @@ var knownRunners = []candidate{
 		// See DefaultHarnesses.
 		Args:       []string{"--strict-mcp-config"},
 		ResumeArgs: []string{"--resume", "{resume}", "--strict-mcp-config"},
+		ForkArgs:   []string{"--resume", "{resume}", "--fork-session", "--strict-mcp-config"},
 		ExitKeys:   []string{"ctrl-d", "ctrl-d"},
+	},
+	{
+		ID: "opencode", Label: "opencode", Cmd: "opencode",
+		ResumeArgs: []string{"--session", "{resume}"},
+		ForkArgs:   []string{"--session", "{resume}", "--fork"},
+		ExitKeys:   []string{"ctrl-d"},
+		Confirm: "opencode resumes with --session and forks with --session --fork, from its documentation and " +
+			"not yet tried on this machine. it finds a session by id, so a fork copies nothing.",
 	},
 	{
 		ID: "codex", Label: "codex", Cmd: "codex",

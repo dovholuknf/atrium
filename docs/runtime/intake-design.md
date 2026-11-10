@@ -140,7 +140,7 @@ record an identifier and a URL on the card. Then add a `-WithAtrium` switch to t
 call `atrium launch` instead of `_OpenClaudeShell`:
 
 ```powershell
-atrium launch --cwd $wtPath --title "zendesk-$ticketId" --tags "zendesk,support,$ticketId" `
+atrium launch --cwd $wtPath --title "zendesk-$ticketId" --tags "zendesk,support" `
   --external "zendesk:$ticketId" --url "https://$zendeskHost/agent/tickets/$ticketId" `
   --why "$($firstLineOfPrompt)" --prompt $zendeskPrompt
 ```

@@ -91,7 +91,7 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // a ReferenceError in the middle of the markup this parses. `termSuffix` is a
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
-  "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termHeldAge", "termHeldTip", "termHeldChip",
+  "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
   "termRoomChip", "termRowChips", "termCold", "termHeldLine", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
   "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];

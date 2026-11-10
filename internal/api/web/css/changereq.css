@@ -13,7 +13,7 @@
   .cr-btn.quiet { background: transparent; border-color: var(--stroke-dim); color: var(--label); }
   .cr-btn:disabled { opacity: .5; cursor: default; }
   .cr-btn:focus-visible, .cr-li:focus-visible, .cr-chip:focus-visible, .cr-in:focus-visible, .cr-seg button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-  @media (hover: hover) { .cr-btn:not(:disabled):hover { transform: translateY(-1px); border-color: var(--teal); } }
+  @media (hover: hover) { .cr-btn:not(:disabled):hover { border-color: var(--teal); } }
 
   /* the strip: one card per open request into main */
   .cr-need { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin: 0 0 26px; }

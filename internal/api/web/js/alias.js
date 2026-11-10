@@ -8,6 +8,37 @@
 // by the room, and the refusal names the card holding it. See
 // internal/store/alias.go.
 
+// Aliases and titles are unique per room only. On a hub board a name worn by cards on two or more rooms is
+// shown as `name@room`, and a unique one stays bare. A room's own board has one room, so nothing is shared.
+const sharedNameCache = new WeakMap();
+function sharedNames(list, field) {
+  let byField = sharedNameCache.get(list);
+  if (!byField) sharedNameCache.set(list, byField = {});
+  if (byField[field]) return byField[field];
+  const rooms = new Map();
+  for (const t of list) {
+    const n = String((t && t[field]) || "").trim();
+    if (!n || !t.room) continue;
+    if (!rooms.has(n)) rooms.set(n, new Set());
+    rooms.get(n).add(t.room);
+  }
+  const shared = new Set();
+  rooms.forEach((r, n) => { if (r.size > 1) shared.add(n); });
+  return byField[field] = shared;
+}
+
+// `field` is "alias" or "display_title".
+function shownName(t, field, list) {
+  const name = String((t && t[field]) || "").trim();
+  const all = list || (typeof lastTasks === "undefined" ? [] : lastTasks);
+  return name && t.room && sharedNames(all, field).has(name) ? name + "@" + t.room : name;
+}
+
+// What the copy button copies: always the handle `atrium_say` takes.
+function fullHandle(t) {
+  return t.room ? t.alias + "@" + t.room : "@" + t.alias;
+}
+
 // The chip on the card. Nothing for a card with no alias, so the board looks
 // as it did until somebody sets one, unless its default was held by another
 // card: then a `no alias` chip says who has it (`alias_note`, from the room).
@@ -20,9 +51,15 @@ function aliasChip(t) {
   if (!t || !t.alias) return "";
   // No tooltip: the chip is the handle, and the icon after it copies it.
   return `<span class="chip alias"
-    onclick="event.stopPropagation();setTaskAlias('${t.id}', '${esc(t.alias)}')">@${esc(t.alias)}</span>` +
-    `<button type="button" class="copybit alias-copy" data-tip="copy @${esc(t.alias)}" aria-label="copy @${esc(t.alias)}"
-    onclick="event.stopPropagation();copyAliasHandle(this, '${esc(t.alias)}')">${copyIcon()}</button>`;
+    onclick="event.stopPropagation();setTaskAlias('${t.id}', '${esc(t.alias)}')">${aliasText(t)}</span>` +
+    `<button type="button" class="copybit alias-copy" data-tip="copy ${esc(fullHandle(t))}" aria-label="copy ${esc(fullHandle(t))}"
+    onclick="event.stopPropagation();copyAliasHandle(this, '${esc(t.alias)}', '${esc(fullHandle(t))}')">${copyIcon()}</button>`;
+}
+
+// Short `@alias` where it is unique, long `alias@room` where another room has it too.
+function aliasText(t) {
+  const n = shownName(t, "alias");
+  return esc(n === t.alias ? "@" + n : n);
 }
 
 // `@handle` to the clipboard, and the icon says so for a moment: a check mark, no toast.
@@ -89,7 +126,8 @@ function paintTermAlias(task, el, label) {
       .filter(Boolean).join(" · ");
     return;
   }
-  el.innerHTML = `<span class="at">@</span>${esc(task.alias)}`;
+  const n = shownName(task, "alias");
+  el.innerHTML = n === task.alias ? `<span class="at">@</span>${esc(n)}` : esc(n);
   // The chip wears no tooltip. The copy icon beside it (`#t-copy`) copies the handle.
   delete el.dataset.tip;
 }

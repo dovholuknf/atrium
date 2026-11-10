@@ -33,6 +33,12 @@
 # -GitVersion 2.56.0, -PwshVersion 7.6.6. A directory that is already at the destination and is NOT a working install
 # is never replaced unless -Force is given.
 #
+# PLAYWRIGHT. With node in -Tools, a last step puts @playwright/test (-PlaywrightVersion, default what package.json pins)
+# in <prefix>/playwright with npm, and its chromium in the user's ms-playwright cache, so the headless board units run on
+# every room instead of skipping. A rerun finds both and changes nothing. On Linux, chromium's missing OS libraries are
+# installed with install-deps when the user is root or has passwordless sudo, else a `playwright-deps warn` gives the
+# command. scripts/test-touched.sh finds <prefix>/playwright/node_modules itself. -NoPlaywright leaves the step out.
+#
 # PATH. The room reads its PATH once, when it starts, so what this records only reaches a room that is STARTED after.
 # The record is ~/.atrium/toolchain/path.txt, one directory per line, and this script only ever ADDS to it. What the
 # room's start reads it through:
@@ -158,6 +164,9 @@ param(
     [string] $NodeVersion = 'v24.21.0',
     [string] $GitVersion = '2.56.0',
     [string] $PwshVersion = '7.6.6',
+    # See PLAYWRIGHT below. Default: what package.json pins, else 1.64.1.
+    [string] $PlaywrightVersion,
+    [switch] $NoPlaywright,
     # Replace a directory at the destination that is not a working install.
     [switch] $Force,
     [string] $Ssh = 'ssh',
@@ -249,6 +258,12 @@ if (Test-Path -LiteralPath $gomod) {
 }
 if (-not $GoVersion) { $GoVersion = if ($goMin) { $goMin } else { '1.26.2' } }
 if (-not $goMin) { $goMin = $GoVersion }
+if (-not $PlaywrightVersion) {
+    $pj = Join-Path (Split-Path -Parent $PSScriptRoot) 'package.json'
+    $m = if (Test-Path -LiteralPath $pj) { Select-String -LiteralPath $pj -Pattern '"@playwright/test":\s*"(\d+\.\d+\.\d+)"' | Select-Object -First 1 }
+    $PlaywrightVersion = if ($m) { $m.Matches[0].Groups[1].Value } else { '1.64.1' }
+}
+if ($PlaywrightVersion -notmatch '^\d+\.\d+\.\d+$') { Fail 'args' 1 "bad -PlaywrightVersion '$PlaywrightVersion'" }
 
 # ── talking to the remote ───────────────────────────────────────────────────
 
@@ -388,6 +403,23 @@ function Tell { param($tools)
     if ($next -ne $cur) { [IO.File]::WriteAllText($BP, $next); 'bashprofile=changed' } else { 'bashprofile=same' }
 #@verify
 Tell ($Names -split ',')
+#@playwright
+    $D = Join-Path $Prefix 'playwright'; $M = Join-Path $D 'node_modules\@playwright\test'; $C = Join-Path $M 'cli.js'
+    $env:Path = (@(Split-Path -Parent $NodeExe) + (Dirs)) -join ';'
+    function V { $j = Join-Path $M 'package.json'; if (Test-Path -LiteralPath $j) { (Get-Content -LiteralPath $j -Raw | ConvertFrom-Json).version } }
+    function B { if (-not (V)) { return $false }
+        $l = @(& $NodeExe $C install --dry-run chromium 2>$null | ForEach-Object { if ("$_" -match '^\s*Install location:\s*(.+)$') { $Matches[1].Trim() } })
+        [bool]($l.Count -and -not @($l | Where-Object { -not (Test-Path -LiteralPath $_) }).Count) }
+    "pw.dir=$D"; "pw.had=$(V)"; "pw.hadbrowser=$(B)"
+    if ($Mode -ne 'install') { exit 0 }
+    if ((V) -ne $PwVersion) {
+        New-Item -ItemType Directory -Force -Path $D | Out-Null
+        $o = & (Join-Path (Split-Path -Parent $NodeExe) 'npm.cmd') install --prefix $D --no-audit --no-fund "@playwright/test@$PwVersion" 2>&1 | Out-String
+        if ((V) -ne $PwVersion) { "err=npm install @playwright/test@$PwVersion into $D failed: $(($o.Trim() -split "`n")[-1])"; 'rc=3'; exit 3 }
+    }
+    if (-not (B)) { $o = & $NodeExe $C install chromium 2>&1 | Out-String
+        if (-not (B)) { "err=playwright install chromium failed: $(($o.Trim() -split "`n")[-1])"; 'rc=3'; exit 3 } }
+    "pw.have=$(V)"; 'pw.browser=True'
 '@
 
 # Unix. The room's view of PATH is the login shell's, which the wrapper in Invoke-Remote already put in PATH.
@@ -452,6 +484,29 @@ record)
     echo hook=changed; fi
   echo "profile=$f";;
 verify) tell "$NAMES";;
+playwright)
+  D="$PREFIX/playwright"; M="$D/node_modules/@playwright/test"; PATH="$(dirname "$NODEEXE"):$PATH"
+  v() { sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$M/package.json" 2>/dev/null | head -1; }
+  locs() { "$NODEEXE" "$M/cli.js" install --dry-run chromium 2>/dev/null | sed -n 's/^ *Install location: *//p'; }
+  b() { [ -n "$(v)" ] || return 1; l=$(locs); [ -n "$l" ] || return 1; printf '%s\n' "$l" | { while IFS= read -r d; do [ -d "$d" ] || exit 1; done; }; }
+  libs() { [ "$(uname -s)" = Linux ] || return 0; command -v ldd >/dev/null 2>&1 || return 0
+    locs | { while IFS= read -r d; do for e in "$d"/*/chrome "$d"/*/chrome-headless-shell; do
+      [ -x "$e" ] && ldd "$e" 2>/dev/null | grep -q 'not found' && exit 1; done; done; }; }
+  echo "pw.dir=$D"; echo "pw.had=$(v)"; if b; then echo pw.hadbrowser=True; else echo pw.hadbrowser=False; fi
+  if [ "$MODE" != install ]; then exit 0; fi
+  if [ "$(v)" != "$PWVERSION" ]; then
+    mkdir -p "$D" || { echo rc=3; exit 3; }
+    o=$("$(dirname "$NODEEXE")/npm" install --prefix "$D" --no-audit --no-fund "@playwright/test@$PWVERSION" 2>&1)
+    if [ "$(v)" != "$PWVERSION" ]; then echo "err=npm install @playwright/test@$PWVERSION into $D failed: $(printf '%s\n' "$o" | tail -1)"; echo rc=3; exit 3; fi
+  fi
+  if ! b; then o=$("$NODEEXE" "$M/cli.js" install chromium 2>&1)
+    if ! b; then echo "err=playwright install chromium failed: $(printf '%s\n' "$o" | tail -1)"; echo rc=3; exit 3; fi; fi
+  if ! libs; then
+    if [ "$(id -u)" = 0 ]; then "$NODEEXE" "$M/cli.js" install-deps chromium >/dev/null 2>&1
+    elif sudo -n true 2>/dev/null; then sudo -n env "PATH=$PATH" "$NODEEXE" "$M/cli.js" install-deps chromium >/dev/null 2>&1; fi
+    if libs; then echo pw.deps=done; else echo "pw.deps=sudo env PATH=\"$PATH\" $NODEEXE $M/cli.js install-deps chromium"; fi
+  fi
+  echo "pw.have=$(v)"; echo pw.browser=True;;
 __CUNIX__esac
 '@
 $unixPayload = $unixPayload.Replace('__CUNIX__', $script:CUnixAct)
@@ -482,6 +537,7 @@ if ($PayloadSizes) {
     $gv = @{ Tool = 'git'; Url = 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.1/PortableGit-2.56.0-64-bit.7z.exe'
         File = 'PortableGit-2.56.0-64-bit.7z.exe'; Sha = ('0123456789abcdef' * 4); Kind = 'sfx'; Strip = '0'; NewDirs = ((1..4 | ForEach-Object { "$longDir$_" }) -join ';') }
     foreach ($a in 'probe', 'install', 'record', 'verify') { Write-Host "payload $a $((New-EncodedCommand (Get-Payload $a $gv.Clone())).Length)" }
+    Write-Host "payload playwright $((New-EncodedCommand (Get-Payload 'playwright' @{ Mode = 'install'; NodeExe = "$longDir\node\node.exe"; PwVersion = '1.64.1' })).Length)"
     foreach ($a in ($script:CActs.Keys | Sort-Object)) { Write-Host "payload $a $((New-EncodedCommand (Get-CPayload $a (Get-CWorstVars $a))).Length)" }
     exit 0
 }
@@ -1100,6 +1156,32 @@ if (-not $Check -and $todo -and $script:rc -ne 3 -and $script:rc -ne 4 -and $scr
 # ── 6b. the rest of the C profile: git, vcpkg, the checkout, the presets ────
 
 if ($cProfile) { if ($script:remoteOS -eq 'windows') { Invoke-CRest } else { Invoke-CUnix } }
+
+# ── 6c. playwright and its chromium, so the headless board units run here ────
+
+if ('node' -in $Tools -and -not $NoPlaywright) {
+    $nodeExe = if ($found['node'].Good) { $found['node'].Path } else { "$(Get-BinDir 'node')$sep" + $(if ($script:remoteOS -eq 'windows') { 'node.exe' } else { 'node' }) }
+    $pwDir = "$prefixR${sep}playwright"
+    if (-not $found['node'].Good -and ($Check -or $script:rc -ne 0)) {
+        Step 'playwright' $(if ($Check) { 'warn' } else { 'skip' }) "$(if ($Check) { 'would install' } else { 'not installed:' }) @playwright/test@$PlaywrightVersion and chromium into $pwDir once node is there"
+    } else {
+        $pr = Invoke-Remote (Get-Payload 'playwright' @{ Mode = $(if ($Check) { 'check' } else { 'install' }); NodeExe = $nodeExe; PwVersion = $PlaywrightVersion })
+        $pk = ConvertFrom-KeyValue $pr.Out
+        $ok = $pk['pw.had'] -eq $PlaywrightVersion -and $pk['pw.hadbrowser'] -eq 'True'
+        if ($pk.err -or ($pk.rc -and $pk.rc -ne '0') -or -not $pk.ContainsKey('pw.dir')) {
+            Step 'playwright' 'fail' $(if ($pk.err) { $pk.err } else { "the playwright step on $where exited $($pr.Code)" })
+            if (-not $pk.err) { $pr.Out | ForEach-Object { Write-Host "    $_" } }
+            Note-Fail 3
+        } elseif ($Check) {
+            if ($ok) { Step 'playwright' 'ok' "$PlaywrightVersion and chromium in $pwDir" }
+            else { Step 'playwright' 'warn' "$(if ($pk['pw.had']) { "$($pk['pw.had']) in $pwDir" } else { 'MISSING' }). would npm install @playwright/test@$PlaywrightVersion into $pwDir and run playwright install chromium" }
+        } else {
+            Step 'playwright' $(if ($ok) { 'ok' } else { 'done' }) "$PlaywrightVersion and chromium in $pwDir. NODE_PATH=$pwDir${sep}node_modules finds it, scripts/test-touched.sh looks there"
+        }
+        if ($pk['pw.deps'] -and $pk['pw.deps'] -ne 'done') { Step 'playwright-deps' 'warn' "chromium is missing OS libraries and there is no passwordless sudo. run as root: $($pk['pw.deps'])" }
+        elseif ($pk['pw.deps'] -eq 'done') { Step 'playwright-deps' 'done' 'installed the OS libraries chromium needs' }
+    }
+}
 
 # ── 7. a room that is running has the old PATH ──────────────────────────────
 

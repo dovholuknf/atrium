@@ -66,6 +66,22 @@ func evalLinks(path string) (string, error) {
 	return filepath.EvalSymlinks(walked)
 }
 
+// Real is EvalSymlinks that also follows a junction and walks past an ancestor the process may not list.
+func Real(path string) (string, error) {
+	real, err := evalLinks(path)
+	if err == nil || !errors.Is(err, fs.ErrPermission) {
+		return real, err
+	}
+	abs, aerr := filepath.Abs(path)
+	if aerr != nil {
+		return "", err
+	}
+	if walked, werr := walkLinks(abs); werr == nil {
+		return walked, nil
+	}
+	return "", err
+}
+
 func containedWith(evalSymlinks func(string) (string, error), root, path string) (string, error) {
 	root = strings.TrimSpace(root)
 	path = strings.TrimSpace(path)

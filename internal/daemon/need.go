@@ -15,7 +15,14 @@ import (
 // and a runner mid-turn ignores its exit keys.
 const needRestartTries = 6
 
-const needRestartGap = 10 * time.Second
+// needQuiet is how long a card must have posted no activity before its need restarts it: its turn has ended.
+const needQuiet = 3 * time.Second
+
+// needQuietWait bounds the wait for that quiet in one try, and needQuietTick is how often it looks.
+const (
+	needQuietWait = 60 * time.Second
+	needQuietTick = 250 * time.Millisecond
+)
 
 // ElevatedTag gives a worker card atrium_launch and atrium_launch_worker. The hub's class lookup reads it.
 const ElevatedTag = "atrium:elevated"
@@ -35,6 +42,8 @@ func needTags(needs []string) (tags, refused []string) {
 			case "Skill", "Agent":
 				tags = append(tags, leanToolTagPrefix+name)
 			case "atrium_launch":
+			case "Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell", "WebFetch":
+				tags = append(tags, leanToolTagPrefix+name)
 			default:
 				refused = append(refused, n)
 			}
@@ -89,6 +98,17 @@ func (d *Daemon) handleNeed(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[atrium] %s needs %s: %s", task.ID, strings.Join(in.Needs, ", "), logLine(in.Why))
 	out := map[string]any{"card": task.ID, "refused": refused}
 	lean := small.HasTag(task.Tags, LeanTag)
+	if !small.HasTag(task.Tags, ChatTag) {
+		var kept []string
+		for _, t := range tags {
+			if name, ok := strings.CutPrefix(t, leanToolTagPrefix); ok && isChatTool(name) {
+				refused = append(refused, "tool:"+name)
+				continue
+			}
+			kept = append(kept, t)
+		}
+		tags = kept
+	}
 	var given []string
 	for _, n := range in.Needs {
 		n = strings.TrimSpace(n)
@@ -138,18 +158,28 @@ func onlyTag(in []string, keep string) []string {
 	return out
 }
 
-// restartForNeed restarts the card until its runner leaves when asked.
+// restartForNeed restarts the card once it has been quiet for needQuiet, retrying while the runner will not leave.
 func (d *Daemon) restartForNeed(taskID string) {
+	quiet, wait, tick := d.hk.needQuiet, needQuietWait, needQuietTick
+	if quiet == 0 {
+		quiet = needQuiet
+	}
+	if d.hk.needQuietTick != 0 {
+		tick, wait = d.hk.needQuietTick, d.hk.needQuietTick*40
+	}
 	for i := 0; i < needRestartTries; i++ {
-		gap := d.hk.needRestartGap
-		if gap == 0 {
-			gap = needRestartGap
+		for waited := time.Duration(0); d.act.quietFor(taskID) < quiet && waited < wait; waited += tick {
+			time.Sleep(tick)
 		}
-		time.Sleep(gap)
-		_, err := d.RestartRunner(taskID)
+		restart := d.RestartRunner
+		if d.hk.needRestart != nil {
+			restart = d.hk.needRestart
+		}
+		_, err := restart(taskID)
 		if err == nil {
 			return
 		}
 		log.Printf("[atrium] restart for %s's need, try %d: %v", taskID, i+1, err)
+		time.Sleep(4 * tick)
 	}
 }
