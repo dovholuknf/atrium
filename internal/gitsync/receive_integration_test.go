@@ -2239,3 +2239,36 @@ func TestOrchestratorDeletesAnotherCardsMergedBranchOnly(t *testing.T) {
 		t.Errorf("claude/done is still there at %s", got)
 	}
 }
+
+// A squash-merge and a cherry-pick leave the tip off main's history, and the branch still adds nothing.
+func TestOrchestratorDeletesASquashedAndACherryPickedBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+	})
+	x.seedMain(hubRepo)
+	x.branch("claude/squash", "s.txt")
+	x.branch("claude/pick", "p.txt")
+	x.branch("claude/unlanded", "u.txt")
+	x.grow("claude/unlanded", "u2.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/squash:refs/heads/claude/squash",
+		"claude/pick:refs/heads/claude/pick", "claude/unlanded:refs/heads/claude/unlanded"))
+	ident := []string{"-c", "user.name=t", "-c", "user.email=t@example.com"}
+	git(t, x.work, "checkout", "-q", "main")
+	git(t, x.work, "merge", "--squash", "claude/squash")
+	git(t, x.work, append(ident, "commit", "-q", "-m", "squash")...)
+	git(t, x.work, append(ident, "cherry-pick", "claude/pick")...)
+	git(t, x.work, append(ident, "cherry-pick", "claude/unlanded~1")...)
+	x.must(x.push(operator, hubRepo, "main:refs/heads/main"))
+
+	orch := roomCard("sg4", "ORCH")
+	x.must(x.push(orch, hubRepo, ":refs/heads/claude/squash"))
+	x.must(x.push(orch, hubRepo, ":refs/heads/claude/pick"))
+	out, err := x.push(orch, hubRepo, ":refs/heads/claude/unlanded")
+	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+		t.Errorf("a branch with an unlanded commit: %v\n%s", err, out)
+	}
+}
