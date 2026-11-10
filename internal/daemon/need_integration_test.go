@@ -43,7 +43,7 @@ func TestANeedWithNoWhyIsRefusedAndNothingIsAdded(t *testing.T) {
 
 func TestANeedIsGrantedAtOnceAndSaysWhatToTellTheHuman(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.needRestartGap = time.Hour
+	d.hk.needQuiet = time.Hour
 	_, w := launchedPair(t, d)
 	if err := d.st.SetTags(w.ID, []string{LeanTag, SuperleanTag}); err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestANeedIsGrantedAtOnceAndSaysWhatToTellTheHuman(t *testing.T) {
 
 func TestALaunchGrantNeedsNoLeanCard(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.needRestartGap = time.Hour
+	d.hk.needQuiet = time.Hour
 	w := peerCard(t, d, "worker")
 	code, out := postNeed(t, d, w.ID, map[string]any{"needs": []string{"tool:atrium_launch", "skill:x"}, "why": "fan out reviewers"})
 	if code != http.StatusOK || out["restarting"] != true {
@@ -91,6 +91,33 @@ func TestALaunchGrantNeedsNoLeanCard(t *testing.T) {
 	}
 	got, _ := d.st.Get(w.ID)
 	if !small.HasTag(got.Tags, ElevatedTag) || small.HasTag(got.Tags, "atrium:skill:x") {
+		t.Fatalf("tags %v", got.Tags)
+	}
+}
+
+func TestAChatCardIsGrantedABuiltInToolAndAPlainOneIsNot(t *testing.T) {
+	d := testDaemon(t)
+	d.hk.needQuiet = time.Hour
+	chat := peerCard(t, d, "chatty")
+	if err := d.st.SetTags(chat.ID, []string{LeanTag, SuperleanTag, ChatTag}); err != nil {
+		t.Fatal(err)
+	}
+	code, out := postNeed(t, d, chat.ID, map[string]any{"needs": []string{"tool:Read"}, "why": "look at the file"})
+	if code != http.StatusOK || out["restarting"] != true {
+		t.Fatalf("code %d, out %v", code, out)
+	}
+	if got, _ := d.st.Get(chat.ID); !small.HasTag(got.Tags, "atrium:tool:Read") {
+		t.Fatalf("tags %v", got.Tags)
+	}
+	plain := peerCard(t, d, "plain")
+	if err := d.st.SetTags(plain.ID, []string{LeanTag, SuperleanTag}); err != nil {
+		t.Fatal(err)
+	}
+	_, out = postNeed(t, d, plain.ID, map[string]any{"needs": []string{"tool:Read"}, "why": "look at the file"})
+	if out["restarting"] == true {
+		t.Fatalf("a card that is not chat was restarted for Read: %v", out)
+	}
+	if got, _ := d.st.Get(plain.ID); small.HasTag(got.Tags, "atrium:tool:Read") {
 		t.Fatalf("tags %v", got.Tags)
 	}
 }

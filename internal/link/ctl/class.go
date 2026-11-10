@@ -58,10 +58,13 @@ var LaunchTools = map[string]bool{"atrium_launch": true, "atrium_launch_worker":
 
 // InClass reports whether a tool is served to a class.
 func InClass(name string, class Class) bool {
-	if class&Elevated != 0 && LaunchTools[name] {
+	if class&Elevated != 0 && class.Base() != ClassChat && LaunchTools[name] {
 		return true
 	}
 	class = class.Base()
+	if class == ClassChat {
+		return name == "atrium_need"
+	}
 	if name == "atrium_review" {
 		return class == ClassWorkerReview
 	}

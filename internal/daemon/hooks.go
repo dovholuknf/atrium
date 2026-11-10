@@ -35,8 +35,11 @@ type hooks struct {
 	finishLimitHooks
 	repliesHooks
 	updateRegistry string
-	// needRestartGap is the wait before each restart for a need. Zero is needRestartGap.
-	needRestartGap time.Duration
+	// needQuiet is the silence a card keeps before a need restarts it, and needQuietTick how often that is looked at.
+	// Zero is needQuiet and needQuietTick.
+	needQuiet     time.Duration
+	needQuietTick time.Duration
+	needRestart   func(taskID string) (*store.Task, error)
 }
 
 type runnerHooks struct {

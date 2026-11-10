@@ -283,3 +283,10 @@ func TestAResidentCallerGetsResidentEndingWords(t *testing.T) {
 		t.Errorf("a plain worker's atrium_done reads %q", d)
 	}
 }
+
+func TestAChatCardSeesAtriumNeedAndNoOtherTool(t *testing.T) {
+	h := newClassHarness(t, []map[string]any{
+		{"id": "c1", "wire_name": "chatty", "status": "working", "tags": []string{"atrium:lean", "atrium:superlean", ChatTag, ElevatedTag}},
+	})
+	sameNames(t, "chat", toolNames(t, h.connect(t, "chatty", "alpha")), []string{"atrium_need"})
+}

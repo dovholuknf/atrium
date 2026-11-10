@@ -184,6 +184,9 @@ var superleanBase = []string{"Read", "Edit", "Write", "Grep", "Glob", "Bash", "P
 
 // superleanTools is the `--tools` list: the base, plus Agent with lean_agents or a granted tool:Agent, and Skill with lean_skills or tool:Skill.
 func superleanTools(k leanKit) []string {
+	if k.Chat {
+		return chatTools(k)
+	}
 	out := append([]string{}, superleanBase...)
 	if len(k.Agents) > 0 || small.HasTag(k.Tools, "Agent") {
 		out = append(out, "Agent")
@@ -232,10 +235,14 @@ func leanOptions(req shared.LaunchRequest, task *store.Task, gateway string) (le
 	mcp = append(mcp, req.MCP...)
 	kit = leanKit{Agents: cleanKitNames(req.LeanAgents), Skills: cleanKitNames(req.LeanSkills)}
 	superlean = req.Superlean != nil && *req.Superlean
+	kit.Chat = req.Chat || small.HasTag(req.Tags, ChatTag)
+	superlean = superlean || kit.Chat
 	lean = lean || !kit.empty() || superlean
 	kit.Interview = small.HasTag(req.Tags, InterviewTag) || (task != nil && small.HasTag(task.Tags, InterviewTag))
 	if task != nil && small.HasTag(task.Tags, LeanTag) {
 		lean = true
+		kit.Chat = kit.Chat || small.HasTag(task.Tags, ChatTag)
+		superlean = superlean || kit.Chat
 		// The request says `superlean: false` to bring a superlean card back lean. Absent leaves it to the card.
 		superlean = superlean || (req.Superlean == nil && small.HasTag(task.Tags, SuperleanTag))
 		var agents, skills []string
@@ -272,6 +279,9 @@ func leanTags(mcp []string, kit leanKit) []string {
 	if kit.Superlean {
 		out = append(out, SuperleanTag)
 	}
+	if kit.Chat {
+		out = append(out, ChatTag)
+	}
 	for _, m := range mcp {
 		out = append(out, leanMCPTagPrefix+m)
 	}
@@ -284,13 +294,13 @@ func leanTags(mcp []string, kit leanKit) []string {
 	return out
 }
 
-// withoutLeanTags is tags without LeanTag, SuperleanTag and the `atrium:mcp:` marks, for a
+// withoutLeanTags is tags without LeanTag, SuperleanTag, ChatTag and the `atrium:mcp:` marks, for a
 // launch that turned lean off. It says whether anything was taken out.
 func withoutLeanTags(tags []string) ([]string, bool) {
 	out := []string{}
 	for _, t := range tags {
 		c := strings.TrimSpace(t)
-		if c == LeanTag || c == SuperleanTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) ||
+		if c == LeanTag || c == SuperleanTag || c == ChatTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) ||
 			strings.HasPrefix(c, leanSkillTagPrefix) || strings.HasPrefix(c, leanToolTagPrefix) {
 			continue
 		}
@@ -376,6 +386,9 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	systemPrompt := leanSystemPrompt
 	if kit.Superlean {
 		systemPrompt = superleanSystemPrompt
+	}
+	if kit.Chat {
+		systemPrompt = chatSystemPrompt
 	}
 	if kit.Interview {
 		systemPrompt = interviewSystemPrompt

@@ -145,6 +145,9 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (class
 			}
 		}()
 	}
+	if hasTag(best.Tags, ChatTag) {
+		return ctl.ClassChat, true
+	}
 	if hasTag(best.Tags, ItemTag) && hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
 		return ctl.ClassWorkerItem, true
 	}

@@ -77,6 +77,8 @@ const (
 	ClassWorkerItem
 	// ClassWorkerReview is the worker set and atrium_review, for a card tagged ReviewTag.
 	ClassWorkerReview
+	// ClassChat is atrium_need and nothing else, for a card tagged ChatTag.
+	ClassChat
 )
 
 // Elevated is a flag on a worker class: the same set plus LaunchTools, for a card tagged ElevatedTag.
@@ -114,6 +116,8 @@ type LaunchInput struct {
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
 	// Superlean cuts a lean worker further. Absent leaves it to superleanLaunch.
 	Superlean *bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius unless mcp names it, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. implies lean, refused with lean: false. claude only, never an interview. default true for an isolated item worker other than a review, false for anything else: false brings an item worker back lean"`
+	// Chat starts a thinking friend with no tools but atrium_need.
+	Chat bool `json:"chat,omitempty" jsonschema:"start a claude CHAT: lean, with no tools at all and only atrium_need from atrium-control, and a one paragraph prompt that says so. it asks you for a tool when it needs one, and atrium_need adds it and restarts it on the same conversation. implies superlean. claude only, never an interview. default false"`
 	// Model and Effort are mapped by the runner's harness row, Args and Env are
 	// passed as given. See docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`

@@ -163,6 +163,9 @@ type LaunchRequest struct {
 	// false`, claude only, never an interview. Recorded as the tag atrium:superlean beside atrium:lean. See
 	// docs/runtime/superlean-design.md.
 	Superlean *bool `json:"superlean,omitempty"`
+	// Chat starts a superlean claude session with no tools at all and only atrium_need from atrium-control, and a
+	// tool is added by atrium_need. Implies superlean. Recorded as the tag atrium:chat. See chat.go.
+	Chat bool `json:"chat,omitempty"`
 	// LeanAgents keeps the Agent tool on a lean launch and makes just these
 	// agents (the operator's ~/.claude/agents/<name>.md) available to it, and
 	// LeanSkills the Skill tool and these skills (~/.claude/skills/<name>/). A
