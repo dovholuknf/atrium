@@ -22,11 +22,11 @@ const SEEN_TICK_MS = 500;
 
 // The unread dot and the questions chip, drawn on a board card and on a
 // terminal strip row.
-function seenChips(t) {
+function seenChips(t, noDot) {
   const s = t && t.seen;
   let out = typeof answerChip === "function" ? answerChip(t) : "";
   if (!s) return out;
-  if (s.unseen) {
+  if (s.unseen && !noDot) {
     out += `<span class="chip unseen"
       data-tip="this session's last turn ended and nobody has looked at it since. attach and read it, or type to it, and this clears"
       >&#9679;</span>`;

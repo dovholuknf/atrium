@@ -9642,6 +9642,16 @@ async function keepaliveSection(browser, base) {
     }
     await kp.evaluate(() => document.getElementById("ka-rows").remove());
 
+    const coldRow = await kp.evaluate(t => {
+      const row = document.createElement("div");
+      row.innerHTML = termStateSlot(t) + termRowChips(t);
+      return { slot: row.querySelector(".tstate").textContent.trim(),
+        chips: [...row.querySelectorAll(".chips .chip")].map(c => c.className) };
+    }, Object.assign({}, T1, { id: "claude-sg4~ka-cold-idle", seen: { unseen: true },
+      keepalive: { state: "on", refreshes: 0, warm_until: soon(-60 * 60000) } }));
+    if (coldRow.slot !== "❄") fail("a cold idle row's state slot is not the snowflake: " + JSON.stringify(coldRow));
+    if (coldRow.chips.join("|") !== "chip room") fail("a cold idle row draws a chip besides the room's: " + JSON.stringify(coldRow));
+
     // The card menu's switch: offered on a Claude card, reads its state, and
     // posts to that card. Not offered on a card with no switch.
     const menu = await kp.evaluate(async cards => {

@@ -1373,7 +1373,7 @@ function termRowChips(t, lead) {
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
   const keep = typeof naKeepChip === "function" ? naKeepChip(t) : "";
-  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t) + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
