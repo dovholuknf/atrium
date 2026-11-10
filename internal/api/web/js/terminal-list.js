@@ -1098,15 +1098,16 @@ function termTree(list) {
 // outlives the status change that filed the card, so a card in `done` can
 // still be carrying a stale `thinking`.
 function termRunnerMark(t) {
-  const mark = runnerMark(t.runner);
-  const a = t.activity;
-  // The row carries the one tooltip, so the mark says nothing of its own.
-  const bare = mark.replace(/ data-tip="[^"]*"/, "");
-  if (!workingNow(t)) return bare;
-  // Inserted into the class list the shared builder produced, rather than the
-  // builder growing a parameter. `runnerMark` is the board's and is called
-  // from three places that do not want this.
-  return bare.replace('class="rmark"', `class="rmark working ${esc(a.what)}"`);
+  return runnerMark(t.runner).replace(/ data-tip="[^"]*"/, "");
+}
+
+// THE ONE STATE SLOT, beside the runner mark: the spinner while it works, else the cache countdown pie while the cache is
+// warm and a refresh is coming, else the snowflake once the cache is cold.
+function termStateSlot(t) {
+  if (workingNow(t)) return `<span class="tstate"><i class="tkidspin"></i></span>`;
+  const chip = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
+  if (/class="chip keepalive cache[^"]*\bpie\b/.test(chip)) return `<span class="tstate">${chip}</span>`;
+  return `<span class="tstate">${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}</span>`;
 }
 
 // One entry in the switcher.
@@ -1122,14 +1123,15 @@ function termRunnerMark(t) {
 // The class and the custom properties a row is drawn with: `--tabc` and `--tabbg` for the bridge, and the worn palette.
 // A shut group's heading wears the same when it stands in for the attached row.
 // A CHILD WITH NO COLOUR OF ITS OWN IS TINTED FROM ITS PARENT. `launcherColor` never hands a worker its launcher's theme, so a
-// child of a green orchestrator was the plain card. `inherit` is the parent's theme, softened toward the skin's card here.
+// child of a green orchestrator was the plain card. `inherit` is the parent's theme, with a thin white overlay (a dark one on a light
+// parent) so the child reads as a shade of its parent and keeps the parent's foreground.
+const TERM_SHADE = 0.1;
 function termTintOf(inherit) {
-  const own = hexRGB(inherit.background), plain = hexRGB(plainTheme().background);
-  const fg = hexRGB(inherit.cursor || inherit.foreground), fg0 = hexRGB(plainTheme().foreground);
-  if (!own || !plain || !fg || !fg0) return null;
-  return Object.assign({}, inherit, {
-    background: rgbHex(mixRGB(own, plain, 0.55)), foreground: rgbHex(mixRGB(fg, fg0, 0.75)), cursor: rgbHex(mixRGB(fg, fg0, 0.75))
-  });
+  const own = hexRGB(inherit.background);
+  if (!own) return null;
+  const light = 0.299 * own.r + 0.587 * own.g + 0.114 * own.b > 150;
+  const layer = light ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
+  return Object.assign({}, inherit, { background: rgbHex(mixRGB(layer, own, TERM_SHADE)) });
 }
 
 function termRowWear(t, inherit) {
@@ -1211,7 +1213,7 @@ function termRow(t, deep, kid, inherit) {
             aria-label="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             data-tip="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}<span
+            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}${termStateSlot(t)}<span
             class="tstack"><span
             class="tname${secondary ? "" : " aspath"}"
             >${esc(primary)}</span>${
@@ -1362,7 +1364,6 @@ function termRowChips(t, lead) {
   // run. See js/seen.js.
   const stuck = typeof stuckMark === "function" ? stuckMark(t) : "";
   const ncx = typeof newContextChip === "function" ? newContextChip(t) : "";
-  const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
   // A card atrium is launching has no runner yet, which is not the same as one joined from another terminal.
   const joined = t.starting && !t.supervised ? `<span class="chip">starting</span>`
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
@@ -1372,7 +1373,7 @@ function termRowChips(t, lead) {
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
   const keep = typeof naKeepChip === "function" ? naKeepChip(t) : "";
-  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1704,6 +1705,7 @@ function termHeading(name, path, count, folded, group, style, movable, rows, emp
   const carries = folded && rows && rows.some(termHoldsOn);
   // It wears the attached row's colours, so the heading, the bridge and the pane frame are one colour.
   const wear = carries ? termRowWear(termTask) : null;
+  const run = folded && rows ? termRunningIn(rows) : 0;
   if (wear) style = ` style="${(style || "").replace(/^ style="|"$/g, "")};${wear.vars}"`;
   return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" + wear.cls : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
@@ -1712,7 +1714,16 @@ function termHeading(name, path, count, folded, group, style, movable, rows, emp
       >${movable ? `<span class="tgrip" aria-hidden="true">&#10303;</span>` : ""}<span
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
-      ><span class="tgcount">${shown}</span></button>`;
+      ><span class="tgcount">${shown}</span>${
+      run ? `<span class="chip tkidrun" data-tip="${run} running"><i class="tkidspin"></i>${run}</span>` : ""}</button>`;
+}
+
+// How many cards in these rows, or under them at any depth, are running. A folded group draws none of them.
+function termRunningIn(rows) {
+  const seen = new Map();
+  const walk = t => { if (!seen.has(t.id)) { seen.set(t.id, t); (termKids.get(t.id) || []).forEach(walk); } };
+  rows.forEach(walk);
+  return [...seen.values()].filter(workingNow).length;
 }
 
 // Is the attached session this row, or one drawn inside it.

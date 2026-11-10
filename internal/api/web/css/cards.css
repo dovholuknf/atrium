@@ -403,6 +403,10 @@
   .chip.cache.pie.due { border-color: var(--warn); background: conic-gradient(var(--warn) var(--pie, 0deg), transparent 0); }
   /* A Terminals row already carries the runner dot, so its chip is only the dial. */
   .term-list .chip.cache:not(.pie) { display: none; }
+  .term-list .tstate { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; margin-right: 4px; }
+  .term-list .tstate .kamark.on { margin: 0; }
+  .term-list .tstate .tkidspin { width: 16px; height: 16px; }
+  .term-list .tstate .chip.cache { margin: 0; }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;

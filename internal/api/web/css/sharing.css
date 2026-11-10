@@ -492,7 +492,8 @@
      child works. */
   .tkidfold .chip { padding: 0 3px; line-height: 1.35; display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
   .tkidfold .tkidn { color: var(--head); }
-  .tkidfold .tkidrun { background: rgba(var(--teal-rgb),.28); border-color: rgba(var(--teal-rgb),.6); color: var(--teal); }
+  .tkidfold .tkidrun, .tgroup .tkidrun { background: rgba(var(--teal-rgb),.28); border-color: rgba(var(--teal-rgb),.6); color: var(--teal); }
+  .tgroup .tkidrun { margin-left: 6px; padding: 0 3px; line-height: 1.35; display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
   .tkidspin { width: 12px; height: 12px; flex: none; background: url("/working.gif") center / contain no-repeat; }
   /* A heading is a button, and only as wide as the thing you press. On the board's group headings the whole
      width toggles, so clicking what looks like empty space beside a name folds what you were reading. Here the
