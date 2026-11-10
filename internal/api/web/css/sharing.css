@@ -538,3 +538,23 @@
   .tgroup .tgrip { font-size: 14px; width: 12px; opacity: .45; }
   .tgroup.movable:hover .tgrip { opacity: .9; }
   .tgroup.dragging { opacity: .5; }
+  /* A row over a group: the open group lights like the pinned bucket and draws a slot where the row will land,
+     a folded one lights its heading and opens. While a row drags, a heading of yours spans the strip so the whole
+     row is the target. */
+  .rowdrag .tgroup[data-ghead] { width: auto; }
+  .tnest.dropover, .tgroup.dropover {
+    background: rgba(var(--teal-rgb), .07);
+    outline: 1px dashed rgba(var(--teal-rgb), .45);
+    outline-offset: 2px; border-radius: var(--r-sm);
+  }
+  .tgroup.dropover { background: rgba(var(--teal-rgb), .16); color: var(--head); }
+  .tdropslot {
+    padding: 13px 10px; border: 1px dashed rgba(var(--teal-rgb), .6); border-radius: var(--r-sm);
+    font: var(--fs-xxs)/1.4 var(--sans); color: var(--label); white-space: nowrap; pointer-events: none;
+  }
+  #tdragnote {
+    position: fixed; z-index: 1000; pointer-events: none; padding: 2px 8px; border-radius: var(--r-sm);
+    background: var(--bg-2); border: 1px solid rgba(var(--teal-rgb), .6); color: var(--head);
+    font: var(--fs-xxs)/1.4 var(--sans); white-space: nowrap;
+  }
+  .tnest:has(> .tdropslot) > .groupempty { display: none; }

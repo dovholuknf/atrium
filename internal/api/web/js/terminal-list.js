@@ -1601,7 +1601,10 @@ function termFlatGroupsHTML(list, g, folded) {
     // `untagged` is the absence of a group and gets no menu.
     const menu = name && name !== UNTAGGED ? name : "";
     const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
-    if (off) return head;
+    if (off) {
+      if (mine) termFoldedRows.set(name, by.get(name));
+      return head;
+    }
     const rows = by.get(name);
     // `untagged` in custom mode is where a row is dragged to take it OUT of
     // the group it came from. See `wireUngroupDrop`.
@@ -2318,12 +2321,19 @@ function wireTermDrag(host) {
       // Firefox refuses to start a drag with nothing set.
       e.dataTransfer.setData("text/plain", termDragID);
       e.dataTransfer.setData("application/x-atrium-card", termDragID);
+      // A FOLDED HEADING TAKES THE DROP ACROSS THE WHOLE ROW. Widened a tick later, because changing the layout
+      // inside `dragstart` can cancel the drag in Chrome.
+      setTimeout(() => { if (termDragEl === el) host.classList.add("rowdrag"); });
     };
     el.ondragend = () => {
       const aborted = !!termDragID;
       termDragID = "";
       termDragEl = null;
       host.querySelectorAll(".dropover").forEach(x => x.classList.remove("dropover"));
+      host.querySelectorAll(".tdropslot").forEach(x => x.remove());
+      host.querySelectorAll(".tgroup[data-ghead]").forEach(termUnpeek);
+      host.classList.remove("rowdrag");
+      termSortNote(null);
       // AN ABANDONED DRAG PUTS THE STRIP BACK. `dragover` moves the row as the
       // pointer travels, so letting go outside the bucket leaves the list
       // showing an order that was never written. The poll would correct it
@@ -2424,9 +2434,15 @@ function wireGroupDrop(nest) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     nest.classList.add("dropover");
+    termDropSlot(nest, name, e);
   };
   nest.ondragleave = e => {
-    if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
+    if (nest.contains(e.relatedTarget)) return;
+    nest.classList.remove("dropover");
+    nest.querySelectorAll(":scope > .tdropslot").forEach(x => x.remove());
+    termSortNote(null);
+    const head = nest.previousElementSibling;
+    if (nest.classList.contains("tpeek") && !(head && head.contains(e.relatedTarget))) termUnpeek(head);
   };
   nest.ondrop = async e => {
     if (termHeadDrag) return headDrop(e);
@@ -2434,16 +2450,92 @@ function wireGroupDrop(nest) {
     // The pinned bucket has a drop of its own and this one has already done it.
     e.stopPropagation();
     nest.classList.remove("dropover");
-    const el = termDragEl;
-    termDragEl = null;
-    termDragID = "";
-    if (!el) return;
-    const id = el.dataset.id;
-    const t = lastTasks.find(x => x.id === id);
-    const tags = (t && t.tags) || [];
-    if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
-    repaintTermList();
+    await fileIntoGroup(name);
   };
+}
+
+// The dragged row goes into the group named, keeping any group it was already in, and the strip repaints.
+async function fileIntoGroup(name) {
+  const el = termDragEl;
+  termDragEl = null;
+  termDragID = "";
+  if (!el) return;
+  const id = el.dataset.id;
+  const t = lastTasks.find(x => x.id === id);
+  const tags = (t && t.tags) || [];
+  if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
+  repaintTermList();
+}
+
+// WHERE THE DRAGGED ROW WILL LAND, drawn as an empty slot in the group. The group's rows keep the strip's sort and
+// there is no order by hand outside the pinned bucket, so the slot goes where `termOrder` puts the card, not under
+// the pointer, and it names the sort. A row over a list it is already in draws nothing there and the pointer
+// carries the sort instead.
+function termDropSlot(nest, name, e) {
+  let slot = nest.querySelector(":scope > .tdropslot");
+  const t = termDragEl && lastTasks.find(x => x.id === termDragEl.dataset.id);
+  const rows = [...nest.querySelectorAll(":scope > .card.tab:not(.kid)")];
+  const there = rows.map(r => lastTasks.find(x => x.id === r.dataset.id)).filter(Boolean);
+  const here = !!t && (there.includes(t) || (t.tags || []).includes(name));
+  termSortNote(here ? e : null);
+  if (!t || here) { if (slot) slot.remove(); return; }
+  const list = termOrder(there.concat(t));
+  const next = list[list.indexOf(t) + 1];
+  const before = next ? rows.find(r => r.dataset.id === next.id) : null;
+  if (!slot) {
+    slot = document.createElement("div");
+    slot.className = "tdropslot";
+    slot.textContent = termSortWords();
+  }
+  if (slot.parentNode !== nest || slot.nextSibling !== before) nest.insertBefore(slot, before);
+}
+
+function termSortWords() {
+  return termSortStarted ? "newest first" : sortByActivity ? "sorted by activity" : "sorted by name";
+}
+
+// The badge above the pointer, clear of the drag image, while a row is over its own list. No event hides it.
+function termSortNote(e) {
+  let note = document.getElementById("tdragnote");
+  if (!e) { if (note) note.hidden = true; return; }
+  if (!note) {
+    note = document.createElement("div");
+    note.id = "tdragnote";
+    document.body.appendChild(note);
+  }
+  note.textContent = termSortWords();
+  note.style.left = (e.clientX + 14) + "px";
+  note.style.top = (e.clientY - 44) + "px";
+  note.hidden = false;
+}
+
+// The rows of each folded group of yours as last drawn, so a drag over its heading can open it for a look.
+let termFoldedRows = new Map();
+
+// A FOLDED GROUP OPENS WHILE A ROW IS OVER IT, to show the slot where the row lands, and folds again when the drag
+// leaves or drops. The fold that is stored never changes, so the next paint draws it folded.
+function termPeek(head, name) {
+  const nest = document.createElement("div");
+  nest.className = "tnest tpeek" + (head.classList.contains("hued") ? " hued" : "");
+  const hue = head.style.getPropertyValue("--ghue");
+  if (hue) nest.style.setProperty("--ghue", hue);
+  nest.dataset.group = name;
+  const rows = termFoldedRows.get(name) || [];
+  nest.innerHTML = rows.length ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint(name);
+  head.after(nest);
+  wireGroupDrop(nest);
+  const caret = head.querySelector(".tcaret");
+  if (caret) caret.innerHTML = "&#9662;";
+  return nest;
+}
+
+function termUnpeek(head) {
+  head.classList.remove("dropover");
+  const nest = head.nextElementSibling;
+  if (!nest || !nest.classList.contains("tpeek")) return;
+  nest.remove();
+  const caret = head.querySelector(".tcaret");
+  if (caret) caret.innerHTML = "&#9656;";
 }
 
 // `untagged` as a drop target, in custom mode. A row dragged here from one of
@@ -2453,13 +2545,18 @@ function wireGroupDrop(nest) {
 // not in a group has nothing to leave, and the drop puts the strip back.
 function wireUngroupDrop(nest) {
   nest.ondragover = e => {
-    if (!termDragEl || !termDragEl.closest(".tnest[data-group]")) return;
+    if (!termDragEl) return;
+    termDropSlot(nest, "", e);
+    if (!termDragEl.closest(".tnest[data-group]")) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     nest.classList.add("dropover");
   };
   nest.ondragleave = e => {
-    if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
+    if (nest.contains(e.relatedTarget)) return;
+    nest.classList.remove("dropover");
+    nest.querySelectorAll(":scope > .tdropslot").forEach(x => x.remove());
+    termSortNote(null);
   };
   nest.ondrop = async e => {
     e.preventDefault();
@@ -2509,8 +2606,33 @@ function wireHeadDrag(host, el) {
     // order that was written, for the reason an abandoned row drag does.
     if (aborted) repaintTermList();
   };
-  el.ondragover = e => { if (termHeadDrag) headDragOver(e, el.dataset.ghead); };
-  el.ondrop = e => { if (termHeadDrag) headDrop(e); };
+  el.ondragover = e => {
+    if (termHeadDrag) return headDragOver(e, el.dataset.ghead);
+    // A FOLDED GROUP TAKES A ROW on its heading and stays folded. An open one takes it in the nest below.
+    if (!termDragEl) return;
+    let nest = headBlock(el.dataset.ghead).nest;
+    if (nest && !nest.classList.contains("tpeek")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!nest) nest = termPeek(el, el.dataset.ghead);
+    el.classList.add("dropover");
+    nest.classList.add("dropover");
+    termDropSlot(nest, el.dataset.ghead, e);
+  };
+  el.ondragleave = e => {
+    const nest = el.nextElementSibling;
+    if (el.contains(e.relatedTarget) || !nest || !nest.classList.contains("tpeek")) return;
+    if (!nest.contains(e.relatedTarget)) termUnpeek(el);
+  };
+  el.ondrop = e => {
+    if (termHeadDrag) return headDrop(e);
+    const nest = headBlock(el.dataset.ghead).nest;
+    if (!termDragEl || (nest && !nest.classList.contains("tpeek"))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove("dropover");
+    fileIntoGroup(el.dataset.ghead);
+  };
 }
 
 // A group's heading and, when it is open, the nest drawn under it.
