@@ -426,13 +426,22 @@ function bridgeSides() {
     : { chat, lay: document.getElementById("term-layout"), pane: document.getElementById("term-pane"), live: !!term };
 }
 
+// One bridge: a strip from every copy of the attached card read as that row overflowing into the pane.
+function termBridgeFrom(cards) {
+  const box = document.querySelector("#term-list .termscroll");
+  const lr = box && box.getBoundingClientRect();
+  const seen = c => { const r = c.getBoundingClientRect(); return r.height > 0 && (!lr || (r.bottom > lr.top + 2 && r.top < lr.bottom - 2)); };
+  const pick = cards.find(c => c.matches(".card.on") && seen(c)) || cards.find(seen) || cards[0];
+  return pick ? [pick] : [];
+}
+
 function placeTabBridge() {
   const first = document.getElementById("tab-bridge");
   if (!first) return;
   const side = bridgeSides();
   // A shut group holding the attached row stands in for it: its heading is the tab.
   // So does a collapsed parent row holding it as a hidden child.
-  const cards = [...document.querySelectorAll("#term-list .card.on, #term-list .tgroup.carries, #term-list .card.carries")];
+  const cards = termBridgeFrom([...document.querySelectorAll("#term-list .card.on, #term-list .tgroup.carries, #term-list .card.carries")]);
   const bridges = [first, ...first.parentNode.querySelectorAll(".tabbridge.extra")];
   while (bridges.length < cards.length) {
     const b = first.cloneNode(false);

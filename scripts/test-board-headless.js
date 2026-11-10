@@ -484,7 +484,7 @@ async function termWearSection(browser, base) {
 // The attached row bridges the divider into the terminal: a strip in the row's
 // background with the row's border along its top and bottom, reaching the
 // pane's edge. A pinned row filed into a group is drawn twice, and both copies
-// are the attached row, so both get the frame and a bridge of their own.
+// are the attached row, so both get the frame and only the first a bridge.
 async function bridgeSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const bp = await ctx.newPage();
@@ -553,8 +553,13 @@ async function bridgeSection(browser, base) {
       if (a.bc !== b.bc || a.bg !== b.bg || a.shadow !== b.shadow) {
         fail("the two copies of the attached row are framed differently " + where + ": " + JSON.stringify(got.cards));
       }
+      if (got.bridges.length !== 1) fail("the attached row has " + got.bridges.length + " bridges, not one " + where + ".");
       for (const [i, c] of got.cards.entries()) {
         const br = got.bridges.find(x => Math.abs(x.top - c.top) < 1 && Math.abs(x.bottom - c.bottom) < 1);
+        if (i > 0) {
+          if (br) fail("copy " + (i + 1) + " of the attached row has a bridge of its own " + where + ".");
+          continue;
+        }
         if (!br) {
           fail("copy " + (i + 1) + " of the attached row has no bridge into the terminal " + where + ".");
           continue;
@@ -23315,7 +23320,8 @@ async function selectedFitsSection(browser, base) {
 
 // A CHILD ROW STAYS IN ITS COLUMN. A parent with a child, drawn pinned and again in a group, the child attached and
 // not, on a wide window and on one under 900px, where the header's `.tab` rule also reaches a row: every child row
-// ends inside the box the rows scroll in, as a top level row does.
+// ends inside the box the rows scroll in, as a top level row does. Attached, with orch also in a folded DIRECTORS
+// group, one bridge runs into the pane, from the first copy, and none from the other copy or the heading.
 async function childFitsSection(browser, base) {
   for (const vw of [1400, 800]) await childFitsAt(browser, base, vw);
   if (!bad) console.log("childFits ok");
@@ -23324,7 +23330,7 @@ async function childFitsAt(browser, base, vw) {
   const ctx = await browser.newContext({ viewport: { width: vw, height: 900 } });
   try {
     await ctx.addInitScript(() => {
-      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["orchestrators"] }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["orchestrators", "directors"] }));
       localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
     });
     const p = await ctx.newPage();
@@ -23335,7 +23341,7 @@ async function childFitsAt(browser, base, vw) {
     await p.evaluate(() => {
       const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
         display_title: id, tags: [], created_at: at, worktree: "/r/" + id, ...extra });
-      const cards = [card("orch", "2026-09-01T10:00:00Z", { pinned: true, tags: ["orchestrators"], theme: "admin-caution" }),
+      const cards = [card("orch", "2026-09-01T10:00:00Z", { pinned: true, tags: ["orchestrators", "directors"], theme: "admin-caution" }),
         card("kid", "2026-09-02T10:00:00Z", { tags: ["atrium:subagent"], spawned_by_id: "orch",
           display_title: "walk-mini-bar-cap with a name long enough to fill the row " + "and then run on past the list column".repeat(3) }),
         card("lone", "2026-09-03T10:00:00Z", { pinned: true })];
@@ -23345,6 +23351,7 @@ async function childFitsAt(browser, base, vw) {
       termTask = cards[2];
       switchView("terms");
     });
+    await p.evaluate(() => document.querySelector('#term-list .tgroup[data-ghead="directors"]').click());
     const skin = process.env.CHILD_FITS_SKIN || "";
     if (skin) await p.evaluate(s => applySkin(s), skin);
     const settle = () => p.evaluate(async () => { await renderTermList(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -23355,7 +23362,10 @@ async function childFitsAt(browser, base, vw) {
       const right = el => Math.round(el.getBoundingClientRect().right);
       return { col: Math.round(box.getBoundingClientRect().left + box.clientLeft + box.clientWidth),
         kids: [...document.querySelectorAll('#term-list .tkids .card.tab[data-id="kid"]')].map(c =>
-          ({ right: right(c), on: c.classList.contains("on"), grouped: !!c.closest(".tnest[data-group]") })),
+          ({ right: right(c), on: c.classList.contains("on"), grouped: !!c.closest(".tnest[data-group]"),
+            top: Math.round(c.getBoundingClientRect().top) })),
+        bridges: [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden)
+          .map(b => Math.round(b.getBoundingClientRect().top)),
         tops: [...document.querySelectorAll("#term-list .card.tab")].filter(c => !c.closest(".tkids")).map(right) };
     });
     const shots = process.env.CHILD_FITS_SHOTS || "";
@@ -23368,6 +23378,9 @@ async function childFitsAt(browser, base, vw) {
         const tag = "childFits: " + vw + "px window, " + pick + " attached, list at " + w + "px: ";
         if (g.kids.length !== 2 || !g.kids.some(k => k.grouped) || !g.kids.some(k => !k.grouped)) fail(tag + "want the child drawn pinned and in its group: " + JSON.stringify(g));
         if (pick === "kid" && !g.kids.every(k => k.on)) fail(tag + "the child is not drawn attached: " + JSON.stringify(g));
+        if (pick === "kid" && vw > 900 && (g.bridges.length !== 1 || g.bridges[0] !== g.kids[0].top)) {
+          fail(tag + "want one bridge, from the first copy of the child: " + JSON.stringify(g));
+        }
         if (g.kids.some(k => k.right > g.col)) fail(tag + "a child row runs past its column: " + JSON.stringify(g));
         if (g.tops.some(r => r > g.col)) fail(tag + "a top level row runs past its column: " + JSON.stringify(g));
         if (shots && pick === "kid" && w === 260) {
