@@ -23313,6 +23313,73 @@ async function selectedFitsSection(browser, base) {
   if (!bad) console.log("selectedFits ok");
 }
 
+// A CHILD ROW STAYS IN ITS COLUMN. A parent with a child, drawn pinned and again in a group, the child attached and
+// not, on a wide window and on one under 900px, where the header's `.tab` rule also reaches a row: every child row
+// ends inside the box the rows scroll in, as a top level row does.
+async function childFitsSection(browser, base) {
+  for (const vw of [1400, 800]) await childFitsAt(browser, base, vw);
+  if (!bad) console.log("childFits ok");
+}
+async function childFitsAt(browser, base, vw) {
+  const ctx = await browser.newContext({ viewport: { width: vw, height: 900 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["orchestrators"] }));
+      localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+    });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderTermList === "function" && typeof placeTabBridge === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: at, worktree: "/r/" + id, ...extra });
+      const cards = [card("orch", "2026-09-01T10:00:00Z", { pinned: true, tags: ["orchestrators"], theme: "admin-caution" }),
+        card("kid", "2026-09-02T10:00:00Z", { tags: ["atrium:subagent"], spawned_by_id: "orch",
+          display_title: "walk-mini-bar-cap with a name long enough to fill the row " + "and then run on past the list column".repeat(3) }),
+        card("lone", "2026-09-03T10:00:00Z", { pinned: true })];
+      boardCards = async () => cards;
+      if (!termSubsOn()) toggleTermShow("subagents");
+      term = term || { options: {}, dispose() {} };
+      termTask = cards[2];
+      switchView("terms");
+    });
+    const skin = process.env.CHILD_FITS_SKIN || "";
+    if (skin) await p.evaluate(s => applySkin(s), skin);
+    const settle = () => p.evaluate(async () => { await renderTermList(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+      placeTabBridge(); r();
+    }))); });
+    const read = () => p.evaluate(() => {
+      const box = document.querySelector("#term-list .termscroll");
+      const right = el => Math.round(el.getBoundingClientRect().right);
+      return { col: Math.round(box.getBoundingClientRect().left + box.clientLeft + box.clientWidth),
+        kids: [...document.querySelectorAll('#term-list .tkids .card.tab[data-id="kid"]')].map(c =>
+          ({ right: right(c), on: c.classList.contains("on"), grouped: !!c.closest(".tnest[data-group]") })),
+        tops: [...document.querySelectorAll("#term-list .card.tab")].filter(c => !c.closest(".tkids")).map(right) };
+    });
+    const shots = process.env.CHILD_FITS_SHOTS || "";
+    for (const pick of ["lone", "kid"]) {
+      await p.evaluate(id => { termTask = { ...termTask, id }; }, pick);
+      for (const w of [200, 260, 420]) {
+        await p.evaluate(w => { termListW = w; applyTermList(); }, w);
+        await settle();
+        const g = await read();
+        const tag = "childFits: " + vw + "px window, " + pick + " attached, list at " + w + "px: ";
+        if (g.kids.length !== 2 || !g.kids.some(k => k.grouped) || !g.kids.some(k => !k.grouped)) fail(tag + "want the child drawn pinned and in its group: " + JSON.stringify(g));
+        if (pick === "kid" && !g.kids.every(k => k.on)) fail(tag + "the child is not drawn attached: " + JSON.stringify(g));
+        if (g.kids.some(k => k.right > g.col)) fail(tag + "a child row runs past its column: " + JSON.stringify(g));
+        if (g.tops.some(r => r > g.col)) fail(tag + "a top level row runs past its column: " + JSON.stringify(g));
+        if (shots && pick === "kid" && w === 260) {
+          fs.mkdirSync(shots, { recursive: true });
+          await p.screenshot({ path: path.join(shots, "child-fits-" + vw + "-" + (process.env.CHILD_FITS_TAG || "after") + ".png") });
+        }
+      }
+    }
+    if (errors.length) fail("childFits: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 async function collapsedBridgeSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
@@ -26841,7 +26908,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -28990,6 +29057,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("selectedFits", () => selectedFitsSection(browser, base));
+    await unit("childFits", () => childFitsSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));
