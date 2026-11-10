@@ -158,16 +158,26 @@
   #t-complete .candmore { color: var(--dimmest); }
   /* Pushed right. It is the same line every time, so it belongs where the eye stops. */
   #t-complete .candhint { margin-left: auto; color: var(--dimmest); }
-  /* A big paste on its way. Top right, clear of the prompt at the bottom and of the path candidates there. */
+  /* A paste on its way: a bar across the top of the terminal, clear of the prompt at the bottom. */
   #t-pasting {
-    position: absolute; top: 8px; right: 8px; z-index: 30;
-    display: flex; align-items: center; gap: var(--sp-2);
-    padding: 4px 10px; border-radius: var(--r-md);
-    font-size: var(--fs-sm); color: var(--body);
-    background: var(--shell-0); border: 1px solid var(--stroke);
-    box-shadow: var(--shadow-pop); pointer-events: none;
+    position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 8px 14px; font-size: var(--fs-md); font-weight: 600; color: var(--body);
+    background: var(--shell-0); border-bottom: 2px solid var(--teal);
+    pointer-events: none;
   }
   #t-pasting[hidden] { display: none; }
+  #t-pasting.failed { color: var(--danger); border-bottom-color: var(--danger); }
+  #t-pasting.failed .shspin { animation: none; border-color: var(--danger); }
+  #t-pasting .rail {
+    margin-left: auto; width: 120px; height: 4px; border-radius: 2px;
+    background: rgba(var(--stroke-rgb),.85); overflow: hidden; position: relative;
+  }
+  #t-pasting .rail i {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 40%; background: var(--teal);
+    animation: pasterail 1.1s ease-in-out infinite;
+  }
+  @keyframes pasterail { from { left: -40%; } to { left: 100%; } }
   /* Sharing, while it is happening. Creating a share is several seconds of somebody else's server, and with the
      button unchanged a failure arrives as a paragraph about something that never appeared to start. These are
      the real steps, in order, and the one in progress is the only moving thing on screen. */
