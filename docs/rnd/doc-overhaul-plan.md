@@ -94,7 +94,7 @@ build status is not settled yet and the batch settles it from the code before wr
 | `docs/orchestrator/wrapup.md` | 87 | before 09-29 (reorg) | wrapup.md, orchestrator wave-boundary checklist | STATUS or DELETE? names Mode A |
 | `docs/release/merge-hygiene.md` | 42 | before 09-29 (reorg) | Merge hygiene | KEEP |
 | `docs/release/packaging.md` | 924 | 2026-10-04 | Packaging: installing atrium, running it as a service, and what pub... | FIX: launchd line runs `atrium daemon`. Check service scripts for the command they run |
-| `docs/release/release-0-0-1-plan.md` | 108 | 2026-10-05 | Release 0.0.1: the plan | STATUS: says READY, check whether 0.0.1 was cut |
+| `docs/release/release-0-0-3-plan.md` | 108 | 2026-10-05 | Release 0.0.1: the plan | STATUS: says READY, check whether 0.0.1 was cut |
 | `docs/release/test-plan-z-providers.md` | 234 | before 09-29 (reorg) | Z. Providers: telling atrium where your repositories live | MERGE into `docs/test-plan.md` section Z, or KEEP with a pointer |
 | `docs/review/cr2-ada747b-2ce6443.md` | 170 | 2026-10-02 | cr2: correctness review of claude/main ada747b..2ce6443 | DELETE? a one-off correctness review, findings filed as backlog items |
 | `docs/review/cr48-2d0ac78-ada747b.md` | 177 | 2026-09-29 | cr48: correctness review of claude/main 2d0ac78..ada747b | DELETE? same |

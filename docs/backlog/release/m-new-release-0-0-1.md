@@ -1,6 +1,6 @@
 # m-new-release-0-0-1. Release 0.0.1: plan, docs site refresh, publish
 
-Status: READY, prepared by agents. The publish is clint's, by hand. Plan: `docs/release/release-0-0-1-plan.md`. First step
+Status: READY, prepared by agents. The publish is clint's, by hand. Plan: `docs/release/release-0-0-3-plan.md`. First step
 for clint is the full gate on a machine that can run it. The deploy queue is merged and deployed.
 
 Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G11 of docs-deps. Owned by release (no
