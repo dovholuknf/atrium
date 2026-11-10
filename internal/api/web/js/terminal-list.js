@@ -1718,6 +1718,7 @@ function termHeading(name, path, count, folded, group, style, movable, rows, emp
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
       ><span class="tgcount">${shown}</span>${
+      group ? `<span class="tgadd" role="button" aria-label="new agent in ${esc(group)}" data-tip="new agent in ${esc(group)}" data-gnew="${esc(group)}">+</span>` : ""}${
       run ? `<span class="chip tkidrun" data-tip="${run} running"><i class="tkidspin"></i>${run}</span>` : ""}</button>`;
 }
 

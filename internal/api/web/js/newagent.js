@@ -480,6 +480,22 @@ async function openNewAgent(tw, prefill, clone) {
   else naEl("na-repo").focus();
 }
 
+async function naOpenInGroup(g) {
+  await openNewAgent(false);
+  if (!naS) return;
+  naS.groups = [g];
+  naRender();
+}
+
+// Capture, so the heading's own click (fold) never sees a press on its +.
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest(".tgroup .tgadd");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  naOpenInGroup(b.dataset.gnew);
+}, true);
+
 naEl("na-repo").addEventListener("focus", () => { naS.listOpen = true; naS.listIdx = 0; naRender(); });
 naEl("na-repo").addEventListener("blur", () => {
   setTimeout(() => {

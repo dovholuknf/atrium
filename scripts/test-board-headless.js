@@ -28732,6 +28732,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("dropdownsInstant", bu("dropdownsInstant"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
+    await unit("launchGroupPlus", bu("launchGroupPlus"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
     await unit("launchThrowaway", bu("launchThrowaway"));
     await unit("launchSetup", bu("launchSetup"));

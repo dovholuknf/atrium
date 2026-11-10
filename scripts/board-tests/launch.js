@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchNewAgent, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
+// Units: launchNewAgent, launchGroupPlus, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -686,8 +686,47 @@ async function launchNewAgentSection(browser, base) {
   if (!bad) console.log("launchNewAgent ok");
 }
 
+// THE + ON A GROUP HEADING in Terminals opens the new agent dialog with that group picked, and does not fold the group.
+// GROUP_PLUS_SHOTS=<dir> writes the heading and the dialog.
+async function launchGroupPlusSection(browser, base) {
+  const tag = "launchGroupPlus: ";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
+      localStorage.removeItem("atrium.newagent.groups");
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof naOpenInGroup === "function" && typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    const plus = p.locator('#term-list .tgroup .tgadd[data-gnew="active"]');
+    await plus.waitFor({ state: "visible", timeout: slow(5000) }).catch(() => fail(tag + "the active heading has no +"));
+    if (process.env.GROUP_PLUS_SHOTS) await p.locator("#term-list").screenshot({ path: process.env.GROUP_PLUS_SHOTS + "/heading.png" });
+    await plus.click();
+    await p.waitForFunction(() => document.getElementById("na").open, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the + did not open the dialog"));
+    const picked = await p.locator("#na-groups .gp-field .chip").allTextContents();
+    if (JSON.stringify(picked) !== '["active"]') fail(tag + "the dialog opened with groups " + JSON.stringify(picked));
+    if (process.env.GROUP_PLUS_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.GROUP_PLUS_SHOTS + "/dialog.png" });
+    await p.click("#na-x");
+    if (!(await p.locator('#term-list .tnest[data-group="active"]').count())) fail(tag + "pressing the + folded the group");
+    if (errors.length) fail(tag + "page errors " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("launchGroupPlus ok");
+}
+
 const units = [
   { name: "launchNewAgent", run: ({ browser, base }) => launchNewAgentSection(browser, base) },
+  { name: "launchGroupPlus", run: ({ browser, base }) => launchGroupPlusSection(browser, base) },
   { name: "launchRepoUrls", run: ({ browser, base }) => launchRepoUrlsSection(browser, base) },
   { name: "launchLink", run: ({ browser, base }) => launchLinkSection(browser, base) },
   { name: "launchThrowaway", run: ({ browser, base }) => launchThrowawaySection(browser, base) },
@@ -695,7 +734,7 @@ const units = [
   { name: "launchPresets", run: ({ browser, base }) => launchPresetsSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
 ];
-const sections = { launchNewAgent: launchNewAgentSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
+const sections = { launchNewAgent: launchNewAgentSection, launchGroupPlus: launchGroupPlusSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
