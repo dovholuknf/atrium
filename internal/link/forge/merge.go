@@ -1124,6 +1124,9 @@ func (p *Service) MergeEnd(ctx context.Context, st *hubstore.Store, step hubstor
 	if m.State != hubstore.MergeCancelled || step.From == hubstore.MergeTesting {
 		p.mergeTell(ctx, m)
 	}
+	if m.State == hubstore.MergeRed || m.State == hubstore.MergeRefused {
+		p.mergeTellOrchestrator(ctx, st, m)
+	}
 	if step.From == hubstore.MergeConflict && m.Merger != "" && m.State != hubstore.MergeLanded {
 		p.mergeTellMerger(ctx, m)
 	}
@@ -1247,6 +1250,38 @@ func (p *Service) mergeTell(ctx context.Context, m hubstore.MergeRequest) {
 			defer cancel()
 			if ans := c.DeliverAs(ctx, t.room, t.card, mergeFrom, text, "", kind, false, false); !ans.OK {
 				log.Printf("[hub] merge %d: could not tell %s@%s: %s", m.N, t.card, t.room, ans.Error)
+			}
+		}()
+	}
+}
+
+// mergeTellOrchestrator says a red or refused request to whoever holds the orchestrator role, since nobody watches the
+// board for it.
+func (p *Service) mergeTellOrchestrator(ctx context.Context, st *hubstore.Store, m hubstore.MergeRequest) {
+	c := p.ctlCaller()
+	if c == nil || st == nil {
+		return
+	}
+	hs, err := st.Roles(hubstore.RoleOrchestrator)
+	if err != nil {
+		log.Printf("[hub] merge %d: could not read the orchestrator: %v", m.N, err)
+		return
+	}
+	why := m.Reason
+	if m.State == hubstore.MergeRed {
+		why = "tests failed"
+		if len(m.Failing) > 0 {
+			why = "failing " + strings.Join(m.Failing, ", ")
+		}
+	}
+	text := fmt.Sprintf("merge request %d of %s by %s@%s is %s: %s. atrium merge show %d", m.N, m.Branch, m.Requester,
+		m.RequesterRoom, m.State, why, m.N)
+	for _, h := range hs {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer cancel()
+			if ans := c.DeliverAs(ctx, h.Room, h.Card, mergeFrom, text, "", "needs", false, false); !ans.OK {
+				log.Printf("[hub] merge %d: could not tell the orchestrator %s@%s: %s", m.N, h.Card, h.Room, ans.Error)
 			}
 		}()
 	}

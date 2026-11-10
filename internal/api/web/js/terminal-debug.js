@@ -557,6 +557,5 @@ async function renderTerms() {
   await renderTermList();
   await renderTermPerm();
   if (typeof renderTurnLimits === "function") await renderTurnLimits();
-  if (typeof loadMerge === "function") await loadMerge();
 }
 

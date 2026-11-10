@@ -152,9 +152,9 @@
     },
     "merge": {
       "file": "scripts/board-tests/merge.js",
-      "page": "the merge queue: its strip on the Terminals tab and its dialog",
+      "page": "the merge queue is not on the board",
       "units": ["merge*"],
-      "sources": ["internal/api/web/js/merge.js"],
+      "sources": [],
       "tests": [],
       "checks": []
     },
