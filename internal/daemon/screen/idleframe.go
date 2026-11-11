@@ -68,6 +68,18 @@ func FramePromptEmpty(tail []byte, cols, rows int) bool {
 	return idle && typed == ""
 }
 
+// FramePromptText is the text on the prompt row of an idle Claude prompt, or "" when the prompt is empty, shows only the
+// dim suggestion, or the screen is not an idle prompt. One row only: a wrapped draft is cut at the first line.
+func FramePromptText(tail []byte, cols, rows int) string {
+	sc := NewScreenSized(cols, rows)
+	sc.Apply(tail)
+	idle, _, typed := classifyScreenPrompt(FrameText(sc))
+	if !idle || FrameLineEmpty(tail, cols, rows) {
+		return ""
+	}
+	return typed
+}
+
 // FrameLineEmpty is a looser read than framePromptEmpty, for a runner whose line is only unsure because of a restart.
 // It asks for the prompt row under a rule and nothing typed on it, and no interrupt hint in the footer rows. Reply
 // text that happens to hold an ellipsis and a bracket, a status line taller than the box classifier allows, and the

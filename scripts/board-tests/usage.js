@@ -885,6 +885,7 @@ async function ctxLineSection(browser, base) {
   try {
     mock.wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-warm", 170000),
       row("cl-over", 201000, { telemetry: { window: 1000000 } }),
+      row("cl-316", 316985, { context_size: { tokens: 316985, warn: true, threshold_k: 200, source: "card" } }),
       row("cl-long", 135000, { display_title: "a very long card title that has to wrap onto a second line in a narrow list" }),
       row("cl-none", null), row("cl-shelf", 201000, { status: "paused" }),
       row("cl-cycle", 201000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
@@ -1063,6 +1064,9 @@ async function ctxLineSection(browser, base) {
       if (b.clash.length) fail(id + " context line overlaps the row's own text or chips: " + b.clash.join(", "));
       if (Math.abs(b.rowH - r.plainH) > 0.5) fail(id + " row is " + b.rowH + "px tall, a row without a line is " + r.plainH + "px.");
       if (b.fill === "none") fail(id + " context line has no fill colour.");
+    }
+    if (r["cl-316"] && (r["cl-316"].cls !== "peek-bar ctxline hot over" || r["cl-316"].width !== "100%")) {
+      fail("316985 tokens against a 200k limit is not a full red line: " + JSON.stringify(r["cl-316"]));
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
       fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);

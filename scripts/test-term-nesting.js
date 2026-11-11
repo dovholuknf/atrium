@@ -91,7 +91,7 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // a ReferenceError in the middle of the markup this parses. `termSuffix` is a
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
-  "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
+  "termNoteDuplicates", "termTree", "workingNow", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
   "termRoomChip", "termRowChips", "termCold", "termHeldLine", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
   "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];
@@ -128,7 +128,7 @@ const terminalParts = (t) => {
 };
 // `isWaiting` and `over` decide whether a row's mark is drawn as working, and
 // a mark is not nesting: both answer false so every fixture takes the same
-// path through `termRunnerMark` and the markup this parses stays the markup
+// path through `termStateSlot` and the markup this parses stays the markup
 // the nesting is about. `seenChips` (js/seen.js) draws nothing here for the
 // same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",

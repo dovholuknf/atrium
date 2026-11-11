@@ -1072,33 +1072,13 @@ function termTree(list) {
   return root;
 }
 
-// The runner's mark, moving while the runner is.
-//
-// The strip is where you look to decide which session to go to, and every row
-// in it looked the same whether the agent was grinding through a build or sat
-// at a prompt. The board answers that with a chip that spells the state out in
-// words, which is right in a column and does not fit in a strip a few hundred
-// pixels wide. So the mark that is already there carries it.
-//
-// CSS RATHER THAN THE ANIMATED IMAGE THIS WAS ASKED FOR, and the reasons are
-// worth stating because a gif is the obvious answer:
-//
-//   - There is no build step here and nothing is served that is not in the
-//     repository, so a gif is a binary to vendor, embed and cache-bust.
-//   - It could not take the session's colour. The mark wears `--tabc`, which
-//     is that terminal's own theme, and a gif is the pixels it was saved as.
-//   - `prefers-reduced-motion` cannot stop a gif. It stops this, by name, in
-//     the block that already exists for the board's live chips.
-//   - The board already animates exactly this state three ways, keyed on the
-//     same field. A fourth spelling of "working" would be a second answer.
-//
-// The state is `t.activity.what`, which is what the board's `activityChip`
-// reads, and the guards are the same: nothing is drawn as working for a card
-// that is waiting on you, finished, or paused. Activity is held in memory and
-// outlives the status change that filed the card, so a card in `done` can
-// still be carrying a stale `thinking`.
-function termRunnerMark(t) {
-  return runnerMark(t.runner).replace(/ data-tip="[^"]*"/, "");
+
+// A ROW WHOSE NAME WOULD BE CUT DROPS ITS ROOM CHIP FIRST, and only then does the name shrink.
+function termRoomFit(root) {
+  const cards = [...root.querySelectorAll(".term-list .card")].filter(c => c.querySelector(".card-line > .chips .chip.room"));
+  cards.forEach(c => c.classList.remove("noroom"));
+  cards.filter(c => { const n = c.querySelector(".tname"); return n && n.scrollWidth > n.clientWidth + 1; })
+    .forEach(c => c.classList.add("noroom"));
 }
 
 // THE ONE STATE SLOT, beside the runner mark: the spinner while it works, else the cache countdown pie while the cache is
@@ -1228,7 +1208,7 @@ function termRow(t, deep, kid, inherit) {
             aria-label="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             data-tip="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}${termStateSlot(t)}<span
+            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termStateSlot(t)}<span
             class="tstack"><span
             class="tname${secondary ? "" : " aspath"}"
             >${esc(primary)}</span>${
@@ -2122,6 +2102,11 @@ async function renderTermList() {
   // After the cards exist, since it is placed against one of them. A frame
   // later, so the measurement happens on the layout that was just written
   // rather than on the one being replaced.
+  termRoomFit(host);
+  if (!host.dataset.roomfit && typeof ResizeObserver === "function") {
+    host.dataset.roomfit = "1";
+    new ResizeObserver(() => termRoomFit(host)).observe(host);
+  }
   termHeadPlace();
   requestAnimationFrame(placeTabBridge);
   // Scrolling the rows moves the attached card under a bridge that is not

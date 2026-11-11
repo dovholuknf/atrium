@@ -19204,7 +19204,8 @@ async function controlsCompactSection(browser, base) {
 
 
 // TERMINALS ROWS ARE ONE LINE: a running card and a parked one (resume chip, room chip, other chips) are the same
-// height and neither wraps its chips under the title. ONELINE_SHOTS=<dir> writes the list as a png.
+// height and neither wraps its chips under the title. Under about 300px of list the row is two lines by design, and
+// there the chips sit on the path's line. ONELINE_SHOTS=<dir> writes the list as a png.
 async function terminalsOneLineSection(browser, base) {
   // Wide viewport: under 900px the phone rules apply and a `.tab` card turns inline-flex, which is another test.
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
@@ -19240,16 +19241,19 @@ async function terminalsOneLineSection(browser, base) {
           const tops = [...c.querySelectorAll(".chips .chip, .tkidfold")].filter(x => x.offsetWidth).map(x => Math.round(x.getBoundingClientRect().top));
           const right = Math.max(...[...c.querySelectorAll(".chips .chip, .tkidfold")].filter(x => x.offsetWidth).map(x => x.getBoundingClientRect().right), 0);
           return { h: Math.round(cr.height), tops, overflow: Math.round(right - cr.right), cw: Math.round(cr.width),
-            titleBottom: Math.round(c.querySelector(".title").getBoundingClientRect().bottom) };
+            titleBottom: Math.round(c.querySelector(".title").getBoundingClientRect().bottom),
+            nameBottom: Math.round(c.querySelector(".tname").getBoundingClientRect().bottom) };
         });
       }, width);
       if (process.env.ONELINE_SHOTS) await p.screenshot({ path: process.env.ONELINE_SHOTS + "/terminals-oneline-" + width + ".png", clip: { x: 0, y: 0, width: width + 10, height: 330 } });
       const tag = "terminalsOneLine " + width + "px: ";
       if (got.length !== 5) fail(tag + "expected 5 rows, drew " + got.length);
-      if (new Set(got.map(r => r.h)).size !== 1) fail(tag + "rows differ in height: " + JSON.stringify(got.map(r => r.h)));
+      const two = width < 300;
+      if (!two && new Set(got.map(r => r.h)).size !== 1) fail(tag + "rows differ in height: " + JSON.stringify(got.map(r => r.h)));
       for (const r of got) {
         if (r.tops.length && Math.max(...r.tops) - Math.min(...r.tops) > 3) fail(tag + "chips sit on more than one line: " + JSON.stringify(r));
-        if (r.tops.length && r.tops[0] >= r.titleBottom) fail(tag + "chips wrapped under the title: " + JSON.stringify(r));
+        if (!two && r.tops.length && r.tops[0] >= r.titleBottom) fail(tag + "chips wrapped under the title: " + JSON.stringify(r));
+        if (two && r.tops.length && r.tops[0] < r.nameBottom - 3) fail(tag + "chips beside the name on a two-line row: " + JSON.stringify(r));
         if (r.overflow > 0) fail(tag + "chips run past the card: " + JSON.stringify(r));
       }
     }
@@ -20687,13 +20691,68 @@ async function mHostileSection(browser) {
       const wd = await w.p.evaluate(() => ({ c: [...document.querySelectorAll("#m-replies .md-img, #m-replies .md-file")].map(e => e.dataset.path),
         h: [...document.querySelectorAll("#m-replies a")].map(a => a.getAttribute("href")), imgs: [...document.querySelectorAll("#m-replies img")].length }));
       if (wd.c.join() !== "D:/Work/Card/ok.png" && wd.c.join() !== "d:/work/card/ok.png") fail(tag + "drive controls are " + wd.c.join());
-      if (wd.h.length) fail(tag + "drive links are " + wd.h.join());
+      if (wd.h.join() !== "http://evil.example/x") fail(tag + "drive links are " + wd.h.join());
       if (wd.imgs !== 1) fail(tag + "drive images drawn: " + wd.imgs);
       if (st.fileHits.length !== 1) fail(tag + "the drive card asked for " + st.fileHits.join());
       await w.ctx.close();
     }
   } finally { await st.close(); }
   if (!bad) console.log("mHostile ok");
+}
+
+// A URL or a /d/<slug> left as text in a bubble is a link: a URL opens a new tab, a document opens the docs sheet, trailing
+// punctuation stays text, and code, markdown links and a /d/ inside another path are left alone.
+async function mBubbleLinksSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("bl-1", { alias: "linker", display_title: "linker", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+  st.replies["bl-1"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text:
+    "Approve at http://atrium.ziti/d/terminate-dialog-v2-approve. Also (https://example.com/a?b=1), [https://example.org/z], " +
+    "see /d/plan-notes, then /d/plan-notes@2.\n\nNot these: /etc/d/plan-notes, `https://code.example/x`, " +
+    "[label](https://md.example/y), javascript:alert(1) and ftp://h/x <img src=x onerror=\"window.__pwn = 1\">" }], prompts: [] };
+  const hub = mDocsHub();
+  st.docsApi = hub.api;
+  hub.add("plan-notes", "Plan notes", [{ bytes: "# Plan\n\nfirst\n", origin: "local", by: "operator" }, { bytes: "# Plan\n\nsecond notes\n", origin: "local", by: "operator" }]);
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mBubbleLinks " + vp.width + ": ";
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.waitForFunction(() => window.mDocs && window.mDocs.available(), null, { timeout: slow(5000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="bl-1"]');
+      await p.waitForSelector('#m-replies a[href="https://example.org/z"]', { timeout: slow(5000) }).catch(() => fail(tag + "the bare URLs did not become links"));
+      const d = await p.evaluate(() => {
+        const r = document.querySelector("#m-replies .reply .md");
+        return { pwn: window.__pwn, img: !!r.querySelector("img"), text: r.textContent,
+          links: [...r.querySelectorAll("a")].map(a => [a.getAttribute("href"), a.textContent, a.target, a.rel, a.className].filter(Boolean).join(" ")) };
+      });
+      const want = [
+        "http://atrium.ziti/d/terminate-dialog-v2-approve http://atrium.ziti/d/terminate-dialog-v2-approve _blank noopener noreferrer",
+        "https://example.com/a?b=1 https://example.com/a?b=1 _blank noopener noreferrer",
+        "https://example.org/z https://example.org/z _blank noopener noreferrer",
+        "/d/plan-notes /d/plan-notes md-doc", "/d/plan-notes@2 /d/plan-notes@2 md-doc",
+        "https://md.example/y label _blank noopener noreferrer"];
+      if (d.links.join("|") !== want.join("|")) fail(tag + "links are " + JSON.stringify(d.links));
+      if (!d.text.includes("-approve. Also (https://example.com/a?b=1), [https://example.org/z], see /d/plan-notes, then /d/plan-notes@2."))
+        fail(tag + "the text around the links changed: " + d.text);
+      if (d.pwn !== undefined || d.img) fail(tag + "markup in the reply ran or drew");
+      let loads = 0;
+      p.on("load", () => { loads++; });
+      await p.tap('#m-replies a[href="/d/plan-notes@2"]');
+      await p.waitForSelector("#m-docs .d-content", { timeout: slow(5000) }).catch(() => fail(tag + "the /d/ link did not open the docs sheet"));
+      if (loads) fail(tag + "a /d/ link navigated away");
+      if (!/second notes/.test(await p.textContent("#m-docs .d-content").catch(() => ""))) fail(tag + "the /d/ link did not open version 2");
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) }).catch(() => fail(tag + "Back did not close the sheet"));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await mShot(p, "bubble-links-" + vp.width);
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mBubbleLinks ok");
 }
 
 // ── many pictures in one card ────────────────────────────────────────────
@@ -21584,6 +21643,161 @@ async function termRowChipsSection(browser, base) {
     if (errors.length) fail("termRowChips page errors: " + errors.join("; "));
   } finally {
     await ctx.close();
+  }
+}
+
+// A LONG NAME ENDS IN AN ELLIPSIS BEFORE EVERY CHIP, whatever the row carries: an alias over a title, a fold count, a room chip.
+async function termNameClearsChipsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termRow === "function", null, { timeout: slow(15000) });
+    for (const width of [275, 300, 320, 400]) {
+      const got = await p.evaluate((width) => {
+        const mk = (id, name, extra) => Object.assign({ id, tags: ["origin:agent"], status: "running", supervised: true,
+          display_title: name, cwd: "github/netfoundry/mcp-connect", seen: { answered: false, open_questions: ["a", "b"], questions_at: "2026-11-10T10:00:00Z" } }, extra || {});
+        const rows = [
+          mk("n1", "netfoundry/mcp-connect", { alias: "exploring-mcp-connect" }),
+          mk("n2", "mcp-gateway"),
+          mk("n3", "docpreview:dashboard-fixes"),
+          mk("n4", "github/dovholuknf/work:claude/event-hub"),
+          mk("n5", "a card with a long name that cannot fit", { alias: "exploring-mcp-connect" }),
+        ];
+        setGrouping({ label: "alias" }, "terms");
+        termKidsPool = new Map();
+        termKids = new Map(rows.map(r => [r.id, [{ id: r.id + "a" }, { id: r.id + "b" }]]));
+        try { window.roomOf = () => "claude-sg4"; } catch (e) {}
+        rows.forEach(r => { if (!termKidsShut(r)) foldedColumns().push(termKidsKey(r)); });
+        const old = document.getElementById("nameclear-host");
+        if (old) old.remove();
+        const host = document.createElement("div");
+        host.id = "nameclear-host";
+        host.style.cssText = "position:fixed;left:0;top:0;width:" + width + "px;z-index:99999;background:#fff";
+        host.innerHTML = '<div class="term-list" style="position:static;width:' + width + 'px;flex:none">' +
+          rows.map(t => termRow(t, false, false)).join("") + "</div>";
+        document.body.appendChild(host);
+        return [...host.querySelectorAll(".card")].filter(c => c.querySelector(".tname")).map(c => {
+          const name = c.querySelector(".tname");
+          const nr = name.getBoundingClientRect();
+          const chips = [...c.querySelectorAll(".card-line > .chips, .tkidfold")].filter(x => x.offsetWidth)
+            .map(x => x.getBoundingClientRect()).filter(x => x.top < nr.bottom && x.bottom > nr.top);
+          return { name: name.textContent, right: nr.right, chipsLeft: Math.min(...chips.map(x => x.left)), w: name.clientWidth };
+        });
+      }, width);
+      for (const r of got) {
+        if (r.right > r.chipsLeft + 0.5) fail("termNameClearsChips " + width + "px: the name runs under a chip: " + JSON.stringify(r));
+        if (r.w < 40) fail("termNameClearsChips " + width + "px: the name lost its 40px: " + JSON.stringify(r));
+      }
+    }
+    if (errors.length) fail("termNameClearsChips: page errors: " + errors.join("; "));
+  } finally { await ctx.close(); }
+}
+
+// A ROW'S TEXT ENDS BEFORE ITS FIRST CHIP on the stack, the board and the terminals list, at every board width, with the
+// fold count, the room chip, a star and a pin, at every text size. ROWCHIPS_SHOTS=<dir> saves the 240, 340 and 540 terminals
+// lists and the stack. On the terminals list there is no runner mark or badge, an empty state slot
+// leaves no gap before the name, and at 300px and under no room chip shows.
+async function rowTextClearsChipsSection(browser, base) {
+  const shots = process.env.ROWCHIPS_SHOTS || "";
+  for (const width of [1280, 1600, 1920]) {
+    const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+    const errors = [];
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof termRow === "function" && typeof stackRow === "function" && typeof cardHTML === "function",
+        null, { timeout: slow(15000) });
+      for (const scale of [1.4, 0.9, 1.1]) {
+        let terms = [];
+        const got = await p.evaluate((scale) => {
+          document.documentElement.style.setProperty("--uiscale", String(scale));
+          hubIsHub = true;
+          window.roomOf = () => "claude-sg4";
+          const long = "netfoundry/mcp-connect-with-a-very-long-repository-name-that-cannot-fit";
+          const mk = (id, extra) => Object.assign({ id, tags: ["origin:agent"], status: "running", supervised: true, room: "claude-sg4",
+            runner: "claude", display_title: "github/" + long + ":claude/exploring-mcp-connect",
+            worktree: "C:/Users/someone/github/" + long + ":claude/exploring-mcp-connect",
+            cwd: "github/" + long, seen: { answered: false, open_questions: ["a", "b"], questions_at: "2026-11-10T10:00:00Z" } }, extra || {});
+          const rows = [
+            mk("x1", { alias: "exploring-mcp-connect-and-a-name-long-enough-to-reach-the-chips", pinned: true }),
+            mk("x2", { pinned: true }),
+            mk("x3", { alias: "exploring-mcp-connect" }),
+            mk("x4", { alias: "a card with a long name that cannot fit anywhere on this row at all, not even close", room: "" }),
+          ];
+          setGrouping({ label: "alias" }, "terms");
+          termKidsPool = new Map();
+          termKids = new Map(rows.map(r => [r.id, [{ id: r.id + "a" }, { id: r.id + "b" }]]));
+          rows.forEach(r => { if (!termKidsShut(r)) foldedColumns().push(termKidsKey(r)); });
+          const out = [];
+          const measure = (kind, host, rowSel, textSel, chipSel) => {
+            for (const row of host.querySelectorAll(rowSel)) {
+              const chips = [...row.querySelectorAll(chipSel)].filter(c => c.offsetWidth && c.getClientRects().length);
+              for (const el of row.querySelectorAll(textSel)) {
+                if (!el.offsetWidth || !el.textContent.trim()) continue;
+                const r = el.getBoundingClientRect();
+                const beside = chips.map(c => c.getBoundingClientRect()).filter(c => c.top < r.bottom && c.bottom > r.top);
+                out.push({ kind, id: row.dataset.id, text: el.className || el.tagName, right: r.right,
+                  chipLeft: beside.length ? Math.min(...beside.map(c => c.left)) : Infinity });
+              }
+            }
+          };
+          const host = (id, w, html, top, left) => {
+            const old = document.getElementById(id);
+            if (old) old.remove();
+            const h = document.createElement("div");
+            h.id = id;
+            h.style.cssText = "position:fixed;left:" + (left || 0) + "px;top:" + (top || 0) + "px;width:" + w + "px;z-index:99999;background:var(--bg)";
+            h.innerHTML = html;
+            document.body.appendChild(h);
+            return h;
+          };
+          const kept = { 240: 360, 340: 0, 540: 620 };
+          const terms = [];
+          for (const w of [240, 260, 300, 340, 400, 460, 540]) {
+            const h = host("rowchips-terms-" + w, w, '<div class="term-list" style="position:static;width:' + w + 'px;flex:none">' +
+              rows.map(t => termRow(t, false, false)).join("") + "</div>", 0, kept[w]);
+            termRoomFit(h);
+            measure("terms", h, ".card", ".card-line .tname, .card-line .tpath", ".card-line > .chips .chip, .card-line > .tkidfold");
+            for (const c of h.querySelectorAll(".card")) {
+              const name = c.querySelector(".tname").getBoundingClientRect();
+              const room = c.querySelector(".chip.room");
+              const lefts = [...c.querySelectorAll(".title .pin, .title .tstate")].filter(e => e.offsetWidth)
+                .map(e => e.getBoundingClientRect()).filter(e => e.top < name.bottom && e.bottom > name.top && e.right <= name.left + 0.5);
+              terms.push({ w, id: c.dataset.id, mark: !!c.querySelector(".rmark, .rbadge"), room: !!(room && room.offsetWidth),
+                gap: Math.round(name.left - Math.max(...lefts.map(e => e.right))) });
+            }
+            if (!(w in kept)) h.remove();
+          }
+          const sw = document.getElementById("stack-list").clientWidth || innerWidth - 40;
+          measure("stack", host("rowchips-stack", sw, '<div class="panel">' + rows.map(stackRow).join("") + "</div>", 400),
+            ".stackrow", ".who > b, .who > span", ".chips .chip");
+          for (const w of [300, 420]) {
+            const h = host("rowchips-board", w, rows.map(t => cardHTML(t)).join(""));
+            measure("board", h, ".card", ".card-line > .title", ".card-line > .chips .chip");
+            h.remove();
+          }
+          return { out, terms };
+        }, scale).then(r => { terms = r.terms; return r.out; });
+        const tag = "rowTextClearsChips " + width + "px at " + scale + ": ";
+        for (const r of terms) {
+          if (r.mark) fail(tag + "a terminals row still draws the runner mark: " + JSON.stringify(r));
+          if (r.w <= 300 && r.room) fail(tag + "the room chip shows at 300px or under: " + JSON.stringify(r));
+          if (r.gap > 5) fail(tag + "a blank gap left of the name: " + JSON.stringify(r));
+        }
+        for (const r of got.filter(r => r.right > r.chipLeft + 0.5)) fail(tag + r.kind + " text runs under a chip: " + JSON.stringify(r));
+        for (const k of ["terms", "stack", "board"]) if (!got.some(r => r.kind === k)) fail(tag + "measured no " + k + " row");
+      }
+      if (shots) {
+        await p.locator("#rowchips-terms-340").screenshot({ path: path.join(shots, "terms-" + width + ".png") });
+        for (const w of [240, 540]) await p.locator("#rowchips-terms-" + w).screenshot({ path: path.join(shots, "terms-" + w + "px-" + width + ".png") });
+        await p.locator("#rowchips-stack").screenshot({ path: path.join(shots, "stack-" + width + ".png") });
+      }
+      if (errors.length) fail("rowTextClearsChips " + width + "px: page errors: " + errors.join("; "));
+    } finally { await ctx.close(); }
   }
 }
 
@@ -27102,9 +27316,9 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mChatThumbs: mChatThumbsSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, workerCardColors: workerCardColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mBubbleLinks: mBubbleLinksSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mBubbleLinks: mBubbleLinksSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mBubbleLinks: mBubbleLinksSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection, ciGrowl: ciGrowlSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
@@ -29250,6 +29464,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mTables", () => mTablesSection(browser));
     await unit("mMarkdown", () => mMarkdownSection(browser));
     await unit("mHostile", () => mHostileSection(browser));
+    await unit("mBubbleLinks", () => mBubbleLinksSection(browser));
     await unit("mPictures", () => mPicturesSection(browser));
     await unit("mHidden", () => mHiddenSection(browser));
     await unit("mViewer", () => mViewerSection(browser));
@@ -29372,6 +29587,8 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("homesLaunch", bu("homesLaunch"));
     await unit("homesAllRooms", bu("homesAllRooms"));
     await unit("termRowChips", () => termRowChipsSection(browser, base));
+    await unit("termNameClearsChips", () => termNameClearsChipsSection(browser, base));
+    await unit("rowTextClearsChips", () => rowTextClearsChipsSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + threwMessage(e));

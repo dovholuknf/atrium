@@ -190,6 +190,9 @@ type Server struct {
 	// TypeAnyway is "type anyway" on the same chip, for a line atrium cannot read: type what is waiting now, past the
 	// gate, and leave the line alone. See internal/daemon/forcesay.go.
 	TypeAnyway http.HandlerFunc
+	// ForceClear is the phone's "Force clear now": discard the text on the card's input line so held messages go in.
+	// See internal/daemon/forceclear.go.
+	ForceClear http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -881,6 +884,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.LetThrough != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/let-through", s.LetThrough)
+	}
+	if s.ForceClear != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/force-clear", s.ForceClear)
 	}
 	if s.TypeAnyway != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/type-anyway", s.TypeAnyway)

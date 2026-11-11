@@ -387,13 +387,47 @@
     else if (t.classList.contains("md-file")) { if (window.mViewer) window.mViewer.open(t.dataset.card, t.dataset.path); else saveFile(t); }
     else if (t.dataset.state === "ready") { const i = t.querySelector("img"); if (i) enlarge(i.src, i.alt); }
   });
+  // A URL, or a /d/<slug> where there are documents, left as text in a bubble becomes a link, built as nodes so no message
+  // text is parsed as markup.
+  const BARE = /https?:\/\/[^\s<>"'`]+|\/d\/[^\s<>"'`]+/g;
+  function linkify(root) {
+    const walk = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+    const todo = [];
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const p = n.parentElement;
+      if (p && p.closest(".md, .own") && !p.closest("a, button, code, pre") && /https?:\/\/|\/d\//.test(n.data)) todo.push(n);
+    }
+    todo.forEach(n => {
+      const src = n.data, frag = document.createDocumentFragment();
+      let at = 0, any = false;
+      src.replace(BARE, (m, off) => {
+        const raw = m.replace(/[.,;:!?)\]]+$/, "");
+        const doc = raw[0] === "/";
+        if (doc ? (off > 0 && !/[\s(\[]/.test(src[off - 1])) || !DOC.test(raw) || !(window.mDocs && window.mDocs.available()) : !safeURL(raw)) return m;
+        const a = document.createElement("a");
+        a.href = raw;
+        a.textContent = raw;
+        if (doc) a.className = "md-doc";
+        else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+        frag.appendChild(document.createTextNode(src.slice(at, off)));
+        frag.appendChild(a);
+        at = off + raw.length;
+        any = true;
+        return m;
+      });
+      if (!any) return;
+      frag.appendChild(document.createTextNode(src.slice(at)));
+      n.replaceWith(frag);
+    });
+  }
+
   // A reply is drawn by innerHTML, so a thumbnail is filled when it arrives. Only where replies are drawn.
   if (window.MutationObserver) {
     ["m-replies", "m-recap"].forEach(id => {
       const host = document.getElementById(id);
-      if (host) new MutationObserver(() => hydrate(host)).observe(host, { childList: true, subtree: true });
+      if (host) new MutationObserver(() => { hydrate(host); linkify(host); }).observe(host, { childList: true, subtree: true });
     });
   }
 
-  window.mMd = { render, safeURL, inline, own, hydrate, release, saveBlob: (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); } };
+  window.mMd = { render, safeURL, inline, own, hydrate, linkify, release, saveBlob: (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); } };
 })();
