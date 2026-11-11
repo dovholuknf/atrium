@@ -5,6 +5,7 @@ const walkPr = {
   prUrl: "",            // the pull request this card walks, as the daemon names it, for when the pulls list is not loaded
   s: null,              // the saved walk: { v, comments, thread, off, bottom, open }
   timer: 0,
+  poll: 0,              // the interval that reads the agent's file while an answer is awaited
   drafts: new Map(),    // textarea key -> text not sent yet, so a repaint keeps it
   editing: null,        // { file, line } of a new comment being written
   sel: "",              // id of the comment the walk stands on
@@ -54,7 +55,7 @@ async function walkPrLoad(taskId) {
   try { const r = await api(`/v1/tasks/${taskId}/walk`); s = r.state; walkPr.prUrl = r.pr_url || ""; } catch (e) { s = null; }
   if (walkPr.taskId !== taskId) return;
   walkPr.s = Object.assign(walkPrBlank(), s || {});
-  walkPrSync();
+  walkPrSync().then(walkPrPoll);
 }
 
 // Takes in what the agent wrote to its file. A save still waiting goes first, so the walk it answers with has it.
@@ -65,10 +66,23 @@ async function walkPrSync() {
   let out;
   try { out = await api(`/v1/tasks/${id}/walk/agent`, { method: "POST" }); } catch (e) { return; }
   if (walkPr.taskId !== id || !out || !out.state || walkPr.timer) return;
-  const at = (n) => (n.comments || []).reduce((k, c) => k + 1 + (c.turns || []).length, 0);
+  const at = (n) => (n.comments || []).reduce((k, c) => k + 1 + (c.turns || []).length, 0) + (n.thread || []).filter(x => x.a).length;
   if (at(out.state) === at(walkPr.s)) return;
   walkPr.s = Object.assign(walkPrBlank(), out.state);
   if (dock.open) dockPaint();
+}
+
+// While an answer is awaited the agent's file is read every few seconds, so the spinner clears when the turn lands.
+function walkPrPending() { return !!walkPr.s && (walkPrWholeWaiting() || walkPr.s.comments.some(walkPrWaiting)); }
+function walkPrPoll() {
+  if (walkPr.poll || !walkPrPending()) return;
+  walkPr.poll = setInterval(async () => {
+    const was = walkPrPending();
+    await walkPrSync();
+    const now = walkPrPending();
+    if (was !== now && dock.open) { dockPaint(); walkPrBottom(); }
+    if (!now) { clearInterval(walkPr.poll); walkPr.poll = 0; }
+  }, 3000);
 }
 
 function walkPrPut(id, s) {
@@ -87,6 +101,15 @@ function walkPrSave() {
 }
 
 function walkPrComment(id) { return walkPr.s && walkPr.s.comments.find(c => c.id === id) || null; }
+const walkPrWait = 10 * 60 * 1000;
+const walkPrAgentTurns = c => (c.turns || []).filter(t => t.who === "agent").length;
+function walkPrAsk(c) { c.ask = { at: Date.now(), n: walkPrAgentTurns(c) }; }
+function walkPrWaiting(c) { return !!c.ask && walkPrAgentTurns(c) === c.ask.n && Date.now() - c.ask.at < walkPrWait; }
+function walkPrWholeWaiting() {
+  const x = walkPr.s && walkPr.s.thread[walkPr.s.thread.length - 1];
+  return !!x && !x.a && Date.now() - x.at < walkPrWait;
+}
+const walkPrSpin = `<div class="wk-wait" role="status"><span class="spin"></span>asking the agent...</div>`;
 function walkPrAgentComments() { return walkPr.s ? walkPr.s.comments.filter(c => c.who === "agent") : []; }
 
 // ── the bubbles ─────────────────────────────────────────
@@ -107,7 +130,7 @@ function walkPrBubble(c) {
     <div class="chead"><b>${c.who === "you" ? "you" : "agent"}</b> &middot; ${esc(c.file.split("/").pop())}:${c.line}${
       c.post ? ` <span class="st">copied for ${esc(forge ? forge.f.label : "the forge")}</span>` : ""}${
       walkPrHelp("Enter sends it to the walk agent, with the walk's scope in front. Shift+Enter or Ctrl+Enter is a new line.")}</div>
-    <div class="wk-said">${walkPrMd(c.text)}</div>${foot}${turns}
+    <div class="wk-said">${walkPrMd(c.text)}</div>${foot}${turns}${walkPrWaiting(c) ? walkPrSpin : ""}
     <textarea data-wpk="${esc(key)}" data-morph-key="${esc(key)}" rows="2" spellcheck="true"
       placeholder="Ask the agent about this line">${esc(walkPr.drafts.get(key) || "")}</textarea>
     <div class="row2"><span class="grow"></span>${forge
@@ -160,12 +183,13 @@ function walkPrScopeText() {
 }
 
 // One line into the card's terminal, the way walkAsk types: a single frame, then the Enter.
-function walkPrSend(text, withScope) {
+function walkPrSend(text, withScope, to) {
   if (typeof termSock === "undefined" || !termSock || termSock.readyState !== WebSocket.OPEN) {
     toast("the terminal is not connected", "there is nobody to ask yet");
     return false;
   }
-  sendInput((withScope === false ? "" : walkPrScopeText() + " | ") + text.replace(/\s*\n\s*/g, " "));
+  const how = to ? '[answer by appending one JSON line {"reply":"' + to + '","text":"<your answer>"} to .atrium/walk-agent.jsonl] | ' : "";
+  sendInput((withScope === false ? "" : walkPrScopeText() + " | ") + how + text.replace(/\s*\n\s*/g, " "));
   setTimeout(() => sendInput("\r"), 60);
   return true;
 }
@@ -189,8 +213,7 @@ function walkPrRegion() {
 function walkPrBottomHtml() {
   const s = walkPr.s, mode = s.bottom === "terminal" ? "terminal" : "thread";
   const open = mode === "thread" && s.open;
-  const what = walkTenant.prId ? "PR" : "branch";
-  const tip = walkPrHelp("For questions about the whole change, not tied to a line. Enter sends, Shift+Enter or Ctrl+Enter is a new line.");
+    const tip = walkPrHelp("For questions about the whole walk, not tied to a line. Enter sends, Shift+Enter or Ctrl+Enter is a new line.");
   const last = s.thread.length ? s.thread[s.thread.length - 1].q.split("\n")[0] : "";
   const sw = `<span class="wb-sw" role="group" aria-label="what the bottom shows"><button type="button" data-wp="mode" data-mode="thread" aria-pressed="${mode === "thread"}"
     data-tip="the whole-PR thread with the walk agent">thread</button><button type="button" data-wp="mode" data-mode="terminal" aria-pressed="${mode === "terminal"}"
@@ -198,17 +221,19 @@ function walkPrBottomHtml() {
   const head = `<div class="wb-bar${open ? " open" : ""}"><button type="button" class="wb-toggle" data-wp="toggle" aria-expanded="${open}"
       data-tip="${open ? "collapse the thread" : "open the whole-PR thread with the walk agent"}">${
       mode === "terminal" ? "<b>the agent's terminal</b>"
-        : open ? `<b>chat with the agent about the ${what} on the whole</b>` : `<b>click here to ask the agent about the whole ${what}</b>`}</button>${tip}<span class="wb-last">${
+        : open ? `<b>chat with the agent about the whole walk</b>` : `<b>click here to ask the agent about the whole walk</b>`}</button>${tip}<span class="wb-last">${
       open || mode === "terminal" ? "" : esc(last)}</span>${open || mode === "terminal" ? "" : `<span class="by">${s.thread.length} messages &#9652;</span>`}${sw}</div>`;
   if (!open) return head;
   const log = `<div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">Ask me anything about the whole change here.
-    The walk's scope goes in front of what you type, and the answer comes in the terminal.</div></div></div>` +
+    The walk's scope goes in front of what you type, and the answer lands here.</div></div></div>` +
     s.thread.map(x => `<div class="wk-turn op"><div class="wk-av">you</div><div class="wk-bub"><div class="wk-said">${walkPrMd(x.q)}</div>
-      <div class="sctx">${esc(x.scope.replace(/^\[walk scope\] /, ""))}</div></div></div>`).join("");
+      <div class="sctx">${esc(x.scope.replace(/^\[walk scope\] /, ""))}</div></div></div>${x.a
+        ? `<div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">${walkPrMd(x.a)}</div></div></div>` : ""}`).join("") +
+    (walkPrWholeWaiting() ? walkPrSpin : "");
   const chips = walkPrScope().map(x => `<button type="button" class="sc ${x.on ? "onc" : "offc"}" data-wp="chip" data-k="${x.k}" aria-pressed="${x.on}"
     data-tip="${x.on ? "sent with your message. click to leave it out" : "not sent with your message. click to send it again"}"><i>${x.on ? "&#10003;" : "&#9675;"}</i><b>${x.k}</b> ${esc(x.v)}</button>`).join("");
   return head + `<div class="wb-body"><div class="chatlog" id="walk-chatlog">${log}</div><div class="chatin"><div class="scopechips"><span>sent with it</span>${chips}</div>
-    <div class="askrow"><textarea data-wpk="whole" data-morph-key="whole" rows="1" spellcheck="true" placeholder="Ask the agent about the whole PR">${esc(walkPr.drafts.get("whole") || "")}</textarea>
+    <div class="askrow"><textarea data-wpk="whole" data-morph-key="whole" rows="1" spellcheck="true" placeholder="Ask the agent about the whole walk">${esc(walkPr.drafts.get("whole") || "")}</textarea>
     <button type="button" class="wk-btn go" data-wp="whole-send">Send &#9166;</button></div></div></div>`;
 }
 
@@ -280,7 +305,9 @@ function walkPrSaveNew() {
     const c = { id: "c" + Date.now().toString(36), file: ed.file, line: ed.line, who: "you", text, turns: [], post: null };
     walkPr.s.comments.push(c);
     walkPr.sel = c.id;
+    if (walkPrSend(text, true, c.id)) walkPrAsk(c);
     walkPrSave();
+    walkPrPoll();
   }
   dockPaint();
 }
@@ -289,8 +316,10 @@ function walkPrSendReply(t) {
   const c = walkPrComment(t.dataset.wpk.slice(6)), v = t.value.trim();
   if (!c || !v) return;
   walkPr.sel = c.id;
-  if (!walkPrSend(v)) return;
+  if (!walkPrSend(v, true, c.id)) return;
   c.turns = (c.turns || []).concat({ who: "you", text: v });
+  walkPrAsk(c);
+  walkPrPoll();
   walkPr.drafts.delete(t.dataset.wpk);
   walkPrSave();
   dockPaint();
@@ -299,9 +328,11 @@ function walkPrSendReply(t) {
 function walkPrSendWhole() {
   const t = document.querySelector('#walk-bottom [data-wpk="whole"]');
   const v = t && t.value.trim();
-  if (!v || !walkPrSend(v)) return;
+  if (!v || !walkPrSend(v, true, "whole")) return;
   walkPr.s.thread.push({ q: v, scope: walkPrScopeText(), at: Date.now() });
   walkPr.drafts.delete("whole");
+  t.value = "";
+  walkPrPoll();
   walkPrSave();
   walkPrBottom();
   const log = document.getElementById("walk-chatlog");

@@ -497,7 +497,7 @@ function placeOneBridge(bridge, card, side) {
   if (lay) lay.classList.add("bridged");
   // Nothing attached, or the list is not beside the terminal to begin with.
   // In `off` the list floats OVER the pane, so there is no gutter to cross.
-  if (!lay || !card || (termListMode === "off" && !side.chat) || !side.live) { bridge.hidden = true; return; }
+  if (!lay || !card || (termListMode === "off" && !side.chat) || !side.live || document.querySelector("#walk-drawer:not([hidden])")) { bridge.hidden = true; return; }
 
   const l = lay.getBoundingClientRect();
   const c = card.getBoundingClientRect();

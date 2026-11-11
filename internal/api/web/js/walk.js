@@ -1323,6 +1323,7 @@ function walkPlace() {
   }
   if (typeof walkPrBottom === "function") walkPrBottom();
   if (typeof placeToasts === "function") placeToasts();
+  if (walkPlace.shown !== !d.hidden) { walkPlace.shown = !d.hidden; if (typeof placeTabBridge === "function") requestAnimationFrame(placeTabBridge); }
 }
 
 function walkGripDown(e) {

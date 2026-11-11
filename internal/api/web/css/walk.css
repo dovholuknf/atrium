@@ -335,11 +335,15 @@
   .wk-fn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .wk-fc { margin-left: auto; color: var(--dim); font-size: var(--fs-xs); }
   .cmt {
-    resize: both; overflow: auto; min-width: 300px; min-height: 90px; max-width: 100%; box-sizing: border-box;
+    resize: both; overflow: auto; min-width: 300px; min-height: 90px; max-width: 90%; box-sizing: border-box;
     display: flex; flex-direction: column; margin: 6px 0 8px 5.2ch; padding: 8px 12px; white-space: normal;
     border: 1px solid var(--stroke-dim); border-left: 3px solid var(--teal); border-radius: var(--r-md);
     background: rgb(var(--shell0-rgb)); font: var(--fs-sm)/1.45 system-ui, sans-serif; color: var(--body);
   }
+  .wk-wait { display: flex; align-items: center; gap: var(--sp-2); margin: 4px 0; color: var(--dim); font: var(--fs-xs) var(--mono); }
+  .wk-wait .spin { width: 12px; height: 12px; border: 2px solid rgba(var(--teal-rgb),.3); border-top-color: var(--teal); border-radius: 50%; animation: wkspin .8s linear infinite; }
+  @keyframes wkspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .wk-wait .spin { animation-duration: 3s; } }
   .cmt.sel { outline: 2px solid var(--teal); outline-offset: 1px; }
   .cmt.you { --cb: var(--blue); }
   .cmt .chead { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 4px; font: var(--fs-xs) var(--mono); color: var(--dim); }
