@@ -11955,8 +11955,9 @@ async function walkSection(browser, base) {
       const leaks = names.filter(f => /^Leak:/m.test(read(f))).length;
       if (r.filter(x => x.leak).length !== leaks) fail(nm + "leak marks " + r.filter(x => x.leak).length + " vs " + leaks);
       if (!r.every(x => /^(HIGH|MED|LOW|NIT|BLOCKING)/.test(x.sev))) fail(nm + "a severity chip is missing: " + JSON.stringify(r.map(x => x.sev)));
-      const segs = await p.$$eval("#walk-bar i", e => e.length);
-      if (segs !== s.n) fail(nm + "progress has " + segs + " segments, not " + s.n);
+      const lab = await p.textContent("#t-walk");
+      if (lab.trim() !== "walk " + s.n + (s.n === 1 ? " finding" : " findings")) fail(nm + "the walk button reads " + lab);
+      if (await p.$("#t-walk i, #walk-bar")) fail(nm + "a segment bar is drawn.");
 
       // The code comes from pr.diff, with context around the anchored line.
       const code = await p.$$eval(S + ".wk-code .wk-l", e => e.length);
@@ -12259,7 +12260,7 @@ async function walkContextSection(browser, base) {
     if (sc.top > tb.bottom - 100) fail("walkContext: ask left the sheet shut");
     const sent = (await pp.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in");
     if (sent.length !== 1 || !/^about 01 a\.go:12, $/.test(sent[0].d)) fail("walkContext: ask typed " + JSON.stringify(sent));
-    await pp.click(S + ".walk-head .icon");
+    await pp.click(S + ".walk-head .walk-close");
     await pp.waitForFunction(() => !document.querySelector(".term-body").classList.contains("sheet-open"), null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(pp).catch(() => {});
     if (await pp.evaluate(() => document.querySelector(".term-body").classList.contains("sheet-open"))) fail("walkContext: closing the drawer left the sheet up");
     sc = await box("#t-screen");
@@ -12301,9 +12302,9 @@ async function walkBranchSection(browser, base) {
     fs.mkdirSync(path.join(tmp, k, "findings"), { recursive: true });
     mock.walkDirs[k] = path.join(tmp, k);
   }
-  mock.walkBranch[ids.ok] = { code: 200, body: { branch: "feature", base: "main", diff: patch } };
+  mock.walkBranch[ids.ok] = { code: 200, body: { branch: "claude/feature", base: "main", diff: patch } };
   // The button's probe is answered, and the base is gone for every read after it.
-  mock.walkBranch[ids.bad] = { code: 200, body: { branch: "feature", base: "main", diff: patch },
+  mock.walkBranch[ids.bad] = { code: 200, body: { branch: "claude/feature", base: "main", diff: patch },
     then: { code: 409, body: { error: "no base to compare feature with: looked for origin/HEAD, origin/main, main" } } };
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -12351,7 +12352,7 @@ async function walkBranchSection(browser, base) {
       .catch(() => fail("walkBranch: no files listed for a card with no findings"));
     const rows = await p.$$eval(S + ".wk-row .wk-fn", els => els.map(e => e.textContent));
     if (rows.join() !== "base.txt,one.txt,two.txt") fail("walkBranch: the files are " + rows.join());
-    if (await p.$eval("#walk-title", e => e.textContent) !== "feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
+    if (await p.$eval("#walk-title", e => e.textContent) !== "claude/feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
     await shot(p, "first-file");
     const lay = await p.evaluate(() => {
       const d = document.getElementById("walk-drawer"), f = document.getElementById("walk-files"), r = document.getElementById("walk-rail");
@@ -12718,7 +12719,7 @@ async function walkNoResizeSection(browser, base) {
       if (open.sent.length) fail(nm + "opening the walk sent a resize: " + JSON.stringify(open.sent));
       const tops = await p.$$eval("#walk-rail .wk-row", els => els.map(e => Math.round(e.getBoundingClientRect().top)));
       if (!(tops.length === 2 && tops[1] > tops[0])) fail(nm + "the rail's rows are not stacked: " + JSON.stringify(tops));
-      await p.click("#walk-drawer .walk-head .icon");
+      await p.click("#walk-drawer .walk-head .walk-close");
       await p.waitForTimeout(600); // wait: as above, the absence of a settled resize after the close.
       const shut = await look(p);
       if (shut.cols !== before.cols || shut.rows !== before.rows) fail(nm + "closing the walk moved the grid to " + shut.cols + "x" + shut.rows);

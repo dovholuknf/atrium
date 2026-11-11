@@ -76,8 +76,6 @@ function dockReset() {
   if (drawer) { drawer.hidden = true; walkPlace(); }
   const btn = document.getElementById("t-walk");
   if (btn) { btn.hidden = true; btn.classList.remove("go"); }
-  const mini = document.getElementById("t-walk-bar");
-  if (mini) mini.innerHTML = "";
   walkTenant.reset();
 }
 function walkReset() { dockReset(); }
@@ -186,10 +184,8 @@ function dockPaint() {
   const t = dock.tenant;
   const drawer = document.getElementById("walk-drawer");
   if (!t) return;
-  const segs = t.segments(dock.items);
-  const barHtml = segs.map(s => `<i class="${s.cls}${s.done ? " done" : ""}"></i>`).join("");
-  const mini = document.getElementById("t-walk-bar");
-  if (mini) setHTML(mini, barHtml);
+  const label = document.getElementById("t-walk-label");
+  if (label) label.textContent = t.label(dock);
   if (!dock.open || !drawer) return;
   const head = t.header(dock);
   document.getElementById("walk-title").textContent = head.title;
@@ -207,7 +203,6 @@ function dockPaint() {
     }
   }
   document.getElementById("walk-note").textContent = head.note;
-  setHTML(document.getElementById("walk-bar"), barHtml);
   document.getElementById("walk-count").textContent = t.summary(dock.items);
   const more = document.getElementById("walk-more");
   more.textContent = head.more || "";
@@ -525,7 +520,7 @@ const walkTenant = {
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
     if ((res.entries || []).some(e => !e.dir && walkParseName(e.name))) return true;
     const br = await api(`/v1/tasks/${task.id}/diff`);
-    return !!(br && br.diff);
+    return !!(br && br.diff) && /^claude\/(?!main$)./.test(br.branch || "");
   },
 
   // No findings: the branch against its base, a file at a time.
@@ -655,8 +650,12 @@ const walkTenant = {
       ? `: ${a} accepted, ${p} posted, ${d} dismissed` + (f ? `, ${f} deferred` : "") : "");
   },
 
-  segments(items) {
-    return items.map(i => ({ cls: "s-" + i.sev + (i.leak ? " leak" : ""), done: i.state === "posted" || i.state === "dismissed" }));
+  label(d) {
+    const n = d.items.length;
+    const row = walkPrOf(d.taskId);
+    if (row) return "walk PR #" + row.number;
+    if (n && d.items[0].kind === "file") return "walk branch: " + n + (n === 1 ? " file" : " files");
+    return "walk " + n + (n === 1 ? " finding" : " findings");
   },
 
   railRow(it, i, d) {
@@ -857,6 +856,7 @@ function walkKeydown(e) {
   const key = k === "Enter" ? "C" : k;
   if (k === "Enter" && t && (t.tagName === "BUTTON" || t.tagName === "A")) return;
   if (k === "Escape" && dock.menu) { e.preventDefault(); walkMenu(false); return; }
+  if (k === "Escape" && !dock.editing && !dock.conflict) { e.preventDefault(); walkClose(); return; }
   if (!"aAecCopsdyfujkgmn[]".includes(key) || key.length !== 1) return;
   if (dock.editing || dock.conflict) return;
   e.preventDefault();

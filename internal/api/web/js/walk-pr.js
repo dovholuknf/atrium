@@ -189,6 +189,7 @@ function walkPrRegion() {
 function walkPrBottomHtml() {
   const s = walkPr.s, mode = s.bottom === "terminal" ? "terminal" : "thread";
   const open = mode === "thread" && s.open;
+  const what = walkTenant.prId ? "PR" : "branch";
   const tip = walkPrHelp("For questions about the whole change, not tied to a line. Enter sends, Shift+Enter or Ctrl+Enter is a new line.");
   const last = s.thread.length ? s.thread[s.thread.length - 1].q.split("\n")[0] : "";
   const sw = `<span class="wb-sw" role="group" aria-label="what the bottom shows"><button type="button" data-wp="mode" data-mode="thread" aria-pressed="${mode === "thread"}"
@@ -197,7 +198,7 @@ function walkPrBottomHtml() {
   const head = `<div class="wb-bar${open ? " open" : ""}"><button type="button" class="wb-toggle" data-wp="toggle" aria-expanded="${open}"
       data-tip="${open ? "collapse the thread" : "open the whole-PR thread with the walk agent"}">${
       mode === "terminal" ? "<b>the agent's terminal</b>"
-        : open ? "<b>chat with the agent about the PR on the whole</b>" : "<b>click here to ask the agent about the whole PR</b>"}</button>${tip}<span class="wb-last">${
+        : open ? `<b>chat with the agent about the ${what} on the whole</b>` : `<b>click here to ask the agent about the whole ${what}</b>`}</button>${tip}<span class="wb-last">${
       open || mode === "terminal" ? "" : esc(last)}</span>${open || mode === "terminal" ? "" : `<span class="by">${s.thread.length} messages &#9652;</span>`}${sw}</div>`;
   if (!open) return head;
   const log = `<div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">Ask me anything about the whole change here.

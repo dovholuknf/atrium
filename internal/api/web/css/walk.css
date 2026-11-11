@@ -56,6 +56,12 @@
   .walk-nav button { white-space: nowrap; padding: 2px 8px; font-size: var(--fs-xs); }
   .walk-nav .by { min-width: 8em; }
   .walk-head button { flex: none; }
+  .walk-head { min-width: 0; flex-wrap: wrap; row-gap: var(--vs-1); }
+  .walk-head a.wk-pr { flex: 0 1 auto; overflow: hidden; }
+  .walk-head a.wk-pr strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+  .walk-head #walk-note { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .walk-head .walk-close { margin-left: var(--sp-4); }
+  #t-walk { flex: none; white-space: nowrap; }
   .walk-nav kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); margin-left: 4px; }
   .walk-head strong { color: var(--head); font-size: var(--fs-md); white-space: nowrap; }
   .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
@@ -64,21 +70,6 @@
     all: unset; position: absolute; top: 0; left: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
   }
   .walk-grip:hover, .walk-grip:focus-visible { background: rgba(var(--teal-rgb),.25); }
-
-  /* Progress: one segment per item, coloured by severity, filled when done. */
-  .walk-bar, .wk-mini { display: inline-flex; gap: 2px; align-items: center; }
-  .walk-bar i, .wk-mini i {
-    display: block; width: 8px; height: 10px; border-radius: 2px;
-    border: 1px solid var(--seg, var(--dim)); background: transparent;
-    transition: background .25s;
-  }
-  .wk-mini { margin-left: var(--sp-2); }
-  .wk-mini i { width: 4px; height: 9px; }
-  .walk-bar i.s-high, .wk-mini i.s-high { --seg: var(--sev-high); }
-  .walk-bar i.s-med, .wk-mini i.s-med { --seg: var(--sev-med); }
-  .walk-bar i.s-low, .wk-mini i.s-low { --seg: var(--sev-low); }
-  .walk-bar i.s-nit, .wk-mini i.s-nit { --seg: var(--sev-nit); }
-  .walk-bar i.done, .wk-mini i.done { background: var(--seg); }
 
   /* The rail. */
   /* `display: block` undoes chrome.css's bare `nav` rule, which lays the rows side by side. */

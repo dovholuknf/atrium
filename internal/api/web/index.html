@@ -480,10 +480,9 @@ Exports honor whatever filter is applied.">?</span>
             width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"
             stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1
             1-1h3.5"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></button>
-          <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
-               finding. -->
+          <!-- Only when the card's directory holds findings, a pull request or a work branch's changes. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
-            data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
+            data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span id="t-walk-label">walk</span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
             aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it"><svg
             viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
@@ -610,7 +609,6 @@ Exports honor whatever filter is applied.">?</span>
             <div class="walk-head term-bar">
               <a id="walk-pr" class="wk-pr" target="_blank" rel="noopener"><strong id="walk-title"></strong></a>
               <span class="by" id="walk-note"></span>
-              <span class="walk-bar" id="walk-bar"></span>
               <span class="by" id="walk-count"></span>
               <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
@@ -620,8 +618,8 @@ Exports honor whatever filter is applied.">?</span>
                 data-tip="open the walk in a tab of its own">⧉ own tab</button>
               <button type="button" class="go" onclick="walkDone()"
                 data-tip="type walk done into the walker and submit it">walk done</button>
-              <button type="button" class="icon" onclick="walkClose()"
-                aria-label="close the walk" data-tip="close the walk">&times;</button>
+              <button type="button" class="walk-close" onclick="walkClose()"
+                data-tip="close this panel and keep the walk as it is (Esc)">close walk</button>
             </div>
             <div class="walk-nav" id="walk-nav" hidden>
               <span class="navgrp"><button type="button" data-act="pc" data-tip="previous change (p)">&#8249; previous <kbd>p</kbd></button><span class="by" id="walk-chg"></span><button type="button" data-act="nc" data-tip="next change (n)">next <kbd>n</kbd> &#8250;</button></span>
