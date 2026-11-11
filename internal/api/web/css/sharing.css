@@ -119,6 +119,12 @@
   }
   .roomrow .hintline { margin-top: 6px; }
   .roomrow .roomcog { flex: none; }
+  .loginrow {
+    display: grid; grid-template-columns: auto 90px 120px 1fr; gap: var(--sp-3); align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--stroke-dim);
+  }
+  .loginrow:last-child { border-bottom: none; }
+  .loginrow .ll-line { width: 100%; font-family: monospace; }
   /* What the hub knows about one room, behind its cog. A table because it is one: a label and a value per
      line, and the labels want to line up or the eye has to find each one again. */
   .kv { border-collapse: collapse; margin-bottom: var(--vs-3); }

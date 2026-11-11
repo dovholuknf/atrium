@@ -490,6 +490,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.LoginNeeded = d.loginHealth
 	d.ap.ToolchainMissing = d.toolchainHealth
 	d.ap.LoginHandler = d.handleLoginNeeded
+	d.ap.LoginStatus = d.handleLoginStatus
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
 	d.ap.OpenShell = d.handleShellOpen

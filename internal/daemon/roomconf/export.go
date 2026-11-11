@@ -154,6 +154,7 @@ var ExportedSettings = []string{
 	// stop being exported from this release, which is correct, because nothing
 	// on the other end would read them either.
 	api.SettingShellCommand,
+	api.SettingLoginCommand,
 	store.SettingUnexpectedExit,
 }
 

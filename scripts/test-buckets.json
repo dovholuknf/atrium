@@ -274,6 +274,7 @@
       ],
       "sources": [
         "internal/api/web/js/rooms.js",
+        "internal/api/web/js/loginrooms.js",
         "internal/api/web/js/rooms-dash.js",
         "internal/api/web/js/hubrestart.js",
         "internal/api/web/js/hubhosts.js",

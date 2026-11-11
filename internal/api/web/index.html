@@ -1006,6 +1006,7 @@ Pick a room and this whole board becomes that machine's atrium. Pick none and yo
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="openRoomJoin()">add a room</button>
       <button class="go" onclick="openDispatch('')">queue work for a machine</button>
+      <button class="go" onclick="openLoginRooms()">log in rooms</button>
     </div>
     <div id="room-list"></div>
 
@@ -2607,6 +2608,34 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+<dialog id="loginrooms" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">rooms</div><h2>log in rooms</h2></div>
+    <button onclick="document.getElementById('loginrooms').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline dlg-lead">Opens one shell per ticked room in its own window with the login line already run.
+      Click the claude.com link it prints. Closing a window ends its shell.</p>
+    <section class="dlg-sec">
+      <div class="dlg-sec-h">which rooms</div>
+      <div id="ll-rows"></div>
+      <span class="hintline">The line is the room's login command setting. Empty means
+        <code>ssh -t &lt;room&gt; claude auth login</code>. An edit here is kept for that room when you open the shells.</span>
+    </section>
+    <section class="dlg-sec">
+      <div class="field">
+        <label class="eyebrow" for="ll-host">open the shells on</label>
+        <div class="picker"><select id="ll-host"></select></div>
+        <span class="hintline">The room the ssh line runs from, which is the machine you sit at.</span>
+      </div>
+    </section>
+  </div>
+  <div class="dlg-foot">
+    <span class="grow"></span>
+    <button class="go" id="ll-go" onclick="openLoginShells()">open shells</button>
+  </div>
+</dialog>
+
 <!-- What to run on the OTHER machine, with the parts this hub knows already
      filled in.
      No data-guard, and no save button, because nothing here is stored. A room
@@ -4022,6 +4051,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/cardurl.js"></script>
 <script src="/js/rooms.js"></script>
 <script src="/js/rooms-dash.js"></script>
+<script src="/js/loginrooms.js"></script>
 <script src="/js/audit.js"></script>
 <script src="/js/chatter.js"></script>
 <script src="/js/chat.js"></script>

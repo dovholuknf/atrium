@@ -116,6 +116,7 @@ func globalAutoView(s *Server) map[string]any {
 		// always being cmd, so the escape hatch for the problem was itself
 		// unreachable by anybody hitting the problem.
 		SettingShellCommand: "shell_command",
+		SettingLoginCommand: "login_command",
 		// The narrowest a runner's terminal goes. Empty means the default.
 		SettingTerminalMinCols: "terminal_min_cols",
 		// The daily limit per kind of atrium text. Empty is the default. See store/turnlimits.go.
@@ -324,6 +325,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Nothing rejected it either. The guard above is a rule about one
 		// specific pair of fields and not a check that every key is known.
 		ShellCommand *string `json:"shell_command"`
+		LoginCommand *string `json:"login_command"`
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
@@ -743,6 +745,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// by `shell_command_now` and `shell_command_ok`.
 		if err := s.st.SetSetting(SettingShellCommand,
 			strings.TrimSpace(*body.ShellCommand)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.LoginCommand != nil {
+		if err := s.st.SetSetting(SettingLoginCommand, strings.TrimSpace(*body.LoginCommand)); err != nil {
 			s.fail(w, err)
 			return
 		}
