@@ -599,6 +599,9 @@ func fromLineStart(b []byte) []byte {
 
 // runner is one live supervised process.
 type runner struct {
+	// stuckAfter overrides defaultStuckAfter, for a test.
+	stuckAfter time.Duration
+
 	// leaving is set when atrium types the exit itself (windDown). A SessionEnd
 	// after it is atrium's doing, never a person typing /exit.
 	leaving atomic.Bool
@@ -1340,15 +1343,19 @@ func (r *runner) inject(banner, body string, ok func() bool, force bool) (bool, 
 	return true, nil
 }
 
-// stuckAfter is how long a typed say gets to submit before the screen is read for it still sitting on the line.
-var stuckAfter = 700 * time.Millisecond
+// defaultStuckAfter is how long a typed say gets to submit before the screen is read for it still sitting on the line.
+const defaultStuckAfter = 700 * time.Millisecond
 
 // resubmitIfStuck presses Enter again when a say's own Enter was eaten: a long paste is still being taken in when the
 // first one lands, so the text sat on the prompt and the operator's next typing joined it. Only while no human key has
 // landed since the say, and at most twice.
 func (r *runner) resubmitIfStuck(seq uint64) {
 	for range 2 {
-		time.Sleep(stuckAfter)
+		wait := r.stuckAfter
+		if wait == 0 {
+			wait = defaultStuckAfter
+		}
+		time.Sleep(wait)
 		r.pasteMu.Lock()
 		r.typeMu.Lock()
 		quiet := r.keySeq == seq

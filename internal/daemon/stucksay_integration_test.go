@@ -10,12 +10,9 @@ import (
 
 func stuckRunner(t *testing.T, frame string) (*runner, *fakePTY) {
 	t.Helper()
-	old := stuckAfter
-	stuckAfter = 20 * time.Millisecond
-	t.Cleanup(func() { stuckAfter = old })
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
-	r := &runner{pty: f, buf: newRingSized(1<<16, 80, 24), watchers: map[chan []byte]struct{}{}, done: make(chan struct{})}
+	r := &runner{stuckAfter: 20 * time.Millisecond, pty: f, buf: newRingSized(1<<16, 80, 24), watchers: map[chan []byte]struct{}{}, done: make(chan struct{})}
 	_, _ = r.buf.Write([]byte(frame))
 	return r, f
 }
