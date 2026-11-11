@@ -420,3 +420,41 @@ func sameFolder(a, b string) bool {
 	rb, eb := safepath.Real(filepath.FromSlash(b))
 	return ea == nil && eb == nil && strings.EqualFold(ra, rb)
 }
+
+func hubClone(t *testing.T) (clone, hub string) {
+	t.Helper()
+	clone = homeRepo(t)
+	hub = filepath.Join(t.TempDir(), "hub.git")
+	cullGit(t, filepath.Dir(clone), "clone", "-q", "--bare", clone, hub)
+	cullGit(t, clone, "remote", "add", "hub", hub)
+	return clone, hub
+}
+
+func TestALaunchWithNoBaseStartsFromTheHubsClaudeMain(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	tip := cullGit(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "-m", "ahead", "-p", "claude/main", "claude/main^{tree}")
+	cullGit(t, hub, "update-ref", "refs/heads/claude/main", tip)
+	req := shared.LaunchRequest{Repo: clone, Title: "Fresh Start"}
+	_, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cullGit(t, dd.Work, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("started from %s, the hub's claude/main is %s", got, tip)
+	}
+}
+
+func TestALaunchWithNoBaseIsRefusedWhenTheHubCannotBeFetched(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	if err := os.RemoveAll(hub); err != nil {
+		t.Fatal(err)
+	}
+	req := shared.LaunchRequest{Repo: clone, Title: "Stale Start"}
+	if _, _, err := d.LaunchHome(store.CardHomeWorktree, &req); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("want a refusal naming the stale base, got %v", err)
+	}
+}

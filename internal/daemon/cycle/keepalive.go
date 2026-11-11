@@ -402,21 +402,27 @@ func (c *LastReplies) ReadLastReply(path string) (*LastReply, error) {
 		return nil, err
 	}
 	defer f.Close()
-	if start > 0 {
+	var done int64
+	// The window doubles back when the tail holds no main reply, a pasted image or a big tool result can fill it.
+	for {
 		if _, err := f.Seek(start, io.SeekStart); err != nil {
 			return nil, err
 		}
-	}
-	c.Scans.Add(1)
-	done, err := ScanMainReplies(f, func(r *MainReply) {
-		switch {
-		case r.Write1h > 0:
-			ttl = time.Hour
-		case r.Write5m > 0:
-			ttl = 5 * time.Minute
+		c.Scans.Add(1)
+		done, err = ScanMainReplies(f, func(r *MainReply) {
+			switch {
+			case r.Write1h > 0:
+				ttl = time.Hour
+			case r.Write5m > 0:
+				ttl = 5 * time.Minute
+			}
+			out = &LastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
+		})
+		if err != nil || out != nil || start == 0 {
+			break
 		}
-		out = &LastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
-	})
+		start = max(0, start-(info.Size()-start))
+	}
 	if err != nil {
 		c.LastReplyDrop(path)
 		return nil, err

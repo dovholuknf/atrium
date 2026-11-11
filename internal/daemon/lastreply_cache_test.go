@@ -89,3 +89,15 @@ func BenchmarkLastReply30CardsUncached(b *testing.B) {
 		}
 	}
 }
+
+func TestLastReplyFoundPastATailOfOneBigLine(t *testing.T) {
+	var replies cycle.LastReplies
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	now := time.Now()
+	big := `{"type":"user","message":{"content":"` + strings.Repeat("x", cycle.TranscriptTail+1000) + `"}}` + "\n"
+	appendTo(t, p, replyLine("a", 316985, now)+big, now)
+	r, err := replies.ReadLastReply(p)
+	if err != nil || r.Context != 316985 {
+		t.Fatalf("want the reply before the big line, got %+v, %v", r, err)
+	}
+}
