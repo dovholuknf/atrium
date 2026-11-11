@@ -6855,6 +6855,7 @@ async function heldEnvelopeSection(browser, base) {
         await p.goto(base, { waitUntil: "domcontentloaded" });
         await p.evaluate(() => switchView("terms"));
         await p.waitForSelector(".card .chip.queued, .stackrow .chip.queued", { state: "attached", timeout: slow(15000) });
+        await p.evaluate(() => { const l = document.getElementById("term-layout"); if (l) l.style.setProperty("--termw", "400px"); }); // the room pill hides under 275px
         await p.evaluate(() => {
           const c = document.querySelector(".card .chip.queued, .stackrow .chip.queued").parentElement;
           if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-sg4</span>');
@@ -6954,7 +6955,7 @@ async function cardRowChipsSection(browser, base) {
         const r = (e) => e.getBoundingClientRect();
         const k = r(card);
         const titles = [...card.querySelectorAll(".tname, .tpath")].filter(e => r(e).width > 0);
-        const chips = [...card.querySelectorAll(".card-line > .chips > .chip")];
+        const chips = [...card.querySelectorAll(".card-line > .chips > .chip")].filter(c => c.offsetWidth); // the room pill is hidden under 275px
         const over = [];
         for (const c of chips) for (const t of titles) {
           const box = r(c.parentElement), cr = r(c), a = { left: Math.max(cr.left, box.left), right: Math.min(cr.right, box.right), top: cr.top, bottom: cr.bottom }, b = r(t);
