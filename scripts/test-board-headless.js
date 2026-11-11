@@ -17829,7 +17829,8 @@ async function mDocsSection(browser) {
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
       await until(() => hub.log.some(r => r.path === "/_hub/docs/settings"), 5000, "the board never asked for the documents settings");
       await frames(p, 3);
-      if (await p.$eval("#m-docs-btn", e => !e.hidden)) fail("mDocs: the documents door shows with no hub documents");
+      if (await p.$eval("#m-files-btn", e => !e.hidden)) fail("mDocs: the files door shows with no hub documents");
+      if (await p.$("#m-docs-btn")) fail("mDocs: the phone still has a separate documents door");
       await p.tap("#m-seg-all");
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="dc-1"]');
@@ -17853,7 +17854,7 @@ async function mDocsSection(browser) {
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   hub.add("usage-md", "Usage <b>report</b>", [
     { bytes: "# Usage\n\nfirst version\n\n- one\n- two\n", origin: "local", by: "operator" },
-    { bytes: "# Usage\n\nsecond version <script>window.__pwn = 1</script>\n\n[x](javascript:window.__pwn=2)\n\n- one\n- three\n", origin: "card", by: "r-031@sg4", card: "dc-1" }]);
+    { bytes: "# Usage\n\nsecond version <script>window.__pwn = 1</script>\n\n[x](javascript:window.__pwn=2)\n\n- one\n- three\n", origin: "card", by: "r-031@sg4", card: "dc-1", room: "sg4" }]);
   hub.add("shot", "Screenshot", [{ bytes: png, kind: "image", mime: "image/png", name: "shot.png", origin: "share", by: "share" }]);
   hub.add("vector", "A vector", [{ bytes: "<svg xmlns='http://www.w3.org/2000/svg'><script>window.__pwn=3</script></svg>", kind: "other", mime: "image/svg+xml", name: "v.svg" }]);
   hub.add("patch", "A patch", [{ bytes: "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n context\n-old line\n+new line\n+++not a header but an addition\n---not a header but a removal\n", kind: "diff", name: "p.diff" }]);
@@ -17875,9 +17876,9 @@ async function mDocsSection(browser) {
       await ctx.addInitScript(() => { window.__revoked = []; const r = URL.revokeObjectURL.bind(URL); URL.revokeObjectURL = u => { window.__revoked.push(u); r(u); }; });
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
-      await p.waitForFunction(() => !document.getElementById("m-docs-btn").hidden, null, { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.getElementById("m-files-btn").hidden, null, { timeout: slow(5000) });
       // the list, newest first, behind a door on the home page, at an address of its own
-      await p.tap("#m-docs-btn");
+      await p.tap("#m-files-btn");
       await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
       if (await p.evaluate(() => location.pathname) !== "/m/docs") fail(tag + "the list has no address of its own");
       let titles = await p.$$eval("#m-docs .d-t", e => e.map(x => x.textContent));
@@ -17886,6 +17887,8 @@ async function mDocsSection(browser) {
       if (await p.$("#m-docs .d-t b")) fail(tag + "a title was set as markup");
       const meta = await p.$$eval("#m-docs .d-m", e => e.map(x => x.textContent).join(" || "));
       if (!/you, at the machine/.test(meta) || !/uploaded over the share/.test(meta) || !/r-031@sg4/.test(meta)) fail(tag + "origins are not shown: " + meta);
+      const rooms = await p.$$eval("#m-docs .d-room", e => e.map(x => x.textContent));
+      if (!rooms.includes("sg4") || !rooms.includes("hub")) fail(tag + "a row does not say which room it is from: " + rooms.join("|"));
       await mShot(p, "docs-list-" + vp.width);
       // the title filter goes to the hub as q
       await p.fill("#m-docs .d-q", "usage");
@@ -18011,7 +18014,7 @@ async function mDocsSection(browser) {
       // /d/ links: only an exact same-origin address opens the sheet, in the app and without a navigation
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
-      await p.waitForFunction(() => !document.getElementById("m-docs-btn").hidden, null, { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.getElementById("m-files-btn").hidden, null, { timeout: slow(5000) });
       await p.tap("#m-seg-all");
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="dc-1"]');
@@ -18054,8 +18057,8 @@ async function mDocsSection(browser) {
     // only an operator is offered `upload anyway`: from anyone else the hub answers an override with a 403
     hub.operator = false;
     const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
-    await p.waitForFunction(() => !document.getElementById("m-docs-btn").hidden, null, { timeout: slow(5000) });
-    await p.tap("#m-docs-btn");
+    await p.waitForFunction(() => !document.getElementById("m-files-btn").hidden, null, { timeout: slow(5000) });
+    await p.tap("#m-files-btn");
     await p.waitForSelector("#m-docs input[type=file]", { state: "attached", timeout: slow(5000) });
     await p.setInputFiles("#m-docs input[type=file]", { name: "key.txt", mimeType: "text/plain", buffer: Buffer.from("-----BEGIN PRIVATE KEY-----") });
     await p.waitForFunction(() => /pem-private-key/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
@@ -22945,6 +22948,10 @@ async function boardFilesSection(browser, base) {
   mock.tasksMode = "land";
   mock.landList = [];
   mock.landPerms = [];
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "files-tab-"));
+  fs.mkdirSync(path.join(folder, "src"));
+  fs.writeFileSync(path.join(folder, "README.md"), "hi");
+  mock.walkDirs.t1 = folder;
   try {
     for (const on of [false, true]) {
       mock.boardDocs = on;
@@ -22961,33 +22968,48 @@ async function boardFilesSection(browser, base) {
       if (shown !== on) fail(tag + "the files tab is " + (shown ? "shown" : "hidden"));
       if (on) {
         await p.evaluate(() => document.querySelector('.tab[data-view="files"]').click());
-        await p.waitForSelector("#m-files .f-row:not(.f-h)", { timeout: slow(5000) });
-        const rows = await p.evaluate(() => [...document.querySelectorAll("#m-files .f-row:not(.f-h)")].map(r => ({ soon: r.classList.contains("soon"), href: r.querySelector("a.f-dl").getAttribute("href"), text: r.textContent })));
+        await p.waitForSelector("#m-docs .d-file", { timeout: slow(5000) });
+        const rows = await p.evaluate(() => [...document.querySelectorAll("#m-docs .d-file")].map(r => ({ soon: r.classList.contains("soon"), href: r.querySelector("a.f-dl").getAttribute("href"), text: r.textContent, room: (r.querySelector(".d-room") || {}).textContent })));
         if (rows.length !== 2) fail(tag + "expected two rows, got " + rows.length);
         else {
           if (rows[0].href !== "/_hub/files/report.pdf/raw") fail(tag + "the download link is " + rows[0].href);
           if (rows[1].href !== "/_hub/files/old%20log.txt/raw") fail(tag + "the download link of a spaced name is " + rows[1].href);
           if (rows[0].soon || !rows[1].soon) fail(tag + "only the file going within a day is marked: " + JSON.stringify(rows.map(r => r.soon)));
           if (!/the numbers/.test(rows[0].text) || !/card-a@box/.test(rows[0].text)) fail(tag + "the note or the origin is not drawn: " + rows[0].text);
+          if (rows[0].room !== "box" || rows[1].room !== "hub") fail(tag + "a file row does not say its room: " + rows.map(r => r.room).join(" || "));
+          if (await p.$("#m-docs .d-row:not(.d-file) .d-main") === null) fail(tag + "the one list does not hold the documents beside the files");
         }
-        if (!/used/.test(await p.textContent("#m-files .d-usage"))) fail(tag + "no usage line");
+        if (!/used/.test(await p.textContent("#m-docs .d-usage"))) fail(tag + "no usage line");
+        const chips = await p.$$eval("#m-docs .d-seg .d-segb", e => e.map(x => x.textContent));
+        if (chips.join("|") !== "all|published|dropped|folders") fail(tag + "the sources are " + chips.join("|"));
+        await p.click("#m-docs .d-seg .d-segb:nth-child(2)");
+        await p.waitForFunction(() => !document.querySelector("#m-docs .d-file") && document.querySelector("#m-docs .d-row"), null, { timeout: slow(3000) });
+        await p.click("#m-docs .d-seg .d-segb:nth-child(4)");
+        await p.waitForSelector("#m-docs .d-card", { timeout: slow(5000) });
+        if (!/first card/.test(await p.textContent("#m-docs .d-card")) || !/this room/.test(await p.textContent("#m-docs .d-card"))) fail(tag + "a card folder row does not say its card and room");
+        await p.click("#m-docs .d-card .d-main");
+        await p.waitForSelector("#m-docs .d-entry", { timeout: slow(5000) });
+        const ent = await p.$$eval("#m-docs .d-entry", e => e.map(x => x.textContent + "@" + (x.querySelector("a") ? x.querySelector("a").getAttribute("href") : "")));
+        if (ent.length !== 2 || !/README\.md.*\/v1\/tasks\/t1\/files\?path=README\.md/.test(ent.join())) fail(tag + "the folder is wrong: " + ent.join("|"));
+        await p.click("#m-docs .d-seg .d-segb:nth-child(1)");
+        await p.waitForSelector("#m-docs .d-file", { timeout: slow(3000) });
         // delete asks in the page first, and keeping it asks nothing of the hub
-        await p.click("#m-files .f-row:not(.f-h) .f-act button");
-        await p.waitForSelector("#m-files .d-sure", { timeout: slow(3000) });
-        await p.click("#m-files .d-sure button:last-child");
+        await p.click("#m-docs .d-file .f-act button");
+        await p.waitForSelector("#m-docs .d-sure", { timeout: slow(3000) });
+        await p.click("#m-docs .d-sure button:last-child");
         if (mock.filesDeleted.length) fail(tag + "keep it still deleted something");
-        await p.click("#m-files .f-row:not(.f-h) .f-act button");
-        await p.click("#m-files .d-sure .d-warn");
+        await p.click("#m-docs .d-file .f-act button");
+        await p.click("#m-docs .d-sure .d-warn");
         await p.waitForFunction(() => true, null, { timeout: slow(1000) });
         await until(() => mock.filesDeleted.length, 5000, "the delete").catch(() => {});
         if (mock.filesDeleted[0] !== "report.pdf") fail(tag + "delete asked for " + JSON.stringify(mock.filesDeleted));
-        await p.click("#m-files .d-back");
-        await p.waitForFunction(() => document.getElementById("m-files").hidden, null, { timeout: slow(3000) });
+        await p.click("#m-docs .d-back");
+        await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) });
       }
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.filesDeleted.length = 0; }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.filesDeleted.length = 0; delete mock.walkDirs.t1; fs.rmSync(folder, { recursive: true, force: true }); }
   if (!bad) console.log("boardFiles ok");
 }
 
