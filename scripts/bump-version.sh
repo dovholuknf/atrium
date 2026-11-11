@@ -4,7 +4,7 @@
 #   scripts/bump-version.sh                the next patch: 0.0.3 becomes 0.0.4
 #   scripts/bump-version.sh 0.1.0          exactly that
 #   scripts/bump-version.sh --push BRANCH  after a release: move BRANCH on origin to the next patch of this checkout's
-#                                          number, if BRANCH still holds this number. The release workflow calls this
+#                                          number, if BRANCH still holds this number
 #
 # Without --push it writes the file, prints the new number and commits nothing.
 
