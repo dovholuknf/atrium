@@ -17102,10 +17102,45 @@ async function mOlderShort(browser) {
   } finally { await st.close(); }
 }
 
+// The address /m/alias/<a> with a short thread, prompts and open questions still draws the load older row, above the replies.
+async function mOlderDirect(browser) {
+  const st = mServer({});
+  const c = mCard("ol-3", { alias: "orch", display_title: "orch", status: "needs-input", waiting_since: mIso(2 * M_MIN),
+    seen: { turn_ended_at: mIso(M_MIN), answered: false, open_questions: ["which one?"], questions_at: mIso(M_MIN) } });
+  st.tasks = [c];
+  const rep = (i, min) => ({ at: mIso(min * M_MIN), text: "Reply " + i + ".", truncated: false });
+  st.replies["ol-3"] = { source: "transcript", replies: [rep(1, 9), rep(2, 6), rep(3, 3)], more: true, next_before: "d-A",
+    prompts: [{ at: mIso(7 * M_MIN), text: "a prompt", truncated: false, kind: "operator" }] };
+  st.pages = { "ol-3": before => before === "d-A" ? { body: { source: "transcript", replies: [rep(0, 30)], prompts: [], more: false } } : { status: 404, body: {} } };
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/*", route => {
+      const u = new URL(route.request().url());
+      if (/^\/m\/alias\//.test(u.pathname) && route.request().resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: fs.readFileSync(path.join(M_ROOT, "index.html")) });
+      if (u.pathname === "/v1/tasks/orch") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(c) });
+      return route.continue();
+    });
+    await p.goto(st.url + "/m/alias/orch", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(10000) });
+    if (!(await p.$("#m-older"))) fail("mOlder direct: no load older row on the alias address");
+    else {
+      await p.tap("#m-older");
+      await p.waitForFunction(() => /Reply 0\./.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    }
+    if (errors.length) fail("mOlder direct: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+}
+
 // "load older" at two viewport heights and at the smallest and largest pinch sizes, so it does not rest on one machine's layout.
 async function mOlderSection(browser) {
   for (const cfg of [{ h: 915, fs: 0 }, { h: 700, fs: 0 }, { h: 915, fs: 11 }, { h: 700, fs: 24 }]) await mOlderRun(browser, cfg);
   await mOlderShort(browser);
+  await mOlderDirect(browser);
   if (!bad) console.log("mOlder ok");
 }
 

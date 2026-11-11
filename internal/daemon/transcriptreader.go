@@ -51,12 +51,56 @@ func (r claudeReader) path(t *store.Task) (string, bool) {
 	return path, path != ""
 }
 
+// newest file first, a file that runs out hands its oldest time on as the cursor into the next
 func (r claudeReader) page(t *store.Task, n int, before time.Time) (replyPage, bool, error) {
-	d := r.d
-	path, ok := r.path(t)
+	cur, ok := r.path(t)
 	if !ok {
 		return replyPage{}, false, nil
 	}
+	files := append([]string{cur}, siblingTranscripts(cur)...)
+	if len(files) > repliesAllFiles {
+		files = files[:repliesAllFiles]
+	}
+	pg, err := r.across(t, files, n, before)
+	return pg, err == nil, err
+}
+
+func (r claudeReader) across(t *store.Task, files []string, n int, before time.Time) (replyPage, error) {
+	var pg replyPage
+	for i, path := range files {
+		var err error
+		if pg, err = r.pageOf(t, path, n, before); err != nil {
+			if i == 0 {
+				return replyPage{}, err
+			}
+			continue
+		}
+		if pg.more {
+			break
+		}
+		if len(pg.replies) > 0 || len(pg.prompts) > 0 {
+			if i+1 < len(files) {
+				pg.more, pg.next = true, oldestOf(pg)
+			}
+			break
+		}
+	}
+	return pg, nil
+}
+
+func oldestOf(pg replyPage) time.Time {
+	var at time.Time
+	if len(pg.replies) > 0 {
+		at = pg.replies[0].At
+	}
+	if len(pg.prompts) > 0 && (at.IsZero() || pg.prompts[0].At.Before(at)) {
+		at = pg.prompts[0].At
+	}
+	return at
+}
+
+func (r claudeReader) pageOf(t *store.Task, path string, n int, before time.Time) (replyPage, error) {
+	d := r.d
 	var (
 		pg  replyPage
 		err error
@@ -68,8 +112,8 @@ func (r claudeReader) page(t *store.Task, n int, before time.Time) (replyPage, b
 	}
 	if err != nil {
 		logRepliesFallback(path, err)
-		return replyPage{}, false, err
+		return replyPage{}, err
 	}
 	fillEdited(t, path, pg.replies)
-	return pg, true, nil
+	return pg, nil
 }
