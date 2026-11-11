@@ -33,6 +33,8 @@ git init -q -b main .
 git config user.email "test@example.invalid"
 git config user.name "release test"
 echo "a repository with one file in it" >README
+mkdir -p changelog
+for v in v0.1.0 v0.1.0-rc1 v0.1.1 v0.2.0 v0.3.0 v0.5.0; do echo "notes for $v" >"changelog/$v.md"; done
 git add -A
 git commit -qm "the commit under test"
 
@@ -93,6 +95,12 @@ git tag -a v0.2.0 -m "atrium v0.2.0"
 expect 0 "the tag on HEAD is used when no version is given" --preflight
 git tag -d v0.2.0 >/dev/null
 expect 2 "with no tag on HEAD and no argument, it asks rather than guesses" --preflight
+
+echo
+echo "=== the release notes"
+expect 9 "a version with no changelog notes is refused" v0.4.0 --preflight
+expect 9 "a --notes file that is not there is refused" v0.3.0 --preflight --notes=nowhere.md
+expect 0 "a --notes file that is there is accepted" v0.4.0 --preflight --notes=README
 
 echo
 echo "=== a dry run leaves nothing behind"

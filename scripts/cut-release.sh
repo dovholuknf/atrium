@@ -56,6 +56,7 @@
 #   6  the build is not reproducible from the commit being tagged
 #   7  the checksums do not match the artefacts
 #   8  scripts/ci.sh failed
+#   9  there are no release notes for the version
 #   1  anything else
 
 set -euo pipefail
@@ -86,7 +87,7 @@ usage: scripts/cut-release.sh <version> [options]
   --preflight     run only the refusals, print the verdict, and stop. Cheap
                   enough to run before you have decided anything.
   --skip-ci       do not run scripts/ci.sh. The only waivable check.
-  --notes=FILE    release notes. Without it, GitHub generates them.
+  --notes=FILE    release notes. Without it, changelog/<version>.md.
 EOF
 }
 
@@ -211,9 +212,9 @@ if [ "$execute" = "yes" ] && [ "$from_tag" = "no" ]; then
   fi
 fi
 
-if [ -n "$notes_file" ] && [ ! -f "$notes_file" ]; then
-  refuse 2 "no notes file at $notes_file"
-fi
+notes_file="${notes_file:-changelog/$version.md}"
+[ -f "$notes_file" ] || refuse 9 "no release notes at $notes_file. write and commit them before the tag."
+echo "  notes      $notes_file"
 
 if [ "$execute" = "yes" ] && ! command -v gh >/dev/null 2>&1; then
   refuse 1 "gh is not on PATH, and it is the only way anything here talks to GitHub."
@@ -383,9 +384,8 @@ step "the artefacts, and their hashes"
 # checksums.txt and then prints the exact gh command it would run. That is the
 # same verification the publish step does, done here where it is still cheap to
 # act on.
-notes_arg=()
-[ -n "$notes_file" ] && notes_arg=(--notes="$notes_file")
-bash scripts/publish-release.sh "$version" "${notes_arg[@]+"${notes_arg[@]}"}" ||
+notes_arg=(--notes="$notes_file")
+bash scripts/publish-release.sh "$version" "${notes_arg[@]}" ||
   refuse 7 "the artefacts do not match their checksums."
 
 # ==============================================================================
@@ -471,7 +471,7 @@ else
   fi
 
   step "publish"
-  bash scripts/publish-release.sh "$version" --publish "${notes_arg[@]+"${notes_arg[@]}"}"
+  bash scripts/publish-release.sh "$version" --publish "${notes_arg[@]}"
 fi
 
 # ==============================================================================
