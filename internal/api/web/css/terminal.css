@@ -284,8 +284,7 @@
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--head); font-weight: 600;
   }
-  /* An unnamed card has no name of its own, so its one line IS the address. Front
-     truncated, the way the address always was, to keep the leaf that tells it apart. */
+  /* An unnamed card has no name of its own, so its one line IS the address, cut at the end like any name. */
   .term-list .card .title .tname.aspath {
     color: var(--body); font-weight: 500;
   }
@@ -315,7 +314,8 @@
      the chips under a long path and made a parked row, with its resume chip, taller than a running one. The title
      already truncates, so it gives way and the chips stay beside it. */
   .term-list .card .card-line { flex-wrap: nowrap; }
-  /* Under 275px of row the room pill goes so the name keeps the space. A container is measured inside its padding\n     and border, so 249px of content is 275px of row at the default scale. */
+  /* Under 275px of row the room pill goes so the name keeps the space. A container is measured inside its padding
+     and border, so 249px of content is 275px of row at the default scale. */
   .term-list .card { container-type: inline-size; }
   @container (max-width: 248px) { .term-list .card .card-line > .chips .chip.room { display: none; } }
   /* Mini. These come after the single-line rules above so those do not undo them.
