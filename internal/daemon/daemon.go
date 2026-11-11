@@ -501,6 +501,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.TypingState = d.handleTypingState
 	d.ap.LetThrough = d.handleLetThrough
 	d.ap.TypeAnyway = d.handleTypeAnyway
+	d.ap.ForceClear = d.handleForceClear
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
 	d.ap.Say = d.HandleSay

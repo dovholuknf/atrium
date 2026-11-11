@@ -866,6 +866,19 @@ func cutReason(s string) string {
 // MergerBranch is the branch a merger of request n works on and asks to merge.
 func MergerBranch(n int64) string { return "claude/merge-" + strconv.FormatInt(n, 10) }
 
+// mergerRepo is repo as a room resolves it into a worktree. The hub names GitHub `github/o/r`, which a room takes for a
+// label, and then launches in its own process directory.
+func mergerRepo(repo string) string {
+	ref, err := gitsync.ParseName(repo)
+	if err != nil {
+		return repo
+	}
+	if ref.Host == gitsync.DefaultHost {
+		ref.Host = "github.com"
+	}
+	return ref.Name()
+}
+
 func (p *Service) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest, res gitsync.MergeResult) (string, error) {
 	c := p.ctlCaller()
 	if c == nil {
@@ -884,7 +897,7 @@ func (p *Service) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest
 		spawnedBy, spawnedByID = card.Wire+"@"+m.RequesterRoom, wire.TagFor(m.RequesterRoom, card.ID)
 	}
 	in := ctl.LaunchInput{
-		Title: fmt.Sprintf("%s merge #%d %s", item, m.N, m.Branch), Repo: m.Repo, Branch: MergerBranch(m.N),
+		Title: fmt.Sprintf("%s merge #%d %s", item, m.N, m.Branch), Repo: mergerRepo(m.Repo), Branch: MergerBranch(m.N),
 		Item: item, Superlean: relaySuperlean(true), Brief: MergerBrief(m, res), Prompt: "Read BRIEF.md and do what it says.",
 		Why:  fmt.Sprintf("merge request %d did not merge onto claude/main", m.N),
 		Tags: []string{"atrium:merger", "atrium:merge:" + strconv.FormatInt(m.N, 10)},

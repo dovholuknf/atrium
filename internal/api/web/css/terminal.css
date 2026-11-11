@@ -140,13 +140,6 @@
   .tl-mini .term-list .card .title {
     display: flex; align-items: center; justify-content: center; gap: 4px;
   }
-  /* Only the size changes here, and the display stays a grid. `.rmark` centres its glyph with `display: grid`
-     and `place-items: center`, so overriding the display to `block` put a 12px mark in the top left corner of
-     an 18px box. */
-  .tl-mini .term-list .card .title .rmark {
-    margin: 0; width: 18px; height: 18px;
-  }
-  .tl-mini .term-list .card .title .rmark svg { width: 12px; height: 12px; }
   /* Which of the two names shows is a CSS question, so both are rendered and neither has to be recomputed
      when the mode changes. */
   .tshort { display: none; }
@@ -267,16 +260,17 @@
      end is the left, so the ellipsis lands there and the tail survives. It is on `.tname` alone rather than
      on the title, because on the title it would send the star and the runner mark to the right of the
      name. */
+  /* Basis 0, not auto: an auto basis is the whole long name, and shrinking in proportion to it crushed the chips under the text. */
   .term-list .card .title {
     display: flex; align-items: center; gap: 4px; line-height: 1.3;
-    flex: 1 1 auto; min-width: 40px; white-space: nowrap;
+    flex: 1 1 0; min-width: min-content; white-space: nowrap;
   }
-  .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; }
-  .term-list .card .title .rmark { flex: none; }
+  .term-list .card .title .pin { flex: none; font-size: var(--fs-md); cursor: pointer; margin-right: 0; }
+  .term-list .card .tstate:empty { display: none; }
   /* The name and its address, stacked. The name is what you are looking for, so it
      is on top and bold; the address is under it and dimmed. */
   .term-list .card .title .tstack {
-    display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 1px;
+    display: flex; flex-direction: column; min-width: 40px; width: 0; flex: 1 1 0; gap: 1px;
   }
   /* THE NAME, primary. It gives way to nothing and truncates at the end, keeping
      the front where the words that name it are. */
@@ -315,9 +309,26 @@
      already truncates, so it gives way and the chips stay beside it. */
   .term-list .card .card-line { flex-wrap: nowrap; }
   /* Under 275px of row the room pill goes so the name keeps the space. A container is measured inside its padding
-     and border, so 249px of content is 275px of row at the default scale. */
+     and border, so 249px of content is 275px of row at the default scale. The em form, 248px at the default scale,
+     raises it with the text size, since a bigger pill would not fit either. */
   .term-list .card { container-type: inline-size; }
-  @container (max-width: 248px) { .term-list .card .card-line > .chips .chip.room { display: none; } }
+  @container (max-width: 248px) or (max-width: 11.25em) { .term-list .card .card-line > .chips .chip.room { display: none; } }
+  .term-list .card.noroom .card-line > .chips .chip.room { display: none; }
+  /* Under about 300px of list the row is two lines: the star and the name, then the path, the chips and the
+     fold count, mini aside. Column 2 holds the state slot and is empty when it is, so the path lines up under the name. */
+  @container (max-width: 260px) {
+    :not(.tl-mini) > .term-list .card .card-line {
+      display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; column-gap: 0; row-gap: 1px; align-items: center;
+    }
+    :not(.tl-mini) > .term-list .card .title, :not(.tl-mini) > .term-list .card .title .tstack { display: contents; }
+    :not(.tl-mini) > .term-list .card .title .pin { grid-column: 1; grid-row: 1; justify-self: center; margin-right: 4px; }
+    :not(.tl-mini) > .term-list .card .title .tstate { grid-column: 2; grid-row: 2; margin-right: 4px; }
+    :not(.tl-mini) > .term-list .card .title .tname { grid-column: 2 / -1; grid-row: 1; min-width: 0; }
+    :not(.tl-mini) > .term-list .card .title .tpath { grid-column: 3; grid-row: 2; }
+    :not(.tl-mini) > .term-list .card .card-line > .chips { grid-column: 4; grid-row: 2; max-width: none; margin-left: 4px; }
+    :not(.tl-mini) > .term-list .card .card-line > .tkidfold { grid-column: 5; grid-row: 2; margin-left: 4px; }
+    :not(.tl-mini) > .term-list .card .card-line > .chips .chip.room { display: none; }
+  }
   /* Mini. These come after the single-line rules above so those do not undo them.
      The entry is an icon and a short name, so both are centred in the column rather than left-aligned against
      an edge a few pixels away. `.tname` stops being rtl here: a short name is not truncated, and an rtl box

@@ -176,6 +176,14 @@ body.m.sheet-open { overscroll-behavior-y: none; }
 .notice { display: flex; flex-direction: column; gap: 2px; margin: 12px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--teal-bg); color: var(--label); font-size: 13.5px; }
 .notice b { color: var(--head); font-size: 15px; }
 .notice.held { background: rgba(var(--path-rgb), .1); }
+.notice.held .held-msg { color: var(--head); font-size: 14px; line-height: 1.4; }
+.notice.held .held-line { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--bg-2); color: var(--head); font: 12.5px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.5em; overflow-y: auto; }
+.notice.held .held-line.none { color: var(--dim); font-family: inherit; font-style: italic; }
+.notice.held .held-src { margin-top: 4px; color: var(--dim); font-size: 12px; }
+.notice.held .held-clear { align-self: flex-start; margin-top: 10px; min-height: 44px; padding: 0 14px; border: 1px solid rgba(var(--danger-rgb), .6); border-radius: 12px; background: none; color: var(--danger); font-size: 14px; font-weight: 600; cursor: pointer; }
+.notice.held .held-clear:active { background: rgba(var(--danger-rgb), .12); }
+.notice.held .held-clear[disabled] { opacity: .55; cursor: default; }
+.notice.held .held-why { margin-top: 6px; color: var(--danger); font-size: 12.5px; }
 
 .conv { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
 .replies { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

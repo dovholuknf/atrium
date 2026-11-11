@@ -70,7 +70,7 @@
      teal rather than danger because work in flight is the normal state. It does not animate: the mark on each
      terminal row already says which, and a header that ticked would be a third thing moving for one fact. */
   /* `button.working` and not `.working`. The class name is taken twice: this is the header's count, and
-     `termRunnerMark` puts `working` on a runner mark to say that session is busy. A bare class selector matched
+     `cardMark` puts `working` on a runner mark to say that session is busy. A bare class selector matched
      both, so every working mark in the terminal list quietly wore this whole block: the padding, which is why a
      21px mark measured 24 wide, and the `::before` bullet, which drew a dot in `currentColor`. On a claude mark
      that is #E8825A, so it read as an orange status light that never moved, sitting just outside the spinner.

@@ -607,5 +607,7 @@ func (d *Daemon) handleTypingState(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(run.typing())
+	s := run.typing()
+	s.Shown, s.ShownFrom = run.lineShown(s)
+	_ = json.NewEncoder(w).Encode(s)
 }

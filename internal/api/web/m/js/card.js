@@ -45,6 +45,44 @@
       (room ? '<span class="pill room">' + U.esc(room) + "</span>" : "") + "</p>" + recapBtnHTML(t);
   }
 
+  // The notice for a message held by text on the card's input line, with that text and a button that throws it away.
+  // `heldLine.from` says where the text came from: "model" is the whole line as atrium followed it, "screen" is the prompt
+  // row read off the terminal and may be cut short, "" is nothing readable.
+  const BLOCKED = "There appears to be text in a terminal that is blocking this message. Would you like to force that clear now? Any text will be lost.";
+  let heldLine = { id: "", text: "", from: "", busy: false, err: "" };
+  function blockedHTML(t) {
+    if (heldLine.id !== t.id) { heldLine = { id: t.id, text: "", from: "", busy: false, err: "" }; loadHeldLine(t.id); }
+    const h = heldLine;
+    const line = h.text ? '<div class="held-line">' + U.esc(h.text) + "</div>" : '<div class="held-line none">atrium cannot show what is on the line</div>';
+    const src = h.from === "screen" ? '<div class="held-src">read off the terminal screen, so it may be cut short</div>' : "";
+    return '<div class="notice held"><div class="held-msg">' + U.esc(BLOCKED) + "</div>" + line + src +
+      '<button type="button" class="held-clear" id="m-force-clear"' + (h.busy ? " disabled" : "") + ">" + (h.busy ? "Clearing…" : "Force clear now") + "</button>" +
+      (h.err ? '<div class="held-why">' + U.esc(h.err) + "</div>" : "") + "</div>";
+  }
+  async function loadHeldLine(id) {
+    try {
+      const s = await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/typing");
+      if (heldLine.id !== id) return;
+      heldLine.text = s.shown || "";
+      heldLine.from = s.shown_from || "";
+      paint(false);
+    } catch (e) {}
+  }
+  async function forceClear() {
+    const id = openId;
+    if (!id || heldLine.busy) return;
+    heldLine.busy = true; heldLine.err = "";
+    paint(false);
+    try {
+      await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/force-clear", { method: "POST", body: "{}" });
+      heldLine = { id: "", text: "", from: "", busy: false, err: "" };
+    } catch (e) {
+      heldLine.busy = false;
+      heldLine.err = "Not cleared. " + (e && e.message ? e.message : "try again");
+    }
+    paint(false);
+  }
+
   function noticesHTML(t) {
     const out = [];
     const rs = window.mHome.reasons(t, window.mStore.perms());
@@ -54,7 +92,10 @@
         U.esc(U.ago(Date.now() - rep.since)) + " ago</span></div>");
     }
     const held = rs.find(r => r.kind === "held");
-    if (held) out.push('<div class="notice held"><b>' + U.esc(held.text) + "</b><span>it goes in when the line is clear</span></div>");
+    const a = t.activity || {};
+    if (!(held && a.held_for === "line") && heldLine.id === t.id) heldLine.id = "";
+    if (held && a.held_for === "line") out.push(blockedHTML(t));
+    else if (held) out.push('<div class="notice held"><b>' + U.esc(held.text) + "</b><span>it goes in when the line is clear</span></div>");
     return out.join("");
   }
 
@@ -1103,6 +1144,7 @@
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
     window.addEventListener("m-send", e => { if (e.detail && e.detail.state === "pending") typingOff(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
+    els.notices.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-force-clear")) forceClear(); });
     els.replies.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-older")) loadOlder(); });
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
