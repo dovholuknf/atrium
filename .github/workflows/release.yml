@@ -34,6 +34,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -69,10 +70,6 @@ jobs:
       - name: build, prove, and publish
         run: bash scripts/cut-release.sh "$ATRIUM_VERSION" --from-tag --skip-ci --execute
 
-      # Moves VERSION on main to the next patch. The script decides, and does nothing when main has moved on.
-      - name: bump VERSION on main
-        run: bash scripts/bump-version.sh --push main
-
       # Kept whether or not the publish worked. When it did, this is how you
       # check a hash without downloading a release. When it did not, it is the
       # only copy of what was built, including the scoop manifest, which is the
@@ -82,3 +79,23 @@ jobs:
         with:
           name: atrium-${{ env.ATRIUM_VERSION }}
           path: build.claude/release/${{ env.ATRIUM_VERSION }}/
+
+      # Tells the hub the release finished, published or not. scripts/ci-notify.sh builds the body, the same as ci.yml.
+      - id: body
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          path=$(bash scripts/ci-notify.sh --conclusion "$JOB_STATUS")
+          echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
+      - uses: dovholuknf/ziti-hook@main
+        if: always()
+        continue-on-error: true
+        # An unreachable hub must not hold the run open: the action has no timeout of its own.
+        timeout-minutes: 2
+        with:
+          transport: ziti
+          url: http://ziti-hook.ziti/
+          payload: ${{ steps.body.outputs.body }}
+          ziti-identity: ${{ secrets.ZITI_HOOK_IDENTITY }}
+          secret: ${{ secrets.ATRIUM_CI_HOOK_SECRET }}
