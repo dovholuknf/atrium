@@ -241,3 +241,64 @@
   desktop.addEventListener("change", layout);
   layout();
 })();
+
+// ── the folded bell: under 1500px the bell, quick paste and sound are one menu (css/topnav.css) ────────────────────────
+(function () {
+  const fold = document.getElementById("hdrfold");
+  const menu = document.getElementById("hdrfold-menu");
+  const bell = document.getElementById("toastlog-open");
+  const link = document.getElementById("quickpaste-open");
+  const sound = document.getElementById("sound");
+  if (!fold || !menu || !bell || !link || !sound) return;
+  const text = (el, sel) => { const e = el.querySelector(sel); return e ? e.textContent : ""; };
+
+  function close() {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    fold.setAttribute("aria-expanded", "false");
+  }
+  function row(src, glyph, label, n) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.fold = src.id;
+    const g = document.createElement("span");
+    g.className = "glyph";
+    g.textContent = glyph;
+    b.append(g, label);
+    if (n) {
+      const c = document.createElement("span");
+      c.className = "count";
+      c.textContent = n;
+      b.append(c);
+    }
+    b.onclick = (e) => { e.stopPropagation(); close(); src.click(); };
+    return b;
+  }
+  function fill() {
+    menu.replaceChildren(
+      row(bell, text(bell, ".glyph"), bell.getAttribute("aria-label") || "what the board has told you", text(bell, ".count")),
+      row(link, "\u{1F517}\uFE0E", "open a link", ""),
+      row(sound, sound.textContent, sound.getAttribute("aria-label") || "sound", ""));
+  }
+  function sync() {
+    fold.querySelector(".glyph").textContent = text(bell, ".glyph");
+    fold.querySelector(".count").textContent = text(bell, ".count");
+    fold.classList.toggle("blocked-now", bell.classList.contains("blocked-now"));
+    if (!menu.hidden) fill();
+  }
+
+  fold.onclick = (e) => {
+    e.stopPropagation();
+    if (!menu.hidden) return close();
+    fill();
+    menu.hidden = false;
+    popFit(menu, fold.getBoundingClientRect(), { gap: 6 });
+    fold.setAttribute("aria-expanded", "true");
+  };
+  document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  const watch = { attributes: true, attributeFilter: ["class", "aria-label"], childList: true, characterData: true, subtree: true };
+  new MutationObserver(sync).observe(bell, watch);
+  new MutationObserver(sync).observe(sound, watch);
+  sync();
+})();

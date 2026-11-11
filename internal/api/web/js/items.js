@@ -24,6 +24,7 @@ let itemsOpen = null;          // the id whose detail page is open
 let itemsDetail = null;        // what the detail answered for it
 let itemsPage = "";            // "" is the list, "efficacy" is the efficacy page (js/efficacy.js)
 let itemsFilter = "all";       // all, a department, or mine
+let itemsStep = "all";         // all, or the step name the row is at
 const itemsFolded = {};        // a group folded shut, by state
 const itemsAsking = {};        // a blocked row whose answer box is open, by id
 let itemsShowAll = false;      // every finished row, not only the newest few
@@ -40,6 +41,7 @@ const ITEM_GROUPS = [
   { state: "queued", label: "queued" },
   { state: "finished", label: "finished" },
 ];
+const ITEM_STEP_NAMES = ["designed", "approved", "building", "tested", "reviewed", "landed", "deployed", "pushed"];
 const itemsCardsOpen = {};     // a row's folded card list that is open, by id
 const ITEMS_FINISHED_SHOWN = 5;
 // What a step that has not been reached says it will do, until the hub has a fact to say instead.
@@ -55,7 +57,7 @@ function paintItemsTab() {
   const tab = document.querySelector('.tab[data-view="items"]');
   if (!tab) return;
   // The fixtures (`?itemsmock=1`) show the tab on a board with no hub, so the views can be read without one.
-  tab.hidden = itemsMockOn() ? false : typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  tab.hidden = itemsMockOn() ? false : !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
   if (!tab.hidden) loadItemsBadge();
 }
 
@@ -207,7 +209,7 @@ function itemStack(t, cls) {
 // ---- the list ----
 
 function itemsMatches(it) {
-  return itemsFilter === "all" || it.dept === itemsFilter;
+  return (itemsFilter === "all" || it.dept === itemsFilter) && (itemsStep === "all" || (it.steps[it.fold.step] || {}).name === itemsStep);
 }
 
 // What was drawn for the folded rows last: the card list is refolded against the board's cards at every paint, so a card that ended
@@ -243,7 +245,8 @@ function itemProgress(it) {
     if (i === cur) return "c" + (g === "needs-you" ? " w" : "") + (g === "idle" ? " i" : "") + (s.state === "stale" ? " s" : "");
     return s.state === "done" || s.state === "skipped" ? "d" : s.state === "stale" ? "s" : "";
   };
-  return '<div class="it-prog">' + it.steps.map((s, i) => '<span class="' + cls(s, i) + '" data-tip="' + esc(s.name) + '"></span>').join("") + "</div>";
+  const names = it.steps.map((s, i) => '<span class="' + (i === cur && g !== "finished" ? "c" : "") + '">' + esc(s.name) + "</span>").join("");
+  return '<div class="it-prog">' + it.steps.map((s, i) => '<span class="' + cls(s, i) + '" data-tip="' + esc(s.name) + '"></span>').join("") + '</div><div class="it-prog-names">' + names + "</div>";
 }
 
 // The line under the bar: "step 3 of 8 · building" with the time in the step, in words rather than only a number.
@@ -345,11 +348,12 @@ function itemsGroupHtml(g) {
 
 function itemListHtml() {
   const depts = [...new Set(itemsList.map(it => it.dept).filter(Boolean))].sort();
-  const pill = (f, label) => '<button type="button" class="it-pill' + (itemsFilter === f ? " on" : "") + '" data-act="filter" data-filter="' + esc(f) + '">' + esc(label) + "</button>";
+  const opts = (vals, cur) => ["all"].concat(vals).map(v => '<option value="' + esc(v) + '"' + (v === cur ? " selected" : "") + ">" + esc(v) + "</option>").join("");
+  const sel = (id, label, vals, cur) => '<select class="it-sel" id="' + id + '" data-filter="' + id + '" aria-label="' + label + '">' + opts(vals, cur) + "</select>";
   const left = ITEM_GROUPS.filter(g => g.left).map(itemsGroupHtml).join(""), right = ITEM_GROUPS.filter(g => !g.left).map(itemsGroupHtml).join("");
   return '<div class="it-wrap"><div class="it-top"><h1>Items</h1><div class="it-sub">Every backlog item in flight, one row each, from designed to pushed.</div></div>' +
     '<div class="it-chips">' + itemCountChips(itemsStats || itemsStatsFrom(itemsList)) + "</div>" + itemLegendHtml() +
-    '<div class="it-filters">' + (depts.length > 1 ? pill("all", "all") + depts.map(d => pill(d, d)).join("") : "") +
+    '<div class="it-filters">' + (depts.length > 1 ? sel("items-dept", "department", depts, itemsFilter) : "") + sel("items-step", "step", ITEM_STEP_NAMES, itemsStep) +
     '<span class="it-sp"></span><button type="button" class="it-pill" data-act="efficacy">efficacy</button></div>' +
     (left || right ? '<div class="it-cols' + (left && right ? "" : " one") + '"><div class="it-col it-col-l">' + left + '</div><div class="it-col">' + right + "</div></div>"
       : '<p class="pane-lead">Nothing matches.</p>') + "</div>";
@@ -697,7 +701,6 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (act === "eff-by") { effBy = b.dataset.by; effLoad(); }
     else if (act === "eff-obs") { effObservedOnly = !effObservedOnly; effLoad(); }
     else if (act === "eff-sort") { effSort = effSort === "worst" ? "newest" : effSort === "newest" ? "cost" : "worst"; itemsPaint(); }
-    else if (act === "filter") { itemsFilter = b.dataset.filter; itemsPaint(); }
     else if (act === "ask") {
       itemsAsking[b.dataset.id] = !itemsAsking[b.dataset.id];
       itemsPaint();
@@ -721,6 +724,12 @@ document.addEventListener("DOMContentLoaded", () => {
       itemsPaint(true);
     }
     else if (act === "open") itemsToggle(b.dataset.id);
+  });
+  box.addEventListener("change", ev => {
+    const s = ev.target.closest("select[data-filter]");
+    if (!s) return;
+    if (s.id === "items-dept") itemsFilter = s.value; else itemsStep = s.value;
+    itemsPaint();
   });
   // A row's folded card list stays open across a repaint. `toggle` does not bubble, so it is caught on the way down.
   box.addEventListener("toggle", ev => {

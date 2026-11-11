@@ -718,6 +718,7 @@ async function launchNewAgentGroupsSection(browser, base) {
       return json(r, { id: "new" + launches.length, status: "running", tags: b.tags || [] });
     });
     await p.route(/\/v1\/tasks\/home1\/clone$/, r => json(r, { error: "cannot clone /cards/home1/work is not a git checkout with a commit" }, 400));
+    await p.route(/\/v1\/tasks\/wt1\/clone$/, r => json(r, { repo: "/src/mcp-gateway", head: "abc123", dirty: [], brief: "" }));
     await p.route(/\/v1\/tasks\/filed1\/close$/, r => {
       if (r.request().method() === "GET") return json(r, { items: [], asks: [], kept: [], warnings: [] });
       closes.push(JSON.parse(r.request().postData() || "{}"));
@@ -775,6 +776,18 @@ async function launchNewAgentGroupsSection(browser, base) {
     b = launches[1] || {};
     if (b.home !== true || b.repo || b.title !== "ryan" || JSON.stringify(b.tags) !== '["ryan"]' || b.harness !== runner || b.lean !== true)
       fail(tag + "the home duplicate sent " + JSON.stringify(b));
+
+    // A duplicate's branch follows the name typed for it, as a fresh launch's does.
+    await p.evaluate(r => openCloneCard("wt1", { id: "wt1", title: "csharp-gaps", branch: "claude/csharp-gaps", repo: "/src/mcp-gateway",
+      tags: [], runner: r, worktree: "/cards/wt1/work" }), runner);
+    await p.waitForFunction(() => document.getElementById("na").open, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "duplicating a card with a repo did not open the dialog"));
+    await p.fill("#na-title", "csharp-ci");
+    await p.click("#na-go");
+    await closed("a worktree duplicate");
+    b = launches[2] || {};
+    if (b.title !== "csharp-ci" || b.branch !== "claude/csharp-ci" || b.clone_of !== "wt1")
+      fail(tag + "the worktree duplicate sent " + JSON.stringify({ title: b.title, branch: b.branch, clone_of: b.clone_of }));
 
     // Delete a group, untagging its cards: the default.
     await p.evaluate(() => switchView("terms"));

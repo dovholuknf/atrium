@@ -78,7 +78,7 @@
       "units": [
         "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "minion*", "boardMinionHidden", "stackMinionHidden", "laneFold",
         "nest*", "untaggedSort", "stackPinnedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors", "workerCardColors",
-        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "revealKeepsCollapse", "revealChip", "topNav", "trayHead", "trayToast", "emptyGroups",
+        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "revealKeepsCollapse", "revealChip", "topNav", "headerFold", "trayHead", "trayToast", "emptyGroups",
         "termsDrawerPush", "linkBoard", "linkReuse", "arrivedOnce", "controlsCompact", "closeOneDialog"
       ],
       "sources": [
@@ -294,7 +294,7 @@
       "file": "scripts/board-tests/settings.js",
       "page": "settings, themes and skins, providers, preferences",
       "units": [
-        "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "dropdownsInstant", "prefsEverywhere", "alias", "parent"
+        "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "emergingSwitch", "dropdownsInstant", "prefsEverywhere", "alias", "parent"
       ],
       "sources": [
         "internal/api/web/js/alias.js",
@@ -305,6 +305,7 @@
         "internal/api/web/js/theme-debug.js",
         "internal/api/web/js/providers.js",
         "internal/api/web/js/prefs-live.js",
+        "internal/api/web/js/emerging.js",
         "internal/api/web/js/logs-rules.js",
         "internal/api/web/css/themes.css",
         "internal/api/web/css/tokens.css"

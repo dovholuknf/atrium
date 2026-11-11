@@ -476,6 +476,7 @@ addEventListener("popstate", async (e) => {
 });
 
 function switchView(name) {
+  if (EMERGING_VIEWS.includes(name) && !emergingOn()) name = "board";
   // A popped-out window is one terminal and nothing else, forever. It has no
   // tabs to click, so every way it could become a board is indirect and none
   // of them are obvious from the call site: a tag chip calls `filterByTag`,

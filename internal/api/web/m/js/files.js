@@ -1,7 +1,7 @@
-// The hub file drop, the view. See docs/rnd/hub-file-drop.md.
+// The hub file drop and the card folders, as sources of the one files list that docs.js draws. See docs/rnd/hub-file-drop.md.
 //
-// One module for the phone's /m shell and the desktop board: the drop's files in a table, an upload with an optional
-// note, a delete that asks in the page, and the usage bar. It talks only to `/_hub/files` with a plain same-origin
+// One module for the phone's /m shell and the desktop board: the drop's rows, an upload with an optional note, a delete that
+// asks in the page, and a card's folders read from its own room. It talks only to `/_hub/files` with a plain same-origin
 // fetch. A file is NEVER previewed or rendered here: a name is a download link to /raw, which the hub always sends as an
 // attachment. Everything from the hub is set with textContent and never as markup.
 (function () {
@@ -79,122 +79,19 @@
   const soon = at => { const t = U().ts(at); return !!t && t - Date.now() < DAY; };
   const fromText = f => f.origin === "local" ? "you, at the machine" : f.origin === "share" ? "the share" : (f.by || "a card") + (f.room ? "@" + f.room : "");
 
-  function build() {
-    if (els) return els;
-    const sheet = el("section", "dsheet");
-    sheet.id = "m-files";
-    sheet.hidden = true;
-    sheet.setAttribute("aria-label", "files");
-    try { const v = parseFloat(localStorage.getItem("atrium.mfs")); if (v) sheet.style.setProperty("--m-fs", v + "px"); } catch (e) {}
-    const top = el("div", "d-top");
-    const back = el("button", "d-back");
-    back.type = "button";
-    back.setAttribute("aria-label", "back");
-    back.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
-    const title = el("span", "d-title", "files");
-    top.append(back, title);
-    const scroll = el("div", "d-scroll");
-    const body = el("div", "d-body");
-    scroll.appendChild(body);
-    sheet.append(top, scroll);
-    document.body.appendChild(sheet);
-    back.addEventListener("click", hide);
-    els = { sheet, body, scroll };
-    return els;
-  }
-  function hide() {
-    seq++;
-    if (!els) return;
-    els.sheet.hidden = true;
-    els.body.textContent = "";
-    document.body.classList.remove("docs-open");
-  }
-
-  function render() {
-    build();
-    els.sheet.hidden = false;
-    document.body.classList.add("docs-open");
-    els.scroll.scrollTop = 0;
-    const root = el("div", "f-view");
-    const head = el("div", "d-lhead");
-    const heading = el("h2", "d-lh", "Files");
-    const count = el("span", "d-count");
-    heading.appendChild(count);
-    head.appendChild(heading);
-
-    const bar = el("div", "d-bar");
-    const pick = el("input");
-    pick.type = "file";
-    pick.hidden = true;
-    pick.setAttribute("aria-label", "choose a file to put in the drop");
-    const noteIn = el("input", "d-tin");
-    noteIn.type = "text";
-    noteIn.placeholder = "note (optional)";
-    noteIn.setAttribute("aria-label", "a note for the new file");
-    noteIn.autocomplete = "off";
-    const up = el("div", "d-upload");
-    up.append(btn("upload", () => pick.click(), "d-up"), noteIn, pick);
-    bar.appendChild(up);
-    const status = el("p", "d-status");
-    status.setAttribute("role", "status");
-    const table = el("div", "f-rows");
-    const usage = el("p", "d-usage");
-    const meter = el("div", "d-meter");
-    const fill = el("i");
-    meter.appendChild(fill);
-    const foot = el("div", "d-foot");
-    foot.append(meter, usage);
-    root.append(head, bar, status, table, foot);
-    els.body.textContent = "";
-    els.body.appendChild(root);
-
-    const load = async () => {
-      const me = ++seq;
-      let g;
-      try { g = await hub("/_hub/files"); } catch (e) { g = down; }
-      if (me !== seq) return;
-      table.textContent = "";
-      if (!g.ok) { table.appendChild(el("p", "d-note d-err", sentence(g.status, g.body))); return; }
-      const files = (g.body && g.body.files) || [];
-      if (!files.length) table.appendChild(el("p", "d-note", "no files in the drop"));
-      else {
-        const h = el("div", "f-row f-h");
-        ["name", "size", "from", "when", "expires", ""].forEach(t => h.appendChild(el("span", "f-c", t)));
-        table.appendChild(h);
-      }
-      files.forEach(f => table.appendChild(rowOf(f, load)));
-      const u = g.body && g.body.usage;
-      usage.textContent = u ? size(u.bytes) + " of " + size(u.cap) + " used" : "";
-      fill.style.width = u && u.cap ? Math.max(1, Math.min(100, u.bytes * 100 / u.cap)).toFixed(1) + "%" : "0%";
-      meter.hidden = !(u && u.cap);
-      count.textContent = files.length ? String(files.length) : "";
-    };
-    pick.addEventListener("change", async () => {
-      const f = pick.files && pick.files[0];
-      pick.value = "";
-      if (!f) return;
-      status.classList.remove("d-err");
-      status.textContent = "uploading 0%";
-      const r = await upload(f, noteIn.value.trim(), n => { status.textContent = "uploading " + n + "%"; });
-      if (!r.ok) { status.classList.add("d-err"); status.textContent = sentence(r.status, r.body); return; }
-      status.textContent = "uploaded " + (r.body && r.body.name || f.name);
-      noteIn.value = "";
-      load();
-    });
-    load();
-  }
-
   function rowOf(f, reload) {
-    const row = el("div", "f-row" + (soon(f.expires) ? " soon" : ""));
-    const name = el("span", "f-c f-name");
+    const row = el("div", "d-row d-file" + (soon(f.expires) ? " soon" : ""));
+    const name = el("span", "d-main");
     const a = el("a", "f-dl", f.name);
     a.href = "/_hub/files/" + encodeURIComponent(f.name) + "/raw";
     a.setAttribute("download", f.name);
     name.appendChild(a);
+    const meta = el("span", "d-m");
+    [size(f.size), fromText(f), age(f.at), left(f.expires)].filter(Boolean).forEach(bit => meta.appendChild(el("span", "d-bit", bit)));
+    meta.appendChild(el("span", "d-bit d-room", f.room || "hub"));
+    name.appendChild(meta);
     if (f.note) name.appendChild(el("span", "f-note", f.note));
-    const exp = el("span", "f-c f-exp", left(f.expires));
-    if (soon(f.expires)) exp.title = "goes within a day";
-    const act = el("span", "f-c f-act");
+    const act = el("span", "f-act");
     const del = btn("delete", () => {
       del.hidden = true;
       const sure = el("span", "d-sure", "delete it? ");
@@ -210,25 +107,86 @@
       act.appendChild(sure);
     }, "d-warn");
     act.appendChild(del);
-    row.append(name, el("span", "f-c", size(f.size)), el("span", "f-c", fromText(f)), el("span", "f-c", age(f.at)), exp, act);
+    row.append(name, act);
     return row;
   }
 
-  async function openList() { if (await ready()) render(); }
-  function onAvailable(f) { hooks.push(f); if (avail !== null) f(avail); }
-
-  async function init() {
-    const b = document.getElementById("m-files-btn");
-    if (b) b.addEventListener("click", () => openList());
-    const tab = document.querySelector('.tab[data-view="files"]');
-    if (tab) tab.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); openList(); }, true);
-    onAvailable(a => {
-      if (b) b.hidden = !a;
-      if (tab) tab.hidden = !a;
-    });
-    await ready();
+  async function list() {
+    let g;
+    try { g = await hub("/_hub/files"); } catch (e) { g = down; }
+    return g.ok && g.body ? g.body : { files: [], usage: null };
   }
 
-  window.mFiles = { init, ready, onAvailable, openList, close: hide, available: () => avail === true };
+  const roomOf = t => t.room || (String(t.id).includes("~") ? String(t.id).split("~")[0] : "this room");
+  function roomHeaders() {
+    const h = {};
+    try { const room = localStorage.getItem("atrium.room"); if (room) h["X-Atrium-Room"] = room; } catch (e) {}
+    return h;
+  }
+  // A card's folder is read from the room the card lives on, through the same listing the card dialog uses. `live` says the
+  // list is still the one on screen.
+  async function folders(host, st, text, redraw, live) {
+    const note = t => host.appendChild(el("p", "d-note", t));
+    const get = async path => {
+      const r = await fetch(path, { headers: roomHeaders() });
+      if (!r.ok) throw new Error("the room answered " + r.status);
+      return r.json();
+    };
+    try {
+      if (!st.fcard) {
+        const g = await get("/v1/tasks");
+        if (!live()) return;
+        const needle = text.toLowerCase();
+        const cards = ((g && g.tasks) || []).filter(t => t && t.id && (!needle || String(t.display_title || t.alias || t.id).toLowerCase().includes(needle)));
+        if (!cards.length) note("no card has that name");
+        cards.forEach(t => {
+          const row = el("div", "d-row d-card");
+          const main = el("button", "d-main");
+          main.type = "button";
+          main.appendChild(el("b", "d-t", t.display_title || t.alias || t.id));
+          const meta = el("span", "d-m");
+          meta.appendChild(el("span", "d-bit d-room", roomOf(t)));
+          main.appendChild(meta);
+          main.addEventListener("click", () => { st.fcard = t.id; st.fpath = ""; redraw(); });
+          row.appendChild(main);
+          host.appendChild(row);
+        });
+        return;
+      }
+      const res = await get("/v1/tasks/" + encodeURIComponent(st.fcard) + "/files/list" + (st.fpath ? "?path=" + encodeURIComponent(st.fpath) : ""));
+      if (!live()) return;
+      const bar = el("div", "d-acts");
+      bar.appendChild(btn("all cards", () => { st.fcard = ""; st.fpath = ""; redraw(); }));
+      if (res.parent || st.fpath) bar.appendChild(btn("up", () => { st.fpath = res.parent || ""; redraw(); }));
+      bar.appendChild(el("span", "d-m", res.path || "/"));
+      host.appendChild(bar);
+      const rows = res.entries || [];
+      if (!rows.length) note("this folder is empty");
+      rows.forEach(e => {
+        const row = el("div", "d-row d-entry");
+        if (e.dir) {
+          const main = el("button", "d-main");
+          main.type = "button";
+          main.appendChild(el("b", "d-t", e.name + "/"));
+          main.addEventListener("click", () => { st.fpath = e.path; redraw(); });
+          row.appendChild(main);
+        } else {
+          const main = el("span", "d-main");
+          const a = el("a", "f-dl", e.name);
+          a.href = "/v1/tasks/" + encodeURIComponent(st.fcard) + "/files?path=" + encodeURIComponent(e.path);
+          a.setAttribute("download", e.name);
+          main.append(a, el("span", "d-m", size(e.size)));
+          row.appendChild(main);
+        }
+        host.appendChild(row);
+      });
+    } catch (e) { if (live()) host.appendChild(el("p", "d-note d-err", e.message)); }
+  }
+
+  function onAvailable(f) { hooks.push(f); if (avail !== null) f(avail); }
+
+  async function init() { await ready(); }
+
+  window.mFiles = { init, ready, onAvailable, list, rowOf, upload, folders, available: () => avail === true };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

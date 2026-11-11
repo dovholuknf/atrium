@@ -201,11 +201,11 @@
   function renderList(st) {
     const mine = ++seq;
     dropUrls();
-    els.title.textContent = st.card ? "documents of one card" : "documents";
+    els.title.textContent = st.card ? "documents of one card" : "files";
     const root = el("div", "d-list-view");
     // One header row: the title with its count, the card-or-every switch when there is a card to switch from, a search.
     const head = el("div", "d-lhead");
-    const heading = el("h2", "d-lh", st.card ? "This card" : "Documents");
+    const heading = el("h2", "d-lh", st.card ? "This card" : "Files");
     const count = el("span", "d-count");
     heading.appendChild(count);
     head.appendChild(heading);
@@ -222,10 +222,24 @@
       seg.append(one, all);
       head.appendChild(seg);
     }
+    if (!st.card) {
+      st.src = st.src === "published" && !emergingOn() ? "all" : st.src || "all";
+      const seg = el("div", "d-seg");
+      seg.setAttribute("role", "group");
+      seg.setAttribute("aria-label", "which files");
+      ["all", "published", "dropped", "folders"].filter(name => name !== "published" || emergingOn()).forEach(name => {
+        const b = el("button", "d-segb", name);
+        b.type = "button";
+        b.setAttribute("aria-pressed", String(st.src === name));
+        b.addEventListener("click", () => { st.src = name; st.fcard = ""; st.fpath = ""; render(st); });
+        seg.appendChild(b);
+      });
+      head.appendChild(seg);
+    }
     const q = el("input", "d-q");
     q.type = "search";
-    q.placeholder = "search titles";
-    q.setAttribute("aria-label", "filter by title");
+    q.placeholder = "search";
+    q.setAttribute("aria-label", "search documents and files");
     q.spellcheck = false;
     q.autocomplete = "off";
     q.value = st.q || "";
@@ -237,16 +251,18 @@
     pick.hidden = true;
     pick.setAttribute("aria-label", "choose a file to upload");
     const upBtn = btn("upload", () => pick.click(), "d-up");
+    const toDrop = !st.card && (st.src === "dropped" || !emergingOn());
     const titleIn = el("input", "d-tin");
     titleIn.type = "text";
-    titleIn.placeholder = "title (optional)";
-    titleIn.setAttribute("aria-label", "title of the new document");
+    titleIn.placeholder = toDrop ? "note (optional)" : "title (optional)";
+    titleIn.setAttribute("aria-label", toDrop ? "a note for the new file" : "title of the new document");
     titleIn.autocomplete = "off";
     const up = el("div", "d-upload");
     up.append(upBtn, titleIn, pick);
     const delChip = btn("deleted", null, "d-chip");
     delChip.setAttribute("aria-pressed", st.deleted ? "true" : "false");
-    bar.append(up, delChip);
+    bar.append(up);
+    if (!toDrop) bar.append(delChip);
     const status = el("p", "d-status");
     status.setAttribute("role", "status");
     const list = el("div", "d-rows");
@@ -262,23 +278,44 @@
     let timer = 0;
     const load = async () => {
       const me = ++seq;
+      const src = st.card ? "published" : st.src;
+      const text = q.value.trim();
+      list.textContent = "";
+      if (src === "folders") {
+        count.textContent = "";
+        usage.textContent = "";
+        meter.hidden = true;
+        await window.mFiles.folders(list, st, text, () => render(st), () => me === seq && cur === st);
+        return;
+      }
       const p = new URLSearchParams();
-      if (q.value.trim()) p.set("q", q.value.trim());
+      if (text) p.set("q", text);
       if (st.deleted) p.set("deleted", "1");
       if (st.card) p.set("card", st.card);
-      let g;
-      try { g = await hub("/_hub/docs" + (p.toString() ? "?" + p : "")); } catch (e) { g = { ok: false, status: 0, body: { error: "could not reach the hub" } }; }
+      const wantDocs = src !== "dropped" && avail === true && (!!st.card || emergingOn());
+      const wantFiles = !st.card && !st.deleted && src !== "published" && window.mFiles && window.mFiles.available();
+      let g = { ok: true, body: { docs: [] } };
+      if (wantDocs) {
+        try { g = await hub("/_hub/docs" + (p.toString() ? "?" + p : "")); } catch (e) { g = { ok: false, status: 0, body: { error: "could not reach the hub" } }; }
+      }
+      const fg = wantFiles ? await window.mFiles.list() : null;
       if (me !== seq || cur !== st) return;
       list.textContent = "";
       if (!g.ok) { list.appendChild(note(sentence(g.status, g.body), "d-err")); return; }
       const docs = (g.body && g.body.docs) || [];
-      if (!docs.length) list.appendChild(note(st.deleted ? "nothing deleted" : q.value.trim() ? "no document has that in its title" : "no documents yet"));
+      const needle = text.toLowerCase();
+      const files = ((fg && fg.files) || []).filter(f => !needle || (f.name + " " + (f.note || "")).toLowerCase().includes(needle));
+      if (!docs.length && !files.length) list.appendChild(note(st.deleted ? "nothing deleted" : text ? "nothing has that in its name" : "nothing here yet"));
       docs.forEach(d => list.appendChild(rowOf(d, st)));
+      files.forEach(f => list.appendChild(window.mFiles.rowOf(f, load)));
       const u = g.body && g.body.usage;
-      usage.textContent = u ? size(u.bytes) + " of " + size(u.cap) + " used" : "";
-      fill.style.width = u && u.cap ? Math.max(1, Math.min(100, u.bytes * 100 / u.cap)).toFixed(1) + "%" : "0%";
-      meter.hidden = !(u && u.cap);
-      count.textContent = docs.length ? String(docs.length) : "";
+      const fu = fg && fg.usage;
+      const use = (name, x) => x ? name + size(x.bytes) + " of " + size(x.cap) + " used" : "";
+      usage.textContent = [wantDocs ? use(wantFiles ? "documents " : "", u) : "", wantFiles ? use(wantDocs ? "drop " : "", fu) : ""].filter(Boolean).join(" · ");
+      const top = wantDocs ? u : fu;
+      fill.style.width = top && top.cap ? Math.max(1, Math.min(100, top.bytes * 100 / top.cap)).toFixed(1) + "%" : "0%";
+      meter.hidden = !(top && top.cap);
+      count.textContent = docs.length + files.length ? String(docs.length + files.length) : "";
     };
     const again = () => { st.q = q.value; clearTimeout(timer); timer = setTimeout(load, 250); };
     q.addEventListener("input", again);
@@ -293,9 +330,11 @@
       status.textContent = "";
       status.classList.remove("d-err");
       status.textContent = "uploading 0%";
-      const r = await upload("/_hub/docs", f, { title: titleIn.value.trim(), override: override ? "1" : "" }, n => { status.textContent = "uploading " + n + "%"; });
+      const onprog = n => { status.textContent = "uploading " + n + "%"; };
+      const r = toDrop ? await window.mFiles.upload(f, titleIn.value.trim(), onprog) : await upload("/_hub/docs", f, { title: titleIn.value.trim(), override: override ? "1" : "" }, onprog);
       if (cur !== st) return;
       status.textContent = "";
+      if (toDrop && r.ok) { status.textContent = "uploaded " + (r.body && r.body.name || f.name); titleIn.value = ""; load(); return; }
       if (r.ok && r.body && r.body.slug) {
         status.textContent = "uploaded ";
         const a = btn("open it", () => go({ v: "doc", slug: r.body.slug }), "d-link");
@@ -318,8 +357,8 @@
     main.appendChild(el("b", "d-t", d.title || d.slug));
     const l = d.latest || {};
     const meta = el("span", "d-m");
-    [l.kind, d.versions > 1 ? d.versions + " versions" : "1 version", age(d.updated), originText(l)].filter(Boolean)
-      .forEach((bit, i) => meta.appendChild(el("span", i === 0 ? "d-bit d-kind" : "d-bit", bit)));
+    [l.kind, d.versions > 1 ? d.versions + " versions" : "1 version", age(d.updated), originText(l), l.room || "hub"].filter(Boolean)
+      .forEach((bit, i, all) => meta.appendChild(el("span", i === 0 ? "d-bit d-kind" : i === all.length - 1 ? "d-bit d-room" : "d-bit", bit)));
     main.appendChild(meta);
     main.addEventListener("click", () => go({ v: "doc", slug: d.slug }));
     row.appendChild(main);
@@ -736,7 +775,7 @@
   }
 
   // ── doors ────────────────────────────────────────────────────────────────
-  async function openList(opts) { if (await ready()) go(Object.assign({ v: "list" }, opts || {})); }
+  async function openList(opts) { const f = window.mFiles ? await window.mFiles.ready() : false; if ((await ready()) || f) go(Object.assign({ v: "list" }, opts || {})); }
   async function openDoc(slug, n) { if (await ready()) go({ v: "doc", slug, n: n || undefined }); }
 
   // A same-origin /d/<slug> link, anywhere on the page, opens here and does not navigate. The path must match exactly and
@@ -762,14 +801,19 @@
       if (!els || els.sheet.hidden) { if (e.state && e.state.mdocs && avail) render(e.state.mdocs); return; }
       if (e.state && e.state.mdocs) render(e.state.mdocs); else hide();
     });
-    const btnM = document.getElementById("m-docs-btn");
+    const btnM = document.getElementById("m-files-btn");
     if (btnM) btnM.addEventListener("click", () => openList());
-    const tab = document.querySelector('.tab[data-view="docs"]');
+    const tab = document.querySelector('.tab[data-view="files"]');
     if (tab) tab.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); openList(); }, true);
-    onAvailable(a => {
-      if (btnM) btnM.hidden = !a;
-      if (tab) tab.hidden = !a;
-    });
+    const door = async () => {
+      const f = window.mFiles ? await window.mFiles.ready() : false;
+      const open = (avail === true && emergingOn()) || f;
+      if (btnM) btnM.hidden = !open;
+      if (tab) tab.hidden = !open;
+    };
+    onAvailable(door);
+    window.addEventListener("emerging", door);
+    if (window.mFiles) window.mFiles.onAvailable(door);
     if (!(await ready())) return;
     // an address of its own: /m/docs, or /d/<slug>[@n], on the phone's shell
     if (isPhone()) {
