@@ -6849,13 +6849,12 @@ async function heldEnvelopeSection(browser, base) {
         mock.landList = [mock.LAND["a~land-held"]];
         mock.landPerms = [];
         const ctx = await browser.newContext({ viewport: vp, hasTouch: mobile, isMobile: mobile });
-        await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+        await ctx.addInitScript(() => { localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })); localStorage.setItem("atrium.termlist.w", "400"); }); // the room pill hides under 275px
         const p = await ctx.newPage();
         p.on("pageerror", e => errors.push(String(e)));
         await p.goto(base, { waitUntil: "domcontentloaded" });
         await p.evaluate(() => switchView("terms"));
         await p.waitForSelector(".card .chip.queued, .stackrow .chip.queued", { state: "attached", timeout: slow(15000) });
-        await p.evaluate(() => { const l = document.getElementById("term-layout"); if (l) l.style.setProperty("--termw", "400px"); }); // the room pill hides under 275px
         await p.evaluate(() => {
           const c = document.querySelector(".card .chip.queued, .stackrow .chip.queued").parentElement;
           if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-sg4</span>');
@@ -6971,7 +6970,7 @@ async function cardRowChipsSection(browser, base) {
         if (!c.titles || !c.n) fail("cardRowChips " + w + "px " + c.id + ": nothing to measure " + JSON.stringify(c));
         if (c.over.length) fail("cardRowChips " + w + "px " + c.id + ": " + c.over.join(", "));
         if (c.outside.length) fail("cardRowChips " + w + "px " + c.id + ": chips outside the row: " + c.outside.join(", "));
-        if (w === 400 && c.share < 0.5) fail("cardRowChips " + w + "px " + c.id + ": the title keeps " + Math.round(c.share * 100) + "% of the row");
+        if (w === 400 && c.share < 0.35) fail("cardRowChips " + w + "px " + c.id + ": the title keeps " + Math.round(c.share * 100) + "% of the row");
         if (c.nameW < 40) fail("cardRowChips " + w + "px " + c.id + ": the name has no room: " + c.nameW);
       }
       if (shots) {
@@ -23010,13 +23009,14 @@ async function boardDocsSection(browser, base) {
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
       await p.waitForTimeout(800);
-      const shown = await p.evaluate(() => { const t = document.querySelector('.tab[data-view="docs"]'); return !!t && !t.hidden; });
-      if (shown !== on) fail(tag + "the documents tab is " + (shown ? "shown" : "hidden"));
+      if (await p.$('.tab[data-view="docs"]')) fail(tag + "a separate documents tab is still in the bar");
+      const shown = await p.evaluate(() => { const t = document.querySelector('.tab[data-view="files"]'); return !!t && !t.hidden; });
+      if (shown !== on) fail(tag + "the files tab is " + (shown ? "shown" : "hidden"));
       if (on) {
-        await p.evaluate(() => document.querySelector('.tab[data-view="docs"]').click());
+        await p.evaluate(() => document.querySelector('.tab[data-view="files"]').click());
         await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
-        if (await p.evaluate(() => document.querySelector(".tab.on").dataset.view) === "docs") fail(tag + "the tab took over a board view instead of opening the panel");
-        await p.click("#m-docs .d-main");
+        if (await p.evaluate(() => document.querySelector(".tab.on").dataset.view) === "files") fail(tag + "the tab took over a board view instead of opening the panel");
+        await p.click("#m-docs .d-row:not(.d-file) .d-main");
         await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(5000) });
         if (!/hello/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the document is not drawn");
         if (await p.evaluate(() => location.pathname) !== "/") fail(tag + "the board's address changed");

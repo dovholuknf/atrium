@@ -736,7 +736,7 @@
   }
 
   // ── doors ────────────────────────────────────────────────────────────────
-  async function openList(opts) { if (await ready()) go(Object.assign({ v: "list" }, opts || {})); }
+  async function openList(opts) { const f = window.mFiles ? await window.mFiles.ready() : false; if ((await ready()) || f) go(Object.assign({ v: "list" }, opts || {})); }
   async function openDoc(slug, n) { if (await ready()) go({ v: "doc", slug, n: n || undefined }); }
 
   // A same-origin /d/<slug> link, anywhere on the page, opens here and does not navigate. The path must match exactly and
@@ -762,14 +762,19 @@
       if (!els || els.sheet.hidden) { if (e.state && e.state.mdocs && avail) render(e.state.mdocs); return; }
       if (e.state && e.state.mdocs) render(e.state.mdocs); else hide();
     });
-    const btnM = document.getElementById("m-docs-btn");
+    const btnM = document.getElementById("m-files-btn");
     if (btnM) btnM.addEventListener("click", () => openList());
-    const tab = document.querySelector('.tab[data-view="docs"]');
+    const tab = document.querySelector('.tab[data-view="files"]');
     if (tab) tab.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); openList(); }, true);
-    onAvailable(a => {
-      if (btnM) btnM.hidden = !a;
-      if (tab) tab.hidden = !a;
-    });
+    const door = async () => {
+      const f = window.mFiles ? await window.mFiles.ready() : false;
+      const open = (avail === true && emergingOn()) || f;
+      if (btnM) btnM.hidden = !open;
+      if (tab) tab.hidden = !open;
+    };
+    onAvailable(door);
+    window.addEventListener("emerging", door);
+    if (window.mFiles) window.mFiles.onAvailable(door);
     if (!(await ready())) return;
     // an address of its own: /m/docs, or /d/<slug>[@n], on the phone's shell
     if (isPhone()) {
