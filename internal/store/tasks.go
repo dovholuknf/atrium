@@ -307,6 +307,10 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 	if !move && t.Worktree != "" {
 		obs.Worktree = t.Worktree
 	}
+	// A hook knows no repo, and blanking the launch's took the card's colour on the board until a restart backfilled it.
+	if obs.Repo == "" {
+		obs.Repo = t.Repo
+	}
 	// A REPORT WITH NO PID KEEPS THE PID ON FILE, FROM THE SAME SESSION (r-011).
 	// Several hooks build an observation with no pid at all (the message and Stop
 	// path, a permission hook that sent none), and writing their 0 erased the pid

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -273,8 +274,9 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 	if _, err := shared.GitIn(clone, gitexec.CheckRefFormat{Name: branch, Branch: true}); err != nil {
 		return "", "", fmt.Errorf("%q is not a branch name: %v", branch, err)
 	}
+	fromDefault := false
 	if base = strings.TrimSpace(base); base == "" {
-		base = DefaultBase(clone)
+		base, fromDefault = DefaultBase(clone), true
 	}
 	if !BranchOK.MatchString(base) || strings.Contains(base, "..") {
 		return "", "", fmt.Errorf("%q is not a start atrium will branch from", base)
@@ -286,8 +288,31 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 		_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, Commitish: branch})
 		return branch, "", WrapGit("add the worktree", err)
 	}
+	if fromDefault {
+		if base, err = freshHubBase(clone, base); err != nil {
+			return "", "", err
+		}
+	}
 	_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, NewBranch: branch, Commitish: base})
 	return branch, base, WrapGit("add the worktree", err)
+}
+
+// freshHubBase is the hub's claude/main, fetched now, for a clone that has a hub remote, because the clone's own
+// claude/main can be weeks behind. A fetch that fails refuses the launch rather than branching from stale code.
+func freshHubBase(clone, base string) (string, error) {
+	if base != shared.DefaultCullInto {
+		return base, nil
+	}
+	remotes, err := shared.GitIn(clone, gitexec.RemoteList{})
+	if err != nil || !slices.Contains(strings.Fields(remotes), "hub") {
+		return base, nil
+	}
+	const tip = "hub/" + shared.DefaultCullInto
+	spec := "+refs/heads/" + shared.DefaultCullInto + ":refs/remotes/" + tip
+	if _, err := shared.GitIn(clone, gitexec.Fetch{Remote: "hub", Refspecs: []string{spec}, NoTags: true, Quiet: true}); err != nil {
+		return "", fmt.Errorf("the hub's %s could not be fetched, so this launch would start from a stale one: %v", shared.DefaultCullInto, err)
+	}
+	return tip, nil
 }
 
 // BranchState is what a launch on a branch of a clone would meet, for the launch dialog to warn before it launches.

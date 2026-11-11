@@ -209,6 +209,7 @@ type DocVersion struct {
 	By      string `json:"by"`
 	Origin  string `json:"origin"`
 	Card    string `json:"card,omitempty"`
+	Room    string `json:"room"`
 	Size    int64  `json:"size"`
 	Kind    string `json:"kind"`
 	Mime    string `json:"mime"`
@@ -861,6 +862,7 @@ func (s *Store) scanVersion(r scanner, extra ...any) (DocVersion, error) {
 		return v, err
 	}
 	v.Purged, v.Override = purged == 1, override == 1
+	v.Room, _, _ = strings.Cut(v.Card, "~")
 	if !v.Purged {
 		if _, err := os.Stat(s.blobPath(v.SHA)); err != nil {
 			v.Missing = true

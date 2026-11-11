@@ -91,7 +91,7 @@ func TestGeminiTrustOriginalBackupIsNeverOverwritten(t *testing.T) {
 		t.Fatalf("the original backup should be the file before atrium's first change, got %s", orig)
 	}
 	last, _ := os.ReadFile(trustFile(env) + backupLast)
-	if !strings.Contains(string(last), "/a") || strings.Contains(string(last), "/b") {
+	if !strings.Contains(string(last), "/worktrees/a") || strings.Contains(string(last), "/worktrees/b") {
 		t.Fatalf("the last backup should be the file before the most recent change, got %s", last)
 	}
 }

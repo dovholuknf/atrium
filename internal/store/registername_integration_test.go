@@ -83,3 +83,22 @@ func TestRefreshObservedKeepsNameWhenAnotherRowHoldsIt(t *testing.T) {
 		t.Fatalf("in-memory card renamed: %s", live.WireName)
 	}
 }
+
+// A hook's report carries no repo, and must not blank the one the launch recorded: the board colours a card by it.
+func TestRegisterWithNoRepoKeepsTheCardsRepo(t *testing.T) {
+	t.Parallel()
+	s := openTestStore(t)
+	card, _, err := s.Register(Observed{WireName: "csharp-ci", Worktree: "/cards/csharp-ci/work", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPlace(card.ID, Place{Repo: "D:/git/github/openziti/ziti-sdk-csharp", Host: "github", Org: "openziti"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Register(Observed{WireName: "csharp-ci", Runner: "claude", PID: 77}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(card.ID); got.Repo != "D:/git/github/openziti/ziti-sdk-csharp" {
+		t.Fatalf("repo = %q after a report with none", got.Repo)
+	}
+}

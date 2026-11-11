@@ -749,3 +749,20 @@ func TestIsTextCutInsideCharacter(t *testing.T) {
 		t.Error("continuation bytes with no start were taken for text")
 	}
 }
+
+func TestADocumentNamesTheRoomItCameFrom(t *testing.T) {
+	s := open(t)
+	mustAdd(t, s, DocInput{Title: "From a card", Name: "c.md", Data: []byte("1"), Origin: "card", By: "r-1@sg4", Card: "sg4~1"})
+	mustAdd(t, s, docIn("From the board", "b.md", "2"))
+	rows, err := s.DocList("", false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.Title] = r.Latest.Room
+	}
+	if got["From a card"] != "sg4" || got["From the board"] != "" {
+		t.Fatalf("rooms %v", got)
+	}
+}
