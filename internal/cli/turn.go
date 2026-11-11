@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -253,9 +255,8 @@ func turnEnded(hubURL, event, name, runner string) string {
 		return keepGoing
 	}
 
-	client := hookClient(hookLeft(start))
 	addr := hubAddress(hubURL)
-	resp, err := client.Post(addr+"/stop", "application/json", bytes.NewReader(body))
+	resp, err := postStop(addr, body, start)
 	if err != nil {
 		// A systemMessage alone never blocks, so the turn still ends.
 		return string(hookWarning("Stop", runner, unreachable("turn --event end", addr, err)))
@@ -272,6 +273,28 @@ func turnEnded(hubURL, event, name, runner string) string {
 		return keepGoing
 	}
 	return turnAnswer(resp.Body)
+}
+
+// postStop posts the turn end, again while the room refuses the connection, as a restart does, inside the hook
+// budget. Only a refused dial is retried, since the room never saw that request and a second turn end is not one.
+func postStop(addr string, body []byte, start time.Time) (*http.Response, error) {
+	deadline := time.Now().Add(permRetryFor())
+	if budget := start.Add(hookBudget); budget.Before(deadline) {
+		deadline = budget
+	}
+	for {
+		resp, err := hookClient(hookLeft(start)).Post(addr+"/stop", "application/json", bytes.NewReader(body))
+		if err == nil || !dialRefused(err) || !time.Now().Add(permRetryEvery()).Before(deadline) {
+			return resp, err
+		}
+		time.Sleep(permRetryEvery())
+	}
+}
+
+// dialRefused is a connection that never opened, so the request was never sent.
+func dialRefused(err error) bool {
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
 }
 
 // turnAnswer reads the daemon's reply and returns what may safely be printed.

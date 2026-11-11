@@ -190,6 +190,8 @@ type Daemon struct {
 	stopAsked atomic.Int32
 	// gatePoll and gateGiveUp override the short gate's timings when set. Zero is the default, see stopkeep.go.
 	gatePoll, gateGiveUp time.Duration
+	// hooksIn counts the turn-end and session hook calls being answered, which the short gate waits out.
+	hooksIn atomic.Int32
 	// hostInJob and hostBuild are what the host's probe said when this daemon connected. A host inside the room
 	// task's job object dies with it, so a stop that leaves runners up would end them anyway. See stopkeep.go.
 	hostInJob atomic.Bool
@@ -1169,14 +1171,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.resumePRReviews()
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/permission", d.handlePermission)
-	agentMux.HandleFunc("/session", d.handleSession)
+	agentMux.HandleFunc("/session", d.countHook(d.handleSession))
 	agentMux.HandleFunc("/gate", d.handleGate)
 	agentMux.HandleFunc("/contract", handleContract)
-	agentMux.HandleFunc("/stop", d.handleStop)
+	agentMux.HandleFunc("/stop", d.countHook(d.handleStop))
 	agentMux.HandleFunc("/activity", d.handleActivity)
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
-	agentMux.HandleFunc("/finish", d.handleFinish)
+	agentMux.HandleFunc("/finish", d.countHook(d.handleFinish))
 	agentMux.HandleFunc("/ready", d.HandleReady)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
@@ -1443,6 +1445,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 // so this can take several seconds. Silence for that long looks like a hang.
 func (d *Daemon) shutdown(servers ...*http.Server) {
 	start := time.Now()
+	// A stop that leaves runners up waits first for the work that lives only in this process, with the listeners and
+	// the board still up and new says held. See stopkeep.go.
+	d.stop.begin()
+	d.shortGate()
 	// Every session ends from here on, and none of those endings is somebody
 	// deciding. See the session hook's `end`.
 	d.windingDown.Store(true)
@@ -1495,9 +1501,6 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// Which runners were mid-turn, read before they are stopped: a runner that
 	// exits files its card dead or done. See unexpectedexit.go.
 	d.noteStopMidTurn()
-
-	// A stop that leaves runners up waits first for the work that lives only in this process. See stopkeep.go.
-	d.shortGate()
 
 	// Runners atrium owns get a real chance to wind up before their terminal
 	// closes underneath them. Ten seconds because an agent mid-turn may be

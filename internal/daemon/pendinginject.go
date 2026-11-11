@@ -120,7 +120,8 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, waitTurn bool) {
 	// A card a wake is delivering to gets everything pending in one turn once its runner is ready: a message queued
 	// meanwhile is carried by that, not typed alone onto a startup screen. See injectKept.
-	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.FrozenForMove(taskID) {
+	// A stop holds new says in the store for the next room to retype, so its gate waits only on those already held.
+	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.FrozenForMove(taskID) || d.stop.stopping() {
 		// A frozen card's message is in the freeze queue, not in message. It is
 		// replayed with its id when the move is undone.
 		return
@@ -713,6 +714,21 @@ func (d *Daemon) releaseSentBy(t *store.Task) {
 	for _, id := range tasks {
 		d.pending.reconcile(id)
 	}
+}
+
+// waitingCard names a card with a say still to type, or is empty. Nil-safe for a daemon without the injector.
+func (pi *pendingInjector) waitingCard() string {
+	if pi == nil {
+		return ""
+	}
+	pi.mu.Lock()
+	defer pi.mu.Unlock()
+	for id, ht := range pi.by {
+		if len(ht.entries) > 0 {
+			return id
+		}
+	}
+	return ""
 }
 
 // stopAll halts every backoff timer, for shutdown. The held messages stay in

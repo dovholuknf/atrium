@@ -72,6 +72,7 @@ func (d *Daemon) shortGate() {
 		}
 		if why != last {
 			log.Printf("[atrium] the stop is waiting for %s", why)
+			d.ap.Broadcast("stop-hold", map[string]any{"why": why, "until": deadline.UTC().Format(time.RFC3339)})
 			last = why
 		}
 		if time.Now().After(deadline) {
@@ -108,7 +109,22 @@ func (d *Daemon) gateBusy() string {
 			r.pasteMu.Unlock()
 		}
 	}
+	if n := d.hooksIn.Load(); n > 0 {
+		return fmt.Sprintf("%d hook call(s) in flight", n)
+	}
+	if id := d.pending.waitingCard(); id != "" {
+		return "a queued say to be typed into " + id
+	}
 	return ""
+}
+
+// countHook counts a hook call while it is answered, so a stop does not close the listener under one.
+func (d *Daemon) countHook(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		d.hooksIn.Add(1)
+		defer d.hooksIn.Add(-1)
+		h(w, r)
+	}
 }
 
 // shutdownBody is what `atrium stop` may send: whether to end the runners the pty host holds too.
