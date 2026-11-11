@@ -19078,8 +19078,8 @@ async function terminalsOneLineSection(browser, base) {
         document.body.appendChild(host);
         return [...host.querySelectorAll(".card")].map(c => {
           const cr = c.getBoundingClientRect();
-          const tops = [...c.querySelectorAll(".chips .chip, .tkidfold")].map(x => Math.round(x.getBoundingClientRect().top));
-          const right = Math.max(...[...c.querySelectorAll(".chips .chip, .tkidfold")].map(x => x.getBoundingClientRect().right), 0);
+          const tops = [...c.querySelectorAll(".chips .chip, .tkidfold")].filter(x => x.offsetWidth).map(x => Math.round(x.getBoundingClientRect().top));
+          const right = Math.max(...[...c.querySelectorAll(".chips .chip, .tkidfold")].filter(x => x.offsetWidth).map(x => x.getBoundingClientRect().right), 0);
           return { h: Math.round(cr.height), tops, overflow: Math.round(right - cr.right), cw: Math.round(cr.width),
             titleBottom: Math.round(c.querySelector(".title").getBoundingClientRect().bottom) };
         });
@@ -21394,7 +21394,7 @@ async function termRowChipsSection(browser, base) {
       const list = document.createElement("div");
       list.id = "termrow-probe";
       list.className = "term-list";
-      list.style.cssText = "position:fixed;left:10px;top:10px;width:260px;z-index:99999;display:block";
+      list.style.cssText = "position:fixed;left:10px;top:10px;width:300px;z-index:99999;display:block";
       list.innerHTML = `<div class="termscroll"><div class="card tab"><div class="card-line">
         <div class="title"><span class="pin">&#9734;</span><span class="tstack"
           ><span class="tname">ziti-hook minion: builds what ziti-edge-tunnel needs before it can run</span
