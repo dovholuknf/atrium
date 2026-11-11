@@ -32,8 +32,9 @@ func walkStr(m map[string]any, k string) string {
 }
 
 // walkMerge folds the agent's lines into a saved walk and reports how many comments and replies were new. A line
-// is a new comment ({file, line, text, scope?, summary?}) or a reply ({reply: <comment id>, text}), and the nth {reply: "whole", text} answers the nth question of the whole-walk thread. An id is a hash
-// of the line's content, so reading the file again adds nothing, and an id in `gone` is a comment the walker deleted.
+// is a new comment ({file, line, text, scope?, summary?}) or a reply ({reply: <comment id>, text}). The nth
+// {reply: "whole", text} answers the nth question of the whole-walk thread. An id is a hash of the line's content,
+// so reading the file again adds nothing, and an id in `gone` is a comment the walker deleted.
 func walkMerge(state map[string]any, lines [][]byte) int {
 	comments, _ := state["comments"].([]any)
 	gone, _ := state["gone"].([]any)
