@@ -68,7 +68,7 @@ jobs:
       # here and it is taken on purpose. Every other refusal is a fact about the
       # artefact and cannot be waived at all.
       - name: build, prove, and publish
-        run: bash scripts/cut-release.sh "$ATRIUM_VERSION" --from-tag --skip-ci --execute
+        run: bash scripts/cut-release.sh "$ATRIUM_VERSION" --from-tag --skip-ci --execute --notes="changelog/$ATRIUM_VERSION.md"
 
       # Kept whether or not the publish worked. When it did, this is how you
       # check a hash without downloading a release. When it did not, it is the
