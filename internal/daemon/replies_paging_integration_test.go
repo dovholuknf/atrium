@@ -428,3 +428,39 @@ func TestRepliesRouteParsesBefore(t *testing.T) {
 		}
 	}
 }
+
+func TestRepliesContinueIntoTheEarlierTranscript(t *testing.T) {
+	dir := t.TempDir()
+	old, cur := filepath.Join(dir, "old.jsonl"), filepath.Join(dir, "cur.jsonl")
+	line := func(i int, id string) string {
+		at := pagingBase.Add(time.Duration(i) * time.Minute)
+		return pagingPromptLine(at, "p"+id) + pagingReplyLine(id, at.Add(time.Second), "r"+id)
+	}
+	if err := os.WriteFile(old, []byte(line(0, "a")+line(1, "b")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cur, []byte(line(10, "c")+line(11, "d")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := claudeReader{&Daemon{hk: *testHooks()}}
+	files := []string{cur, old}
+	var got []string
+	pg, err := r.across(&store.Task{}, files, 50, time.Time{})
+	if err == nil && (!pg.more || pg.next.IsZero()) {
+		t.Fatalf("first page with an earlier transcript: more=%v next=%v", pg.more, pg.next)
+	}
+	for ; err == nil; pg, err = r.across(&store.Task{}, files, 50, pg.next) {
+		for i := len(pg.replies) - 1; i >= 0; i-- {
+			got = append(got, pg.replies[i].Text)
+		}
+		if !pg.more {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "rd,rc,rb,ra" {
+		t.Fatalf("replies walked newest first = %v", got)
+	}
+}

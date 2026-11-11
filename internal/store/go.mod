@@ -1,6 +1,6 @@
 module github.com/dovholuknf/atrium/internal/store
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/dovholuknf/atrium/internal/base v0.0.0

@@ -25,6 +25,8 @@
       min-height: 40px; box-sizing: border-box;
       display: inline-flex; align-items: center; justify-content: center;
     }
+    /* A terminals row is `.card.tab` too, and inline-flex sized a nested one to its content, past the list's edge. */
+    .term-list .card.tab { display: block; }
     .rooms, .conn, .sharing, button.working { min-height: 40px; box-sizing: border-box; }
     main { padding: 14px 12px; }
 

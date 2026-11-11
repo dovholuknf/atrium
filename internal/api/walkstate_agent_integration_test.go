@@ -59,3 +59,22 @@ func TestWalkStateNamesThePullRequestItIsFor(t *testing.T) {
 		t.Fatalf("a card with no pull request named one: %s", body)
 	}
 }
+
+func TestWalkMergeAnswersTheWholeThreadOnceInOrder(t *testing.T) {
+	state := map[string]any{"thread": []any{map[string]any{"q": "one"}, map[string]any{"q": "two"}}}
+	lines := [][]byte{[]byte(`{"reply":"whole","text":"first"}`)}
+	if n := walkMerge(state, lines); n != 1 {
+		t.Fatalf("added %d, want 1", n)
+	}
+	lines = append(lines, []byte(`{"reply":"whole","text":"second"}`), []byte(`{"reply":"whole","text":"third"}`))
+	if n := walkMerge(state, lines); n != 1 {
+		t.Fatalf("added %d on the second read, want 1", n)
+	}
+	th := state["thread"].([]any)
+	if a := th[0].(map[string]any)["a"]; a != "first" {
+		t.Fatalf("first answer %v", a)
+	}
+	if a := th[1].(map[string]any)["a"]; a != "second" {
+		t.Fatalf("second answer %v", a)
+	}
+}

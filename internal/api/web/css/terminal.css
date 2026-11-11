@@ -284,10 +284,9 @@
     min-width: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--head); font-weight: 600;
   }
-  /* An unnamed card has no name of its own, so its one line IS the address. Front
-     truncated, the way the address always was, to keep the leaf that tells it apart. */
+  /* An unnamed card has no name of its own, so its one line IS the address, cut at the end like any name. */
   .term-list .card .title .tname.aspath {
-    color: var(--body); font-weight: 500; direction: rtl; text-align: left;
+    color: var(--body); font-weight: 500;
   }
   /* Where it lives, under the name and dimmed. Front truncated so a strip too narrow
      for the whole address keeps the repo and branch that tell two rows apart. */
@@ -306,9 +305,7 @@
      the one thing on the entry that changes what a click does. Narrowing the list shrank it to nothing, so
      the click that would have raised that window landed on the card and did something else. The name gives
      way instead, which it can afford to, since it is already truncating. */
-  /* THE CHIPS TAKE THEIR OWN WIDTH and the title ellipsizes before them. They used to shrink with the title while no
-     chip inside could, so the box got narrower than what it held and, justified to the end, the overflow ran out the
-     left edge and drew over the name. The name wins: the chips take at most 45% of the row and clip inside it, the cycle chip giving first. */
+  /* The chips take at most 60% of the row and clip inside it; the name keeps 40px and the title ellipsizes before them. */
   .term-list .card .card-line > .chips { flex: 0 1 auto; max-width: 60%; min-width: 0; overflow: hidden; flex-wrap: nowrap; }
   /* The room chip never shrinks, it tells two rooms apart. The title gives way first, then the cycle chip. */
   .term-list .card .card-line > .chips .chip.room { flex: none; overflow: visible; text-overflow: clip; }
@@ -317,6 +314,10 @@
      the chips under a long path and made a parked row, with its resume chip, taller than a running one. The title
      already truncates, so it gives way and the chips stay beside it. */
   .term-list .card .card-line { flex-wrap: nowrap; }
+  /* Under 275px of row the room pill goes so the name keeps the space. A container is measured inside its padding
+     and border, so 249px of content is 275px of row at the default scale. */
+  .term-list .card { container-type: inline-size; }
+  @container (max-width: 248px) { .term-list .card .card-line > .chips .chip.room { display: none; } }
   /* Mini. These come after the single-line rules above so those do not undo them.
      The entry is an icon and a short name, so both are centred in the column rather than left-aligned against
      an edge a few pixels away. `.tname` stops being rtl here: a short name is not truncated, and an rtl box

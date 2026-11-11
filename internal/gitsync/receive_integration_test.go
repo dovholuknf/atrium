@@ -2207,3 +2207,112 @@ func TestAPushThatMakesGitProbeLandsThroughTheReceiver(t *testing.T) {
 		t.Fatalf("fix/x is %q on the hub, want %q", got, sha)
 	}
 }
+
+// The orchestrator deletes another card's claude/* branch only once its tip is in main or claude/main.
+func TestOrchestratorDeletesAnotherCardsMergedBranchOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+	})
+	x.seedMain(hubRepo)
+	x.branch("claude/done", "d.txt")
+	x.branch("claude/open", "o.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/done:refs/heads/claude/done", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(operator, hubRepo, "claude/done:refs/heads/main"))
+	for _, c := range []struct {
+		who  who
+		spec string
+	}{
+		{roomCard("sg4", "C2"), ":refs/heads/claude/done"},
+		{roomCard("sg4", "ORCH"), ":refs/heads/claude/open"},
+	} {
+		out, err := x.push(c.who, hubRepo, c.spec)
+		if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+			t.Errorf("%s by %+v: %v\n%s", c.spec, c.who, err, out)
+		}
+	}
+	x.must(x.push(roomCard("sg4", "ORCH"), hubRepo, ":refs/heads/claude/done"))
+	if got := x.refOn(hubRepo, "refs/heads/claude/done"); got != "" {
+		t.Errorf("claude/done is still there at %s", got)
+	}
+}
+
+// A squash-merge and a cherry-pick leave the tip off main's history, and the branch still adds nothing.
+func TestOrchestratorDeletesASquashedAndACherryPickedBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+	})
+	x.seedMain(hubRepo)
+	x.branch("claude/squash", "s.txt")
+	x.branch("claude/pick", "p.txt")
+	x.branch("claude/unlanded", "u.txt")
+	x.grow("claude/unlanded", "u2.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/squash:refs/heads/claude/squash",
+		"claude/pick:refs/heads/claude/pick", "claude/unlanded:refs/heads/claude/unlanded"))
+	ident := []string{"-c", "user.name=t", "-c", "user.email=t@example.com"}
+	git(t, x.work, "checkout", "-q", "main")
+	git(t, x.work, "merge", "--squash", "claude/squash")
+	git(t, x.work, append(ident, "commit", "-q", "-m", "squash")...)
+	git(t, x.work, append(ident, "cherry-pick", "claude/pick")...)
+	git(t, x.work, append(ident, "cherry-pick", "claude/unlanded~1")...)
+	x.must(x.push(operator, hubRepo, "main:refs/heads/main"))
+
+	orch := roomCard("sg4", "ORCH")
+	x.must(x.push(orch, hubRepo, ":refs/heads/claude/squash"))
+	x.must(x.push(orch, hubRepo, ":refs/heads/claude/pick"))
+	out, err := x.push(orch, hubRepo, ":refs/heads/claude/unlanded")
+	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+		t.Errorf("a branch with an unlanded commit: %v\n%s", err, out)
+	}
+}
+
+// An adopted mirror is never fetched from its forge, so the merged check reads the forge's main from the checkout's
+// origin/main.
+func TestOrchestratorDeletesABranchSquashedIntoAnAdoptedMirrorsForgeMain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	forge := filepath.ToSlash(t.TempDir())
+	ck := filepath.ToSlash(filepath.Join(t.TempDir(), "ck"))
+	x := newRecv(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+		h.Repos = func() ([]Repo, error) { return []Repo{{Name: hubRepo, Checkout: ck, Branch: "claude/main"}}, nil }
+	})
+	git(t, forge, "init", "-q", "--bare")
+	git(t, x.work, "push", "-q", forge, "main:refs/heads/main")
+	git(t, "", "clone", "-q", forge, ck)
+	git(t, ck, "branch", "-q", "claude/main", "origin/main")
+	if _, err := x.h.Mirror(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMarker(x.h.Bare(hubRepo), KindAdopted); err != nil {
+		t.Fatal(err)
+	}
+	x.branch("claude/sq", "s.txt")
+	x.branch("claude/open", "o.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
+	ident := []string{"-c", "user.name=t", "-c", "user.email=t@example.com"}
+	git(t, x.work, "checkout", "-q", "main")
+	git(t, x.work, "merge", "--squash", "claude/sq")
+	git(t, x.work, append(ident, "commit", "-q", "-m", "squash")...)
+	git(t, x.work, "push", "-q", forge, "main:refs/heads/main")
+	git(t, ck, "fetch", "-q", "origin")
+
+	orch := roomCard("sg4", "ORCH")
+	out, err := x.push(orch, hubRepo, ":refs/heads/claude/open")
+	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+		t.Errorf("a branch the forge's main lacks: %v\n%s", err, out)
+	}
+	x.must(x.push(orch, hubRepo, ":refs/heads/claude/sq"))
+	if got := x.refOn(hubRepo, "refs/heads/claude/sq"); got != "" {
+		t.Errorf("claude/sq is still there at %s", got)
+	}
+}

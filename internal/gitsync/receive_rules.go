@@ -196,9 +196,35 @@ func (rc *Receiver) askCard(ctx context.Context, room, card string) ownerVerdict
 	return ownerVerdict{err: err}
 }
 
+// orchDeletesMerged says whether the pusher holds the orchestrator role and the branch's tip is already in main,
+// claude/main or the forge's main, so deleting it loses no commit. A branch it does not hold is still the owner's
+// alone.
+func (rc *Receiver) orchDeletesMerged(ctx context.Context, dir string, p Pusher, tip string) bool {
+	if rc.h.IsOrchestrator == nil || !rc.h.IsOrchestrator(p.Room, p.Card) {
+		return false
+	}
+	for _, into := range []string{MainRef, ClaudeMainRef, ForgeRefPrefix + "main"} {
+		if ok, err := rc.h.Store().isAncestor(ctx, dir, tip, into); err == nil && ok {
+			return true
+		}
+		// A squash or a cherry-pick leaves the tip off main's history, so a branch that adds nothing is also merged:
+		// merging it into main changes no file.
+		s := rc.h.Store()
+		merged, err := s.git(ctx, dir, gitexec.MergeTree{Branch1: into, Branch2: tip})
+		if err != nil {
+			continue
+		}
+		have, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: into + "^{tree}", Quiet: true})
+		if err == nil && strings.TrimSpace(strings.SplitN(merged, "\n", 2)[0]) == strings.TrimSpace(have) {
+			return true
+		}
+	}
+	return false
+}
+
 // decide applies the rules to every update of a push, with the repository's lock held. `cur` is the
 // repository's branches and tags as they are now, and nothing in it is trusted from the client.
-func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushRequest, cur map[string]string,
+func (rc *Receiver) decide(ctx context.Context, repo, dir string, p Pusher, req pushRequest, cur map[string]string,
 	names map[string]string, asked map[string]ownerVerdict) decision {
 
 	d := decision{bad: map[string]string{}}
@@ -237,7 +263,7 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 				switch {
 				case err != nil:
 					d.fail(ref, "the hub could not read who owns "+label)
-				case !ok || room != p.Room || card != p.Card:
+				case (!ok || room != p.Room || card != p.Card) && !rc.orchDeletesMerged(ctx, dir, p, have):
 					d.fail(ref, "deleting "+label+" is refused. a card deletes only a branch it pushed")
 				case !strings.HasPrefix(label, "claude/"):
 					d.fail(ref, "deleting "+label+" is refused. a card deletes only a claude/* branch it pushed")

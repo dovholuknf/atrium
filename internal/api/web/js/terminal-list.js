@@ -497,7 +497,7 @@ function placeOneBridge(bridge, card, side) {
   if (lay) lay.classList.add("bridged");
   // Nothing attached, or the list is not beside the terminal to begin with.
   // In `off` the list floats OVER the pane, so there is no gutter to cross.
-  if (!lay || !card || (termListMode === "off" && !side.chat) || !side.live) { bridge.hidden = true; return; }
+  if (!lay || !card || (termListMode === "off" && !side.chat) || !side.live || document.querySelector("#walk-drawer:not([hidden])")) { bridge.hidden = true; return; }
 
   const l = lay.getBoundingClientRect();
   const c = card.getBoundingClientRect();
@@ -1132,6 +1132,21 @@ function termTintOf(inherit) {
   const light = 0.299 * own.r + 0.587 * own.g + 0.114 * own.b > 150;
   const layer = light ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
   return Object.assign({}, inherit, { background: rgbHex(mixRGB(layer, own, TERM_SHADE)) });
+}
+
+// The tint a nested child wears, from its nearest coloured launcher as `termNest` nests it, so its pane matches its row.
+function termInheritedTheme(t) {
+  const list = typeof lastTasks === "undefined" || !lastTasks ? [] : lastTasks;
+  const byBare = new Map(list.map(c => [bareId(c.id), c]));
+  const seen = new Set();
+  for (let c = byBare.get(bareId(t.id)) || t; c && nestsUnderLauncher(c) && !c.pinned && !seen.has(c.id);) {
+    seen.add(c.id);
+    const up = launcherOf(c, list, byBare);
+    const own = up && themeSource(up);
+    if (own) return termTintOf(own);
+    c = up;
+  }
+  return null;
 }
 
 function termRowWear(t, inherit) {

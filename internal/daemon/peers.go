@@ -651,7 +651,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	}
 	// Held for a new-context cycle or a room deploy: queued, delivered after the
 	// wake prompt.
-	if d.HoldingFrom(target.ID, from) {
+	if d.HoldingFrom(target.ID, from) || d.stop.stopping() {
 		return false, ""
 	}
 	run := d.sup.Get(target.ID)

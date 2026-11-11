@@ -2026,6 +2026,12 @@ function connect() {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
     tasksSoon();
   });
+  // A stop waiting for its sessions to go quiet before it restarts. See internal/daemon/stopkeep.go.
+  es.addEventListener("stop-hold", e => {
+    let d = {};
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    toast("restart held", "waiting for " + (d.why || "the sessions to go quiet"));
+  });
   es.addEventListener("going-down", e => {
     let why = "";
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}

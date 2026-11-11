@@ -544,6 +544,15 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	}
 	names := rc.checkNames(ctx, req)
 	asked := rc.askOwners(ctx, ref.Name(), who, req)
+	if !who.Operator && rc.h.IsOrchestrator != nil && rc.h.IsOrchestrator(who.Room, who.Card) {
+		for _, u := range req.Updates {
+			// A squash PR lands on the forge's main before claude/main, so a delete reads a fresh copy of it.
+			if u.New == zeroSHA {
+				_, _ = rc.h.Store().FetchForgeBranch(ctx, ref.Name(), "main")
+				break
+			}
+		}
+	}
 
 	name := ref.Name()
 	l := rc.h.lock("store:" + strings.ToLower(name))
@@ -566,6 +575,9 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 				if why := mirrorRefuses(name, u.Ref, r.Branch); why != "" {
 					refuseAll(why)
 					return
+				}
+				if u.New == zeroSHA {
+					rc.h.carryForgeMain(ctx, r, dir)
 				}
 			}
 		}
@@ -590,7 +602,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		}
 	}
 
-	dec := rc.decide(ctx, name, who, req, cur, names, asked)
+	dec := rc.decide(ctx, name, dir, who, req, cur, names, asked)
 	if len(dec.bad) > 0 {
 		rc.h.audit(who.Room, "git-hub-push-refused", fmt.Sprintf("%s refs=%d card=%s", name, len(req.Updates), who.Card))
 		resp.reset()

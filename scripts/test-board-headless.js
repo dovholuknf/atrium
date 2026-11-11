@@ -6855,6 +6855,7 @@ async function heldEnvelopeSection(browser, base) {
         await p.goto(base, { waitUntil: "domcontentloaded" });
         await p.evaluate(() => switchView("terms"));
         await p.waitForSelector(".card .chip.queued, .stackrow .chip.queued", { state: "attached", timeout: slow(15000) });
+        await p.evaluate(() => { const l = document.getElementById("term-layout"); if (l) l.style.setProperty("--termw", "400px"); }); // the room pill hides under 275px
         await p.evaluate(() => {
           const c = document.querySelector(".card .chip.queued, .stackrow .chip.queued").parentElement;
           if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-sg4</span>');
@@ -6954,7 +6955,7 @@ async function cardRowChipsSection(browser, base) {
         const r = (e) => e.getBoundingClientRect();
         const k = r(card);
         const titles = [...card.querySelectorAll(".tname, .tpath")].filter(e => r(e).width > 0);
-        const chips = [...card.querySelectorAll(".card-line > .chips > .chip")];
+        const chips = [...card.querySelectorAll(".card-line > .chips > .chip")].filter(c => c.offsetWidth); // the room pill is hidden under 275px
         const over = [];
         for (const c of chips) for (const t of titles) {
           const box = r(c.parentElement), cr = r(c), a = { left: Math.max(cr.left, box.left), right: Math.min(cr.right, box.right), top: cr.top, bottom: cr.bottom }, b = r(t);
@@ -11955,8 +11956,9 @@ async function walkSection(browser, base) {
       const leaks = names.filter(f => /^Leak:/m.test(read(f))).length;
       if (r.filter(x => x.leak).length !== leaks) fail(nm + "leak marks " + r.filter(x => x.leak).length + " vs " + leaks);
       if (!r.every(x => /^(HIGH|MED|LOW|NIT|BLOCKING)/.test(x.sev))) fail(nm + "a severity chip is missing: " + JSON.stringify(r.map(x => x.sev)));
-      const segs = await p.$$eval("#walk-bar i", e => e.length);
-      if (segs !== s.n) fail(nm + "progress has " + segs + " segments, not " + s.n);
+      const lab = await p.textContent("#t-walk");
+      if (lab.trim() !== "walk " + s.n + (s.n === 1 ? " finding" : " findings")) fail(nm + "the walk button reads " + lab);
+      if (await p.$("#t-walk i, #walk-bar")) fail(nm + "a segment bar is drawn.");
 
       // The code comes from pr.diff, with context around the anchored line.
       const code = await p.$$eval(S + ".wk-code .wk-l", e => e.length);
@@ -12259,7 +12261,7 @@ async function walkContextSection(browser, base) {
     if (sc.top > tb.bottom - 100) fail("walkContext: ask left the sheet shut");
     const sent = (await pp.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in");
     if (sent.length !== 1 || !/^about 01 a\.go:12, $/.test(sent[0].d)) fail("walkContext: ask typed " + JSON.stringify(sent));
-    await pp.click(S + ".walk-head .icon");
+    await pp.click(S + ".walk-head .walk-close");
     await pp.waitForFunction(() => !document.querySelector(".term-body").classList.contains("sheet-open"), null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(pp).catch(() => {});
     if (await pp.evaluate(() => document.querySelector(".term-body").classList.contains("sheet-open"))) fail("walkContext: closing the drawer left the sheet up");
     sc = await box("#t-screen");
@@ -12301,9 +12303,9 @@ async function walkBranchSection(browser, base) {
     fs.mkdirSync(path.join(tmp, k, "findings"), { recursive: true });
     mock.walkDirs[k] = path.join(tmp, k);
   }
-  mock.walkBranch[ids.ok] = { code: 200, body: { branch: "feature", base: "main", diff: patch } };
+  mock.walkBranch[ids.ok] = { code: 200, body: { branch: "claude/feature", base: "main", diff: patch } };
   // The button's probe is answered, and the base is gone for every read after it.
-  mock.walkBranch[ids.bad] = { code: 200, body: { branch: "feature", base: "main", diff: patch },
+  mock.walkBranch[ids.bad] = { code: 200, body: { branch: "claude/feature", base: "main", diff: patch },
     then: { code: 409, body: { error: "no base to compare feature with: looked for origin/HEAD, origin/main, main" } } };
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -12351,7 +12353,7 @@ async function walkBranchSection(browser, base) {
       .catch(() => fail("walkBranch: no files listed for a card with no findings"));
     const rows = await p.$$eval(S + ".wk-row .wk-fn", els => els.map(e => e.textContent));
     if (rows.join() !== "base.txt,one.txt,two.txt") fail("walkBranch: the files are " + rows.join());
-    if (await p.$eval("#walk-title", e => e.textContent) !== "feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
+    if (await p.$eval("#walk-title", e => e.textContent) !== "claude/feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
     await shot(p, "first-file");
     const lay = await p.evaluate(() => {
       const d = document.getElementById("walk-drawer"), f = document.getElementById("walk-files"), r = document.getElementById("walk-rail");
@@ -12718,7 +12720,7 @@ async function walkNoResizeSection(browser, base) {
       if (open.sent.length) fail(nm + "opening the walk sent a resize: " + JSON.stringify(open.sent));
       const tops = await p.$$eval("#walk-rail .wk-row", els => els.map(e => Math.round(e.getBoundingClientRect().top)));
       if (!(tops.length === 2 && tops[1] > tops[0])) fail(nm + "the rail's rows are not stacked: " + JSON.stringify(tops));
-      await p.click("#walk-drawer .walk-head .icon");
+      await p.click("#walk-drawer .walk-head .walk-close");
       await p.waitForTimeout(600); // wait: as above, the absence of a settled resize after the close.
       const shut = await look(p);
       if (shut.cols !== before.cols || shut.rows !== before.rows) fail(nm + "closing the walk moved the grid to " + shut.cols + "x" + shut.rows);
@@ -17101,10 +17103,45 @@ async function mOlderShort(browser) {
   } finally { await st.close(); }
 }
 
+// The address /m/alias/<a> with a short thread, prompts and open questions still draws the load older row, above the replies.
+async function mOlderDirect(browser) {
+  const st = mServer({});
+  const c = mCard("ol-3", { alias: "orch", display_title: "orch", status: "needs-input", waiting_since: mIso(2 * M_MIN),
+    seen: { turn_ended_at: mIso(M_MIN), answered: false, open_questions: ["which one?"], questions_at: mIso(M_MIN) } });
+  st.tasks = [c];
+  const rep = (i, min) => ({ at: mIso(min * M_MIN), text: "Reply " + i + ".", truncated: false });
+  st.replies["ol-3"] = { source: "transcript", replies: [rep(1, 9), rep(2, 6), rep(3, 3)], more: true, next_before: "d-A",
+    prompts: [{ at: mIso(7 * M_MIN), text: "a prompt", truncated: false, kind: "operator" }] };
+  st.pages = { "ol-3": before => before === "d-A" ? { body: { source: "transcript", replies: [rep(0, 30)], prompts: [], more: false } } : { status: 404, body: {} } };
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/*", route => {
+      const u = new URL(route.request().url());
+      if (/^\/m\/alias\//.test(u.pathname) && route.request().resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: fs.readFileSync(path.join(M_ROOT, "index.html")) });
+      if (u.pathname === "/v1/tasks/orch") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(c) });
+      return route.continue();
+    });
+    await p.goto(st.url + "/m/alias/orch", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(10000) });
+    if (!(await p.$("#m-older"))) fail("mOlder direct: no load older row on the alias address");
+    else {
+      await p.tap("#m-older");
+      await p.waitForFunction(() => /Reply 0\./.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    }
+    if (errors.length) fail("mOlder direct: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+}
+
 // "load older" at two viewport heights and at the smallest and largest pinch sizes, so it does not rest on one machine's layout.
 async function mOlderSection(browser) {
   for (const cfg of [{ h: 915, fs: 0 }, { h: 700, fs: 0 }, { h: 915, fs: 11 }, { h: 700, fs: 24 }]) await mOlderRun(browser, cfg);
   await mOlderShort(browser);
+  await mOlderDirect(browser);
   if (!bad) console.log("mOlder ok");
 }
 
@@ -19077,8 +19114,8 @@ async function terminalsOneLineSection(browser, base) {
         document.body.appendChild(host);
         return [...host.querySelectorAll(".card")].map(c => {
           const cr = c.getBoundingClientRect();
-          const tops = [...c.querySelectorAll(".chips .chip, .tkidfold")].map(x => Math.round(x.getBoundingClientRect().top));
-          const right = Math.max(...[...c.querySelectorAll(".chips .chip, .tkidfold")].map(x => x.getBoundingClientRect().right), 0);
+          const tops = [...c.querySelectorAll(".chips .chip, .tkidfold")].filter(x => x.offsetWidth).map(x => Math.round(x.getBoundingClientRect().top));
+          const right = Math.max(...[...c.querySelectorAll(".chips .chip, .tkidfold")].filter(x => x.offsetWidth).map(x => x.getBoundingClientRect().right), 0);
           return { h: Math.round(cr.height), tops, overflow: Math.round(right - cr.right), cw: Math.round(cr.width),
             titleBottom: Math.round(c.querySelector(".title").getBoundingClientRect().bottom) };
         });
@@ -21393,18 +21430,18 @@ async function termRowChipsSection(browser, base) {
       const list = document.createElement("div");
       list.id = "termrow-probe";
       list.className = "term-list";
-      list.style.cssText = "position:fixed;left:10px;top:10px;width:260px;z-index:99999;display:block";
+      list.style.cssText = "position:fixed;left:10px;top:10px;width:300px;z-index:99999;display:block";
       list.innerHTML = `<div class="termscroll"><div class="card tab"><div class="card-line">
         <div class="title"><span class="pin">&#9734;</span><span class="tstack"
           ><span class="tname">ziti-hook minion: builds what ziti-edge-tunnel needs before it can run</span
           ><span class="tpath">github/dovholuknf/atrium:claude/ziti-hook-minion-builds-things</span></span></div>
-        <div class="chips"><span class="chip warn">? 1</span><span class="chip room" style="--rhue:200">claude-sg4</span></div>
+        <div class="chips"><span class="chip warn">? 1</span><span class="chip arrived">new</span><span class="chip room" style="--rhue:200">claude-sg4</span></div>
       </div></div></div>`;
       document.body.appendChild(list);
       const fit = el => ({ scroll: el.scrollWidth, client: el.clientWidth });
       const room = list.querySelector(".chip.room");
       return {
-        room: fit(room), badge: fit(list.querySelector(".chip.warn")),
+        room: fit(room), badge: fit(list.querySelector(".chip.warn")), fresh: fit(list.querySelector(".chip.arrived")), freshRight: list.querySelector(".chip.arrived").getBoundingClientRect().right,
         name: fit(list.querySelector(".tname")), path: fit(list.querySelector(".tpath")),
         card: list.querySelector(".card").getBoundingClientRect().right,
         roomRight: room.getBoundingClientRect().right,
@@ -21417,6 +21454,7 @@ async function termRowChipsSection(browser, base) {
     if (got.room.scroll > got.room.client) fail("the room chip is cut: " + JSON.stringify(got));
     if (got.room.client < 40) fail("the room chip shrank: " + JSON.stringify(got));
     if (got.badge.scroll > got.badge.client) fail("the questions badge is cut: " + JSON.stringify(got));
+    if (got.fresh.scroll > got.fresh.client || got.freshRight > got.card + 1) fail("the new chip is cut: " + JSON.stringify(got));
     if (got.name.scroll <= got.name.client) fail("the title did not ellipsize at a narrow list width: " + JSON.stringify(got));
     if (got.path.scroll <= got.path.client) fail("the path line did not ellipsize at a narrow list width: " + JSON.stringify(got));
     if (got.roomRight > got.card + 1) fail("the room chip runs past the card: " + JSON.stringify(got));
@@ -23311,6 +23349,90 @@ async function selectedFitsSection(browser, base) {
     if (errors.length) fail("selectedFits: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("selectedFits ok");
+}
+
+// A CHILD ROW STAYS IN ITS COLUMN. A parent with a child, drawn pinned and again in a group, the child attached and
+// not, on a wide window and on one under 900px, where the header's `.tab` rule also reaches a row: every child row
+// ends inside the box the rows scroll in, as a top level row does. Attached, both copies bridge into the pane,
+// and the pane wears the tint the child row does.
+async function childFitsSection(browser, base) {
+  for (const vw of [1400, 800]) await childFitsAt(browser, base, vw);
+  if (!bad) console.log("childFits ok");
+}
+async function childFitsAt(browser, base, vw) {
+  const ctx = await browser.newContext({ viewport: { width: vw, height: 900 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["orchestrators"] }));
+      localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+    });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderTermList === "function" && typeof placeTabBridge === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: at, worktree: "/r/" + id, ...extra });
+      const cards = [card("orch", "2026-09-01T10:00:00Z", { pinned: true, tags: ["orchestrators"], theme: "admin-caution" }),
+        card("kid", "2026-09-02T10:00:00Z", { tags: ["atrium:subagent"], spawned_by_id: "orch",
+          display_title: "walk-mini-bar-cap with a name long enough to fill the row " + "and then run on past the list column".repeat(3) }),
+        card("lone", "2026-09-03T10:00:00Z", { pinned: true })];
+      boardCards = async () => cards;
+      lastTasks = cards;
+      if (!termSubsOn()) toggleTermShow("subagents");
+      term = term || { options: {}, dispose() {} };
+      termTask = cards[2];
+      switchView("terms");
+    });
+    const skin = process.env.CHILD_FITS_SKIN || "";
+    if (skin) await p.evaluate(s => applySkin(s), skin);
+    const settle = () => p.evaluate(async () => { await renderTermList(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+      placeTabBridge(); r();
+    }))); });
+    const read = () => p.evaluate(() => {
+      const box = document.querySelector("#term-list .termscroll");
+      const right = el => Math.round(el.getBoundingClientRect().right);
+      return { col: Math.round(box.getBoundingClientRect().left + box.clientLeft + box.clientWidth),
+        kids: [...document.querySelectorAll('#term-list .tkids .card.tab[data-id="kid"]')].map(c =>
+          ({ right: right(c), on: c.classList.contains("on"), grouped: !!c.closest(".tnest[data-group]"),
+            top: Math.round(c.getBoundingClientRect().top) })),
+        bridges: [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden)
+          .map(b => Math.round(b.getBoundingClientRect().top)),
+        tops: [...document.querySelectorAll("#term-list .card.tab")].filter(c => !c.closest(".tkids")).map(right) };
+    });
+    const shots = process.env.CHILD_FITS_SHOTS || "";
+    for (const pick of ["lone", "kid"]) {
+      await p.evaluate(id => { termTask = { ...termTask, id }; }, pick);
+      for (const w of [200, 260, 420]) {
+        await p.evaluate(w => { termListW = w; applyTermList(); }, w);
+        await settle();
+        const g = await read();
+        const tag = "childFits: " + vw + "px window, " + pick + " attached, list at " + w + "px: ";
+        if (g.kids.length !== 2 || !g.kids.some(k => k.grouped) || !g.kids.some(k => !k.grouped)) fail(tag + "want the child drawn pinned and in its group: " + JSON.stringify(g));
+        if (pick === "kid" && !g.kids.every(k => k.on)) fail(tag + "the child is not drawn attached: " + JSON.stringify(g));
+        if (pick === "kid" && vw > 900 && (g.bridges.length !== 2 || g.kids.some(k => !g.bridges.includes(k.top)))) {
+          fail(tag + "want a bridge from each copy of the child: " + JSON.stringify(g));
+        }
+        if (pick === "kid") {
+          const bg = await p.evaluate(() => {
+            paintPaneBg(themeFor(termTask));
+            const row = document.querySelector('#term-list .card.tab.on[data-id="kid"]');
+            return { row: row && getComputedStyle(row).getPropertyValue("--tabbg").trim(),
+              pane: getComputedStyle(document.getElementById("term-pane")).getPropertyValue("--term-bg").trim() };
+          });
+          if (!bg.row || bg.row !== bg.pane) fail(tag + "the pane is not in the child row's colours: " + JSON.stringify(bg));
+        }
+        if (g.kids.some(k => k.right > g.col)) fail(tag + "a child row runs past its column: " + JSON.stringify(g));
+        if (g.tops.some(r => r > g.col)) fail(tag + "a top level row runs past its column: " + JSON.stringify(g));
+        if (shots && pick === "kid" && w === 260) {
+          fs.mkdirSync(shots, { recursive: true });
+          await p.screenshot({ path: path.join(shots, "child-fits-" + vw + "-" + (process.env.CHILD_FITS_TAG || "after") + ".png") });
+        }
+      }
+    }
+    if (errors.length) fail("childFits: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
 }
 
 async function collapsedBridgeSection(browser, base) {
@@ -26841,7 +26963,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -28990,6 +29112,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("selectedFits", () => selectedFitsSection(browser, base));
+    await unit("childFits", () => childFitsSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));

@@ -242,6 +242,54 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 	}
 }
 
+// A stop waits for a hook call in flight and for a say already held to be typed, and holds every new say in the store.
+func TestStopWaitsForQuietHooksAndHeldSays(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	task, _ := hostRunnerCard(t, d, "gate-quiet")
+	d.gatePoll = 10 * time.Millisecond
+
+	d.hooksIn.Add(1)
+	d.pending.mu.Lock()
+	d.pending.by[task.ID] = &heldTell{entries: []pendingMsg{{msgID: "m1", text: "held before the stop"}}}
+	d.pending.mu.Unlock()
+	done := make(chan struct{})
+	go func() { d.shortGate(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("the stop went ahead with a hook call in flight")
+	case <-time.After(300 * time.Millisecond):
+	}
+	d.hooksIn.Add(-1)
+	select {
+	case <-done:
+		t.Fatal("the stop went ahead with a say still to type")
+	case <-time.After(300 * time.Millisecond):
+	}
+	d.pending.drop(task.ID)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stop is still waiting once the hooks and says are quiet")
+	}
+
+	d.stop.begin()
+	d.deferPeerInjection(task.ID, "m2", "", "said during the stop", "", false)
+	if id := d.pending.waitingCard(); id != "" {
+		t.Fatalf("a say made during the stop was held for typing into %s, want it left in the store", id)
+	}
+	if d.HoldingFrom(task.ID, "") {
+		t.Fatal("the test needs no other hold on the card")
+	}
+	if typed, _ := d.tellByTyping(task, "peer", "said during the stop", "", false); typed {
+		t.Fatal("a say was typed in during the stop")
+	}
+}
+
 func TestHostStateCountsHostRunners(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")

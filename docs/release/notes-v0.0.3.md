@@ -1,0 +1,30 @@
+# atrium v0.0.3
+
+## Highlights
+
+- Run a room as a Windows service, installed and managed with `atrium service`, so it starts with the machine.
+- Walk a pull request in its own tab: read the diff and the agent's findings, and reply on each one to the reviewer.
+- A redesigned new agent dialog: paste a repo or PR link, pick a group, start a quick throwaway or clone a card.
+- Start a chat card with no tools at all, and it asks you for only what it needs as it goes.
+- Terminals live in their own host process, so a room restart reattaches to running cards instead of losing them.
+- The hub keeps your code, lands branches with `atrium merge`, and reaches rooms over direct TLS, ziti or zrok.
+- A repo can list the tools it needs, and a room checks them before a card starts.
+- The board warns you when a runner's login has expired or is about to, and shows the command that fixes it.
+
+## Also
+
+- **Board and terminals:** more than 20 new terminal themes, a paste bar, drag a card into a group, a + on each group,
+  quieter rows, a tidier card menu, and many phone layout fixes.
+- **Cards and context:** idle cards stay warm, then hand off cleanly when they go cold. Resume, restart and wake say
+  plainly what they did, and a paused card wakes when you message it.
+- **Sessions from outside atrium:** a session started elsewhere shows as a tile and can be moved into atrium.
+- **Rooms and the hub:** the hub creates a repo on its first push, counts squash merged branches as merged and
+  restarts a room's terminal host on request. Shared names on a hub board carry their room.
+- **Runners:** better Codex support, with trusted worktrees and hooks it accepts.
+- **Git:** a branch already held by another worktree is refused before launch, and git 2.43 works.
+- **Versions:** every build reports its version and commit, and the board reloads onto a new build when idle.
+- **Security:** paths, names and git arguments from outside are checked before they reach the disk or a command.
+- **Reliability:** steadier Windows deploys and process cleanup, CI jobs that time out instead of hanging, and many
+  flaky tests fixed.
+
+The installers in this release are unsigned. Check them against `checksums.txt`.

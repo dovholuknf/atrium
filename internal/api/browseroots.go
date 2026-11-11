@@ -63,6 +63,9 @@ const SettingSharedLocation = "shared_location"
 // unreachable by exactly the person who needed it.
 const SettingShellCommand = "shell_command"
 
+// SettingLoginCommand is stored on the room it logs in, and empty means the board's default ssh line.
+const SettingLoginCommand = "login_command"
+
 // browseRootsFor is the allowed set, resolved.
 //
 // Resolved rather than compared as text, because the whole point of the check

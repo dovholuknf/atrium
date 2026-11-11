@@ -4,11 +4,14 @@ package cli
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // withStdin hands the command a hook payload the way Claude Code does, through
@@ -136,6 +139,52 @@ func TestTurnKeepsGoingWhenAtriumIsNotThere(t *testing.T) {
 	got := turnEnded("http://127.0.0.1:1", "end", "probe", "")
 	if !strings.Contains(got, "turn --event end") || strings.Contains(got, "block") || strings.Contains(got, "additionalContext") {
 		t.Fatalf("got %q, wanted the warning alone with no daemon", got)
+	}
+}
+
+// A room restarting refuses the connection for a moment. The turn end is posted again once it listens, inside the
+// hook budget, so the turn ends through atrium and not past it.
+func TestTurnRetriesARefusedStop(t *testing.T) {
+	shortPermRetry(t, 2*time.Second)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	var stops atomic.Int32
+	up := make(chan *http.Server, 1)
+	go func() {
+		time.Sleep(300 * time.Millisecond) // wait: the room is down this long, as across a restart
+		l, err := net.Listen("tcp", addr)
+		if err != nil {
+			up <- nil
+			return
+		}
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/stop" {
+				stops.Add(1)
+			}
+			_, _ = w.Write([]byte("{}"))
+		})}
+		up <- srv
+		_ = srv.Serve(l)
+	}()
+	restore := withStdin(t, `{"cwd":"/w","hook_event_name":"Stop"}`)
+	defer restore()
+
+	start := time.Now()
+	got := turnEnded("http://"+addr, "end", "probe", "")
+	srv := <-up
+	if srv == nil {
+		t.Skip("the port was taken before the room came back")
+	}
+	defer srv.Close()
+	if got != keepGoing || stops.Load() != 1 {
+		t.Fatalf("got %q with %d turn ends posted, want one posted after the refusals and a plain continue", got, stops.Load())
+	}
+	if took := time.Since(start); took > hookBudget+500*time.Millisecond {
+		t.Fatalf("the Stop hook took %s, past its budget", took)
 	}
 }
 

@@ -29,7 +29,7 @@ const forgeRepo = "github/o/r"
 
 // newForgeFix is a hub whose store reads its forge from a local repository with main and, when branch is set, that
 // branch too. The store does not hold the repository yet.
-func newForgeFix(t *testing.T) *forgeFix {
+func newForgeFix(t *testing.T, set ...func(*Hub)) *forgeFix {
 	t.Helper()
 	f := newForge(t, "main")
 	x := &forgeFix{forge: f, down: &atomic.Bool{}, audits: &auditLog{}}
@@ -43,6 +43,9 @@ func newForgeFix(t *testing.T) *forgeFix {
 				return f.dir
 			}
 			return filepath.Join(filepath.Dir(f.dir), "no-such.git")
+		}
+		for _, fn := range set {
+			fn(h)
 		}
 	})
 	return x
@@ -617,5 +620,31 @@ func TestARefreshThatFailsIsAuditedAndRecoveryToo(t *testing.T) {
 	}
 	if !strings.Contains(x.audits.text(), "git-store-forge-refresh recovered") {
 		t.Fatalf("audit = %q, want the recovery", x.audits.text())
+	}
+}
+
+// A squash PR lands on the forge's main before claude/main, and the orchestrator's delete reads the forge's main.
+func TestOrchestratorDeletesABranchTheForgesMainSquashed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newForgeFix(t, func(h *Hub) {
+		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+	})
+	git(t, x.work, "fetch", "-q", x.forge.dir, "main")
+	x.branchOff("claude/sq", "FETCH_HEAD", "s.txt")
+	x.branchOff("claude/open", "FETCH_HEAD", "o.txt")
+	x.must(x.push(roomCard("sg4", "C1"), forgeRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
+	x.forge.push(t, "main", "s.txt", "claude/sqs.txt", 3000)
+
+	orch := roomCard("sg4", "ORCH")
+	out, err := x.push(orch, forgeRepo, ":refs/heads/claude/open")
+	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
+		t.Errorf("a branch the forge's main lacks: %v\n%s", err, out)
+	}
+	x.must(x.push(orch, forgeRepo, ":refs/heads/claude/sq"))
+	if got := x.refOn(forgeRepo, "refs/heads/claude/sq"); got != "" {
+		t.Errorf("claude/sq is still there at %s", got)
 	}
 }

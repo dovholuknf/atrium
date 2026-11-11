@@ -32,8 +32,9 @@ func walkStr(m map[string]any, k string) string {
 }
 
 // walkMerge folds the agent's lines into a saved walk and reports how many comments and replies were new. A line
-// is a new comment ({file, line, text, scope?, summary?}) or a reply ({reply: <comment id>, text}). An id is a hash
-// of the line's content, so reading the file again adds nothing, and an id in `gone` is a comment the walker deleted.
+// is a new comment ({file, line, text, scope?, summary?}) or a reply ({reply: <comment id>, text}). The nth
+// {reply: "whole", text} answers the nth question of the whole-walk thread. An id is a hash of the line's content,
+// so reading the file again adds nothing, and an id in `gone` is a comment the walker deleted.
 func walkMerge(state map[string]any, lines [][]byte) int {
 	comments, _ := state["comments"].([]any)
 	gone, _ := state["gone"].([]any)
@@ -51,7 +52,7 @@ func walkMerge(state map[string]any, lines [][]byte) int {
 		}
 		return false
 	}
-	added := 0
+	added, wholes := 0, 0
 	for _, raw := range lines {
 		var in map[string]any
 		if json.Unmarshal(raw, &in) != nil {
@@ -59,6 +60,17 @@ func walkMerge(state map[string]any, lines [][]byte) int {
 		}
 		text := walkStr(in, "text")
 		if text == "" {
+			continue
+		}
+		if walkStr(in, "reply") == "whole" {
+			thread, _ := state["thread"].([]any)
+			if wholes < len(thread) {
+				if m, ok := thread[wholes].(map[string]any); ok && walkStr(m, "a") == "" {
+					m["a"] = text
+					added++
+				}
+			}
+			wholes++
 			continue
 		}
 		if to := walkStr(in, "reply"); to != "" {

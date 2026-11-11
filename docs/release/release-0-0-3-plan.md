@@ -1,4 +1,4 @@
-# Release 0.0.1: the plan
+# Release 0.0.3: the plan
 
 Status: planned, not run. The repository has no release tag as of 2026-10-07.
 
@@ -11,8 +11,8 @@ They are in the item file too.
 
 | Question | Decision |
 | --- | --- |
-| Version string and tag | `0.0.1`, tag `v0.0.1`, on the claude/main sha the orchestrator names at release time. |
-| Signing | Unsigned for 0.0.1. `checksums.txt` is published with the assets and the notes say the installers are unsigned. Signing is the later item `m-new-release-signing`. |
+| Version string and tag | `0.0.3`, tag `v0.0.3`, on the claude/main sha the orchestrator names at release time. |
+| Signing | Unsigned for 0.0.3. `checksums.txt` is published with the assets and the notes say the installers are unsigned. Signing is the later item `m-new-release-signing`. |
 | Channels | GitHub Release (archives, deb, rpm, checksums), the scoop bucket, and the docs site. The brew tap and the one-line install stay in the far backlog. |
 | Who tags | `scripts/cut-release.sh --execute` from clint's machine for the first release, then the workflow once it has worked. |
 
@@ -36,7 +36,7 @@ They are in the item file too.
 | Tag, push, release upload | clint |
 | Scoop bucket commit and push | clint |
 | Docs site publish | the `docs` workflow on a published release, started by clint |
-| Brew tap | not in 0.0.1 |
+| Brew tap | not in 0.0.3 |
 
 Agents run none of them.
 
@@ -53,30 +53,30 @@ git status --short                      # must print nothing
 env -u ATRIUM_LOCATION -u ATRIUM_DEBUG_INPUTLAG bash scripts/ci.sh
 
 # 1. Cheap refusals only.
-bash scripts/cut-release.sh v0.0.1 --preflight
+bash scripts/cut-release.sh v0.0.3 --preflight
 
 # 2. Full dry run. Builds all platforms, checks the stamped version and the reproducible build,
-#    writes build.claude/release/v0.0.1/scoop/atrium.json. Touches nothing remote.
-bash scripts/cut-release.sh v0.0.1
+#    writes build.claude/release/v0.0.3/scoop/atrium.json. Touches nothing remote.
+bash scripts/cut-release.sh v0.0.3
 
 # 3. Tag, push the tag and publish the release. Pushing the tag fires release.yml, which runs the same
 #    script, so one of the two finds the release already there. Use this one the first time.
-bash scripts/cut-release.sh v0.0.1 --execute
+bash scripts/cut-release.sh v0.0.3 --execute
 
 # 4. The scoop bucket, in the bucket repository and not this one.
-cp build.claude/release/v0.0.1/scoop/atrium.json <bucket>/bucket/atrium.json
-cd <bucket> && git add bucket/atrium.json && git commit -m "atrium 0.0.1" && git push
+cp build.claude/release/v0.0.3/scoop/atrium.json <bucket>/bucket/atrium.json
+cd <bucket> && git add bucket/atrium.json && git commit -m "atrium 0.0.3" && git push
 
 # 5. On any Windows machine, the real test of the release shape.
 scoop bucket add dovholuknf https://github.com/dovholuknf/scoop-bucket
 scoop install atrium
-atrium version                          # v0.0.1
+atrium version                          # v0.0.3
 
 # 6. The docs site. Publishing the release in step 3 already triggers it. To run it by hand instead:
 gh workflow run docs.yml --repo dovholuknf/atrium
 ```
 
-If step 3 fails after the tag is pushed, do not move the tag. Fix forward with `v0.0.2`.
+If step 3 fails after the tag is pushed, do not move the tag. Fix forward with `v0.0.4`.
 
 ## The docs site
 

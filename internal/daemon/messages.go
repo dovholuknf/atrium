@@ -740,7 +740,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	//
 	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
 	// words still go. See roomhold.go.
-	holding := d.HoldingFrom(taskID, from)
+	holding := d.HoldingFrom(taskID, from) || d.stop.stopping()
 	// FORCE: types now, past the typing gate and the turn rule. Only a dialog or a new-context cycle refuses it, and
 	// it says so rather than queueing, because the sender asked for now.
 	if body.Force && gate == sayOK && !woke {

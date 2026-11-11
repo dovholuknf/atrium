@@ -56,6 +56,12 @@
   .walk-nav button { white-space: nowrap; padding: 2px 8px; font-size: var(--fs-xs); }
   .walk-nav .by { min-width: 8em; }
   .walk-head button { flex: none; }
+  .walk-head { min-width: 0; flex-wrap: wrap; row-gap: var(--vs-1); }
+  .walk-head a.wk-pr { flex: 0 1 auto; overflow: hidden; }
+  .walk-head a.wk-pr strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+  .walk-head #walk-note { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .walk-head .walk-close { margin-left: var(--sp-4); }
+  #t-walk { flex: none; white-space: nowrap; }
   .walk-nav kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); margin-left: 4px; }
   .walk-head strong { color: var(--head); font-size: var(--fs-md); white-space: nowrap; }
   .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
@@ -64,21 +70,6 @@
     all: unset; position: absolute; top: 0; left: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
   }
   .walk-grip:hover, .walk-grip:focus-visible { background: rgba(var(--teal-rgb),.25); }
-
-  /* Progress: one segment per item, coloured by severity, filled when done. */
-  .walk-bar, .wk-mini { display: inline-flex; gap: 2px; align-items: center; }
-  .walk-bar i, .wk-mini i {
-    display: block; width: 8px; height: 10px; border-radius: 2px;
-    border: 1px solid var(--seg, var(--dim)); background: transparent;
-    transition: background .25s;
-  }
-  .wk-mini { margin-left: var(--sp-2); }
-  .wk-mini i { width: 4px; height: 9px; }
-  .walk-bar i.s-high, .wk-mini i.s-high { --seg: var(--sev-high); }
-  .walk-bar i.s-med, .wk-mini i.s-med { --seg: var(--sev-med); }
-  .walk-bar i.s-low, .wk-mini i.s-low { --seg: var(--sev-low); }
-  .walk-bar i.s-nit, .wk-mini i.s-nit { --seg: var(--sev-nit); }
-  .walk-bar i.done, .wk-mini i.done { background: var(--seg); }
 
   /* The rail. */
   /* `display: block` undoes chrome.css's bare `nav` rule, which lays the rows side by side. */
@@ -344,11 +335,15 @@
   .wk-fn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .wk-fc { margin-left: auto; color: var(--dim); font-size: var(--fs-xs); }
   .cmt {
-    resize: both; overflow: auto; min-width: 300px; min-height: 90px; max-width: 100%; box-sizing: border-box;
+    resize: both; overflow: auto; min-width: 300px; min-height: 90px; max-width: 90%; box-sizing: border-box;
     display: flex; flex-direction: column; margin: 6px 0 8px 5.2ch; padding: 8px 12px; white-space: normal;
     border: 1px solid var(--stroke-dim); border-left: 3px solid var(--teal); border-radius: var(--r-md);
     background: rgb(var(--shell0-rgb)); font: var(--fs-sm)/1.45 system-ui, sans-serif; color: var(--body);
   }
+  .wk-wait { display: flex; align-items: center; gap: var(--sp-2); margin: 4px 0; color: var(--dim); font: var(--fs-xs) var(--mono); }
+  .wk-wait .spin { width: 12px; height: 12px; border: 2px solid rgba(var(--teal-rgb),.3); border-top-color: var(--teal); border-radius: 50%; animation: wkspin .8s linear infinite; }
+  @keyframes wkspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .wk-wait .spin { animation-duration: 3s; } }
   .cmt.sel { outline: 2px solid var(--teal); outline-offset: 1px; }
   .cmt.you { --cb: var(--blue); }
   .cmt .chead { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 4px; font: var(--fs-xs) var(--mono); color: var(--dim); }

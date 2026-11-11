@@ -480,10 +480,9 @@ Exports honor whatever filter is applied.">?</span>
             width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"
             stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1
             1-1h3.5"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></button>
-          <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
-               finding. -->
+          <!-- Only when the card's directory holds findings, a pull request or a work branch's changes. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
-            data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
+            data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span id="t-walk-label">walk</span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
             aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it"><svg
             viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
@@ -610,7 +609,6 @@ Exports honor whatever filter is applied.">?</span>
             <div class="walk-head term-bar">
               <a id="walk-pr" class="wk-pr" target="_blank" rel="noopener"><strong id="walk-title"></strong></a>
               <span class="by" id="walk-note"></span>
-              <span class="walk-bar" id="walk-bar"></span>
               <span class="by" id="walk-count"></span>
               <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
@@ -620,8 +618,8 @@ Exports honor whatever filter is applied.">?</span>
                 data-tip="open the walk in a tab of its own">⧉ own tab</button>
               <button type="button" class="go" onclick="walkDone()"
                 data-tip="type walk done into the walker and submit it">walk done</button>
-              <button type="button" class="icon" onclick="walkClose()"
-                aria-label="close the walk" data-tip="close the walk">&times;</button>
+              <button type="button" class="walk-close" onclick="walkClose()"
+                data-tip="close this panel and keep the walk as it is (Esc)">close walk</button>
             </div>
             <div class="walk-nav" id="walk-nav" hidden>
               <span class="navgrp"><button type="button" data-act="pc" data-tip="previous change (p)">&#8249; previous <kbd>p</kbd></button><span class="by" id="walk-chg"></span><button type="button" data-act="nc" data-tip="next change (n)">next <kbd>n</kbd> &#8250;</button></span>
@@ -1008,6 +1006,7 @@ Pick a room and this whole board becomes that machine's atrium. Pick none and yo
     <div class="toolbar" style="margin-bottom:12px">
       <button class="go" onclick="openRoomJoin()">add a room</button>
       <button class="go" onclick="openDispatch('')">queue work for a machine</button>
+      <button class="go" onclick="openLoginRooms()">log in rooms</button>
     </div>
     <div id="room-list"></div>
 
@@ -2609,6 +2608,34 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+<dialog id="loginrooms" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">rooms</div><h2>log in rooms</h2></div>
+    <button onclick="document.getElementById('loginrooms').close()">close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="hintline dlg-lead">Opens one shell per ticked room in its own window with the login line already run.
+      Click the claude.com link it prints. Closing a window ends its shell.</p>
+    <section class="dlg-sec">
+      <div class="dlg-sec-h">which rooms</div>
+      <div id="ll-rows"></div>
+      <span class="hintline">The line is the room's login command setting. Empty means
+        <code>ssh -t &lt;room&gt; claude auth login</code>. An edit here is kept for that room when you open the shells.</span>
+    </section>
+    <section class="dlg-sec">
+      <div class="field">
+        <label class="eyebrow" for="ll-host">open the shells on</label>
+        <div class="picker"><select id="ll-host"></select></div>
+        <span class="hintline">The room the ssh line runs from, which is the machine you sit at.</span>
+      </div>
+    </section>
+  </div>
+  <div class="dlg-foot">
+    <span class="grow"></span>
+    <button class="go" id="ll-go" onclick="openLoginShells()">open shells</button>
+  </div>
+</dialog>
+
 <!-- What to run on the OTHER machine, with the parts this hub knows already
      filled in.
      No data-guard, and no save button, because nothing here is stored. A room
@@ -4024,6 +4051,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/cardurl.js"></script>
 <script src="/js/rooms.js"></script>
 <script src="/js/rooms-dash.js"></script>
+<script src="/js/loginrooms.js"></script>
 <script src="/js/audit.js"></script>
 <script src="/js/chatter.js"></script>
 <script src="/js/chat.js"></script>

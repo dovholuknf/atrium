@@ -135,6 +135,7 @@ type Server struct {
 	// `/v1/login-needed`, where DELETE lifts it. See internal/daemon/loginneeded.go.
 	LoginNeeded  func() map[string]any
 	LoginHandler http.HandlerFunc
+	LoginStatus  http.HandlerFunc
 	// ToolchainMissing is the tools a worker launched here lacked, for `/v1/health`: nil when fine.
 	ToolchainMissing func() map[string]any
 	// CancelPending answers every outstanding request on a task with a block.
@@ -972,6 +973,9 @@ func (s *Server) Handler() http.Handler {
 	if s.LoginHandler != nil {
 		mux.HandleFunc("GET /v1/login-needed", s.LoginHandler)
 		mux.HandleFunc("DELETE /v1/login-needed", s.LoginHandler)
+	}
+	if s.LoginStatus != nil {
+		mux.HandleFunc("GET /v1/login-status", s.LoginStatus)
 	}
 	if s.Hold != nil {
 		mux.HandleFunc("GET /v1/hold", s.Hold)

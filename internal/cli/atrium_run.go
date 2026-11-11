@@ -526,6 +526,18 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	gitHub.Audit = proxy.RecordAudit
 	// A branch's owner is asked about through the hub's own relay when another card pushes to it.
 	gitHub.Cards = proxy.GitCards
+	gitHub.IsOrchestrator = func(room, card string) bool {
+		hs, err := store.Roles(hubstore.RoleOrchestrator)
+		if err != nil {
+			return false
+		}
+		for _, h := range hs {
+			if h.Room == room && h.Card == card {
+				return true
+			}
+		}
+		return false
+	}
 	// THE LAUNCH CAP PER ROOM, kept in the hub's settings. See launchcaps.go.
 	proxy.SetLaunchCaps(store)
 	// THE HUB'S DOCUMENTS, rows in the store and bytes beside it. See link/docs_api.go.
