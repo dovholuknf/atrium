@@ -65,6 +65,13 @@
     .rooms:not(.scoped) #rooms-t { font-size: 0; }
     .rooms:not(.scoped) #rooms-t::after { content: attr(data-n); font: 500 var(--fs-xl)/1 var(--mono); }
   }
+  /* Under 1500px the bell, quick paste and sound fold into one bell that opens a menu of the three. */
+  #hdrfold { display: none; }
+  @media (min-width: 901px) and (max-width: 1500px) {
+    header .bar > :is(#toastlog-open, #quickpaste-open, #sound) { display: none; }
+    #hdrfold { display: inline-flex; align-items: center; justify-content: center; }
+  }
+  #hdrfold-menu .glyph { display: inline-block; width: 1.6em; margin-right: 8px; text-align: center; }
   /* Under 1300px the wordmark is tighter too. */
   @media (min-width: 901px) and (max-width: 1300px) {
     .bar { gap: var(--sp-2); }

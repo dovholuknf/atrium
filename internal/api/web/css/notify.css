@@ -64,7 +64,7 @@
   .tlrow.agent:not(.pinned) { opacity: .55; }
   .tlrow.pinned { position: sticky; top: 0; z-index: 1; background: var(--lift); }
   .tlrow.pinned.blocker { background-image: linear-gradient(rgba(var(--danger-rgb),.14), rgba(var(--danger-rgb),.14)); }
-  :is(#toastlog-open, #t-bell).blocked-now { color: var(--danger); }
+  :is(#toastlog-open, #t-bell, #hdrfold).blocked-now { color: var(--danger); }
   #t-bell { display: none; }
   body.solo #t-bell { display: inline-flex; }
   #toastlog-window[aria-pressed="true"] { color: var(--warn, #e0a53a); }
@@ -111,9 +111,9 @@
   @media (hover: none) { .tlrow .tlcopy { opacity: .65; } }
   /* The bell only carries a number when there is one to carry. A zero is a control reporting that it has
      nothing to report. */
-  #toastlog-open, #t-bell { position: relative; }
-  :is(#toastlog-open, #t-bell) .count:empty { display: none; }
-  :is(#toastlog-open, #t-bell) .count {
+  #toastlog-open, #t-bell, #hdrfold { position: relative; }
+  :is(#toastlog-open, #t-bell, #hdrfold) .count:empty { display: none; }
+  :is(#toastlog-open, #t-bell, #hdrfold) .count {
     position: absolute; top: -2px; right: -2px;
     min-width: 14px; padding: 0 3px; border-radius: 7px;
     background: var(--teal); color: var(--bg-2);

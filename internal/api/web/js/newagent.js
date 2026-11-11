@@ -577,7 +577,6 @@ async function openCloneCard(id, t) {
   await openNewAgent(false, "", {
     state: {
       ref: src.repo || t.repo || "", title: "", titleTouched: true,
-      branch: (t.branch || "claude/" + naSlug(title, 38)) + "-clone", branchTouched: true,
       groups: tags.filter(isPickableGroup),
       how: { room: roomOf(id), harness: t.runner, model: t.model || "", effort: t.effort || "", setup }
     },

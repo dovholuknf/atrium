@@ -1539,13 +1539,13 @@ async function tooltipSection(browser, base) {
     if ((await tipNow()).on) fail("a scroll left the tooltip up.");
 
     // A click on a button is not keyboard focus, and does not pin its tooltip up.
-    await mark("header #sound");
+    await mark("header #sound, header #hdrfold");
     await fakePause(tp);
     await tp.click("[data-tipprobe]");
     await tp.clock.runFor(700);
     const pinned = (await tipNow()).on;
     await tp.clock.resume();
-    if (pinned) fail("clicking the sound button left its tooltip up.");
+    if (pinned) fail("clicking the sound button (or the fold it sits in under 1500px) left its tooltip up.");
     await tp.click("[data-tipprobe]");
     // Keyboard focus shows it at once.
     await tp.mouse.move(700, 890);
@@ -1553,7 +1553,7 @@ async function tooltipSection(browser, base) {
     await tp.evaluate(() => document.getElementById("gear").focus());
     await frames(tp, 2);
     const kb = await tipNow();
-    if (!kb.on || kb.text !== "sound settings") fail("keyboard focus on the gear did not show its tooltip: " +
+    if (!kb.on || kb.text !== "settings") fail("keyboard focus on the gear did not show its tooltip: " +
       JSON.stringify(kb));
     await tp.evaluate(() => document.activeElement.blur());
 
@@ -7099,7 +7099,7 @@ async function topNavSection(browser, base) {
     const rt = show("rooms-t", "3/5 rooms"); rt.dataset.n = "3/5";
     document.getElementById("rooms").hidden = false;
     const bell = document.querySelector("#toastlog-open .count"); bell.textContent = "99+";
-    document.querySelectorAll('.tab[data-view="docs"], .tab[data-view="audit"]').forEach(t => t.hidden = false);
+    document.querySelectorAll('.tab[data-view="audit"]').forEach(t => t.hidden = false);
     const ct = document.getElementById("c-term"); ct.textContent = "14"; ct.classList.remove("zero");
     const cp = document.getElementById("c-perm"); cp.textContent = "3"; cp.classList.remove("zero");
   });
@@ -7176,6 +7176,127 @@ async function topNavSection(browser, base) {
   }
   if (errors.length) fail("topNav: the page threw: " + errors.join(" | "));
   if (!bad) console.log("topNav ok");
+}
+
+// Under 1500px the bell, quick paste and sound are one menu, and at 1280 and 1440 with the emerging switch off and on nothing in
+// the header runs past the window or is cut: a tab that has no room is in the ... menu.
+async function headerFoldSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
+  const errors = [];
+  try {
+    for (const w of [1280, 1440]) for (const em of [false, true]) {
+      const tag = "headerFold " + w + (em ? " emerging: " : ": ");
+      const ctx = await browser.newContext({ viewport: { width: w, height: 700 }, emerging: em });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await p.evaluate(() => {
+        window.paintWorking = () => {};
+        window.paintToastLogBadge = () => {};
+        const show = (id, text) => { const e = document.getElementById(id); e.hidden = false; if (text != null) e.textContent = text; return e; };
+        show("working", "5 working").dataset.n = "5";
+        show("sharing", "sharing");
+        const rt = show("rooms-t", "3/5 rooms"); rt.dataset.n = "3/5";
+        document.getElementById("rooms").hidden = false;
+        document.querySelector("#toastlog-open .count").textContent = "7";
+        const views = ["audit", "files"].concat(emergingOn() ? ["items", "pulls", "hubrepos", "backlog"] : []);
+        for (const v of views) document.querySelector('.tab[data-view="' + v + '"]').hidden = false;
+        const cp = document.getElementById("c-perm"); cp.textContent = "3"; cp.classList.remove("zero");
+      });
+      await p.waitForFunction(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))); // wait: two frames for the nav layout
+      const m = await p.evaluate(() => {
+        const bar = document.querySelector("header .bar"), nav = bar.querySelector("nav"), nr = nav.getBoundingClientRect();
+        const cut = [];
+        for (const c of bar.children) {
+          if (!c.getClientRects().length || c.classList.contains("grow")) continue;
+          const r = c.getBoundingClientRect();
+          if (r.right > innerWidth + 1 || r.left < -1) cut.push(c.id || c.className);
+          if (c !== nav && r.width > 0 && c.scrollWidth > c.clientWidth + 1 && getComputedStyle(c).overflow !== "visible") cut.push("inner:" + (c.id || c.className));
+        }
+        for (const t of nav.querySelectorAll(".tab")) {
+          if (t.hidden || t.classList.contains("ovf") || t.classList.contains("umenu") || t.classList.contains("uhide")) continue;
+          const r = t.getBoundingClientRect();
+          if (r.right > nr.right + 1 || r.left < nr.left - 1) cut.push("tab:" + t.dataset.view);
+        }
+        const shown = id => document.getElementById(id).getClientRects().length > 0;
+        return { cut, sideways: document.documentElement.scrollWidth > innerWidth, barOver: bar.scrollWidth - bar.clientWidth,
+          fold: shown("hdrfold"), bell: shown("toastlog-open"), link: shown("quickpaste-open"), sound: shown("sound"),
+          count: document.querySelector("#hdrfold .count").textContent };
+      });
+      if (m.cut.length) fail(tag + "the header clips: " + m.cut.join(","));
+      if (m.sideways || m.barOver > 1) fail(tag + "the header runs past the window by " + m.barOver + "px");
+      if (!m.fold || m.bell || m.link || m.sound) fail(tag + "the bell, quick paste and sound are not folded: " + JSON.stringify(m));
+      if (m.count !== "7") fail(tag + "the folded bell does not carry the bell's count: " + m.count);
+      await p.click("#hdrfold");
+      const rows = await p.evaluate(() => {
+        const menu = document.getElementById("hdrfold-menu"), r = menu.getBoundingClientRect();
+        return { open: !menu.hidden, inside: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, ids: [...menu.querySelectorAll("button")].map(b => b.dataset.fold) };
+      });
+      if (!rows.open || !rows.inside || rows.ids.join() !== "toastlog-open,quickpaste-open,sound") fail(tag + "the fold menu is wrong: " + JSON.stringify(rows));
+      const before = await p.evaluate(() => document.getElementById("sound").getAttribute("aria-label"));
+      await p.click('#hdrfold-menu button[data-fold="sound"]');
+      const after = await p.evaluate(() => ({ label: document.getElementById("sound").getAttribute("aria-label"), open: !document.getElementById("hdrfold-menu").hidden }));
+      if (after.label === before || after.open) fail(tag + "the sound row did not toggle the sound and close the menu: " + JSON.stringify(after));
+      await ctx.close();
+    }
+    const wide = await browser.newContext({ viewport: { width: 1600, height: 700 } });
+    const wp = await wide.newPage();
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const at1600 = await wp.evaluate(() => ["hdrfold", "toastlog-open", "quickpaste-open", "sound"].map(id => document.getElementById(id).getClientRects().length > 0).join());
+    if (at1600 !== "false,true,true,true") fail("headerFold 1600: the header folds above 1500px: " + at1600);
+    await wide.close();
+  } finally {
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("headerFold: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("headerFold ok");
+}
+
+async function emergingSwitchSection(browser, base) {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 700 }, emerging: false });
+  await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const gated = ["items", "pulls", "hubrepos", "backlog"];
+    const state = () => p.evaluate((g) => {
+      hubIsHub = true;
+      paintItemsTab(); paintHubReposTab(); paintBacklogTab();
+      const menu = document.getElementById("tabs-menu");
+      return { shown: g.filter(v => !document.querySelector('.tab[data-view="' + v + '"]').hidden),
+        on: (document.querySelector(".tab.on") || {}).dataset.view, mark: document.documentElement.hasAttribute("data-emerging"),
+        stored: localStorage.getItem("atrium.emerging"), menuHasGated: [...menu.querySelectorAll("button[data-view]")].some(b => g.includes(b.dataset.view)) };
+    }, gated);
+    let st = await state();
+    if (st.shown.length || st.mark || st.stored) fail("emergingSwitch: off is not the default: " + JSON.stringify(st));
+    await p.evaluate(() => switchView("items"));
+    if ((await state()).on === "items") fail("emergingSwitch: an emerging view opened with the switch off");
+    await p.evaluate(() => document.getElementById("gear").click());
+    await p.waitForSelector("#settings[open]");
+    await p.check("#s-emerging");
+    st = await state();
+    if (st.shown.join() !== "items,hubrepos,backlog" || !st.mark || st.stored !== "1") fail("emergingSwitch: on did not show the tabs: " + JSON.stringify(st));
+    await p.evaluate(() => { document.getElementById("settings").close(); switchView("backlog"); });
+    await p.evaluate(() => emergingSet(false));
+    st = await state();
+    if (st.shown.length || st.on !== "board" || st.mark || st.stored !== "0") fail("emergingSwitch: off did not hide the tabs and fall back to the board: " + JSON.stringify(st));
+    await p.evaluate(() => { localStorage.setItem("atrium.emerging", "1"); emergingApply(); });
+    const mark = await p.evaluate(() => getComputedStyle(document.querySelector('.tab[data-view="items"]'), "::after").content);
+    if (mark !== "none") fail("emergingSwitch: the items tab wears a marker: " + mark);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("emergingSwitch: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("emergingSwitch ok");
 }
 
 // ── u-tabs-order-and-hide: the top tabs can be ordered, put in the ... menu, or hidden ─────────────────────
@@ -7289,13 +7410,13 @@ async function tabsOrderSection(browser, base) {
     await n.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await n.evaluate(() => {
       window.badge = () => {};
-      document.querySelectorAll('.tab[data-view="docs"], .tab[data-view="audit"], .tab[data-view="hubrepos"], .tab[data-view="backlog"]').forEach(t => t.hidden = false);
+      document.querySelectorAll('.tab[data-view="audit"], .tab[data-view="hubrepos"], .tab[data-view="backlog"]').forEach(t => t.hidden = false);
       const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero");
     });
     await n.waitForTimeout(300);
     v = await view(n);
     if (v.clipped) fail("tabsOrder: a tab clips at 1024 with a custom order " + JSON.stringify(v));
-    if (!v.listed.includes("runners") || !v.listed.includes("perms") || !v.listed.includes("docs") || v.listed.includes("history"))
+    if (!v.listed.includes("runners") || !v.listed.includes("perms") || ![...v.shown, ...v.listed].includes("usage") || v.listed.includes("history"))
       fail("tabsOrder: the menu at 1024 is wrong " + JSON.stringify(v));
     if (v.shown.includes("history") || v.shown.includes("perms") || v.shown.includes("runners")) fail("tabsOrder: a moved tab is in the bar at 1024 " + JSON.stringify(v));
     if (v.listed.length + v.shown.length < 10) fail("tabsOrder: a tab is lost at 1024 " + JSON.stringify(v));
@@ -21797,7 +21918,9 @@ async function quickPasteSection(browser, base) {
 
     // the header button opens the same bar, and the bar has a button for people who click
     await p.evaluate(() => { window.__clip = "just words"; });
-    await p.click("#quickpaste-open");
+    // Under 1500px it is a row of the folded bell's menu.
+    if (await p.isVisible("#quickpaste-open")) await p.click("#quickpaste-open");
+    else { await p.click("#hdrfold"); await p.click('#hdrfold-menu [data-fold="quickpaste-open"]'); }
     await p.waitForFunction(() => document.getElementById("switcher").open, null, { timeout: slow(5000) });
     await frames(p, 2);
     if (await p.inputValue("#sw-q") !== "") fail("quickPaste: text that is not a link was put in the box");
@@ -26914,6 +27037,15 @@ async function main() {
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
 
   const browser = LIST_MODE ? null : withTrace(withClock(await chromium.launch()), () => results.currentUnit);
+  if (browser) {
+    const newContext = browser.newContext.bind(browser);
+    browser.newContext = async (o = {}, more) => {
+      const { emerging, ...rest } = o;
+      const ctx = await newContext(rest, more);
+      if (emerging !== false) await ctx.addInitScript(() => localStorage.setItem("atrium.emerging", "1"));
+      return ctx;
+    };
+  }
   // A unit moved to scripts/board-tests/<bucket>.js still runs here, in its place in the suite order, through unit().
   const bu = name => () => bt.run(name, { browser, base });
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
@@ -26961,7 +27093,7 @@ async function main() {
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
-      childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
+      childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
@@ -28961,6 +29093,7 @@ async function main() {
     await unit("itemsRealShape", bu("itemsRealShape"));
     await unit("itemsUx", bu("itemsUx"));
     await unit("itemsView", bu("itemsView"));
+    await unit("itemsListFilters", bu("itemsListFilters"));
     await unit("itemsMock", bu("itemsMock"));
     await unit("itemsEfficacy", bu("itemsEfficacy"));
     await unit("itemsPhone", bu("itemsPhone"));
@@ -29034,6 +29167,9 @@ async function main() {
     await unit("backlogShow", bu("backlogShow"));
     await unit("backlogGroup", bu("backlogGroup"));
     await unit("backlogNewItem", bu("backlogNewItem"));
+    await unit("backlogKind", bu("backlogKind"));
+    await unit("backlogScroll", bu("backlogScroll"));
+    await unit("backlogOpen", bu("backlogOpen"));
     await unit("mergeStripGone", bu("mergeStripGone"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
@@ -29169,7 +29305,9 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termActivityWorkingFirst", () => termActivityWorkingFirstSection(browser, base));
     await unit("termGroupDropSort", () => termGroupDropSortSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
+    await unit("headerFold", () => headerFoldSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
+    await unit("emergingSwitch", () => emergingSwitchSection(browser, base));
     await unit("boardUsage", bu("boardUsage"));
     await unit("pullsMorePending", bu("pullsMorePending"));
     await unit("pullsLiveSteps", bu("pullsLiveSteps"));
@@ -29546,7 +29684,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|replies|changereq-core|changereq-mock|resume-opening)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|emerging|replies|changereq-core|changereq-mock|resume-opening)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));

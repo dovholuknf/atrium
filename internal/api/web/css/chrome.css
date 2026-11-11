@@ -415,6 +415,12 @@
   }
   #stack > .filters { flex: 0 0 auto; }
   #stack > #stack-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* The backlog the same way: its view bar and the header row stay put and the list scrolls, with the reports under it scrolling on their own. */
+  main > #backlog { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #backlog > :not(#backlog-items):not(#backlog-reports) { flex: 0 0 auto; }
+  #backlog > #newitem-open { align-self: flex-start; }
+  #backlog > #backlog-items { flex: 1 1 60%; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  #backlog > #backlog-reports { flex: 0 1 30%; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   /* The audit and history panes the same way: the heading and the filters stay put and the list scrolls
      under them. A view left out of both lists above is as tall as its rows, and main clips the rest. A new
      top-level view goes in one of them. */

@@ -1,6 +1,6 @@
 // backlog: the backlog page, the hub's items and the reports directors left (js/backlog.js).
 //
-// Units: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogBar, backlogSearch, backlogShow, backlogGroup, backlogNewItem.
+// Units: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogBar, backlogSearch, backlogShow, backlogGroup, backlogNewItem, backlogKind, backlogScroll, backlogOpen.
 // Until stage B2 only bootClean covered this page. These read it through the hub routes the page calls, answered here
 // from the page's own context so each unit shapes the items it needs, and none reads what another left on the mock.
 // `units` is what the harness runs, in suite order. Alone: `node scripts/board-tests/backlog.js`.
@@ -102,7 +102,7 @@ async function backlogRowsSection(browser, base) {
     if (got.rows.includes("bk-done") || got.rows.includes("bk-held")) fail("backlogRows: a finished or held item is listed by default");
     if (got.oldBox) fail("backlogRows: the department box or the open only box is still on the page");
     if (!b.gets.length || !b.gets.every(q => q === "?bodies=1")) fail("backlogRows: the read carried a filter, the board filters what it holds: " + b.gets.join(" "));
-    if (got.head.join() !== "status,dept,id,priority,title,created,changed") fail("backlogRows: the header is " + got.head);
+    if (got.head.join() !== "status,dept,id,kind,priority,title,created,changed") fail("backlogRows: the header is " + got.head);
     for (const w of ["in-progress", "fabric", "bk-high-new", "High and new"]) if (!got.first.includes(w)) fail("backlogRows: a row lacks " + w + ": " + got.first);
     if (got.prio !== "bk-high-new:high,bk-low:low,bk-int:low,bk-high-old:high,bk-med:medium,bk-none:unset") fail("backlogRows: the priority selects read " + got.prio);
     if (got.chips !== "high:false,medium:false,low:false,unset:false") fail("backlogRows: the priority chips start as " + got.chips);
@@ -259,7 +259,7 @@ async function backlogBarSection(browser, base) {
     const p = b.p;
     const got = await bar(p);
     if (!got.mounted || !got.q) fail("backlogBar: the backlog tab has no view bar: " + JSON.stringify(got));
-    if (got.rows !== "show,priority,dept,sort by,group") fail("backlogBar: the rows are " + got.rows);
+    if (got.rows !== "show,kind,priority,dept,sort by,group") fail("backlogBar: the rows are " + got.rows);
     if (/open only|department/i.test(await p.evaluate(() => document.getElementById("backlog").textContent.slice(0, 400)))) fail("backlogBar: the old department or open only controls are still drawn");
     if ((await segText(p, "backlog-show")) !== "all 8|open 5|in-progress 1|held 1|done 1|dropped 0") fail("backlogBar: the show chips read " + await segText(p, "backlog-show"));
     const on = await p.evaluate(() => [...document.querySelectorAll("#backlog-show button.on")].map(x => x.dataset.v).join());
@@ -441,6 +441,100 @@ async function backlogNewItemSection(browser, base) {
   if (!bad) console.log("backlogNewItem ok");
 }
 
+const KINDED = () => [
+  ["b-crash", "bug"], ["f-search", "feature"], ["s-sort", "spike"], ["p-look", "design"], ["u-flow", "design"], ["i-ask", "interview"],
+  ["d-guide", "docs"], ["a-freeze", "chore"], ["r-037", "chore"], ["x-odd", "chore"],
+].map(([id], n) => ({ id, dept: "fabric", title: "T " + id, status: "open", priority: "low", created_at: ago(n + 1), changed_at: ago(n + 1) }))
+  .concat([{ id: "b-stored", kind: "spike", dept: "fabric", title: "Stored wins", status: "open", priority: "low", created_at: ago(20), changed_at: ago(20) }]);
+
+// Each item has a kind: the hub's own field when it sends one, else the id prefix. It is a column, a sortable header and a chip row.
+async function backlogKindSection(browser, base) {
+  const was = mock.hubMode;
+  mock.hubMode = true;
+  let b;
+  try {
+    b = await backlogBoard(browser, base, { items: KINDED() });
+    const p = b.p;
+    const kinds = () => p.evaluate(() => [...document.querySelectorAll("#backlog-items .bl-row[data-id]")].map(r => r.dataset.id + ":" + r.querySelector(".bl-kind").textContent).join());
+    const want = "b-crash:bug,f-search:feature,s-sort:spike,p-look:design,u-flow:design,i-ask:interview,d-guide:docs,a-freeze:chore,r-037:chore,x-odd:chore,b-stored:spike";
+    if ((await kinds()).split(",").sort().join() !== want.split(",").sort().join()) fail("backlogKind: the kinds read " + await kinds());
+    await openBar(p);
+    if ((await segText(p, "backlog-kinds")).replace(/ \d+/g, "") !== "bug|feature|spike|design|interview|docs|chore") fail("backlogKind: the kind chips are " + await segText(p, "backlog-kinds"));
+    await p.click('#backlog-kinds button[data-v="design"]');
+    await settle(p);
+    if ((await ids(p)).slice().sort().join() !== "p-look,u-flow") fail("backlogKind: design left " + await ids(p));
+    await p.click('#backlog-kinds button[data-v="bug"]');
+    await settle(p);
+    if ((await ids(p)).slice().sort().join() !== "b-crash,p-look,u-flow") fail("backlogKind: design and bug left " + await ids(p));
+    if (await p.evaluate(() => localStorage.getItem("atrium.backlog.kinds")) !== '["design","bug"]') fail("backlogKind: the choice is not kept");
+    await p.click('#backlog-kinds button[data-v="design"]');
+    await p.click('#backlog-kinds button[data-v="bug"]');
+    await p.evaluate(() => fdSet("backlog", false));
+    await p.click('#backlog-items .bl-sort[data-sort="kind"]');
+    await settle(p);
+    const order = (await kinds()).split(",").map(x => x.split(":")[1]);
+    if (order.join() !== order.slice().sort().join()) fail("backlogKind: sorting by kind gave " + order);
+    if (b.errors.length) fail("backlogKind: threw " + b.errors.join(" | "));
+  } finally { if (b) await b.ctx.close(); mock.hubMode = was; }
+  if (!bad) console.log("backlogKind ok");
+}
+
+// The list scrolls inside the tab: the view bar and the header row stay put, and the page itself does not scroll.
+async function backlogScrollSection(browser, base) {
+  const was = mock.hubMode;
+  mock.hubMode = true;
+  let b;
+  try {
+    const many = Array.from({ length: 80 }, (_, n) => ({ id: "b-many-" + n, dept: "fabric", title: "Row " + n, status: "open", priority: "low", created_at: ago(n), changed_at: ago(n) }));
+    b = await backlogBoard(browser, base, { items: many });
+    const p = b.p;
+    const m = () => p.evaluate(() => {
+      const box = document.getElementById("backlog-items"), r = e => e.getBoundingClientRect();
+      return { over: box.scrollHeight - box.clientHeight, oy: getComputedStyle(box).overflowY, top: box.scrollTop, boxTop: r(box).top, head: r(box.querySelector(".bl-head")).top,
+        bar: r(document.querySelector("#fd-backlog .fline")), page: document.scrollingElement.scrollHeight - innerHeight, bottom: r(box).bottom };
+    });
+    const a = await m();
+    if (a.over <= 0 || !/auto|scroll/.test(a.oy)) fail("backlogScroll: the list does not scroll inside the tab " + JSON.stringify(a));
+    if (a.page > 1) fail("backlogScroll: the page itself scrolls by " + a.page);
+    if (a.bottom > 800 + 1) fail("backlogScroll: the list runs off the bottom of the window to " + a.bottom);
+    await p.evaluate(() => { document.getElementById("backlog-items").scrollTop = 600; });
+    const z = await m();
+    if (z.top < 500) fail("backlogScroll: the list did not move " + JSON.stringify(z));
+    if (Math.abs(z.head - z.boxTop) > 1) fail("backlogScroll: the header row left the top, " + z.head + " against " + z.boxTop);
+    if (z.bar.top < 0 || z.bar.bottom > z.boxTop + 1) fail("backlogScroll: the view bar moved " + JSON.stringify(z.bar));
+    if (b.errors.length) fail("backlogScroll: threw " + b.errors.join(" | "));
+  } finally { if (b) await b.ctx.close(); mock.hubMode = was; }
+  if (!bad) console.log("backlogScroll ok");
+}
+
+// A row opens its item on the items tab, which is the one view of an item. The priority select on the row still only changes the priority.
+async function backlogOpenSection(browser, base) {
+  const was = mock.hubMode;
+  mock.hubMode = true;
+  let b;
+  try {
+    b = await backlogBoard(browser, base);
+    const p = b.p;
+    await p.click('#backlog-items .bl-row[data-id="bk-med"] .aud-detail');
+    await p.waitForFunction(() => { const v = document.getElementById("items"); return v && !v.hidden && itemsOpenId() === "bk-med"; }, null, { timeout: slow(8000) });
+    if (!(await p.evaluate(() => document.getElementById("backlog").hidden))) fail("backlogOpen: the backlog is still showing beside the item");
+    await p.evaluate(() => switchView("backlog"));
+    await p.waitForFunction(() => document.querySelectorAll("#backlog-items .bl-row[data-id]").length > 0, null, { timeout: slow(8000) });
+    await p.evaluate(() => itemsShow(null));
+    await p.evaluate(() => switchView("backlog"));
+    await p.focus('#backlog-items .bl-row[data-id="bk-none"]');
+    await p.keyboard.press("Enter");
+    await p.waitForFunction(() => itemsOpenId() === "bk-none", null, { timeout: slow(8000) });
+    await p.evaluate(() => { itemsShow(null); switchView("backlog"); });
+    await p.waitForFunction(() => document.querySelectorAll("#backlog-items .bl-row[data-id]").length > 0, null, { timeout: slow(8000) });
+    await p.selectOption('#backlog-items select.bl-prio[data-id="bk-low"]', "medium");
+    await settle(p, 400);
+    if (await p.evaluate(() => itemsOpenId()) !== "") fail("backlogOpen: changing a priority opened the item");
+    if (b.errors.length) fail("backlogOpen: threw " + b.errors.join(" | "));
+  } finally { if (b) await b.ctx.close(); mock.hubMode = was; }
+  if (!bad) console.log("backlogOpen ok");
+}
+
 const units = [
   { name: "backlogAbsent", run: ({ browser, base }) => backlogAbsentSection(browser, base) },
   { name: "backlogRows", run: ({ browser, base }) => backlogRowsSection(browser, base) },
@@ -452,12 +546,15 @@ const units = [
   { name: "backlogShow", run: ({ browser, base }) => backlogShowSection(browser, base) },
   { name: "backlogGroup", run: ({ browser, base }) => backlogGroupSection(browser, base) },
   { name: "backlogNewItem", run: ({ browser, base }) => backlogNewItemSection(browser, base) },
+  { name: "backlogKind", run: ({ browser, base }) => backlogKindSection(browser, base) },
+  { name: "backlogScroll", run: ({ browser, base }) => backlogScrollSection(browser, base) },
+  { name: "backlogOpen", run: ({ browser, base }) => backlogOpenSection(browser, base) },
 ];
 const sections = {
   backlogAbsent: backlogAbsentSection, backlogRows: backlogRowsSection, backlogSort: backlogSortSection,
   backlogPrios: backlogPriosSection, backlogPriority: backlogPrioritySection, backlogBar: backlogBarSection,
   backlogSearch: backlogSearchSection, backlogShow: backlogShowSection, backlogGroup: backlogGroupSection,
-  backlogNewItem: backlogNewItemSection,
+  backlogNewItem: backlogNewItemSection, backlogKind: backlogKindSection, backlogScroll: backlogScrollSection, backlogOpen: backlogOpenSection,
 };
 
 module.exports = { units, sections };

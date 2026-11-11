@@ -85,7 +85,7 @@ function hubReposSorted(repos, sort) {
 function paintHubReposTab() {
   const tab = document.querySelector('.tab[data-view="hubrepos"]');
   if (!tab) return;
-  tab.hidden = typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  tab.hidden = !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
 }
 
 function hubReposCardTitle(room, card) {

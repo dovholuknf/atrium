@@ -183,7 +183,6 @@
            data-tip="reviews that are ready to walk or failed"></span></div>
       <div class="tab" data-view="history">history</div>
       <div class="tab" data-view="usage">usage</div>
-      <div class="tab" data-view="docs" hidden>documents</div>
       <div class="tab" data-view="files" hidden>files</div>
       <!-- Put machine configuration and the permissions audit after the daily work views.
            Called `rooms` because a room is the machine, and everything under this tab is a
@@ -238,12 +237,15 @@
          which is right for a toast and wrong as the only copy: a share
          address, a save that failed, a card that just asked for something.
          The badge counts what has arrived since this was last opened. -->
+    <!-- Desktop under 1500px only (css/topnav.css, js/topnav.js): the bell, quick paste and sound in one menu. -->
+    <button type="button" id="hdrfold" class="icon" aria-haspopup="true" aria-expanded="false"
+      aria-label="notices, open a link, sound" data-tip="notices, open a link, sound"><span class="glyph">&#128276;</span><span class="count"></span></button>
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
       aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span><span class="hmsg" hidden><svg viewBox="0 0 12 9" aria-hidden="true"><rect x=".65" y=".65" width="10.7" height="7.7" rx="1"/><path d="M1 1.4 6 5.4 11 1.4"/></svg><span class="pb-n"></span></span></button>
     <button id="quickpaste-open" class="icon" onclick="openQuickPaste()"
       aria-label="open a link: a pull request, issue, branch or ticket (ctrl-alt-r)" data-tip="open a link: a pull request, issue, branch or ticket (ctrl-alt-r)">&#128279;&#xFE0E;</button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
-    <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
+    <button id="gear" class="icon" aria-label="settings" data-tip="settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
          Hidden outright on a plain daemon, which is every atrium that is not a
          hub: `js/rooms.js` probes for one and turns this off when there is
@@ -264,6 +266,7 @@
   <div class="rule"></div>
 </header>
 <div id="tabs-menu" class="tabs-menu" hidden></div>
+<div id="hdrfold-menu" class="tabs-menu" hidden></div>
 <div id="halted"><strong>halted</strong><span id="halt-t"></span></div>
 <!-- The growler on a phone: a flex item of the body, so it takes its height out of `main` and never lies over the
      key bar. See js/growl.js. -->
@@ -1604,6 +1607,13 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow">top bar tabs</label>
       <div class="picker"><button type="button" id="s-arrangetabs">arrange tabs...</button></div>
       <span class="hintline">Choose the order, and which tabs show in the bar, sit in the ... menu or are hidden.</span>
+    </div>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-emerging" onchange="emergingSet(this.checked)">
+        <span>use emerging features</span>
+      </label>
+      <span class="help" tabindex="0" data-tip="Shows the areas that are not finished: the items, pulls, repos and backlog tabs, and the hub documents on the files tab. Kept in this browser only.">?</span>
     </div>
     <!-- Kept in this browser, like text size: it is how this screen reads the
          cards, and a phone or a second monitor may want the other answer. -->
@@ -4042,6 +4052,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/popfit.js"></script>
 <script src="/js/dragclick.js"></script>
 <script src="/js/prefs-live.js"></script>
+<script src="/js/emerging.js"></script>
 <script src="/js/cardrules.js"></script>
 <script src="/js/sounds.js"></script>
 <script src="/js/core.js"></script>
