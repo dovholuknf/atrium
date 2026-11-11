@@ -42,7 +42,7 @@ const FD_TABS = {
 FD_TABS.backlog = {
   host: "fd-backlog", q: "backlog-q", match: "backlog-match",
   placeholder: "id, title, dept or body. #dept for one dept",
-  rows: [["show", "backlog-show", "seg multi"], ["priority", "backlog-prios", "seg multi"], ["dept", "backlog-depts", "seg multi"],
+  rows: [["show", "backlog-show", "seg multi"], ["kind", "backlog-kinds", "seg multi"], ["priority", "backlog-prios", "seg multi"], ["dept", "backlog-depts", "seg multi"],
     ["sort by", "backlog-sort", "seg"], ["group", "backlog-group", "seg"]],
   repaint: () => paintBacklog()
 };

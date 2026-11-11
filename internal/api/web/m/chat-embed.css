@@ -19,6 +19,8 @@ body.m.chat-embed #m-card .replies { gap: 10px; }
 body.m.chat-embed #m-card .reply { align-self: flex-start; max-width: 85%; padding: 8px 14px 9px; border-radius: 18px 18px 18px 6px; box-shadow: 0 2px 8px rgba(var(--shadow-rgb), .15); }
 body.m.chat-embed #m-card .reply.mine { align-self: flex-end; max-width: 85%; border-radius: 18px 18px 6px 18px; }
 body.m.chat-embed #m-card .reply.prompt.command { align-self: flex-end; }
+body.m.chat-embed.worn #m-card .reply:not(.mine):not(.command) { background: var(--chip-accent); box-shadow: none; border: 1px solid var(--chip-accent-stroke); }
+body.m.chat-embed.worn #m-card .reply.mine { background: var(--lift-strong); box-shadow: none; border: 1px solid var(--stroke-dim); }
 body.m.chat-embed #m-compose,
 body.m.chat-embed #m-working,
 body.m.chat-embed #m-recap { width: calc(100% - 2 * var(--gut)); max-width: none; margin-inline: auto; box-sizing: border-box; }

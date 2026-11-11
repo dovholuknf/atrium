@@ -410,7 +410,9 @@
     });
     if (door) door.addEventListener("click", openList);
     avail = await load();
-    if (door) door.hidden = !avail;
+    const paint = () => { if (door) door.hidden = !avail || !emergingOn(); };
+    window.addEventListener("emerging", paint);
+    paint();
   }
   // The hub says `item` on /v1/events; the store passes it here. Read again once the list has been read at all.
   let evT = 0;

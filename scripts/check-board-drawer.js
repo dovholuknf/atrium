@@ -190,10 +190,10 @@ async function clickConfirmed(page, mobile, sel, want, tag) {
   return false;
 }
 
-const state = page => page.evaluate(() => {
+const state = page => page.evaluate(qs => {
   const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
   if (!h) return null;
-  const panel = h.querySelector(".fpanel"), line = h.querySelector(".fline"), q = h.querySelector(".fq");
+  const panel = h.querySelector(".fpanel"), line = h.querySelector(".fline"), q = h.querySelector(".fq") || document.getElementById(qs[h.id]);
   const r = e => { const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, b: b.bottom }; };
   return {
     tab: h.dataset.tab, open: h.classList.contains("open"), inert: panel.inert,
@@ -203,7 +203,7 @@ const state = page => page.evaluate(() => {
     active: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : "",
     activeIsQ: document.activeElement === q
   };
-});
+}, Object.fromEntries(Object.values(TABS).map(t => [t.host, t.q])));
 
 const geometry = (page, sel) => page.evaluate(s => {
   const e = document.querySelector(s); if (!e) return null;
@@ -226,6 +226,14 @@ async function open(browser, width, mobile) {
     FD_TERMS_PUSH = false;
     const h = document.getElementById("fd-terms");
     if (h) h.classList.add("foverlay");
+    // A row that fits sits on the line with no drawer (fdFitInline). These steps are the drawer, so keep every one under its line.
+    window.fdFitInline = () => {};
+    for (const d of document.querySelectorAll(".fdrawer.inline")) {
+      const panel = d.querySelector(".fpanel");
+      d.classList.remove("inline");
+      d.querySelector(".fwrap").appendChild(panel);
+      panel.inert = true;
+    }
   });
   return { ctx, page };
 }
@@ -649,7 +657,7 @@ async function swallowEdges(browser) {
     const tag = "1280px terms";
     const { ctx, page } = await open(browser, 1280, false);
     await goto(page, "terms");
-    const openIt = async () => { const p = await linePoint(page); await page.mouse.click(p.x, p.y); await until(() => state(page), x => x && x.open); };
+    const openIt = async () => { const p = await linePoint(page); await page.mouse.click(p.x, p.y); await until(() => state(page), x => x && x.open); await calm(page); };
     await openIt();
     let s = await state(page);
     check(s && s.open, `${tag} 3b: the drawer is open before the right-click`);

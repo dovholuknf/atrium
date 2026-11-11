@@ -75,7 +75,7 @@ async function boardUsageSection(browser, base) {
     const rows = await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].map(r => ({
       name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
     const at = (name) => rows.findIndex(r => r.name === name);
-    const used = at("view:" + hot), more = at("id:tabmore"), never = at("view:docs");
+    const used = at("view:" + hot), more = at("id:tabmore"), never = at("view:pulls");
     if (used < 0 || rows[used].n !== "2" || (used > 2)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
     if (more < 0 || rows[more].n !== "3") fail("boardUsage: the ... button is not listed with 3 clicks: " + JSON.stringify(rows.slice(0, 4)));
     if (never < 0 || !rows[never].never || rows[never].n !== "never") fail("boardUsage: an untouched tab is not listed as never: " + JSON.stringify(rows.slice(-6)));

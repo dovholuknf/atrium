@@ -1,6 +1,6 @@
 // items: the items view: unified cards, interviews, ready cards.
 //
-// Units: readyOnce, readyPopout, readyTwoWindows, itemsRealShape, itemsUx, itemsView, itemsMock, itemsEfficacy, itemsPhone, itemsTaskList, interviewTop, itemMinionChip, itemDocsLanded, itemOpenHiddenCard, kidCounts, unifiedCard, noReadyChildren, readyNoSeed.
+// Units: itemsListFilters, readyOnce, readyPopout, readyTwoWindows, itemsRealShape, itemsUx, itemsView, itemsMock, itemsEfficacy, itemsPhone, itemsTaskList, interviewTop, itemMinionChip, itemDocsLanded, itemOpenHiddenCard, kidCounts, unifiedCard, noReadyChildren, readyNoSeed.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -1126,7 +1126,7 @@ async function itemsUxSection(browser, base) {
     await p.route(/\/v1\/tasks(\?.*)?$/, r => r.fulfill({ contentType: "application/json", body: JSON.stringify(fx.tasks) }));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    await p.click('.tab[data-view="items"]');
+    await p.evaluate(() => switchView("items"));
     await p.waitForSelector(".it-row", { timeout: slow(10000) });
     await p.evaluate(t => { lastTasks = t; itemsHtml = ""; itemsPaint(); }, fx.tasks);
     return { ctx, p };
@@ -1249,7 +1249,49 @@ async function itemsTaskListSection(browser, base) {
   if (!failed) console.log("itemsTaskList ok");
 }
 
+// THE ITEMS LIST, on the fixtures: no sideways scroll at any width, the departments are one select (not a row of chips), a step select filters the
+// rows to the ones at that step, and each bar names its steps with the current one marked.
+async function itemsListFiltersSection(browser, base) {
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("items"));
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
+    for (const w of [1400, 1000, 700]) {
+      await p.setViewportSize({ width: w, height: 900 });
+      const over = await p.evaluate(() => { const l = document.getElementById("items-list"); return { list: l.scrollWidth - l.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; });
+      if (over.list > 0 || over.page > 0) fail("itemsListFilters: the list scrolls sideways at " + w + "px " + JSON.stringify(over));
+    }
+    await p.setViewportSize({ width: 1400, height: 900 });
+    const bar = await p.evaluate(() => ({ chips: document.querySelectorAll('#items-list [data-act="filter"]').length,
+      dept: [...document.querySelectorAll("#items-dept option")].map(o => o.value).join(), step: [...document.querySelectorAll("#items-step option")].map(o => o.value).join() }));
+    if (bar.chips) fail("itemsListFilters: the department chips are still a row of buttons (" + bar.chips + ")");
+    if (!/^all,/.test(bar.dept) || !/fabric/.test(bar.dept) || !/ui/.test(bar.dept)) fail("itemsListFilters: the dept select holds " + bar.dept);
+    if (bar.step !== "all,designed,approved,building,tested,reviewed,landed,deployed,pushed") fail("itemsListFilters: the step select holds " + bar.step);
+    const names = await p.evaluate(() => { const n = document.querySelector(".it-row .it-prog-names"); return n ? [...n.children].map(x => x.textContent).join() + "|" + n.querySelectorAll(".c").length : ""; });
+    if (!names.startsWith("designed,approved,building,tested,reviewed,landed,deployed,pushed|")) fail("itemsListFilters: the bar names read " + names);
+    const total = await p.evaluate(() => document.querySelectorAll("#items-list .it-row").length);
+    await p.selectOption("#items-step", "building");
+    await p.waitForFunction(n => document.querySelectorAll("#items-list .it-row").length < n, total, { timeout: slow(5000) });
+    const left = await p.evaluate(() => [...document.querySelectorAll("#items-list .it-row")].map(r => (r.querySelector(".it-prog-names .c") || { textContent: "" }).textContent));
+    if (!left.length || left.some(s => s !== "building")) fail("itemsListFilters: the building filter left " + left.join());
+    await p.selectOption("#items-step", "all");
+    await p.selectOption("#items-dept", "fabric");
+    const depts = await p.evaluate(() => [...document.querySelectorAll("#items-list .it-row")].map(r => itemsList.find(i => i.id === r.dataset.item).dept));
+    if (!depts.length || depts.some(d => d !== "fabric")) fail("itemsListFilters: the fabric filter left " + depts.join());
+    if (errors.length) fail("itemsListFilters: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); mock.hubMode = wasHub; }
+  if (!bad) console.log("itemsListFilters ok");
+}
+
 const units = [
+  { name: "itemsListFilters", run: ({ browser, base }) => itemsListFiltersSection(browser, base) },
   { name: "readyOnce", run: ({ browser, base }) => readyOnceSection(browser, base) },
   { name: "readyPopout", run: ({ browser, base }) => readyPopoutSection(browser, base) },
   { name: "readyTwoWindows", run: ({ browser, base }) => readyTwoWindowsSection(browser, base) },

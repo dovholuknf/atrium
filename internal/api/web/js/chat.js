@@ -27,7 +27,10 @@ function chatMark() {
   for (const row of list.querySelectorAll(".card.tab[data-id]")) {
     const on = !!chatId && row.dataset.id === chatId;
     if (row.classList.contains("on") !== on) row.classList.toggle("on", on);
+    // A card nobody coloured reads as it does unattached, as the terminals' own row does when attached.
+    row.classList.toggle("plain", on && !row.style.getPropertyValue("--tabc"));
   }
+  chatPaint();
   requestAnimationFrame(placeTabBridge);
   const t = chatCard(chatId);
   const title = document.getElementById("chat-title");
@@ -47,6 +50,35 @@ function chatDrop(id) {
 }
 
 function chatScopeNow() { return typeof roomNow === "function" ? roomNow() || "" : ""; }
+
+// The frame's page cannot read this page's variables, so it is sent the card's palette too.
+let chatWornVars = [];
+function chatWearOf(t) {
+  const w = t && wearFor(t);
+  const vars = {};
+  if (w) for (const kv of w.style.split(";")) { const i = kv.indexOf(":"); vars[kv.slice(0, i)] = kv.slice(i + 1); }
+  return vars;
+}
+
+function chatDress(f, vars) {
+  try { f.contentWindow.postMessage({ atriumChatWear: vars }, location.origin); } catch (e) {}
+}
+
+function chatPaint() {
+  const pane = document.getElementById("chat-pane");
+  if (!pane || !chatLent) return;
+  const t = chatCard(chatId);
+  const th = t ? themeFor(t) : plainTheme();
+  const vars = chatWearOf(t);
+  for (const k of chatWornVars) if (!(k in vars)) pane.style.removeProperty(k);
+  for (const k of Object.keys(vars)) pane.style.setProperty(k, vars[k]);
+  chatWornVars = Object.keys(vars);
+  pane.classList.toggle("worn", chatWornVars.length > 0);
+  pane.style.setProperty("--term-edge", th.cursor || th.foreground || "");
+  pane.style.setProperty("--term-bg", th.background);
+  for (const [id, f] of chatFrames) chatDress(f, chatWearOf(chatCard(id)));
+}
+new MutationObserver(() => chatPaint()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-skin"] });
 
 function chatTell(f) {
   try { f.contentWindow.postMessage({ atriumChatPark: f.hidden }, location.origin); } catch (e) {}
@@ -82,7 +114,7 @@ function chatSelect(id) {
       f.setAttribute("aria-label", "conversation");
       f.dataset.card = chatId;
       f.hidden = true;
-      f.addEventListener("load", () => chatTell(f));
+      f.addEventListener("load", () => { chatTell(f); chatDress(f, chatWearOf(chatCard(f.dataset.card))); });
       f.src = "/m/?chat=1#term=" + encodeURIComponent(chatId);
       host.append(f);
       chatFrames.set(chatId, f);

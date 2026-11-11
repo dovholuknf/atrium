@@ -609,8 +609,15 @@
   #chatter .filters select option { background: var(--card-1); color: var(--head); }
   #chatter-list > .chat-more { margin: 10px 0; }
   /* The backlog list: status, dept, id, priority, title, created, changed. The header row is buttons that sort. */
-  .aud-row.bl-row { grid-template-columns: max-content max-content max-content max-content 1fr max-content max-content; }
-  .bl-head { position: sticky; top: 0; background: var(--bg-2); }
+  .aud-row.bl-row { grid-template-columns: 7.5em 6em 14em 7em 6.5em minmax(0, 1fr) 6.5em 6.5em; }
+  .bl-head { position: sticky; top: 0; z-index: 2; background: var(--bg-2); }
+  .bl-row[data-id] { cursor: pointer; }
+  .bl-row[data-id]:hover .aud-detail { color: var(--head); text-decoration: underline; }
+  .bl-row .aud-room, .bl-row .bl-kind { justify-self: start; }
+  .bl-kind { font: var(--fs-xs)/1.4 var(--mono); color: var(--label); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 1px 7px; white-space: nowrap; }
+  .bl-kind[data-kind="bug"] { color: var(--danger); border-color: var(--danger); }
+  .bl-kind[data-kind="feature"] { color: var(--teal); border-color: var(--teal); }
+  .bl-kind[data-kind="design"] { color: var(--warn); border-color: var(--warn); }
   .bl-sort {
     font: 600 var(--fs-xs)/1.4 var(--sans); color: var(--dim); background: none; border: 0; padding: 0;
     text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: .04em;

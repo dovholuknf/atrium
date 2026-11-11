@@ -272,6 +272,15 @@
     permsSoon(0);
   });
   window.addEventListener("online", () => { if (!live) { attempt = 0; connect(); } });
+  let wornVars = [];
+  window.addEventListener("message", e => {
+    if (e.source !== window.parent || e.origin !== location.origin || !e.data || typeof e.data.atriumChatWear !== "object") return;
+    const vars = e.data.atriumChatWear || {};
+    for (const k of wornVars) if (!(k in vars)) document.body.style.removeProperty(k);
+    for (const k of Object.keys(vars)) document.body.style.setProperty(k, vars[k]);
+    wornVars = Object.keys(vars);
+    document.body.classList.toggle("worn", wornVars.length > 0);
+  });
   window.addEventListener("message", e => {
     if (e.source !== window.parent || e.origin !== location.origin || !e.data || typeof e.data.atriumChatPark !== "boolean") return;
     if (parked === e.data.atriumChatPark) return;

@@ -100,7 +100,7 @@ async function loadPulls() {
     pulls.recent = all || pulls.rows.some(r => !r.archived_at) ? [] : await pullsReadRecent();
     pulls.loaded = true;
     const tab = document.querySelector('.tab[data-view="pulls"]');
-    if (tab) tab.hidden = false;
+    if (tab) tab.hidden = !emergingOn();
     // Only a note this read itself raised is cleared: a refusal that asked for this read stays on screen.
     if (pulls.loadFailed) pullsSay("");
     pulls.loadFailed = false;

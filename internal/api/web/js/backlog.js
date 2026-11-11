@@ -12,6 +12,7 @@
 const BACKLOG_SHOW_KEY = "atrium.backlog.show";
 const BACKLOG_PRIO_KEY = "atrium.backlog.prios";
 const BACKLOG_DEPT_KEY = "atrium.backlog.depts";
+const BACKLOG_KIND_KEY = "atrium.backlog.kinds";
 const BACKLOG_SORT_KEY = "atrium.backlog.sort";
 const BACKLOG_GROUP_KEY = "atrium.backlog.group";
 const BACKLOG_STATUSES = ["open", "in-progress", "held", "done", "dropped"];
@@ -36,16 +37,21 @@ let backlogShow = new Set(backlogStored(BACKLOG_SHOW_KEY, BACKLOG_SHOW_DEFAULT))
 // Priorities shown, as a set. Empty means all of them. `unset` is the items with none.
 const backlogPrios = new Set(backlogStored(BACKLOG_PRIO_KEY, []));
 const backlogDepts = new Set(backlogStored(BACKLOG_DEPT_KEY, []));
+const backlogKinds = new Set(backlogStored(BACKLOG_KIND_KEY, []));
 let backlogGroup = backlogStored(BACKLOG_GROUP_KEY, "dept");
 // The header the list is sorted by, or null for the default order. `dir` is 1 or -1.
 let backlogSort = backlogStored(BACKLOG_SORT_KEY, null);
 let backlogList = [];
 
 const BACKLOG_PRIOS = ["high", "medium", "low", "unset"];
+// The hub keeps no kind yet, so it is read off the id prefix. A kind the hub does send wins.
+const BACKLOG_KINDS = ["bug", "feature", "spike", "design", "interview", "docs", "chore"];
+const BACKLOG_PREFIX_KIND = { b: "bug", f: "feature", s: "spike", p: "design", u: "design", i: "interview", d: "docs", a: "chore", r: "chore" };
 const BACKLOG_COLS = [
   { key: "status", label: "status" },
   { key: "dept", label: "dept" },
   { key: "id", label: "id" },
+  { key: "kind", label: "kind" },
   { key: "priority", label: "priority" },
   { key: "title", label: "title" },
   { key: "created", label: "created" },
@@ -55,7 +61,7 @@ const BACKLOG_COLS = [
 function paintBacklogTab() {
   const tab = document.querySelector('.tab[data-view="backlog"]');
   if (!tab) return;
-  tab.hidden = typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  tab.hidden = !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
 }
 
 async function backlogGet(path) {
@@ -69,6 +75,12 @@ async function backlogGet(path) {
 function backlogPrio(b) {
   const p = String((b && b.priority) || "").trim().toLowerCase();
   return BACKLOG_PRIOS.includes(p) && p !== "unset" ? p : "unset";
+}
+
+function backlogKind(b) {
+  const k = String((b && b.kind) || "").trim().toLowerCase();
+  if (BACKLOG_KINDS.includes(k)) return k;
+  return BACKLOG_PREFIX_KIND[String((b && b.id) || "").charAt(1) === "-" ? String(b.id).charAt(0).toLowerCase() : ""] || "chore";
 }
 
 function backlogRank(b) { return BACKLOG_PRIOS.indexOf(backlogPrio(b)); }
@@ -92,6 +104,7 @@ function backlogDefaultCompare(a, b) {
 function backlogKeyOf(b, key) {
   switch (key) {
     case "priority": return backlogRank(b);
+    case "kind": return backlogKind(b);
     case "created": return backlogTime(b.created_at);
     case "changed": return backlogTime(b.changed_at);
     default: return String(b[key] || "").toLowerCase();
@@ -134,6 +147,7 @@ function backlogVisible(list, skip) {
     if (skip !== "show" && backlogShow.size && !backlogShow.has(String(b.status || ""))) return false;
     if (skip !== "prio" && backlogPrios.size && !backlogPrios.has(backlogPrio(b))) return false;
     if (skip !== "dept" && backlogDepts.size && !backlogDepts.has(String(b.dept || ""))) return false;
+    if (skip !== "kind" && backlogKinds.size && !backlogKinds.has(backlogKind(b))) return false;
     return backlogMatchesText(b, q);
   });
 }
@@ -158,6 +172,14 @@ function toggleBacklogShow(v) {
   paintBacklog();
 }
 function toggleBacklogDept(d) { toggleBacklogSet(backlogDepts, BACKLOG_DEPT_KEY, d); }
+function toggleBacklogKind(k) { toggleBacklogSet(backlogKinds, BACKLOG_KIND_KEY, k); }
+
+// A row is the item's way in: it opens the item on the items tab, the one view of an item.
+function backlogOpenItem(id) {
+  if (!id || typeof switchView !== "function" || typeof itemsShow !== "function") return;
+  switchView("items");
+  itemsShow(id);
+}
 function setBacklogGroup(g) {
   backlogGroup = g;
   backlogStore(BACKLOG_GROUP_KEY, g, g === "dept");
@@ -182,10 +204,12 @@ function backlogStamp(s) {
 function backlogItemRow(b) {
   const p = backlogPrio(b);
   const opts = BACKLOG_PRIOS.map(o => '<option value="' + o + '"' + (o === p ? " selected" : "") + ">" + o + "</option>").join("");
-  return '<div class="aud-row bl-row" data-id="' + esc(b.id || "") + '">' +
+  const k = backlogKind(b);
+  return '<div class="aud-row bl-row" data-id="' + esc(b.id || "") + '" role="link" tabindex="0">' +
     '<span class="aud-when">' + esc(b.status || "") + "</span>" +
     '<span class="aud-room">' + esc(b.dept || "") + "</span>" +
     '<span class="aud-kind">' + esc(b.id || "") + "</span>" +
+    '<span class="bl-kind" data-kind="' + k + '">' + k + "</span>" +
     '<select class="bl-prio" data-prio="' + p + '" data-id="' + esc(b.id || "") + '" aria-label="priority of ' + esc(b.id || "") + '">' +
     opts + "</select>" +
     '<span class="aud-detail">' + esc(b.title || "") + "</span>" +
@@ -206,6 +230,8 @@ function paintBacklogChips() {
   const show = document.getElementById("backlog-show");
   if (show) show.innerHTML = chip("all", backlogShow.size === 0, "toggleBacklogShow('')", "") +
     BACKLOG_STATUSES.map(s => chip(s, backlogShow.has(s), "toggleBacklogShow('" + s + "')", s)).join("");
+  const kinds = document.getElementById("backlog-kinds");
+  if (kinds) kinds.innerHTML = BACKLOG_KINDS.map(k => chip(k, backlogKinds.has(k), "toggleBacklogKind('" + k + "')", k)).join("");
   const prios = document.getElementById("backlog-prios");
   if (prios) prios.innerHTML = BACKLOG_PRIOS.map(p => `<button type="button" data-prio="${p}" data-v="${p}"${backlogPrios.has(p) ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${p} <i class="pillcount"></i></button>`).join("");
   const depts = [...new Set(backlogList.map(b => String(b.dept || "")).filter(Boolean))].sort();
@@ -219,6 +245,7 @@ function paintBacklogChips() {
   const grp = document.getElementById("backlog-group");
   if (grp) grp.innerHTML = BACKLOG_GROUPS.map(([k, label]) => `<button type="button" class="${backlogGroup === k ? "on" : ""}" data-group="${k}" onclick="setBacklogGroup('${k}')">${esc(label)}</button>`).join("");
   pillCounts("backlog-show", Object.assign({ "": backlogVisible(backlogList, "show").length }, count("show", b => String(b.status || ""), BACKLOG_STATUSES)));
+  pillCounts("backlog-kinds", count("kind", backlogKind, BACKLOG_KINDS));
   pillCounts("backlog-prios", count("prio", backlogPrio, BACKLOG_PRIOS));
   pillCounts("backlog-depts", count("dept", b => String(b.dept || ""), depts));
 }
@@ -337,7 +364,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (items) {
     items.addEventListener("click", ev => {
       const h = ev.target.closest("button[data-sort]");
-      if (h) backlogClickHeader(h.dataset.sort);
+      if (h) return backlogClickHeader(h.dataset.sort);
+      const row = ev.target.closest(".bl-row[data-id]");
+      if (row && !ev.target.closest("select")) backlogOpenItem(row.dataset.id);
+    });
+    items.addEventListener("keydown", ev => {
+      const row = ev.key === "Enter" && ev.target.classList.contains("bl-row") ? ev.target : null;
+      if (row) backlogOpenItem(row.dataset.id);
     });
     items.addEventListener("change", ev => {
       const s = ev.target.closest("select.bl-prio");
