@@ -16380,20 +16380,23 @@ async function pasteDoneSection(browser, base) {
       out.afterDone = vis();
       termSock.onmessage({ data: "[Pasted text #1 +3 lines]\r\n" });
       await wait(200);
+      out.held = vis();
+      await wait(1100);
       out.pastedText = vis();
       sendPasteText("two");
       await sentIds(2);
       termSock.onmessage({ data: "[Image #2]\r\n" });
-      await wait(200);
+      await wait(1300);
       out.image = vis();
       sendPasteText("hello there");
       await sentIds(3);
       termSock.onmessage({ data: "> hello there\r\n" });
-      await wait(200);
+      await wait(1300);
       out.short = vis();
       answer(out);
     }, null, 20000);
     if (got.afterDone !== true) fail("pasteDone: the room's word alone took the bar down: " + JSON.stringify(got));
+    if (got.held !== true) fail("pasteDone: the bar went down before pasteHoldMs: " + JSON.stringify(got));
     if (got.pastedText !== false) fail("pasteDone: the runner's [Pasted text] line did not end it: " + JSON.stringify(got));
     if (got.image !== false) fail("pasteDone: the runner's [Image] line did not end it: " + JSON.stringify(got));
     if (got.short !== false) fail("pasteDone: the short text on the screen did not end it: " + JSON.stringify(got));  } finally {

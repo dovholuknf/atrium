@@ -1385,6 +1385,7 @@ function connectTerm(taskID) {
       return;
     }
     const bytes = new Uint8Array(e.data);
+    pasteOutAt = Date.now();
     writeRunnerOutput(term, bytes, carryLoadDone(bytes, lagOnOutput(followScroll)));
   };
   termSock.onclose = async ev => {
@@ -2078,13 +2079,25 @@ function sendInput(text, quiet, pasted) {
 // WHAT ENDS IT IS THE RUNNER SHOWING THE PASTE. The room answering `in-done` only says the pty write returned,
 // and a runner that is busy shows the paste seconds later, so the bar used to go while nothing had appeared. Now
 // the terminal's own buffer is read each tick for what a runner prints for a paste: Claude Code's
-// `[Pasted text #N +M lines]` or `[Image #N]`, or the pasted text itself when it is short. One more of those than
-// before the paste ends it, after `pasteHoldMs` so it is painted at least once. The cap is the fallback for a
-// runner that shows nothing.
-const pasteHoldMs = 100;
+// `[Pasted text #N +M lines]` or `[Image #N]`, or the pasted text itself when it is short, on the input line: the
+// `pasteEchoRows` rows up to the cursor. One more of those than before the paste ends it, but not before
+// `pasteHoldMs`: a runner echoes in well under 100ms, and a bar up that briefly was never seen. The cap is the
+// fallback for a runner that shows nothing.
+const pasteHoldMs = 1200;
 const pasteGiveUpMs = 20000;
-const pasteEchoRows = 200;
-const pasteEchoMarker = /\[(Pasted text|Image) #\d+/;
+const pasteEchoRows = 30;
+const pasteEchoMarkers = /\[(Pasted text|Image) #\d+/g;
+
+// A PASTE THE RUNNER SHOWS WITH NO MARKER. Claude Code expands a paste of the same text again into the raw text, too
+// long for the needle, so no echo is ever seen. Output after the send that then goes quiet for `pasteSettleMs` is the
+// runner done with it. Claude Code can leave that expanded screen half drawn, so its own redraw key follows.
+const pasteSettleMs = 500;
+let pasteOutAt = 0;
+
+function pasteRepaint() {
+  if (termKind !== "runner" || !termTask || termTask.runner !== "claude") return;
+  sendInput("\x0c", true);
+}
 
 // A BIG PASTE LANDS LONG AFTER IT DRAINS, and nothing above sees that.
 //
@@ -2194,21 +2207,28 @@ function pasteBegin(n, needle) {
     if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); pasteLog(g, "bar shown"); }
     if (f.sent && !f.echoed && pasteEchoCount(f) > f.base) { f.echoed = true; pasteLog(g, "echo seen"); }
     if (f.echoed && t >= f.holdUntil) { pasteEnd("echo"); return; }
+    if (f.sent && pasteOutAt > f.sentAt && t - pasteOutAt >= pasteSettleMs && t >= f.holdUntil) {
+      pasteEnd("settled");
+      pasteRepaint();
+      return;
+    }
     f.timer = setTimeout(tick, 50);
   };
   tick();
 }
 
-// How many rows near the bottom of the terminal show a paste: a runner's marker for one, or its first line.
+// How many times the input line shows a paste: a runner's marker for one, or its first line.
 function pasteEchoCount(f) {
   if (!term) return 0;
   const b = term.buffer.active;
+  const at = b.baseY + b.cursorY;
   let n = 0;
-  for (let y = Math.max(0, b.length - pasteEchoRows); y < b.length; y++) {
+  for (let y = Math.max(0, at - pasteEchoRows); y <= at; y++) {
     const row = b.getLine(y);
     if (!row) continue;
     const s = row.translateToString(true);
-    if (pasteEchoMarker.test(s) || (f.needle && s.includes(f.needle))) n++;
+    n += (s.match(pasteEchoMarkers) || []).length;
+    if (f.needle && s.includes(f.needle)) n++;
   }
   return n;
 }
@@ -2295,6 +2315,7 @@ function showPasting(say) {
   el.classList.remove("failed");
   setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span><span class="rail"><i></i></span>`);
   el.hidden = false;
+  host.classList.add("pasting");
   placeToasts();
 }
 
@@ -2319,6 +2340,8 @@ function pasteEnd(why, handOn) {
   if (!handOn) { lagPasteMark("cleared"); lagPasteDone(why || "the board"); pasteLog(pasteShownG, "bar cleared", why || "the board"); pasteShownG = null; }
   const el = document.getElementById("t-pasting");
   if (el) el.hidden = true;
+  const host = document.getElementById("term-pane");
+  if (host) host.classList.remove("pasting");
   placeToasts();
 }
 
