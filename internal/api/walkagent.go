@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // walkAgentFile is where the walk agent leaves comments and replies, one JSON object per line. It sits beside PR.md
@@ -87,7 +88,7 @@ func walkMerge(state map[string]any, lines [][]byte) int {
 				}
 			}
 			if !have {
-				c["turns"] = append(turns, map[string]any{"who": "agent", "text": text, "id": id})
+				c["turns"] = append(turns, map[string]any{"who": "agent", "text": text, "id": id, "at": time.Now().UnixMilli()})
 				added++
 			}
 			continue
@@ -103,7 +104,7 @@ func walkMerge(state map[string]any, lines [][]byte) int {
 		if byID[id] != nil || isGone(id) {
 			continue
 		}
-		c := map[string]any{"id": id, "file": file, "line": line, "who": "agent", "text": text, "turns": []any{}, "post": nil}
+		c := map[string]any{"id": id, "file": file, "line": line, "who": "agent", "text": text, "turns": []any{}, "post": nil, "at": time.Now().UnixMilli()}
 		for _, k := range []string{"scope", "summary"} {
 			if v := walkStr(in, k); v != "" {
 				c[k] = v

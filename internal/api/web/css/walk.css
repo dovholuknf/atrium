@@ -338,7 +338,7 @@
     resize: both; overflow: auto; min-width: 300px; min-height: 90px; max-width: 90%; box-sizing: border-box;
     display: flex; flex-direction: column; margin: 6px 0 8px 5.2ch; padding: 8px 12px; white-space: normal;
     border: 1px solid var(--stroke-dim); border-left: 3px solid var(--teal); border-radius: var(--r-md);
-    background: rgb(var(--shell0-rgb)); font: var(--fs-sm)/1.45 system-ui, sans-serif; color: var(--body);
+    background: rgb(var(--shell0-rgb)); font: var(--fs-base)/1.45 system-ui, sans-serif; color: var(--body);
   }
   .wk-wait { display: flex; align-items: center; gap: var(--sp-2); margin: 4px 0; color: var(--dim); font: var(--fs-xs) var(--mono); }
   .wk-wait .spin { width: 12px; height: 12px; border: 2px solid rgba(var(--teal-rgb),.3); border-top-color: var(--teal); border-radius: 50%; animation: wkspin .8s linear infinite; }
@@ -351,7 +351,8 @@
   .cmt .st { color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4); border-radius: var(--r-pill); padding: 0 var(--sp-2); font-size: var(--fs-xxs); }
   .cmt .wk-turn { margin: 4px 0; }
   .cmt textarea, .askrow textarea { color: var(--head); background: rgba(var(--sink-rgb),.4); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); padding: 6px 10px; }
-  .cmt textarea { width: 100%; box-sizing: border-box; min-height: 2.6em; flex: 1 1 auto; resize: none; font: var(--fs-sm)/1.4 system-ui, sans-serif; }
+  .cmt textarea { width: 100%; box-sizing: border-box; min-height: 2.6em; flex: 1 1 auto; resize: none; font: var(--fs-base)/1.4 system-ui, sans-serif; }
+  .cmt .wk-said { font-size: var(--fs-base); }
   .cmt .row2 { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; flex-wrap: wrap; }
   .cmt .row2 .grow { flex: 1; }
   .cmt code.gh { display: block; margin-top: 6px; padding: 4px 8px; font: var(--fs-xxs)/1.4 var(--mono); color: var(--dim); background: rgba(var(--sink-rgb),.5); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-all; }
