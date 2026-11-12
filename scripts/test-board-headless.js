@@ -4792,6 +4792,8 @@ async function pasteLandsSection(browser, base) {
             setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ t: "in-done", id: m.id }) }),
               window.__link.write);
             setTimeout(() => { let k = 0; const iv = setInterval(() => { if (++k > window.__link.after / 100 || !this.onmessage) { clearInterval(iv); return; } window.__link.lastOut = performance.now(); this.onmessage({ data: new ArrayBuffer(4096) }); }, 100); }, window.__link.write);
+            setTimeout(() => this.onmessage && this.onmessage({ data: new TextEncoder().encode("[Pasted text #1 +1 lines]\r\n").buffer }),
+              window.__link.write + window.__link.after);
           }, m ? window.__link.drain : 0);
         },
         close() { this.readyState = 3; } };
