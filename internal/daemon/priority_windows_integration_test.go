@@ -72,8 +72,8 @@ func spawnSleeper(t *testing.T, d *Daemon, name string) (uint32, map[uint32]bool
 	return uint32(pid), fresh
 }
 
+// Not parallel, on purpose: a console host a parallel spawn made, not raised, is counted as this test's.
 func TestRunnerAndConsoleHostAreRaised(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	pid, hosts := spawnSleeper(t, d, "raised")
 	if len(hosts) == 0 {

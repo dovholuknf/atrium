@@ -3,11 +3,15 @@
 package daemon
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -171,5 +175,63 @@ func TestAThrowawayLeftBySomethingThatDiedIsSweptAtStartup(t *testing.T) {
 	}
 	if _, err := d.st.Get(task.ID); err == nil {
 		t.Fatal("the card survived the sweep")
+	}
+}
+
+func TestAStoppedThrowawayLeavesNoDirectory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+	task := aThrowaway(t, d)
+	shell, args := someShell(t)
+	sleep := "Start-Sleep -Seconds 60"
+	if shell == "sh" {
+		sleep = "sleep 60"
+	}
+	if _, err := d.spawnPTY(task.ID, shell, append(args, sleep), filepath.FromSlash(task.Worktree), os.Environ()); err != nil {
+		t.Skipf("could not start a runner here: %v", err)
+	}
+	r := d.sup.get(task.ID)
+	t.Cleanup(func() {
+		r.closePTY()
+		select {
+		case <-r.done:
+		case <-time.After(20 * time.Second):
+		}
+	})
+
+	_ = r.cmd.Process.Kill()
+
+	gone := func() bool {
+		_, err := os.Stat(filepath.FromSlash(task.Worktree))
+		return os.IsNotExist(err)
+	}
+	testwait.PollEvery(testwait.HTTP, 30*time.Second, gone)
+	if !gone() {
+		t.Fatalf("%s is still there after the stop", task.Worktree)
+	}
+	if _, err := d.st.Get(task.ID); err == nil {
+		t.Fatal("the card outlived the stop")
+	}
+}
+
+func TestDeletingAThrowawayCardDeletesItsDirectory(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task := aThrowaway(t, d)
+
+	rec := httptest.NewRecorder()
+	d.ap.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+task.ID, nil))
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("the delete answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.FromSlash(task.Worktree)); !os.IsNotExist(err) {
+		t.Fatalf("%s outlived its card", task.Worktree)
+	}
+	if _, err := d.st.Get(task.ID); err == nil {
+		t.Fatal("the card is still there")
 	}
 }

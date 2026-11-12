@@ -32,7 +32,7 @@ func makeThrowawayDir() (string, error) {
 // throwawayWhy is what the card says about itself, so that "gone forever" is
 // never a surprise. Written only where the operator typed nothing.
 const throwawayWhy = "temporary. this directory, this card and the conversation " +
-	"are deleted when the session ends. promote it to keep the work."
+	"are deleted when the session ends."
 
 // endThrowaway cleans up an exiting runner and returns immediately for
 // ordinary cards. All exit paths reach it through cmd.Wait, including

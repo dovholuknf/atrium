@@ -190,16 +190,34 @@ func mergeBase(g gitAt, head string) (string, string) {
 		return "", ""
 	}
 	for _, br := range []string{"claude/main", "main"} {
-		if _, err := g.git(gitexec.RevParseVerify{Rev: "refs/heads/" + br, Quiet: true}); err != nil {
+		tip := freshestTip(g, br)
+		if tip == "" {
 			continue
 		}
-		if out, err := g.git(gitexec.MergeBase{A: "HEAD", B: "refs/heads/" + br}); err == nil {
+		if out, err := g.git(gitexec.MergeBase{A: "HEAD", B: tip}); err == nil {
 			if sha := strings.TrimSpace(out); sha != "" {
 				return sha, br
 			}
 		}
 	}
 	return "", ""
+}
+
+// freshestTip is the local branch or its origin or hub tracking ref, whichever is a descendant of the others,
+// so a local base left behind never counts upstream work as the card's. Empty when none exists.
+func freshestTip(g gitAt, br string) string {
+	best := ""
+	for _, ref := range []string{"refs/heads/" + br, "refs/remotes/origin/" + br, "refs/remotes/hub/" + br} {
+		if _, err := g.git(gitexec.RevParseVerify{Rev: ref, Quiet: true}); err != nil {
+			continue
+		}
+		if best == "" {
+			best = ref
+		} else if _, err := g.git(gitexec.IsAncestor{Commit: best, Of: ref}); err == nil {
+			best = ref
+		}
+	}
+	return best
 }
 
 // turnChanges is the files one reply's turn changed, found from its edit tool calls.

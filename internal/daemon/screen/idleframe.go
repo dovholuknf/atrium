@@ -103,6 +103,10 @@ func FrameLineEmpty(tail []byte, cols, rows int) bool {
 			if ch == 0 {
 				ch = ' '
 			}
+			// Claude draws a no-break space after the prompt mark.
+			if ch == '\u00a0' {
+				ch = ' '
+			}
 			if after && ch != ' ' {
 				if !sgrIsDim(c.sgr) && !(first && sgrIsInverse(c.sgr)) {
 					dim = false
