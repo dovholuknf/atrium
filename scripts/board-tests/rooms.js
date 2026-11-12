@@ -271,7 +271,8 @@ async function restartStaysSection(browser, base) {
   try {
     await gp.addInitScript(() => {
       document.addEventListener("DOMContentLoaded", () => {
-        window.__coverAtLoad = document.getElementById("hubrestart").open;
+        const cover = document.getElementById("hubrestart"); // a frame inside the page, such as the file viewer, has none
+        if (cover) window.__coverAtLoad = cover.open;
       });
     });
     await gp.clock.install();
