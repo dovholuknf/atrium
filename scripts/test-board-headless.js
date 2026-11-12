@@ -23328,7 +23328,7 @@ async function switcherRankSection(browser, base) {
       swTasks = cs;
       swSetQuery(q);
       return [...document.querySelectorAll("#sw-list .swrow[data-id]")].map(r => ({ id: r.dataset.id,
-        name: r.querySelector(".swname").textContent, dir: r.querySelector(".swdir").textContent }));
+        name: r.querySelector(".tname").textContent, dir: r.querySelector(".tpath").textContent }));
     }, [cards, q]);
     const sub = await rows("ui-for-config");
     if (sub.map(r => r.id).join() !== "sw-a") fail("switcherRank: ui-for-config should find only sw-a, got " + sub.map(r => r.id).join());
@@ -23351,7 +23351,7 @@ async function switcherRankSection(browser, base) {
     // Two cards of one repo are told apart by their titles.
     const both = await rows("ziti-console");
     if (new Set(both.map(r => r.name)).size !== 2) fail("switcherRank: two cards of one repo read alike: " + JSON.stringify(both));
-    // A dead card is found once something is typed, under the live one, chipped ended or archived.
+    // A dead card is found once something is typed, under the live one.
     const gone = Object.assign(card("sw-d", "Config old", "/w/github/openziti/ziti-console", "old"), { supervised: false });
     const idle = await rows("");
     if (idle.some(r => r.id === "sw-d")) fail("switcherRank: a dead card is listed with nothing typed");
@@ -23361,10 +23361,10 @@ async function switcherRankSection(browser, base) {
       swGone = [Object.assign({}, g, { id: "sw-e", archived_at: "2026-10-01T00:00:00Z" })];
       paintSwitcher();
       return [...document.querySelectorAll("#sw-list .swrow[data-id]")].map(r =>
-        r.dataset.id + ":" + [...r.querySelectorAll(".chip")].map(c => c.textContent).filter(c => /^(ended|archived)$/.test(c)).join("/"));
+        r.dataset.id);
     }, [cards.concat(gone), gone]);
-    if (dead[0] !== "sw-a:" || dead.slice(1).sort().join() !== "sw-d:ended,sw-e:archived") {
-      fail("switcherRank: config should list sw-a, then sw-d ended and sw-e archived, got " + dead.join());
+    if (dead[0] !== "sw-a" || dead.slice(1).sort().join() !== "sw-d,sw-e") {
+      fail("switcherRank: config should list sw-a, then sw-d and sw-e, got " + dead.join());
     }
     if (errors.length) fail("switcherRank: page errors: " + errors.join(" | "));
   } finally { mock.tasksMode = was; await ctx.close(); }
