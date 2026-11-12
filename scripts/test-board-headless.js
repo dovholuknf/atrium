@@ -22218,7 +22218,7 @@ async function quickPasteSection(browser, base) {
     // the box reads the link as it is pasted and says what it was read as: a PR, with its label and title
     await p.waitForFunction(() => document.getElementById("sw-open").dataset.kind === "pr", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: the box did not say it read a pull request"));
-    if (!/open PR.*review zrok#12.*github pull request/.test(await p.textContent("#sw-open")))
+    if (!/open PR[\s\S]*review zrok#12[\s\S]*github pull request/.test(await p.textContent("#sw-open")))
       fail("quickPaste: the line read " + await p.textContent("#sw-open"));
     st.calls = [];
 
