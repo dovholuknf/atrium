@@ -41,6 +41,63 @@ function viewURL(id, path) {
   return "/v1/tasks/" + encodeURIComponent(id) + "/files/view?path=" + encodeURIComponent(path);
 }
 
+// `?embed` is the board's file drawer showing this page in a frame: the drawer draws its own bar, so this one hides.
+const EMBED = typeof location !== "undefined" && /(^|&)embed(=|&|$)/.test(location.search.slice(1));
+
+// A tab never holds more text than this. The rest is a download, said so above the text.
+const READ_CAP = 1 << 20;
+
+// The first `cap` bytes of a response, and how large the whole file is. Asked for as a range, and cut here as well, so a
+// route that ignores the range still never puts sixty megabytes in a <pre>.
+async function readCapped(r, cap) {
+  const range = /\/(\d+)$/.exec(r.headers.get("Content-Range") || "");
+  const total = range ? Number(range[1]) : Number(r.headers.get("Content-Length")) || 0;
+  const parts = [];
+  let got = 0;
+  if (r.body && r.body.getReader) {
+    const rd = r.body.getReader();
+    while (got < cap) {
+      const { done, value } = await rd.read();
+      if (done) break;
+      parts.push(value);
+      got += value.length;
+    }
+    rd.cancel().catch(() => {});
+  } else {
+    const all = new Uint8Array(await r.arrayBuffer());
+    parts.push(all);
+    got = all.length;
+  }
+  const bytes = new Uint8Array(Math.min(got, cap));
+  let at = 0;
+  for (const p of parts) {
+    const take = Math.min(p.length, bytes.length - at);
+    bytes.set(p.subarray(0, take), at);
+    at += take;
+    if (at >= bytes.length) break;
+  }
+  return { bytes, total: Math.max(total, bytes.length), cut: Math.max(total, got) > bytes.length };
+}
+
+// A NUL in the first 8 KB is how git decides a file is binary, and it is right often enough here.
+function looksBinary(bytes) {
+  const n = Math.min(bytes.length, 8192);
+  for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
+  return false;
+}
+
+function readSize(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + " bytes";
+  if (n < 1 << 20) return Math.round(n / 1024) + " KB";
+  if (n < 1 << 30) return (n / (1 << 20)).toFixed(1).replace(/\.0$/, "") + " MB";
+  return (n / (1 << 30)).toFixed(1).replace(/\.0$/, "") + " GB";
+}
+
+function downloadURL(id, path) {
+  return "/v1/tasks/" + encodeURIComponent(id) + "/files?path=" + encodeURIComponent(path);
+}
+
 function isMarkdown(path) { return /\.(md|markdown)$/i.test(path); }
 
 function isHTML(path) { return /\.html?$/i.test(path); }
@@ -75,7 +132,8 @@ function htmlMain(body) {
     frame.hidden = !render;
     text.hidden = render;
     btn.textContent = render ? "Show the source" : "Show it rendered";
-    history.replaceState(null, "", (render ? "?render" : location.pathname) + location.hash);
+    const q = [EMBED ? "embed" : "", render ? "render" : ""].filter(Boolean).join("&");
+    history.replaceState(null, "", (q ? "?" + q : location.pathname) + location.hash);
   };
   btn.hidden = false;
   btn.onclick = () => show(frame.hidden);
@@ -190,6 +248,7 @@ function readMain() {
   const what = document.getElementById("what");
   const text = document.getElementById("text");
   const md = document.getElementById("md");
+  if (EMBED) document.documentElement.classList.add("embed");
 
   if ((!SHARE && !id) || !path) {
     where.textContent = "nothing to read";
@@ -219,22 +278,46 @@ function readMain() {
     f.src = viewURL(id, path);
     return;
   }
-  if (kind === "binary") {
-    oops("atrium shows pictures, PDFs and text, and this is none of them. ");
+  const binary = size => {
+    text.className = "oops binary";
+    text.textContent = "";
+    const b = document.createElement("b");
+    b.textContent = path.split("/").pop();
     const a = document.createElement("a");
-    a.href = "/v1/tasks/" + encodeURIComponent(id) + "/files?path=" + encodeURIComponent(path);
+    a.href = downloadURL(id, path);
     a.textContent = "Download it";
-    text.appendChild(a);
+    text.append(b, document.createTextNode((size ? " is " + readSize(size) + " of" : " is") +
+      " binary, so there is nothing here to read. "), a);
+  };
+  if (kind === "binary") {
+    if (SHARE) { oops("This file is not text."); return; }
+    fetch(viewURL(id, path), { method: "HEAD" })
+      .then(r => binary(Number(r.headers.get("Content-Length")) || 0))
+      .catch(() => binary(0));
     return;
   }
-  fetch(viewURL(id, path))
+  let cutNote = null;
+  fetch(viewURL(id, path), SHARE ? undefined : { headers: { Range: "bytes=0-" + (READ_CAP - 1) } })
     .then(async r => {
       if (!r.ok) throw new Error((await r.text()) || r.statusText);
-      return r.text();
+      const got = await readCapped(r, READ_CAP);
+      if (kind === "text" && looksBinary(got.bytes)) return { binary: got.total };
+      if (got.cut) cutNote = got.total;
+      return { body: new TextDecoder().decode(got.bytes) };
     })
-    .then(body => {
+    .then(({ body, binary: size }) => {
+      if (size !== undefined) { binary(size); return; }
+      if (cutNote) {
+        const cut = document.getElementById("cut");
+        cut.textContent = "The first " + readSize(READ_CAP) + " of " + readSize(cutNote) + ". ";
+        const a = document.createElement("a");
+        a.href = downloadURL(id, path);
+        a.textContent = "Download all of it";
+        cut.appendChild(a);
+        cut.hidden = false;
+      }
       const lines = body.split("\n").length;
-      what.textContent = lines + (lines === 1 ? " line" : " lines");
+      what.textContent = (cutNote ? "first " : "") + lines + (lines === 1 ? " line" : " lines");
       if (kind === "svg") {
         // An image never runs the script an SVG can carry, and a blob keeps it off the view route's text type.
         const pic = document.getElementById("pic");

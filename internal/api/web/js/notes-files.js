@@ -156,16 +156,21 @@ function openTermFiles() {
   if (!termTask) return;
   setTermFiles(true);
   loadFiles("", termFilesCtx());
+  focusFileList(termFilesCtx());
 }
 
-function setTermFiles(open) {
+function setTermFiles(open, quiet) {
   const box = document.getElementById("t-files-panel");
   if (!box) return;
   box.hidden = !open;
   // Closed by any route means the next open starts its own history. Left set,
   // a drawer opened from the button after a terminal click would close itself
   // the first time an editor in it was shut.
-  if (!open) termFilesAuto = false;
+  if (!open) {
+    termFilesAuto = false;
+    closeFileView(termFilesCtx(), true);
+    if (!quiet) filesNavPush();
+  }
   const btn = document.getElementById("t-files");
   if (btn) btn.classList.toggle("go", open);
   // The terminal's box changed, and xterm measures in characters, so it has to
@@ -188,23 +193,70 @@ function setTermFiles(open) {
 // Not routed through xterm's key handler. The drawer sets `#t-screen` to
 // `display: none`, so while it is open there is no terminal on screen and no
 // question about whether the runner wanted this key.
-document.addEventListener("keydown", e => {
-  if (e.key !== "Escape") return;
+function drawerKey(e) {
   const drawer = document.getElementById("t-files-panel");
   if (!drawer || drawer.hidden) return;
   const ed = document.getElementById("t-edit");
   if (ed && !ed.hidden) {
     // The textarea has its own handler and has already run. Anything else with
     // focus, a button or the list, gets the same answer from here.
-    if (e.target && e.target.id === "t-edit-text") return;
+    if (e.key !== "Escape" || (e.target && e.target.id === "t-edit-text")) return;
     e.preventDefault();
     closeEditor();
     return;
   }
-  e.preventDefault();
-  setTermFiles(false);
-  if (term) term.focus();
-});
+  const ctx = termFilesCtx();
+  const pos = filesPos.term;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (pos.viewing) { closeFileView(ctx); return; }
+    if (pos.q) { setFilesQ(ctx, ""); paintFiles(ctx); focusFileList(ctx); return; }
+    setTermFiles(false);
+    if (term) term.focus();
+    return;
+  }
+  // The rest only from inside the drawer or the file shown in it, so a key meant for anything else is left alone.
+  const t = e.target;
+  const inFrame = t && t.ownerDocument && t.ownerDocument !== document;
+  if (!inFrame && !(t && drawer.contains(t))) return;
+  if (t && t.id === ctx.q) return;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && t.type !== "checkbox") return;
+  if (e.ctrlKey || e.metaKey || (e.altKey && e.key !== "ArrowUp")) return;
+  if (pos.viewing && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    e.preventDefault();
+    stepFileView(ctx, e.key === "ArrowLeft" ? -1 : 1);
+    return;
+  }
+  const list = document.getElementById(ctx.list);
+  const page = Math.max(1, Math.floor(list.clientHeight / 26) - 1);
+  const go = to => { moveFileCur(ctx, to); if (pos.viewing) followFileCur(ctx); };
+  switch (e.key) {
+    case "ArrowDown": e.preventDefault(); go(pos.cur + 1); break;
+    case "ArrowUp":
+      e.preventDefault();
+      if (e.altKey) termFilesUp(); else go(pos.cur - 1);
+      break;
+    case "PageDown": e.preventDefault(); go(pos.cur + page); break;
+    case "PageUp": e.preventDefault(); go(pos.cur - page); break;
+    case "Home": e.preventDefault(); go(0); break;
+    case "End": e.preventDefault(); go(pos.shown.length - 1); break;
+    case "Enter": e.preventDefault(); openFileRow(ctx, pos.cur); break;
+    case "Backspace": e.preventDefault(); termFilesUp(); break;
+    case " ": {
+      e.preventDefault();
+      const cb = list.querySelector(`.frow[data-i="${pos.cur}"] .fpick`);
+      if (cb) { cb.checked = !cb.checked; paintPicked(ctx); }
+      break;
+    }
+    case "/": {
+      e.preventDefault();
+      const q = document.getElementById(ctx.q);
+      if (q) { q.focus(); q.select(); }
+      break;
+    }
+  }
+}
+document.addEventListener("keydown", drawerKey);
 
 // Which browser is being driven, so one implementation serves both.
 //
@@ -216,7 +268,8 @@ function termFilesCtx() {
   return {
     id: termTask && termTask.id, at: "term",
     where: "t-files-where", up: "t-files-up", zip: "t-files-zip",
-    del: "t-files-del", list: "t-files-list", note: "t-files-note"
+    del: "t-files-del", list: "t-files-list", note: "t-files-note",
+    q: "t-files-q", qn: "t-files-qn", view: "t-fview"
   };
 }
 function dialogFilesCtx() {
@@ -230,90 +283,232 @@ function dialogFilesCtx() {
 // Where each browser is standing. Two of them, because the dialog and the pane
 // can be open on different directories and one shared variable made walking in
 // one of them move the other.
-const filesPos = { dialog: { at: "", parent: "" }, term: { at: "", parent: "" } };
+function filesPlace() {
+  return { at: "", parent: "", root: "", rows: [], shown: [], total: 0, truncated: false, big: false, q: "", cur: -1,
+    viewing: "", err: null };
+}
+const filesPos = { dialog: filesPlace(), term: filesPlace() };
 
-async function loadFiles(path, ctx) {
+// How every list is sorted, folders always first. Kept in this browser, since it is how this person reads a folder.
+const FILES_SORT_KEY = "atrium.files.sort";
+let filesSort = (() => {
+  try {
+    const s = JSON.parse(localStorage.getItem(FILES_SORT_KEY) || "");
+    if (s && ["name", "size", "mtime"].includes(s.key)) return { key: s.key, desc: !!s.desc };
+  } catch (e) {}
+  return { key: "name", desc: false };
+})();
+
+function setFilesQ(ctx, q) {
+  filesPos[ctx.at].q = q;
+  const box = ctx.q && document.getElementById(ctx.q);
+  if (box) box.value = q;
+}
+
+function focusFileList(ctx) {
+  const list = document.getElementById(ctx.list);
+  if (list) list.focus({ preventScroll: true });
+}
+
+async function loadFiles(path, ctx, keepQ) {
   ctx = ctx || dialogFilesCtx();
   if (!ctx.id) return;
   const pos = filesPos[ctx.at];
+  const ask = path || "";
+  if (!keepQ && ask !== pos.at) setFilesQ(ctx, "");
+  pos.err = null;
   let res;
   try {
+    // A folder cut at the room's cap is filtered by the room, so the filter finds what the cut left out.
     res = await api(`/v1/tasks/${ctx.id}/files/list` +
-      (path ? `?path=${encodeURIComponent(path)}` : ""));
+      (ask ? `?path=${encodeURIComponent(ask)}` : "") +
+      (pos.q && pos.big ? `${ask ? "&" : "?"}q=${encodeURIComponent(pos.q)}` : ""));
   } catch (e) {
-    setHTML(document.getElementById(ctx.list),
-      `<div class="empty">${esc(e.message)}</div>`);
+    pos.err = { msg: e.message, status: e.status || 0, path: ask };
+    paintFiles(ctx);
     return;
   }
+  const moved = pos.at !== res.path;
   pos.at = res.path;
   pos.parent = res.parent || "";
+  pos.root = res.root || "";
+  pos.rows = res.entries || [];
+  pos.truncated = !!res.truncated;
+  pos.total = res.total || pos.rows.length;
+  if (!pos.q || !pos.big) pos.big = pos.truncated;
+  if (moved) pos.cur = pos.rows.length ? 0 : -1;
   // Kept for the dialog's own callers, which still read the old names.
   if (ctx.at === "dialog") { filesAt = res.path; filesParent = pos.parent; }
+  paintFiles(ctx);
+  if (ctx.at === "term") filesNavPush();
+}
 
-  paintCrumbs(ctx, res);
+// The drawer's place in the browser's history, so Back returns to the last folder or file. The URL stays the same.
+let filesNavApplying = false;
+function filesNavPush(replace) {
+  if (filesNavApplying) return;
+  const drawer = document.getElementById("t-files-panel");
+  const pos = filesPos.term;
+  const files = drawer && !drawer.hidden && termTask ? { card: termTask.id, at: pos.at, viewing: pos.viewing } : null;
+  const was = history.state || {};
+  if (JSON.stringify(was.files || null) === JSON.stringify(files)) return;
+  const now = Object.assign({}, was, { files });
+  if (replace) history.replaceState(now, "");
+  else history.pushState(now, "");
+}
+
+// Registered after board.js's, which attaches the card first. A state for another card is left to that one.
+addEventListener("popstate", async e => {
+  const f = e.state && e.state.files;
+  const drawer = document.getElementById("t-files-panel");
+  if (!drawer) return;
+  filesNavApplying = true;
+  try {
+    if (!f) { if (!drawer.hidden) setTermFiles(false); return; }
+    if (!termTask || bareId(termTask.id) !== bareId(f.card)) return;
+    const ctx = termFilesCtx(), pos = filesPos.term;
+    if (drawer.hidden) setTermFiles(true);
+    if (pos.at !== f.at) await loadFiles(f.at, ctx);
+    const e2 = f.viewing && pos.shown.find(r => r.path === f.viewing);
+    if (e2) { moveFileCur(ctx, pos.shown.indexOf(e2)); openFileView(ctx, e2); } else closeFileView(ctx, true);
+  } finally {
+    filesNavApplying = false;
+  }
+});
+
+
+// A room that is not connected answers from the hub with one of these.
+function filesOffline(status) { return status === 502 || status === 503 || status === 504; }
+
+function filesHead() {
+  const b = (k, label, right) => `<button type="button" class="fsort${right ? " r" : ""}${filesSort.key === k ? " on" : ""}"
+    data-sort="${k}" data-tip="sort by ${label}">${label}${filesSort.key === k ?
+      `<i>${filesSort.desc ? "&#9662;" : "&#9652;"}</i>` : ""}</button>`;
+  return `<div class="frow fhead"><input type="checkbox" class="fpickall" aria-label="pick every file shown"
+    data-tip="pick every file shown">${b("name", "name")}${b("size", "size", true)}${b("mtime", "modified", true)}<span></span></div>`;
+}
+
+function paintFiles(ctx) {
+  const pos = filesPos[ctx.at];
+  const host = document.getElementById(ctx.list);
+  if (!host) return;
+  paintCrumbs(ctx, pos.err ? { root: pos.root, path: pos.err.path || pos.at } : { root: pos.root, path: pos.at });
   // Disabled rather than hidden at the top, so the control does not move
-  // under the cursor as you walk up. Kept alongside the breadcrumb: one step
-  // back is the commonest move and it should not need aiming at a word.
+  // under the cursor as you walk up. After an error it goes back to the folder that last listed.
   const up = document.getElementById(ctx.up);
-  if (up) up.disabled = !pos.parent;
-  document.getElementById(ctx.note).textContent = res.truncated
-    ? `showing the first ${(res.entries || []).length}. this directory has more.`
-    : "";
-  // The download button is painted from the selection, not from the directory.
-  // See paintPicked.
+  if (up) up.disabled = pos.err ? filesOffline(pos.err.status) || !pos.at || pos.err.path === pos.at : !pos.parent;
+  const note = document.getElementById(ctx.note);
+  note.textContent = "";
+  const qn = ctx.qn && document.getElementById(ctx.qn);
+  if (qn) qn.textContent = "";
 
-  const rows = res.entries || [];
-  if (!rows.length) {
-    setHTML(document.getElementById(ctx.list),
-      `<div class="empty">nothing here.</div>`);
+  if (pos.err) {
+    const off = filesOffline(pos.err.status);
+    const room = (ctx.at === "term" && termTask && termTask.room) || "the room";
+    setHTML(host, `<div class="fstate oops"><b>${off ? `${esc(room)} is not reachable` : "could not open this folder"}</b>
+      <span>${esc(pos.err.msg)}</span><span class="facts-row"><button type="button" data-retry>try again</button>${
+        !off && pos.root ? `<button type="button" data-home>the card's folder</button>` : ""}</span></div>`);
+    host.querySelector("[data-retry]").onclick = () => loadFiles(pos.err.path, ctx, true);
+    const home = host.querySelector("[data-home]");
+    if (home) home.onclick = () => loadFiles(pos.root, ctx);
+    paintPicked(ctx);
     return;
   }
-  // Sorted by the daemon, folders first then by name, so the board does not
-  // hold a second opinion about the order.
-  setHTML(document.getElementById(ctx.list), rows.map(e => `
-    <div class="frow${e.dir ? " dir" : ""}" data-path="${esc(e.path)}"${
-        e.dir ? ` data-dir="${esc(e.path)}"` : ""}>
-      <input type="checkbox" class="fpick" data-path="${esc(e.path)}"
-        data-tip="pick this for a download">
-      <span class="fname">${fileIcon(e)}${esc(e.name)}${e.dir ? "/" : ""}</span>
+
+  const rows = filesShownBy(pos.rows, pos.q, filesSort);
+  pos.shown = rows;
+  if (pos.cur >= rows.length) pos.cur = rows.length - 1;
+  if (qn && pos.q) qn.textContent = pos.big ? `${rows.length} found` : `${rows.length} of ${pos.rows.length}`;
+  if (pos.truncated) {
+    note.textContent = pos.q && pos.big ? `the first ${pos.rows.length} of ${pos.total} matches`
+      : `the first ${pos.rows.length} of ${pos.total}, folders first. filter to find the rest.`;
+  }
+  if (!pos.rows.length && !(pos.q && pos.big)) {
+    setHTML(host, `<div class="fstate">this folder is empty</div>`);
+    paintPicked(ctx);
+    return;
+  }
+  const picked = new Set([...host.querySelectorAll(".frow[data-i] .fpick:checked")].map(c => c.dataset.path));
+  if (!rows.length) {
+    setHTML(host, filesHead() + `<div class="fstate">nothing here is called “${esc(pos.q)}”<span class="facts-row">
+      <button type="button" data-clearq>clear the filter</button></span></div>`);
+  } else {
+    setHTML(host, filesHead() + rows.map((e, i) => `
+    <div class="frow${e.dir ? " dir" : ""}${i === pos.cur ? " cur" : ""}${e.path === pos.viewing ? " open" : ""}"
+      role="option" data-i="${i}" data-path="${esc(e.path)}">
+      <input type="checkbox" class="fpick" data-path="${esc(e.path)}" tabindex="-1"${picked.has(e.path) ? " checked" : ""}
+        aria-label="pick ${esc(e.name)}">
+      <${e.dir ? "span" : `a href="${esc(fileTabURL(ctx.id, e.path))}" tabindex="-1" draggable="false"`} class="fname"${
+        e.name.length > 36 ? ` data-tip="${esc(e.name)}"` : ""}>${fileIcon(e)}<span class="fn">${
+        esc(e.name)}${e.dir ? "/" : ""}</span></${e.dir ? "span" : "a"}>
       <span class="fsize">${e.dir ? "" : esc(bytes(e.size))}</span>
       <span class="fwhen">${esc(firstSeen(e.mtime))}</span>
-      <span class="facts">${e.dir ? "" : `
-        ${editable(e.name) ? `<span class="chip edit" data-edit="${esc(e.path)}"
-          data-tip="in a box right here, in this browser. works from anywhere."
-          >edit here</span>` : ""}
-        <span class="chip open" data-open="${esc(e.path)}"
-          data-tip="in your own editor, on the machine this session runs on. over an overlay that
-                 window opens there, not where you are sitting."
-          >open there</span>
-        <a class="chip" download href="/v1/tasks/${ctx.id}/files?path=${
-           encodeURIComponent(e.path)}">get</a>`}</span>
+      <span class="facts">${e.dir ? "" : `${editableHere(e) ? `<span class="chip edit" data-edit="${esc(e.path)}"
+        data-tip="change it here, in this browser">edit</span>` : ""}<a class="chip" tabindex="-1" download
+        href="/v1/tasks/${ctx.id}/files?path=${encodeURIComponent(e.path)}" data-tip="save it to this computer">get</a>`}</span>
     </div>`).join(""));
+  }
 
   // Wired rather than inlined: a filename with an apostrophe in it breaks an
   // onclick attribute, and HTML escaping does nothing about that.
-  const host = document.getElementById(ctx.list);
-  host.querySelectorAll(".frow.dir").forEach(el => {
-    el.onclick = () => { if (!droppedASelection()) loadFiles(el.dataset.dir, ctx); };
-  });
-  host.querySelectorAll(".chip.open").forEach(el => {
-    el.onclick = ev => {
-      ev.stopPropagation();
-      if (!droppedASelection()) openOnDaemon(ctx.id, el.dataset.open);
+  const clear = host.querySelector("[data-clearq]");
+  if (clear) clear.onclick = () => { setFilesQ(ctx, ""); paintFiles(ctx); };
+  host.querySelectorAll(".fsort").forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.sort;
+      filesSort = filesSort.key === k ? { key: k, desc: !filesSort.desc } : { key: k, desc: k !== "name" };
+      try { localStorage.setItem(FILES_SORT_KEY, JSON.stringify(filesSort)); } catch (e) {}
+      paintFiles(ctx);
     };
   });
-  host.querySelectorAll(".chip.edit").forEach(el => {
+  host.querySelectorAll(".frow[data-i]").forEach(el => {
     el.onclick = ev => {
-      ev.stopPropagation();
-      if (!droppedASelection()) openEditor(ctx.id, el.dataset.edit);
+      if (ev.target.closest(".fpick, .facts a") || droppedASelection()) return;
+      // The name is a link to the file's tab: a modified click is the browser's, a plain one opens it here.
+      if (ev.target.closest("a.fname")) {
+        if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button) return;
+        ev.preventDefault();
+      }
+      pos.cur = Number(el.dataset.i);
+      const edit = ev.target.closest(".chip.edit");
+      if (edit) { openEditor(ctx.id, edit.dataset.edit); return; }
+      openFileRow(ctx, pos.cur);
     };
   });
-  // A tick must not also walk into the directory it is on.
+  // A tick must not also open the row it is on.
   host.querySelectorAll(".fpick").forEach(el => {
     el.onclick = ev => ev.stopPropagation();
     el.onchange = () => paintPicked(ctx);
   });
+  const all = host.querySelector(".fpickall");
+  if (all) {
+    all.onchange = () => {
+      host.querySelectorAll(".frow[data-i] .fpick").forEach(c => { c.checked = all.checked; });
+      paintPicked(ctx);
+    };
+  }
   paintPicked(ctx);
+  const cur = host.querySelector(".frow.cur");
+  if (cur) cur.scrollIntoView({ block: "nearest" });
+}
+
+function moveFileCur(ctx, to) {
+  const pos = filesPos[ctx.at];
+  if (!pos.shown.length) return;
+  pos.cur = Math.max(0, Math.min(pos.shown.length - 1, to));
+  const host = document.getElementById(ctx.list);
+  host.querySelectorAll(".frow.cur").forEach(r => r.classList.remove("cur"));
+  const el = host.querySelector(`.frow[data-i="${pos.cur}"]`);
+  if (el) { el.classList.add("cur"); el.scrollIntoView({ block: "nearest" }); }
+}
+
+// A folder walks in. A file opens beside the list in the pane, and in a tab from the card dialog, which has no room.
+function openFileRow(ctx, i) {
+  const e = filesPos[ctx.at].shown[i];
+  if (!e) return;
+  if (e.dir) { closeFileView(ctx, true); loadFiles(e.path, ctx); return; }
+  if (ctx.view) openFileView(ctx, e);
+  else openFileTabFor(ctx.id, e.path);
 }
 
 // Did this click just finish selecting text, rather than mean anything?
@@ -351,8 +546,13 @@ function paintPicked(ctx) {
   const host = document.getElementById(ctx.list);
   const zip = document.getElementById(ctx.zip);
   if (!host || !zip) return;
-  const picked = [...host.querySelectorAll(".fpick")]
-    .filter(c => c.checked).map(c => c.dataset.path);
+  const boxes = [...host.querySelectorAll(".frow[data-i] .fpick")];
+  const picked = boxes.filter(c => c.checked).map(c => c.dataset.path);
+  const all = host.querySelector(".fpickall");
+  if (all) {
+    all.checked = boxes.length > 0 && picked.length === boxes.length;
+    all.indeterminate = picked.length > 0 && picked.length < boxes.length;
+  }
 
   const del = document.getElementById(ctx.del);
   zip.hidden = picked.length === 0;
@@ -378,6 +578,141 @@ function paintPicked(ctx) {
   }
   zip.dataset.tip = picked.join("\n");
 }
+
+// ── a file, shown in the drawer ─────────────────────────────────────────────
+
+// Beside the list where the pane is wide and over it where it is not, in read.html drawn bare (`?embed`).
+function openFileView(ctx, e, replace) {
+  const pos = filesPos[ctx.at];
+  pos.viewing = e.path;
+  document.getElementById("t-fview").hidden = false;
+  document.getElementById("t-files-panel").classList.add("viewing");
+  const where = document.getElementById("t-fview-where");
+  where.textContent = e.name;
+  where.dataset.tip = e.path;
+  document.getElementById("t-fview-what").textContent = bytes(e.size);
+  const files = pos.shown.filter(r => !r.dir);
+  const at = files.findIndex(r => r.path === e.path);
+  document.getElementById("t-fview-prev").disabled = at <= 0;
+  document.getElementById("t-fview-next").disabled = at < 0 || at >= files.length - 1;
+  const ed = document.getElementById("t-fview-edit");
+  ed.hidden = !editableHere(e);
+  ed.onclick = () => openEditor(ctx.id, e.path);
+  document.getElementById("t-fview-tab").onclick = () => openFileTabFor(ctx.id, e.path);
+  document.getElementById("t-fview-get").href = `/v1/tasks/${ctx.id}/files?path=${encodeURIComponent(e.path)}`;
+  paintViewThere(ctx, e);
+  // Replaced rather than set: a frame's own navigations are entries in the tab's history, and Back would walk them.
+  document.getElementById("t-fview-frame").contentWindow.location.replace(
+    "/read.html?embed#" + encodeURIComponent(ctx.id) + "/" + encodeURIComponent(e.path));
+  document.getElementById(ctx.list).querySelectorAll(".frow").forEach(r => r.classList.toggle("open", r.dataset.path === e.path));
+  filesNavPush(replace);
+}
+
+// Only where the window would open in front of you, and that room has an editor set.
+async function paintViewThere(ctx, e) {
+  const b = document.getElementById("t-fview-there");
+  const help = document.getElementById("t-fview-there-help");
+  b.hidden = help.hidden = true;
+  if (!fileOpensHere(ctx.id, location.hostname, typeof hubRooms === "undefined" ? [] : hubRooms)) return;
+  const cmd = await roomEditor((termTask && termTask.room) || "");
+  if (!cmd || filesPos[ctx.at].viewing !== e.path) return;
+  b.hidden = help.hidden = false;
+  b.textContent = "open in your editor";
+  help.dataset.tip = `Runs ${cmd} on this computer.`;
+  b.onclick = () => openOnDaemon(ctx.id, e.path);
+}
+
+// The editor command of the room a card is on, which is the one `files/open` runs. "" when it has none.
+async function roomEditor(room) {
+  try {
+    const s = await api("/v1/settings", room ? { headers: { "X-Atrium-Room": room } } : undefined);
+    return (s && s.editor_command) || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function stepFileView(ctx, by) {
+  const pos = filesPos[ctx.at];
+  const files = pos.shown.filter(r => !r.dir);
+  const next = files[files.findIndex(r => r.path === pos.viewing) + by];
+  if (!next) return;
+  moveFileCur(ctx, pos.shown.indexOf(next));
+  openFileView(ctx, next, true);
+}
+
+// With a file open, moving down the list shows each file in turn.
+function followFileCur(ctx) {
+  const pos = filesPos[ctx.at];
+  const e = pos.shown[pos.cur];
+  if (e && !e.dir) openFileView(ctx, e, true);
+}
+
+function closeFileView(ctx, quiet) {
+  const pos = filesPos[ctx.at];
+  if (!pos || !pos.viewing) return;
+  pos.viewing = "";
+  document.getElementById("t-fview").hidden = true;
+  document.getElementById("t-fview-frame").contentWindow.location.replace("about:blank");
+  document.getElementById("t-files-panel").classList.remove("viewing");
+  document.getElementById(ctx.list).querySelectorAll(".frow.open").forEach(r => r.classList.remove("open"));
+  focusFileList(ctx);
+  if (!quiet) filesNavPush();
+}
+
+// The file in the frame is drawn on the card's colours, the drawer's own, rather than on the board's skin.
+const FRAME_THEME = ["--bg-1", "--shell-0", "--body", "--head", "--label", "--dim", "--dimmest", "--stroke-dim", "--stroke",
+  "--chip", "--lift", "--term-thumb", "--term-thumb-hi"];
+function paintFrameTheme(doc) {
+  const cs = getComputedStyle(document.getElementById("t-files-panel"));
+  const bg = cs.getPropertyValue("--term-bg").trim(), fg = cs.getPropertyValue("--term-fg").trim();
+  const st = doc.documentElement.style;
+  FRAME_THEME.forEach(k => st.removeProperty(k));
+  if (!bg || !fg) return;
+  const mix = n => `color-mix(in srgb, ${fg} ${n}%, ${bg})`;
+  const thumb = cs.getPropertyValue("--term-thumb").trim(), hi = cs.getPropertyValue("--term-thumb-hi").trim();
+  [bg, mix(6), fg, fg, fg, mix(70), mix(50), mix(25), mix(40), mix(10), mix(14), thumb || mix(25), hi || mix(50)].forEach((v, i) => st.setProperty(FRAME_THEME[i], v));
+}
+
+// The frame is this origin's read.html, so after a click in it Esc and the arrows are still the drawer's.
+function wireFileView() {
+  const f = document.getElementById("t-fview-frame");
+  if (!f) return;
+  f.addEventListener("load", () => {
+    let doc = null;
+    try { doc = f.contentDocument; } catch (e) {}
+    if (!doc || !doc.body) return;
+    paintFrameTheme(doc);
+    doc.addEventListener("keydown", drawerKey);
+    const what = doc.getElementById("what");
+    if (!what) return;
+    const sync = () => { if (what.textContent) document.getElementById("t-fview-what").textContent = what.textContent; };
+    new MutationObserver(sync).observe(what, { childList: true, characterData: true, subtree: true });
+    sync();
+  });
+  const ctx = () => termFilesCtx();
+  document.getElementById("t-fview-back").onclick = () => closeFileView(ctx());
+  document.getElementById("t-fview-prev").onclick = () => stepFileView(ctx(), -1);
+  document.getElementById("t-fview-next").onclick = () => stepFileView(ctx(), 1);
+  let qTimer = 0;
+  const q = document.getElementById("t-files-q");
+  q.addEventListener("input", () => {
+    const c = ctx(), pos = filesPos.term;
+    pos.q = q.value;
+    pos.cur = 0;
+    clearTimeout(qTimer);
+    if (pos.big) qTimer = setTimeout(() => loadFiles(pos.at, c, true), 200);
+    else paintFiles(c);
+  });
+  q.addEventListener("keydown", e => {
+    if (e.key !== "ArrowDown" && e.key !== "Enter") return;
+    e.preventDefault();
+    const c = ctx();
+    focusFileList(c);
+    if (e.key === "Enter") openFileRow(c, Math.max(0, filesPos.term.cur));
+  });
+}
+wireFileView();
 
 async function deletePicked(ctx, picked) {
   if (!picked.length) return;
@@ -418,6 +753,10 @@ function editable(name) {
   return EDITABLE.includes(ext);
 }
 
+// The room's `maxTextBytes`: the editor refuses a larger file, so it is not offered one.
+const EDIT_MAX_BYTES = 2 << 20;
+function editableHere(e) { return !e.dir && editable(e.name) && (Number(e.size) || 0) <= EDIT_MAX_BYTES; }
+
 // The path as steps you can press.
 //
 // An `up` button says nothing about where it goes, and getting back from three
@@ -432,26 +771,38 @@ function paintCrumbs(ctx, res) {
   if (!host) return;
   const root = String(res.root || "").replace(/\/+$/, "");
   const at = String(res.path || "").replace(/\/+$/, "");
-  host.dataset.tip = at;
+  const pop = document.getElementById(ctx.where + "-pop");
+  if (pop) paintPathPop(pop, root, at);
+  else host.dataset.tip = at;
 
-  const rest = at.startsWith(root) ? at.slice(root.length).replace(/^\//, "") : "";
-  const steps = rest ? rest.split("/") : [];
-  // The card's own directory is named by its leaf rather than by its whole
-  // path, which is already on the card and would be most of the width here.
-  const parts = [{ label: root.split("/").filter(Boolean).pop() || root, path: root }];
-  let walk = root;
-  for (const s of steps) {
-    walk += "/" + s;
-    parts.push({ label: s, path: walk });
-  }
+  // The card's own directory by its leaf: its whole path is already on the card.
+  const parts = crumbSteps(root, at);
   setHTML(host, parts.map((p, i) => {
     const last = i === parts.length - 1;
-    return (i ? `<span class="sep">/</span>` : "") +
-      `<span class="crumb${last ? " here" : ""}"${
-        last ? "" : ` data-go="${esc(p.path)}"`}>${esc(p.label)}</span>`;
+    return (i ? `<span class="sep">${p.whole ? "&#8942;" : "/"}</span>` : "") +
+      `<span class="crumb${last ? " here" : ""}${p.whole ? " whole" : ""}"${
+        last ? "" : ` data-go="${esc(p.path)}" tabindex="0"`}>${p.whole ? `<bdi>${esc(p.label)}</bdi>` : esc(p.label)}</span>`;
   }).join(""));
   host.querySelectorAll(".crumb[data-go]").forEach(el => {
-    el.onclick = () => loadFiles(el.dataset.go, ctx);
+    el.onclick = () => { closeFileView(ctx, true); loadFiles(el.dataset.go, ctx); };
+    el.onkeydown = e => { if (e.key === "Enter") el.onclick(); };
+  });
+}
+
+// Shown on hovering the breadcrumb: where this folder is on the machine and in the card, each to copy.
+function paintPathPop(pop, root, at) {
+  const rel = cardRelPath(root, at);
+  const row = (label, p) => `<span class="fpl">${label}</span><code>${esc(p)}</code>
+    <button type="button" class="fpcopy" data-copy="${esc(p)}" aria-label="copy the ${label} path" data-tip="copy">${copyIcon()}</button>`;
+  setHTML(pop, row("absolute", at) + (rel && rel !== at ? row("in the card", rel) : ""));
+  pop.querySelectorAll(".fpcopy").forEach(b => {
+    b.onclick = async () => {
+      let ok = true;
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) { ok = false; }
+      b.dataset.tip = ok ? "copied" : "could not copy";
+      b.classList.toggle("done", ok);
+      setTimeout(() => { b.dataset.tip = "copy"; b.classList.remove("done"); }, 1400);
+    };
   });
 }
 
@@ -535,27 +886,23 @@ async function openEditor(taskID, path) {
 
 // ── the same file, somewhere else ───────────────────────────────────────────
 
-// paintEditorElsewhere names the machine on the button that opens the file
-// there, and hides it when there is nothing configured to open it with.
+// paintEditorElsewhere shows the button that opens the file in the operator's
+// own editor, and only where that window would open in front of them.
 //
-// THE MACHINE IS IN THE LABEL because it is the whole decision. `files/open`
-// runs a command where the FILE is, which is where the agent is and not
-// necessarily where you are: over a share it opens a window beside somebody
-// else. A button called `open` would be a trap; one called `open on sg4` is a
-// choice.
-function paintEditorElsewhere() {
+// `files/open` runs a command where the FILE is, which is where the agent is
+// and not necessarily where you are. A window opened on another machine is
+// one nobody sees, so on any other machine there is no button.
+async function paintEditorElsewhere() {
   const b = document.getElementById("t-edit-there");
   if (!b) return;
-  // The room the card is on, when the board is looking at several. On a plain
-  // daemon there is no name to use and "where the file is" is still the honest
-  // description: it is not this browser.
-  const where = (typeof termTask !== "undefined" && termTask && termTask.room) || "";
-  const cmd = (pastePrefs && pastePrefs.editor_command) || "";
-  b.hidden = !cmd;
-  b.textContent = where ? "open on " + where : "open where the file is";
-  b.dataset.tip = cmd
-    ? "runs " + cmd + " on the machine the file is on, which is not this browser"
-    : "";
+  b.hidden = true;
+  const id = editing && editing.taskID;
+  if (!fileOpensHere(id, location.hostname, typeof hubRooms === "undefined" ? [] : hubRooms)) return;
+  const cmd = await roomEditor((typeof termTask !== "undefined" && termTask && termTask.room) || "");
+  if (!cmd || !editing || editing.taskID !== id) return;
+  b.hidden = false;
+  b.textContent = "open in your editor";
+  b.dataset.tip = "runs " + cmd + " on this computer";
 }
 
 // Where a file is read in a tab.
@@ -607,52 +954,67 @@ function editorState(s) {
 // leave the list they asked for.
 let termFilesAuto = false;
 
-// A FILE BELONGS TO THE CARD IT WAS OPENED ON.
+// A FILE BELONGS TO THE CARD IT WAS OPENED ON, AND SO DOES THE DRAWER.
 //
 // The editor is one set of elements in the pane, not one per card, so before this
 // it stayed on screen over whichever terminal was attached next, still saving to
-// the card it was read from. Leaving a card now puts its open file in this map,
-// text and scroll and the unsaved mark included, and arriving on one takes it
-// back out. Keyed by bare id like the rest of the list, and memory only: a
-// reload has never kept an open file and this does not start.
+// the card it was read from. Leaving a card now puts its open drawer in this map,
+// with its folder and file and any open file's text, scroll and unsaved mark,
+// and arriving on one takes it back out. Keyed by bare id like the rest of the
+// list, and memory only: a reload has never kept an open file and this does not start.
 const fileViews = new Map();
 
 function fileViewLeave() {
+  const drawer = document.getElementById("t-files-panel");
+  if (!termTask || !drawer || drawer.hidden) return;
+  const pos = filesPos.term;
+  const v = { at: pos.at, viewing: pos.viewing, q: pos.q, auto: termFilesAuto };
   const ed = document.getElementById("t-edit");
-  if (!editing || !ed || ed.hidden || !termTask) return;
-  const box = document.getElementById("t-edit-text");
-  fileViews.set(bareId(termTask.id), {
-    editing, text: box.value, scroll: box.scrollTop,
-    state: document.getElementById("t-edit-state").textContent,
-    auto: termFilesAuto,
-  });
-  ed.hidden = true;
-  editing = null;
+  if (editing && ed && !ed.hidden) {
+    const box = document.getElementById("t-edit-text");
+    Object.assign(v, { editing, text: box.value, scroll: box.scrollTop,
+      state: document.getElementById("t-edit-state").textContent });
+    ed.hidden = true;
+    editing = null;
+  }
+  fileViews.set(bareId(termTask.id), v);
   termFilesAuto = false;
-  setTermFiles(false);
+  setTermFiles(false, true);
 }
 
-// Called with the new card already attached, since the listing behind the
-// editor is read through it.
-function fileViewEnter() {
+// Called with the new card already attached, since the listing is read through it. It rewrites the history entry the
+// attach just made rather than adding one, so Back leaves the card rather than first closing a drawer it brought back.
+async function fileViewEnter() {
   const v = termTask && fileViews.get(bareId(termTask.id));
   if (!v) return;
   fileViews.delete(bareId(termTask.id));
-  editing = v.editing;
-  editing.taskID = termTask.id;
-  document.getElementById("t-edit-where").textContent = editing.path;
-  document.getElementById("t-edit-where").dataset.tip = editing.path;
-  const box = document.getElementById("t-edit-text");
-  box.value = v.text;
-  box.oninput = () => editorState("not saved");
-  editorState(v.state);
-  paintEditorElsewhere();
+  const ctx = termFilesCtx();
   setTermFiles(true);
   termFilesAuto = v.auto;
-  const cut = editing.path.lastIndexOf("/");
-  loadFiles(cut > 0 ? editing.path.slice(0, cut) : "", termFilesCtx());
-  document.getElementById("t-edit").hidden = false;
-  box.scrollTop = v.scroll;
+  if (v.editing) {
+    editing = v.editing;
+    editing.taskID = termTask.id;
+    document.getElementById("t-edit-where").textContent = editing.path;
+    document.getElementById("t-edit-where").dataset.tip = editing.path;
+    const box = document.getElementById("t-edit-text");
+    box.value = v.text;
+    box.oninput = () => editorState("not saved");
+    editorState(v.state);
+    paintEditorElsewhere();
+    document.getElementById("t-edit").hidden = false;
+    box.scrollTop = v.scroll;
+  }
+  const card = termTask;
+  setFilesQ(ctx, v.q || "");
+  filesNavApplying = true;
+  try {
+    await loadFiles(v.at, ctx, true);
+    const e = v.viewing && termTask === card && filesPos.term.shown.find(r => r.path === v.viewing);
+    if (e) { moveFileCur(ctx, filesPos.term.shown.indexOf(e)); openFileView(ctx, e); }
+  } finally {
+    filesNavApplying = false;
+  }
+  if (termTask === card) filesNavPush(true);
 }
 
 // A card that is gone takes its file with it.

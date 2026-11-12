@@ -4887,11 +4887,10 @@ async function pasteEmptySection(browser, base) {
 }
 
 // ── a slow paste shows the busy mark at once and keeps it ─────────────────
-// Test plan (u-007). The mock runner does what Claude Code does: it echoes the
-// paste within milliseconds, then works, and prints its real answer late. The
-// box has to be up on the gesture, before any slow step (the clipboard read, the
-// upload), survive the early echo, and go when the runner has said something
-// after the hold. Nothing coming back clears it at the cap.
+// Test plan (u-007). The mock runner is a busy Claude Code: it shows the paste as a
+// `[Pasted text]` line only after a second. The box has to be up on the gesture, before
+// any slow step (the clipboard read, the upload), stay up until that line, and go with
+// it. Nothing coming back clears it at the cap.
 async function pasteBusySection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -4912,9 +4911,7 @@ async function pasteBusySection(browser, base) {
           let d = "";
           try { d = JSON.parse(str).d || ""; } catch (e) {}
           if (window.__silent || d.length < 3) return;
-          // Echo at once, then the real answer late.
-          setTimeout(() => this.onmessage && this.onmessage({ data: "[Pasted text #1]" }), 3);
-          setTimeout(() => this.onmessage && this.onmessage({ data: "the answer" }), window.__answerAt);
+          setTimeout(() => this.onmessage && this.onmessage({ data: "[Pasted text #1]\r\n" }), window.__answerAt);
         },
         close() { this.readyState = 3; } };
       setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
@@ -4953,9 +4950,9 @@ async function pasteBusySection(browser, base) {
     // the real answer at 1000ms, gone after it.
     const expect = (name, seen, textRe) => {
       if (!seen.sync) fail(name + ": the box was not up on the gesture itself: " + JSON.stringify(seen));
-      if (!seen[100] || !seen[300]) fail(name + ": the early echo took the box down: " + JSON.stringify(seen));
-      if (!seen[700]) fail(name + ": the box went before the runner's real answer: " + JSON.stringify(seen));
-      if (seen[1700]) fail(name + ": the box stayed after the runner answered: " + JSON.stringify(seen));
+      if (!seen[100] || !seen[300]) fail(name + ": the box went before the runner showed the paste: " + JSON.stringify(seen));
+      if (!seen[700]) fail(name + ": the box went before the runner showed the paste: " + JSON.stringify(seen));
+      if (seen[1700]) fail(name + ": the box stayed after the runner showed the paste: " + JSON.stringify(seen));
       if (textRe && !textRe.test(seen.text)) fail(name + ": the box says the wrong thing: " + JSON.stringify(seen.text));
     };
     const at = [100, 300, 700, 1700];
@@ -5005,7 +5002,7 @@ async function pasteBusySection(browser, base) {
       fail("an image upload did not show the box at once, naming the file: " + JSON.stringify(img));
     }
     if (!img[100] || !img[400]) fail("the box went while the upload was still out: " + JSON.stringify(img));
-    if (!img[900]) fail("the box went between the upload answering and the runner answering: " + JSON.stringify(img));
+    if (!img[900]) fail("the box went between the upload answering and the runner showing the path: " + JSON.stringify(img));
     if (img[2100]) fail("the box stayed after an uploaded image landed: " + JSON.stringify(img));
 
     // 5. Nothing comes back: the cap clears it. The clock is moved rather than
@@ -5376,21 +5373,21 @@ async function fileMenuSection(browser, base) {
     const same = (got, want) => JSON.stringify(got) === JSON.stringify(want);
 
     let got = await ask("docs/plan.md");
-    const want = ["open rendered", "open in atrium's editor", "open in the editor on sg4"];
+    const want = ["open rendered", "open in atrium's editor", "open in your editor"];
     if (!same(got, want)) fail("the file menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
     await shot(p, "menu-md");
     if (!settingsRooms.includes("sg4")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
-    await choose("open in the editor on sg4");
+    await choose("open in your editor");
     await until(() => opened.length > 0);
-    if (!same(opened, ["docs/plan.md"])) fail("open in the editor on sg4 sent " + JSON.stringify(opened));
+    if (!same(opened, ["docs/plan.md"])) fail("open in your editor sent " + JSON.stringify(opened));
 
     await ask("docs/plan.md");
     await choose("open rendered");
     await until(async () => (await tabs()).length > 0);
 
     got = await ask("src/beta.go");
-    const wantGo = ["open in a tab", "open in atrium's editor", "open in the editor on sg4"];
+    const wantGo = ["open in a tab", "open in atrium's editor", "open in your editor"];
     if (!same(got, wantGo)) fail("a .go menu offered " + JSON.stringify(got));
     if (!await p.locator("#cardmenu button", { hasText: "open in a tab" }).locator("svg.out").count()) fail("open in a tab has no icon");
     await shot(p, "menu-go");
@@ -5399,6 +5396,16 @@ async function fileMenuSection(browser, base) {
     const opens = await tabs();
     if (opens[0] !== "/read.html#land-live/docs%2Fplan.md") fail("a .md tab opened " + opens[0]);
     if (opens[1] !== "/read.html#land-live/src%2Fbeta.go") fail("a .go tab opened " + opens[1]);
+
+    // A card on another machine never offers its editor: the window would open where nobody is sitting.
+    got = await p.evaluate(() => { termTask = { id: "sgg~land-live", room: "sgg" }; return 0; });
+    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, "sgg~land-live", { rel: "docs/plan.md", dir: false }); });
+    if (!await menuState(true)) fail("fileLinkMenu for a remote card did not open the menu");
+    got = await items();
+    if (!same(got, want.slice(0, 2))) fail("a card on another room offered " + JSON.stringify(got));
+    await p.keyboard.press("Escape");
+    await menuState(false);
+    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
 
     editorCommand = "";
     got = await ask("docs/plan.md");
@@ -16306,6 +16313,40 @@ async function pasteStartSection(browser, base) {
         await p.evaluate(() => pasteEnd());
       }
     }
+    {
+      await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await p.evaluate(() => {
+        delete navigator.clipboard;
+        window.__log = [];
+        window.__sent.length = 0;
+        new MutationObserver(() => { const el = document.getElementById("t-pasting"); window.__log.push([performance.now(), el.hidden]); })
+          .observe(document.getElementById("t-pasting"), { attributes: true, attributeFilter: ["hidden"] });
+        window.__seen = {};
+        const iv = setInterval(() => {
+          const s = window.__sent.find(x => x.id);
+          if (!s) return;
+          clearInterval(iv);
+          setTimeout(() => termSock.onmessage({ data: JSON.stringify({ t: "in-done", id: s.id }) }), 15);
+          setTimeout(() => { window.__seen.afterDone = !document.getElementById("t-pasting").hidden; }, 500);
+          setTimeout(() => termSock.onmessage({ data: "[Pasted text #1 +1 lines]\r\n" }), 600);
+        }, 5);
+        return navigator.clipboard.writeText("hello world");
+      });
+      const lines = [];
+      p.on("console", m => { if (m.text().startsWith("[atrium paste]")) lines.push(m.text()); });
+      await p.focus(".xterm-helper-textarea");
+      await p.keyboard.press("Control+V");
+      await p.waitForFunction(() => window.__log.length && window.__log[window.__log.length - 1][1] === true, null, { timeout: slow(8000) });
+      const got = await p.evaluate(() => {
+        const l = window.__log, shown = l.find(x => x[1] === false), gone = l[l.length - 1];
+        return { up: Math.round(gone[0] - shown[0]), afterDone: window.__seen.afterDone };
+      });
+      if (!got.afterDone) fail("pasteStart: the room's in-done alone took the bar down before the runner showed the paste: " + JSON.stringify(got));
+      if (got.up < 600) fail("pasteStart: the bar went before the runner echoed the paste: " + JSON.stringify(got));
+      const steps = ["begin ctrl+v", "bar shown", "sent", "in-done", "echo seen", "bar cleared echo"];
+      const said = steps.filter(s => !lines.some(l => l.includes(" " + s)));
+      if (said.length) fail("pasteStart: the console did not say " + said.join(", ") + ": " + JSON.stringify(lines));
+    }
     const typed = await p.evaluate(() => {
       window.__sent.length = 0;
       term.input("a", true);
@@ -16337,51 +16378,30 @@ async function pasteDoneSection(browser, base) {
       };
       const done = id => termSock.onmessage({ data: JSON.stringify({ t: "in-done", id }) });
       const out = {};
-      // First paste: answer it, so the socket is known to answer.
       sendPasteText("one");
       const [id0] = await sentIds(1);
-      await wait(100);
       done(id0);
-      await wait(100);
-      out.floor = vis();
-      await wait(450);
-      out.first = vis();
-      // Second: output past the hold and a long quiet must not end it.
+      await wait(300);
+      out.afterDone = vis();
+      termSock.onmessage({ data: "[Pasted text #1 +3 lines]\r\n" });
+      await wait(200);
+      out.pastedText = vis();
       sendPasteText("two");
-      const id1 = (await sentIds(2))[1];
-      await wait(500);
-      termSock.onmessage({ data: "echo" });
-      await wait(1900);
-      out.quiet = vis();
-      done("not-the-id");
-      await wait(80);
-      out.wrong = vis();
-      done(id1);
-      await wait(120);
-      out.right = vis();
-      // Two in a row: the first word leaves the second up.
-      sendPasteText("three");
-      sendPasteText("four");
-      const ids = await sentIds(4);
-      out.ids = ids.slice(2);
-      await wait(400);
-      done(ids[2]);
-      await wait(120);
-      out.afterThree = vis();
-      done(ids[3]);
-      await wait(120);
-      out.afterFour = vis();
+      await sentIds(2);
+      termSock.onmessage({ data: "[Image #2]\r\n" });
+      await wait(200);
+      out.image = vis();
+      sendPasteText("hello there");
+      await sentIds(3);
+      termSock.onmessage({ data: "> hello there\r\n" });
+      await wait(200);
+      out.short = vis();
       answer(out);
     }, null, 20000);
-    if (got.floor !== true) fail("pasteDone: the word ended the box inside its floor: " + JSON.stringify(got));
-    if (got.first !== false) fail("pasteDone: the word did not end the box: " + JSON.stringify(got));
-    if (got.quiet !== true) fail("pasteDone: output and quiet ended an acknowledged paste: " + JSON.stringify(got));
-    if (got.wrong !== true) fail("pasteDone: another paste's id ended it: " + JSON.stringify(got));
-    if (got.right !== false) fail("pasteDone: its own id did not end it: " + JSON.stringify(got));
-    if (got.ids.length !== 2 || got.ids[0] === got.ids[1]) fail("pasteDone: two pastes did not get two ids: " + JSON.stringify(got));
-    if (got.afterThree !== true) fail("pasteDone: the first of two words ended the second paste: " + JSON.stringify(got));
-    if (got.afterFour !== false) fail("pasteDone: the second word did not end it: " + JSON.stringify(got));
-  } finally {
+    if (got.afterDone !== true) fail("pasteDone: the room's word alone took the bar down: " + JSON.stringify(got));
+    if (got.pastedText !== false) fail("pasteDone: the runner's [Pasted text] line did not end it: " + JSON.stringify(got));
+    if (got.image !== false) fail("pasteDone: the runner's [Image] line did not end it: " + JSON.stringify(got));
+    if (got.short !== false) fail("pasteDone: the short text on the screen did not end it: " + JSON.stringify(got));  } finally {
     await ctx.close();
   }
   if (errors.length) fail("pasteDone: the page threw: " + errors.join(" | "));
@@ -16389,7 +16409,7 @@ async function pasteDoneSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// A socket that never answers: the guess still ends the box, and the cap holds.
+// A runner that never shows the paste: only the cap ends the box.
 async function pasteOldRoomSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -16404,9 +16424,9 @@ async function pasteOldRoomSection(browser, base) {
       sendPasteText("one");
       await sent(1);
       out.up = vis();
-      await wait(450);
-      termSock.onmessage({ data: "echo" });
-      await wait(50);
+      await wait(1250);
+      termSock.onmessage({ data: "something else the runner printed\r\n" });
+      await wait(200);
       out.guessed = vis();
       // No output at all: only the cap ends it. Time is moved, not waited for.
       sendPasteText("two");
@@ -16420,7 +16440,7 @@ async function pasteOldRoomSection(browser, base) {
       answer(out);
     }, null, 20000);
     if (!got.up || !got.upAgain) fail("pasteOldRoom: the box did not come up: " + JSON.stringify(got));
-    if (got.guessed) fail("pasteOldRoom: output past the hold did not end it on a socket that never answers: " + JSON.stringify(got));
+    if (!got.guessed) fail("pasteOldRoom: output that is not the paste ended it: " + JSON.stringify(got));
     if (got.capped) fail("pasteOldRoom: the cap did not end a paste that got no output: " + JSON.stringify(got));
   } finally {
     await ctx.close();
@@ -19671,6 +19691,9 @@ async function discreteGroupSection(browser, base) {
     // The phone page shares cardrules.js: it still loads it and the default project rule still answers.
     if (!/js\/cardrules\.js/.test(fs.readFileSync(path.join(WEB_ROOT, "m", "index.html"), "utf8"))) fail("discreteGroup: the phone page no longer loads cardrules.js");
     if ((await p.evaluate(() => cardProjectOf({ worktree: "/w/github/o/r" }))) !== "o/r") fail("discreteGroup: the default project rule broke");
+    if ((await p.evaluate(() => [cardProjectOf({ worktree: "D:/worktrees/claude/cards/a-b12345/work", org: "openziti", repo: "ziti-sdk-csharp" }), cardProjectOf({ worktree: "D:/worktrees/claude/cards/a-b12345/work" })].join("|"))) !== "openziti/ziti-sdk-csharp|") fail("discreteGroup: a card home did not group under its origin or none");
+    if ((await p.evaluate(() => [["csharp-ci-gqi9x0", "openziti", "ziti-sdk-csharp"], ["interview-nfpreview-backward-compat-exce-mntw4i", "openziti-test-kitchen", "docpreview"], ["mcp-gateway-transport-mtls-zrok-private-ilua7r", "openziti", "mcp-gateway"]].map(([d, org, repo]) => terminalLabel({ worktree: "D:/worktrees/claude/cards/" + d + "/work", host: "github", org, repo, branch: "claude/x" }) + "=" + cardProjectOf({ worktree: "D:/worktrees/claude/cards/" + d + "/work", host: "github", org, repo })).join("|"))) !== "github/openziti/ziti-sdk-csharp:claude/x=openziti/ziti-sdk-csharp|github/openziti-test-kitchen/docpreview:claude/x=openziti-test-kitchen/docpreview|github/openziti/mcp-gateway:claude/x=openziti/mcp-gateway") fail("discreteGroup: the sg4 card homes did not group under their repos");
+    if ((await p.evaluate(() => { localStorage.setItem("atrium.grouping.terms", JSON.stringify({ mode: "window" })); return groupingPrefs("terms").mode; })) !== "project") fail("discreteGroup: a saved window mode did not fall back to project");
 
     // The repos tab.
     await p.evaluate(() => switchView("hubrepos"));
@@ -19696,7 +19719,7 @@ async function discreteGroupSection(browser, base) {
   if (!bad) console.log("discreteGroup ok");
 }
 
-// EVERY TAB KEEPS ITS OWN VIEW. Grouping (on, mode, order, typed code) and sort are saved per tab: choosing `by pile` on the
+// EVERY TAB KEEPS ITS OWN VIEW. Grouping (on, mode, order, typed code) and sort are saved per tab: choosing `by age` on the
 // stack leaves the terminals on `by project`, and the other way round, across a switch of tabs and across a reload. A browser
 // that only has the old shared `atrium.grouping` starts every tab from it. The named groups and colours stay shared.
 async function groupingPerViewSection(browser, base) {
@@ -19734,17 +19757,17 @@ async function groupingPerViewSection(browser, base) {
 
     // Stack to pile, terminals to project, board left alone.
     await view("stack");
-    await p.evaluate(() => { setGroupMode("window", "stack"); });
+    await p.evaluate(() => { setGroupMode("recency", "stack"); });
     await view("terms");
     await p.evaluate(() => { setGroupMode("project", "terms"); });
-    const want = { board: "tag", stack: "window", terms: "project" };
+    const want = { board: "tag", stack: "recency", terms: "project" };
     const check = async (why) => {
       for (const v of Object.keys(want)) if ((await mode(v)) !== want[v]) fail(tag + why + ": " + v + " is " + await mode(v) + ", wanted " + want[v]);
     };
     await check("after setting");
     await view("stack");
     await check("on the stack");
-    if ((await pill("stack-group")) !== "window") fail(tag + "the stack pills show " + await pill("stack-group"));
+    if ((await pill("stack-group")) !== "recency") fail(tag + "the stack pills show " + await pill("stack-group"));
     if ((await pill("term-drawer-group")) !== "project") fail(tag + "the terminal pills show " + await pill("term-drawer-group"));
     if ((await pill("board-group")) !== "tag") fail(tag + "the board pills show " + await pill("board-group"));
     await view("terms");
@@ -22982,7 +23005,7 @@ async function gearTermListSection(browser, base) {
         hide: document.querySelectorAll("#gear-term-hide, .termhide").length,
         group: document.querySelectorAll("#term-group button").length
       }));
-      if (!f.shown || f.sort !== 3 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.group < 5) fail(tag + "the section is wrong: " + JSON.stringify(f));
       const a = await p.evaluate(() => {
         const was = sortByActivity;
         [...document.querySelectorAll("#gear-term-sort button")].find(b => !b.classList.contains("on")).click();
@@ -26161,6 +26184,210 @@ async function fileViewSection(browser, base) {
   } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
+// THE DRAWER IS IN THE BROWSER'S HISTORY. Into a folder, open a file, then Back closes the file, Back leaves the folder,
+// Back closes the drawer, and Forward opens it again. A file's name is a link to its tab, and hovering the path offers
+// both spellings of it to copy.
+async function fileBackSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = mock.tasksMode;
+  const root = "/tmp/fb/work";
+  try {
+    mock.wornTasks = [Object.assign({}, T1, { id: "fb-a", display_title: "row fb-a", supervised: true, pinned: true, worktree: root })];
+    mock.tasksMode = "worn";
+    await wp.route(/\/v1\/tasks\/fb-a\/files\/list/, route => {
+      const at = new URL(route.request().url()).searchParams.get("path") || root;
+      const entries = at === root
+        ? [{ name: "sub", path: root + "/sub", dir: true }, { name: "a.txt", path: root + "/a.txt", size: 3 }]
+        : [{ name: "b.txt", path: root + "/sub/b.txt", size: 3 }];
+      route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ path: at, root, parent: at === root ? "" : root, entries }) });
+    });
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    await wp.evaluate(() => attachTask("fb-a"));
+    await until(() => wp.evaluate(() => !!termTask && termTask.id === "fb-a"), 5000, "fileBack: fb-a attached");
+    const st = () => wp.evaluate(() => ({ drawer: !document.getElementById("t-files-panel").hidden,
+      at: filesPos.term.at, viewing: filesPos.term.viewing }));
+    const want = async (what, w) => {
+      const ok = await until(async () => { const s = await st(); return s.drawer === w.drawer && (!w.drawer ||
+        (s.at === w.at && s.viewing === w.viewing)); }, 3000, "fileBack: " + what).then(() => true, () => false);
+      if (!ok) fail("fileBack: " + what + ": " + JSON.stringify(await st()) + ", wanted " + JSON.stringify(w));
+    };
+
+    await wp.evaluate(() => openTermFiles());
+    await want("the drawer opened on the card's folder", { drawer: true, at: root, viewing: "" });
+    await wp.click('#t-files-list .frow.dir[data-path="' + root + '/sub"]');
+    await want("the folder opened", { drawer: true, at: root + "/sub", viewing: "" });
+    const href = await wp.getAttribute("#t-files-list a.fname", "href");
+    if (href !== "/read.html#fb-a/" + encodeURIComponent(root + "/sub/b.txt")) fail("fileBack: the file's link is " + href);
+    await wp.click("#t-files-list a.fname");
+    await want("the file opened in the drawer, not a tab", { drawer: true, at: root + "/sub", viewing: root + "/sub/b.txt" });
+    if (wp.context().pages().length !== 1) fail("fileBack: a plain click on a file's name opened a tab");
+
+    await wp.hover("#t-files-where");
+    const pop = await wp.evaluate(() => [...document.querySelectorAll("#t-files-where-pop code")].map(c => c.textContent));
+    if (pop.join("|") !== root + "/sub|/work/sub") fail("fileBack: hovering the path offered " + JSON.stringify(pop));
+
+    await wp.evaluate(() => history.back());
+    await want("Back closed the file", { drawer: true, at: root + "/sub", viewing: "" });
+    await wp.evaluate(() => history.back());
+    await want("Back left the folder", { drawer: true, at: root, viewing: "" });
+    await wp.evaluate(() => history.back());
+    await want("Back closed the drawer", { drawer: false });
+    await wp.evaluate(() => history.forward());
+    await want("Forward opened it again", { drawer: true, at: root, viewing: "" });
+    if (errors.length) fail("fileBack: page errors " + errors.join("; "));
+    if (!bad) console.log("fileBack ok");
+  } finally { mock.tasksMode = was; await ctx.close(); }
+}
+
+// A FOLDER LINK IN A TERMINAL opens the one drawer, on that folder. The header names the folder clicked, even outside the
+// card, with the filter beside it. The drawer belongs to the terminal it opened from: switching cards hides it, and
+// coming back brings it back. Back closes it and Forward reopens it. Every row's size and date sit in the same columns,
+// whatever its name. The file shown in it is drawn on the card's colours.
+async function fileLinkDrawerSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 760, height: 800 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = mock.tasksMode;
+  const root = "D:/git/github/dovholuknf/atrium";
+  const far = "D:/worktrees/github/openziti-test-kitchen/ziti-tv/2026-nov-13/live-stream/2026/11-13";
+  try {
+    mock.wornTasks = ["fl-a", "fl-b"].map(id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true,
+      pinned: true, worktree: root }));
+    mock.tasksMode = "worn";
+    await wp.route(/\/v1\/tasks\/fl-[ab]\/files\/list/, route => {
+      const at = new URL(route.request().url()).searchParams.get("path") || root;
+      const t = new Date(Date.now() - 86400000).toISOString();
+      const entries = at === far ? [
+        { name: "notes", path: far + "/notes", dir: true },
+        { name: "a-very-long-recording-script-name-for-the-stream.md", path: far + "/a.md", size: 120000, mtime: t },
+        { name: "revoke-probe.mjs", path: far + "/revoke-probe.mjs", size: 3000, mtime: t },
+        { name: "x.md", path: far + "/x.md", size: 1023, mtime: new Date().toISOString() }
+      ] : [{ name: "a.txt", path: root + "/a.txt", size: 3 }];
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ path: at, root, parent: "", entries }) });
+    });
+    await wp.route(/\/v1\/tasks\/fl-a\/files\/view/, route => route.fulfill({ status: 200, contentType: "text/plain", body: "hi" }));
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    const attach = async id => {
+      await wp.evaluate(i => { floorNoticed = true; attachTask(i); }, id);
+      await until(() => wp.evaluate(i => !!termTask && termTask.id === i, id), 5000, "fileLinkDrawer: " + id + " attached");
+    };
+    await attach("fl-a");
+    const st = () => wp.evaluate(() => ({ card: termTask && termTask.id, drawer: !document.getElementById("t-files-panel").hidden,
+      at: filesPos.term.at }));
+    const want = async (what, w) => {
+      const ok = await until(async () => { const s = await st(); return s.card === w.card && s.drawer === w.drawer &&
+        (!w.drawer || s.at === w.at); }, 3000, "fileLinkDrawer: " + what).then(() => true, () => false);
+      if (!ok) fail("fileLinkDrawer: " + what + ": " + JSON.stringify(await st()) + ", wanted " + JSON.stringify(w));
+    };
+
+    await wp.evaluate(f => openFromTerminal("fl-a", { rel: f, dir: true, outside: true }), far);
+    await want("the link opened the drawer on its folder", { card: "fl-a", drawer: true, at: far });
+    const head = await wp.evaluate(() => {
+      const r = el => el.getBoundingClientRect();
+      const here = document.querySelector("#t-files-where .crumb.here"), q = document.getElementById("t-files-q");
+      return { here: here.textContent, hereW: r(here).width, mid: r(here).top + r(here).height / 2,
+        qTop: r(q).top, qBottom: r(q).bottom, qW: r(q).width, svg: !!document.querySelector("#t-files-up svg"),
+        pop: [...document.querySelectorAll("#t-files-where-pop code")].map(c => c.textContent) };
+    });
+    if (head.here !== far || head.hereW < 120) fail("fileLinkDrawer: the header does not name the folder: " + JSON.stringify(head));
+    if (!(head.qW > 0 && head.mid > head.qTop && head.mid < head.qBottom)) fail("fileLinkDrawer: the filter is not beside the path: " + JSON.stringify(head));
+    if (!head.svg || head.pop[0] !== far) fail("fileLinkDrawer: not the drawer #39 made: " + JSON.stringify(head));
+
+    const cols = await wp.evaluate(() => [...document.querySelectorAll("#t-files-list .frow[data-i]:not(.dir)")].map(r => {
+      const sz = r.querySelector(".fsize"), wh = r.querySelector(".fwhen");
+      return { size: Math.round(sz.getBoundingClientRect().right), when: Math.round(wh.getBoundingClientRect().right),
+        fits: wh.scrollWidth <= wh.clientWidth && sz.scrollWidth <= sz.clientWidth };
+    }));
+    if (cols.length !== 3 || new Set(cols.map(c => c.size)).size !== 1 || new Set(cols.map(c => c.when)).size !== 1 ||
+        cols.some(c => !c.fits)) fail("fileLinkDrawer: the size and date columns do not line up: " + JSON.stringify(cols));
+
+    await attach("fl-b");
+    await want("switching cards hid the drawer", { card: "fl-b", drawer: false });
+    await attach("fl-a");
+    await want("coming back brought it back", { card: "fl-a", drawer: true, at: far });
+
+    await wp.evaluate(() => history.back());
+    await want("Back went to the other card, with no drawer", { card: "fl-b", drawer: false });
+    await wp.evaluate(() => history.back());
+    await want("Back came to the drawer the link opened", { card: "fl-a", drawer: true, at: far });
+    await wp.evaluate(() => history.back());
+    await want("Back closed the drawer", { card: "fl-a", drawer: false });
+    await wp.evaluate(() => history.forward());
+    await want("Forward opened it again", { card: "fl-a", drawer: true, at: far });
+
+    await wp.evaluate(() => { const p = document.getElementById("term-pane");
+      p.style.setProperty("--term-bg", "rgb(11, 61, 11)"); p.style.setProperty("--term-fg", "rgb(224, 255, 224)");
+      p.style.setProperty("--term-thumb", "rgb(40, 120, 40)"); });
+    await wp.click('#t-files-list .frow[data-path="' + far + '/x.md"] a.fname');
+    await until(() => wp.evaluate(() => { const d = document.getElementById("t-fview-frame").contentDocument;
+      return !!d && !!d.documentElement && d.documentElement.style.getPropertyValue("--bg-1") === "rgb(11, 61, 11)"; }), 3000,
+      "fileLinkDrawer: the file is drawn on the card's background").catch(e => fail(String(e)));
+    const look = await wp.evaluate(() => {
+      const c = el => getComputedStyle(el);
+      return { q: c(document.getElementById("t-files-q")).backgroundColor, frame: c(document.getElementById("t-fview-frame")).backgroundColor };
+    });
+    if (look.frame !== "rgb(11, 61, 11)" || look.q === "rgb(11, 61, 11)") fail("fileLinkDrawer: the drawer does not wear the card's colours: " + JSON.stringify(look));
+    const bars = await wp.evaluate(() => [document.getElementById("t-files-list"),
+      document.getElementById("t-fview-frame").contentDocument.documentElement].map(e => getComputedStyle(e).scrollbarColor));
+    if (bars.some(b => !b.startsWith("rgb(40, 120, 40)") || !b.endsWith("rgb(11, 61, 11)")))
+      fail("fileLinkDrawer: the drawer's scrollbars do not follow the card: " + JSON.stringify(bars));
+    if (process.env.SHOT) await wp.screenshot({ path: process.env.SHOT });
+    if (errors.length) fail("fileLinkDrawer: page errors " + errors.join("; "));
+    if (!bad) console.log("fileLinkDrawer ok");
+  } finally { mock.tasksMode = was; await ctx.close(); }
+}
+
+// A DEPLOY REACHES AN OPEN BOARD EVEN WITH A DRAFT. A new build reloads the page while a box holds unsent text, and the
+// text comes back in the same box for the same card, not for another one.
+async function draftReloadSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const wasBuild = mock.healthBuild, was = mock.tasksMode;
+  try {
+    mock.wornTasks = [T1, T2];
+    mock.tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const [a, b] = [T1.id, T2.id];
+    const sayBox = async id => {
+      await wp.evaluate(i => openTask(i), id);
+      await until(() => wp.evaluate(() => document.getElementById("detail").open), 5000, "draftReload: the card dialog opened");
+      return wp.evaluate(() => document.getElementById("d-say").value);
+    };
+    await sayBox(a);
+    await wp.click("#d-say");
+    await wp.keyboard.type("half a thought");
+    await wp.evaluate(() => { checkBuild(boardBuild || "test"); });
+    mock.healthBuild = "next-build";
+    const reloaded = wp.waitForEvent("load", { timeout: slow(10000) });
+    await wp.evaluate(() => checkBuild("next-build"));
+    await reloaded.catch(() => fail("draftReload: a draft held the reload"));
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.evaluate(() => { const d = document.getElementById("detail"); if (d.open) d.close(); });
+    const other = await sayBox(b);
+    if (other) fail("draftReload: the draft landed on another card: " + JSON.stringify(other));
+    await wp.evaluate(() => document.getElementById("detail").close());
+    const back = await until(async () => (await sayBox(a)) === "half a thought", 3000, "draftReload: the draft came back")
+      .then(() => true, () => false);
+    if (!back) fail("draftReload: the draft did not come back: " + JSON.stringify(await wp.evaluate(() => document.getElementById("d-say").value)));
+    if (errors.length) fail("draftReload: page errors " + errors.join("; "));
+    if (!bad) console.log("draftReload ok");
+  } finally { mock.healthBuild = wasBuild; mock.tasksMode = was; await ctx.close(); }
+}
+
 // TERMINALS ARE KEPT ALIVE when you switch away. Switching back shows the same terminal with no new socket and no
 // replay; a hidden terminal takes frames into its own screen and touches nothing of the pane showing (title, focus,
 // size, the ready/seen/scroll helpers); a hidden terminal never sends a resize; the least recently used unpinned ones
@@ -27332,7 +27559,7 @@ async function main() {
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -27766,7 +27993,7 @@ async function main() {
     if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|group|cache" || gearSec.hide) {
       fail("the gear has no terminal list section with sort, group and cache, and no hide: " + JSON.stringify(gearSec));
     }
-    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6) {
+    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 5) {
       fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
     }
     const gearActs = await page.evaluate(async () => {
@@ -29567,6 +29794,9 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termDeadCard", () => termDeadCardSection(browser, base));
     await unit("deadCardId", () => deadCardIdSection(browser, base));
     await unit("fileView", () => fileViewSection(browser, base));
+    await unit("fileBack", () => fileBackSection(browser, base));
+    await unit("fileLinkDrawer", () => fileLinkDrawerSection(browser, base));
+    await unit("draftReload", () => draftReloadSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pinNow", () => pinNowSection(browser, base));
     await unit("pullsDrawer", bu("pullsDrawer"));
