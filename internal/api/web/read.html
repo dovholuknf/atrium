@@ -145,6 +145,8 @@
     height: 24px; padding: 0 10px; border: 1px solid var(--stroke-dim); background: var(--chip);
     color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
   }
+  a.sharebtn { display: inline-grid; place-items: center; text-decoration: none; box-sizing: border-box; }
+  a.sharebtn[hidden] { display: none; }
   .sharebtn:hover, .sharebox button:hover { background: var(--lift); color: var(--head); }
   .sharebtn:disabled { opacity: .6; cursor: default; }
   .sharebox {
@@ -170,6 +172,8 @@
     <button type="button" data-width="full" aria-label="the whole window">Full</button>
   </span>
   <select id="skin" aria-label="skin for this page only"></select>
+  <button id="raw-md" type="button" class="sharebtn" hidden>Raw</button>
+  <a id="download" class="sharebtn" hidden>Download</a>
   <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button>
   <button id="html-mode" type="button" class="sharebtn" hidden>Show it rendered</button></header>
 <div id="share-box" class="sharebox" hidden>

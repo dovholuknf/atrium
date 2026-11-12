@@ -98,6 +98,33 @@ function downloadURL(id, path) {
   return "/v1/tasks/" + encodeURIComponent(id) + "/files?path=" + encodeURIComponent(path);
 }
 
+// The browser knows a file is on its own machine only for a card of the board's own daemon, reached on loopback.
+function readFileIsLocal(id, host) {
+  return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(String(host || "")) && String(id || "").indexOf("~") < 0;
+}
+
+function downloadMain(id, path) {
+  if (readFileIsLocal(id, location.hostname)) return;
+  const a = document.getElementById("download");
+  a.href = downloadURL(id, path);
+  a.setAttribute("download", path.split("/").pop());
+  a.hidden = false;
+}
+
+function rawMain(body) {
+  const text = document.getElementById("text");
+  const md = document.getElementById("md");
+  const btn = document.getElementById("raw-md");
+  btn.hidden = false;
+  btn.onclick = () => {
+    const raw = text.hidden;
+    text.textContent = raw ? body : "";
+    text.hidden = !raw;
+    md.hidden = raw;
+    btn.textContent = raw ? "Rendered" : "Raw";
+  };
+}
+
 function isMarkdown(path) { return /\.(md|markdown)$/i.test(path); }
 
 function isHTML(path) { return /\.html?$/i.test(path); }
@@ -258,6 +285,7 @@ function readMain() {
   }
   where.textContent = path;
   document.title = path.split("/").pop() + " — atrium";
+  if (!SHARE) downloadMain(id, path);
   const kind = readKind(path);
   const oops = msg => { text.className = "oops"; text.textContent = msg; };
   if (kind === "image") {
@@ -335,6 +363,7 @@ function readMain() {
         md.hidden = false;
         // The sanitised string, and the only innerHTML on this page.
         md.innerHTML = renderMarkdown(body, id, path);
+        rawMain(body);
         if (!SHARE) shareMain(id, path);
       } else if (isHTML(path) && !SHARE) {
         htmlMain(body);
