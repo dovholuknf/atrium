@@ -1585,7 +1585,7 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   document.getElementById("l-home-repo").value = "";
   document.getElementById("l-home-branch").value = "";
   setHome(false);
-  if (typeof paintThrowawayHint === "function") { paintThrowawayHint(); loadHomes(); }
+  if (typeof loadHomes === "function") loadHomes();
   // Off every time, like the model: deleting what a link made is asked for each time it is wanted.
   document.getElementById("l-cleanup-on").checked = false;
 

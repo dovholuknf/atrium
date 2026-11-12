@@ -281,11 +281,10 @@ function cardUrlNotice(notes) {
 // A card opened by its address has no header and no list, so it had no way back but the address bar. Two controls:
 // "all cards" is a plain link to the board, and "cards" opens the switcher, the card picker this window still has.
 // One copy rides in the terminal bar, and a second floats over a phone's terminal, where the bar is a tray that stays
-// shut until it is pulled. CSS shows the one that fits. Not drawn for a pop-out opened by `#term=`, which is a
-// deliberately bare window, except on a phone, where there is no other way to the board.
+// shut until it is pulled. CSS shows the one that fits. A pop-out opened by `#term=` gets them at any width, and its
+// bar copy has no "all cards": that link opened a second board beside the one that popped it out.
 function cardUrlWayOut() {
   if (document.getElementById("cardurl-way")) return;
-  if (!cardUrlIsCard() && !(typeof termNarrow === "function" && termNarrow())) return;
   const make = id => {
     const box = document.createElement("div");
     if (id) box.id = id;
@@ -300,7 +299,8 @@ function cardUrlWayOut() {
     pick.textContent = "cards \u25BE";
     pick.setAttribute("aria-label", "switch card");
     pick.onclick = () => { if (typeof openSwitcher === "function") openSwitcher(); };
-    box.append(all, pick);
+    if (id && !cardUrlIsCard()) box.append(pick);
+    else box.append(all, pick);
     return box;
   };
   const bar = document.querySelector("#term-pane .term-bar");

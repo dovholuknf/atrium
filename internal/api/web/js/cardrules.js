@@ -11,6 +11,9 @@ if (!path) return "";
 const forge = path.match(/\\/(?:github|gitlab|bitbucket)[^/]*\\/([^/]+)\\/([^/]+)/i);
 if (forge) return forge[1] + "/" + forge[2];
 
+// A card home is <root>/cards/<slug>/work: its project is its clone origin's org/repo, or none.
+if (/\\/cards\\/[^/]+\\/work$/.test(path)) return task.org && task.repo ? task.org + "/" + task.repo : "";
+
 // Otherwise the last two segments, which is usually parent/leaf.
 const parts = path.split("/").filter(Boolean);
 if (parts.length >= 2) return parts.slice(-2).join("/");
@@ -56,7 +59,6 @@ const GROUP_CHOICES = [
   ["status", "status", "working, waiting, and so on"],
   ["runner", "runner", "which agent runs the card"],
   ["prefix", "tag prefix", "the part of a tag before its colon, so origin:agent files under origin"],
-  ["window", "pile", "the pile the launcher put the card in, else its project"],
   ["tag", "tag", "every tag on the card, a card with several appears under each"],
   ["custom", "your groups", "the named buckets you made with the + button"],
   ["recency", "age", "today, yesterday, this week, this month, dormant"],

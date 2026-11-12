@@ -448,6 +448,8 @@ function navPush() {
 function navReplace() {
   if (termOnly() || navApplying || !history.state || !history.state.atrium) return;
   const now = navState();
+  // The file drawer's place on this entry (js/notes-files.js), which Back and Forward return to.
+  if (history.state.files) now.files = history.state.files;
   history.replaceState(now, "", routeURL(now));
   routeRecord(now);
 }
@@ -910,7 +912,6 @@ function cardHTML(t, wearAs) {
         >wake queued</span>` : ""}
       ${newContextChip(t)}${parkedChip(t)}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
-      ${typeof naKeepChip === "function" ? naKeepChip(t) : ""}
       ${stuckMark(t)}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
         data-tip="${esc("this session is published at " + (sharedCards.get(t.id).address || "") +
@@ -1157,7 +1158,7 @@ const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderB
 const UNTAGGED = "untagged";
 
 // EVERY TAB KEEPS ITS OWN VIEW. On or off, the group mode, the group order and the typed code are saved per tab, in
-// `atrium.grouping.<tab>`, so choosing `by pile` on the stack leaves the terminals as they were. What stays in the shared
+// `atrium.grouping.<tab>`, so choosing `by tag` on the stack leaves the terminals as they were. What stays in the shared
 // `atrium.grouping` is what describes the cards and not a view: the operator's named groups and every group's colour.
 //
 // MIGRATION IS A FALLBACK, NOT A COPY. A tab with nothing of its own yet reads the view fields the shared key held before
@@ -1185,7 +1186,9 @@ function groupingPrefs(view) {
   const own = readJSONKey(groupViewKey(view));
   const mine = {};
   GROUP_VIEW_FIELDS.forEach(f => { if (own[f] !== undefined) mine[f] = own[f]; });
-  return Object.assign({}, GROUPING_DEFAULTS, shared, mine);
+  const out = Object.assign({}, GROUPING_DEFAULTS, shared, mine);
+  if (out.mode === "window") out.mode = "project";
+  return out;
 }
 
 function setGrouping(patch, view) {
@@ -1260,14 +1263,6 @@ function compiled(body, fallback, ...args) {
     try { return new Function(...args, fallback); } catch (e2) { return null; }
   }
 }
-
-// The project rule as a callable, for the modes that want it as a FALLBACK
-// rather than as the whole answer.
-//
-// Compiled from the same source the settings dialog shows and cached, so there
-// is one project rule on the board and not a second copy written in JavaScript
-// beside the one written as a string.
-function defaultProjectOf(task) { return cardProjectOf(task); }
 
 // Builds the grouper and the sorter for one render, each already wrapped so a
 // throw on one card cannot stop the board drawing the rest.
@@ -1383,27 +1378,6 @@ function grouperByMode(view) {
       of: t => [recencyBucket(t)],
       cmp: (a, b) => RECENCY_ORDER.indexOf(a) - RECENCY_ORDER.indexOf(b)
     };
-  }
-
-  // BY THE PILE THE LAUNCHER PUT IT IN. `window_name` is a string somebody
-  // else decided: `pull-requests`, `tangent`, `discourse`, a repo name,
-  // anything. Atrium stores it and groups by it without knowing what any of
-  // them mean, which is why this needs no list of valid answers.
-  //
-  // A card with no window falls back to its PROJECT rather than to one heap
-  // called "none". Most cards on any board were never launched with a window,
-  // and a mode that put all of them together would be unusable on the day it
-  // was turned on.
-  if (p.mode === "window" && !usesCode(p)) {
-    const of = t => {
-      const w = String(t.window_name || "").trim();
-      return [w || defaultProjectOf(t)];
-    };
-    return { many: false, of, cmp: (a, b) => {
-      if (!a) return 1;
-      if (!b) return -1;
-      return a.localeCompare(b);
-    } };
   }
 
   // Grouping by tag needs no compiled function. A card can carry several, so

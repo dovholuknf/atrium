@@ -1119,12 +1119,18 @@ function termInheritedTheme(t) {
   const list = typeof lastTasks === "undefined" || !lastTasks ? [] : lastTasks;
   const byBare = new Map(list.map(c => [bareId(c.id), c]));
   const seen = new Set();
+  let depth = 1;
   for (let c = byBare.get(bareId(t.id)) || t; c && nestsUnderLauncher(c) && !c.pinned && !seen.has(c.id);) {
     seen.add(c.id);
     const up = launcherOf(c, list, byBare);
     const own = up && themeSource(up);
-    if (own) return termTintOf(own);
+    if (own) {
+      let th = own;
+      for (let i = 0; i < depth; i++) th = termTintOf(th);
+      return th;
+    }
     c = up;
+    depth++;
   }
   return null;
 }
@@ -1182,7 +1188,7 @@ function termRow(t, deep, kid, inherit) {
   const shut = termKidTotal(t) > 0 && termKidsShut(t);
   // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
   const shown = shut ? [] : allKids;
-  const down = themeSource(t) || inherit;
+  const down = themeSource(t) || (inherit && termTintOf(inherit));
   const kids = shown.map(k => termRow(k, false, true, down)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${carries ? "carries" : ""}${kid ? " kid" : ""}${
@@ -1367,8 +1373,7 @@ function termRowChips(t, lead) {
   const minion = isMinion(t) ? `<span class="chip" data-tip="a throwaway session an item launched. it is listed because it needs you">minion</span>` : "";
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
-  const keep = typeof naKeepChip === "function" ? naKeepChip(t) : "";
-  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

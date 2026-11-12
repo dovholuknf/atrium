@@ -421,9 +421,9 @@
     min-width: 0; flex: 0 1 auto;
   }
   #t-copy { flex: none; }
-  /* The name and its copy glyph, one pill when the card has an alias. */
+  /* The name and its copy glyph, one pill when the card has an alias, and always in a popped-out window. */
   .term-bar .tname { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-  .term-bar .tname:has(> .as-alias) {
+  .term-bar .tname:has(> .as-alias), body.solo .term-bar .tname {
     background: var(--chip); border: 1px solid var(--stroke-dim); border-radius: 999px; padding: 1px 8px 1px 10px;
   }
   .term-bar strong {

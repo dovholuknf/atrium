@@ -383,6 +383,9 @@
      steps. Pop out would open a window from a window. */
   body.solo main > #usage { display: none; }
   body.solo #t-popout { display: none; }
+  /* The phone rules hide every bare `.grow` at 900px and under, which a popped-out window is, so the bar's right group
+     lost the right edge it has docked. A phone's bar is a tray and keeps its own rule. */
+  body.solo:not(.term-phone) .term-bar > .grow { display: block; }
   /* Answering the request here works. Going to the perms tab does not, because this window has no perms tab,
      and a button that does nothing is worse than one that is not there. Approve once and block once are both
      still offered. */
