@@ -45,6 +45,7 @@ const (
 	GrowlRoomCPU     = "room-cpu"
 	GrowlRunnerGone  = "runner-missing"
 	GrowlRunnerLogin = "runner-login"
+	GrowlReminder    = "reminder"
 )
 
 // Growl states.
@@ -273,14 +274,14 @@ func (s *Store) GrowlRoom(roomID, reason string, on bool, g Growl) (raised, chan
 func (s *Store) GrowlRaise(roomID string, g Growl) (raised bool, err error) {
 	at := s.now()
 	reason := "question"
-	if g.Reason == "ci" {
-		reason = "ci"
+	if g.Reason == "ci" || g.Reason == GrowlReminder {
+		reason = g.Reason
 	}
 	err = s.tx(func(t *sql.Tx) error {
 		raised = false
-		res, err := t.Exec(`INSERT INTO growl (id, room_id, reason, title, body, subject, raised_at, state,
-			changed_at, changed_via) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
-			g.ID, roomID, reason, g.Title, g.Body, g.Subject, ts(at), ts(at))
+		res, err := t.Exec(`INSERT INTO growl (id, room_id, card_id, reason, title, body, subject, raised_at, state,
+			changed_at, changed_via) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
+			g.ID, roomID, g.CardID, reason, g.Title, g.Body, g.Subject, ts(at), ts(at))
 		if err != nil {
 			return err
 		}

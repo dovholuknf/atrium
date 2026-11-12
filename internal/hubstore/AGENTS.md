@@ -94,6 +94,7 @@ kept in tiers: everything from the last hour, hourly for a day, daily for a week
 | `docs.go` / `docs_secrets.go` | hub documents and the secret checks every way in passes |
 | `files.go` | the hub file drop |
 | `growl.go` / `notify.go` | what waits on a human, and what the hub last notified about |
+| `reminder.go` | a card's reminders, set by `atrium_remind`. The hub raises a `reminder` growler when one is due. See `internal/link/remind.go` |
 | `push.go` | web push subscriptions |
 | `prclaim.go` | one owning room per pull request |
 | `roomspec.go` | a room's desired spec and observed lock. No credentials in either |

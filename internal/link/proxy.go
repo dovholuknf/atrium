@@ -51,6 +51,8 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// remind is atrium_remind's endpoint and loop, nil on a hub that never turned it on. See remind.go.
+	remind *Reminders
 	// handlers are what serveHubAPI dispatches through. See hubroutes.go.
 	handlersOnce sync.Once
 	handlers     hubHandlers
@@ -1626,6 +1628,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "ci-hook" || sub == "ci-hook/routes" {
 		p.hubRoutes().CIHook(w, r, sub)
+		return
+	}
+	if sub == "remind" {
+		p.serveRemind(w, r)
 		return
 	}
 	if sub == "events" || sub == "events/subs" {
