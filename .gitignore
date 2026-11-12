@@ -60,3 +60,6 @@ HANDOFF.*.md
 REPORT.md
 
 mercurius.yaml
+
+# UI mocks stay local, never committed.
+/mocks/
