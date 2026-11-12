@@ -174,7 +174,7 @@
   }
   #t-pasting[hidden] { display: none; }
   #t-pasting.failed { color: var(--danger); border-top-color: var(--danger); }
-  #term-pane.pasting #t-screen, #term-pane.pasting #t-screen * { cursor: progress !important; }
+  #term-pane.pasting, #term-pane.pasting * { cursor: progress !important; }
   #t-pasting.failed .shspin { animation: none; border-color: var(--danger); }
   #t-pasting .rail {
     margin-left: auto; width: 120px; height: 4px; border-radius: 2px;

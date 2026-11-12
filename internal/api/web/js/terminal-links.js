@@ -2148,7 +2148,7 @@ function sendPaste(d) {
     const bytes = big ? new TextEncoder().encode(s).length : s.length;
     if (bytes > pasteFrameMax) {
       pasteHeld = null;
-      if (pasteFlight === f) pasteEnd();
+      pasteFlightEnd(f);
       pasteFail("paste failed: too big");
       toast("that paste is too big",`${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
       return;
@@ -2158,7 +2158,7 @@ function sendPaste(d) {
     // aimed at, so none of it goes to this one.
     if (termSock !== sock) {
       pasteHeld = null;
-      if (pasteFlight === f) pasteEnd();
+      pasteFlightEnd(f);
       pasteFail("paste failed: the terminal changed");
       toast("that paste did not go","the terminal changed before it left");
       return;
@@ -2166,7 +2166,7 @@ function sendPaste(d) {
     sendFrame(s);
     lagPasteMark("sent");
     pasteLog(f.g, "sent", pasteSize(bytes));
-    if (pasteFlight === f) { f.sent = true; f.sentAt = Date.now(); }
+    if (pasteFlights.has(f)) { f.sent = true; f.sentAt = Date.now(); }
     phoneFollow();
     if (term) term.scrollToBottom();
     followScrollUntil = Infinity;
@@ -2179,36 +2179,48 @@ function sendPaste(d) {
   setTimeout(go, 100);
 }
 
-// The paste in flight, or null. A second paste replaces it, which is right:
-// the newer one is the one still to land.
+// The newest paste in flight, or null, and every one still in flight. A second paste does not replace the first: each one
+// ends on its own echo or the cap, and the bar stays up until the last has.
 let pasteFlight = null;
+const pasteFlights = new Set();
 
-// A paste replacing one still inside its hold keeps that hold and the box, or a paste right behind another would
-// take the box straight down.
+// One paste is done. The bar goes with the last of them.
+function pasteFlightEnd(f, why) {
+  clearTimeout(f.timer);
+  if (!pasteFlights.delete(f)) return;
+  if (pasteFlights.size) {
+    pasteLog(f.g, "cleared", why || "the board");
+    if (pasteFlight === f) pasteFlight = [...pasteFlights].pop();
+    return;
+  }
+  pasteEnd(why);
+}
+
 function pasteBegin(n, needle) {
-  const prev = pasteFlight && pasteFlight.shown && pasteFlight.sock === termSock ? pasteFlight : null;
-  pasteEnd("", true);
+  clearTimeout(pasteWaitTimer);
   lagPasteStart("paste");
   const now = Date.now();
   const g = pasteG || pasteVia("other");
   pasteG = null;
   const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: false, sentAt: 0, id: "", done: false,
-    holdUntil: Math.max(now + pasteHoldMs, prev ? prev.holdUntil : 0), needle: needle || "", g,
+    holdUntil: now + pasteHoldMs, needle: needle || "", g,
     echoed: false, drained: false, base: 0 };
-  f.base = pasteEchoCount(f);
+  // An older paste still waiting on its marker will put one on the line, and that one is not this paste's.
+  f.base = pasteEchoCount(f) + [...pasteFlights].filter(o => !o.echoed && o.sock === f.sock).length;
+  pasteFlights.add(f);
   pasteFlight = f;
   pasteShownG = g;
   pasteLog(g, "begin", `${g.how} ${pasteSize(n)}`);
   const tick = () => {
-    if (pasteFlight !== f) return;
+    if (!pasteFlights.has(f)) return;
     const t = Date.now();
-    if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteEnd("cap"); return; }
+    if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteFlightEnd(f, "cap"); return; }
     if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
     if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); pasteLog(g, "bar shown"); }
     if (f.sent && !f.echoed && pasteEchoCount(f) > f.base) { f.echoed = true; pasteLog(g, "echo seen"); }
-    if (f.echoed && t >= f.holdUntil) { pasteEnd("echo"); return; }
+    if (f.echoed && t >= f.holdUntil) { pasteFlightEnd(f, "echo"); return; }
     if (f.sent && pasteOutAt > f.sentAt && t - pasteOutAt >= pasteSettleMs && t >= f.holdUntil) {
-      pasteEnd("settled");
+      pasteFlightEnd(f, "settled");
       pasteRepaint();
       return;
     }
@@ -2254,8 +2266,8 @@ function takePasteDone(data, sock) {
   let msg;
   try { msg = JSON.parse(data); } catch (e) { return false; }
   if (!msg || msg.t !== "in-done") return false;
-  const f = pasteFlight;
-  if (f && f.sock === sock && f.id && f.id === msg.id) {
+  const f = [...pasteFlights].find(o => o.sock === sock && o.id && o.id === msg.id);
+  if (f) {
     lagPasteMark("in-done");
     f.done = true;
     pasteLog(f.g, "in-done");
@@ -2283,7 +2295,7 @@ function takeInRefused(data) {
 let pasteWaitTimer = 0;
 function pasteWaiting(say, how) {
   lagPasteStart(how);
-  if (pasteFlight) return;
+  if (pasteFlights.size) return;
   pasteShownG = pasteG && pasteG.how === how ? pasteG : pasteVia(how);
   showPasting(say);
   lagPasteMark("shown");
@@ -2328,16 +2340,16 @@ function pasteFail(say) {
   el.classList.add("failed");
   pasteLog(pasteShownG, "fail", say);
   setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span>`);
-  pasteFailTimer = setTimeout(() => { if (!pasteFlight) pasteEnd("failed"); }, 5000);
+  pasteFailTimer = setTimeout(() => { if (!pasteFlights.size) pasteEnd("failed"); }, 5000);
 }
 
-// `handOn` is a paste taking over from a wait or from an older paste: the box
-// stays and so does the timing line, which is one per gesture.
-function pasteEnd(why, handOn) {
-  if (pasteFlight) clearTimeout(pasteFlight.timer);
+// Every paste in flight ends here at once. One paste ending among others is `pasteFlightEnd`.
+function pasteEnd(why) {
+  pasteFlights.forEach(o => clearTimeout(o.timer));
+  pasteFlights.clear();
   clearTimeout(pasteWaitTimer);
   pasteFlight = null;
-  if (!handOn) { lagPasteMark("cleared"); lagPasteDone(why || "the board"); pasteLog(pasteShownG, "bar cleared", why || "the board"); pasteShownG = null; }
+  lagPasteMark("cleared"); lagPasteDone(why || "the board"); pasteLog(pasteShownG, "bar cleared", why || "the board"); pasteShownG = null;
   const el = document.getElementById("t-pasting");
   if (el) el.hidden = true;
   const host = document.getElementById("term-pane");

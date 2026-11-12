@@ -16407,6 +16407,75 @@ async function pasteDoneSection(browser, base) {
   mock.tasksMode = was;
 }
 
+// A paste right behind another does not strand it: each one ends on its own and says so, and the bar stays up until
+// the last has.
+async function pasteTwiceSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors, true);
+  try {
+    const got = await fakeRun(p, async (_, answer) => {
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const lines = [];
+      const info = console.info;
+      console.info = (...a) => { lines.push(a.join(" ")); };
+      const sentIds = async n => {
+        while (window.__sent.filter(x => x.id).length < n) await wait(10);
+        return window.__sent.filter(x => x.id).map(x => x.id);
+      };
+      const out = {};
+      sendPasteText("one");
+      sendPasteText("two");
+      sendPasteText("three");
+      const ids = await sentIds(3);
+      ids.forEach(id => termSock.onmessage({ data: JSON.stringify({ t: "in-done", id }) }));
+      await wait(50);
+      termSock.onmessage({ data: new TextEncoder().encode("[Pasted text #1 +3 lines]\r\n").buffer });
+      await wait(900);
+      out.upBeforeHold = vis();
+      await wait(2000);
+      out.upAfter = vis();
+      out.ended = ids.filter(id => lines.some(l => l.includes(id + " ") && /cleared/.test(l)));
+      out.ids = ids.length;
+      console.info = info;
+      answer(out);
+    }, null, 20000);
+    if (got.ids !== 3) fail("pasteTwice: three pastes did not all leave: " + JSON.stringify(got));
+    if (!got.upBeforeHold) fail("pasteTwice: the bar went before the pastes' hold: " + JSON.stringify(got));
+    if (got.upAfter) fail("pasteTwice: a paste was left holding the bar up: " + JSON.stringify(got));
+    if (got.ended.length !== 3) fail("pasteTwice: not every paste cleared on its own: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteTwice: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
+// The mouse over the terminal is a busy cursor while the paste bar is up, and goes back when it clears.
+async function pasteBusyCursorSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    const cursors = () => p.evaluate(() => ["#t-screen", "#t-screen .xterm-screen", "#t-screen .xterm-viewport", "#t-screen canvas"]
+      .map(s => document.querySelector(s)).filter(Boolean).map(e => getComputedStyle(e).cursor));
+    await p.evaluate(() => sendPasteText("x".repeat(100)));
+    const up = await cursors();
+    if (!up.length || up.some(c => c !== "progress")) fail("pasteBusyCursor: the cursor over the terminal was " + up.join() + " while the bar was up");
+    await p.evaluate(() => pasteEnd("test"));
+    const down = await cursors();
+    if (down.some(c => c === "progress")) fail("pasteBusyCursor: the busy cursor stayed after the bar cleared: " + down.join());
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteBusyCursor: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
 // A runner that never shows the paste: only the cap ends the box.
 async function pasteOldRoomSection(browser, base) {
   const was = mock.tasksMode;
@@ -27538,7 +27607,7 @@ async function main() {
       notifyCommand: notifyCommandSection, hears: hearsSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       
       u001Audit: u001AuditSection,
-      pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
+      pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteTwice: pasteTwiceSection, pasteBusyCursor: pasteBusyCursorSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mChatThumbs: mChatThumbsSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, workerCardColors: workerCardColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mBubbleLinks: mBubbleLinksSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -29537,6 +29606,8 @@ async function main() {
     await unit("pasteStart", () => pasteStartSection(browser, base));
     await unit("pasteDone", () => pasteDoneSection(browser, base));
     await unit("pasteOldRoom", () => pasteOldRoomSection(browser, base));
+    await unit("pasteTwice", () => pasteTwiceSection(browser, base));
+    await unit("pasteBusyCursor", () => pasteBusyCursorSection(browser, base));
     await unit("pasteClose", () => pasteCloseSection(browser, base));
     await unit("growlQuestionBody", () => growlQuestionBodySection(browser, base));
     await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));

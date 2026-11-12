@@ -164,6 +164,8 @@
   "pasteDone": 5217,
   "pasteEmpty": 734,
   "pasteOldRoom": 1867,
+  "pasteTwice": 2000,
+  "pasteBusyCursor": 1500,
   "pasteSpinner": 2899,
   "pasteStart": 1474,
   "peekEverywhere": 24919,
