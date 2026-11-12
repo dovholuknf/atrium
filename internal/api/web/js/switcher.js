@@ -385,8 +385,8 @@ function paintSwitcher() {
       if (t.link) {
         const r = quickPasteRow(t.link);
         return `
-      <div class="swrow swopen ${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
-        id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}">${r.html}</div>`;
+      <div class="swrow swopen ${r.card !== undefined ? "swcard " : ""}${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
+        id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}"${r.card !== undefined ? ` data-card="${esc(r.card)}"` : ""}>${r.html}</div>`;
       }
       if (t.reviveAll) {
         return `
@@ -407,9 +407,15 @@ function paintSwitcher() {
     }).join("")
     : `<div class="empty">${swQuery ? "nothing matches that"
         : (swLoaded ? "no sessions to go to" : "looking&hellip;")}</div>`);
-  host.querySelectorAll(".swcard .tname").forEach(el => { el.innerHTML = swHighlight(el.textContent, swQuery); });
+  host.querySelectorAll(".swcard[data-id] .tname").forEach(el => { el.innerHTML = swHighlight(el.textContent, swQuery); });
   // The id travels in a data attribute and comes back through the DOM, never
   // through an inline handler. The house rule, and it costs nothing here.
+  const cardRow = host.querySelector(".swopen.swcard .tstack");
+  if (cardRow) {
+    let path = cardRow.querySelector(".tpath");
+    if (!path) cardRow.insertAdjacentHTML("beforeend", `<span class="tpath"></span>`), path = cardRow.querySelector(".tpath");
+    path.textContent = host.querySelector(".swopen.swcard").dataset.card;
+  }
   host.querySelectorAll(".swrow").forEach(el => {
     el.onclick = e => el.dataset.revive ? swReviveAll()
       : el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey)

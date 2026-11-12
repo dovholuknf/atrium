@@ -273,6 +273,8 @@
   }
   /* The list is a `.term-list` so the sidebar's card rows draw here unchanged. Its column box is put back to a plain block. */
   #switcher .swlist { display: block; flex: none; width: auto; max-height: 46vh; overflow: auto; padding: 6px; background: none; }
+  #switcher .swrow.swopen.swcard { display: flex; align-items: center; gap: var(--sp-3); }
+  #switcher .swrow.swopen.swcard .card { flex: 1 1 0; min-width: 0; }
   #switcher .swrow.swcard { display: block; padding: 0; background: none; border: 0; }
   #switcher .swrow.swcard .card { margin-bottom: 4px; cursor: pointer; }
   #switcher .swrow.swcard.on .card { outline: 2px solid var(--blue); outline-offset: 1px; }
