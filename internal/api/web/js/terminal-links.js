@@ -91,7 +91,6 @@ async function provideFileLinks(t, id, y, done) {
   if (!line) { done(undefined); return; }
 
   const known = probeKnown(id);
-  const root = termTask.worktree || "";
   const spans = [], ask = [];
   for (const c of fileCandidates(line.text)) {
     const start = cellAt(line, c.start), end = cellAt(line, c.end - 1);
@@ -112,10 +111,9 @@ async function provideFileLinks(t, id, y, done) {
   const links = [];
   for (const s of spans) {
     const hit = probeHit(probeKnown(id), s.token);
-    // The room decides what outside the card it will open. A path it does not find stays refused.
+    // Only what the room will open is underlined. Anything else stays plain text.
     if (hit) links.push(fileLink(id, s.range, hit));
     else if (docLinkPath(s.token)) links.push(docLink(s.range, s.token));
-    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token));
   }
   done(links.length ? links : undefined);
 }
@@ -149,6 +147,12 @@ async function askProbe(id, paths, row) {
   }
 }
 
+// One line per click for devtools: what was clicked, where the room found it and what the click did.
+function linkLog(tok, hit, result) {
+  console.info("[atrium link]", { path: tok, cwd: termTask && termTask.worktree, found: hit ? hit.rel : null,
+    outsideCard: !!(hit && hit.outside), result });
+}
+
 // One link, with somewhere to go.
 function fileLink(id, range, hit) {
   return {
@@ -162,6 +166,7 @@ function fileLink(id, range, hit) {
       ev.preventDefault();
       linkTipHide();
       hideTip();
+      linkLog(hit.path, hit, hit.dir ? "directory in the drawer" : viewAtOnce(hit.rel) ? "viewer tab" : "menu");
       if (hit.dir) openFromTerminal(id, hit);
       else if (viewAtOnce(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
@@ -185,33 +190,6 @@ function docLink(range, tok) {
       openLinkReused(location.origin + tok);
     }
   };
-}
-
-// A path that names somewhere outside the card. Its link opens nothing and says why.
-function outsideLink(range, tok) {
-  return {
-    range,
-    text: tok,
-    activate: () => {},
-    hover: (ev) => linkTipShow(ev, tok, tok + "\noutside this card, the board cannot open it"),
-    leave: () => linkTipLeave()
-  };
-}
-
-// Whether `tok` is an absolute path that is not under the card's directory, judged from the spelling alone. A
-// relative path, `~/x` and anything not absolute is left to the probe.
-function outsideCard(tok, root) {
-  if (!root) return false;
-  const norm = s => String(s).replace(/\\/g, "/").replace(/\/+$/, "");
-  const dir = norm(root);
-  const win = /^[A-Za-z]:\//.test(dir + "/");
-  let p = norm(tok);
-  if (win && /^\/[A-Za-z]\//.test(p)) p = p[1] + ":" + p.slice(2);
-  const abs = /^[A-Za-z]:\/[^/]/.test(p) || /^\/\/[^/]+\/[^/]/.test(p) || /^\/[^/]+\/[^/]/.test(p);
-  if (!abs) return false;
-  const fold = s => win ? s.toLowerCase() : s;
-  const a = fold(p), d = fold(dir);
-  return a !== d && !a.startsWith(d + "/");
 }
 
 function linkTipShow(ev, key, text) {

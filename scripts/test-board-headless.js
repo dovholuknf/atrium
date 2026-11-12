@@ -5911,7 +5911,7 @@ async function fileLinksViewSection(browser, base) {
       });
     }), y);
     const got = [await linksOn(1), await linksOn(2), await linksOn(3)];
-    if (!got[0].includes(outsideWin)) fail("an outside Windows path was not a link: " + JSON.stringify(got[0]));
+    if (got[0].length) fail("a path the room did not find was underlined: " + JSON.stringify(got[0]));
     if (!got[1].includes(insideWin)) fail("an inside absolute path was not a link: " + JSON.stringify(got[1]));
     if (!got[2].includes(outsideBash) || !got[2].includes("docs/plan.md")) fail("row 3 linked " + JSON.stringify(got[2]));
     if (!asked.some(a => /openziti-test-kitchen/.test(a))) fail("an outside path was not sent to the room: " + JSON.stringify(asked));
@@ -5935,12 +5935,7 @@ async function fileLinksViewSection(browser, base) {
       }
       return t;
     };
-    let t = await tipFor(12, 0, /outside this card/);
-    if (!/outside this card, the board cannot open it/.test(t) || !t.includes("socials.txt")) fail("the outside path's tip was " + JSON.stringify(t));
-    await shot(p, "1-outside-tip");
-    await p.mouse.click(...at(12, 0));
-    await p.waitForTimeout(300); // wait: negative check, nothing may open after a click
-    if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on") || window.__tabs.length > 0)) fail("clicking an outside path opened something");
+    if (await tipFor(12, 0, /outside this card/)) fail("a path the room did not find had a tip");
     const clickMenu = async (col, r) => {
       await p.mouse.move(...at(60, 8));
       await p.mouse.move(...at(col, r), { steps: 3 });
