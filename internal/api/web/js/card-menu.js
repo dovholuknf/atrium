@@ -241,41 +241,6 @@ async function forgetSessionsNow(id, t) {
   toast("forgotten", (gone && gone.title) || pick);
 }
 
-// Give a throwaway a permanent directory. The response says whether it moved
-// now or will move after the running session exits.
-// One at a time: see oneAtATime in js/core.js.
-function promoteCard(id, t) {
-  if (typeof homeOf === "function" && homeOf(t) && typeof naKeepOpen === "function") { naKeepOpen(id, t); return; }
-  return oneAtATime("promote:" + id, () => promoteCardNow(id, t));
-}
-
-async function promoteCardNow(id, t) {
-  const to = await askUser({
-    title: "keep this work?",
-    body: "This directory is temporary and is deleted when the session ends. " +
-      "Say where it should live instead, and it becomes an ordinary card.",
-    input: true,
-    value: "",
-    placeholder: "the whole path, somewhere that does not exist yet",
-    buttons: [{ label: "cancel", value: null },
-              { label: "keep it", value: true, style: "go" }]
-  });
-  if (to === null || !to.trim()) return;
-
-  let res;
-  try {
-    res = await api(`/v1/tasks/${id}/promote`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: to.trim() })
-    });
-  } catch (e) {
-    toast("could not keep it", e.message);
-    return;
-  }
-  toast(res.when === "now" ? "moved" : "will move when the session ends", res.to);
-  refresh();
-}
-
 // A RESUME IS NOT OVER WHEN THE LAUNCH ANSWERS.
 //
 // `/v1/launch` returns when the runner is started, and the terminal has nothing
@@ -812,19 +777,6 @@ async function cardMenu(e, id) {
         "conversation back up where it stopped. It opens where this card was " +
         "last open, so there is nothing to answer.",
       sub: resumeEntries(id, t)
-    } : null,
-    // Offer transcript actions when the card has a directory, without fetching
-    // the list just to build the menu. Put promotion first for throwaways so
-    // the operator can keep the work before cleanup.
-    t.throwaway ? {
-      label: t.promote_to ? "keep it somewhere else…" : "keep this work…",
-      help: (t.promote_to ? "Moving to " + t.promote_to + ". " : "") + "This directory is temporary and goes when the session ends. " +
-        (typeof homeOf === "function" && homeOf(t)
-          ? "Promoting it keeps the directory where it is, under the card root, and the card "
-          : "Promoting it moves the directory somewhere you choose and the card ") +
-        "stops being temporary. While a session is running the move happens " +
-        "as it ends, because a directory cannot be moved out from under it.",
-      act: () => promoteCard(id, t)
     } : null,
     t.worktree ? {
       label: "forget a conversation…",

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -240,6 +241,34 @@ func (d *Service) HubGitEnv(card string, outside bool, harness map[string]string
 	into["GIT_CONFIG_COUNT"] = strconv.Itoa(n + 1)
 	into["GIT_CONFIG_KEY_"+i] = "http." + base + ".extraHeader"
 	into["GIT_CONFIG_VALUE_"+i] = gitsync.HeaderCardToken + ": " + tok
+}
+
+// launchFetchCard starts the id the room fetches the hub's claude/main under before a launch has a card. Stashing makes it live.
+const launchFetchCard = "atrium-launch-fetch"
+
+// hubFetchEnv is the git environment that proves the room's own fetch to its own forwarder, which refuses a request
+// without a good token. Nil when this room has no forwarder, so a remote that is not one is fetched as it was.
+func (d *Service) hubFetchEnv(card, clone string) []string {
+	ct, _ := d.HubGit.Cards.(*gitsync.CardTokens)
+	base := d.HubRemoteBase()
+	if ct == nil || base == "" {
+		return nil
+	}
+	tok, err := ct.RoomToken(card)
+	if err != nil {
+		return nil
+	}
+	// An empty value first clears a stale header the clone's own config holds for this url, which the forwarder would read before ours.
+	env := append(gitsync.PushEnv(base, tok, 1), "GIT_CONFIG_KEY_0="+gitsync.ExtraHeaderKey(base), "GIT_CONFIG_VALUE_0=")
+	// A shared clone's hub remote can name another room's forwarder, where this token is no good.
+	if have, err := shared.GitIn(clone, gitexec.ConfigGet{Key: "remote.hub.url"}); err == nil {
+		// Any host spelling: localhost, a bracketed ::1 or another port are all a forwarder that is not this room's.
+		if have = strings.TrimSpace(have); strings.HasPrefix(have, "http://") && strings.Contains(have, "/git/hub/") && !strings.HasPrefix(have, base) {
+			env[0] = "GIT_CONFIG_COUNT=3"
+			env = append(env, "GIT_CONFIG_KEY_2=url."+base+".insteadOf", "GIT_CONFIG_VALUE_2="+have[:strings.Index(have, "/git/hub/")+len("/git/")])
+		}
+	}
+	return env
 }
 
 // isOutsideCode says whether a launch is of a card that runs code that is not the room's own.

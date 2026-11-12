@@ -32,7 +32,7 @@ if (/not loaded/.test(html)) fail("a published image ref was shown as not loaded
 
   const tl = fs.readFileSync(path.join(web, "js", "terminal-links.js"), "utf8");
   const mk = new Function("term", "linkTipHide", "openLinkReused", "location",
-    tl.slice(tl.indexOf("function docLinkPath"), tl.indexOf("// A path that names somewhere outside the card")) +
+    tl.slice(tl.indexOf("function docLinkPath"), tl.indexOf("function linkTipShow")) +
     "; return { docLinkPath, docLink };");
   const opened = [];
   const t = mk(null, () => {}, u => opened.push(u), { origin: "http://hub:7778" });

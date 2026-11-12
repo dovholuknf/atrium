@@ -1746,6 +1746,7 @@ function wireTerminalPaste(screen) {
     e.preventDefault();
     e.stopPropagation();
     lagPasteStart("paste event");
+    pasteVia("ctrl+v");
     // A delay-rendered clipboard image can arrive here with no bytes, while
     // the async clipboard API still has them.
     if (!files.length && sawEmpty && !isGuest()) { pasteFilesIntoTerm(true); return; }
@@ -1933,7 +1934,7 @@ function sendPasteBox() {
   // Through `sendPasteText`, so a multi-line paste from the box is bracketed
   // and carriage-returned the same as one that came off the terminal. A box
   // that skipped that would submit the first line and drop the rest.
-  if (text) sendPasteText(text);
+  if (text) { pasteVia("paste box"); sendPasteText(text); }
 }
 
 // WIRED ONCE, for the same reason `wireTerminalPaste` is: the box outlives
@@ -2101,6 +2102,7 @@ function wireTerminalDrops(screen) {
       const text = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
       if (!text) return;
       e.preventDefault();
+      pasteVia("drop");
       sendPasteText(text);
       return;
     }

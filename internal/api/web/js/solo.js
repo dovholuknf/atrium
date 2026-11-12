@@ -74,6 +74,11 @@ function terminalParts(task) {
   return { where: label.slice(0, label.length - branch.length - 1), branch, leaf: branch };
 }
 
+// A card home is `<card root>/cards/<slug>-<6>/work`, a path that names no project.
+function isCardHomePath(path) {
+  return /\/cards\/[^/]+\/work$/.test(path);
+}
+
 function terminalLabel(task) {
   if (!task) return "";
   const path = String(task.worktree || "").replace(/\\/g, "/").replace(/\/+$/, "");
@@ -97,6 +102,10 @@ function terminalLabel(task) {
   let where = "";
   if (at >= 0) {
     where = segs.slice(Math.max(0, at - 2), at + 1).join("/");
+  } else if (task.host && task.org && repo) {
+    where = [task.host, task.org, repo].join("/");
+  } else if (isCardHomePath(path)) {
+    where = "";
   } else if (segs.length) {
     // No repo on the card. That happens for a worktree atrium has not been
     // able to ask git about, and for a directory that is not a checkout at

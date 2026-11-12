@@ -32,25 +32,11 @@ async function loadHomes(force) {
     const v = await api("/v1/homes");
     homesLoaded(v && v.homes);
     homesRoot = v && !v.error && v.root || "";
-    paintThrowawayHint();
   } catch (e) {
     homesAt = Date.now();
   } finally {
     homesBusy = false;
   }
-}
-
-const THROWAWAY_KEPT = " If it turns out to matter, promote it from the card's menu and it stays where it is, under the card root.";
-
-// paintThrowawayHint says where a promoted throwaway ends up: in place when the room has a card root, since the
-// throwaway is then a home, and somewhere chosen when it has none.
-function paintThrowawayHint() {
-  const el = document.getElementById("l-throwaway-hint");
-  if (!el) return;
-  if (!el.dataset.was) el.dataset.was = el.textContent;
-  el.textContent = homesRoot
-    ? el.dataset.was.replace(/\s+If it turns out to matter[\s\S]*$/, "") + THROWAWAY_KEPT
-    : el.dataset.was;
 }
 
 function homeOf(task) {

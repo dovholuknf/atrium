@@ -179,7 +179,7 @@ function placeToasts() {
   if (!onTerm) return;
   const r = pane.getBoundingClientRect();
   let below = r.top;
-  pane.querySelectorAll(".term-bar, #t-pasting, #t-find, #walk-drawer .walk-head").forEach(el => {
+  pane.querySelectorAll(".term-bar, #t-find, #walk-drawer .walk-head").forEach(el => {
     if (el.hidden) return;
     const b = el.getBoundingClientRect();
     if (b.height) below = Math.max(below, b.bottom);
@@ -196,7 +196,7 @@ if (window.ResizeObserver) {
   const paneEl = document.getElementById("term-pane");
   if (paneEl) {
     barWatch.observe(paneEl);
-    paneEl.querySelectorAll(".term-bar, #t-pasting, #t-find").forEach(el => barWatch.observe(el));
+    paneEl.querySelectorAll(".term-bar, #t-find").forEach(el => barWatch.observe(el));
   }
 }
 

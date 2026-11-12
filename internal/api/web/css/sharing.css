@@ -164,16 +164,17 @@
   #t-complete .candmore { color: var(--dimmest); }
   /* Pushed right. It is the same line every time, so it belongs where the eye stops. */
   #t-complete .candhint { margin-left: auto; color: var(--dimmest); }
-  /* A paste on its way: a bar across the top of the terminal, clear of the prompt at the bottom. */
+  /* A paste on its way: a bar over the hint line under the terminal, and a busy pointer over the terminal. */
   #t-pasting {
-    position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 30;
     display: flex; align-items: center; gap: var(--sp-3);
-    padding: 8px 14px; font-size: var(--fs-md); font-weight: 600; color: var(--body);
-    background: var(--shell-0); border-bottom: 2px solid var(--teal);
+    padding: 4px 14px; font-size: var(--fs-sm); font-weight: 600; color: var(--body);
+    background: var(--shell-0); border-top: 2px solid var(--teal);
     pointer-events: none;
   }
   #t-pasting[hidden] { display: none; }
-  #t-pasting.failed { color: var(--danger); border-bottom-color: var(--danger); }
+  #t-pasting.failed { color: var(--danger); border-top-color: var(--danger); }
+  #term-pane.pasting, #term-pane.pasting * { cursor: progress !important; }
   #t-pasting.failed .shspin { animation: none; border-color: var(--danger); }
   #t-pasting .rail {
     margin-left: auto; width: 120px; height: 4px; border-radius: 2px;

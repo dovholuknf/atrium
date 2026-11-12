@@ -84,6 +84,8 @@ const (
 	ReasonLogin = "login"
 	// ReasonCI is the CI hook telling the operator what a post came to. A growler reason, a plain notice with no card.
 	ReasonCI = "ci"
+	// ReasonReminder is a reminder a card set for itself coming due. A growler reason, about a card.
+	ReasonReminder = "reminder"
 )
 
 const (

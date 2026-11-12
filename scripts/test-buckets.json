@@ -246,16 +246,17 @@
     },
     "docs-files": {
       "page": "docs, files, the reader, change requests",
-      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "markdownTab", "docShare", "coverPoll", "coverSteps"],
+      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileBack", "fileLinkDrawer", "draftReload", "fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "markdownTab", "docShare", "coverPoll", "coverSteps"],
       "sources": [
         "internal/api/web/js/notes-files.js",
+        "internal/api/web/js/files-rules.js",
         "internal/api/web/js/terminal-links.js",
         "internal/api/web/read.js",
         "internal/api/web/read.html",
         "internal/api/web/share.html",
         "internal/api/web/css/files.css"
       ],
-      "tests": ["scripts/test-paste-kind.js"],
+      "tests": ["scripts/test-paste-kind.js", "scripts/test-files-rules.js"],
       "checks": []
     },
     "deploy": {
@@ -413,7 +414,7 @@
     "hub/deploypkg": {"package": "./internal/link/deploy", "sources": ["internal/link/deploy/*.go"], "tests": []},
     "hub/docs": {"package": "./internal/link/docs", "sources": ["internal/link/docs/*.go"], "tests": []},
 "hub/cihook": {"package": "./internal/link", "sources": ["internal/link/cihook_deliver.go"], "tests": ["internal/link/cihook_*test.go", "internal/link/eventhook_*test.go"]},
-    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_relay.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go", "internal/link/review.go", "internal/link/review_mcp.go"], "tests": ["internal/link/review_integration_test.go", "internal/link/control_*test.go", "internal/link/ctl_*test.go", "internal/link/ctlaudit_*test.go", "internal/link/ctlclass_*test.go", "internal/link/launch_item_schema_test.go", "internal/link/launch_schema_integration_test.go", "internal/link/need_integration_test.go"]},
+    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_remind.go", "internal/link/control_relay.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go", "internal/link/review.go", "internal/link/review_mcp.go"], "tests": ["internal/link/review_integration_test.go", "internal/link/control_*test.go", "internal/link/ctl_*test.go", "internal/link/ctlaudit_*test.go", "internal/link/ctlclass_*test.go", "internal/link/launch_item_schema_test.go", "internal/link/launch_schema_integration_test.go", "internal/link/need_integration_test.go"]},
     "mcp/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog_mcp.go"], "tests": []},
     "mcp/deploy": {"package": "./internal/link", "sources": ["internal/link/deploy_forward.go"], "tests": ["internal/link/deploy_*test.go"]},
     "mcp/deps": {"package": "./internal/link", "sources": ["internal/link/deps_mcp.go"], "tests": []},
@@ -443,6 +444,7 @@
     "api/scratch": {"package": "./internal/api", "sources": ["internal/api/scratch.go", "internal/api/tangent.go"], "tests": ["internal/api/scratch_*test.go", "internal/api/tangent_*test.go"]},
     "api/walkdiff": {"package": "./internal/api", "sources": ["internal/api/walkdiff.go", "internal/api/walkstate.go", "internal/api/walkagent.go"], "tests": ["internal/api/walkdiff_*test.go", "internal/api/walkstate_*test.go"]},
     "api/rest": {"package": "./internal/api", "rest": true, "ceiling": 29, "sources": [], "tests": []},
+    "hub/remind": {"package": "./internal/link", "sources": ["internal/link/remind.go"], "tests": ["internal/link/remind_*test.go"]},
     "hub/rest": {"package": "./internal/link", "rest": true, "ceiling": 27, "sources": [], "tests": []}
   }
 }

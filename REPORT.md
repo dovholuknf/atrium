@@ -1,14 +1,18 @@
-# qa-refit report
+# group-by-fixes
 
-Fix: `TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves` waits for the replay's cursor move in its `hostWait`.
+Commit: see branch claude/group-by-fixes.
 
-PROVEN (by reading `internal/daemon/attach.go`):
-- Write order on attach is `caps`, `size` (`tellSize`), then the replay body with the cursor move. The size frame
-  always precedes the replay, so a wait on the size frame cannot guarantee the replay has landed.
-- The failing log's `large.seen()` was `caps` then `size 200x20` and nothing else, matching a check made between the
-  size write and the replay write.
-
-INFERRED:
-- That this gap is the whole cause on the Windows runner. Not reproduced locally, so no before/after run.
-
-Product bug: none. The size-before-backlog order is deliberate (see the comment in `attach.go`).
+1. "by pile" removed: FD_GROUP_WORDS, the settings.js option, the cardrules GROUP_CHOICES entry, the board.js `window`
+   grouper and the `defaultProjectOf` helper it left dead, and the comment. `groupingPrefs` maps a saved mode `window`
+   to `project`.
+2. Cause: the terminals tab nests by `terminalLabel` (solo.js), which ignored host and org and fell back to the last
+   path segments, so `cards/<slug>/work` made a "cards" heading. Now the label uses host/org/repo when the card has
+   them, and a card-home path with no repo has no project (uncategorized). The flat project rule in cardrules.js does
+   the same.
+3. Per card: csharp-ci and csharp-gaps group under github/openziti/ziti-sdk-csharp, mcp-gateway-transport under
+   github/openziti/mcp-gateway-transport, interview-nfpreview under uncategorized if it has no origin.
+   Caveat: atrium_peers does not expose host, org or repo, so these are assumed from the brief, not read off the live
+   records.
+4. test-touched passes. The headless units were skipped (playwright not installed), so the assertions I added in
+   scripts/test-board-headless.js did not run.
+5. Mock: http://127.0.0.1:7931/ is a static page with real board CSS, not the full board.

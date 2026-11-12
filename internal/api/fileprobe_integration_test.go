@@ -345,3 +345,30 @@ func TestADotDotOrASymlinkCannotLeaveAnOpenRoot(t *testing.T) {
 		t.Errorf("the target itself answered %d, want 403", c)
 	}
 }
+
+func TestAProbeFindsARelativePathInAnotherOpenRoot(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	other := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(other, "live", "slides"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "script.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(SettingOpenPaths, filepath.ToSlash(other)); err != nil {
+		t.Fatal(err)
+	}
+	got := probed(t, s, task.ID, []string{"script.md", "live/slides", "../escape.md", "nope.md"})
+	if len(got) != 2 {
+		t.Fatalf("want 2 hits, got %v", got)
+	}
+	h := got["script.md"]
+	if !h.Outside || filepath.Base(h.Rel) != "script.md" || !filepath.IsAbs(filepath.FromSlash(h.Rel)) {
+		t.Fatalf("script.md came back as %+v", h)
+	}
+	if d := got["live/slides"]; !d.Dir || !d.Outside {
+		t.Fatalf("live/slides came back as %+v", d)
+	}
+}

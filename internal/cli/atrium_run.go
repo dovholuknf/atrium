@@ -627,6 +627,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetPush(link.NewPush(store, notifier))
 	proxy.SetGrowler(growler)
 	growler.Start(ctx)
+	reminders := proxy.NewReminders(store)
+	proxy.SetReminders(reminders)
+	go reminders.Run(ctx)
 	startCIHook(ctx, f.ciHookService, store, ht, proxy)
 	ht.Add(link.TransportItem{
 		Name: link.TransportBoardZiti, Label: "Board over ziti", Kind: "board-ziti", DefaultService: "atrium-board",

@@ -1119,12 +1119,18 @@ function termInheritedTheme(t) {
   const list = typeof lastTasks === "undefined" || !lastTasks ? [] : lastTasks;
   const byBare = new Map(list.map(c => [bareId(c.id), c]));
   const seen = new Set();
+  let depth = 1;
   for (let c = byBare.get(bareId(t.id)) || t; c && nestsUnderLauncher(c) && !c.pinned && !seen.has(c.id);) {
     seen.add(c.id);
     const up = launcherOf(c, list, byBare);
     const own = up && themeSource(up);
-    if (own) return termTintOf(own);
+    if (own) {
+      let th = own;
+      for (let i = 0; i < depth; i++) th = termTintOf(th);
+      return th;
+    }
     c = up;
+    depth++;
   }
   return null;
 }
@@ -1140,7 +1146,7 @@ function termRowWear(t, inherit) {
     (tint ? `;--tabedge:${inherit.cursor || inherit.foreground}` : "") + (wear.style ? ";" + wear.style : "") };
 }
 
-function termRow(t, deep, kid, inherit) {
+function termRow(t, deep, kid, inherit, plain) {
   // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a row of
   // tabs onto the panes behind it rather than as a list of names. Amber for
   // waiting said something the board already says better and cost the one
@@ -1181,8 +1187,8 @@ function termRow(t, deep, kid, inherit) {
   const allKids = termKids.get(t.id) || [];
   const shut = termKidTotal(t) > 0 && termKidsShut(t);
   // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
-  const shown = shut ? [] : allKids;
-  const down = themeSource(t) || inherit;
+  const shown = shut || plain ? [] : allKids;
+  const down = themeSource(t) || (inherit && termTintOf(inherit));
   const kids = shown.map(k => termRow(k, false, true, down)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${carries ? "carries" : ""}${kid ? " kid" : ""}${
@@ -1192,22 +1198,22 @@ function termRow(t, deep, kid, inherit) {
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
            termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
-         data-id="${t.id}"${kid ? "" : ` draggable="true"`}
+         data-id="${t.id}"${kid || plain ? "" : ` draggable="true"`}
          data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. resume it from the right-click menu"
            : "\nthis one has exited. resume it from the right-click menu") +
            (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
            : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
-         onclick="${termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
-         oncontextmenu="termMenu(event, '${t.id}')">
+         ${plain ? "" : `onclick="${termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
+         oncontextmenu="termMenu(event, '${t.id}')"`}>
       ${ctxLine(t)}
       <div class="card-line">
         <div class="title">
           <span class="pin ${t.pinned ? "on" : ""}"
             aria-label="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             data-tip="${t.pinned ? "always here. click to unpin" : "keep this here"}"
-            onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
+            ${plain ? "" : `onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"`}
             >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termStateSlot(t)}<span
             class="tstack"><span
             class="tname${secondary ? "" : " aspath"}"
@@ -1220,7 +1226,7 @@ function termRow(t, deep, kid, inherit) {
                 : ""
             }</span>
         </div>
-        ${termRowChips(t, keptChip)}${termKidsToggle(t, termKidTotal(t), termKidTotal(t) - shown.length, shut)}
+        ${termRowChips(t, keptChip)}${plain ? "" : termKidsToggle(t, termKidTotal(t), termKidTotal(t) - shown.length, shut)}
       </div>${termHeldLine(t)}
     </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
@@ -1367,8 +1373,7 @@ function termRowChips(t, lead) {
   const minion = isMinion(t) ? `<span class="chip" data-tip="a throwaway session an item launched. it is listed because it needs you">minion</span>` : "";
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
-  const keep = typeof naKeepChip === "function" ? naKeepChip(t) : "";
-  const inner = (lead || "") + minion + keep + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

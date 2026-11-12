@@ -120,6 +120,35 @@ func TestAReattachedRunnerShowingOnlyASuggestionDeliversAHeldSayWithNoKey(t *tes
 	}
 }
 
+func TestAReattachedRunnerShowingASuggestionAfterANoBreakSpaceDeliversAHeldSay(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	t.Cleanup(func() { d.pending.stopAll() })
+	alice := peerCard(t, d, "alice")
+	task, r := runningCard(t, d, strings.Replace(ghostFrame, "❯ ", "❯\u00a0", 1), time.Minute)
+	d.act.set(task.ID, ActivityIdle, "")
+	r.reattached.Store(true)
+	r.line.lost(reattachLineKey)
+	f := r.pty.(*fakePTY)
+
+	if code := message(t, d, task.ID, map[string]string{"text": "NBSPWORDS", "from": alice.WireName}); code != 200 {
+		t.Fatalf("the say answered %d", code)
+	}
+	if strings.Contains(f.written(), "NBSPWORDS") {
+		t.Fatal("typed before the screen was read")
+	}
+	if err := d.watchLooksIdle(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(f.written(), "NBSPWORDS") {
+		time.Sleep(20 * time.Millisecond) // wait: poll step under the 10 s deadline
+	}
+	if !strings.Contains(f.written(), "NBSPWORDS") {
+		t.Fatalf("the held say was not delivered: %q", f.written())
+	}
+}
+
 // A turn that ended after a restart left the line unsure, because a Stop was not taken as proof, and an idle card at
 // an empty prompt held its mail for 20 minutes.
 func TestAStopAfterAReattachOpensTheGateUnlessAKeyCameSince(t *testing.T) {

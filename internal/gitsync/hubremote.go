@@ -213,9 +213,9 @@ func (c *SCM) addHubRemote(ctx context.Context, dir, url string) (name, note str
 	return ensureHubRemote(ctx, c.runner(), dir, url)
 }
 
-// ownForwarderURL is a remote url that is an atrium forwarder: this room's from an earlier start, or on another
+// OwnForwarderURL is a remote url that is an atrium forwarder: this room's from an earlier start, or on another
 // agent port.
-var ownForwarderURL = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]+/git/hub/`)
+var OwnForwarderURL = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]+/git/hub/`)
 
 const movedNote = "this clone's own `hub` remote points somewhere else and was left alone, so atrium's is `atrium-hub`"
 
@@ -232,7 +232,7 @@ func ensureHubRemote(ctx context.Context, g *Runner, dir, url string) (name, not
 				return "", "", fmt.Errorf("%s", firstLine(err))
 			}
 		case have == url:
-		case ownForwarderURL.MatchString(have):
+		case OwnForwarderURL.MatchString(have):
 			if _, err := g.Git(ctx, dir, gitexec.RemoteSetURL{Name: n, URL: url}); err != nil {
 				return "", "", fmt.Errorf("%s", firstLine(err))
 			}

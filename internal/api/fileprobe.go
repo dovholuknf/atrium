@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Which of these words are actually files.
@@ -129,12 +131,15 @@ func probeAlias(want string) string {
 // a `..` would be.
 func probeOne(root, want string, roots func() []string) (probeHit, bool) {
 	full, outside, err := containedOrOpen(root, probeAlias(want), roots)
-	if err != nil {
-		return probeHit{}, false
+	var fi os.FileInfo
+	if err == nil {
+		fi, err = os.Lstat(full)
 	}
-	fi, err := os.Lstat(full)
 	if err != nil {
-		return probeHit{}, false
+		if full, fi = elsewhere(want, roots); fi == nil {
+			return probeHit{}, false
+		}
+		outside = true
 	}
 	rel, err := filepath.Rel(root, full)
 	if outside {
@@ -148,4 +153,25 @@ func probeOne(root, want string, roots func() []string) (probeHit, bool) {
 		out.Size = fi.Size()
 	}
 	return out, true
+}
+
+// elsewhere finds a relative path that is not in the card under another open root, where the agent works on a
+// sibling worktree. The newest match wins, and safepath.Contained keeps every one inside its root.
+func elsewhere(want string, roots func() []string) (string, os.FileInfo) {
+	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") {
+		return "", nil
+	}
+	var best string
+	var bestFi os.FileInfo
+	for _, r := range roots() {
+		full, err := safepath.Contained(r, want)
+		if err != nil {
+			continue
+		}
+		fi, err := os.Lstat(full)
+		if err == nil && (bestFi == nil || fi.ModTime().After(bestFi.ModTime())) {
+			best, bestFi = full, fi
+		}
+	}
+	return best, bestFi
 }

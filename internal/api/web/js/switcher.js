@@ -380,14 +380,13 @@ function paintSwitcher() {
   if (at >= 0) rows.splice(at, 0, { reviveAll: killed.map(t => t.id) });
   swRows = (link ? [{ link }] : []).concat(rows, swRunnerRows(swQuery));
   if (swSel >= swRows.length) swSel = Math.max(0, swRows.length - 1);
-  const here = swHere();
   setHTML(host, swRows.length
     ? swRows.map((t, i) => {
       if (t.link) {
         const r = quickPasteRow(t.link);
         return `
-      <div class="swrow swopen ${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
-        id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}">${r.html}</div>`;
+      <div class="swrow swopen ${r.card !== undefined ? "swcard " : ""}${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
+        id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}"${r.card !== undefined ? ` data-card="${esc(r.card)}"` : ""}>${r.html}</div>`;
       }
       if (t.reviveAll) {
         return `
@@ -404,23 +403,19 @@ function paintSwitcher() {
         <span class="swdir">new agent</span>
       </div>`;
       }
-      return `
-      <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
-        ${runnerMark(t.runner)}
-        <span class="swname">${swHighlight(String(t.display_title || t.title || terminalLabel(t) || ""), swQuery)}</span>
-        ${sameCard(t.id, here) ? `<span class="chip">here</span>` : ""}
-        ${poppedOut(t.id) && !sameCard(t.id, here)
-          ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
-        ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
-        ${t.supervised ? "" : `<span class="chip ${t.revive ? "warn" : ""}">${t.archived_at ? "archived" : t.revive ? "killed" : "ended"}</span>`}
-        ${!t.supervised && roomOf(t.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(t.id))}">${esc(roomOf(t.id))}</span>` : ""}
-        <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(terminalLabel(t) || t.worktree || "")}</span>
-      </div>`;
+      return `<div class="swrow swcard ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">${termRow(t, false, false, null, true)}</div>`;
     }).join("")
     : `<div class="empty">${swQuery ? "nothing matches that"
         : (swLoaded ? "no sessions to go to" : "looking&hellip;")}</div>`);
+  host.querySelectorAll(".swcard[data-id] .tname").forEach(el => { el.innerHTML = swHighlight(el.textContent, swQuery); });
   // The id travels in a data attribute and comes back through the DOM, never
   // through an inline handler. The house rule, and it costs nothing here.
+  const cardRow = host.querySelector(".swopen.swcard .tstack");
+  if (cardRow) {
+    let path = cardRow.querySelector(".tpath");
+    if (!path) cardRow.insertAdjacentHTML("beforeend", `<span class="tpath"></span>`), path = cardRow.querySelector(".tpath");
+    path.textContent = host.querySelector(".swopen.swcard").dataset.card;
+  }
   host.querySelectorAll(".swrow").forEach(el => {
     el.onclick = e => el.dataset.revive ? swReviveAll()
       : el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey)

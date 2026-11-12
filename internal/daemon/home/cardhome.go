@@ -264,7 +264,7 @@ func (d *Service) BackfillHomeOrigins() int {
 var BranchOK = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
 // addHomeWorktree puts `<home>/work` on a branch of the clone, made from base when the branch is new. Argv, never a shell.
-func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (usedBranch, usedBase string, err error) {
+func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string, env []string) (usedBranch, usedBase string, err error) {
 	if branch = strings.TrimSpace(branch); branch == "" {
 		branch = "claude/" + slug
 	}
@@ -289,7 +289,7 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 		return branch, "", WrapGit("add the worktree", err)
 	}
 	if fromDefault {
-		if base, err = freshHubBase(clone, base); err != nil {
+		if base, err = freshHubBase(clone, base, env); err != nil {
 			return "", "", err
 		}
 	}
@@ -299,7 +299,7 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string) (used
 
 // freshHubBase is the hub's claude/main, fetched now, for a clone that has a hub remote, because the clone's own
 // claude/main can be weeks behind. A fetch that fails refuses the launch rather than branching from stale code.
-func freshHubBase(clone, base string) (string, error) {
+func freshHubBase(clone, base string, env []string) (string, error) {
 	if base != shared.DefaultCullInto {
 		return base, nil
 	}
@@ -309,7 +309,7 @@ func freshHubBase(clone, base string) (string, error) {
 	}
 	const tip = "hub/" + shared.DefaultCullInto
 	spec := "+refs/heads/" + shared.DefaultCullInto + ":refs/remotes/" + tip
-	if _, err := shared.GitIn(clone, gitexec.Fetch{Remote: "hub", Refspecs: []string{spec}, NoTags: true, Quiet: true}); err != nil {
+	if _, err := shared.GitWith(gitexec.Opts{Dir: clone, Env: env}, gitexec.Fetch{Remote: "hub", Refspecs: []string{spec}, NoTags: true, Quiet: true}); err != nil {
 		return "", fmt.Errorf("the hub's %s could not be fetched, so this launch would start from a stale one: %v", shared.DefaultCullInto, err)
 	}
 	return tip, nil
@@ -716,7 +716,10 @@ func (d *Service) LaunchHome(kind string, req *shared.LaunchRequest) (store.Card
 		return store.CardHome{}, HomeDirs{}, err
 	}
 	if kind == store.CardHomeWorktree {
-		branch, base, err := AddHomeWorktree(clone, dd, req.Branch, req.Base, HomeSlug(req.Title, leaf))
+		fetchCard := launchFetchCard + strconv.FormatInt(time.Now().UnixNano(), 10)
+		d.HubGit.Stashing.Store(fetchCard, true)
+		branch, base, err := AddHomeWorktree(clone, dd, req.Branch, req.Base, HomeSlug(req.Title, leaf), d.hubFetchEnv(fetchCard, clone))
+		d.HubGit.Stashing.Delete(fetchCard)
 		if err != nil {
 			d.ReclaimHome(nil, row, true)
 			return store.CardHome{}, HomeDirs{}, err

@@ -21,14 +21,13 @@
 
 dialog#na { width: min(792px, 94vw); overflow: visible; }
 dialog#na:focus { outline: none; }
-dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
-#na .dlg-head, #na-keep .dlg-head { padding: 18px 22px 14px; align-items: center; }
+#na .dlg-head { padding: 18px 22px 14px; align-items: center; }
 #na .dlg-head h2 { font-size: var(--fs-xl); margin: 0; }
-#na .x, #na-keep .x { background: transparent; border: 1px solid transparent; color: var(--label); font-size: var(--fs-2xl);
+#na .x { background: transparent; border: 1px solid transparent; color: var(--label); font-size: var(--fs-2xl);
   line-height: 1; padding: 4px 10px; }
-#na .x:hover, #na-keep .x:hover { border-color: var(--stroke); color: var(--head); background: var(--lift); }
-#na .dlg-body, #na-keep .dlg-body { padding: 18px 22px 8px; overflow-y: auto; }
-#na .dlg-body.popped, #na-keep .dlg-body.popped { overflow: visible; }
+#na .x:hover { border-color: var(--stroke); color: var(--head); background: var(--lift); }
+#na .dlg-body { padding: 18px 22px 8px; overflow-y: auto; }
+#na .dlg-body.popped { overflow: visible; }
 #na button:hover, #na button:active { transform: none; }
 #na .field { margin-bottom: 16px; position: relative; }
 #na .field.what { margin-bottom: 12px; }
@@ -171,7 +170,6 @@ dialog#na-keep { width: min(460px, 94vw); overflow: visible; }
 #na .na-note.warn { color: var(--warn); }
 #na .dlg-foot { padding: 12px 22px; gap: var(--sp-3); }
 #na .dlg-foot .twhint { font-size: var(--fs-xs); color: var(--dim); }
-#na-keep .hintline { color: var(--dim); font-size: var(--fs-sm); }
 #na .na-pv { flex: none; width: auto; padding: 0; background: none; overflow: visible; }
 #na .na-pv .card { margin: 0; cursor: default; }
 #na .na-pv .card .title .pin { color: var(--stroke); }

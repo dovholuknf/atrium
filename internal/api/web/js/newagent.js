@@ -248,7 +248,7 @@ function naGroupChoices(sel, tagsOn) {
 }
 function naGroupCount(g) { return (lastTasks || []).filter(t => (t.tags || []).includes(g)).length; }
 function naSyncPop() {
-  document.querySelectorAll("#na .dlg-body, #na-keep .dlg-body").forEach(b =>
+  document.querySelectorAll("#na .dlg-body").forEach(b =>
     b.classList.toggle("popped", !!b.querySelector('.gpick[data-open="1"], #na-repo-list:not([hidden])')));
 }
 function naPaintGroups(root, sel, set) {
@@ -309,7 +309,7 @@ function naPaintGroups(root, sel, set) {
   };
 }
 document.addEventListener("mousedown", e => {
-  document.querySelectorAll('#na .gpick[data-open="1"], #na-keep .gpick[data-open="1"]').forEach(r => {
+  document.querySelectorAll('#na .gpick[data-open="1"]').forEach(r => {
     if (!r.contains(e.target)) { r.dataset.open = ""; r._paint(); }
   });
 });
@@ -689,52 +689,6 @@ async function naTag(id, groups) {
   const tags = [...new Set([...((t && t.tags) || []), ...groups])];
   await api("/v1/tasks/" + encodeURIComponent(id), { method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tags }) }).catch(e => toast("could not put it in its groups", e.message));
-}
-
-let naKeepId = "", naKeepGroups = [];
-function naKeepOpen(id, t) {
-  naKeepId = id;
-  naKeepGroups = naRead(NA_GROUPS_KEY, []);
-  naEl("nk-h").textContent = (t && (t.display_title || t.title)) || id;
-  naEl("nk-title").value = (t && t.title) || "";
-  naEl("nk-groups").dataset.open = "";
-  const paint = () => naPaintGroups(naEl("nk-groups"), naKeepGroups, gs => { naKeepGroups = gs; paint(); });
-  paint();
-  naEl("na-keep").showModal();
-  naEl("nk-title").focus();
-}
-naEl("nk-x").onclick = () => naEl("na-keep").close();
-naEl("nk-go").onclick = () => busyWhile("nk-go", async () => {
-  const id = naKeepId, title = naEl("nk-title").value.trim();
-  let res;
-  try {
-    res = await api(`/v1/tasks/${id}/promote`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    const t = await api("/v1/tasks/" + encodeURIComponent(id));
-    const patch = { tags: [...new Set([...(t.tags || []), ...naKeepGroups])] };
-    if (title) patch.overrides = { title };
-    await api("/v1/tasks/" + encodeURIComponent(id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
-  } catch (e) {
-    toast("could not keep it", e.message);
-    return;
-  }
-  naEl("na-keep").close();
-  naNameGroups(naKeepGroups);
-  toast(res.when === "now" ? "kept" : "kept when the session ends", naKeepGroups.length ? "in " + naKeepGroups.join(", ") : res.to);
-  if (typeof refresh === "function") refresh();
-}, "keeping…");
-naEl("na-keep").addEventListener("keydown", e => {
-  if (e.key === "Enter" && e.target.id === "nk-title") { e.preventDefault(); naEl("nk-go").click(); }
-});
-
-function naKeepChip(t) {
-  if (!t || !t.throwaway || isMinion(t)) return "";
-  if (t.promote_to) return `<span class="chip" data-tip="kept: it stays when the session ends">kept</span>`;
-  return `<span class="chip warn" data-tip="a throwaway: gone when the session ends. click to keep it"
-    onclick="event.stopPropagation();naKeepFromCard('${t.id}')">throwaway · keep</span>`;
-}
-function naKeepFromCard(id) {
-  const t = (lastTasks || []).find(x => x.id === id);
-  if (t) promoteCard(id, t);
 }
 
 async function naPin(task) {

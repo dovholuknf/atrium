@@ -112,7 +112,7 @@ var growlBackoff = []time.Duration{
 // growlUrgency orders the stack, most urgent first.
 var growlUrgency = map[string]int{
 	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5, ReasonCI: 6, reasonRoomCPU: 7,
-	reasonRunnerMissing: 8, reasonRunnerLogin: 8,
+	reasonRunnerMissing: 8, reasonRunnerLogin: 8, ReasonReminder: 6,
 }
 
 // The card reasons R1 derives. Passed to the store, which touches no other
@@ -633,7 +633,7 @@ func (g *Growler) tick(ctx context.Context) {
 	g.mu.Unlock()
 	ladder := g.ladder()
 	phone := func(r GrowlRow) {
-		if g.phone == nil || (r.Reason != ReasonPermission && r.Reason != ReasonQuestion) {
+		if g.phone == nil || (r.Reason != ReasonPermission && r.Reason != ReasonQuestion && r.Reason != ReasonReminder) {
 			return
 		}
 		name := names[r.Room+"|"+r.CardID]

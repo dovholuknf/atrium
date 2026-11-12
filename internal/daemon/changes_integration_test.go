@@ -173,6 +173,25 @@ func TestChangesBaseIsTheBranchSinceTheMergeBase(t *testing.T) {
 	}
 }
 
+func TestChangesBaseIgnoresALocalBaseBehindItsOrigin(t *testing.T) {
+	f := newChangesFix(t)
+	gitT(t, f.repo, time.Time{}, "switch", "-c", "feature")
+	writeF(t, filepath.Join(f.repo, "up.txt"), "upstream\n")
+	gitT(t, f.repo, changesBase, "add", ".")
+	gitT(t, f.repo, changesBase, "commit", "-m", "upstream work")
+	gitT(t, f.repo, time.Time{}, "update-ref", "refs/remotes/origin/claude/main", "HEAD")
+
+	if v := f.ok("?against=base"); v.Against != "base" || v.Total != 0 {
+		t.Fatalf("a branch with no commits past origin/claude/main shows %d files: %+v", v.Total, v.Files)
+	}
+	writeF(t, filepath.Join(f.repo, "mine.txt"), "mine\n")
+	gitT(t, f.repo, changesBase, "add", ".")
+	gitT(t, f.repo, changesBase, "commit", "-m", "mine")
+	if v := f.ok("?against=base"); v.Total != 1 || fileOf(v, "mine.txt") == nil {
+		t.Fatalf("only the branch's own file should show: %+v", v.Files)
+	}
+}
+
 func TestChangesRefusals(t *testing.T) {
 	f := newChangesFix(t)
 	if code, m := f.get("?path=a.txt"); code != 400 {

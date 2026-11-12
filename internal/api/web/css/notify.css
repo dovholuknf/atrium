@@ -271,7 +271,13 @@
     border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0;
     outline: none;
   }
-  #switcher .swlist { max-height: 46vh; overflow: auto; padding: 6px; }
+  /* The list is a `.term-list` so the sidebar's card rows draw here unchanged. Its column box is put back to a plain block. */
+  #switcher .swlist { display: block; flex: none; width: auto; max-height: 46vh; overflow: auto; padding: 6px; background: none; }
+  #switcher .swrow.swopen.swcard { display: flex; align-items: center; gap: var(--sp-3); }
+  #switcher .swrow.swopen.swcard .card { flex: 1 1 0; min-width: 0; }
+  #switcher .swrow.swcard { display: block; padding: 0; background: none; border: 0; }
+  #switcher .swrow.swcard .card { margin-bottom: 4px; cursor: pointer; }
+  #switcher .swrow.swcard.on .card { outline: 2px solid var(--blue); outline-offset: 1px; }
   /* The row is the click target, and nothing inside it is focusable. Every keystroke has to keep reaching the
      field, so a row that could take focus would swallow the next thing you type. */
   #switcher .swrow {
@@ -283,7 +289,7 @@
     color: var(--head); font-size: var(--fs-md); white-space: normal;
     overflow-wrap: anywhere; flex: 0 1 auto;
   }
-  #switcher .swhit { background: none; color: var(--teal); font-weight: 600; }
+  #switcher .swhit { background: color-mix(in srgb, currentColor 25%, transparent); color: inherit; border-radius: 2px; }
   /* The directory, truncated from the left. What tells two sessions apart is the end of the path, and every one
      of these opens with the same three segments. */
   #switcher .swdir {
@@ -383,6 +389,9 @@
      steps. Pop out would open a window from a window. */
   body.solo main > #usage { display: none; }
   body.solo #t-popout { display: none; }
+  /* The phone rules hide every bare `.grow` at 900px and under, which a popped-out window is, so the bar's right group
+     lost the right edge it has docked. A phone's bar is a tray and keeps its own rule. */
+  body.solo:not(.term-phone) .term-bar > .grow { display: block; }
   /* Answering the request here works. Going to the perms tab does not, because this window has no perms tab,
      and a button that does nothing is worse than one that is not there. Approve once and block once are both
      still offered. */

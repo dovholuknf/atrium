@@ -960,8 +960,8 @@ function cleanUpCard(id, t, asked) { return oneAtATime("close:" + id, () => clea
 function closeNotDone(out) { return (out.items || []).some(it => it.action === "keep" && it.error); }
 
 // stopBody is the stop question's text for the card's folder atrium did not make (pv.foreign), or for none.
-function stopBody(f) {
-  const said = "Its files stay.";
+function stopBody(f, t) {
+  const said = t && t.throwaway ? "Its folder and this card are deleted." : "Its files stay.";
   if (!f || f.main) return said;
   if (!f.why) {
     return said + `<div class="field"><label class="check"><input type="checkbox" id="ask-adopt">` +
@@ -989,7 +989,7 @@ async function cleanUpNow(id, t, asked) {
     const ok = await askUser({
       plain: true,
       title: `Stop ${title}?`,
-      body: stopBody(f),
+      body: stopBody(f, t),
       buttons: [{ label: "cancel", value: null }, { label: "stop", value: true, style: "go" }]
     });
     if (!ok) return;

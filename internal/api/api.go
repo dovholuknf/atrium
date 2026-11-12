@@ -66,6 +66,8 @@ type Server struct {
 	TaskLaunch func(body []byte) (*store.Task, error)
 	// Kill stops the runner behind a card.
 	Kill func(taskID string) error
+	// EndThrowaway deletes a throwaway card with its folder, as its runner's exit does.
+	EndThrowaway func(taskID string)
 	// Closed is told when a close has moved a card to done, so what it still had held for others is released.
 	Closed func(t *store.Task)
 	// RunAction says a stored action's prompt to a card, and optionally asks
@@ -930,6 +932,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HubCall != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/subscriptions", s.cardSubscriptions)
+		mux.HandleFunc("POST /v1/tasks/{id}/remind", s.cardRemind)
 	}
 	mux.HandleFunc("POST /v1/tasks/exist", s.cardsExist)
 	if s.ItemAct != nil {
@@ -2107,6 +2110,19 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 	// id to act on. This is here because the operator is watching this one.
 	if CloseShellFor != nil {
 		CloseShellFor(id)
+	}
+	// Deleted with its folder, or the folder outlives every record of it.
+	if t, err := s.st.Get(id); err == nil && t.Throwaway && s.EndThrowaway != nil && !(s.supervised() != nil && s.supervised()(id)) {
+		s.EndThrowaway(id)
+		left, err := s.st.Get(id)
+		if err != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if left.Throwaway {
+			writeErr(w, http.StatusConflict, errors.New("its temporary folder could not be deleted, so the card stays"))
+			return
+		}
 	}
 	// Under the send lock so a flush that read the card before the forget
 	// cannot broadcast it after the removal and put it back on the board.
