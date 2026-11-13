@@ -16330,7 +16330,7 @@ async function pasteStartSection(browser, base) {
       const lines = [];
       p.on("console", m => { if (m.text().startsWith("[atrium paste]")) lines.push(m.text()); });
       await p.focus(".xterm-helper-textarea");
-      await p.keyboard.press("Control+V");
+      await p.keyboard.press(process.platform === "darwin" ? "Meta+V" : "Control+V"); // macOS chromium pastes on Cmd+V only
       await p.waitForFunction(() => window.__log.length && window.__log[window.__log.length - 1][1] === true, null, { timeout: slow(8000) });
       const got = await p.evaluate(() => {
         const l = window.__log, shown = l.find(x => x[1] === false), gone = l[l.length - 1];
@@ -19262,7 +19262,7 @@ async function controlsCompactSection(browser, base) {
         if (process.env.DRAWER_SHOTS && tab === "stack") await p.screenshot({ path: process.env.DRAWER_SHOTS + "/drawer-" + v.w + ".png", clip: { x: 0, y: 0, width: v.w, height: Math.min(v.h, 260) } });
         // over 900px the terms label pills sit over the list with the search box, see termHeadPlace
         if (got.labels !== { stack: "show|sort by|group|label", board: "show|sort|group|label", terms: v.w > 900 ? "show|sort by|group" : "show|sort by|group|label" }[tab]) fail(tag + "rows changed: " + got.labels);
-        if (got.overflowX > 0) fail(tag + "the drawer scrolls sideways: " + JSON.stringify(got));
+        if (got.overflowX > 0) fail(tag + "the drawer scrolls sideways by " + got.overflowX + "px, panel " + got.panelW + "px, row rights " + got.rows.map(r => r.right).join(",") + ": " + JSON.stringify(got));
         if (!v.phone && got.handleH > 14) fail(tag + "the drag handle is " + got.handleH + "px, not a few: " + JSON.stringify(got));
         if (!v.phone && got.band > 6) fail(tag + "an empty band of " + got.band + "px sits above the handle: " + JSON.stringify(got));
         for (const r of got.rows) {
