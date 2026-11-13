@@ -268,10 +268,14 @@ async function fakeWait(p, fn, arg, ms, step = 100) {
 }
 
 // pauseAt(future) would jump there and fire every due timer, the 60s resync included, mid-test. The clock runs live, so
-// a target too close is already past by the time it lands: widen the margin until it is not.
+// a target too close is already past by the time it lands. The gap is a CPU-starved round trip, so the margin is the
+// round trip just measured, times four, on top of the fixed step: it follows the load instead of a constant.
 const fakePause = async p => {
   for (const ms of [2, 10, 50, 250]) {
-    try { return await p.clock.pauseAt(await p.evaluate(m => Date.now() + m, ms)); }
+    const t0 = Date.now();
+    await p.evaluate(() => 0);
+    const rtt = Date.now() - t0;
+    try { return await p.clock.pauseAt(await p.evaluate(m => Date.now() + m, ms + 4 * rtt)); }
     catch (e) { if (!/past/.test(e.message)) throw e; }
   }
   throw new Error("fakePause: the page clock outran every margin");
