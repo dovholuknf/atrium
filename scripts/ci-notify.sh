@@ -13,6 +13,8 @@
 # --needs takes the space-separated results of the jobs the run waited on and picks the conclusion: failure if any
 # failed or was skipped, cancelled if any was cancelled, else success. A skipped job means a gate stopped the run,
 # except as many as --expected-skipped N (default 0), the jobs a manual dispatch's os and suite left out on purpose.
+# --jobs takes the forge's per job conclusions and turns a success into failure or cancelled when a job was not green. With
+# no --jobs, GH_TOKEN and the runner's GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT and GITHUB_REPOSITORY make it ask the forge itself.
 # else exits 3 and writes nothing. --check with --needs writes and sends nothing and exits 0 only for success, else 1.
 # The body is written to --out (default build.claude/ci-notify-body.json) and that path is printed. With no --url
 # that is all it does, and the ziti-hook step carries the body. With --url it POSTs the body with the secret in
@@ -22,13 +24,14 @@
 # Exit codes: 0 sent or written, 2 a usage problem, 3 EVENT_FILE is not a workflow_run event, 1 the POST failed.
 set -uo pipefail
 
-event=""; expected=0; conclusion="failure"; out="${CI_NOTIFY_OUT:-build.claude/ci-notify-body.json}"; url=""; secret="${ATRIUM_CI_HOOK_SECRET:-}"; check=""
+event=""; expected=0; conclusion="failure"; jobs=""; out="${CI_NOTIFY_OUT:-build.claude/ci-notify-body.json}"; url=""; secret="${ATRIUM_CI_HOOK_SECRET:-}"; check=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --conclusion) [ $# -ge 2 ] || { echo "--conclusion needs a value" >&2; exit 2; }; conclusion="$2"; shift 2 ;;
     --expected-skipped) [ $# -ge 2 ] || { echo "--expected-skipped needs a number" >&2; exit 2; }
       case "$2" in ''|*[!0-9]*) echo "--expected-skipped needs a number" >&2; exit 2 ;; esac; expected="$2"; shift 2 ;;
     --needs) [ $# -ge 2 ] || { echo "--needs needs the job results" >&2; exit 2; }; needs="$2"; shift 2 ;;
+    --jobs) [ $# -ge 2 ] || { echo "--jobs needs the job conclusions" >&2; exit 2; }; jobs="$2"; shift 2 ;;
     --check) check=1; shift ;;
     --out) [ $# -ge 2 ] || { echo "--out needs a file" >&2; exit 2; }; out="$2"; shift 2 ;;
     --url) [ $# -ge 2 ] || { echo "--url needs an address" >&2; exit 2; }; url="$2"; shift 2 ;;
@@ -45,6 +48,13 @@ if [ -n "${needs+x}" ]; then
   for r in $needs; do [ "$r" = skipped ] && skips=$((skips + 1)); done
   case " $needs " in *" failure "*) conclusion=failure ;; *" cancelled "*) conclusion=cancelled ;;
     *) if [ "$skips" -gt "$expected" ]; then conclusion=failure; else conclusion=success; fi ;; esac
+  # A matrix leg cancelled by the runner can leave its job's result success, so the forge's job conclusions decide.
+  if [ "$conclusion" = success ] && [ -z "$jobs" ] && [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
+    jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/${GITHUB_RUN_ATTEMPT:-1}/jobs" --jq '.jobs[].conclusion // empty' | tr '\n' ' ') || jobs=""
+  fi
+  if [ "$conclusion" = success ]; then
+    case " $jobs " in *" failure "*|*" timed_out "*) conclusion=failure ;; *" cancelled "*) conclusion=cancelled ;; esac
+  fi
 fi
 
 if [ -n "$check" ]; then
