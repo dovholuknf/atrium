@@ -397,8 +397,7 @@ jobs:
           EXPECTED_SKIPPED: ${{ needs.select.outputs.skipped }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --jq '.jobs[].conclusion // empty' | tr '\n' ' ') || jobs=""
-          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS" --expected-skipped "$EXPECTED_SKIPPED" --jobs "$jobs")
+          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS" --expected-skipped "$EXPECTED_SKIPPED")
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         continue-on-error: true
