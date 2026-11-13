@@ -6954,6 +6954,13 @@ async function cardRowChipsSection(browser, base) {
     for (const w of [270, 400]) {
       await p.evaluate(px => document.getElementById("term-layout").style.setProperty("--termw", px + "px"), w);
       await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      // Under 260px of card the title is display: contents and measures 0 by design, so at 400 wait until the row is out of that layout.
+      if (w > 270) await p.waitForFunction(px => {
+        const lay = document.getElementById("term-layout");
+        if (lay.style.getPropertyValue("--termw") !== px + "px") { lay.style.setProperty("--termw", px + "px"); return false; }
+        const cards = [...document.querySelectorAll(".term-list .card.tab")];
+        return cards.length >= 2 && cards.every(c => c.querySelector(".title").getBoundingClientRect().width > 0);
+      }, w, { timeout: slow(15000) });
       const m = await p.evaluate(() => [...document.querySelectorAll(".term-list .card.tab")].map(card => {
         const r = (e) => e.getBoundingClientRect();
         const k = r(card);
