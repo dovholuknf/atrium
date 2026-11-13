@@ -387,6 +387,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
       id-token: write
     steps:
       - uses: actions/checkout@v7
@@ -394,8 +395,10 @@ jobs:
         env:
           NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
           EXPECTED_SKIPPED: ${{ needs.select.outputs.skipped }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS" --expected-skipped "$EXPECTED_SKIPPED")
+          jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --jq '.jobs[].conclusion // empty' | tr '\n' ' ') || jobs=""
+          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS" --expected-skipped "$EXPECTED_SKIPPED" --jobs "$jobs")
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         continue-on-error: true
