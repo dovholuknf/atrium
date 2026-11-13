@@ -6,6 +6,6 @@
     "walkthrough": "playwright test --config scripts/walkthrough/playwright.config.js --headed"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1"
+    "@playwright/test": "1.65.0"
   }
 }
