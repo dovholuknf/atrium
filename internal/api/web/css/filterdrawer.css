@@ -152,7 +152,7 @@
   }
   .fdrawer.inline .frow { flex: none; max-width: none; }
   /* The 2px absorb a fractional width that the wide fallback font rounds the wrong way. */
-  .fdrawer.fstrip.inline .fpanel, .fdrawer.inline .fpanel { flex-shrink: 0; padding-right: 2px; }
+  .fdrawer.fstrip.inline .fpanel, .fdrawer.inline .fpanel { padding-right: 2px; }
   .fdrawer.inline .frow .seg { flex-wrap: nowrap; }
   .fdrawer.inline .fpanel { gap: 0 var(--sp-3); }
   .fdrawer.inline .frow { gap: var(--sp-2); }
