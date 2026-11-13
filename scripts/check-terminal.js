@@ -455,7 +455,7 @@ if (/openPasteBox\(/.test(html)) {
     }
   }
   const sendAt = html.indexOf("function sendPasteBox(");
-  if (sendAt < 0 || !/sendPasteText\(/.test(html.slice(sendAt, sendAt + 400))) {
+  if (sendAt < 0 || !/sendPasteText\(/.test(html.slice(sendAt, sendAt + 600))) {
     fail("the paste box does not send through sendPasteText. Skipping it means no " +
       "bracketed paste and no carriage returns, so a multi-line paste out of the box " +
       "submits its first line and drops the rest.");

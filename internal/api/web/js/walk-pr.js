@@ -117,17 +117,22 @@ function walkPrAgentComments() { return walkPr.s ? walkPr.s.comments.filter(c =>
 const walkPrHelp = (tip) => ` <span class="help" tabindex="0" data-tip="${esc(tip)}">?</span>`;
 const walkPrMd = t => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>");
 
+function walkPrStamp(at) {
+  if (!at) return "";
+  return ` &middot; ${esc(new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}`;
+}
+
 function walkPrBubble(c) {
   const sel = walkPr.sel === c.id;
   const size = (c.w ? "width:" + c.w + ";" : "") + (c.h ? "height:" + c.h + ";" : "");
   const forge = walkPrForge();
   const turns = (c.turns || []).map(t => `<div class="wk-turn ${t.who === "agent" ? "rv" : "op"}"><div class="wk-av">${t.who === "agent" ? "ag" : "you"}</div>
-    <div class="wk-bub"><div class="wk-said">${walkPrMd(t.text)}</div></div></div>`).join("");
+    <div class="wk-bub"><div class="wk-who"><b>${t.who === "agent" ? "agent" : "you"}</b>${walkPrStamp(t.at)}</div><div class="wk-said">${walkPrMd(t.text)}</div></div></div>`).join("");
   const foot = c.who === "agent" && (c.scope || c.summary)
     ? `<pre class="rv-foot">CHANGE SCOPE : ${esc(c.scope || "")}\nSUMMARY      : ${esc(c.summary || "")}</pre>` : "";
   const key = "reply:" + c.id;
   return `<div class="cmt${c.who === "you" ? " you" : ""}${sel ? " sel" : ""}" data-cid="${esc(c.id)}" style="${size}">
-    <div class="chead"><b>${c.who === "you" ? "you" : "agent"}</b> &middot; ${esc(c.file.split("/").pop())}:${c.line}${
+    <div class="chead"><b>${c.who === "you" ? "you" : "agent"}</b>${walkPrStamp(c.at)} &middot; ${esc(c.file.split("/").pop())}:${c.line}${
       c.post ? ` <span class="st">copied for ${esc(forge ? forge.f.label : "the forge")}</span>` : ""}${
       walkPrHelp("Enter sends it to the walk agent, with the walk's scope in front. Shift+Enter or Ctrl+Enter is a new line.")}</div>
     <div class="wk-said">${walkPrMd(c.text)}</div>${foot}${turns}${walkPrWaiting(c) ? walkPrSpin : ""}
@@ -302,7 +307,7 @@ function walkPrSaveNew() {
   walkPr.drafts.delete("new:" + ed.file + ":" + ed.line);
   walkPr.editing = null;
   if (text) {
-    const c = { id: "c" + Date.now().toString(36), file: ed.file, line: ed.line, who: "you", text, turns: [], post: null };
+    const c = { id: "c" + Date.now().toString(36), file: ed.file, line: ed.line, who: "you", text, turns: [], post: null, at: Date.now() };
     walkPr.s.comments.push(c);
     walkPr.sel = c.id;
     if (walkPrSend(text, true, c.id)) walkPrAsk(c);
@@ -317,7 +322,7 @@ function walkPrSendReply(t) {
   if (!c || !v) return;
   walkPr.sel = c.id;
   if (!walkPrSend(v, true, c.id)) return;
-  c.turns = (c.turns || []).concat({ who: "you", text: v });
+  c.turns = (c.turns || []).concat({ who: "you", text: v, at: Date.now() });
   walkPrAsk(c);
   walkPrPoll();
   walkPr.drafts.delete(t.dataset.wpk);

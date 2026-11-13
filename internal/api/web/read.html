@@ -108,10 +108,45 @@
   .pdf { display: block; width: 100%; height: calc(100vh - 56px); border: 0; }
   /* A page with no background of its own is drawn on white, as a browser would draw it, above the grid on body::before. */
   .page { position: relative; z-index: 1; background: #fff; }
+  .cut {
+    padding: 6px 18px; border-bottom: 1px solid var(--stroke-dim); background: var(--warn-bg-soft);
+    color: var(--warn); font-size: var(--fs-sm);
+  }
+  .cut a, .oops.binary a { color: var(--head); }
+  .oops.binary { color: var(--dim); font: var(--fs-base)/1.6 var(--sans); white-space: normal; text-align: center; padding: 48px 18px; }
+  .oops.binary b { color: var(--head); font-family: var(--mono); font-weight: 500; }
+  /* In the board's drawer: the drawer's bar names the file and holds the buttons, so this page is only the file. */
+  :root.embed header, :root.embed .sharebox { display: none; }
+  :root.embed, :root.embed body { overflow-y: auto; }
+  /* The drawer's frame has no chrome.css, so its bar was the browser's. It takes the card's thumb and track. */
+  :root.embed { scrollbar-width: thin; scrollbar-color: var(--term-thumb, var(--stroke-dim)) var(--bg-1); }
+  :root.embed::-webkit-scrollbar { width: 10px; height: 10px; }
+  :root.embed::-webkit-scrollbar-track { background: var(--bg-1); }
+  :root.embed::-webkit-scrollbar-thumb { background: var(--term-thumb, var(--stroke-dim)); border-radius: var(--r-sm); }
+  :root.embed::-webkit-scrollbar-thumb:hover { background: var(--term-thumb-hi, var(--stroke)); }
+  :root.embed body::before { display: none; }
+  :root.embed.plain body { background: var(--bg-1); }
+  :root.embed .pic { max-height: calc(100vh - 36px); object-fit: contain; border: 1px solid var(--stroke-dim); border-radius: 4px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.18); }
+  :root.embed .pdf { height: 100vh; }
+  /* A checkerboard behind a picture, so a transparent PNG shows where its edges are. */
+  :root.plain .pic {
+    background-color: #2a2a2a;
+    background-image: linear-gradient(45deg, #333 25%, transparent 25%, transparent 75%, #333 75%),
+      linear-gradient(45deg, #333 25%, transparent 25%, transparent 75%, #333 75%);
+    background-size: 16px 16px; background-position: 0 0, 8px 8px;
+  }
+  :root.embed.plain .pic {
+    background-color: var(--shell-0);
+    background-image: linear-gradient(45deg, var(--lift) 25%, transparent 25%, transparent 75%, var(--lift) 75%),
+      linear-gradient(45deg, var(--lift) 25%, transparent 25%, transparent 75%, var(--lift) 75%);
+  }
   .sharebtn, .sharebox button {
     height: 24px; padding: 0 10px; border: 1px solid var(--stroke-dim); background: var(--chip);
     color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
   }
+  a.sharebtn { display: inline-grid; place-items: center; text-decoration: none; box-sizing: border-box; }
+  a.sharebtn[hidden] { display: none; }
   .sharebtn:hover, .sharebox button:hover { background: var(--lift); color: var(--head); }
   .sharebtn:disabled { opacity: .6; cursor: default; }
   .sharebox {
@@ -137,6 +172,8 @@
     <button type="button" data-width="full" aria-label="the whole window">Full</button>
   </span>
   <select id="skin" aria-label="skin for this page only"></select>
+  <button id="raw-md" type="button" class="sharebtn" hidden>Raw</button>
+  <a id="download" class="sharebtn" hidden>Download</a>
   <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button>
   <button id="html-mode" type="button" class="sharebtn" hidden>Show it rendered</button></header>
 <div id="share-box" class="sharebox" hidden>
@@ -146,6 +183,7 @@
   <button id="share-stop" type="button">Stop</button>
 </div>
 <div id="share-err" class="oops" hidden></div>
+<div id="cut" class="cut" hidden></div>
 <pre id="text"></pre>
 <article id="md" class="md" hidden></article>
 <img id="pic" class="pic" alt="" hidden>

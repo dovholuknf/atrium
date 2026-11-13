@@ -468,7 +468,7 @@ function subsBadgeHTML(n) {
 }
 
 // How a tab's grouping reads in the line, in the words of the group pills (settings.js `paintGroupSegs`).
-const FD_GROUP_WORDS = { project: "by project", window: "by pile", tag: "by tag", custom: "by group", recency: "by age", code: "by code" };
+const FD_GROUP_WORDS = { project: "by project", tag: "by tag", custom: "by group", recency: "by age", code: "by code" };
 function groupWords(p) {
   if (!p || !p.on) return "ungrouped";
   const mode = usesCode(p) ? "code" : (p.mode || "project");

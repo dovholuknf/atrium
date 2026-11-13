@@ -80,7 +80,7 @@ func TestPRFetchSourceTimedAgainstALocalRemote(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	git(remote, "init", "-q")
+	git(remote, "init", "-q", "-b", "claude/main")
 	for i := 0; i < 5; i++ {
 		os.WriteFile(filepath.Join(remote, "f"+string(rune('a'+i%26))+".txt"), []byte(strings.Repeat("line\n", 500+i)), 0o644)
 		git(remote, "add", ".")

@@ -173,7 +173,7 @@
       '<button type="button" class="rmenu-go rmenu-danger" data-ans="go">stop</button>' +
       '<button type="button" class="rmenu-x" data-close="1">cancel</button>';
     box.querySelector(".rmenu-name").textContent = "Stop " + window.mUtil.cardName(t).main + "?";
-    let said = "Its files stay.";
+    let said = t && t.throwaway ? "Its folder and this card are deleted." : "Its files stay.";
     if (f && !f.main && f.why && f.repo) {
       said += " Atrium does not offer to delete it: " + f.why + ". To delete it yourself:\n" +
         "git -C " + f.repo + " worktree remove " + f.path + (f.branch ? "\ngit -C " + f.repo + " branch -d " + f.branch : "");

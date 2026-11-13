@@ -221,9 +221,6 @@ function flashSaved(el) {
 function paintGroupSegs() {
   const opts = [
     ["project", "by project", "cut the cards into projects, read from the worktree path"],
-    ["window", "by pile",
-      "cut the cards the way whatever launched them said to: pull requests, tangents, " +
-      "support threads. a card that was not told falls back to its project"],
     ["tag", "by tag", "cut the cards into the tags you applied. a card with several appears under each"],
     ["custom", "by group",
       "your own named buckets. the + button adds one, and a card's menu files " +

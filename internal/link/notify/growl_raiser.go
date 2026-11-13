@@ -1,6 +1,10 @@
 package notify
 
-import "log"
+import (
+	"log"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
+)
 
 // GrowlRaiser is what a growl store that can hold a question about no card adds to GrowlStore. A store without it
 // raises none, and the event still goes out.
@@ -53,4 +57,25 @@ func (g *Growler) EndAbout(id string) {
 	if changed {
 		g.Publish()
 	}
+}
+
+// Remind raises a reminder's growler on its card's room, once, and tells the phone when it is new. name is what the
+// phone calls the card. Reports whether the row is in the store now: an id that was already raised is, and is not new.
+func (g *Growler) Remind(room string, row GrowlRow, name string) (ok bool) {
+	rs, can := g.Raiser()
+	if !can {
+		return false
+	}
+	raised, err := rs.Raise(room, row)
+	if err != nil {
+		log.Printf("[hub] growlers could not raise %s: %v", row.ID, err)
+		return false
+	}
+	if raised {
+		g.Publish()
+		if g.phone != nil {
+			g.phone(Notice{Name: name, Reason: ReasonReminder, Card: wire.TagFor(room, row.CardID), Room: room})
+		}
+	}
+	return true
 }

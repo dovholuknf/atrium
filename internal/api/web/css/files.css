@@ -25,6 +25,7 @@
   .crumbs .crumb.here { color: var(--head); cursor: default; }
   .crumbs .crumb.here:hover { background: none; }
   .crumbs .sep { color: var(--dimmest); }
+  .crumbs .crumb:focus-visible { outline: 1px solid var(--teal); }
   .filelist {
     max-height: 240px; overflow-y: auto;
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
@@ -64,12 +65,38 @@
        `sep 4`. */
     min-width: 15ch; text-align: right;
   }
-  /* The two actions, on the row the pointer is over. Always present in the layout, so nothing shifts when they
-     appear: a row whose contents move under the cursor is a row you click the wrong part of. */
-  .filelist .facts { display: flex; gap: var(--sp-2); visibility: hidden; }
-  .filelist .frow:hover .facts, .filelist .frow:focus-within .facts { visibility: visible; }
-  .filelist .facts .chip { text-decoration: none; cursor: pointer; }
+  /* The actions are always there and quiet, so they are found without hovering, and light up on their row. */
+  .filelist .facts { display: flex; gap: var(--sp-2); justify-content: flex-end; opacity: .45; }
+  .filelist .frow:hover .facts, .filelist .frow.cur .facts, .filelist .frow:focus-within .facts { opacity: 1; }
+  .filelist .facts .chip { text-decoration: none; cursor: pointer; border: 1px solid transparent; }
+  .filelist .facts .chip:hover { border-color: var(--teal); color: var(--head); }
   .filelist .chip { text-decoration: none; }
+  .filelist .fname .fn { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  /* Every row opens, so every row is pressable, and the one the keyboard is on is marked. */
+  .filelist .frow:not(.fhead) { cursor: pointer; }
+  .filelist:focus { outline: none; }
+  .filelist .frow.cur { box-shadow: inset 2px 0 0 var(--stroke); }
+  .filelist:focus .frow.cur { box-shadow: inset 2px 0 0 var(--teal); background: var(--lift); }
+  .filelist .frow.open { background: rgba(var(--teal-rgb), .14); }
+  /* The header: every column a button that sorts by it. Sticky, so it is there at row four hundred. */
+  .filelist .frow.fhead { position: sticky; top: 0; z-index: 1; background: var(--bg-1); padding-top: 4px; padding-bottom: 4px; }
+  .filelist .frow.fhead:hover { background: var(--bg-1); }
+  .filelist .fsort {
+    all: unset; cursor: pointer; font: var(--fs-xxs) var(--sans); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--dimmest); white-space: nowrap;
+  }
+  .filelist .fsort.r { text-align: right; }
+  .filelist .fsort:hover, .filelist .fsort:focus-visible, .filelist .fsort.on { color: var(--head); }
+  .filelist .fsort i { font-style: normal; margin-left: 4px; }
+  .filelist .fpickall { margin: 0; accent-color: var(--teal); cursor: pointer; }
+  /* Empty, no match, an error, a room that is not there: one centred block, with what to do next as buttons. */
+  .fstate {
+    display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px;
+    color: var(--dim); font-size: var(--fs-sm); text-align: center;
+  }
+  .fstate.oops b { color: var(--warn); font-weight: 600; }
+  .fstate.oops span:not(.facts-row) { font: var(--fs-xs) var(--mono); color: var(--dimmest); overflow-wrap: anywhere; }
+  .fstate .facts-row { display: flex; gap: var(--sp-2); margin-top: 4px; }
   /* Tags already in use, offered so the second card spells one the same way as the first. */
   /* Messages said and not yet arrived. Dimmed, because the interesting fact is how many are stacked up rather
      than what each one said. */

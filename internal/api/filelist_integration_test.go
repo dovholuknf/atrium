@@ -27,6 +27,7 @@ type listing struct {
 	Root      string `json:"root"`
 	Parent    string `json:"parent"`
 	Truncated bool   `json:"truncated"`
+	Total     int    `json:"total"`
 	Entries   []struct {
 		Name string `json:"name"`
 		Path string `json:"path"`
@@ -223,6 +224,77 @@ func TestAHugeDirectoryIsBoundedAndSaysSo(t *testing.T) {
 	}
 	if !got.Truncated {
 		t.Fatal("a truncated listing does not say it was truncated")
+	}
+}
+
+// The cut comes after the sort, so a folder named after five hundred files is still listed, and a filter reaches
+// past the cut.
+func TestAHugeDirectoryKeepsItsFoldersAndFiltersPastTheCut(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	big := filepath.Join(work, "many")
+	for _, d := range []string{"zz1", "zz2"} {
+		if err := os.MkdirAll(filepath.Join(big, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < maxListEntries+50; i++ {
+		if err := os.WriteFile(filepath.Join(big, "f"+itoa(10000+i)+".txt"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, _ := doList(t, s, task.ID, filepath.ToSlash(big))
+	if len(got.Entries) < 2 || got.Entries[0].Name != "zz1" || !got.Entries[1].Dir {
+		t.Fatalf("the folders were cut: first entries %+v", got.Entries[:2])
+	}
+	if got.Total != maxListEntries+52 {
+		t.Fatalf("total %d, wanted %d", got.Total, maxListEntries+52)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v1/tasks/"+task.ID+"/files/list?q=10549&path="+filepath.ToSlash(big), nil)
+	r.SetPathValue("id", task.ID)
+	s.listFiles(w, r)
+	var found listing
+	if err := json.Unmarshal(w.Body.Bytes(), &found); err != nil {
+		t.Fatal(err)
+	}
+	if len(found.Entries) != 1 || found.Entries[0].Name != "f10549.txt" || found.Truncated {
+		t.Fatalf("the filter did not reach past the cut: %+v", found)
+	}
+}
+
+// A link to a folder is a folder. A link out of the card is not listed, since every action on it is refused.
+func TestSymlinksListAsWhatTheyReach(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	if err := os.MkdirAll(filepath.Join(work, "real"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(filepath.Join(work, "real"), filepath.Join(work, "link")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "link")); err != nil {
+		t.Skip("links do not resolve here:", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(work, "away")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := doList(t, s, task.ID, filepath.ToSlash(work))
+	seen := map[string]bool{}
+	for _, e := range got.Entries {
+		seen[e.Name] = e.Dir
+	}
+	if dir, ok := seen["link"]; !ok || !dir {
+		t.Fatalf("a link to a folder listed as %v, present %v", dir, ok)
+	}
+	if _, ok := seen["away"]; ok {
+		t.Fatal("a link out of the card was listed")
 	}
 }
 

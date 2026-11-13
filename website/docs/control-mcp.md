@@ -91,6 +91,7 @@ The hub address is `--url`, then `ATRIUM_HUB_MCP`, then `http://127.0.0.1:7778/_
 | `atrium_export` | Pull every online room's usage rows or card list into the drop in one call, with no card needed on those rooms. |
 | `atrium_backlog` | The backlog, kept on the hub, so an item filed on one room is seen on every room. |
 | `atrium_reports` | Director reports, kept on the hub, append-only and marked read once read. |
+| `atrium_remind` | Bring something back to a card later, up to 90 days out: an alert on the board and the phone, and with `wake` the text typed into the card. Kept on the hub. |
 | `atrium_deps` | Work items that wait on other work: other items, a room attached, a commit landed. |
 | `atrium_resources` | The machines and environments you may use. Call it before looking for a machine. |
 | `atrium_deploy` | Ask for a room deploy, or, as the deploy owner, run one that holds every agent first. |
@@ -103,7 +104,7 @@ push: `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_report`, `atrium_ta
 Everyone else gets them all.
 
 `atrium control`, the stdio server for a session that does not reach the hub, carries `atrium_status`,
-`restart_atrium`, the peer tools, `atrium_git_push`, `atrium_git_url`, `atrium_ci`, and two of its own: `atrium_git_clone`, which
+`restart_atrium`, the peer tools, `atrium_git_push`, `atrium_git_url`, `atrium_ci`, `atrium_remind`, and two of its own: `atrium_git_clone`, which
 returns a clone of a repository on this room and makes it if it is missing, and `atrium_open`.
 
 ### The file drop

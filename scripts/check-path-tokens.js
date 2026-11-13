@@ -44,7 +44,7 @@ function lift(name) {
   return m[0] + "\n";
 }
 
-const src = ["fileCandidates", "trimCandidate", "worthProbing"].map(lift).join("\n");
+const src = ["fileCandidates", "fileURLPath", "trimCandidate", "worthProbing"].map(lift).join("\n");
 if (bad) {
   process.exit(1);
 }
@@ -59,7 +59,7 @@ function tokens(line) {
 // underlines the character beside the path and opens nothing.
 function checkOffsets(line) {
   for (const c of candidates(line)) {
-    if (line.slice(c.start, c.end) !== c.token) {
+    if (line.slice(c.start, c.end) !== (c.text || c.token)) {
       fail(`the candidate ${JSON.stringify(c.token)} points at ` +
         `${JSON.stringify(line.slice(c.start, c.end))} in ${JSON.stringify(line)}. ` +
         `An offset that is off underlines the wrong characters.`);
@@ -136,8 +136,19 @@ lacks("see https://zrok.io/docs for more", "https://zrok.io/docs",
 lacks("built 1.2.3 in 30s", "1.2.3",
   "A version with no letter in it has nothing to open under any reading.");
 
-// ── and everything else is the daemon's to answer ───────
-//
+// ── a file:// URL is the path it names ──────────────────
+
+for (const [line, want] of [
+  ["open file:///D:/work/site/index.html in a browser", "D:/work/site/index.html"],
+  ["see file:///D:/my%20site/a.html.", "D:/my site/a.html"],
+  ["at file:///home/c/work/out.html:12", "/home/c/work/out.html"],
+  ["at file://localhost/tmp/x.svg", "/tmp/x.svg"]
+]) {
+  has(line, want, "A browser prints a local page as a file:// URL, and it is the path it names.");
+}
+lacks("see https://zrok.io/docs for more", "zrok.io/docs", "Only a file:// URL is a path.");
+
+// ── and everything else is the daemon's to answer ───────//
 // These are the words the endpoint exists to say no to. The board must offer
 // them ANYWAY. A local rule that drops them is a rule that is wrong somewhere
 // else, and being wrong here means a real file is silently not a link.

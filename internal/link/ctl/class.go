@@ -19,6 +19,8 @@ var WorkerTools = map[string]bool{
 	"atrium_record": true,
 	"atrium_task":   true,
 	"atrium_alias":  true,
+	// A card asks the hub to bring something back to it later. See control_remind.go.
+	"atrium_remind": true,
 	// A lean worker names what it lacks. See needHandler.
 	"atrium_need": true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.

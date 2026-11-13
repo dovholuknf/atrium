@@ -123,37 +123,65 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries := make([]fileEntry, 0, len(raw))
-	truncated := false
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	type listed struct {
+		e    os.DirEntry
+		full string
+		dir  bool
+		info os.FileInfo
+	}
+	kept := make([]listed, 0, len(raw))
 	for _, e := range raw {
-		if len(entries) >= maxListEntries {
-			truncated = true
-			break
+		if q != "" && !strings.Contains(strings.ToLower(e.Name()), q) {
+			continue
 		}
 		full := filepath.Join(dir, e.Name())
-		row := fileEntry{
-			Name: e.Name(),
-			Path: filepath.ToSlash(full),
-			Dir:  e.IsDir(),
+		row := listed{e: e, full: full, dir: e.IsDir()}
+		if e.Type()&os.ModeSymlink != 0 {
+			// A link out of the card would list and then refuse every action, so it is not listed.
+			if _, _, err := containedOrOpen(root, full, roots); err != nil {
+				continue
+			}
+			if fi, err := os.Stat(full); err == nil {
+				row.dir, row.info = fi.IsDir(), fi
+			}
 		}
-		if info, err := e.Info(); err == nil {
-			if !e.IsDir() {
+		kept = append(kept, row)
+	}
+
+	// Directories first, then by name, and only then cut, so a folder is never what the cut drops. The same order
+	// browse.go uses.
+	sort.SliceStable(kept, func(i, j int) bool {
+		if kept[i].dir != kept[j].dir {
+			return kept[i].dir
+		}
+		return strings.ToLower(kept[i].e.Name()) < strings.ToLower(kept[j].e.Name())
+	})
+	total := len(kept)
+	truncated := total > maxListEntries
+	if truncated {
+		kept = kept[:maxListEntries]
+	}
+
+	entries := make([]fileEntry, 0, len(kept))
+	for _, k := range kept {
+		row := fileEntry{
+			Name: k.e.Name(),
+			Path: filepath.ToSlash(k.full),
+			Dir:  k.dir,
+		}
+		info := k.info
+		if info == nil {
+			info, _ = k.e.Info()
+		}
+		if info != nil {
+			if !k.dir {
 				row.Size = info.Size()
 			}
 			row.Mtime = info.ModTime().UTC().Format(time.RFC3339)
 		}
 		entries = append(entries, row)
 	}
-
-	// Directories first, then by name. The same order browse.go uses, because
-	// two pickers in one application sorting differently is its own small
-	// annoyance.
-	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].Dir != entries[j].Dir {
-			return entries[i].Dir
-		}
-		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
-	})
 
 	// Where up goes, or empty at the card's own directory. Computed here so the
 	// board never has to do path arithmetic, which is where a traversal would
@@ -171,6 +199,7 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		"parent":    parent,
 		"entries":   entries,
 		"truncated": truncated,
+		"total":     total,
 	})
 }
 

@@ -3,8 +3,13 @@
 package daemon
 
 import (
+	"bytes"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -458,3 +463,186 @@ func TestALaunchWithNoBaseIsRefusedWhenTheHubCannotBeFetched(t *testing.T) {
 		t.Fatalf("want a refusal naming the stale base, got %v", err)
 	}
 }
+
+type uploadPackHub struct{ repo string }
+
+func (u uploadPackHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	run := func(body []byte, args ...string) []byte {
+		cmd := exec.Command("git", append(args, u.repo)...)
+		cmd.Stdin = bytes.NewReader(body)
+		out, _ := cmd.Output()
+		return out
+	}
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte("001e# service=git-upload-pack\n0000"))
+		_, _ = w.Write(run(nil, "upload-pack", "--stateless-rpc", "--advertise-refs"))
+		return
+	}
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+	_, _ = w.Write(run(body, "upload-pack", "--stateless-rpc"))
+}
+
+func TestALaunchWithNoBaseFetchesThroughTheTokenCheckingForwarder(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	tip := cullGit(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "-m", "ahead", "-p", "claude/main", "claude/main^{tree}")
+	cullGit(t, hub, "update-ref", "refs/heads/claude/main", tip)
+	srv := httptest.NewServer(uploadPackHub{repo: hub})
+	t.Cleanup(srv.Close)
+	d.SetHubGit(func() (http.RoundTripper, error) {
+		return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			u, _ := url.Parse(srv.URL)
+			out := r.Clone(r.Context())
+			out.URL.Scheme, out.URL.Host, out.Host = u.Scheme, u.Host, u.Host
+			return http.DefaultTransport.RoundTrip(out)
+		}), nil
+	})
+	fw := httptest.NewServer(d.HubRemote())
+	t.Cleanup(fw.Close)
+	d.SetAgentAddr(fw.Listener.Addr())
+	cullGit(t, clone, "remote", "set-url", "hub", d.HubRemoteURL("github/o/r"))
+	cullGit(t, clone, "config", "protocol.version", "0")
+	req := shared.LaunchRequest{Repo: clone, Title: "Fresh Start"}
+	_, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cullGit(t, dd.Work, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("started from %s, the hub's claude/main is %s", got, tip)
+	}
+}
+
+func TestALaunchWithNoBaseFetchesThroughItsOwnForwarderWhenTheCloneNamesAnotherRooms(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	tip := cullGit(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "-m", "ahead", "-p", "claude/main", "claude/main^{tree}")
+	cullGit(t, hub, "update-ref", "refs/heads/claude/main", tip)
+	srv := httptest.NewServer(uploadPackHub{repo: hub})
+	t.Cleanup(srv.Close)
+	d.SetHubGit(func() (http.RoundTripper, error) {
+		return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			u, _ := url.Parse(srv.URL)
+			out := r.Clone(r.Context())
+			out.URL.Scheme, out.URL.Host, out.Host = u.Scheme, u.Host, u.Host
+			return http.DefaultTransport.RoundTrip(out)
+		}), nil
+	})
+	fw := httptest.NewServer(d.HubRemote())
+	t.Cleanup(fw.Close)
+	d.SetAgentAddr(fw.Listener.Addr())
+	cullGit(t, clone, "remote", "set-url", "hub", strings.Replace(d.HubRemoteURL("github/o/r"), "127.0.0.1:", "127.0.0.1:1", 1))
+	cullGit(t, clone, "config", "protocol.version", "0")
+	req := shared.LaunchRequest{Repo: clone, Title: "Fresh Start"}
+	_, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cullGit(t, dd.Work, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("started from %s, the hub's claude/main is %s", got, tip)
+	}
+}
+
+func TestALaunchWithNoBaseFetchesThroughItsOwnForwarderWhenTheCloneSpellsTheHostAnotherWay(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	tip := cullGit(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "-m", "ahead", "-p", "claude/main", "claude/main^{tree}")
+	cullGit(t, hub, "update-ref", "refs/heads/claude/main", tip)
+	srv := httptest.NewServer(uploadPackHub{repo: hub})
+	t.Cleanup(srv.Close)
+	d.SetHubGit(func() (http.RoundTripper, error) {
+		return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			u, _ := url.Parse(srv.URL)
+			out := r.Clone(r.Context())
+			out.URL.Scheme, out.URL.Host, out.Host = u.Scheme, u.Host, u.Host
+			return http.DefaultTransport.RoundTrip(out)
+		}), nil
+	})
+	fw := httptest.NewServer(d.HubRemote())
+	t.Cleanup(fw.Close)
+	d.SetAgentAddr(fw.Listener.Addr())
+	cullGit(t, clone, "remote", "set-url", "hub", strings.Replace(d.HubRemoteURL("github/o/r"), "127.0.0.1:", "localhost:", 1))
+	cullGit(t, clone, "config", "protocol.version", "0")
+	req := shared.LaunchRequest{Repo: clone, Title: "Fresh Start"}
+	_, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cullGit(t, dd.Work, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("started from %s, the hub's claude/main is %s", got, tip)
+	}
+}
+
+func TestALaunchWithNoBaseFetchesThroughItsOwnForwarderWhenTheHubRemoteIsSetInTheWorktreeConfig(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	tip := cullGit(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "-m", "ahead", "-p", "claude/main", "claude/main^{tree}")
+	cullGit(t, hub, "update-ref", "refs/heads/claude/main", tip)
+	srv := httptest.NewServer(uploadPackHub{repo: hub})
+	t.Cleanup(srv.Close)
+	d.SetHubGit(func() (http.RoundTripper, error) {
+		return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			u, _ := url.Parse(srv.URL)
+			out := r.Clone(r.Context())
+			out.URL.Scheme, out.URL.Host, out.Host = u.Scheme, u.Host, u.Host
+			return http.DefaultTransport.RoundTrip(out)
+		}), nil
+	})
+	fw := httptest.NewServer(d.HubRemote())
+	t.Cleanup(fw.Close)
+	d.SetAgentAddr(fw.Listener.Addr())
+	cullGit(t, clone, "config", "--unset", "remote.hub.url")
+	cullGit(t, clone, "config", "extensions.worktreeConfig", "true")
+	cullGit(t, clone, "config", "--worktree", "remote.hub.url", strings.Replace(d.HubRemoteURL("github/o/r"), "127.0.0.1:", "127.0.0.1:1", 1))
+	cullGit(t, clone, "config", "protocol.version", "0")
+	req := shared.LaunchRequest{Repo: clone, Title: "Fresh Start"}
+	_, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cullGit(t, dd.Work, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("started from %s, the hub's claude/main is %s", got, tip)
+	}
+}
+
+func TestALaunchWithNoBaseFetchesThroughItsOwnForwarderWhenTheCloneHoldsAStaleTokenHeader(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	clone, hub := hubClone(t)
+	tip := cullGit(t, hub, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "-m", "ahead", "-p", "claude/main", "claude/main^{tree}")
+	cullGit(t, hub, "update-ref", "refs/heads/claude/main", tip)
+	srv := httptest.NewServer(uploadPackHub{repo: hub})
+	t.Cleanup(srv.Close)
+	d.SetHubGit(func() (http.RoundTripper, error) {
+		return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			u, _ := url.Parse(srv.URL)
+			out := r.Clone(r.Context())
+			out.URL.Scheme, out.URL.Host, out.Host = u.Scheme, u.Host, u.Host
+			return http.DefaultTransport.RoundTrip(out)
+		}), nil
+	})
+	fw := httptest.NewServer(d.HubRemote())
+	t.Cleanup(fw.Close)
+	d.SetAgentAddr(fw.Listener.Addr())
+	own := d.HubRemoteURL("github/o/r")
+	cullGit(t, clone, "remote", "set-url", "hub", own)
+	cullGit(t, clone, "config", "--add", "http."+own[:strings.Index(own, "/git/")+len("/git/")]+".extraHeader", "X-Atrium-Card-Token: gone.00")
+	cullGit(t, clone, "config", "protocol.version", "0")
+	req := shared.LaunchRequest{Repo: clone, Title: "Fresh Start"}
+	_, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cullGit(t, dd.Work, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("started from %s, the hub's claude/main is %s", got, tip)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

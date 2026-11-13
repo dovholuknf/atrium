@@ -91,7 +91,6 @@ async function provideFileLinks(t, id, y, done) {
   if (!line) { done(undefined); return; }
 
   const known = probeKnown(id);
-  const root = termTask.worktree || "";
   const spans = [], ask = [];
   for (const c of fileCandidates(line.text)) {
     const start = cellAt(line, c.start), end = cellAt(line, c.end - 1);
@@ -112,10 +111,9 @@ async function provideFileLinks(t, id, y, done) {
   const links = [];
   for (const s of spans) {
     const hit = probeHit(probeKnown(id), s.token);
-    // The room decides what outside the card it will open. A path it does not find stays refused.
+    // Only what the room will open is underlined. Anything else stays plain text.
     if (hit) links.push(fileLink(id, s.range, hit));
     else if (docLinkPath(s.token)) links.push(docLink(s.range, s.token));
-    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token));
   }
   done(links.length ? links : undefined);
 }
@@ -149,6 +147,12 @@ async function askProbe(id, paths, row) {
   }
 }
 
+// One line per click for devtools: what was clicked, where the room found it and what the click did.
+function linkLog(tok, hit, result) {
+  console.info("[atrium link]", { path: tok, cwd: termTask && termTask.worktree, found: hit ? hit.rel : null,
+    outsideCard: !!(hit && hit.outside), result });
+}
+
 // One link, with somewhere to go.
 function fileLink(id, range, hit) {
   return {
@@ -162,6 +166,7 @@ function fileLink(id, range, hit) {
       ev.preventDefault();
       linkTipHide();
       hideTip();
+      linkLog(hit.path, hit, hit.dir ? "directory in the drawer" : viewAtOnce(hit.rel) ? "viewer tab" : "menu");
       if (hit.dir) openFromTerminal(id, hit);
       else if (viewAtOnce(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
@@ -185,33 +190,6 @@ function docLink(range, tok) {
       openLinkReused(location.origin + tok);
     }
   };
-}
-
-// A path that names somewhere outside the card. Its link opens nothing and says why.
-function outsideLink(range, tok) {
-  return {
-    range,
-    text: tok,
-    activate: () => {},
-    hover: (ev) => linkTipShow(ev, tok, tok + "\noutside this card, the board cannot open it"),
-    leave: () => linkTipLeave()
-  };
-}
-
-// Whether `tok` is an absolute path that is not under the card's directory, judged from the spelling alone. A
-// relative path, `~/x` and anything not absolute is left to the probe.
-function outsideCard(tok, root) {
-  if (!root) return false;
-  const norm = s => String(s).replace(/\\/g, "/").replace(/\/+$/, "");
-  const dir = norm(root);
-  const win = /^[A-Za-z]:\//.test(dir + "/");
-  let p = norm(tok);
-  if (win && /^\/[A-Za-z]\//.test(p)) p = p[1] + ":" + p.slice(2);
-  const abs = /^[A-Za-z]:\/[^/]/.test(p) || /^\/\/[^/]+\/[^/]/.test(p) || /^\/[^/]+\/[^/]/.test(p);
-  if (!abs) return false;
-  const fold = s => win ? s.toLowerCase() : s;
-  const a = fold(p), d = fold(dir);
-  return a !== d && !a.startsWith(d + "/");
 }
 
 function linkTipShow(ev, key, text) {
@@ -270,11 +248,11 @@ function viewAtOnce(rel) { return notEditable(rel) || /\.svg$/i.test(rel || "");
 //                                   card. First and always offered. Markdown is rendered there. HTML is offered
 //                                   both ways: drawn in a sandboxed frame, and as its source.
 //   in atrium's editor              here, in this browser, in the drawer. Not for a binary.
-//   open in the editor on <machine> `files/open`, which runs the operator's `editor_command` on the machine the
-//                                   file is on. Offered ONLY when that room has one set. There is no default.
+//   open in your editor             `files/open`, which runs the operator's `editor_command` on the machine the
+//                                   file is on. Offered ONLY when that is this browser's machine and the room has
+//                                   one set (`fileOpensHere`). There is no default.
 //
-// The last is named for the machine because over a share it is not the machine in front of you. The
-// room's own setting decides, not the board's: a card on another room is opened by that room's command.
+// The room's own setting decides, not the board's: a card on the hub's own room is opened by that room's command.
 async function fileLinkMenu(ev, id, hit) {
   const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
   const where = (termTask && termTask.id === id && termTask.room) || "";
@@ -295,9 +273,9 @@ async function fileLinkMenu(ev, id, hit) {
       tip: "drawn in a sandbox: no script runs and nothing outside the file loads" });
   }
   if (!notEditable(hit.rel) && !hit.outside) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
-  if (cmd && !hit.outside) {
+  if (cmd && !hit.outside && fileOpensHere(id, location.hostname, typeof hubRooms === "undefined" ? [] : hubRooms)) {
     items.push({
-      label: where ? "open in the editor on " + where : "open in the editor where the file is",
+      label: "open in your editor",
       act: () => openOnDaemon(id, hit.rel)
     });
   }
@@ -406,11 +384,23 @@ function fileCandidates(text) {
   let m;
   while ((m = re.exec(text))) {
     const lead = (m[0].match(/^[('"`\[{<*]+/) || [""])[0].length;
-    const token = trimCandidate(m[0].slice(lead));
+    const text = trimCandidate(m[0].slice(lead));
+    // A `file://` URL is the path it names, underlined whole.
+    const token = fileURLPath(text) || text;
     if (!token || !worthProbing(token)) continue;
-    out.push({ token, start: m.index + lead, end: m.index + lead + token.length });
+    out.push(token === text ? { token, start: m.index + lead, end: m.index + lead + token.length }
+      : { token, text, start: m.index + lead, end: m.index + lead + text.length });
   }
   return out;
+}
+
+// The path in `file:///D:/a%20b/x.html` or `file:///home/x`, decoded. "" for anything else.
+function fileURLPath(tok) {
+  const m = /^file:\/\/(?:localhost)?(\/[^?#]*)$/i.exec(tok);
+  if (!m) return "";
+  let p = m[1];
+  try { p = decodeURIComponent(p); } catch (e) {}
+  return /^\/[A-Za-z]:\//.test(p) ? p.slice(1) : p;
 }
 
 // The punctuation stuck to the end of a path, taken off.
@@ -1046,20 +1036,67 @@ function reloadWhenIdle() {
   if (!buildTarget || boardReloading) return;
   if (typingNow()) { buildWait = setTimeout(reloadWhenIdle, 1000); return; }
   boardReloading = true;
-  // This is THE reload that matters for coming back to where you were, so
-  // where you are is written down here rather than trusted to have been
-  // written earlier.
+  // Written here, not trusted to have been written earlier: this is the reload that must come back to where you were.
   rememberWhereYouAre();
+  saveDrafts();
   location.reload();
 }
 
-// A terminal's line lives in the runner and survives a reload, so only recent keys hold it. A box's text does not.
+// Only keys in the last few seconds hold the reload. A draft does not: it is kept across it (`saveDrafts`), since a box
+// left holding text, or a field the board itself filled, held it forever and an open board never took a deploy.
 function typingNow() {
-  if (Date.now() - lastTypedAt < BUILD_IDLE_MS) return true;
-  const box = el => el && !el.classList.contains("xterm-helper-textarea") && (el.isContentEditable || el.tagName === "TEXTAREA" ||
-    (el.tagName === "INPUT" && !/^(button|checkbox|radio|submit|reset|range|color|file)$/.test(el.type)));
-  if (box(document.activeElement)) return true;
-  return [...document.querySelectorAll("textarea")].some(t => box(t) && t.value.trim() && t.value !== t.defaultValue);
+  return Date.now() - lastTypedAt < BUILD_IDLE_MS;
+}
+
+// AN UNSENT DRAFT OUTLIVES THE RELOAD. Every box typed in is written to this tab's sessionStorage with the card it
+// belongs to, and after the reload it goes back into that box the first time the box is on screen for that card: the
+// card dialog opened on it, or its terminal attached. A box is put back only while empty, so nothing typed since is lost.
+const DRAFTS_KEY = "atrium.drafts";
+const typedBoxes = new Set();
+const draftBox = el => el && el.id && !el.classList.contains("xterm-helper-textarea") && (el.tagName === "TEXTAREA" ||
+  (el.tagName === "INPUT" && !/^(button|checkbox|radio|submit|reset|range|color|file|hidden|password)$/.test(el.type)));
+addEventListener("input", e => { if (e.isTrusted && draftBox(e.target)) typedBoxes.add(e.target.id); }, true);
+let draftsPending = (() => {
+  try {
+    const d = JSON.parse(sessionStorage.getItem(DRAFTS_KEY) || "[]");
+    sessionStorage.removeItem(DRAFTS_KEY);
+    return Array.isArray(d) ? d : [];
+  } catch (e) { return []; }
+})();
+
+function draftCard(el) {
+  if (el.closest("#detail")) return (typeof current !== "undefined" && current && current.id) || "";
+  if (el.closest("#term-pane")) return (termTask && termTask.id) || "";
+  return "";
+}
+
+function saveDrafts() {
+  const out = draftsPending.slice();
+  for (const id of typedBoxes) {
+    const el = document.getElementById(id);
+    if (!draftBox(el) || !el.value.trim() || el.value === el.defaultValue) continue;
+    out.push({ box: id, card: draftCard(el), value: el.value });
+  }
+  try { if (out.length) sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(out)); } catch (e) {}
+}
+
+function restoreDrafts() {
+  draftsPending = draftsPending.filter(d => {
+    const el = document.getElementById(d.box);
+    if (!draftBox(el)) return false;
+    if (el.value || !el.getClientRects().length || draftCard(el) !== d.card) return true;
+    el.value = d.value;
+    typedBoxes.add(d.box);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return false;
+  });
+  if (!draftsPending.length && draftWatch) { draftWatch.disconnect(); draftWatch = null; }
+}
+// A box comes on screen by a dialog opening or a panel unhiding, and those are the only changes worth a look.
+let draftWatch = null;
+if (draftsPending.length) {
+  draftWatch = new MutationObserver(restoreDrafts);
+  draftWatch.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["open", "hidden"] });
 }
 
 // Is the daemon there at all.
@@ -1344,12 +1381,11 @@ function connectTerm(taskID) {
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
       if (takeTermCaps(e.data) || takeTermSize(e.data) || takePasteDone(e.data, sock) || takeInRefused(e.data)) return;
-      pasteSawOutput(e.data.length);
       term.write(e.data, lagOnOutput(followScroll));
       return;
     }
-    pasteSawOutput(e.data.byteLength || 0);
     const bytes = new Uint8Array(e.data);
+    pasteOutAt = Date.now();
     writeRunnerOutput(term, bytes, carryLoadDone(bytes, lagOnOutput(followScroll)));
   };
   termSock.onclose = async ev => {
@@ -2038,20 +2074,30 @@ function sendInput(text, quiet, pasted) {
 // good. At the cap it just goes: the bytes left, and waiting longer says nothing.
 
 // Any size. What starts it is where the bytes came from, not how many there are
-// (see `sendInput`). Drawn AT ONCE. It used to wait 20ms so a paste that landed
-// straight away never flashed, and a busy runner ended it inside that 20ms: it
-// repaints all the time, so the first output after the drain was never the paste
-// landing, and the box was never seen on the pastes that were slow.
+// (see `sendInput`). Drawn AT ONCE.
 //
-// So it stays up at least `pasteHoldMs`, and output inside that only counts as
-// "the runner echoed". Past the hold the next output ends it, and an echo
-// followed by `pasteQuietMs` of nothing ends it too. A runner that prints an
-// echo and then works silently for a while is the case this is a guess for.
-const pasteHoldMs = 400;
-const pasteQuietMs = 1500;
+// WHAT ENDS IT IS THE RUNNER SHOWING THE PASTE. The room answering `in-done` only says the pty write returned,
+// and a runner that is busy shows the paste seconds later, so the bar used to go while nothing had appeared. Now
+// the terminal's own buffer is read each tick for what a runner prints for a paste: Claude Code's
+// `[Pasted text #N +M lines]` or `[Image #N]`, or the pasted text itself when it is short, on the input line: the
+// `pasteEchoRows` rows up to the cursor. One more of those than before the paste ends it, but not before
+// `pasteHoldMs`: a runner echoes in well under 100ms, and a bar up that briefly was never seen. The cap is the
+// fallback for a runner that shows nothing.
+const pasteHoldMs = 1200;
 const pasteGiveUpMs = 20000;
-const pasteRenderMin = 2048;
+const pasteEchoRows = 30;
+const pasteEchoMarkers = /\[(Pasted text|Image) #\d+/g;
+
+// A PASTE THE RUNNER SHOWS WITH NO MARKER. Claude Code expands a paste of the same text again into the raw text, too
+// long for the needle, so no echo is ever seen. Output after the send that then goes quiet for `pasteSettleMs` is the
+// runner done with it. Claude Code can leave that expanded screen half drawn, so its own redraw key follows.
 const pasteSettleMs = 500;
+let pasteOutAt = 0;
+
+function pasteRepaint() {
+  if (termKind !== "runner" || !termTask || termTask.runner !== "claude") return;
+  sendInput("\x0c", true);
+}
 
 // A BIG PASTE LANDS LONG AFTER IT DRAINS, and nothing above sees that.
 //
@@ -2064,21 +2110,11 @@ const pasteSettleMs = 500;
 // And `send` itself holds the main thread, about 7ms per MB, so a box put up on
 // the 20ms timer waits behind the send it is meant to cover.
 //
-// So from this size the box goes up FIRST, the frame leaves once it has
-// painted, and it stays up at least `pasteHoldFor` before an echo may end it.
-// The hold is a floor so the box can be read, not a measure of the pty.
+// So every paste puts the box up FIRST and the frame leaves once it has painted.
 //
-// THE ROOM NOW SAYS WHEN THE WRITE FINISHED, so all of the above is the
-// fallback. A paste frame carries an `id` and the room answers
-// `{"t":"in-done","id":...}` on the same socket once the pty write returned.
-// A socket that has answered once ends its pastes on that word alone. An older
-// room never answers, and is told apart per socket rather than by version: a
-// socket that has not answered is guessed for, as it always was.
+// A paste frame carries an `id` and the room answers `{"t":"in-done","id":...}` once the pty write returned. That is
+// logged and nothing more: see `pasteHoldMs`.
 const pasteBigAt = 256 * 1024;
-
-function pasteHoldFor(n) {
-  return Math.min(4000, Math.max(500, n / 1024));
-}
 
 // The daemon's read limit on one attach frame. A bigger one CLOSES THE SOCKET,
 // the paste is lost, and the terminal reconnects. See `SetReadLimit` in
@@ -2097,10 +2133,11 @@ const pasteSeqBase = Date.now().toString(36);
 
 function sendPaste(d) {
   const big = d.length >= pasteBigAt;
-  pasteBegin(d.length, big);
+  const first = d.replace(/\x1b\[20[01]~/g, "").split(/\r|\n/).map(s => s.trim()).find(Boolean) || "";
+  pasteBegin(d.length, d.length <= 4000 ? first.slice(0, 30) : "");
   const f = pasteFlight;
   const sock = termSock;
-  const id = "p" + pasteSeqBase + "." + (++pasteSeq);
+  const id = f.g.id;
   f.id = id;
   pasteHeld = [];
   let gone = false;
@@ -2111,7 +2148,7 @@ function sendPaste(d) {
     const bytes = big ? new TextEncoder().encode(s).length : s.length;
     if (bytes > pasteFrameMax) {
       pasteHeld = null;
-      if (pasteFlight === f) pasteEnd();
+      pasteFlightEnd(f);
       pasteFail("paste failed: too big");
       toast("that paste is too big",`${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
       return;
@@ -2121,14 +2158,15 @@ function sendPaste(d) {
     // aimed at, so none of it goes to this one.
     if (termSock !== sock) {
       pasteHeld = null;
-      if (pasteFlight === f) pasteEnd();
+      pasteFlightEnd(f);
       pasteFail("paste failed: the terminal changed");
       toast("that paste did not go","the terminal changed before it left");
       return;
     }
     sendFrame(s);
     lagPasteMark("sent");
-    if (pasteFlight === f) { f.sent = true; f.sentAt = Date.now(); }
+    pasteLog(f.g, "sent", pasteSize(bytes));
+    if (pasteFlights.has(f)) { f.sent = true; f.sentAt = Date.now(); }
     phoneFollow();
     if (term) term.scrollToBottom();
     followScrollUntil = Infinity;
@@ -2141,83 +2179,100 @@ function sendPaste(d) {
   setTimeout(go, 100);
 }
 
-// The paste in flight, or null. A second paste replaces it, which is right:
-// the newer one is the one still to land.
+// The newest paste in flight, or null, and every one still in flight. A second paste does not replace the first: each one
+// ends on its own echo or the cap, and the bar stays up until the last has.
 let pasteFlight = null;
+const pasteFlights = new Set();
 
-// `big` shows the box at once and holds it. See `pasteBigAt`. A paste that
-// replaces a big one still inside its hold keeps that hold and the box, or a
-// small paste right behind a big one would take the box straight down.
-function pasteBegin(n, big) {
-  const prev = pasteFlight && pasteFlight.shown && pasteFlight.sock === termSock ? pasteFlight : null;
-  pasteEnd("", true);
+// One paste is done. The bar goes with the last of them.
+function pasteFlightEnd(f, why) {
+  clearTimeout(f.timer);
+  if (!pasteFlights.delete(f)) return;
+  if (pasteFlights.size) {
+    pasteLog(f.g, "cleared", why || "the board");
+    if (pasteFlight === f) pasteFlight = [...pasteFlights].pop();
+    return;
+  }
+  pasteEnd(why);
+}
+
+function pasteBegin(n, needle) {
+  clearTimeout(pasteWaitTimer);
   lagPasteStart("paste");
   const now = Date.now();
-  // EVERY PASTE HOLDS, not only a big one. See `pasteHoldMs`.
+  const g = pasteG || pasteVia("other");
+  pasteG = null;
   const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: false, sentAt: 0, id: "", done: false,
-    holdUntil: Math.max(now + (big ? pasteHoldFor(n) : pasteHoldMs), prev ? prev.holdUntil : 0),
-    echoed: false, lastOut: 0, drained: false };
+    holdUntil: now + pasteHoldMs, needle: needle || "", g,
+    echoed: false, drained: false, base: 0 };
+  // An older paste still waiting on its marker will put one on the line, and that one is not this paste's.
+  f.base = pasteEchoCount(f) + [...pasteFlights].filter(o => !o.echoed && o.sock === f.sock).length;
+  pasteFlights.add(f);
   pasteFlight = f;
+  pasteShownG = g;
+  pasteLog(g, "begin", `${g.how} ${pasteSize(n)}`);
   const tick = () => {
-    if (pasteFlight !== f) return;
+    if (!pasteFlights.has(f)) return;
     const t = Date.now();
-    if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteEnd("the cap"); return; }
+    if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteFlightEnd(f, "cap"); return; }
     if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
-    // The room said the write finished. Only the floor, so the box can be read, is left to wait for.
-    if (pasteWrittenAndSettled(f, t)) { pasteEnd("the room's word"); return; }
-    // An echo and then nothing: the runner took it and has no more to say.
-    if (f.echoed && t >= f.holdUntil && t - f.lastOut >= pasteQuietMs && pasteMayGuess(f)) { pasteEnd("quiet"); return; }
-    if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); }
+    if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); pasteLog(g, "bar shown"); }
+    if (f.sent && !f.echoed && pasteEchoCount(f) > f.base) { f.echoed = true; pasteLog(g, "echo seen"); }
+    if (f.echoed && t >= f.holdUntil) { pasteFlightEnd(f, "echo"); return; }
+    if (f.sent && pasteOutAt > f.sentAt && t - pasteOutAt >= pasteSettleMs && t >= f.holdUntil) {
+      pasteFlightEnd(f, "settled");
+      pasteRepaint();
+      return;
+    }
     f.timer = setTimeout(tick, 50);
   };
   tick();
 }
 
-// Called on every output frame. Ends the paste if its bytes have all left and
-// it has been up long enough. Read here rather than on the poll, so output that
-// lands between two polls is not missed. Inside the hold it is only noted, and
-// the poll ends it when the hold runs out.
-function pasteSawOutput(n) {
-  const f = pasteFlight;
-  if (!f || !f.sent || !f.sock || f.sock.bufferedAmount !== 0) return;
-  if (n >= pasteRenderMin) f.bigOut = Date.now();
-  lagPasteMark("output");
-  f.lastOut = Date.now();
-  if (f.lastOut < f.holdUntil || !pasteMayGuess(f)) { f.echoed = true; return; }
-  pasteEnd("output");
+// How many times the input line shows a paste: a runner's marker for one, or its first line.
+function pasteEchoCount(f) {
+  if (!term) return 0;
+  const b = term.buffer.active;
+  const at = b.baseY + b.cursorY;
+  let n = 0;
+  for (let y = Math.max(0, at - pasteEchoRows); y <= at; y++) {
+    const row = b.getLine(y);
+    if (!row) continue;
+    const s = row.translateToString(true);
+    n += (s.match(pasteEchoMarkers) || []).length;
+    if (f.needle && s.includes(f.needle)) n++;
+  }
+  return n;
 }
 
-// May output end this paste. Not on a socket that has answered with `in-done`,
-// which ends it on that alone.
-function pasteMayGuess(f) {
-  return f.sock.pasteAck !== "yes";
+// `[atrium paste]`, one line per step with the paste's id and the ms since its gesture, so devtools shows whether a
+// paste happened and where it stopped.
+let pasteG = null;
+let pasteShownG = null;
+
+function pasteVia(how) {
+  const g = { how, t0: performance.now(), id: "p" + pasteSeqBase + "." + (++pasteSeq) };
+  pasteG = g;
+  return g;
 }
 
-// `{"t":"in-done","id":...}`, the room's word that the pty write for a paste
-// returned. Any such frame makes the socket a new room for good, even one for a
-// paste that has since been replaced.
+function pasteLog(g, step, extra) {
+  if (g) console.info(`[atrium paste] ${g.id} +${Math.round(performance.now() - g.t0)}ms ${step}${extra ? " " + extra : ""}`);
+}
+
+// `{"t":"in-done","id":...}`: the room's pty write returned. Logged, and not what ends the bar. See `pasteHoldMs`.
 function takePasteDone(data, sock) {
   if (!data || data[0] !== "{") return false;
   let msg;
   try { msg = JSON.parse(data); } catch (e) { return false; }
   if (!msg || msg.t !== "in-done") return false;
-  sock.pasteAck = "yes";
-  const f = pasteFlight;
-  if (f && f.sock === sock && f.id && f.id === msg.id) {
+  const f = [...pasteFlights].find(o => o.sock === sock && o.id && o.id === msg.id);
+  if (f) {
     lagPasteMark("in-done");
     f.done = true;
-    if (pasteWrittenAndSettled(f, Date.now())) pasteEnd("the room's word");
+    pasteLog(f.g, "in-done");
   }
   return true;
-}
-
-// The room wrote the paste and the box has been up as long as it promised. A paste this size is still landing
-// after the write returns: the runner prints it back, and the main thread is busy parsing that. Output of
-// `pasteRenderMin` or more since the room's word is that, so the box waits for `pasteSettleMs` without any. A
-// runner redrawing a spinner prints small frames and never holds it.
-function pasteWrittenAndSettled(f, t) {
-  if (!f.done || t < f.holdUntil) return false;
-  return t - Math.max(f.bigOut || 0, f.t0) >= (f.bigOut ? pasteSettleMs : 0);
 }
 
 // `{"t":"in-refused","why":...}`: the room dropped typing because a new context is
@@ -2240,11 +2295,13 @@ function takeInRefused(data) {
 let pasteWaitTimer = 0;
 function pasteWaiting(say, how) {
   lagPasteStart(how);
-  if (pasteFlight) return;
+  if (pasteFlights.size) return;
+  pasteShownG = pasteG && pasteG.how === how ? pasteG : pasteVia(how);
   showPasting(say);
   lagPasteMark("shown");
+  pasteLog(pasteShownG, "bar shown", say);
   clearTimeout(pasteWaitTimer);
-  pasteWaitTimer = setTimeout(() => pasteEnd("the cap"), pasteGiveUpMs);
+  pasteWaitTimer = setTimeout(() => pasteEnd("cap"), pasteGiveUpMs);
 }
 
 function pasteSize(n) {
@@ -2270,6 +2327,7 @@ function showPasting(say) {
   el.classList.remove("failed");
   setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span><span class="rail"><i></i></span>`);
   el.hidden = false;
+  host.classList.add("pasting");
   placeToasts();
 }
 
@@ -2280,19 +2338,22 @@ function pasteFail(say) {
   const el = document.getElementById("t-pasting");
   if (!el) return;
   el.classList.add("failed");
+  pasteLog(pasteShownG, "fail", say);
   setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span>`);
-  pasteFailTimer = setTimeout(() => { if (!pasteFlight) pasteEnd("failed"); }, 5000);
+  pasteFailTimer = setTimeout(() => { if (!pasteFlights.size) pasteEnd("failed"); }, 5000);
 }
 
-// `handOn` is a paste taking over from a wait or from an older paste: the box
-// stays and so does the timing line, which is one per gesture.
-function pasteEnd(why, handOn) {
-  if (pasteFlight) clearTimeout(pasteFlight.timer);
+// Every paste in flight ends here at once. One paste ending among others is `pasteFlightEnd`.
+function pasteEnd(why) {
+  pasteFlights.forEach(o => clearTimeout(o.timer));
+  pasteFlights.clear();
   clearTimeout(pasteWaitTimer);
   pasteFlight = null;
-  if (!handOn) { lagPasteMark("cleared"); lagPasteDone(why || "the board"); }
+  lagPasteMark("cleared"); lagPasteDone(why || "the board"); pasteLog(pasteShownG, "bar cleared", why || "the board"); pasteShownG = null;
   const el = document.getElementById("t-pasting");
   if (el) el.hidden = true;
+  const host = document.getElementById("term-pane");
+  if (host) host.classList.remove("pasting");
   placeToasts();
 }
 

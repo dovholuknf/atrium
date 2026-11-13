@@ -85,10 +85,24 @@ function quickPasteRow(url) {
   const bad = problem || known.fetch_error;
   const rest = bad ? (known.fetch_error ? "the fetch failed: " + known.fetch_error : problem)
     : known.label || known.recogniser || "";
+  if (kind && !bad) {
+    return { kind, seen: true, warn: false, card: rest,
+      html: `<span class="qpkind">open ${esc(QUICKPASTE_KINDS[kind])}</span>${termRow(quickPasteCard(known, name), false, false, null, true)}` };
+  }
   return { kind: kind || "link", seen: true, warn: !!bad,
     html: `<span class="qpkind">open ${esc(QUICKPASTE_KINDS[kind])}</span>` +
       (bad ? "" : `<span class="qplabel">${esc(name)}</span>`) +
       `<span class="qpdetail">${esc(rest)}</span>` };
+}
+
+// The card the link will make, as far as the read says: the repo is what picks its colour (`repoColorName`), and a link
+// with no repo of its own, a ticket, lands in the default colour. Never in `lastTasks`, so nothing else sees it.
+function quickPasteCard(known, name) {
+  const v = known.vars || {};
+  const branch = String(known.branch || "");
+  return { id: "link-preview", status: "working", supervised: true, display_title: name, title: name,
+    host: v.host || known.host || "", org: v.org || "", repo: v.repo || "", branch: branch.includes("{") ? "" : branch,
+    tags: known.tags || [] };
 }
 
 async function quickPasteRecognise(url) {

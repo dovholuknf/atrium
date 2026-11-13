@@ -483,6 +483,9 @@ Exports honor whatever filter is applied.">?</span>
             width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"
             stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1
             1-1h3.5"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></button>
+          <!-- A popped-out window only (css/notify.css): its header is hidden, so the bell takes the pop-out button's slot. The same tray. -->
+          <button type="button" id="t-bell" class="icon" onclick="openToastLog()"
+            aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span></button>
           <!-- Only when the card's directory holds findings, a pull request or a work branch's changes. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
             data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span id="t-walk-label">walk</span></button>
@@ -498,9 +501,6 @@ Exports honor whatever filter is applied.">?</span>
                A button for it was a decision offered where there was none.
                The cog is LAST because it is the only control here that opens
                something rather than doing something. -->
-          <!-- A popped-out window only (css/notify.css): its header is hidden, so the bell comes here. The same tray. -->
-          <button type="button" id="t-bell" class="icon" onclick="openToastLog()"
-            aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span></button>
           <button id="t-cog" class="icon" onclick="termSettings(event)"
             aria-label="how this terminal looks and behaves" data-tip="how this terminal looks and behaves">&#9881;</button>
         </div>
@@ -515,14 +515,45 @@ Exports honor whatever filter is applied.">?</span>
              what may be reached. -->
         <div class="term-files" id="t-files-panel" hidden>
           <div class="filebar">
-            <button id="t-files-up" class="icon" onclick="termFilesUp()" aria-label="up one directory" data-tip="up one directory">&#8593;</button>
-            <span class="crumbs" id="t-files-where"></span>
+            <button id="t-files-up" class="icon" onclick="termFilesUp()" aria-label="up one directory" data-tip="up one directory (Backspace)"><svg
+              viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true"><path d="M8 13.5V2.5M3.5 7 8 2.5 12.5 7"/></svg></button>
+            <span class="fwhere"><span class="crumbs" id="t-files-where"></span><span class="fpathpop" id="t-files-where-pop"></span></span>
+            <span class="ffilter"><input type="search" id="t-files-q" placeholder="filter" spellcheck="false"
+              aria-label="filter this folder" data-tip="filter this folder by name (/)"><span id="t-files-qn"></span></span>
+            <span class="fgrow"></span>
             <a class="chip go" id="t-files-zip" download hidden></a>
             <span class="chip no" id="t-files-del" hidden></span>
-            <button onclick="openTermFiles()" data-tip="close this">close</button>
+            <button onclick="openTermFiles()" data-tip="back to the terminal (Esc)">close</button>
           </div>
-          <div class="filelist" id="t-files-list"></div>
-          <span class="hintline" id="t-files-note"></span>
+          <!-- The list, and a file shown beside it where the pane is wide and over it where it is not. -->
+          <div class="fsplit">
+            <div class="fside">
+              <div class="filelist" id="t-files-list" tabindex="0" role="listbox" aria-label="files"></div>
+              <span class="hintline" id="t-files-note"></span>
+            </div>
+            <div class="fview" id="t-fview" hidden>
+              <div class="filebar">
+                <button class="icon" id="t-fview-back" aria-label="back to the list" data-tip="back to the list (Esc)"><svg
+                  viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8H2.5M7 3.5 2.5 8 7 12.5"/></svg></button>
+                <code id="t-fview-where"></code>
+                <span class="by" id="t-fview-what"></span>
+                <button class="icon" id="t-fview-prev" aria-label="previous file" data-tip="previous file (&#8592;)"><svg
+                  viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
+                <button class="icon" id="t-fview-next" aria-label="next file" data-tip="next file (&#8594;)"><svg
+                  viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+                <button id="t-fview-edit" data-tip="change it here, in this browser">edit</button>
+                <button id="t-fview-tab" data-tip="read it in its own browser tab">new tab</button>
+                <a class="chip" id="t-fview-get" download data-tip="save it to this computer">download</a>
+                <button id="t-fview-there" hidden></button>
+                <span class="help" id="t-fview-there-help" tabindex="0" hidden>?</span>
+              </div>
+              <iframe id="t-fview-frame" aria-label="the file"></iframe>
+            </div>
+          </div>
           <!-- The editor, over the list, for the case where you want to change
                one line rather than fetch the whole file. Over an overlay it is
                the only way: `files/open` starts an editor on the daemon's
@@ -1356,7 +1387,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <label for="sw-nm">worktree name</label>
     <div class="swnmq"><span>claude/</span><input type="search" id="sw-nm" spellcheck="false" autocomplete="off"></div>
   </div>
-  <div id="sw-list" class="swlist"></div>
+  <div id="sw-list" class="swlist term-list"></div>
   <div id="sw-nmfoot" class="swfoot" hidden>
     <span><kbd>enter</kbd> start</span>
     <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
@@ -3471,8 +3502,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span>throw it away when the session ends</span>
       </label>
       <span class="hintline" id="l-throwaway-hint">Atrium makes a temporary directory and starts here. When the
-        session ends the directory, the card and the conversation are all deleted. If it turns
-        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
+        session ends the directory, the card and the conversation are all deleted.</span>
     </div>
     <!-- A NEW HOME is the other answer to the directory question: atrium makes the folder, under the room's card root, and
          with a repo adds the worktree in it. Ticking it quiets the path box above, as the throwaway does.
@@ -3619,39 +3649,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="sum" id="na-sum"></span>
       <button type="button" class="linkbtn" id="na-change" aria-expanded="false">change</button>
       <span class="grow"></span>
-      <button type="button" class="twbtn notw" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends. keep it from the card if it matters">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
+      <button type="button" class="twbtn notw" id="na-tw" data-tip="a temp folder and a card that are gone when the session ends">&#9889; quick throwaway<kbd>ctrl &#9166;</kbd></button>
     </div>
     <div class="how" id="na-how" hidden></div>
     <div class="na-note" id="na-note"></div>
   </div>
   <div class="dlg-foot">
-    <span class="twhint onlytw">gone when it ends. keep it from its card if it matters</span>
+    <span class="twhint onlytw">gone when it ends</span>
     <span class="grow"></span>
     <button type="button" class="linkbtn onlytw" id="na-full">full launch</button>
     <button class="go big" id="na-go"><span>launch</span><kbd>&#9166;</kbd></button>
-  </div>
-</dialog>
-
-<!-- Keeping a throwaway: its name and groups, and its home stays where it is. js/newagent.js. -->
-<dialog id="na-keep" data-guard>
-  <div class="dlg-head">
-    <div class="grow"><div class="dlg-eyebrow">keep this throwaway</div><h2 id="nk-h"></h2></div>
-    <button class="x" id="nk-x" aria-label="close" data-tip="close (esc)">&times;</button>
-  </div>
-  <div class="dlg-body">
-    <div class="field">
-      <label class="eyebrow" for="nk-title">name</label>
-      <input type="text" id="nk-title" spellcheck="false">
-    </div>
-    <div class="field">
-      <label class="eyebrow">groups</label>
-      <div class="gpick" id="nk-groups"></div>
-    </div>
-    <span class="hintline">It stays where it is under the card root, and the card stays when the session ends.</span>
-  </div>
-  <div class="dlg-foot">
-    <span class="grow"></span>
-    <button class="go big" id="nk-go">keep it</button>
   </div>
 </dialog>
 
@@ -4103,6 +4110,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>
 <script src="/js/expose3.js"></script>
+<script src="/js/files-rules.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/usage.js"></script>
 <script src="/js/hears.js"></script>

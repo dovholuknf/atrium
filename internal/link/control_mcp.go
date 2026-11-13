@@ -179,6 +179,8 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 			"every room's.",
 	}, c.statusHandler)
 
+	addTool(s, class, &mcp.Tool{Name: "atrium_remind", Description: remindToolDesc}, c.remindHandler)
+
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_peers",
 		Description: "The other sessions on this board: what each is called, what it is doing, " +

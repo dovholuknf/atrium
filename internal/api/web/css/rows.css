@@ -224,6 +224,7 @@
   }
   .term-files[hidden] { display: none; }
   .term-files .filebar { display: flex; align-items: center; gap: var(--sp-3); }
+  .term-files > .filebar { flex-wrap: nowrap; }
   /* Room for the bar, which is painted by the universal scrollbar rule in chrome.css along with every other
      one on the board. `max-height: none` because `.filelist` carries a 240px cap that is right inside the card dialog,
      where the list is one field among several, and wrong here, where the drawer is the whole pane. */
@@ -234,6 +235,13 @@
     padding-right: 12px; max-height: none;
     border-color: var(--term-line, var(--stroke-dim));
   }
+  /* The same thumb and track as the terminal's own bar, on every card theme. */
+  .term-files .filelist {
+    scrollbar-color: var(--term-thumb, var(--stroke-dim)) var(--term-bg, transparent);
+  }
+  .term-files .filelist::-webkit-scrollbar-track { background: var(--term-bg, transparent); }
+  .term-files .filelist::-webkit-scrollbar-thumb { background: var(--term-thumb, var(--stroke-dim)); }
+  .term-files .filelist::-webkit-scrollbar-thumb:hover { background: var(--term-thumb-hi, var(--stroke)); }
   .term-files .filelist .frow { border-bottom-color: var(--term-line, var(--stroke-dim)); }
   .term-files .filelist .frow:hover { background: var(--term-line, var(--lift)); }
   .term-files .filelist .fname { color: var(--term-fg, var(--body)); }
@@ -288,7 +296,107 @@
   .fedit textarea:focus { outline: none; border-color: var(--teal); }
   /* A tick per row, and it must not swallow the click that walks a directory. */
   .filelist .fpick { flex: none; margin: 0; accent-color: var(--teal); cursor: pointer; }
-  .filelist .frow { grid-template-columns: auto 1fr auto auto auto; }
+  /* Fixed tracks after the name, since each row is its own grid and only fixed widths line up down the list. */
+  .filelist .frow { grid-template-columns: auto minmax(0, 1fr) 7ch 20ch 92px; }
+  .filelist .fwhen { min-width: 0; }
+  .term-files { container: files / inline-size; }
+  .term-files > .filebar .crumbs { overflow: hidden; flex-wrap: nowrap; }
+  .term-files > .filebar .crumbs .crumb { overflow: hidden; text-overflow: ellipsis; }
+  .term-files > .filebar .crumbs .crumb:not(.here) { max-width: 18ch; }
+  /* A folder outside the card is one crumb, its whole path, cut from the left so the folder's own name stays. */
+  .term-files > .filebar .crumbs .crumb.whole { direction: rtl; flex-shrink: 100; }
+  .term-files > .filebar .crumbs:has(.whole) .crumb:not(.whole) { flex: none; }
+  .term-files .filebar button, .term-files .filebar .chip {
+    flex: none; padding: 3px 9px; font-size: var(--fs-sm); line-height: 1.3;
+  }
+  /* The same weight as the terminal bar's folder button, so the arrows read as buttons and are easy to hit. */
+  .term-files .filebar button.icon {
+    display: inline-grid; place-items: center; padding: 4px 6px; min-width: 30px; line-height: 1;
+    color: var(--body); background: var(--chip); border-color: var(--stroke-dim);
+  }
+  .term-files .filebar button.icon svg { display: block; }
+  .term-files .filebar button.icon:disabled { opacity: .4; }
+  /* On the card's colours: a tint of its foreground, so a control reads on a dark green card and a light one alike. */
+  .term-files .filebar button, .term-files .filebar button.icon, .term-files .fview .filebar .chip, .term-files .filelist .facts .chip {
+    color: var(--term-fg, var(--body)); background: color-mix(in srgb, var(--term-fg, var(--body)) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--term-fg, var(--body)) 30%, transparent);
+  }
+  .term-files .filelist .facts { opacity: .75; }
+  @media (hover: hover) {
+    .term-files .filebar button.icon:not(:disabled):hover { color: var(--head); border-color: var(--blue); background: var(--btn-hover); }
+  }
+  .filelist a.fname { color: inherit; text-decoration: none; }
+  /* The crumbs take only their width, so the filter sits right after them and the rest is pushed right. */
+  .term-files > .filebar .fwhere { position: relative; display: flex; flex: 0 1 auto; min-width: 0; }
+  .term-files > .filebar .fwhere .crumbs { flex: 0 1 auto; }
+  .term-files > .filebar .fgrow { flex: 1 1 0; }
+  /* The padding is the bridge the pointer crosses from the crumbs to the copy buttons without the box closing. */
+  .fpathpop {
+    display: none; position: absolute; top: 100%; left: 0; z-index: 30; padding-top: 6px;
+    width: max-content; grid-template-columns: auto auto auto; gap: 4px 10px; align-items: center;
+  }
+  .fpathpop::before {
+    content: ""; position: absolute; inset: 6px 0 0 0; z-index: -1;
+    background: var(--bg-1); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); box-shadow: 0 6px 20px rgba(var(--shadow-rgb), .45);
+  }
+  .fpathpop:not(:empty) { padding: 14px 12px 8px; }
+  .fwhere:hover .fpathpop:not(:empty), .fwhere:focus-within .fpathpop:not(:empty) { display: grid; }
+  .fpathpop .fpl { font: var(--fs-xxs) var(--sans); color: var(--dimmest); white-space: nowrap; }
+  .fpathpop code { font: var(--fs-xs) var(--mono); color: var(--head); white-space: nowrap; user-select: all; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; }
+  .term-files .filebar .fpathpop button.fpcopy {
+    all: unset; cursor: pointer; display: inline-flex; color: var(--dim); padding: 2px;
+  }
+  .term-files .filebar .fpathpop button.fpcopy:hover { color: var(--teal); }
+  .term-files .filebar .fpathpop button.fpcopy.done { color: var(--teal); }
+  .ffilter { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  .ffilter input {
+    width: 16ch; padding: 3px 8px; font: var(--fs-xs) var(--mono); color: var(--term-fg, var(--head));
+    background: var(--term-bg, var(--bg-2)); border: 1px solid var(--term-line, var(--stroke-dim)); border-radius: var(--r-sm);
+  }
+  .term-files .ffilter input {
+    background: color-mix(in srgb, var(--term-fg, var(--body)) 8%, var(--term-bg, var(--bg-2)));
+    border-color: color-mix(in srgb, var(--term-fg, var(--body)) 35%, transparent);
+  }
+  .term-files .ffilter input::placeholder { color: var(--term-fg, var(--dimmest)); opacity: .6; }
+  .ffilter input:focus { outline: none; border-color: var(--term-thumb-hi, var(--teal)); width: 22ch; }
+  .ffilter span { font: var(--fs-xxs) var(--mono); color: var(--term-fg, var(--dimmest)); opacity: .7; white-space: nowrap; }
+  .ffilter span:empty { display: none; }
+  .term-files .filelist .frow.fhead, .term-files .filelist .frow.fhead:hover { background: var(--term-bg, var(--bg-1)); }
+  .term-files .filelist .fsort { color: var(--term-fg, var(--dimmest)); opacity: .7; }
+  .term-files .filelist .fsort:hover, .term-files .filelist .fsort.on { color: var(--term-thumb-hi, var(--head)); opacity: 1; }
+  .term-files .filelist:focus .frow.cur { box-shadow: inset 2px 0 0 var(--term-thumb-hi, var(--teal)); background: var(--term-line, var(--lift)); }
+  .term-files .fstate { color: var(--term-fg, var(--dim)); }
+  /* The list and the open file. Side by side where there is room, the file over the list where there is not. */
+  .fsplit { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--sp-3); }
+  .fside { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .fside .hintline { margin-top: 0; }
+  .fside .hintline:empty { display: none; }
+  .fview { flex: 1.6 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .fview[hidden] { display: none; }
+  .fview iframe {
+    flex: 1 1 auto; min-height: 0; width: 100%; border: 1px solid var(--term-line, var(--stroke-dim));
+    border-radius: var(--r-md); background: var(--term-bg, var(--bg-1));
+  }
+  .fview .filebar { margin: 0; flex-wrap: nowrap; }
+  .fview .filebar code {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--fs-sm); color: var(--term-fg, var(--head));
+  }
+  .fview .filebar .by { font: var(--fs-xxs) var(--mono); color: var(--term-fg, var(--dimmest)); opacity: .7; white-space: nowrap; }
+  .fview .filebar .chip { border: 1px solid var(--stroke-dim); text-decoration: none; }
+  .term-files:has(.fedit:not([hidden])) > .fsplit { display: none; }
+  @container files (max-width: 899px) {
+    .term-files.viewing .fside, .term-files.viewing > .filebar .ffilter,
+    .term-files.viewing > .filebar #t-files-zip, .term-files.viewing > .filebar #t-files-del { display: none; }
+  }
+  @container files (max-width: 520px) {
+    .term-files .fwhen, .term-files .fhead .fsort[data-sort="mtime"] { display: none; }
+    .term-files .filelist .frow { grid-template-columns: auto minmax(0, 1fr) 7ch 92px; }
+    .ffilter input { width: 9ch; }
+    .fview .filebar { flex-wrap: wrap; }
+    .fview .filebar code { flex: 1 0 calc(100% - 48px); }
+    .fview .filebar .by, .fview .filebar #t-fview-tab { display: none; }
+  }
   /* The drawer takes the pane, so the terminal has to give it up rather than both claiming the same room. */
   .term-pane:has(.term-files:not([hidden])) #t-screen { display: none; }
   /* And so does the box it lives in. Emptied, `.term-body` still carries `flex: 1 1 auto`, so it kept a share of the

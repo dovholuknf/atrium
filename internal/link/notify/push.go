@@ -91,6 +91,8 @@ func pushBody(reason string) string {
 		return "needs a claude login: run /login on that machine"
 	case ReasonCI:
 		return "a CI post reached the hub"
+	case ReasonReminder:
+		return "set a reminder for now"
 	case "test":
 		return "this is a test alert"
 	}

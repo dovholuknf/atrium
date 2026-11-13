@@ -254,6 +254,9 @@ function themeSource(t) {
 function repoColorName(t) {
   const key = repoKeyOf(t);
   const mine = repoColors.get();
+  // A NESTED CHILD NEVER WEARS ITS OWN REPO'S COLOUR. Its work lands in whatever repo the task is about, so siblings under one
+  // parent came out in different palettes. With its launcher on the board it has no colour of its own, so the list tints it from the parent.
+  if (nestsUnderLauncher(t) && launcherOf(t, typeof lastTasks !== "undefined" ? lastTasks : [])) return "";
   if (key && mine.repos[key]) return mine.repos[key];
   return launcherColor(t, mine) || mine.default;
 }
