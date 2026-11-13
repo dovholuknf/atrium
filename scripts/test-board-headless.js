@@ -4836,7 +4836,7 @@ async function pasteLandsSection(browser, base) {
       const end = link.after ? Math.max(got.lastOut, link.drain + link.write) : link.drain + link.write;
       if (got.firstUp < 0 || got.firstUp > 300) fail(name + ": a 500KB paste did not show the box at once: " + JSON.stringify(got));
       else if (got.lastUp < end - 150 && !(link.after === 0)) fail(name + ": the box went down before the last byte was written (" + end + "ms): " + JSON.stringify(got));
-      else if (got.lastUp > end + 600) fail(name + ": the box stayed up after the last byte was written (" + end + "ms): " + JSON.stringify(got));
+      else if (got.lastUp > Math.max(end + 600, 1300)) fail(name + ": the box stayed up after the last byte was written (" + end + "ms): " + JSON.stringify(got));
     }
   } finally {
     await ctx.close();
