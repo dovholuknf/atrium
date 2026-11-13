@@ -159,7 +159,7 @@ func promptSeenBy(t *testing.T, d *Daemon, req shared.LaunchRequest) string {
 	testwait.PollEvery(50*time.Millisecond, 5*time.Second, func() bool {
 		raw, err := os.ReadFile(out)
 		got = string(raw)
-		return err == nil
+		return err == nil && got != ""
 	})
 	return got
 }
