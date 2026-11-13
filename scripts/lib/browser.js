@@ -267,18 +267,14 @@ async function fakeWait(p, fn, arg, ms, step = 100) {
   }
 }
 
-// pauseAt(future) would jump there and fire every due timer, the 60s resync included, mid-test. The clock runs live, so
-// a target too close is already past by the time it lands. The gap is a CPU-starved round trip, so the margin is the
-// round trip just measured, times four, on top of the fixed step: it follows the load instead of a constant.
+// pauseAt(future) would jump there and fire every due timer, the 60s resync included, mid-test, and a target on a live
+// clock can be past by the time it lands. So every frame of the context freezes its own clock at its own now first, and
+// Playwright's pauseAt gets the latest frozen time, so its logged pause replays on a navigation. Playwright's pauseAt
+// runs in every frame of every page in the context, and each frozen one is at or behind that time, never past it.
 const fakePause = async p => {
-  for (const ms of [2, 10, 50, 250]) {
-    const t0 = Date.now();
-    await p.evaluate(() => 0);
-    const rtt = Date.now() - t0;
-    try { return await p.clock.pauseAt(await p.evaluate(m => Date.now() + m, ms + 4 * rtt)); }
-    catch (e) { if (!/past/.test(e.message)) throw e; }
-  }
-  throw new Error("fakePause: the page clock outran every margin");
+  const freeze = () => { const k = globalThis.__pwClock; if (!k) return 0; const c = k.controller; return c.pauseAt(c.now()).then(() => Date.now()); };
+  const at = await Promise.all(p.context().pages().flatMap(q => q.frames().map(f => f.evaluate(freeze).catch(() => 0))));
+  return p.clock.pauseAt(Math.max(...at));
 };
 
 // `ms` of page time on the fake clock, every timer fired as it comes due, so a poll or a chained fetch still shows in a
