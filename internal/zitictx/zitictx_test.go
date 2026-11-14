@@ -2,8 +2,11 @@ package zitictx
 
 import (
 	"errors"
+	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/openziti/sdk-golang/ziti"
 )
@@ -46,6 +49,46 @@ func TestSharedFileBuildsOncePerIdentityFile(t *testing.T) {
 	}
 	if len(*built) != 2 || Live() != 2 {
 		t.Fatalf("built %d, live %d, want 2 and 2", len(*built), Live())
+	}
+}
+
+func TestConcurrentFirstCallersBuildOneContext(t *testing.T) {
+	var built atomic.Int32
+	gate := make(chan struct{})
+	restore := SetSDK(
+		func(string) (*ziti.Config, error) { return &ziti.Config{}, nil },
+		func(*ziti.Config) (ziti.Context, error) {
+			built.Add(1)
+			<-gate
+			return &fakeCtx{}, nil
+		})
+	t.Cleanup(func() { CloseAll(); restore() })
+	var wg sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := SharedFile("test", "a.json"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	deadline := time.After(5 * time.Second)
+	for built.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("no build started")
+		default:
+			runtime.Gosched()
+		}
+	}
+	for i := 0; i < 100; i++ {
+		runtime.Gosched()
+	}
+	close(gate)
+	wg.Wait()
+	if built.Load() != 1 || Live() != 1 {
+		t.Fatalf("built %d, live %d, want 1 and 1", built.Load(), Live())
 	}
 }
 

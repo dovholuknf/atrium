@@ -19,6 +19,8 @@ import (
 var (
 	mu   sync.Mutex
 	open = map[string]*counted{}
+	// building holds one lock per key, so concurrent first callers wait for one build rather than race a second.
+	building = map[string]*sync.Mutex{}
 )
 
 // Live is how many contexts built here have not been closed.
@@ -135,6 +137,19 @@ func build(who, key string, cfg *ziti.Config) (*counted, error) {
 // Its Close does nothing.
 func SharedFile(who, identity string) (ziti.Context, error) {
 	key := keyOf(identity)
+	mu.Lock()
+	if c, ok := open[key]; ok {
+		mu.Unlock()
+		return shared{c}, nil
+	}
+	b, ok := building[key]
+	if !ok {
+		b = &sync.Mutex{}
+		building[key] = b
+	}
+	mu.Unlock()
+	b.Lock()
+	defer b.Unlock()
 	mu.Lock()
 	if c, ok := open[key]; ok {
 		mu.Unlock()

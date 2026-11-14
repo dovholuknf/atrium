@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -141,5 +142,27 @@ func TestABoardClearAfterTheClearStillTypesTheWake(t *testing.T) {
 	until(t, "the wake", func() bool { return strings.Contains(f.written(), ncWakeMark) })
 	if code != http.StatusConflict {
 		t.Fatalf("a DELETE after /clear answered %d, want 409", code)
+	}
+}
+
+func TestAFailedClearDismissedPastTheAckResumesAtTheClearWithNoSecondPrompt(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.NcTiming.ClearTypeWait = 50 * time.Millisecond
+	task, f, _ := cycleCard(t, d, 300_000)
+	d.cycleCheck(task, 300_000)
+	until(t, "the limit prompt", func() bool { c := d.Nctx.Get(task.ID); return prompts(f) == 1 && c != nil && c.Prompted == 1 })
+	midTurn(d, task.ID)
+	ncAck(t, d, task)
+	until(t, "the failed clear", func() bool { return failedWith(d, task.ID) != "" })
+	if code := boardClear(d, task.ID); code != http.StatusOK {
+		t.Fatalf("dismissing the failed chip answered %d", code)
+	}
+	ncTurnEnds(d, task.ID)
+	task, _ = d.st.Get(task.ID)
+	d.cycleCheck(task, 305_000)
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+	if prompts(f) != 1 {
+		t.Fatalf("%d limit prompts, want 1", prompts(f))
 	}
 }

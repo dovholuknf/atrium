@@ -21112,6 +21112,88 @@ async function joinedHeldTileSection(browser, base) {
   if (!bad) console.log("joinedHeldTile ok");
 }
 
+// Every card held on a permission is listed over the Terminals tab, on any room, minus what the pane already shows,
+// and its panel floats over the terminal rather than pushing it down.
+async function heldStripSection(browser, base) {
+  const tag = "heldStrip: ";
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const long = "powershell -NoProfile -Command \"" + "Get-ChildItem -Recurse D:/worktrees/claude/cards/held/work/build.claude/logs | ".repeat(6) + "Measure-Object\"";
+  let held = [{ id: "pa", task_id: "ow", tool: "Bash", command: long, requested_at: new Date(Date.now() - 240000).toISOString() },
+    { id: "pj", task_id: "jn", tool: "Bash", command: "go test ./internal/daemon/...", requested_at: new Date().toISOString() }];
+  let remote = [{ id: "r9", task_id: "t3", tool: "Edit", command: "internal/hubstore/push.go", agent: "hub-push-log",
+    requested_at: new Date(Date.now() - 900000).toISOString() }];
+  const cards = [
+    { id: "ow", status: "needs-permission", supervised: true, title: "ow", display_title: "owned and held", tags: [] },
+    { id: "jn", status: "needs-permission", supervised: false, title: "jn", display_title: "resumed outside atrium", tags: [] }];
+  const decided = [];
+  await p.route(u => u.pathname === "/v1/permissions", r => r.fulfill({ json: { permissions: held } }));
+  await p.route(u => u.pathname === "/v1/rooms", r => r.fulfill({ json: { rooms: [{ name: "sg3", requests: remote }] } }));
+  await p.route(u => u.pathname === "/v1/tasks", r => r.fulfill({ json: { tasks: cards } }));
+  await p.route(u => /\/decide$/.test(u.pathname), r => {
+    const at = new URL(r.request().url()).pathname;
+    decided.push(at + " " + JSON.parse(r.request().postData()).decision);
+    held = held.filter(h => !at.endsWith("/" + h.id + "/decide") || at.includes("/rooms/"));
+    if (at.includes("/rooms/sg3/")) remote = [];
+    r.fulfill({ json: { ok: true } });
+  });
+  const rows = () => p.$$eval("#held-strip .held-row", rs => rs.map(r => ({ id: r.dataset.id, text: r.innerText.replace(/\s+/g, " "),
+    btns: [...r.querySelectorAll(".actions button")].map(b => b.textContent) })));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderHeldStrip === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => { try { localStorage.removeItem("atrium.heldShut"); } catch (e) {} switchView("terms"); });
+    await p.waitForFunction(() => document.querySelectorAll("#held-strip .held-row").length === 2, null, { timeout: slow(8000) })
+      .catch(() => fail(tag + "the strip did not list the owned card and the other room's"));
+    let got = await rows();
+    if (got.map(r => r.id).join() !== "sg3/r9,pa") fail(tag + "with nothing attached the strip lists " + JSON.stringify(got));
+    if (!/hub-push-log/.test(got[0].text) || !/on sg3/.test(got[0].text) || !/Edit internal\/hubstore\/push\.go/.test(got[0].text)) {
+      fail(tag + "the other room's row reads " + JSON.stringify(got[0].text));
+    }
+    if (got[1].btns.join() !== "approve once,block once,open in perms") fail(tag + "the owned row's buttons are " + got[1].btns.join());
+    if (!(await p.$("#term-perm:not([hidden]) .held-tile"))) fail(tag + "the joined card's tile is gone from the pane");
+
+    const lay = () => p.$eval("#term-layout", e => Math.round(e.getBoundingClientRect().top));
+    const open = await lay();
+    const over = await p.$eval("#held-strip .held-rows", e => ({ pos: getComputedStyle(e).position, bottom: e.getBoundingClientRect().bottom,
+      top: document.getElementById("term-layout").getBoundingClientRect().top }));
+    if (over.pos !== "absolute" || over.bottom <= over.top) fail(tag + "the panel does not float over the terminal: " + JSON.stringify(over));
+
+    const req = "#held-strip .held-row[data-id='pa'] .held-req";
+    if (!(await p.$eval(req, e => e.scrollWidth > e.clientWidth))) fail(tag + "the long command is not cut to one line");
+    await p.click(req);
+    if (!(await p.$eval("#held-strip .held-row[data-id='pa']", e => e.classList.contains("open") &&
+      e.querySelector(".held-req").scrollWidth <= e.querySelector(".held-req").clientWidth))) fail(tag + "a click did not show the whole command");
+
+    await p.click("#held-strip .held-fold");
+    if (await p.$("#held-strip .held-rows")) fail(tag + "the fold left the panel open");
+    if ((await lay()) !== open) fail(tag + "the panel pushed the terminal: top " + open + " open, " + (await lay()) + " shut");
+    if ((await p.evaluate(() => localStorage.getItem("atrium.heldShut"))) !== "1") fail(tag + "the fold was not kept");
+    await p.click("#held-strip .held-fold");
+    await p.waitForSelector("#held-strip .held-rows", { timeout: slow(3000) }).catch(() => fail(tag + "the fold did not open again"));
+
+    await p.evaluate(() => { termTask = cardList().find(c => c.id === "ow"); renderTermPerm(); });
+    got = await rows();
+    if (got.map(r => r.id).join() !== "sg3/r9,pj") fail(tag + "with the owned card attached the strip lists " + JSON.stringify(got.map(r => r.id)));
+    const jn = got.find(r => r.id === "pj") || { text: "", btns: [] };
+    if (!/resumed outside atrium/.test(jn.text) || !/no terminal here/.test(jn.text)) fail(tag + "the joined row reads " + JSON.stringify(jn.text));
+    if (jn.btns.join() !== "approve once,block once,open in perms,adopt into atrium") fail(tag + "the joined row's buttons are " + jn.btns.join());
+
+    await p.click("#held-strip .held-row[data-id='sg3/r9'] button.go");
+    await until(() => decided.length === 1, 5000, "the room's decide POST").catch(() => {});
+    if (decided.join() !== "/v1/rooms/sg3/permissions/r9/decide approve") fail(tag + "the room's approve posted " + JSON.stringify(decided));
+    await p.click("#held-strip .held-row[data-id='pj'] button.go");
+    await until(() => decided.length === 2, 5000, "the local decide POST").catch(() => {});
+    if (decided[1] !== "/v1/permissions/pj/decide approve") fail(tag + "the local approve posted " + JSON.stringify(decided));
+    await p.waitForFunction(() => !document.querySelector("#held-strip .held-row[data-id='pj'], #held-strip .held-row[data-id='sg3/r9']"),
+      null, { timeout: slow(5000) }).catch(() => fail(tag + "an answered row stayed"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("heldStrip ok");
+}
+
 // The Terminals tab keeps the cards whose session ended in a collapsed group per room, with how each ended and a
 // one click resume. SHOTS=/dir also writes the three pictures of the change.
 async function termEndedSection(browser, base) {
@@ -27629,7 +27711,7 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
-      mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection,
+      mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection, heldStrip: heldStripSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
@@ -29830,6 +29912,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termEnded", () => termEndedSection(browser, base));
     await unit("joinedClick", () => joinedClickSection(browser, base));
     await unit("joinedHeldTile", () => joinedHeldTileSection(browser, base));
+    await unit("heldStrip", () => heldStripSection(browser, base));
     await unit("coverPoll", () => coverPollSection(browser, base));
     await unit("coverSteps", () => coverStepsSection(browser, base));
     await unit("termBox", () => termBoxSection(browser, base));

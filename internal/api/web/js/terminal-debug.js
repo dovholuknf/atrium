@@ -456,6 +456,7 @@ function forgetTerm() {
 // A permission request while attached: the runner is blocked and its terminal
 // shows nothing, so the question has to appear where you are already looking.
 async function renderTermPerm() {
+  renderHeldStrip();
   const host = document.getElementById("term-perm");
   host.classList.remove("tiles");
   // The terminal's palette, held to 4.5:1 on its background, or the skin's own on a terminal nobody coloured.
@@ -511,6 +512,100 @@ function renderHeldTiles(host) {
         >adopt into atrium</button>
     </div></div>`).join("");
 }
+
+// EVERY CARD HELD ON A PERMISSION, over the Terminals tab, on any room and whether or not atrium holds its terminal.
+// A request already drawn in the pane (the attached card's banner, or a held tile) is left out. The panel floats over
+// the terminal so opening it never reflows the pane, and a request not seen before opens it again.
+const HELD_SHUT_KEY = "atrium.heldShut";
+const heldSeen = new Set();
+const heldOpen = new Set();
+function heldShut() { try { return localStorage.getItem(HELD_SHUT_KEY) === "1"; } catch (e) { return false; } }
+function setHeldShut(on) {
+  try { if (on) localStorage.setItem(HELD_SHUT_KEY, "1"); else localStorage.removeItem(HELD_SHUT_KEY); } catch (e) {}
+  renderHeldStrip();
+}
+
+function heldInPane(p, t) {
+  if (termTask) return p.task_id === termTask.id;
+  return !!t && termJoined(t);
+}
+
+function heldList() {
+  const cards = cardList();
+  return permsLocal.map(p => ({ p, t: cards.find(c => c.id === p.task_id) }))
+    .filter(h => !heldInPane(h.p, h.t))
+    .concat(remoteLocal.map(p => ({ p, t: null })))
+    .sort((a, b) => (Date.parse(a.p.requested_at) || 0) - (Date.parse(b.p.requested_at) || 0));
+}
+
+function heldRow({ p, t }) {
+  const name = (t && (t.display_title || t.title)) || p.agent || p.task_id || "an agent";
+  const joined = !!t && termJoined(t);
+  const chips = (p.room ? `<span class="chip warn">on ${esc(p.room)}</span>` : "") +
+    (t && !t.supervised ? `<span class="chip" data-tip="started or resumed outside atrium, so there is no terminal here to attach"
+      >no terminal here</span>` : "");
+  return `<div class="held-row${heldOpen.has(p.id) ? " open" : ""}" data-id="${esc(p.id)}">
+    ${t ? `<button type="button" class="held-name" data-go="${esc(t.id)}" data-tip="${
+      t.supervised ? "attach its terminal" : "what you can do with it"}">${esc(name)}</button>`
+      : `<span class="held-name">${esc(name)}</span>`}
+    <span class="held-chips">${chips}</span>
+    <span class="held-req" data-x="1"><b>${esc(p.tool || "")}</b> <code>${esc(p.command || "")}</code></span>
+    <span class="held-wait">${esc(waitedFor(p.requested_at))}</span>
+    <span class="actions">
+      <button type="button" class="go" data-do="approve">approve once</button>
+      <button type="button" class="no" data-do="block">block once</button>
+      <button type="button" class="to-perms" data-do="perms" data-tip="to set a standing rule for this">open in perms</button>${
+      joined ? `<button type="button" class="move-in" data-card="${esc(t.id)}"
+        data-tip="ends the session where it runs now, denies this request and resumes it under atrium">adopt into atrium</button>` : ""}
+    </span>
+  </div>`;
+}
+
+function renderHeldStrip() {
+  const host = document.getElementById("held-strip");
+  if (!host) return;
+  const held = termOnly() ? [] : heldList();
+  if (!held.length) { host.hidden = true; host.innerHTML = ""; return; }
+  const fresh = held.filter(h => !heldSeen.has(h.p.id));
+  fresh.forEach(h => heldSeen.add(h.p.id));
+  if (fresh.length && heldShut()) { try { localStorage.removeItem(HELD_SHUT_KEY); } catch (e) {} }
+  const shut = heldShut();
+  host.hidden = false;
+  host.classList.toggle("shut", shut);
+  host.innerHTML = `<div class="held-head"><button type="button" class="held-fold" aria-expanded="${!shut}"
+      aria-label="${shut ? "show" : "hide"} the requests">${shut ? "&#9656;" : "&#9662;"}</button>
+    <span class="held-label">waiting on a permission</span><span class="chip warn">${held.length}</span><span class="help"
+      tabindex="0" data-tip="every card held on a permission request, on any room, including ones started or resumed outside atrium. one already shown in the terminal pane is not repeated here">?</span>
+    </div>${shut ? "" : `<div class="held-rows">${held.map(heldRow).join("")}</div>`}`;
+}
+
+async function heldStripClick(e) {
+  const host = e.currentTarget;
+  if (e.target.closest(".held-fold")) { setHeldShut(!heldShut()); return; }
+  const row = e.target.closest(".held-row");
+  if (!row || !host.contains(row)) return;
+  const id = row.dataset.id;
+  if (e.target.closest("[data-x]")) {
+    if (heldOpen.has(id)) heldOpen.delete(id); else heldOpen.add(id);
+    row.classList.toggle("open", heldOpen.has(id));
+    return;
+  }
+  const go = e.target.closest("[data-go]");
+  if (go) {
+    const t = cardList().find(c => c.id === go.dataset.go);
+    if (t && termJoined(t)) joinedClick(t.id); else attachTask(go.dataset.go);
+    return;
+  }
+  const move = e.target.closest(".move-in");
+  if (move) { moveIntoAtrium(move); return; }
+  const b = e.target.closest("[data-do]");
+  if (!b) return;
+  if (b.dataset.do === "perms") { switchView("perms"); return; }
+  await oneAtATime("decide:" + id, () => busyWhile(b, () => decide(id, b.dataset.do, false), "sending…"));
+  heldOpen.delete(id);
+  renderTermPerm();
+}
+document.getElementById("held-strip")?.addEventListener("click", heldStripClick);
 
 // Ends the joined session's process, so it asks first. The room refuses anything that is not still that runner.
 async function moveIntoAtrium(btn) {

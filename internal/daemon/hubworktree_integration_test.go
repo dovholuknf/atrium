@@ -44,6 +44,27 @@ func TestScopeHubRemoteIsWorktreeOnly(t *testing.T) {
 	}
 }
 
+func TestScopeHubRemoteIgnoresPlainDirInsideCheckout(t *testing.T) {
+	main := t.TempDir()
+	hubWtGit(t, main, "init", "-q", "-b", "main")
+	other := "http://127.0.0.1:7787/git/hub/github/o/r.git"
+	hubWtGit(t, main, "remote", "add", "hub", other)
+	sub := filepath.Join(main, "cards", "c")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{hk: *testHooks()}
+	d.initServices()
+	d.HubGit.Agent = "127.0.0.1:7777"
+	d.scopeHubRemote(sub)
+	if got := hubWtGit(t, main, "config", "remote.hub.url"); got != other {
+		t.Fatalf("enclosing checkout url changed: %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(main, ".git", "config.worktree")); err == nil {
+		t.Fatal("config.worktree written")
+	}
+}
+
 func TestScopeHubRemoteNoOps(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()

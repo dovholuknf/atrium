@@ -809,6 +809,8 @@ type ActivityEvent struct {
 	Notification string `json:"notification,omitempty"`
 	// MissingTool is a known tool a shell answered command not found for, on a tool-end.
 	MissingTool string `json:"missing_tool,omitempty"`
+	// RoomSource is "daemon.json" when the hook guessed this room from the machine's file and not from its env.
+	RoomSource string `json:"room_source,omitempty"`
 }
 
 // handleActivity records what a session is doing.
@@ -856,6 +858,10 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 			return ""
 		}
 		taskID = t.ID
+	}
+
+	if in.RoomSource == roomSourceFile {
+		d.noteRoomGuess(taskID)
 	}
 
 	// The runner spoke for itself, which settles a looks-idle guess. Logged here

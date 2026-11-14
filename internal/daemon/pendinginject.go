@@ -475,6 +475,9 @@ func (pi *pendingInjector) try(taskID string) {
 		return
 	}
 
+	// Text left on the line long enough is cleared and kept, so the say goes on. See clearStaleLine.
+	pi.d.clearStaleLine(taskID)
+
 	// Drain oldest first while the gate stays open. injectPeer submits each on
 	// its own line, so several waiting messages arrive as several turns. The
 	// gate only shuts here if the operator starts typing between two of them,

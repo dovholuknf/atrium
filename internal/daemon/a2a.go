@@ -54,6 +54,8 @@ const (
 	// NoticeStuckWake is the one notice typed to a launcher that holds its notices, when a
 	// card it launched has been stuck past the second step of the backoff. See wakeLauncher.
 	NoticeStuckWake = "stuck-wake"
+	// NoticeRoomGuess is a hook that found this room in daemon.json, once per card. See noteRoomGuess.
+	NoticeRoomGuess = "room-guess"
 )
 
 // The thresholds. Each has an environment override that takes a Go duration,

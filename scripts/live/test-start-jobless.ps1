@@ -1,6 +1,6 @@
-# Proves the live start helpers leave no job object over what they start: a caller already in a job starts through WMI,
-# one outside any job uses breakaway, a WMI refusal falls back loudly, and a result still in a job is said plainly. Fakes
-# every start, so nothing real is launched.
+# Proves the live start helpers leave no job object over what they start: a caller already in a job starts through the
+# task scheduler, then WMI, one outside any job uses breakaway, each refusal falls back loudly, and a result still in a
+# job is said plainly. Fakes every start, so nothing real is launched.
 # Usage: pwsh -NoProfile -File scripts/live/test-start-jobless.ps1
 $ErrorActionPreference = 'Stop'
 $fail = 0
@@ -21,9 +21,42 @@ $Base = Join-Path ([IO.Path]::GetTempPath()) "start-jobless-$PID"
 New-Item -ItemType Directory $Base | Out-Null
 $ToolchainDir = $Base
 try {
-  Check 'in a job the route is wmi' ((Get-StartRoute $true) -eq 'wmi')
+  Check 'in a job the route is the task scheduler' ((Get-StartRoute $true) -eq 'task')
   Check 'outside any job the route is breakaway' ((Get-StartRoute $false) -eq 'breakaway')
-  Check 'a job that could not be read is treated as a job' ((Get-StartRoute $null) -eq 'wmi')
+  Check 'a job that could not be read is treated as a job' ((Get-StartRoute $null) -eq 'task')
+
+  $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Start-Task' }, $true) |
+    Select-Object -First 1
+  . ([scriptblock]::Create(($def.Extent.Text -replace '^function Start-Task', 'function Start-RealTask')))
+  $sched = [System.Collections.Generic.List[string]]::new()
+  $script:taskXml = $null; $script:runFails = $false; $script:state = '"atrium-live-control","Running","0"'
+  function Start-Sleep {}
+  function schtasks.exe {
+    $sched.Add("$($args[0]) $($args[[array]::IndexOf($args, '/TN') + 1])")
+    $global:LASTEXITCODE = 0
+    switch ($args[0]) {
+      '/Create' { $script:taskXml = Get-Content -LiteralPath $args[-1] -Raw }
+      '/Run' { if ($script:runFails) { $global:LASTEXITCODE = 1; 'ERROR: Access is denied.' } }
+      '/Query' { '"TaskName","Status","Last Result"'; $script:state }
+    }
+  }
+  $launchCmd = Join-Path $Base 'launch-control.cmd'
+  $n = Start-RealTask $launchCmd 'control'
+  $x = [xml]$script:taskXml
+  Check 'the task has no trigger, so never at boot, logon or on a repeat' ($x.Task.Triggers -eq $null -and $script:taskXml -notmatch '(?i)Trigger|Repetition|Boot|Logon(?!Type)')
+  Check 'the task runs once now and is deleted after its run begins' (($sched -join ',') -eq '/Create atrium-live-control,/Run atrium-live-control,/Query atrium-live-control,/Delete atrium-live-control' -and $n -eq 'atrium-live-control')
+  Check 'the task starts hidden, in a headless console' ($x.Task.Actions.Exec.Command -eq 'conhost.exe' -and $x.Task.Actions.Exec.Arguments -eq "--headless cmd.exe /c `"$launchCmd`"" -and $x.Task.Settings.Hidden -eq 'true')
+  Check 'the task has no time limit, so the scheduler never stops the room' ($x.Task.Settings.ExecutionTimeLimit -eq 'PT0S')
+  Check 'the task xml is removed' (-not (Test-Path ([IO.Path]::ChangeExtension($launchCmd, 'xml'))))
+  $sched.Clear(); $script:runFails = $true
+  $threw = $false
+  try { $null = Start-RealTask $launchCmd 'control' } catch { $threw = "$_" -match 'Access is denied' }
+  Check 'a task that would not start throws and is deleted too' ($threw -and ($sched -join ',') -eq '/Create atrium-live-control,/Run atrium-live-control,/Delete atrium-live-control')
+  $sched.Clear(); $script:runFails = $false; $script:state = '"atrium-live-control","Ready","267011"'
+  $threw = $false
+  try { $null = Start-RealTask $launchCmd 'control' } catch { $threw = "$_" -match 'did not run in 10s' }
+  Check 'a task that never runs (no console logon) throws, so the start falls back, and is deleted' ($threw -and $sched[-1] -eq '/Delete atrium-live-control')
+  Remove-Item Function:schtasks.exe, Function:Start-Sleep
 
   $env:ATRIUM_HOSTS = 'a.example,b.example'
   $env:ATRIUM_PCT = '50%'
@@ -41,7 +74,13 @@ try {
   $script:inJob = @{}
   $script:calls = [System.Collections.Generic.List[string]]::new()
   $script:wmiFails = $false
+  $script:taskFails = $true
   function Test-ProcessInJob([int]$ProcId) { $script:inJob[$ProcId] }
+  function Start-Task([string]$Launch, [string]$Tag) {
+    $script:calls.Add("task $Tag $Launch")
+    if ($script:taskFails) { throw 'Access is denied' }
+    return "atrium-live-$Tag"
+  }
   function Start-Wmi([string]$CommandLine) {
     $script:calls.Add("wmi $CommandLine")
     if ($script:wmiFails) { throw 'Win32_Process Create returned 2' }
@@ -56,8 +95,17 @@ try {
   }
 
   Reset $true $false $false $true
+  $script:taskFails = $false
+  $p = Start-Jobless '"x.exe" room > out 2> err' 'control'
+  Check 'from a job it starts through the task scheduler and nothing else' ($p -eq 0 -and $calls.Count -eq 1 -and $calls[0] -like 'task control *launch-control.cmd')
+  Check 'the task start is said with the task name' (($said -join "`n") -match 'started through the task scheduler as task atrium-live-control, outside this shell''s job')
+  Check 'the task runs the launch script with the command last' ((Get-Content (Join-Path $Base 'launch-control.cmd'))[-1] -eq '"x.exe" room > out 2> err')
+  $script:taskFails = $true
+
+  Reset $true $false $false $true
   $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
-  Check 'from a job it starts through WMI and returns that pid' ($p -eq 200 -and $calls.Count -eq 1 -and $calls[0] -like 'wmi cmd.exe /c *launch-room.cmd*')
+  Check 'a task refusal falls back to WMI, said as a WARNING' (($said -join "`n") -match 'WARNING: could not start room through the task scheduler \(Access is denied\)\. trying WMI')
+  Check 'from a job with no task it starts through WMI and returns that pid' ($p -eq 200 -and $calls.Count -eq 2 -and $calls[0] -like 'task room *' -and $calls[1] -like 'wmi cmd.exe /c *launch-room.cmd*')
   Check 'it says the result is in no job' (($said -join "`n") -match 'in no job object')
   Check 'with no record it says so and names room-toolchain.ps1' (($said -join "`n") -match 'no PATH record at .*path\.txt.*room-toolchain\.ps1')
 
@@ -90,7 +138,7 @@ try {
 
   Reset $true $true $false $false
   $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
-  Check 'a WMI refusal falls back to breakaway' ($p -eq 300 -and $calls.Count -eq 2 -and $calls[1] -like 'breakaway *')
+  Check 'a WMI refusal falls back to breakaway' ($p -eq 300 -and $calls.Count -eq 3 -and $calls[2] -like 'breakaway *')
   Check 'the fallback is said as a WARNING with the reason' (($said -join "`n") -match 'WARNING: could not start room through WMI \(Win32_Process Create returned 2\)')
 
   Reset $true $true $false $true

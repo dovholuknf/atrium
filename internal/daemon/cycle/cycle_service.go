@@ -67,6 +67,7 @@ type Calls struct {
 	RequeueCarried          func(taskID string, carried []shared.DeliveredSay)
 	ItemMissed              func(taskID string, carried []shared.DeliveredSay) []shared.DeliveredSay
 	ShutdownAllowed         func(w http.ResponseWriter, r *http.Request) bool
+	ClearStaleLine          func(taskID string) bool
 }
 
 // Config is what the root hands the service.

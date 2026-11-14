@@ -242,7 +242,7 @@ func adapterEnv(location, scenario string) []string {
 
 func shellCommand(cmd string) []string {
 	if runtime.GOOS == "windows" {
-		return []string{"cmd", "/C", cmd}
+		return []string{"cmd", "/S", "/C", cmd}
 	}
 	return []string{"sh", "-c", cmd}
 }
@@ -251,6 +251,7 @@ func shellCommand(cmd string) []string {
 // a hook that exits non-zero or outlives its bound fails the session it rides.
 func runDriver(ctx context.Context, env []string, stdin, dir string, argv []string) (string, error) {
 	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	rawShellLine(c, argv)
 	c.Env = env
 	c.Dir = dir
 	c.Stdin = strings.NewReader(stdin)
