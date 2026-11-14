@@ -21500,7 +21500,12 @@ async function heldStripSection(browser, base) {
     await until(() => decided.length === 2, 5000, "the local decide POST").catch(() => {});
     if (decided[1] !== "/v1/permissions/pj/decide approve") fail(tag + "the local approve posted " + JSON.stringify(decided));
     await p.waitForFunction(() => !document.querySelector("#held-strip .held-row[data-id='pj'], #held-strip .held-row[data-id='sg3/r9']"),
-      null, { timeout: slow(5000) }).catch(() => fail(tag + "an answered row stayed"));
+      null, { timeout: slow(5000) }).catch(async () => {
+      // Which queue still holds the row tells a stale in-flight read from a repaint that never ran.
+      const now = await p.evaluate(() => ({ perms: permsLocal.map(x => x.id), remote: remoteLocal.map(x => x.id),
+        rows: [...document.querySelectorAll("#held-strip .held-row")].map(r => r.dataset.id) })).catch(() => ({}));
+      fail(tag + "an answered row stayed: " + JSON.stringify(now) + " decided " + JSON.stringify(decided));
+    });
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("heldStrip ok");
