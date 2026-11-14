@@ -1832,13 +1832,16 @@ function sendPasteText(text) {
 // paste box, which needs no permission at all.
 async function pasteIntoTerm() {
   const mine = ++pasteAttempt;
+  const task = termTask;
   // At once, before the clipboard read, which is the slow step on a share.
   pasteWaiting("reading the clipboard", "right click");
+  let answered = false;
+  const work = clipboardIntoTerm(mine, () => { answered = true; }, task);
+  // Only an unanswered prompt opens the box: a granted read, or the upload behind one, is slow, not refused.
   const got = await Promise.race([
-    clipboardIntoTerm(mine),
-    new Promise(r => setTimeout(
-      () => r({ why: "the browser has not been told whether this page may read the clipboard" }),
-      pasteWaitMs)),
+    work,
+    new Promise(r => setTimeout(async () => r(await clipboardGranted() || answered ? work
+      : { why: "the browser has not been told whether this page may read the clipboard" }), pasteWaitMs)),
   ]);
   if (got.ok) {
     // Nothing on the clipboard to send: the wait box has nothing to wait for.
@@ -1856,6 +1859,19 @@ async function pasteIntoTerm() {
 // resolves in single-digit milliseconds; an unanswered prompt resolves never.
 const pasteWaitMs = 1200;
 
+async function clipboardGranted() {
+  try { return (await navigator.permissions.query({ name: "clipboard-read" })).state === "granted"; } catch (e) { return false; }
+}
+
+// A screenshot tool can still hold the clipboard when the read comes, and the read then gives nothing.
+const pasteRetryMs = 300;
+
+// Whether the terminal showing is still `task`'s. A paste goes to the terminal its gesture was on, never to one
+// switched to while it read or uploaded.
+function pasteSameTerm(task) {
+  return !!(termTask && task && bareId(termTask.id) === bareId(task.id));
+}
+
 // Which paste attempt is current.
 //
 // The bounded wait does not cancel the clipboard read, it only stops waiting
@@ -1867,22 +1883,32 @@ let pasteAttempt = 0;
 // The clipboard API attempt, files first and then text, unchanged in what it
 // does with either. Reports whether it got anywhere rather than toasting,
 // because the caller has somewhere better to go than an error.
-async function clipboardIntoTerm(mine) {
+async function clipboardIntoTerm(mine, onRead, task) {
   if (!navigator.clipboard) {
     return { why: "this browser will not let a page read the clipboard here" };
   }
-  try {
-    if (await pasteFilesIntoTerm()) return { ok: mine === pasteAttempt };
-  } catch (e) { /* text is still worth trying */ }
-  try {
-    const text = await navigator.clipboard.readText();
-    lagPasteMark("clipboard");
-    if (mine !== pasteAttempt) return { ok: true };
-    if (text) sendPasteText(text);
-    return { ok: true };
-  } catch (e) {
-    return { why: "the browser refused clipboard access" };
+  task = task || termTask;
+  const live = () => { if (onRead) onRead(); return mine === pasteAttempt; };
+  let text;
+  for (let tries = 0; ; tries++) {
+    try {
+      if (await pasteFilesIntoTerm(undefined, live, task)) return { ok: mine === pasteAttempt };
+    } catch (e) { /* text is still worth trying */ }
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (e) {
+      return { why: "the browser refused clipboard access (" + (e && e.name || "error") + ")" };
+    }
+    if (onRead) onRead();
+    if (text || tries || mine !== pasteAttempt) break;
+    await new Promise(r => setTimeout(r, pasteRetryMs));
   }
+  lagPasteMark("clipboard");
+  if (mine !== pasteAttempt) return { ok: true };
+  if (!pasteSameTerm(task)) { pasteEnd("the terminal changed"); return { ok: true }; }
+  // A throw past the read is the board's, not the browser's refusal, so it never opens the box.
+  try { if (text) sendPasteText(text); } catch (e) { pasteEnd("an error"); toast("could not paste", String(e && e.message || e)); }
+  return { ok: true };
 }
 
 // THE PASTE BOX: the clipboard arriving by the door that is always open.
@@ -1990,15 +2016,18 @@ function wirePasteBox() {
 //
 // `fromEmpty` says the paste event already held an empty file, so a clipboard
 // that gives nothing either is answered with a toast rather than silence.
-async function pasteFilesIntoTerm(fromEmpty) {
+async function pasteFilesIntoTerm(fromEmpty, onRead, task) {
+  task = task || termTask;
   const emptyToast = () => { if (fromEmpty) { pasteEnd("the pasted image being empty"); toast("the pasted image was empty", "paste it again"); } return fromEmpty === true; };
-  if (!termTask || !navigator.clipboard || !navigator.clipboard.read) return emptyToast();
+  if (!task || !navigator.clipboard || !navigator.clipboard.read) return emptyToast();
   // A guest has no file endpoint, so this hands the paste back and the text
   // branch behind it takes over. Not handled here means not handled, which is
   // what the caller already knows how to do something with.
   if (isGuest()) return false;
   let items;
   try { items = await navigator.clipboard.read(); } catch (e) { return emptyToast(); }
+  // A read that answers after the paste box went up has lost: the box is the paste now, never both.
+  if (onRead && !onRead()) return true;
 
   const files = [];
   for (const item of items) {
@@ -2012,8 +2041,9 @@ async function pasteFilesIntoTerm(fromEmpty) {
     } catch (e) { /* an item that will not read is one to skip */ }
   }
   if (!files.length) return emptyToast();
+  if (onRead && !onRead()) return true;
 
-  await uploadIntoTerm(files);
+  await uploadIntoTerm(files, task);
   return true;
 }
 
@@ -2021,8 +2051,9 @@ async function pasteFilesIntoTerm(fromEmpty) {
 //
 // Whatever gesture produced the bytes, the bytes go to the same endpoint and
 // what comes back is a path. Charon's lesson, and worth taking whole.
-async function uploadIntoTerm(files) {
-  if (!termTask || !files) return;
+async function uploadIntoTerm(files, task) {
+  task = task || termTask;
+  if (!task || !files) return;
   // Last guard: a path to an empty file is worse than no path.
   const sent = Array.from(files).filter(f => f.size > 0);
   if (sent.length < files.length) toast("the pasted image was empty", "paste it again");
@@ -2040,7 +2071,7 @@ async function uploadIntoTerm(files) {
   lagPasteMark("upload start");
   let res;
   try {
-    res = await api(`/v1/tasks/${termTask.id}/files`, { method: "POST", body: form });
+    res = await api(`/v1/tasks/${task.id}/files`, { method: "POST", body: form });
   } catch (e) {
     pasteEnd("the upload failing");
     toast("that did not go up", e.message);
@@ -2060,6 +2091,11 @@ async function uploadIntoTerm(files) {
   // The preamble says what the path is for. A bare path is what a person types
   // when they mean "look at this", and it is not what they say.
   const pre = preambleForFiles(await pasteSettings(), files);
+  if (paths && !pasteSameTerm(task)) {
+    pasteEnd("the terminal changed");
+    toast("not pasted: the terminal changed", "it went up to " + (task.title || task.id) + " as " + paths);
+    return;
+  }
   // On a phone with the composer up the paths go into it, at its caret (js/tcompose.js).
   if (paths && typeof tcomposeInsert === "function" && tcomposeInsert(paths)) pasteEnd("the paths going into the message box");
   else if (paths) sendInput(pre + paths + " ", false, true);

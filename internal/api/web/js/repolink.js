@@ -109,17 +109,26 @@ async function repoSeenBy(rk, room) {
 // Enter on a repo link, with the card already drawn under `id`.
 async function repoNewGo(id, rk, got, name) {
   linkOpeningName(id, rk.org + "/" + rk.repo);
-  const picker = document.getElementById("l-harness");
-  const harness = (document.getElementById("l-pick-field").hidden ? launchTarget && launchTarget.harness : picker.value) || "";
   const launch = document.getElementById("launch");
   if (launch && launch.open) launch.close();
+  const o = linkOpenings.get(id);
+  const pick = repoPick && o && repoPick.url === o.url ? repoPick : null;
+  repoPick = null;
   try {
-    const room = await linkRoomFor(got);
+    // The room first, so the runner is one of that room's and not one the dialog held for another.
+    const room = pick ? pick.room : quickPasteRoom(await linkRoomFor(got));
+    if (room === null) { linkOpeningFail(id, quickPasteNoRunner()); return; }
+    const picker = document.getElementById("l-harness");
+    const harness = pick ? pick.harness
+      : (document.getElementById("l-pick-field").hidden ? launchTarget && launchTarget.harness : picker.value) || "";
+    const setup = pick ? pick.setup : "";
+    name = name || repoWorkBranch();
+    if (o) o.repo = { rk, name, room, harness, setup };
     const headers = { "Content-Type": "application/json" };
     if (room) headers["X-Atrium-Room"] = room;
     linkOpeningStep(id, "finding " + rk.slug);
     const seen = await repoSeenBy(rk, room);
-    if (seen.room || seen.hub) { await repoNewStart(id, rk, harness, headers, room, name); return; }
+    if (seen.room || seen.hub) { await repoNewStart(id, rk, harness, headers, room, name, setup); return; }
     if (typeof hubIsHub !== "undefined" && hubIsHub) {
       linkOpeningStep(id, "the hub is fetching " + rk.slug);
       await api("/_hub/git/init", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -127,17 +136,18 @@ async function repoNewGo(id, rk, got, name) {
     }
     linkOpeningStep(id, "cloning " + rk.slug);
     await api("/v1/new", { method: "POST", headers, body: JSON.stringify({ repo: rk.slug, prepare: true, progress: id }) });
-    await repoNewStart(id, rk, harness, headers, room, name);
+    await repoNewStart(id, rk, harness, headers, room, name, setup);
   } catch (e) {
     linkOpeningFail(id, (e && e.message) || String(e));
   }
 }
 
 // The worktree and the card, once the repo is somewhere this room can use it and somebody said so.
-async function repoNewStart(id, rk, harness, headers, room, name) {
+async function repoNewStart(id, rk, harness, headers, room, name, setup) {
   try {
     const out = await api("/v1/new", { method: "POST", headers, body: JSON.stringify({
-      repo: rk.slug, name: name || repoWorkBranch(), title: rk.org + "/" + rk.repo, harness, progress: id }) });
+      repo: rk.slug, name: name || repoWorkBranch(), title: rk.org + "/" + rk.repo, harness, progress: id,
+      lean: setup === "lean", superlean: setup === "superlean" }) });
     linkOpeningEnd(id);
     rememberLaunchRoom(room, out.card);
     const warn = [out.fetch_error && "fetching origin failed, so the base is what was last fetched",
@@ -170,16 +180,28 @@ async function repoNewEdit(rk, name) {
 // THE NAME FIRST. Enter on a repo link in the switcher asks for the worktree name, `claude/` fixed and the rest
 // editable, before anything starts. Enter starts it, shift-Enter is "start new work" filled in, Esc is the list again.
 let repoNaming = null;
+let repoPick = null;
 
-function repoNameAsk(url, rk) {
-  repoNaming = { url, rk };
+// `prev` is what a failed card was sent with (its `edit`), so the room, runner, setup and name come back as they were.
+function repoNameAsk(url, rk, prev) {
+  prev = prev || {};
+  const d = typeof naDefaultHow === "function" ? naDefaultHow() : { room: "", harness: "", setup: "full" };
+  const rooms = typeof naRooms === "function" ? naRooms() : [];
+  const room = rooms.includes(prev.room) || (!rooms.length && prev.room) ? prev.room : d.room;
+  repoNaming = { url, rk, room, harness: prev.harness || d.harness, setup: prev.setup || d.setup || "full",
+    last: prev.error || "", open: false };
   repoNameShow(true);
   document.getElementById("sw-nmkey").textContent = comboName(switchKey());
   const box = document.getElementById("sw-nm");
-  box.value = repoWorkBranch().slice("claude/".length);
+  box.value = (prev.name || repoWorkBranch()).replace(/^claude\//, "");
   paintSwitcher();
   box.focus();
   box.select();
+}
+
+function repoNameAgain(o) {
+  openSwitcher({ url: o.url });
+  repoNameAsk(o.url, o.repo.rk, Object.assign({ error: o.error }, o.repo));
 }
 
 function repoNameShow(on) {
@@ -187,6 +209,18 @@ function repoNameShow(on) {
   document.getElementById("sw-name").hidden = !on;
   document.getElementById("sw-foot").hidden = on;
   document.getElementById("sw-nmfoot").hidden = !on;
+  document.getElementById("sw-how").hidden = !on;
+}
+
+function repoNameRunner() {
+  const all = launchableHarnesses(repoNaming.room || "");
+  return all.find(h => h.id === repoNaming.harness) || all[0] || null;
+}
+
+function repoNameRoomLabel() {
+  const scoped = typeof roomNow === "function" ? roomNow() : "";
+  const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms) || [];
+  return repoNaming.room || scoped || (rooms.length === 1 ? rooms[0].name : "") || "this room";
 }
 
 function repoNameEnd() {
@@ -204,7 +238,60 @@ function repoNamePaint(host) {
   const folder = "<scm>/worktrees/" + repoNaming.rk.slug + "/" + branch.replace(/\//g, "-");
   setHTML(host, `<div class="swrow swopen on seen" data-kind="repo">${quickPasteRow(repoNaming.url).html}</div>
     <div class="swnmhint"><b>branch</b><code>${esc(branch)}</code><b>off</b><code>origin's default branch</code>
-      <b>folder</b><code class="swnmdir">&lrm;${esc(folder)}&lrm;</code></div>`);
+      <b>folder</b><code class="swnmdir">&lrm;${esc(folder)}&lrm;</code>${repoNaming.last
+        ? `<b>last try</b><span class="swlast">${esc(repoNaming.last)}</span>` : ""}</div>`);
+  repoHowPaint(branch);
+}
+
+// The card it makes and how it starts, New agent's preview and room, runner and setup (js/newagent.js) in board selects.
+function repoHowPaint(branch) {
+  const n = repoNaming, h = repoNameRunner(), rooms = typeof naRooms === "function" ? naRooms() : [];
+  const claude = !!(h && hookTargetFor(h) === "claude");
+  const where = n.rk.org + "/" + n.rk.repo;
+  const label = repoNameRoomLabel();
+  setHTML(document.getElementById("sw-preview"), `<div class="term-list na-pv"><div class="card tab"><div class="card-line"><div class="title">` +
+    `<span class="pin" data-tip="keep it at the top and in terminals when it starts">&#9734;</span>` +
+    (h ? runnerMark(hookTargetFor(h) || h.label || h.id) : "") +
+    `<span class="tstack"><span class="tname">${esc(where)}</span><span class="tpath">${esc(where + ":" + branch)}</span></span></div>` +
+    `<div class="chips"><span class="chip">new worktree</span><span class="chip">starting</span>` +
+    (rooms.length && n.room ? `<span class="chip room" style="--rhue:${roomHue(n.room)}" data-tip="this card runs in room ${esc(n.room)}">${esc(n.room)}</span>` : "") +
+    `</div></div></div></div>`);
+  const setupName = (NA_SETUPS.find(s => s[0] === n.setup) || NA_SETUPS[0])[1];
+  setHTML(document.getElementById("sw-sum"), h
+    ? [`<b>${esc(label)}</b>`, esc(h.label || h.id)].concat(claude ? [esc(setupName)] : []).join(" · ")
+    : `<b>${esc(label)}</b> · no runner here`);
+  document.getElementById("sw-nmgo").classList.toggle("off", !h);
+  const change = document.getElementById("sw-change");
+  change.textContent = n.open ? "close" : "change";
+  change.setAttribute("aria-expanded", String(n.open));
+  const pick = document.getElementById("sw-pick");
+  pick.hidden = !n.open;
+  if (!n.open) return;
+  const opts = (list, on) => list.map(([v, t]) => `<option value="${esc(v)}"${v === on ? " selected" : ""}>${esc(t)}</option>`).join("");
+  const usable = launchableHarnesses(n.room || "");
+  const rows = [];
+  if (rooms.length) rows.push(["room", `<select id="sw-room">${opts(rooms.map(r => [r, r]), n.room)}</select>`]);
+  rows.push(["runner", usable.length ? `<select id="sw-runner">${opts(usable.map(x => [x.id, x.label || x.id]), h && h.id)}</select>`
+    : `<span class="none">no runner on ${esc(label)} is turned on and installed</span>`]);
+  if (claude) rows.push(["setup", `<select id="sw-setup">${opts(NA_SETUPS, n.setup)}</select>`]);
+  setHTML(pick, rows.map(([k, body]) => `<span class="k">${k}</span><div class="rowend">${body}</div>`).join(""));
+  const wire = (id, set) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.onchange = () => {
+      set(el.value);
+      paintSwitcher();
+      const again = document.getElementById(id);
+      if (again) again.focus();
+    };
+  };
+  wire("sw-room", v => {
+    n.room = v;
+    const u = launchableHarnesses(v);
+    if (!u.some(x => x.id === n.harness)) n.harness = u[0] ? u[0].id : "";
+  });
+  wire("sw-runner", v => { n.harness = v; });
+  wire("sw-setup", v => { n.setup = v; });
 }
 
 (function wireRepoName() {
@@ -215,6 +302,9 @@ function repoNamePaint(host) {
     if (!repoNaming) return;
     if (e.key === "Enter") {
       e.preventDefault();
+      const h = repoNameRunner();
+      if (!h && !e.shiftKey) return;
+      repoPick = e.shiftKey ? null : { url: repoNaming.url, room: repoNaming.room, harness: h.id, setup: repoNaming.setup };
       quickPasteGo(repoNaming.url, e.shiftKey, repoNameBranch());
     } else if (e.key === "Escape") {
       // Kept from the dialog, whose Escape would close the whole bar.
@@ -223,6 +313,11 @@ function repoNamePaint(host) {
       paintSwitcher();
       document.getElementById("sw-q").focus();
     }
+  });
+  document.getElementById("sw-change").addEventListener("click", () => {
+    if (!repoNaming) return;
+    repoNaming.open = !repoNaming.open;
+    paintSwitcher();
   });
   switcherDlg().addEventListener("close", repoNameEnd);
 })();

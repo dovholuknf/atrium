@@ -384,9 +384,9 @@ function walkPrKeydown(e) {
 }
 
 // [ and ] step through the agent's comments, wherever they are.
-function walkPrStepComment(dir) {
+async function walkPrStepComment(dir) {
+  await walkPrSync();
   const all = walkPrAgentComments().sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
-  walkPrSync();
   if (!all.length) return;
   const now = all.findIndex(c => c.id === walkPr.sel);
   const c = all[Math.max(0, Math.min(all.length - 1, (now < 0 ? (dir > 0 ? -1 : all.length) : now) + dir))];
