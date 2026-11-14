@@ -136,7 +136,7 @@ func repoDirs(dir string) []string {
 // heldBy finds a relative path under a folder the session touched, and answers that folder. It is only ever said,
 // never opened.
 func heldBy(want string, dirs []string) string {
-	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") || strings.Contains(filepath.ToSlash(want), "..") {
+	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") || strings.Contains(want, "..") {
 		return ""
 	}
 	for _, d := range dirs {

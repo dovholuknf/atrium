@@ -225,7 +225,7 @@ func probeOne(root, realCard, want string, roots func() []string, near func() []
 // elsewhere finds a relative path that is not in the card under another open root, where the agent works on a
 // sibling worktree. The newest match wins, and safepath.Contained keeps every one inside its root.
 func elsewhere(want string, roots []string) (string, os.FileInfo) {
-	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") {
+	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") || strings.Contains(want, "..") {
 		return "", nil
 	}
 	var best string
