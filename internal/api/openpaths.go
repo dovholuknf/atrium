@@ -3,7 +3,10 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
@@ -53,7 +56,50 @@ func (s *Server) openRoots() []string {
 			raw = append(raw, strings.TrimSpace(p))
 		}
 	}
-	return resolveRoots(raw)
+	return s.rootMemo.resolve(raw)
+}
+
+// openRootsFresh is how long a resolved root is reused. Resolving one follows every link up its path, which on a
+// room with many cards cost more than the rest of a probe together.
+const openRootsFresh = 20 * time.Second
+
+type rootMemo struct {
+	mu   sync.Mutex
+	real map[string]memoRoot
+}
+
+type memoRoot struct {
+	real string
+	at   time.Time
+}
+
+// resolve is resolveRoots with each entry's answer, a miss too, kept for openRootsFresh.
+func (m *rootMemo) resolve(raw []string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	next := make(map[string]memoRoot, len(raw))
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range raw {
+		e, ok := next[p]
+		if !ok {
+			if e, ok = m.real[p]; !ok || now.Sub(e.at) > openRootsFresh {
+				e = memoRoot{at: now}
+				if r := resolveRoots([]string{p}); len(r) > 0 {
+					e.real = r[0]
+				}
+			}
+			next[p] = e
+		}
+		if e.real != "" && !seen[strings.ToLower(e.real)] {
+			seen[strings.ToLower(e.real)] = true
+			out = append(out, e.real)
+		}
+	}
+	m.real = next
+	sort.Strings(out)
+	return out
 }
 
 // containedOrOpen resolves want inside the card, else, for an absolute path, inside an open root. Resolving follows
@@ -63,7 +109,13 @@ func containedOrOpen(card, want string, roots func() []string) (real string, out
 	if err == nil || !filepath.IsAbs(want) {
 		return real, false, err
 	}
+	resolved, werr := safepath.Real(want)
 	for _, root := range roots() {
+		// Resolved once here, so a root that cannot hold it is skipped without resolving every root's links again.
+		rel, rerr := filepath.Rel(root, resolved)
+		if werr == nil && (rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+			continue
+		}
 		if r, rerr := safepath.Contained(root, want); rerr == nil {
 			return r, true, nil
 		}

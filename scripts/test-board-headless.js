@@ -3205,9 +3205,6 @@ async function pasteSpinnerSection(browser, base) {
       setTimeout(() => { termSock.bufferedAmount = 0; termSock.onmessage({ data: "one line" }); }, 50);
       setTimeout(() => { got.after = vis(); got.shown = window.__shown; done(got); }, 120);
     });
-    // Inside the hold the echo is only noted. Held, then gone once it is quiet.
-    if (!heldGot.after) fail("an echo 50ms in took the spinner down inside its hold: " + JSON.stringify(heldGot));
-    heldGot.after = false;
     if (!heldGot.during || heldGot.shown !== 1) {
       fail("a one-line paste held on the socket for 50ms did not show the spinner: " + JSON.stringify(heldGot));
     }
@@ -3217,26 +3214,21 @@ async function pasteSpinnerSection(browser, base) {
     if (heldGot.after) fail("the spinner stayed up after the paste drained and echoed: " + JSON.stringify(heldGot));
 
     // 2. A paste that drains and echoes inside 20ms is still drawn, at once, and
-    // is gone once the runner has been quiet since the echo.
+    // is gone once the runner has echoed it.
     const quick = await fakeRun(p, (_, done) => {
-      const attempt = tries => {
-        pasteEnd();
-        window.__shown = 0;
-        termSock.bufferedAmount = 0;
-        sendPasteText("x");
-        const got = { now: window.__shown };
-        // A send that left after the hold ran out is not a paste that landed inside it, so go again.
-        const echo = () => {
-          const f = pasteFlight;
-          if (!(f && f.sent)) { setTimeout(echo, 10); return; }
-          if (Date.now() >= f.holdUntil && tries > 0) { attempt(tries - 1); return; }
-          termSock.onmessage({ data: "x" });
-          got.flight = !!pasteFlight;
-          done(got);
-        };
-        setTimeout(echo, 60);
+      pasteEnd();
+      window.__shown = 0;
+      termSock.bufferedAmount = 0;
+      sendPasteText("x");
+      const got = { now: window.__shown };
+      const echo = () => {
+        const f = pasteFlight;
+        if (!(f && f.sent)) { setTimeout(echo, 10); return; }
+        termSock.onmessage({ data: "x" });
+        got.flight = !!pasteFlight;
+        done(got);
       };
-      attempt(5);
+      setTimeout(echo, 60);
     });
     if (quick.now !== 1 || !quick.flight) {
       fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
@@ -5626,6 +5618,60 @@ async function markdownTabSection(browser, base) {
   }
 }
 
+// ── the reader's Raw button and Ctrl-A (f-reader-raw-and-select-all) ──
+// A text file gets a Raw link to the view route in a new tab, a picture does not, and Ctrl-A selects only the file.
+async function readerRawSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  const body = "function go() {\n  return 1;\n}\n";
+  try {
+    await ctx.route("**/files/view?*", route => route.fulfill({ status: 200,
+      contentType: /\.png/.test(route.request().url()) ? "image/png" : "text/plain; charset=utf-8",
+      headers: { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" },
+      body: /\.png/.test(route.request().url()) ? Buffer.from("iVBORw0KGgo=", "base64") : body }));
+    const open = async () => { const pg = await ctx.newPage(); pg.on("pageerror", e => errors.push(String(e))); return pg; };
+    let p = await open();
+    await p.goto(base + "/read.html#land-live/survey%2FCode.gs", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#raw:not([hidden])", { timeout: slow(8000) });
+    const r = await p.evaluate(() => {
+      const a = document.getElementById("raw");
+      const dl = document.getElementById("download");
+      return { href: a.getAttribute("href"), target: a.target, text: a.textContent, cls: a.className,
+        download: a.hasAttribute("download"), next: a.nextElementSibling === dl };
+    });
+    if (r.href !== "/v1/tasks/land-live/files/view?path=survey%2FCode.gs") fail("Raw pointed at " + r.href);
+    if (r.target !== "_blank" || r.download) fail("Raw does not open in a new tab: " + JSON.stringify(r));
+    if (r.text !== "Raw" || r.cls !== "sharebtn" || !r.next) fail("Raw is not the toolbar button beside Download: " + JSON.stringify(r));
+    await p.click("#text");
+    await p.keyboard.press("ControlOrMeta+a");
+    const sel = await p.evaluate(() => getSelection().toString());
+    if (sel.trimEnd() !== body.trimEnd()) fail("Ctrl-A selected " + JSON.stringify(sel.slice(0, 200)));
+    await p.close();
+    p = await open();
+    await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#md:not([hidden])", { timeout: slow(8000) });
+    await p.keyboard.press("ControlOrMeta+a");
+    const mdSel = await p.evaluate(() => ({ sel: getSelection().toString(), raw: !document.getElementById("raw").hidden,
+      src: document.getElementById("raw-md").textContent }));
+    if (/Narrow|Download|A\+/.test(mdSel.sel) || !/return 1/.test(mdSel.sel)) fail("Ctrl-A on markdown selected " + JSON.stringify(mdSel.sel.slice(0, 200)));
+    if (!mdSel.raw || mdSel.src !== "Source") fail("markdown lost Raw or the Source toggle: " + JSON.stringify(mdSel));
+    await p.close();
+    p = await open();
+    await p.goto(base + "/read.html#land-live/img%2Fp.png", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => document.documentElement.classList.contains("plain"), null, { timeout: slow(8000), polling: 10 });
+    if (await p.evaluate(() => !document.getElementById("raw").hidden)) fail("a picture got a Raw button");
+    if (errors.length) fail("the reader threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── a document shared publicly from the reader, and the page a shared link opens (f-share-doc-zrok-stage1) ──
 // The reader's button posts the path and the images it drew, shows the address with copy and stop, and a shared page
 // renders the same document from /doc.md and /f/<n> without asking /v1 for anything. DOCSHARE_SHOTS=dir writes PNGs.
@@ -5875,7 +5921,8 @@ async function fileLinksViewSection(browser, base) {
     asked.push(...paths);
     const found = paths.filter(p => /\.(md|txt|go)$/.test(p) && !/openziti-test-kitchen/.test(p))
       .map(p => ({ path: p, rel: p.replace(/\\/g, "/").replace(/^.*blog-add-by-url\//, ""), size: 10, dir: false }));
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+    const held = paths.filter(p => /openziti-test-kitchen/.test(p)).map(p => ({ path: p, folder: "D:/worktrees/github/openziti-test-kitchen" }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found, held }) });
   });
   await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
     body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
@@ -5912,7 +5959,10 @@ async function fileLinksViewSection(browser, base) {
         res((links || []).map(l => row.slice(l.range.start.x - 1, l.range.end.x)));
       });
     }), y);
+    await p.evaluate(() => { window.__told = []; window.toast = (t, b) => window.__told.push(t + ": " + b); });
     const got = [await linksOn(1), await linksOn(2), await linksOn(3)];
+    const told = await p.evaluate(() => window.__told);
+    if (!told.some(m => /socials\.txt.*not an open path/.test(m)) || new Set(told).size !== told.length) fail("a held path was not explained once: " + JSON.stringify(told));
     if (got[0].length) fail("a path the room did not find was underlined: " + JSON.stringify(got[0]));
     if (!got[1].includes(insideWin)) fail("an inside absolute path was not a link: " + JSON.stringify(got[1]));
     if (!got[2].includes(outsideBash) || !got[2].includes("docs/plan.md")) fail("row 3 linked " + JSON.stringify(got[2]));
@@ -5956,11 +6006,12 @@ async function fileLinksViewSection(browser, base) {
       { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
     const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
     await p.keyboard.press("Escape");
-    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "docs/plan.md", dir: false }); });
+    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { path: "docs/plan.md", rel: "docs/plan.md", dir: false }); });
     if (!await menuUp(true)) fail("the menu did not open for an md");
     let menu = await items();
     if (menu.some(m => /externally/.test(m))) fail("an md file was offered open externally: " + JSON.stringify(menu));
     if (menu[0] !== "open rendered") fail("the viewer is not first: " + JSON.stringify(menu));
+    if (!menu.includes("copy full path")) fail("a relative path's menu has no copy full path: " + JSON.stringify(menu));
     await shot(p, "3-menu");
     await p.keyboard.press("Escape");
     await menuUp(false);
@@ -5997,6 +6048,104 @@ async function fileLinksViewSection(browser, base) {
     await v.close();
     v = await view("out/bundle.zip", () => !!document.querySelector("#text a[href*='/files?path=out%2Fbundle.zip']"));
     await v.close();
+    if (errors.length) fail("the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── a folder in a terminal opens the folder view (bug-term-folder-link-no-view) ──
+// The prompt line names the card's folder with a backslash path and " (branch)" after it, a file path names the
+// folders it sits in, an open_paths folder is outside the card, and a folder the room does not find is not a link.
+async function termFolderLinkSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const cwd = "D:/git/worktrees/github.com/netfoundry/mcp-connect/claude-exploring-mcp-connect";
+  const open = "D:/open/shared";
+  landCard("land-live", { supervised: true, room: "sg4", worktree: cwd, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const listed = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  // The room's answer: a folder or file under the card or the open folder, nothing else.
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = [];
+    for (const p of paths) {
+      const n = p.replace(/\\/g, "/");
+      const dir = !/\.[a-z]+$/i.test(n);
+      if (n === cwd || n.startsWith(cwd + "/")) found.push({ path: p, rel: n === cwd ? "." : n.slice(cwd.length + 1), dir });
+      else if (n === open || n.startsWith(open + "/")) found.push({ path: p, rel: n, dir, outside: true });
+    }
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  await ctx.route(/\/files\/list/, route => {
+    const at = new URL(route.request().url()).searchParams.get("path") || "";
+    listed.push(at);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ path: at, root: cwd, parent: "", entries: [] }) });
+  });
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termFolderLink", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await p.waitForTimeout(300);
+    const win = cwd.replace(/\//g, "\\");
+    const rows = [win + " (claude/exploring-mcp-connect)", "wrote " + win + "\\scratch.claude\\survey\\Code.gs ok",
+      "D:\\elsewhere\\place", "D:\\open\\shared\\sub"];
+    await p.evaluate(r => new Promise(res => term.write("\x1b[2J\x1b[H" + r.join("\r\n") + "\r\n", res)), rows);
+    const linksOn = y => p.evaluate(y => new Promise(res => {
+      provideFileLinks(term, termTask.id, y, links => {
+        const row = term.buffer.active.getLine(y - 1).translateToString(false);
+        res((links || []).map(l => row.slice(l.range.start.x - 1, l.range.end.x)));
+      });
+    }), y);
+    const got = [await linksOn(1), await linksOn(2), await linksOn(3), await linksOn(4)];
+    // A folder underlines only its own name, wherever the pointer first meets the path.
+    if (!got[0].includes("claude-exploring-mcp-connect") || got[0].includes(win)) fail("the card's folder on the prompt line was not a link on its own name: " + JSON.stringify(got[0]));
+    for (const d of ["scratch.claude", "survey", win + "\\scratch.claude\\survey\\Code.gs"]) if (!got[1].includes(d)) fail("a name in a file path was not a link, wanted " + d + ": " + JSON.stringify(got[1]));
+    if (got[2].length) fail("a folder outside the allowed places was a link: " + JSON.stringify(got[2]));
+    if (!got[3].includes("sub")) fail("an open_paths folder was not a link: " + JSON.stringify(got[3]));
+
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const clickOpens = async (col, r) => {
+      await p.evaluate(() => { setTermFiles(false); });
+      listed.length = 0;
+      await p.mouse.move(...at(60, 8));
+      await p.mouse.move(...at(col, r), { steps: 3 });
+      await p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) });
+      await p.mouse.click(...at(col, r));
+      await p.waitForFunction(() => !document.getElementById("t-files-panel").hidden, null, { timeout: slow(3000) })
+        .catch(() => fail("clicking at " + col + "," + r + " did not open the folder view"));
+      await until(() => Promise.resolve(listed.length > 0), 3000, "the folder was listed").catch(() => {});
+      return listed.slice();
+    };
+    let l = await clickOpens(win.length - 5, 0);
+    if (l[l.length - 1] !== ".") fail("the prompt line's folder listed " + JSON.stringify(l) + ", want the card's folder");
+    l = await clickOpens(6 + win.length + 18, 1);
+    if (l[l.length - 1] !== "scratch.claude/survey") fail("a folder in a file path listed " + JSON.stringify(l));
     if (errors.length) fail("the page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -12553,6 +12702,9 @@ async function walkBranchSection(browser, base) {
     await p.evaluate(() => walkPrSync());
     await p.waitForFunction(() => walkPrAgentComments().length === 1 && /agent reply/.test(document.getElementById("walk-item").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("walkBranch: the agent's comment and its reply did not reach the bubbles"));
+    mock.walkAgent.add.push({ id: "ag2", file: "one.txt", line: 1, who: "agent", text: "agent wrote this after the walk opened", turns: [], post: null });
+    await p.evaluate(() => walkPrStepComment(1));
+    if (await p.evaluate(() => walkPr.sel) !== "ag2") fail("walkBranch: ] stepped over a comment the agent wrote after the walk opened");
     const forge = await p.evaluate(() => { walkPr.prUrl = "https://github.com/acme/widgets/pull/7"; const f = walkPrForge(); return f && f.kind + " " + f.num; });
     if (forge !== "github 7") fail("walkBranch: the walk's own pull request url gave " + forge);
     await p.close();
@@ -16229,9 +16381,13 @@ async function u001AuditSection(browser, base) {
 // ── the paste spinner: starts on the paste, stops on the room's word ──────
 // A page whose attach socket is a mock that records every frame it is sent, and
 // whether the spinner was up at that moment. `window.__sent` is the record.
-async function pasteMockPage(browser, base, errors, fake) {
+async function pasteMockPage(browser, base, errors, fake, more) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
+  for (const id of more || []) {
+    landCard(id, { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+    mock.landList.push(mock.LAND[id]);
+  }
   mock.landPerms = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -16339,7 +16495,7 @@ async function pasteStartSection(browser, base) {
       const lines = [];
       p.on("console", m => { if (m.text().startsWith("[atrium paste]")) lines.push(m.text()); });
       await p.focus(".xterm-helper-textarea");
-      await p.keyboard.press(process.platform === "darwin" ? "Meta+V" : "Control+V"); // macOS chromium pastes on Cmd+V only
+      await p.keyboard.press("ControlOrMeta+V");
       await p.waitForFunction(() => window.__log.length && window.__log[window.__log.length - 1][1] === true, null, { timeout: slow(8000) });
       const got = await p.evaluate(() => {
         const l = window.__log, shown = l.find(x => x[1] === false), gone = l[l.length - 1];
@@ -16389,24 +16545,21 @@ async function pasteDoneSection(browser, base) {
       out.afterDone = vis();
       termSock.onmessage({ data: "[Pasted text #1 +3 lines]\r\n" });
       await wait(200);
-      out.held = vis();
-      await wait(1100);
       out.pastedText = vis();
       sendPasteText("two");
       await sentIds(2);
       termSock.onmessage({ data: "[Image #2]\r\n" });
-      await wait(1300);
+      await wait(200);
       out.image = vis();
       sendPasteText("hello there");
       await sentIds(3);
       termSock.onmessage({ data: "> hello there\r\n" });
-      await wait(1300);
+      await wait(200);
       out.short = vis();
       answer(out);
     }, null, 20000);
     if (got.afterDone !== true) fail("pasteDone: the room's word alone took the bar down: " + JSON.stringify(got));
-    if (got.held !== true) fail("pasteDone: the bar went down before pasteHoldMs: " + JSON.stringify(got));
-    if (got.pastedText !== false) fail("pasteDone: the runner's [Pasted text] line did not end it: " + JSON.stringify(got));
+    if (got.pastedText !== false) fail("pasteDone: the runner's [Pasted text] line did not end it at once: " + JSON.stringify(got));
     if (got.image !== false) fail("pasteDone: the runner's [Image] line did not end it: " + JSON.stringify(got));
     if (got.short !== false) fail("pasteDone: the short text on the screen did not end it: " + JSON.stringify(got));  } finally {
     await ctx.close();
@@ -16442,7 +16595,7 @@ async function pasteTwiceSection(browser, base) {
       ids.forEach(id => termSock.onmessage({ data: JSON.stringify({ t: "in-done", id }) }));
       await wait(50);
       termSock.onmessage({ data: new TextEncoder().encode("[Pasted text #1 +3 lines]\r\n").buffer });
-      await wait(900);
+      await wait(150);
       out.upBeforeHold = vis();
       await wait(2000);
       out.upAfter = vis();
@@ -16452,7 +16605,7 @@ async function pasteTwiceSection(browser, base) {
       answer(out);
     }, null, 20000);
     if (got.ids !== 3) fail("pasteTwice: three pastes did not all leave: " + JSON.stringify(got));
-    if (!got.upBeforeHold) fail("pasteTwice: the bar went before the pastes' hold: " + JSON.stringify(got));
+    if (!got.upBeforeHold) fail("pasteTwice: the first echo took the bar down with two pastes still waiting:" + JSON.stringify(got));
     if (got.upAfter) fail("pasteTwice: a paste was left holding the bar up: " + JSON.stringify(got));
     if (got.ended.length !== 3) fail("pasteTwice: not every paste cleared on its own: " + JSON.stringify(got));
   } finally {
@@ -16482,6 +16635,165 @@ async function pasteBusyCursorSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("pasteBusyCursor: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+// A right click that reads the clipboard but fails to send what it read is the board's error, not the browser's
+// refusal, so the paste box stays down and the error is said.
+async function pasteRightClickSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    const got = await p.evaluate(async () => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => Promise.resolve("from the clipboard"), read: () => Promise.resolve([]) } });
+      const real = window.sendPasteText;
+      window.sendPasteText = () => { throw new Error("boom"); };
+      document.getElementById("t-screen").dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+      await new Promise(r => setTimeout(r, 50));
+      window.sendPasteText = real;
+      return { box: !document.getElementById("t-paste").hidden, toast: document.getElementById("toasts").textContent };
+    });
+    if (got.box) fail("pasteRightClick: a throw after the clipboard read opened the paste box");
+    if (!/boom/.test(got.toast)) fail("pasteRightClick: the error was not said: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteRightClick: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+// A right click on an image never pops the paste box for a slow read, a slow upload or a read that first comes back
+// empty. Only an unanswered prompt does.
+async function pasteImageSlowSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  const posts = [];
+  let uploadMs = 0;
+  await ctx.route("**/v1/tasks/*/files", async route => {
+    if (route.request().method() === "POST") posts.push(route.request().url());
+    if (uploadMs) await new Promise(r => setTimeout(r, uploadMs));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/x/pasted.png"] }) });
+  });
+  try {
+    const run = how => p.evaluate(async how => {
+      const img = { types: ["image/png"], getType: async () => new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }) };
+      let reads = 0;
+      const asked = how === "prompt" || how === "late read";
+      const read = how === "slow read" || how === "late read" ? () => new Promise(r => setTimeout(() => r([img]), 1800))
+        : how === "empty first" ? async () => (++reads === 1 ? [] : [img])
+        : how === "prompt" ? () => new Promise(() => {})
+        : async () => [img];
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { read, readText: how === "prompt" ? () => new Promise(() => {}) : async () => "" } });
+      Object.defineProperty(navigator, "permissions", { configurable: true,
+        value: { query: async () => ({ state: asked ? "prompt" : "granted" }) } });
+      closePasteBox(); pasteEnd("test");
+      document.getElementById("t-screen").dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+      await new Promise(r => setTimeout(r, 2600));
+      return !document.getElementById("t-paste").hidden;
+    }, how);
+    for (const how of ["slow read", "slow upload", "empty first"]) {
+      posts.length = 0;
+      uploadMs = how === "slow upload" ? 1800 : 0;
+      const box = await run(how);
+      if (box) fail("pasteImageSlow " + how + ": the paste box popped");
+      if (posts.length !== 1) fail("pasteImageSlow " + how + ": " + posts.length + " uploads, want 1");
+    }
+    uploadMs = 0;
+    if (!await run("prompt")) fail("pasteImageSlow: an unanswered prompt did not open the paste box");
+    posts.length = 0;
+    if (!await run("late read")) fail("pasteImageSlow: a read still unanswered at the wait did not open the paste box");
+    if (posts.length) fail("pasteImageSlow: a read that answered after the paste box went up still uploaded " + posts.length);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteImageSlow: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+// An image goes up to the card whose terminal was right clicked, and its path is typed into that terminal only: one
+// switched to while it went up is told, not typed into.
+async function pasteImageSwitchSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors, false, ["land-other"]);
+  const posts = [];
+  await ctx.route("**/v1/tasks/*/files", async route => {
+    if (route.request().method() === "POST") posts.push(new URL(route.request().url()).pathname);
+    if (/land-live/.test(route.request().url())) await new Promise(r => setTimeout(r, 800));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/x/pasted.png"] }) });
+  });
+  try {
+    const got = await p.evaluate(async () => {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const img = { types: ["image/png"], getType: async () => new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }) };
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read: async () => [img], readText: async () => "" } });
+      const click = () => document.getElementById("t-screen").dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+      const out = {};
+      click();
+      await wait(200);
+      attachTask("land-other");
+      for (let i = 0; i < 100 && !(termSock && termSock.readyState === 1 && termTask && termTask.id === "land-other"); i++) await wait(20);
+      window.__sent.length = 0;
+      await wait(1200);
+      out.typedIntoOther = window.__sent.filter(x => x.id).length;
+      out.toast = document.getElementById("toasts").textContent;
+      out.on = termTask && termTask.id;
+      click();
+      for (let i = 0; i < 100 && !window.__sent.some(x => x.id); i++) await wait(20);
+      out.typedAfter = window.__sent.filter(x => x.id).length;
+      return out;
+    });
+    if (got.on !== "land-other") fail("pasteImageSwitch: the switch did not happen: " + JSON.stringify(got));
+    if (posts[0] !== "/v1/tasks/land-live/files") fail("pasteImageSwitch: the first image went to " + posts[0]);
+    if (got.typedIntoOther) fail("pasteImageSwitch: the first card's path was typed into the card switched to: " + JSON.stringify(got));
+    if (!/terminal changed/.test(got.toast)) fail("pasteImageSwitch: the switch was not said: " + JSON.stringify(got));
+    if (posts[1] !== "/v1/tasks/land-other/files") fail("pasteImageSwitch: a paste after the switch went to " + posts[1]);
+    if (got.typedAfter !== 1) fail("pasteImageSwitch: a paste after the switch was not typed: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteImageSwitch: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+// A second paste of the same path joins the first on the input line, wrapped where the runner likes, and its echo
+// still ends the bar.
+async function pasteEchoRepeatSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    const got = await p.evaluate(async () => {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const line = "check out the image here: C:/x/pasted.png";
+      termSock.onmessage({ data: "\r\n> " + line });
+      await wait(100);
+      window.__sent.length = 0;
+      sendInput(line + " ", false, true);
+      for (let i = 0; i < 50 && !window.__sent.some(x => x.id); i++) await wait(20);
+      const up = vis();
+      termSock.onmessage({ data: "\r\x1b[2K> " + line + " check out the image \r\nhere: C:/x/pasted.png" });
+      await wait(300);
+      return { up, after: vis() };
+    });
+    if (!got.up) fail("pasteEchoRepeat: the bar did not come up: " + JSON.stringify(got));
+    if (got.after) fail("pasteEchoRepeat: the echo of a repeated paste did not end the bar: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteEchoRepeat: the page threw: " + errors.join(" | "));
   mock.landList = []; mock.landPerms = [];
   mock.tasksMode = was;
 }
@@ -22005,6 +22317,7 @@ async function repoPasteSection(browser, base) {
       const body = JSON.parse(req.postData() || "{}");
       if (body.prepare) return json(route, 200, { repo: body.repo, cloned: true, checkout: "/scm/" + body.repo });
       if (st.hold) await st.hold;
+      if (st.failNew) return json(route, 400, { error: st.failNew });
       return json(route, 201, { card: "t-r", worktree: "/wt/o/r/claude-work", repo: body.repo, created: true });
     }
     if (p === "/v1/recognise") {
@@ -22060,7 +22373,7 @@ async function repoPasteSection(browser, base) {
       .catch(() => fail("repoPaste: the card stayed after the open"));
     const news = st.calls.filter(c => c.indexOf("POST /v1/new") === 0).map(c => JSON.parse(c.split(" ").slice(2).join(" ")));
     if (news.length !== 1 || news[0].prepare || !/^claude\/work-\d{6}-\d{4}$/.test(news[0].name) ||
-        news[0].title !== "openziti-test-kitchen/ziti-tv" || news[0].repo !== "github.com/openziti-test-kitchen/ziti-tv" || !news[0].progress)
+        news[0].title !== "openziti-test-kitchen/ziti-tv" || !news[0].harness || news[0].repo !== "github.com/openziti-test-kitchen/ziti-tv" || !news[0].progress)
       fail("repoPaste: a held repo opened as " + JSON.stringify(news));
     if (st.calls.some(c => c.indexOf("_hub/git/init") >= 0)) fail("repoPaste: a held repo asked the hub to fetch it");
 
@@ -22084,6 +22397,36 @@ async function repoPasteSection(browser, base) {
       /^claude\/work-\d{6}-\d{4}$/.test(document.getElementById("l-nw-name").value), null, { timeout: slow(5000) })
       .catch(() => fail("repoPaste: shift-enter did not open start new work with a name"));
     if (await p.inputValue("#l-nw-repo") !== "github.com/openziti-test-kitchen/ziti-tv") fail("repoPaste: shift-enter did not pick the repo");
+
+    // EDIT ON A FAILED REPO CARD: the switcher's name step again, its name, its last error, the card it makes, a runner
+    st.has = true; st.calls = []; st.failNew = "the card did not start: unknown harness \"\"";
+    await row(urls[0]);
+    await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    await p.fill("#sw-nm", "edit-again");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(".card.linkopen [data-op-act=edit]", { timeout: slow(5000) })
+      .catch(() => fail("repoPaste: a failed repo open left no card with edit"));
+    st.failNew = null;
+    await p.click(".card.linkopen [data-op-act=edit]");
+    await p.waitForFunction(() => document.getElementById("switcher").open && !document.getElementById("sw-name").hidden,
+      null, { timeout: slow(5000) }).catch(() => fail("repoPaste: edit did not open the name step"));
+    const ed = await p.evaluate(() => ({ name: document.getElementById("sw-nm").value, how: !!document.querySelector("#sw-how:not([hidden])"),
+      last: (document.querySelector("#sw-list .swlast") || {}).textContent || "", card: !!document.querySelector("#sw-preview .card"),
+      sum: document.getElementById("sw-sum").textContent, launch: document.getElementById("launch").open }));
+    if (ed.name !== "edit-again" || !ed.how || !/unknown harness/.test(ed.last) || !ed.card || !ed.sum || ed.launch)
+      fail("repoPaste: edit on a failed card showed " + JSON.stringify(ed));
+    await p.click("#sw-change");
+    await shot(p, "switcher-repo-edit");
+    if (!await p.isVisible("#sw-pick #sw-runner")) fail("repoPaste: change did not show the runner");
+    st.calls = [];
+    await p.focus("#sw-nm");
+    await p.keyboard.press("Enter");
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) })
+      .catch(() => fail("repoPaste: the edited open did not finish"));
+    const again = st.calls.filter(c => c.indexOf("POST /v1/new") === 0).map(c => JSON.parse(c.split(" ").slice(2).join(" ")));
+    if (again.length !== 1 || again[0].name !== "claude/edit-again" || !again[0].harness)
+      fail("repoPaste: the edited open sent " + JSON.stringify(again));
     if (errors.length) fail("repoPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("repoPaste ok");
@@ -26603,6 +26946,65 @@ async function pinNowSection(browser, base) {
   } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
+// ── a path's probe answer outlives switching to another card and back ──
+// A room with many cards answers a probe in seconds, so asking again on every switch back left a path plain that long.
+async function keptFileLinkSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  let probes = 0;
+  await ctx.route("**/files/probe", route => {
+    probes++;
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => /\.md$/.test(p)).map(p => ({ path: p, rel: p.replace(/\\/g, "/"), size: 1, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
+  const was = mock.tasksMode;
+  const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false, worktree: "/tmp/kl/" + id });
+  try {
+    mock.wornTasks = [live("kl-a"), live("kl-b")];
+    mock.tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { localStorage.setItem("atrium.termKeep", "8"); await loadCards().catch(() => {}).then(renderTermList); });
+    const attach = async id => {
+      await wp.evaluate(i => attachTask(i), id);
+      await wp.waitForFunction(i => termTask && termTask.id === i && termSock && termSock.readyState === 1 && term && term.element &&
+        term.element.offsetWidth > 0, id, { timeout: slow(5000), polling: 20 });
+    };
+    const links = () => wp.evaluate(() => new Promise(res => term.write("\x1b[2J\x1b[Hsee docs/survey/form-preview.md now\r\n",
+      () => provideFileLinks(term, termTask.id, 1, l => res((l || []).map(x => x.text))))));
+    await attach("kl-a");
+    if (JSON.stringify(await links()) !== '["docs/survey/form-preview.md"]') fail("keptFileLink: the path was not a link on the first attach");
+    await attach("kl-b");
+    await links();
+    await attach("kl-a");
+    const asked = probes;
+    const back = await links();
+    if (JSON.stringify(back) !== '["docs/survey/form-preview.md"]') fail("keptFileLink: the path was not a link after switching back: " + JSON.stringify(back));
+    if (probes !== asked) fail("keptFileLink: switching back asked the room again for a row it had answered (" + (probes - asked) + " probes)");
+    if (errors.length) fail("keptFileLink: the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 async function keepAliveSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const wp = await ctx.newPage();
@@ -27675,7 +28077,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -27717,7 +28119,7 @@ async function main() {
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, keptFileLink: keptFileLinkSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -29699,6 +30101,10 @@ async function main() {
     await unit("pasteOldRoom", () => pasteOldRoomSection(browser, base));
     await unit("pasteTwice", () => pasteTwiceSection(browser, base));
     await unit("pasteBusyCursor", () => pasteBusyCursorSection(browser, base));
+    await unit("pasteRightClick", () => pasteRightClickSection(browser, base));
+    await unit("pasteImageSlow", () => pasteImageSlowSection(browser, base));
+    await unit("pasteImageSwitch", () => pasteImageSwitchSection(browser, base));
+    await unit("pasteEchoRepeat", () => pasteEchoRepeatSection(browser, base));
     await unit("pasteClose", () => pasteCloseSection(browser, base));
     await unit("growlQuestionBody", () => growlQuestionBodySection(browser, base));
     await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));
@@ -29762,9 +30168,11 @@ async function main() {
     await unit("fileMenuHTML", () => fileMenuHTMLSection(browser, base));
     await unit("htmlTab", () => htmlTabSection(browser, base));
     await unit("markdownTab", () => markdownTabSection(browser, base));
+    await unit("readerRaw", () => readerRawSection(browser, base));
     await unit("docShare", () => docShareSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
     await unit("fileLinksView", () => fileLinksViewSection(browser, base));
+    await unit("termFolderLink", () => termFolderLinkSection(browser, base));
     await unit("termProbeStorm", () => termProbeStormSection(browser, base));
     await unit("termFitHeight", () => termFitHeightSection(browser, base));
     await unit("roomsSetup", bu("roomsSetup"));
@@ -29959,6 +30367,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("fileLinkDrawer", () => fileLinkDrawerSection(browser, base));
     await unit("draftReload", () => draftReloadSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
+    await unit("keptFileLink", () => keptFileLinkSection(browser, base));
     await unit("pinNow", () => pinNowSection(browser, base));
     await unit("pullsDrawer", bu("pullsDrawer"));
     await unit("switchBackCost", () => switchBackCostSection(browser, base));
