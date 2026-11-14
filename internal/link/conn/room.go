@@ -74,6 +74,9 @@ type Room struct {
 	// RemoteDir is the room's key directory, where remote_access.json and its log live. Empty means remote access is
 	// off and nothing is recorded. See stream.go.
 	RemoteDir string
+	// PreviewPort says whether the hub may forward a browser to 127.0.0.1:port here. Nil refuses every port. See
+	// preview.go.
+	PreviewPort func(port int) error
 
 	// smu guards streams, the ssh streams this room is carrying, and accessPoke wakes the switch watcher when one
 	// opens or closes. wmu serialises writes on the control connection, which the beat and the watcher share.

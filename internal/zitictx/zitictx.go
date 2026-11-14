@@ -100,6 +100,9 @@ func keyOf(identity string) string {
 func New(who, key string, cfg *ziti.Config) (ziti.Context, error) {
 	c, err := build(who, key, cfg)
 	if err != nil {
+		if errors.Is(err, ErrDuplicate) {
+			log.Printf("[ziti] BUG: refusing a second context (%s) for %s", who, key)
+		}
 		return nil, err
 	}
 	return c, nil
@@ -109,7 +112,6 @@ func build(who, key string, cfg *ziti.Config) (*counted, error) {
 	mu.Lock()
 	if _, ok := open[key]; ok {
 		mu.Unlock()
-		log.Printf("[ziti] BUG: refusing a second context (%s) for %s", who, key)
 		return nil, ErrDuplicate
 	}
 	mk := newContext
@@ -123,7 +125,6 @@ func build(who, key string, cfg *ziti.Config) (*counted, error) {
 	if _, ok := open[key]; ok {
 		mu.Unlock()
 		c.Close()
-		log.Printf("[ziti] BUG: refusing a second context (%s) for %s", who, key)
 		return nil, ErrDuplicate
 	}
 	open[key] = cc

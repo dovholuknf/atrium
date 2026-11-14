@@ -165,6 +165,26 @@ The board binds loopback and has no login. `atrium run --board-transport zrok|zi
 `--board-share private` (the default) needs zrok on the other end, and `public` gives a URL and is refused without a
 share login set. `docs/fabric/overlays.md` has the reasoning.
 
+## A room's loopback port
+
+`/<room>/preview/<port>/` on the hub's board is `127.0.0.1:<port>/` on that room, so a card's docs site or mock board
+opens from the board machine as `http://127.0.0.1:7778/m1mini/preview/20801/` instead of `http://m1mini:20801/`. It
+rides the room link: the hub asks the room for `/_link/preview/<port>/...`, a route served on the link only, and the
+room dials its own 127.0.0.1 and nothing else.
+
+- Same auth as the board, because it is the board's handler. A path with no slash after the port is sent to the slash.
+- Only a port in the room's card range (`ports.card_range`, the ports `atrium_port` hands out) or the previews'
+  50000-50999. Atrium's own listeners trust loopback, so they are never a target, and every forwarded request carries
+  `X-Forwarded-For` besides.
+- Prefix aware: a `Location`, and root-relative `href`, `src`, `action`, `poster`, `formaction` and `url()` in HTML and
+  CSS gain the prefix. Script is not rewritten, so a single-page app that builds absolute paths in code wants its base
+  set to the prefix, which `X-Forwarded-Prefix` names. Websockets pass through.
+- Sandboxed: every answer carries `Content-Security-Policy: sandbox` without `allow-same-origin`, so a preview's script
+  runs in an opaque origin and cannot drive the board it shares an origin with. Its cookies and `Clear-Site-Data` are
+  dropped, and the board's cookies and `Authorization` are not sent to it. The cost: a preview cannot use storage or
+  cookies, its own `fetch`, module scripts and websockets from the page count as cross origin, and the board's edge
+  refuses its form posts.
+
 ## Upgrades
 
 A hub started with `--builds <dir>` offers rooms a binary per platform, named `atrium_<os>_<arch>`. A room started with

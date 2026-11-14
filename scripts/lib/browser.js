@@ -65,6 +65,9 @@ const CLOCK_INIT = "(" + installClock.toString() + ")(" + CLOCK_OFFSET + ");";
 // script of every context, ahead of any a section adds. browser.newPage() makes
 // its own context, so it goes through the same door.
 function retryGoto(page) {
+  const on = page.on.bind(page);
+  // A goto that failed lands on chrome-error://, where an init script reading localStorage throws before the retry.
+  page.on = (ev, fn) => on(ev, ev !== "pageerror" ? fn : e => { if (!page.url().startsWith("chrome-error:")) fn(e); });
   const goto = page.goto.bind(page);
   page.goto = async (url, o) => {
     for (let n = 1; ; n++) {

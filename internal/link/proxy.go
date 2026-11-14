@@ -550,6 +550,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if v != nil {
 		r = r.WithContext(context.WithValue(r.Context(), viewKey{}, v))
 	}
+	// A ROOM'S LOOPBACK PORT, at /<room>/preview/<port>/. See preview.go.
+	if p.servePreview(w, r) {
+		return
+	}
 	// THE CONTROL MCP SERVER, ahead of the rest of the hub API because it sets
 	// its own content type and streams: serveHubAPI marks everything JSON, which
 	// is wrong for this. Loopback only, and refused otherwise. See serveControl.

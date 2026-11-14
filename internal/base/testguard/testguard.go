@@ -34,6 +34,8 @@ func Scrub() string {
 			_ = os.Unsetenv(kv[:i])
 		}
 	}
+	// A room's WORKTREE_ROOT holds the test temp folder, which would make every "outside the card" path an atrium path.
+	_ = os.Unsetenv("WORKTREE_ROOT")
 	keepGoCaches()
 	dir, err := os.MkdirTemp("", "atrium-testguard-")
 	if err != nil {

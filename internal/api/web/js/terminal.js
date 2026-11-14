@@ -1788,6 +1788,15 @@ function wireTerminalPaste(screen) {
     }
     e.preventDefault();
     e.stopPropagation();
+    // The link is drawn on a canvas, so the browser's menu has no "open link" for it: ours offers the two it would.
+    if (termHoverURL && typeof showMenu === "function") {
+      const url = termHoverURL;
+      showMenu(e, [
+        { label: "Open in new tab", act: () => openTermURL({ preventDefault() {} }, url) },
+        { label: "Copy link", act: () => { if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {}); } },
+      ]);
+      return;
+    }
     // A LONG PRESS ON A PHONE IS NOT A RIGHT CLICK. Android fires `contextmenu` on one, and pasting the
     // clipboard on a press that meant to select or scroll is the bug. The menu stays suppressed and nothing
     // is pasted; paste on a phone is the paste box and the attach button.

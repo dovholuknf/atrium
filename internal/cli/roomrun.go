@@ -493,6 +493,8 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	d.SetHubLink(func() any { return room.State() })
 	// SSH STREAMS: this room's switch lives beside its certificate, and the link carries the streams. See internal/link/stream.go.
 	room.RemoteDir = keys.Dir
+	// PORT PREVIEWS: the hub forwards a browser to one of this room's card ports. See internal/link/conn/preview.go.
+	room.PreviewPort = d.PreviewPort
 	d.SetStreamer(room)
 	d.SetHubDialer(climbing{dial})
 	d.SetSSHWizard(sshWizardHandler(keys.Dir, dial))

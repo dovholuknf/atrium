@@ -1017,9 +1017,12 @@ function ucCumHover(stage, x) {
   if (a.before || !isFinite(y)) { dot.hidden = true; tag.hidden = true; return; }
   dot.hidden = false; tag.hidden = false;
   dot.style.left = hov.style.left; dot.style.top = y.toFixed(1) + "px";
-  tag.textContent = c.lim ? `${ucPctNum(a.pct)}% · ${ucNum(a.tok)}` : `${ucNum(a.tok)} tokens`;
+  const d = new Date(a.t), pad = n => String(n).padStart(2, "0");
+  const when = `${d.toLocaleDateString([], { weekday: "short" })} ${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  tag.textContent = [when, c.lim ? `${ucPctNum(a.pct)}% · ${ucNum(a.tok)}` : `${ucNum(a.tok)} tokens`, `${ucNum(a.rate)}/h`, a.proj ? "projected" : ""].filter(Boolean).join(" · ");
   tag.style.left = hov.style.left; tag.style.top = Math.max(0, y - 30).toFixed(1) + "px";
-  tag.classList.toggle("flip", f > 0.6);
+  const px = f * r.width, w = tag.offsetWidth + 10;
+  tag.classList.toggle("flip", px + w > r.width && px - w >= 0 || px + w > r.width && px > r.width - px);
 }
 
 // Pointer events, so a mouse and a finger do the same. The stage is touch-action: pan-y, so a vertical swipe is
