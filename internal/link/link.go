@@ -122,6 +122,7 @@ const (
 	RelayFind          = conn.RelayFind
 	RelayLaunch        = conn.RelayLaunch
 	RelayHub           = conn.RelayHub
+	RelayHand          = conn.RelayHand
 	RoomSpecRoomHeader = conn.RoomSpecRoomHeader
 	StreamUpgrade      = conn.StreamUpgrade
 	MaxStreams         = conn.MaxStreams

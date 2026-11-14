@@ -36,6 +36,9 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 	fail := func(err error) {
 		log.Printf("[atrium] hub remote for %s not scoped: %s", cwd, small.FirstLine(err.Error()))
 	}
+	if top, err := g.Git(ctx, cwd, gitexec.RevParseShowToplevel{}); err != nil || !sameTop(strings.TrimSpace(top), cwd) {
+		return // a plain dir inside another checkout must never rewrite that checkout's config
+	}
 	have, err := g.Git(ctx, cwd, gitexec.ConfigGet{Key: "remote.hub.url"})
 	have = strings.TrimSpace(have)
 	if err != nil || have == "" {
@@ -101,6 +104,16 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 	if _, err := g.Git(ctx, cwd, gitexec.ConfigSet{Key: "remote.hub.url", Value: want, Worktree: true}); err != nil {
 		fail(err)
 	}
+}
+
+func sameTop(a, b string) bool {
+	if ra, err := filepath.EvalSymlinks(a); err == nil {
+		a = ra
+	}
+	if rb, err := filepath.EvalSymlinks(b); err == nil {
+		b = rb
+	}
+	return sameDir(a, b)
 }
 
 func sameDir(a, b string) bool {

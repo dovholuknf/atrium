@@ -89,6 +89,16 @@ func (l linkRelay) Hub(ctx context.Context, from, method, path string, body json
 		Unconfirmed: ans.Unconfirmed, Data: ans.Data}, nil
 }
 
+// Hand makes linkRelay a hublink.HandAsker: one hook of a session started by hand, carried to the room holding its card.
+func (l linkRelay) Hand(ctx context.Context, room, card, path string, body json.RawMessage) (daemon.RelayResult, error) {
+	ans, err := l.room.Relay(ctx, wire.RelayRequest{Op: conn.RelayHand, Room: room, To: card, Path: path, Body: body})
+	if err != nil {
+		return daemon.RelayResult{}, relayErr(err)
+	}
+	return daemon.RelayResult{OK: ans.OK, Code: ans.Code, Error: ans.Error, Unreachable: ans.Unreachable,
+		Unconfirmed: ans.Unconfirmed, Data: ans.Data}, nil
+}
+
 // reach relays one card or exit request, and carries the card back.
 func (l linkRelay) reach(ctx context.Context, req wire.RelayRequest) (daemon.RelayResult, error) {
 	ans, err := l.room.Relay(ctx, req)

@@ -483,10 +483,16 @@ func reportActivity(hubURL, event, name string) string {
 		return ""
 	}
 
+	roomSource := ""
+	if _, src := hubAddressFrom(hubURL); src == hubSourceDaemon {
+		roomSource = "daemon.json"
+	}
 	body, err := json.Marshal(map[string]any{
 		"agent":   agent,
 		"task_id": os.Getenv("ATRIUM_TASK_ID"),
 		"pid":     runnerPID(),
+		// "daemon.json" when no env or flag named the room and the address was read from the machine's file.
+		"room_source": roomSource,
 		// "dir" when the name was made up from the directory. Absent otherwise.
 		"name_source": nameSource,
 		"event":       kind,

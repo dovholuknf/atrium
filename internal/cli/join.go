@@ -115,8 +115,10 @@ func hubAddress(override string) string {
 	return addr
 }
 
+const hubSourceDaemon = "a running daemon"
+
 // hubAddressFrom also says where the answer came from, for a caller reporting
-// itself to a human. Nothing on the hot path reads the second value.
+// itself to a human. Only the activity hook reads the second value.
 func hubAddressFrom(override string) (addr, source string) {
 	if override != "" {
 		return strings.TrimRight(override, "/"), "the --url flag"
@@ -125,7 +127,7 @@ func hubAddressFrom(override string) (addr, source string) {
 		return strings.TrimRight(v, "/"), "$ATRIUM_HUB_URL"
 	}
 	if v := recordedAgentAddr(); v != "" {
-		return v, "a running daemon"
+		return v, hubSourceDaemon
 	}
 	return "http://127.0.0.1:7777", "the default, since no daemon has recorded one"
 }

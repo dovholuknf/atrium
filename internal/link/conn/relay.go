@@ -58,6 +58,9 @@ const (
 	// RelayHub asks the hub's own backlog or reports endpoint, for a room's atrium_backlog and
 	// atrium_reports. The hub answers it itself, with no other room in it. See hubask.go.
 	RelayHub = "hub"
+	// RelayHand carries a hook of a session started by hand to the card another room holds for its conversation. With
+	// no room it finds that room. See hand.go in internal/link.
+	RelayHand = "hand"
 )
 
 // What the wire package declares and the hub answers with.

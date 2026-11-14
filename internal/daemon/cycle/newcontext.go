@@ -593,12 +593,12 @@ func (n *NewContexts) Clear(taskID string) bool {
 	n.Mu.Lock()
 	cur, had := n.By[taskID]
 	delete(n.By, taskID)
-	if had && cur.Prompted > 0 {
+	if had && (cur.Prompted > 0 || cur.Acked) {
 		if n.Dropped == nil {
 			n.Dropped = map[string]ncDropped{}
 		}
 		n.Dropped[taskID] = ncDropped{conv: cur.Conv, file: cur.File, auto: cur.Auto, tokens: cur.Tokens, limit: cur.Limit,
-			prompted: cur.Prompted, at: time.Now()}
+			prompted: cur.Prompted, acked: cur.Acked, cleared: cur.Cleared, at: time.Now()}
 	}
 	n.Mu.Unlock()
 	n.Save()
@@ -610,11 +610,11 @@ const droppedHold = 10 * time.Minute
 
 // ncDropped is a run that was cleared after it asked.
 type ncDropped struct {
-	conv, file    string
-	tokens, limit int64
-	prompted      int
-	auto          bool
-	at            time.Time
+	conv, file           string
+	tokens, limit        int64
+	prompted             int
+	auto, acked, cleared bool
+	at                   time.Time
 }
 
 // DroppedHolds is whether the card's cleared run still holds the trigger off: same conversation, under droppedHold.
@@ -630,6 +630,27 @@ func (n *NewContexts) DropMarker(taskID string) {
 	n.Mu.Lock()
 	delete(n.Dropped, taskID)
 	n.Mu.Unlock()
+}
+
+// ResumeAcked puts a cleared run that was past the ack back at the clear, in the conversation it began in, so the
+// handoff already written is used and no second one is asked for.
+func (n *NewContexts) ResumeAcked(taskID, conv string) (uint64, bool) {
+	n.Mu.Lock()
+	m, ok := n.Dropped[taskID]
+	n.Mu.Unlock()
+	if !ok || !m.acked || m.conv != conv {
+		return 0, false
+	}
+	step := NewContextClear
+	if m.cleared {
+		step = NewContextWake
+	}
+	gen, ok := n.Claim(taskID, &NewContext{Step: step, File: m.file, Conv: m.conv, Auto: m.auto, Tokens: m.tokens,
+		Limit: m.limit, Prompted: m.prompted, Acked: true, Cleared: m.cleared})
+	if ok {
+		n.DropMarker(taskID)
+	}
+	return gen, ok
 }
 
 // Revive puts a cleared auto run back, for an `atrium ready` that arrives after the clear.
@@ -1220,14 +1241,18 @@ func (d *Service) AtIdlePrompt(taskID string) bool {
 }
 
 // ncArm arms gen's run if the operator's line gate is open now, and reports whether it is armed. Judged under the
-// input lock, so an operator key already written has closed the gate first.
+// input lock, so an operator key already written has closed the gate first. Text nobody has typed into for five
+// minutes is cleared first. See clearStaleLine.
 func (d *Service) NcArm(taskID string, gen uint64) bool {
 	run := d.Sup.Get(taskID)
 	if run == nil {
 		return false
 	}
 	armed, changed := false, false
-	run.WhileGateOpen(func() { armed, changed = d.Nctx.Arm(taskID, gen) })
+	arm := func() { armed, changed = d.Nctx.Arm(taskID, gen) }
+	if !run.WhileGateOpen(arm) && d.ClearStaleLine != nil && d.ClearStaleLine(taskID) {
+		run.WhileGateOpen(arm)
+	}
 	if changed {
 		log.Printf("[atrium] new context on %s: the input line is clear, holding input", taskID)
 		d.Publish(taskID)

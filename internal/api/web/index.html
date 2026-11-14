@@ -409,6 +409,8 @@ Exports honor whatever filter is applied.">?</span>
     <div id="fd-terms"></div>
     <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
     <div class="term-limits" id="term-limits" hidden></div>
+    <!-- Every card held on a permission, on any room. Its panel floats over the terminal. See `renderHeldStrip`. -->
+    <div class="held-strip" id="held-strip" hidden></div>
     <div class="term-layout" id="term-layout">
       <!-- The way back when the list is hidden. Before the list in the DOM so
            hovering it can reveal the list with a sibling selector, which keeps

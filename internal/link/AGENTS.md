@@ -99,6 +99,7 @@ against and the operator chose on purpose.
 | `control_mcp.go` / `ctlclass.go` / `ctlaudit.go` | the control MCP served by the hub, who sees which tools, the audit line |
 | `ctl_end.go` / `control_alias.go` / `*_mcp.go` | individual control tools. `*_door.go` is one code shared with the stdio server |
 | `conn/relay.go` / `control_relay*.go` / `hubask.go` | a room asking the hub to carry a message, a launch or a backlog call |
+| `hand.go` | the `hand` relay: finding the room that holds a hand-started session's conversation, and carrying its hooks there |
 | `address.go` / `resolve.go` | how a name is split and turned into a card |
 | `launchroute.go` / `launchcaps.go` / `openroute.go` | placing an unscoped launch or open, and the per-room cap |
 | `prclaim.go` / `prmove.go` / `prworktreeroute.go` / `pulls.go` | one owning room per PR, moving it, the pulls view |

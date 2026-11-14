@@ -157,6 +157,61 @@ func (d *Daemon) reopenSaved() {
 	log.Printf("[atrium] reopened %d of %d terminal(s)", reopened, len(wanted))
 }
 
+// reopenLostFresh is how recently a card must have been active for its unfiled run to be taken as lost with a pty
+// host, so a run row an old build left behind never brings a long-finished card back.
+const reopenLostFresh = 24 * time.Hour
+
+// reopenLostRuns brings back cards whose runner died with its pty host or room, which no wind-down wrote down: a run
+// start whose exit nobody filed. It runs after reopenSaved, so a card that list already started is skipped, and it
+// files every old start it passes so the next restart does not find it again.
+func (d *Daemon) reopenLostRuns() {
+	runs, err := d.st.UnfiledRunnerRuns()
+	if err != nil {
+		log.Printf("[atrium] could not read the unfiled runs: %v", err)
+		return
+	}
+	var wanted []*store.Task
+	seen := map[string]bool{}
+	for _, r := range runs {
+		if seen[r.TaskID] || d.sup.get(r.TaskID) != nil {
+			continue
+		}
+		seen[r.TaskID] = true
+		t := d.reopenCandidate(r.TaskID)
+		if t == nil || t.ArchivedAt != nil || time.Since(t.LastActivityAt) > reopenLostFresh {
+			continue
+		}
+		switch t.Status {
+		case store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission, store.StatusDead:
+			wanted = append(wanted, t)
+		}
+	}
+	if len(wanted) > 0 {
+		ids := make([]string, 0, len(wanted))
+		for _, t := range wanted {
+			ids = append(ids, t.ID)
+		}
+		d.settle.expect(ids)
+		log.Printf("[atrium] resuming %d card(s) whose runner died with its terminal host", len(wanted))
+		reopenEach(wanted, func(t *store.Task) error {
+			_, err := d.Launch(d.reopenRequest(t))
+			d.settle.arrived(t.ID)
+			if err != nil {
+				log.Printf("[atrium] could not resume %s: %v", t.ID, err)
+			}
+			return err
+		})
+	}
+	for _, r := range runs {
+		if cur := d.sup.get(r.TaskID); cur != nil && cur.runID == r.RunID {
+			continue
+		}
+		if _, err := d.st.FileExit(store.ExitFiling{TaskID: r.TaskID, RunID: r.RunID}); err != nil {
+			log.Printf("[atrium] could not file the lost run %s: %v", r.RunID, err)
+		}
+	}
+}
+
 // reopenEach runs start over every card with at most reopenWorkers in flight, in list order, and returns how many
 // succeeded.
 func reopenEach(wanted []*store.Task, start func(*store.Task) error) int {
@@ -195,48 +250,55 @@ func (d *Daemon) reopenWanted() []*store.Task {
 
 	var wanted []*store.Task
 	for _, id := range cards {
-		if d.sup.Get(id) != nil {
-			// A fixture already brought this one up, or a runner reconnected.
-			continue
+		if t := d.reopenCandidate(id); t != nil {
+			wanted = append(wanted, t)
 		}
-		t, err := d.st.Get(id)
-		if err != nil || t.ArchivedAt != nil {
-			// The card was pruned or archived while the daemon was down. Not
-			// worth a warning: the work is gone, which is an answer.
-			continue
-		}
-		if t.Runner == "" {
-			log.Printf("[atrium] not reopening %s: nothing records which runner it used", id)
-			continue
-		}
-		if t.Worktree == "" {
-			log.Printf("[atrium] not reopening %s: no directory recorded", id)
-			continue
-		}
-		// A card somebody put down is a standing no, and reopening it would
-		// undo that by way of a restart. Shelving already refuses on the
-		// agent's behalf in the permission chain, so a reopened runner would
-		// sit blocked behind a card nobody is looking at.
-		if t.Status == store.StatusPaused {
-			continue
-		}
-		// AN ASKED EXIT IS KEPT. Not `done`: a wind-down ends every session and
-		// each lands in `done`, which is what this list exists to bring back.
-		if asked, err := d.st.ExitAsked(t.ID); err == nil && asked {
-			continue
-		}
-		// Parked is put down the same way: it wakes when something asks it to.
-		if small.IsParked(t) {
-			continue
-		}
-		// Do not reopen throwaways. Their directories may be gone or awaiting
-		// startup cleanup, so directory existence alone does not make reopening safe.
-		if t.Throwaway {
-			continue
-		}
-		wanted = append(wanted, t)
 	}
 	return wanted
+}
+
+// reopenCandidate is the card under id when it is one to start again, or nil.
+func (d *Daemon) reopenCandidate(id string) *store.Task {
+	if d.sup.Get(id) != nil {
+		// A fixture already brought this one up, or a runner reconnected.
+		return nil
+	}
+	t, err := d.st.Get(id)
+	if err != nil || t.ArchivedAt != nil {
+		// The card was pruned or archived while the daemon was down. Not
+		// worth a warning: the work is gone, which is an answer.
+		return nil
+	}
+	if t.Runner == "" {
+		log.Printf("[atrium] not reopening %s: nothing records which runner it used", id)
+		return nil
+	}
+	if t.Worktree == "" {
+		log.Printf("[atrium] not reopening %s: no directory recorded", id)
+		return nil
+	}
+	// A card somebody put down is a standing no, and reopening it would
+	// undo that by way of a restart. Shelving already refuses on the
+	// agent's behalf in the permission chain, so a reopened runner would
+	// sit blocked behind a card nobody is looking at.
+	if t.Status == store.StatusPaused {
+		return nil
+	}
+	// AN ASKED EXIT IS KEPT. Not `done`: a wind-down ends every session and
+	// each lands in `done`, which is what this list exists to bring back.
+	if asked, err := d.st.ExitAsked(t.ID); err == nil && asked {
+		return nil
+	}
+	// Parked is put down the same way: it wakes when something asks it to.
+	if small.IsParked(t) {
+		return nil
+	}
+	// Do not reopen throwaways. Their directories may be gone or awaiting
+	// startup cleanup, so directory existence alone does not make reopening safe.
+	if t.Throwaway {
+		return nil
+	}
+	return t
 }
 
 // reopenResume is the conversation to pick back up, checked before it is used.

@@ -94,6 +94,34 @@ func (s *Store) Run(runID string) (*PtyRun, error) {
 	return &r, nil
 }
 
+// UnfiledRunnerRuns is every runner start whose exit was never filed, oldest first.
+func (s *Store) UnfiledRunnerRuns() ([]PtyRun, error) {
+	var out []PtyRun
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(
+			`SELECT run_id, task_id, kind, host, started_at FROM pty_run
+			 WHERE filed_at = '' AND kind = ? ORDER BY started_at`, RunKindRunner)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r PtyRun
+			var started string
+			if err := rows.Scan(&r.RunID, &r.TaskID, &r.Kind, &r.Host, &started); err != nil {
+				return err
+			}
+			if t, perr := time.Parse(time.RFC3339Nano, started); perr == nil {
+				r.Started = t
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // PtyRunKeep is how long a filed run row stays. An exit is filed once and a row only exists to say so, so a
 // filed row older than any host still holding that run is dead weight.
 const PtyRunKeep = 7 * 24 * time.Hour
