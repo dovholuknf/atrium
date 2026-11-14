@@ -111,6 +111,29 @@ function downloadMain(id, path) {
   a.hidden = false;
 }
 
+// The view route serves text as text/plain, inline and sandboxed, behind the same containment as Download.
+function rawTab(id, path) {
+  const a = document.getElementById("raw");
+  a.href = viewURL(id, path);
+  a.hidden = false;
+}
+
+// Ctrl-A selects the file shown, not the bar above it.
+function selectBody(e) {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || String(e.key).toLowerCase() !== "a") return;
+  if (e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+  const body = ["text", "md"].map(i => document.getElementById(i)).find(el => el && !el.hidden);
+  if (!body) return;
+  e.preventDefault();
+  const r = document.createRange();
+  r.selectNodeContents(body);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+if (typeof addEventListener === "function") addEventListener("keydown", selectBody);
+
 function rawMain(body) {
   const text = document.getElementById("text");
   const md = document.getElementById("md");
@@ -121,7 +144,7 @@ function rawMain(body) {
     text.textContent = raw ? body : "";
     text.hidden = !raw;
     md.hidden = raw;
-    btn.textContent = raw ? "Rendered" : "Raw";
+    btn.textContent = raw ? "Rendered" : "Source";
   };
 }
 
@@ -335,6 +358,7 @@ function readMain() {
     })
     .then(({ body, binary: size }) => {
       if (size !== undefined) { binary(size); return; }
+      if (!SHARE) rawTab(id, path);
       if (cutNote) {
         const cut = document.getElementById("cut");
         cut.textContent = "The first " + readSize(READ_CAP) + " of " + readSize(cutNote) + ". ";

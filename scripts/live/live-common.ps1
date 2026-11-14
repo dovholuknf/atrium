@@ -701,12 +701,13 @@ function Stop-Hub {
   }
 }
 
-# Backup keeps the previous run's log, since a redirect overwrites it. -Keep prunes to the newest that many copies.
+# Backup moves the previous run's log aside, so the next one starts empty and no copy repeats the history. -Keep prunes
+# to the newest that many rotations.
 function Backup([string]$Name, [string]$Dir = $Base, [int]$Keep = 0) {
   $p = Join-Path $Dir $Name
   if (Test-Path $p) {
-    Invoke-Step "keep $p as $Name.<timestamp>" {
-      Copy-Item $p (Join-Path $Dir "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+    Invoke-Step "move $p to $Name.<timestamp>" {
+      Move-Item $p (Join-Path $Dir "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
       if ($Keep -gt 0) {
         Get-ChildItem $Dir -Filter "$Name.*" | Sort-Object LastWriteTime -Descending | Select-Object -Skip $Keep |
           ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
@@ -799,10 +800,58 @@ function Test-ProcessInJob([int]$ProcId) {
   } finally { [AtriumLive.Spawn]::CloseHandle($h) | Out-Null }
 }
 
-# Get-StartRoute picks how a detached process is started. A caller already inside a job goes straight to WMI, the one
-# start that is in no job of ours: CreateProcess with breakaway only escapes the innermost job. Outside any job the
-# cheaper breakaway start is enough.
-function Get-StartRoute($InJob) { if ($InJob -or $null -eq $InJob) { 'wmi' } else { 'breakaway' } }
+# Get-StartRoute picks how a detached process is started. A caller already inside a job starts it through the task
+# scheduler, then WMI: CreateProcess with breakaway only escapes the innermost job, and on 2026-11-09 a start from a
+# card on sg4 still landed in that card's job, so the deployed sg4-control died with it. Outside any job the cheaper
+# breakaway start is enough.
+function Get-StartRoute($InJob) { if ($InJob -or $null -eq $InJob) { 'task' } else { 'breakaway' } }
+
+# Start-Task runs the launch script once, now, as the scheduled task atrium-live-<Tag>: this user, no trigger (never at
+# boot, logon or on a repeat, which rooms must not have), no time limit, and a headless console so no window opens. The
+# task is deleted once its run has begun, which leaves the run going. The process belongs to the scheduler and never to
+# the shell that ran this. schtasks, not the ScheduledTasks cmdlets, which go through CIM as WMI does. Throws when the
+# task could not be registered or started.
+function Start-Task([string]$Launch, [string]$Tag) {
+  $name = "atrium-live-$Tag"
+  $who = [Security.SecurityElement]::Escape([Security.Principal.WindowsIdentity]::GetCurrent().Name)
+  $arg = [Security.SecurityElement]::Escape("--headless cmd.exe /c `"$Launch`"")
+  $xml = [IO.Path]::ChangeExtension($Launch, 'xml')
+  Set-Content -LiteralPath $xml -Encoding Unicode -Value @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Principals><Principal id="Author"><UserId>$who</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Hidden>true</Hidden>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>conhost.exe</Command><Arguments>$arg</Arguments></Exec></Actions>
+</Task>
+"@
+  try {
+    $o = schtasks.exe /Create /F /TN $name /XML $xml 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "schtasks /Create: $o" }
+    $o = schtasks.exe /Run /TN $name 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "schtasks /Run: $o" }
+    # 267011 is "has not yet run": an interactive-only task waits forever when this user is not logged on at the console.
+    $st = $null
+    for ($i = 0; $i -lt 40; $i++) {
+      $st = schtasks.exe /Query /TN $name /V /FO CSV 2>$null | ConvertFrom-Csv | Select-Object -First 1
+      if ($st.Status -eq 'Running' -or ($st.'Last Result' -and $st.'Last Result' -ne '267011')) { break }
+      Start-Sleep -Milliseconds 250
+    }
+    if ($st.Status -ne 'Running' -and (-not $st -or -not $st.'Last Result' -or $st.'Last Result' -eq '267011')) {
+      throw "task $name did not run in 10s. it runs only while this user is logged on at the console"
+    }
+  } finally {
+    $null = schtasks.exe /Delete /TN $name /F 2>&1
+    Remove-Item -LiteralPath $xml -ErrorAction SilentlyContinue
+  }
+  return $name
+}
 
 # Start-Wmi starts a command line through Win32_Process Create: WmiPrvSE is its parent, so it is in no job of ours and
 # survives the terminal that ran the script. Hidden. Returns the pid, throws when WMI refuses.
@@ -847,7 +896,8 @@ function Get-LoginPath {
 }
 
 # Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
-# when the result is still in one. Returns the pid of the cmd that runs it. Throws only when neither route could start it.
+# when the result is still in one. Returns the pid of the cmd that runs it, 0 for a task. Throws only when no route
+# could start it.
 function Start-Jobless([string]$Command, [string]$Tag) {
   $route = Get-StartRoute (Test-ProcessInJob $PID)
   $record = Get-PathRecord
@@ -858,11 +908,23 @@ function Start-Jobless([string]$Command, [string]$Tag) {
     Say "no PATH record at $(Join-Path $ToolchainDir 'path.txt'), so $Tag gets no go or jq it did not inherit. room-toolchain.ps1 writes one"
   }
   $procId = $null
+  $launch = Join-Path $Base "launch-$Tag.cmd"
+  if ($route -ne 'breakaway') {
+    $login = @(Get-LoginPath | Where-Object { $record -notcontains $_ })
+    New-LaunchScript $launch $Command (@($record) + $login)
+  }
+  if ($route -eq 'task') {
+    try {
+      $task = Start-Task $launch $Tag
+      Say "$Tag started through the task scheduler as task $task, outside this shell's job"
+      return 0
+    } catch {
+      Say "WARNING: could not start $Tag through the task scheduler ($($_.Exception.Message)). trying WMI"
+      $route = 'wmi'
+    }
+  }
   if ($route -eq 'wmi') {
     try {
-      $launch = Join-Path $Base "launch-$Tag.cmd"
-      $login = @(Get-LoginPath | Where-Object { $record -notcontains $_ })
-      New-LaunchScript $launch $Command (@($record) + $login)
       $procId = Start-Wmi "cmd.exe /c `"$launch`""
     } catch {
       Say "WARNING: could not start $Tag through WMI ($($_.Exception.Message)). falling back to breakaway, which leaves it in any outer job"

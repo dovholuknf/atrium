@@ -131,7 +131,7 @@ func RepoIsRef(repo string) bool {
 		return true
 	}
 	parts := strings.Split(repo, "/")
-	return len(parts) == 3 && strings.Contains(parts[0], ".")
+	return len(parts) == 3 && (strings.Contains(parts[0], ".") || parts[0] == gitsync.DefaultHost)
 }
 
 // homeLaunchRefusal is why a launch cannot have the home it asked for, before anything is made.
@@ -201,6 +201,9 @@ func (d *Service) ResolveRepo(ctx context.Context, repo string) (string, error) 
 			return "", fmt.Errorf("%s is not a git clone on this room", repo)
 		}
 		return dir, nil
+	}
+	if first, rest, ok := strings.Cut(repo, "/"); ok && first == gitsync.DefaultHost {
+		repo = "github.com/" + rest
 	}
 	ref, err := gitsync.ParseURL("https://" + repo)
 	if err != nil {

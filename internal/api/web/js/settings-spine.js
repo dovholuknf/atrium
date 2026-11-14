@@ -367,8 +367,10 @@ function badge(id, n) {
 // the blocked channel and named in the terms that machine uses.
 async function decide(id, decision, forever) {
   const onCard = document.querySelector(`#perms-list .perm[data-id="${id}"]`);
-  const room = (onCard && onCard.dataset.room) || "";
-  const perm = (onCard && onCard.dataset.perm) || id;
+  // Answered from the Terminals tab's held strip, the perms card may not be drawn, and a room's request is in the queue.
+  const queued = onCard ? null : remoteLocal.find(p => p.id === id);
+  const room = (onCard && onCard.dataset.room) || (queued && queued.room) || "";
+  const perm = (onCard && onCard.dataset.perm) || (queued && queued.perm_id) || id;
   let reason = "", prefix = "", kind = "command";
   if (decision === "block") {
     // A block includes guidance, so a refusal reads as "no, do it this way
@@ -2026,6 +2028,12 @@ function connect() {
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
     tasksSoon();
+  });
+  // A room's notice for a person: a held notice, or a line it cleared. See docs/changes/r-hold-notices.md.
+  es.addEventListener("notice", e => {
+    let d = {};
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    if (d.toast) toast(d.source || "notice", d.toast, "", "", d.about_card || d.task_id || "");
   });
   // A stop waiting for its sessions to go quiet before it restarts. See internal/daemon/stopkeep.go.
   es.addEventListener("stop-hold", e => {

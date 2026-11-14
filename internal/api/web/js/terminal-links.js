@@ -29,16 +29,22 @@
 // in a table) becomes a link once its row's text changes, because the row is then a
 // new key and is asked again. No clock: a timer re-asked every row on every sweep,
 // which was the storm.
-let probeCache = { id: "", known: new Map() };
+const probeCache = new Map();
+
+// How many cards keep their answers. A room with many cards answers a probe in seconds, so a switch back reuses them.
+const probeCards = 16;
 
 // More misses than this and the cache starts over, so a long session cannot grow it without bound.
 const probeMissCap = 20000;
 
-// The cache for a card, emptied if the card changed. Switching cards changes
-// which directory a word is measured against, so nothing carries over.
+// The cache for a card, by bare id, kept across a switch to another card and back. The oldest card is dropped.
 function probeKnown(id) {
-  if (probeCache.id !== id) probeCache = { id, known: new Map() };
-  return probeCache.known;
+  const key = bareId(id);
+  const known = probeCache.get(key) || new Map();
+  probeCache.delete(key);
+  probeCache.set(key, known);
+  if (probeCache.size > probeCards) probeCache.delete(probeCache.keys().next().value);
+  return known;
 }
 
 // Asks in flight, so a second hover on a row before the first answer lands waits for it instead of asking again.
@@ -92,12 +98,19 @@ async function provideFileLinks(t, id, y, done) {
 
   const known = probeKnown(id);
   const spans = [], ask = [];
-  for (const c of fileCandidates(line.text)) {
+  const add = c => {
     const start = cellAt(line, c.start), end = cellAt(line, c.end - 1);
     // Only this row: a joined line can be thousands of characters.
-    if (y < start.y || y > end.y) continue;
-    spans.push({ token: c.token, range: { start, end } });
+    if (y < start.y || y > end.y) return;
+    const cut = folderTail(c);
+    const tail = cut && { start: cellAt(line, c.start + cut), end };
+    spans.push({ token: c.token, folder: c.folder, range: { start, end }, tail });
     if (!probeFresh(known, c.token, line.text) && !ask.includes(c.token)) ask.push(c.token);
+  };
+  for (const c of fileCandidates(line.text)) {
+    // Folders first: xterm takes the first link under the pointer, so a folder's own words open the folder.
+    folderParts(c).forEach(add);
+    add(c);
   }
   const pendKey = tok => probeMissKey(id + "\u0000" + tok, line.text);
   const fresh = ask.filter(tok => !probePending.has(pendKey(tok)));
@@ -112,10 +125,21 @@ async function provideFileLinks(t, id, y, done) {
   for (const s of spans) {
     const hit = probeHit(probeKnown(id), s.token);
     // Only what the room will open is underlined. Anything else stays plain text.
-    if (hit) links.push(fileLink(id, s.range, hit));
-    else if (docLinkPath(s.token)) links.push(docLink(s.range, s.token));
+    // A directory underlines only its own name, as the folders above it do. A file underlines the whole path.
+    if (hit) links.push(fileLink(id, hit.dir && s.tail || s.range, hit));
+    else if (!s.folder && docLinkPath(s.token)) links.push(docLink(s.range, s.token));
   }
   done(links.length ? links : undefined);
+}
+
+// A path found in a folder the session works in, which the board may not open. Said once per card and path.
+const heldTold = new Set();
+function tellHeld(id, h) {
+  const key = id + "\u0000" + h.path;
+  if (heldTold.has(key)) return;
+  heldTold.add(key);
+  console.info("[atrium link]", { path: h.path, cwd: termTask && termTask.worktree, found: h.folder, result: "held: folder is not an open path" });
+  toast("not a link", h.path + " is in " + h.folder + ", where the session works, but that folder is not an open path. Add it to open_paths to open it.");
 }
 
 // Asks the daemon, and remembers both answers.
@@ -132,6 +156,7 @@ async function askProbe(id, paths, row) {
       body: JSON.stringify({ paths: batch })
     });
     found = r.found || [];
+    for (const h of r.held || []) tellHeld(id, h);
   } catch (e) {
     return;
   }
@@ -279,6 +304,14 @@ async function fileLinkMenu(ev, id, hit) {
       act: () => openOnDaemon(id, hit.rel)
     });
   }
+  const typed = String(hit.path || "");
+  if (typed && !/^([A-Za-z]:[\\/]|[\\/]|~)/.test(typed)) {
+    const full = hit.outside ? hit.rel : String((termTask && termTask.worktree) || "").replace(/[\\/]+$/, "") + "/" + hit.rel;
+    items.push({ label: "copy full path", act: () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(full).catch(() => {});
+      toast("full path copied", full);
+    } });
+  }
   showMenu(at, items);
 }
 
@@ -401,6 +434,30 @@ function fileURLPath(tok) {
   let p = m[1];
   try { p = decodeURIComponent(p); } catch (e) {}
   return /^\/[A-Za-z]:\//.test(p) ? p.slice(1) : p;
+}
+
+// The folders an absolute path sits in, each as a candidate over its own name only, so the rest of the path stays the
+// path's. The room judges each one like any other token, so a folder outside the allowed places is not a link.
+function folderParts(c) {
+  const tok = c.token;
+  if (c.text || !/^([A-Za-z]:[\\/]|\/)/.test(tok)) return [];
+  const out = [];
+  let from = tok.indexOf(":") === 1 ? 3 : 1;
+  for (let i = from; i < tok.length; i++) {
+    if (tok[i] !== "/" && tok[i] !== "\\") continue;
+    if (i > from) out.push({ token: tok.slice(0, i), start: c.start + from, end: c.start + i, folder: true });
+    from = i + 1;
+  }
+  return out;
+}
+
+// Where the last name of an absolute path starts, as an offset in its token. 0 for a folder part, a relative path or
+// a path ending in a separator.
+function folderTail(c) {
+  const tok = c.token;
+  if (c.folder || c.text || !/^([A-Za-z]:[\\/]|\/)/.test(tok)) return 0;
+  const i = Math.max(tok.lastIndexOf("/"), tok.lastIndexOf("\\"));
+  return i + 1 < tok.length && i >= (tok.indexOf(":") === 1 ? 2 : 0) ? i + 1 : 0;
 }
 
 // The punctuation stuck to the end of a path, taken off.
@@ -2080,10 +2137,8 @@ function sendInput(text, quiet, pasted) {
 // and a runner that is busy shows the paste seconds later, so the bar used to go while nothing had appeared. Now
 // the terminal's own buffer is read each tick for what a runner prints for a paste: Claude Code's
 // `[Pasted text #N +M lines]` or `[Image #N]`, or the pasted text itself when it is short, on the input line: the
-// `pasteEchoRows` rows up to the cursor. One more of those than before the paste ends it, but not before
-// `pasteHoldMs`: a runner echoes in well under 100ms, and a bar up that briefly was never seen. The cap is the
+// `pasteEchoRows` rows up to the cursor. One more of those than before the paste ends it at once. The cap is the
 // fallback for a runner that shows nothing.
-const pasteHoldMs = 1200;
 const pasteGiveUpMs = 20000;
 const pasteEchoRows = 30;
 const pasteEchoMarkers = /\[(Pasted text|Image) #\d+/g;
@@ -2113,7 +2168,7 @@ function pasteRepaint() {
 // So every paste puts the box up FIRST and the frame leaves once it has painted.
 //
 // A paste frame carries an `id` and the room answers `{"t":"in-done","id":...}` once the pty write returned. That is
-// logged and nothing more: see `pasteHoldMs`.
+// logged and nothing more: the echo ends the bar.
 const pasteBigAt = 256 * 1024;
 
 // The daemon's read limit on one attach frame. A bigger one CLOSES THE SOCKET,
@@ -2203,7 +2258,7 @@ function pasteBegin(n, needle) {
   const g = pasteG || pasteVia("other");
   pasteG = null;
   const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: false, sentAt: 0, id: "", done: false,
-    holdUntil: now + pasteHoldMs, needle: needle || "", g,
+    needle: needle || "", g,
     echoed: false, drained: false, base: 0 };
   // An older paste still waiting on its marker will put one on the line, and that one is not this paste's.
   f.base = pasteEchoCount(f) + [...pasteFlights].filter(o => !o.echoed && o.sock === f.sock).length;
@@ -2218,8 +2273,8 @@ function pasteBegin(n, needle) {
     if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
     if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); pasteLog(g, "bar shown"); }
     if (f.sent && !f.echoed && pasteEchoCount(f) > f.base) { f.echoed = true; pasteLog(g, "echo seen"); }
-    if (f.echoed && t >= f.holdUntil) { pasteFlightEnd(f, "echo"); return; }
-    if (f.sent && pasteOutAt > f.sentAt && t - pasteOutAt >= pasteSettleMs && t >= f.holdUntil) {
+    if (f.echoed) { pasteFlightEnd(f, "echo"); return; }
+    if (f.sent && pasteOutAt > f.sentAt && t - pasteOutAt >= pasteSettleMs) {
       pasteFlightEnd(f, "settled");
       pasteRepaint();
       return;
@@ -2235,13 +2290,18 @@ function pasteEchoCount(f) {
   const b = term.buffer.active;
   const at = b.baseY + b.cursorY;
   let n = 0;
+  let all = "";
   for (let y = Math.max(0, at - pasteEchoRows); y <= at; y++) {
     const row = b.getLine(y);
     if (!row) continue;
     const s = row.translateToString(true);
     n += (s.match(pasteEchoMarkers) || []).length;
-    if (f.needle && s.includes(f.needle)) n++;
+    all += s;
   }
+  // Every time it shows, without whitespace: a second paste of the same path joins the first's line, and the runner
+  // wraps it anywhere, so one hit per row never rose and only the cap ended the bar.
+  const needle = f.needle.replace(/\s+/g, "");
+  if (needle) n += all.replace(/\s+/g, "").split(needle).length - 1;
   return n;
 }
 
@@ -2260,7 +2320,7 @@ function pasteLog(g, step, extra) {
   if (g) console.info(`[atrium paste] ${g.id} +${Math.round(performance.now() - g.t0)}ms ${step}${extra ? " " + extra : ""}`);
 }
 
-// `{"t":"in-done","id":...}`: the room's pty write returned. Logged, and not what ends the bar. See `pasteHoldMs`.
+// `{"t":"in-done","id":...}`: the room's pty write returned. Logged, and not what ends the bar.
 function takePasteDone(data, sock) {
   if (!data || data[0] !== "{") return false;
   let msg;

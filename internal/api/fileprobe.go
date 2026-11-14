@@ -3,11 +3,13 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
@@ -80,15 +82,20 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	root := filepath.FromSlash(task.Worktree)
+	var once sync.Once
 	var roots []string
-	built := false
 	open := func() []string {
-		if !built {
-			roots, built = s.openRoots(), true
-		}
+		once.Do(func() { roots = s.openRoots() })
 		return roots
 	}
-	hits := make([]probeHit, 0, len(body.Paths))
+	var nearOnce sync.Once
+	var near []string
+	nearDirs := func() []string {
+		nearOnce.Do(func() { near = touchedDirs(root) })
+		return near
+	}
+	realCard, _ := safepath.Real(root)
+	var wants []string
 	seen := map[string]bool{}
 	for _, want := range body.Paths {
 		want = strings.TrimSpace(want)
@@ -96,13 +103,42 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[want] = true
-		hit, ok := probeOne(root, want, open)
-		if !ok {
-			continue
-		}
-		hits = append(hits, hit)
+		wants = append(wants, want)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"found": hits})
+	// Each candidate is a few filesystem calls, so a row of one path and its folders is asked at once.
+	found := make([]*probeHit, len(wants))
+	var wg sync.WaitGroup
+	gate := make(chan struct{}, probeWorkers)
+	for i, want := range wants {
+		wg.Add(1)
+		gate <- struct{}{}
+		go func() {
+			defer func() { <-gate; wg.Done() }()
+			if hit, ok := probeOne(root, realCard, want, open, nearDirs); ok {
+				found[i] = &hit
+			}
+		}()
+	}
+	wg.Wait()
+	hits := make([]probeHit, 0, len(wants))
+	held := []map[string]string{}
+	for i, h := range found {
+		if h != nil {
+			hits = append(hits, *h)
+		} else if d := heldBy(wants[i], nearDirs()); d != "" {
+			held = append(held, map[string]string{"path": wants[i], "folder": d})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"found": hits, "held": held})
+}
+
+// probeWorkers is how many candidates of one request are resolved at once.
+const probeWorkers = 8
+
+// under reports whether an already-resolved path sits at or below an already-resolved root.
+func under(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // probeAlias spells a path the way this machine does. An agent in WSL or Git Bash prints `/d/work/x` for
@@ -129,15 +165,46 @@ func probeAlias(want string) string {
 // relative one. `safepath.Contained` is what decides, and it follows symlinks
 // on both sides, so a link pointing out of the worktree is refused the same as
 // a `..` would be.
-func probeOne(root, want string, roots func() []string) (probeHit, bool) {
-	full, outside, err := containedOrOpen(root, probeAlias(want), roots)
+func probeOne(root, realCard, want string, roots func() []string, near func() []string) (probeHit, bool) {
+	var full string
+	var outside bool
+	var err error
+	resolved := false
+	if filepath.IsAbs(probeAlias(want)) && realCard != "" {
+		// An absolute path is resolved once and judged against the card and the open roots, which are already
+		// resolved. containedOrOpen would resolve the card and every root that could hold it again.
+		res, rerr := safepath.Real(probeAlias(want))
+		if errors.Is(rerr, fs.ErrNotExist) {
+			return probeHit{}, false
+		}
+		if rerr == nil {
+			full, resolved = res, true
+			if !under(realCard, res) {
+				outside = true
+				held := false
+				for _, r := range roots() {
+					if held = under(r, res); held {
+						break
+					}
+				}
+				if !held {
+					return probeHit{}, false
+				}
+			}
+		}
+	}
+	if !resolved {
+		full, outside, err = containedOrOpen(root, probeAlias(want), roots)
+	}
 	var fi os.FileInfo
 	if err == nil {
 		fi, err = os.Lstat(full)
 	}
 	if err != nil {
-		if full, fi = elsewhere(want, roots); fi == nil {
-			return probeHit{}, false
+		if full, fi = elsewhere(want, roots()); fi == nil {
+			if full, fi = nearby(root, want, roots, near()); fi == nil {
+				return probeHit{}, false
+			}
 		}
 		outside = true
 	}
@@ -157,13 +224,17 @@ func probeOne(root, want string, roots func() []string) (probeHit, bool) {
 
 // elsewhere finds a relative path that is not in the card under another open root, where the agent works on a
 // sibling worktree. The newest match wins, and safepath.Contained keeps every one inside its root.
-func elsewhere(want string, roots func() []string) (string, os.FileInfo) {
-	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") {
+func elsewhere(want string, roots []string) (string, os.FileInfo) {
+	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") || strings.Contains(want, "..") {
 		return "", nil
 	}
 	var best string
 	var bestFi os.FileInfo
-	for _, r := range roots() {
+	for _, r := range roots {
+		// One stat per root, so a word that is nowhere does not resolve every root's links.
+		if _, err := os.Lstat(filepath.Join(r, want)); err != nil {
+			continue
+		}
 		full, err := safepath.Contained(r, want)
 		if err != nil {
 			continue
@@ -174,4 +245,21 @@ func elsewhere(want string, roots func() []string) (string, os.FileInfo) {
 		}
 	}
 	return best, bestFi
+}
+
+// nearby finds a relative path under a folder the session touched, and only where an open root holds that folder.
+func nearby(root, want string, roots func() []string, near []string) (string, os.FileInfo) {
+	if filepath.IsAbs(want) || strings.HasPrefix(want, "~") {
+		return "", nil
+	}
+	for _, d := range near {
+		full, _, err := containedOrOpen(root, filepath.Join(d, want), roots)
+		if err != nil {
+			continue
+		}
+		if fi, err := os.Lstat(full); err == nil {
+			return full, fi
+		}
+	}
+	return "", nil
 }

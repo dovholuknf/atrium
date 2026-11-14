@@ -30,6 +30,7 @@ func init() {
 		"git-plain-checkout":     checkGitPlainCheckout,
 		"git-branch-name":        checkGitBranchName,
 		"git-current-branch":     checkGitCurrentBranch,
+		"checkout-home":          checkCheckoutHome,
 		"compound-cd":            checkCompoundCd,
 		"command":                checkCommand,
 		"env-prefix":             checkEnvPrefix,

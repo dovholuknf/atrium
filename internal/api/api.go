@@ -484,6 +484,8 @@ type Server struct {
 	BranchCheck func(repo, branch string) (any, error)
 	// checkouts is the launch dialog's list of this room's checkouts, kept so opening it reads no disk.
 	checkouts checkoutCache
+	// rootMemo keeps the open roots resolved for a few seconds, so a probe resolves no root it has just resolved.
+	rootMemo rootMemo
 }
 
 // forever turns a one-off decision into a standing rule, so the same command

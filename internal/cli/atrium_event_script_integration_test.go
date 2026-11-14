@@ -21,7 +21,8 @@ func eventScripts(t *testing.T, hub string) map[string]*exec.Cmd {
 	}
 	out := map[string]*exec.Cmd{}
 	if bash, err := exec.LookPath("bash"); err == nil {
-		if _, err := exec.LookPath("curl"); err == nil {
+		_, curlErr := exec.LookPath("curl")
+		if exec.Command(bash, "-c", "exit 0").Run() == nil && curlErr == nil {
 			out["sh"] = exec.Command(bash, filepath.Join(dir, "atrium-event.sh"), "--kind", "land", "--repo", "o/r", "--branch", "main",
 				"--outcome", "pushed", "--from", "a", "--to", "b", "--commits", "2", "--hub-url", hub)
 		}

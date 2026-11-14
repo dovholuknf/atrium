@@ -435,7 +435,7 @@ if (themeIndex) {
 // gesture rather than as a read.
 if (/function pasteIntoTerm\(/.test(html)) {
   const at = html.indexOf("async function pasteIntoTerm(");
-  const body = html.slice(at, at + 700);
+  const body = html.slice(at, at + 1600); // the function grew past 700 chars, openPasteBox sits at its end
   if (!/Promise\.race\(/.test(body)) {
     fail("pasteIntoTerm awaits the clipboard without a bound. An unanswered permission " +
       "prompt never settles, so right click on a shared board hangs forever and says " +

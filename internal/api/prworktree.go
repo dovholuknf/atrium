@@ -273,7 +273,7 @@ func (s *Server) haveCheckout(p *store.Provider, host, org, repo string) bool {
 // provider's when it has one, else the scm clone, cloned when it is not there, with its worktrees under the scm
 // folder's `worktrees/<host>`. cloned is whether this call made the clone, which the card then owns (store.ResClone).
 func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org, repo string) (repoPath, wtRoot string, cloned bool, status int, err error) {
-	if p != nil {
+	if p != nil && pathOnThisMachine(p.Root) && pathOnThisMachine(p.WorktreeRoot) {
 		repoPath, wtRoot = store.ProviderPath(p.Root, org, repo), p.WorktreeRoot
 		// A pasted link's case is not the folder's: the folder named the same ignoring case is the same repo on a
 		// case-sensitive disk, and the path keeps the folder's own spelling.
@@ -299,6 +299,12 @@ func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org,
 		wtRoot = filepath.ToSlash(filepath.Join(scm, "worktrees", host))
 	}
 	return repoPath, wtRoot, cloned, http.StatusOK, nil
+}
+
+// pathOnThisMachine is whether a provider folder can be a folder here: a D:/ root saved on a mac room is not one, and
+// git would make it relative to wherever it ran.
+func pathOnThisMachine(p string) bool {
+	return p == "" || filepath.IsAbs(filepath.FromSlash(p))
 }
 
 // undoPRWorktree removes a worktree prWorktree made, and the branch when it made that too. A found worktree is

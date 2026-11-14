@@ -36,10 +36,10 @@ func (s *Store) PtyHostOn() bool {
 // SettingCardRootRequired is `on` when the room refuses an agent launch whose directory is outside the card root.
 const SettingCardRootRequired = "card_root_required"
 
-// CardRootRequiredOn reports whether the setting is on. Unset is off.
+// CardRootRequiredOn reports whether the setting is on. Unset is on, only `off` turns it off.
 func (s *Store) CardRootRequiredOn() bool {
 	v, err := s.Setting(SettingCardRootRequired)
-	return err == nil && strings.EqualFold(strings.TrimSpace(v), "on")
+	return err != nil || !strings.EqualFold(strings.TrimSpace(v), "off")
 }
 
 // NewRunID makes a run id: random, 128 bits, the same shape as every other key.
@@ -92,6 +92,34 @@ func (s *Store) Run(runID string) (*PtyRun, error) {
 	}
 	r.Filed = filed != ""
 	return &r, nil
+}
+
+// UnfiledRunnerRuns is every runner start whose exit was never filed, oldest first.
+func (s *Store) UnfiledRunnerRuns() ([]PtyRun, error) {
+	var out []PtyRun
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(
+			`SELECT run_id, task_id, kind, host, started_at FROM pty_run
+			 WHERE filed_at = '' AND kind = ? ORDER BY started_at`, RunKindRunner)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r PtyRun
+			var started string
+			if err := rows.Scan(&r.RunID, &r.TaskID, &r.Kind, &r.Host, &started); err != nil {
+				return err
+			}
+			if t, perr := time.Parse(time.RFC3339Nano, started); perr == nil {
+				r.Started = t
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	return out, err
 }
 
 // PtyRunKeep is how long a filed run row stays. An exit is filed once and a row only exists to say so, so a

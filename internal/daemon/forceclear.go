@@ -1,11 +1,16 @@
 package daemon
 
 import (
+	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Where the text a notice shows came from: atrium's own typing model, or the prompt row read off the screen.
@@ -77,3 +82,88 @@ func (d *Daemon) handleForceClear(w http.ResponseWriter, r *http.Request) {
 	d.Publish(taskID)
 	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"cleared": true})
 }
+
+// staleLineAfter is how long unsent text may sit on a line nobody types into before a new context or a held say
+// clears it and goes on.
+const staleLineAfter = 5 * time.Minute
+
+// clearStaleLine throws away text left on the card's line that nobody has typed into for staleLineAfter, so a new
+// context or a held message is not stuck behind a stray character. The text is saved first, on the card's events and
+// in a file, and the board is told once with it, so it can be put back. Refused under a dialog and mid-turn, as the
+// force clear is. Reports whether it cleared.
+func (d *Daemon) clearStaleLine(taskID string) bool {
+	run := d.sup.get(taskID)
+	if run == nil || d.act.dialogOpen(taskID) || d.act.midTurn(taskID) {
+		return false
+	}
+	run.injectMu.Lock()
+	defer run.injectMu.Unlock()
+	run.pasteMu.Lock()
+	defer run.pasteMu.Unlock()
+	s := run.typing()
+	if s.Count == 0 && s.Unsure == "" {
+		return false
+	}
+	run.typeMu.Lock()
+	last := run.lastTyped
+	run.typeMu.Unlock()
+	if last.IsZero() {
+		last = run.started
+		if run.reattachedAt.After(last) {
+			last = run.reattachedAt
+		}
+	}
+	quiet := time.Since(last)
+	if quiet < staleLineAfter {
+		return false
+	}
+	text, from := run.lineShown(s)
+	if err := run.Write([]byte{0x03}); err != nil {
+		log.Printf("[atrium] could not clear the stale line on %s: %v", taskID, err)
+		return false
+	}
+	run.typeMu.Lock()
+	run.line.clear()
+	run.typeMu.Unlock()
+	if d.pending != nil {
+		d.pending.reset(taskID)
+	}
+	d.keepClearedLine(taskID, text, from, quiet)
+	return true
+}
+
+// keepClearedLine saves a cleared line under the card's folder beside the database and on its events, and rings the
+// board's notice with it.
+func (d *Daemon) keepClearedLine(taskID, text, from string, quiet time.Duration) {
+	shown := text
+	if shown == "" {
+		shown = "text atrium could not read"
+	}
+	msg := fmt.Sprintf("You had '%s' on the line and did not send it within %d minutes, so I cleared it.",
+		shown, int(staleLineAfter.Minutes()))
+	file := ""
+	dir := filepath.Join(filepath.Dir(d.opts.DBPath), "cards", taskID, "cleared-lines")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Printf("[atrium] could not keep the cleared line of %s: %v", taskID, err)
+	} else {
+		file = filepath.ToSlash(filepath.Join(dir, time.Now().UTC().Format("20060102-150405.000")+".txt"))
+		if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+			log.Printf("[atrium] could not keep the cleared line of %s: %v", taskID, err)
+			file = ""
+		}
+	}
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+		"by": lineClearedBy, "text": msg, "line": text, "line_from": from, "file": file, "quiet_s": int(quiet.Seconds()),
+	}); err != nil {
+		log.Printf("[atrium] could not record the cleared line on %s: %v", taskID, err)
+	}
+	log.Printf("[atrium] %s: cleared %d character(s) left on the line for %s, kept in %s", taskID, len([]rune(text)),
+		quiet.Round(time.Second), file)
+	d.Publish(taskID)
+	d.ap.Broadcast("notice", map[string]any{
+		"task_id": taskID, "about_card": taskID, "source": lineClearedBy, "toast": msg, "line": text, "file": file,
+	})
+}
+
+// lineClearedBy names a cleared line, as the notified event's author and the notice's source.
+const lineClearedBy = "line-cleared"

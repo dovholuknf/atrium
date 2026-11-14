@@ -66,6 +66,12 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 		d.Nctx.DropMarker(t.ID)
 		return
 	}
+	if gen, ok := d.Nctx.ResumeAcked(t.ID, d.ConversationOf(t)); ok {
+		log.Printf("[atrium] context cycle on %s resumed at the clear: atrium ready already came", t.DisplayTitle())
+		d.Publish(t.ID)
+		go d.RunNewContext(t.ID, gen)
+		return
+	}
 	if d.Nctx.DroppedHolds(t.ID, d.ConversationOf(t)) {
 		return
 	}

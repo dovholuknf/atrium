@@ -24,6 +24,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -116,11 +117,50 @@ func (sw *Switch) SetLive(on bool) bool {
 	return true
 }
 
+// perSecond is how many lines a second may be written. A stalled machine pushes every echo over the threshold, and a
+// line per frame is what filled hub.err.
+const perSecond = 10
+
+// limiter lets perSecond lines through each second and counts the rest, so the next second's first line says how many
+// were held back.
+type limiter struct {
+	mu      sync.Mutex
+	second  int64
+	written int
+	dropped int
+}
+
+// allow reports whether a line may be written at now, and how many lines the last busy second held back.
+func (l *limiter) allow(now time.Time) (ok bool, held int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if s := now.Unix(); s != l.second {
+		l.second, l.written = s, 0
+		held, l.dropped = l.dropped, 0
+	}
+	if l.written >= perSecond {
+		l.dropped++
+		return false, held
+	}
+	l.written++
+	return true, held
+}
+
+var lines limiter
+
 // Logf writes one line under a fixed prefix, so the lines grep out of a busy
 // log in one pass. The clock is to the millisecond because the log's own is to
 // the second, and the board's console lines carry the same shape to match.
+// At most perSecond lines a second are written.
 func Logf(format string, args ...any) {
-	log.Printf("[inputlag] "+time.Now().Format("15:04:05.000")+" "+format, args...)
+	now := time.Now()
+	ok, held := lines.allow(now)
+	if held > 0 {
+		log.Printf("[inputlag] %s %d lines held back by the rate limit", now.Format("15:04:05.000"), held)
+	}
+	if ok {
+		log.Printf("[inputlag] "+now.Format("15:04:05.000")+" "+format, args...)
+	}
 }
 
 // Ms renders a duration as milliseconds with one decimal, the unit every line

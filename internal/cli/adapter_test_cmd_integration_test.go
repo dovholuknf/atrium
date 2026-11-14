@@ -86,7 +86,7 @@ func adapterHelperKit(t *testing.T, mode string) []scenarioResult {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k := adapterKit{cmd: self + " -test.run=TestAdapterHelper", timeout: 20 * time.Second, out: io.Discard}
+	k := adapterKit{cmd: `"` + self + `" -test.run=TestAdapterHelper`, timeout: 20 * time.Second, out: io.Discard}
 	return k.run()
 }
 

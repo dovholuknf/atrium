@@ -409,6 +409,8 @@ Exports honor whatever filter is applied.">?</span>
     <div id="fd-terms"></div>
     <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
     <div class="term-limits" id="term-limits" hidden></div>
+    <!-- Every card held on a permission, on any room. Its panel floats over the terminal. See `renderHeldStrip`. -->
+    <div class="held-strip" id="held-strip" hidden></div>
     <div class="term-layout" id="term-layout">
       <!-- The way back when the list is hidden. Before the list in the DOM so
            hovering it can reveal the list with a sibling selector, which keeps
@@ -1388,8 +1390,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="swnmq"><span>claude/</span><input type="search" id="sw-nm" spellcheck="false" autocomplete="off"></div>
   </div>
   <div id="sw-list" class="swlist term-list"></div>
+  <!-- The name step's card and how it starts (js/repolink.js): New agent's preview and its room, runner and setup. -->
+  <div id="sw-how" class="swhow dlg-body" hidden>
+    <label class="eyebrow">the card it makes</label>
+    <div id="sw-preview"></div>
+    <div class="howline">
+      <span class="ico">&#9881;</span>
+      <span class="sum" id="sw-sum"></span>
+      <button type="button" class="linkbtn" id="sw-change" aria-expanded="false">change</button>
+    </div>
+    <div class="how" id="sw-pick" hidden></div>
+  </div>
   <div id="sw-nmfoot" class="swfoot" hidden>
-    <span><kbd>enter</kbd> start</span>
+    <span id="sw-nmgo"><kbd>enter</kbd> start</span>
     <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
     <span><kbd>esc</kbd> back</span>
     <span class="grow"></span>
@@ -2572,7 +2585,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="s-cardrootreq">agents and the card root</label>
       <label><input id="s-cardrootreq" type="checkbox" data-saves="saveCardRootRequired">
         refuse an agent launch outside the card root</label>
-      <span class="hintline">Off by default. When on, an agent that launches a card with a directory of its own is told to
+      <span class="hintline">On by default. When on, an agent that launches a card with a directory of its own is told to
         pass repo and branch so the room makes the folder, unless it says scratch. Launches from the board are never
         refused.</span>
     </div>

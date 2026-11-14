@@ -140,7 +140,8 @@ document.addEventListener("click", e => {
     return;
   }
   linkOpeningEnd(id);
-  if (act === "edit") quickPasteGo(o.url, true);
+  if (act === "edit" && o.repo) repoNameAgain(o);
+  else if (act === "edit") quickPasteGo(o.url, true);
   else if (act === "again") quickPasteGo(o.url, false);
   else if (act === "goto") linkOpeningGoto(o.card);
 });

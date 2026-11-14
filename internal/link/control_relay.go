@@ -58,6 +58,8 @@ func (c *controlMCP) Relay(ctx context.Context, from string, req wire.RelayReque
 		return c.launchAcross(ctx, from, req)
 	case RelayHub:
 		return c.hubAsk(ctx, from, req)
+	case RelayHand:
+		return c.handAcross(ctx, from, req)
 	case RelayFind:
 		card, code, err := lookupEverywhere(c.hub, from, req.To)
 		if err != nil {

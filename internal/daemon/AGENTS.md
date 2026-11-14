@@ -98,6 +98,7 @@ the hazard it did not catch on its own is a route that grows a parameter: `<id>/
 | `attach.go` | the websocket carrying one of those terminals. `?kind=shell` picks which |
 | `messages.go` | saying something to a running session |
 | `session.go` | join, leave, start, end, and the gate question |
+| `hand.go` | a session started by hand whose card another room holds: asking the hub, then carrying its hooks there |
 | `launch.go` | spawning a runner from a harness row |
 | `shutdown.go` | stopping without killing |
 | `restartpty.go` | restarting the pty host and reopening its cards with the room staying up |

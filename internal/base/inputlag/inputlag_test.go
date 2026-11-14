@@ -58,3 +58,18 @@ func TestSetLiveLeavesAPinnedThresholdAlone(t *testing.T) {
 		t.Fatal("the setting moved a threshold the variable pinned")
 	}
 }
+
+func TestLimiterHoldsBackALoudSecondAndSaysSo(t *testing.T) {
+	var l limiter
+	at := time.Unix(1000, 0)
+	for i := 0; i < perSecond+5; i++ {
+		ok, _ := l.allow(at)
+		if ok != (i < perSecond) {
+			t.Fatalf("line %d allowed=%v", i, ok)
+		}
+	}
+	ok, held := l.allow(at.Add(time.Second))
+	if !ok || held != 5 {
+		t.Fatalf("next second: ok=%v held=%d, want true and 5", ok, held)
+	}
+}

@@ -228,6 +228,10 @@ recap, and its report. The worker brief says so in one line: "what you want kept
 failed removal are retried, and throwaway rows whose card's runner has exited are removed (a backstop for a room that
 restarted between exit and cleanup).
 
+**The ended-folder sweep** (`endedfolders.go`) removes the home of a card the operator closed whole, after stashing its
+unpushed git work to the hub. A card that ended by itself (done, dead or archived on a timer) loses a git home the same
+way, but its scratch home stays `kept` while it has no git and its `work/` holds files. An empty one goes.
+
 ## 6. Existing cards: left where they are
 
 Nothing moves. A live runner's working directory cannot be moved on Windows, a worktree moved by hand loses its admin

@@ -241,6 +241,9 @@ type Daemon struct {
 	// reattached closes when startup has re-adopted the pty host's runners. The reaper waits on it when non-nil.
 	reattached chan struct{}
 
+	// sweepStash stands in for StashTo in the folder sweep when set. See endedfolders.go.
+	sweepStash func(ctx context.Context, card, dir, branch string) (string, string, error)
+
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
 	up updates
@@ -278,6 +281,8 @@ type Daemon struct {
 	// resumeclaim.go.
 	announced   sync.Map
 	resumeNoted sync.Map
+	// handed is agent name to the handForward of a session started by hand whose card another room holds. See hand.go.
+	handed sync.Map
 
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
@@ -1167,21 +1172,21 @@ func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.Publish }
 //
 // NOT the agent listener. That one is a different mux on a different port and
 // `docs/fabric/overlays.md` says never to publish it. See `Run` below.
-func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
+func (d *Daemon) BoardHandler() http.Handler { return d.boardWithHand() }
 
 func (d *Daemon) Run(ctx context.Context) error {
 	go d.probeAutocompact()
 	d.resumePRReviews()
 	agentMux := http.NewServeMux()
-	agentMux.HandleFunc("/permission", d.handlePermission)
-	agentMux.HandleFunc("/session", d.countHook(d.handleSession))
-	agentMux.HandleFunc("/gate", d.handleGate)
+	agentMux.HandleFunc("/permission", d.handedOn("/permission", d.handlePermission))
+	agentMux.HandleFunc("/session", d.handedOn("/session", d.countHook(d.handleSession)))
+	agentMux.HandleFunc("/gate", d.handedOn("/gate", d.handleGate))
 	agentMux.HandleFunc("/contract", handleContract)
-	agentMux.HandleFunc("/stop", d.countHook(d.handleStop))
-	agentMux.HandleFunc("/activity", d.handleActivity)
+	agentMux.HandleFunc("/stop", d.handedOn("/stop", d.countHook(d.handleStop)))
+	agentMux.HandleFunc("/activity", d.handedOn("/activity", d.handleActivity))
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
-	agentMux.HandleFunc("/finish", d.countHook(d.handleFinish))
+	agentMux.HandleFunc("/finish", d.handedOn("/finish", d.countHook(d.handleFinish)))
 	agentMux.HandleFunc("/ready", d.HandleReady)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
@@ -1289,6 +1294,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// exists, rather than asking the runner.
 	if !d.opts.Passive {
 		d.reattached = make(chan struct{})
+		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
 	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
@@ -1351,6 +1357,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			close(d.reattached)
 			d.startFixtures()
 			d.reopenSaved()
+			d.reopenLostRuns()
 			// Throwaways whose session ended when the last daemon did, so
 			// nothing was there to clean up after them. Last, because it reads
 			// which cards have a runner and the two calls above are what
@@ -1755,6 +1762,7 @@ func (d *Daemon) initServices() {
 			RequeueCarried:  func(id string, c []shared.DeliveredSay) { d.requeueCarried(id, c) },
 			ItemMissed:      func(id string, c []shared.DeliveredSay) []shared.DeliveredSay { return d.itemMissed(id, c) },
 			ShutdownAllowed: func(w http.ResponseWriter, r *http.Request) bool { return d.shutdownAllowed(w, r) },
+			ClearStaleLine:  func(id string) bool { return d.clearStaleLine(id) },
 		},
 	})
 	d.cycleService.Act = activityForCycle{d.act}
