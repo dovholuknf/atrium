@@ -17,7 +17,7 @@ $LiveLog = Join-Path $Base 'hub-start.log'
 $running = Find-Atrium run | Select-Object -First 1
 if ($running) { Say "hub already running, pid $($running.ProcessId). nothing to do."; exit 0 }
 
-Backup 'hub.err'
+Backup 'hub.err' $Base 5
 if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 Start-Hub
 Say "hub started (lag log $(if ($NoLagLog) { 'off' } else { 'on' }))"
