@@ -54,7 +54,7 @@ if ($svc) {
   # them as room.err.<timestamp>, as the batch deploy does for claude-sg4, and prune to the newest 20.
   $oldErr = Join-Path $CtlLogs 'room.err'
   if (Test-Path $oldErr) {
-    Copy-Item $oldErr (Join-Path $CtlLogs "room.err.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+    Move-Item $oldErr (Join-Path $CtlLogs "room.err.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
     Get-ChildItem $CtlLogs -Filter 'room.err.*' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
       ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
   }

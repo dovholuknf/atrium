@@ -701,12 +701,13 @@ function Stop-Hub {
   }
 }
 
-# Backup keeps the previous run's log, since a redirect overwrites it. -Keep prunes to the newest that many copies.
+# Backup moves the previous run's log aside, so the next one starts empty and no copy repeats the history. -Keep prunes
+# to the newest that many rotations.
 function Backup([string]$Name, [string]$Dir = $Base, [int]$Keep = 0) {
   $p = Join-Path $Dir $Name
   if (Test-Path $p) {
-    Invoke-Step "keep $p as $Name.<timestamp>" {
-      Copy-Item $p (Join-Path $Dir "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+    Invoke-Step "move $p to $Name.<timestamp>" {
+      Move-Item $p (Join-Path $Dir "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
       if ($Keep -gt 0) {
         Get-ChildItem $Dir -Filter "$Name.*" | Sort-Object LastWriteTime -Descending | Select-Object -Skip $Keep |
           ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }

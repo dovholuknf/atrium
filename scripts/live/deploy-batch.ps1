@@ -87,7 +87,7 @@ if (-not (Install-Atrium)) { exit 1 }
 if ($RoomOnly) {
   if (-not $WhatIf -and -not (Wait-Hub 5)) { Say 'FATAL: room only, but the hub is not answering'; exit 1 }
 } else {
-  Backup 'hub.err'
+  Backup 'hub.err' $Base 5
   Start-Hub
   if (-not $WhatIf) {
     $h = Wait-Hub 25
