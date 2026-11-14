@@ -372,3 +372,76 @@ func TestAProbeFindsARelativePathInAnotherOpenRoot(t *testing.T) {
 		t.Fatalf("live/slides came back as %+v", d)
 	}
 }
+
+func touchedSetup(t *testing.T) (*Server, *store.Store, *store.Task, string) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	sib := t.TempDir()
+	day := filepath.Join(sib, "live-stream", "2026", "11-13")
+	if err := os.MkdirAll(filepath.Join(sib, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(day, "slides"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(day, "script.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := projectDirFor(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":` +
+		strconv.Quote(filepath.ToSlash(filepath.Join(day, "script.md"))) + `}}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "s1.jsonl"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return s, st, task, day
+}
+
+func probeRaw(t *testing.T, s *Server, id string, paths []string) (found []probeHit, held []map[string]string) {
+	w := httptest.NewRecorder()
+	s.probeFiles(w, probeReq(t, id, paths))
+	var got struct {
+		Found []probeHit          `json:"found"`
+		Held  []map[string]string `json:"held"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	return got.Found, got.Held
+}
+
+func TestAProbeNamesATouchedFolderItWillNotOpen(t *testing.T) {
+	s, _, task, day := touchedSetup(t)
+	found, held := probeRaw(t, s, task.ID, []string{"script.md", "live-stream/2026/11-13/slides", "nope.md"})
+	if len(found) != 0 {
+		t.Fatalf("a touched folder outside every open root was opened: %+v", found)
+	}
+	if len(held) != 2 || held[0]["path"] != "script.md" || held[0]["folder"] != filepath.ToSlash(day) {
+		t.Fatalf("held was %v", held)
+	}
+}
+
+func TestAProbeOpensARelativePathInATouchedFolderUnderAnOpenRoot(t *testing.T) {
+	s, st, task, day := touchedSetup(t)
+	if err := st.SetSetting(SettingOpenPaths, filepath.ToSlash(filepath.Dir(filepath.Dir(filepath.Dir(day))))); err != nil {
+		t.Fatal(err)
+	}
+	found, held := probeRaw(t, s, task.ID, []string{"script.md", "slides", "nope.md"})
+	if len(held) != 0 || len(found) != 2 {
+		t.Fatalf("found %+v held %v", found, held)
+	}
+	for _, h := range found {
+		if !h.Outside || !filepath.IsAbs(filepath.FromSlash(h.Rel)) {
+			t.Fatalf("hit %+v", h)
+		}
+	}
+}
