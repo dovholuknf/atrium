@@ -279,8 +279,8 @@ func TestTheHubFlagsARoomWhoseDataDialsFail(t *testing.T) {
 	})
 }
 
-// onlyFirst lets the first dial through, the control connection, and refuses
-// every one after it until open.
+// onlyFirst lets the first dial that connects through, the control connection, and
+// refuses every one after it until open.
 type onlyFirst struct {
 	addr  string
 	first atomic.Bool
@@ -288,11 +288,15 @@ type onlyFirst struct {
 }
 
 func (o *onlyFirst) Dial(ctx context.Context) (net.Conn, error) {
-	if o.first.Swap(true) && !o.open.Load() {
+	if o.first.Load() && !o.open.Load() {
 		return nil, errors.New("dial tcp 192.168.1.68:7779: i/o timeout")
 	}
 	var d net.Dialer
-	return d.DialContext(ctx, "tcp", o.addr)
+	c, err := d.DialContext(ctx, "tcp", o.addr)
+	if err == nil {
+		o.first.Store(true) // a real dial failing (port exhaustion) must not spend the control slot
+	}
+	return c, err
 }
 
 func (o *onlyFirst) Describe() string { return o.addr }
