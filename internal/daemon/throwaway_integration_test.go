@@ -208,11 +208,16 @@ func TestAStoppedThrowawayLeavesNoDirectory(t *testing.T) {
 		_, err := os.Stat(filepath.FromSlash(task.Worktree))
 		return os.IsNotExist(err)
 	}
-	testwait.PollEvery(testwait.HTTP, 30*time.Second, gone)
+	cardGone := func() bool {
+		_, err := d.st.Get(task.ID)
+		return err != nil
+	}
+	// wait: discardThrowaway removes the directory first and the card after
+	testwait.PollEvery(testwait.HTTP, 30*time.Second, func() bool { return gone() && cardGone() })
 	if !gone() {
 		t.Fatalf("%s is still there after the stop", task.Worktree)
 	}
-	if _, err := d.st.Get(task.ID); err == nil {
+	if !cardGone() {
 		t.Fatal("the card outlived the stop")
 	}
 }
