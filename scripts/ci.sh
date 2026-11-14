@@ -448,12 +448,17 @@ if { want board || want board-visual || want flaky-board; } && command -v npm >/
     check "npm install" npm install --no-audit --no-fund
   fi
   deps=""
-  if [ "$os" = linux ] && [ -n "${CI:-}" ]; then deps="--with-deps"; fi
+  # The CI image holds the system libraries and runs as a user that cannot su, so only a bare host gets --with-deps.
+  if [ "$os" = linux ] && [ -n "${CI:-}" ] && [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then deps="--with-deps"; fi
   have_browser=1
   while read -r dir; do [ -d "$dir" ] || have_browser=0; done < <(npx --no-install playwright install --dry-run chromium 2>/dev/null | sed -n 's/^ *Install location: *//p')
   if [ "$have_browser" = 1 ]; then
     echo "ok: playwright browser already installed"
   else
+    # The image's browser dir is read-only here: a playwright that wants another build gets its own dir in the workspace.
+    if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -w "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+      export PLAYWRIGHT_BROWSERS_PATH="$PWD/build.claude/pw-browsers"
+    fi
     # The install fails now and then on a runner (apt or download hiccup), so try up to 3 times.
     install_browser() {
       local n
