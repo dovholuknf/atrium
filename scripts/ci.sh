@@ -454,7 +454,17 @@ if { want board || want board-visual || want flaky-board; } && command -v npm >/
   if [ "$have_browser" = 1 ]; then
     echo "ok: playwright browser already installed"
   else
-    check "playwright browser" npx --no-install playwright install $deps chromium
+    # The install fails now and then on a runner (apt or download hiccup), so try up to 3 times.
+    install_browser() {
+      local n
+      for n in 1 2 3; do
+        npx --no-install playwright install $deps chromium && return 0
+        echo "playwright install attempt $n failed" >&2
+        [ "$n" = 3 ] || sleep 10
+      done
+      return 1
+    }
+    check "playwright browser" install_browser
   fi
 fi
 
