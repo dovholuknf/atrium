@@ -6106,7 +6106,7 @@ async function termFolderLinkSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "termFolderLink", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: the terminal link probes need a beat after attach
     const win = cwd.replace(/\//g, "\\");
     const rows = [win + " (claude/exploring-mcp-connect)", "wrote " + win + "\\scratch.claude\\survey\\Code.gs ok",
       "D:\\elsewhere\\place", "D:\\open\\shared\\sub"];
@@ -16653,7 +16653,7 @@ async function pasteRightClickSection(browser, base) {
       window.sendPasteText = () => { throw new Error("boom"); };
       document.getElementById("t-screen").dispatchEvent(
         new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 50)); // wait: let the swallowed paste error surface
       window.sendPasteText = real;
       return { box: !document.getElementById("t-paste").hidden, toast: document.getElementById("toasts").textContent };
     });
@@ -16677,7 +16677,7 @@ async function pasteImageSlowSection(browser, base) {
   let uploadMs = 0;
   await ctx.route("**/v1/tasks/*/files", async route => {
     if (route.request().method() === "POST") posts.push(route.request().url());
-    if (uploadMs) await new Promise(r => setTimeout(r, uploadMs));
+    if (uploadMs) await new Promise(r => setTimeout(r, uploadMs)); // wait: simulated upload latency
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/x/pasted.png"] }) });
   });
   try {
@@ -16696,7 +16696,7 @@ async function pasteImageSlowSection(browser, base) {
       closePasteBox(); pasteEnd("test");
       document.getElementById("t-screen").dispatchEvent(
         new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
-      await new Promise(r => setTimeout(r, 2600));
+      await new Promise(r => setTimeout(r, 2600)); // wait: longer than the paste wait, so the box has opened
       return !document.getElementById("t-paste").hidden;
     }, how);
     for (const how of ["slow read", "slow upload", "empty first"]) {
@@ -16728,12 +16728,12 @@ async function pasteImageSwitchSection(browser, base) {
   const posts = [];
   await ctx.route("**/v1/tasks/*/files", async route => {
     if (route.request().method() === "POST") posts.push(new URL(route.request().url()).pathname);
-    if (/land-live/.test(route.request().url())) await new Promise(r => setTimeout(r, 800));
+    if (/land-live/.test(route.request().url())) await new Promise(r => setTimeout(r, 800)); // wait: simulated upload latency
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/x/pasted.png"] }) });
   });
   try {
     const got = await p.evaluate(async () => {
-      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const wait = ms => new Promise(r => setTimeout(r, ms)); // wait: fixed beats of the fake clipboard flow
       const img = { types: ["image/png"], getType: async () => new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }) };
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read: async () => [img], readText: async () => "" } });
       const click = () => document.getElementById("t-screen").dispatchEvent(
@@ -16775,7 +16775,7 @@ async function pasteEchoRepeatSection(browser, base) {
   const { ctx, p } = await pasteMockPage(browser, base, errors);
   try {
     const got = await p.evaluate(async () => {
-      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const wait = ms => new Promise(r => setTimeout(r, ms)); // wait: fixed beats of the fake clipboard flow
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       const line = "check out the image here: C:/x/pasted.png";
       termSock.onmessage({ data: "\r\n> " + line });
