@@ -19,8 +19,9 @@ func needDaemon(restart func(string) (*store.Task, error)) *Daemon {
 func TestNeedRestartWaitsForTheCardToGoQuiet(t *testing.T) {
 	var at time.Time
 	d := needDaemon(func(string) (*store.Task, error) { at = time.Now(); return nil, nil })
-	d.act.set("c1", ActivityThinking, "")
+	// Taken before the activity is stamped, so the clock reading can only be early, never late.
 	last := time.Now()
+	d.act.set("c1", ActivityThinking, "")
 	d.restartForNeed("c1")
 	if at.Sub(last) < d.hk.needQuiet {
 		t.Fatalf("restarted %v after the last activity, want at least %v", at.Sub(last), d.hk.needQuiet)
