@@ -139,6 +139,18 @@ func (r dirResolver) cd(cur string, c *Cmd) string {
 // path resolves a directory argument. fromCd says bash's CDPATH applies, so a
 // bare relative name could land anywhere.
 func (r dirResolver) path(cur, p string, fromCd bool) string {
+	p = r.place(cur, p, fromCd)
+	if p == "" {
+		return ""
+	}
+	if isDir, ok := r.env.Stat(p); !ok || !isDir {
+		return ""
+	}
+	return p
+}
+
+// place is where path would land, whether or not anything is there yet.
+func (r dirResolver) place(cur, p string, fromCd bool) string {
 	if m := msysDrive.FindStringSubmatch(p); m != nil {
 		p = m[1] + ":" + m[2] + "/"
 	}
@@ -164,11 +176,7 @@ func (r dirResolver) path(cur, p string, fromCd bool) string {
 		}
 		p = filepath.Join(cur, p)
 	}
-	p = filepath.Clean(p)
-	if isDir, ok := r.env.Stat(p); !ok || !isDir {
-		return ""
-	}
-	return p
+	return filepath.Clean(p)
 }
 
 // Wrappers: commands that run the rest of their arguments as a command.

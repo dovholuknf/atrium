@@ -241,6 +241,9 @@ type Daemon struct {
 	// reattached closes when startup has re-adopted the pty host's runners. The reaper waits on it when non-nil.
 	reattached chan struct{}
 
+	// sweepStash stands in for StashTo in the folder sweep when set. See endedfolders.go.
+	sweepStash func(ctx context.Context, card, dir, branch string) (string, string, error)
+
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
 	up updates
@@ -1291,6 +1294,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// exists, rather than asking the runner.
 	if !d.opts.Passive {
 		d.reattached = make(chan struct{})
+		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
 	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
