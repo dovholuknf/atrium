@@ -11,6 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // newWorkHarness is an open harness whose checkout of o/r was cloned from a BARE origin, plus a second clone of that
@@ -290,5 +293,81 @@ func TestSetupWorktreeRunsTheHookAndSaysWhatHappened(t *testing.T) {
 	nh.srv.setupWorktree(ctx, "github.com", "o", "r", wt)
 	if len(said) != 1 || !strings.Contains(said[0], "failed: ") || !strings.Contains(said[0], "hook says no") {
 		t.Errorf("a failing hook: %q", said)
+	}
+}
+
+// A BOARD THAT LOST ITS RUNNER LIST sends no harness: the card starts on the repo's recipe, else claude, never on "".
+func TestNewWorkWithNoRunnerStartsTheRecipesOrClaude(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	ran := func(name string) string {
+		t.Helper()
+		nh.launched = nil
+		if code, out := nh.newWork(t, map[string]any{"name": name, "harness": " "}); code != 201 || len(nh.launched) != 1 {
+			t.Fatalf("%d %v", code, out)
+		}
+		var in struct {
+			Harness string `json:"harness"`
+		}
+		_ = json.Unmarshal(nh.launched[0], &in)
+		return in.Harness
+	}
+	if got := ran("no.recipe"); got != "claude" {
+		t.Errorf("with no recipe the runner is %q", got)
+	}
+	if _, err := nh.srv.st.SavePRRecipe(store.PRRecipe{Name: "default", Harness: "here", Panel: store.DefaultPRPanel,
+		WalkerBrief: "walk", BudgetUSD: 1, TurnsCap: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ran("a.recipe"); got != "here" {
+		t.Errorf("with a recipe the runner is %q", got)
+	}
+}
+
+// A PROVIDER FOLDER FROM ANOTHER MACHINE (a D:/ root on a mac room) is not a folder here: the work goes in the room's
+// own clone and worktrees, never under that path.
+func TestNewWorkIgnoresAProviderFolderFromAnotherMachine(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	tmp := filepath.ToSlash(t.TempDir())
+	foreign := "D:" + tmp
+	if runtime.GOOS == "windows" {
+		foreign = tmp[len(filepath.VolumeName(tmp)):]
+	}
+	if _, err := nh.srv.st.SaveProvider(store.Provider{Name: "github", Root: foreign + "/git", Enabled: true,
+		Worktrees: true, WorktreeRoot: foreign + "/wt"}); err != nil {
+		t.Fatal(err)
+	}
+	nh.srv.SCMClone = func(context.Context, string) (gitsync.SCMResult, error) {
+		return gitsync.SCMResult{Path: nh.checkout, State: "existing"}, nil
+	}
+	code, out := nh.newWork(t, map[string]any{"name": "far.away"})
+	if code != 201 {
+		t.Fatalf("%d %v", code, out)
+	}
+	scm := filepath.ToSlash(filepath.Dir(filepath.Dir(filepath.Dir(filepath.FromSlash(nh.checkout)))))
+	if wt, _ := out["worktree"].(string); !strings.HasPrefix(strings.ToLower(wt), strings.ToLower(scm+"/worktrees/")) {
+		t.Errorf("the worktree is %q, not under %s/worktrees", wt, scm)
+	}
+}
+
+// THE SETUP THE OPEN DIALOG PICKED reaches the launch, and a full setup sends neither.
+func TestNewWorkPassesTheSetupToTheLaunch(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	for _, c := range []struct {
+		name            string
+		lean, superlean bool
+	}{{"setup.full", false, false}, {"setup.lean", true, false}, {"setup.superlean", false, true}} {
+		nh.launched = nil
+		if code, out := nh.newWork(t, map[string]any{"name": c.name, "lean": c.lean, "superlean": c.superlean}); code != 201 ||
+			len(nh.launched) != 1 {
+			t.Fatalf("%s: %d %v", c.name, code, out)
+		}
+		var in map[string]any
+		_ = json.Unmarshal(nh.launched[0], &in)
+		if _, ok := in["lean"]; ok != c.lean {
+			t.Errorf("%s: lean %v", c.name, in["lean"])
+		}
+		if _, ok := in["superlean"]; ok != c.superlean {
+			t.Errorf("%s: superlean %v", c.name, in["superlean"])
+		}
 	}
 }

@@ -58,6 +58,9 @@ type newWorkRequest struct {
 	Why     string `json:"why"`
 	Model   string `json:"model"`
 	Effort  string `json:"effort"`
+	// Lean and Superlean are the claude setup the open dialog picked, passed to the launch as they came.
+	Lean      bool `json:"lean"`
+	Superlean bool `json:"superlean"`
 	// Progress is an id the board made up. Each step is broadcast as an `open-progress` event carrying it, the same as
 	// an open of a link, so the card the board drew for the paste can name the step.
 	Progress string `json:"progress"`
@@ -188,11 +191,18 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = name
 	}
-	body, _ := json.Marshal(map[string]any{
-		"harness": strings.TrimSpace(in.Harness), "cwd": wt.Path, "title": title, "why": in.Why,
+	launch := map[string]any{
+		"harness": s.newWorkHarness(in.Harness, org, repo), "cwd": wt.Path, "title": title, "why": in.Why,
 		"prompt": strings.TrimSpace(in.Prompt), "model": strings.TrimSpace(in.Model),
 		"effort": strings.TrimSpace(in.Effort), "repo": repo, "org": org, "host": host, "branch": wt.Branch,
-	})
+	}
+	if in.Lean {
+		launch["lean"] = true
+	}
+	if in.Superlean {
+		launch["superlean"] = true
+	}
+	body, _ := json.Marshal(launch)
 	task, err := s.Launch(body)
 	if err != nil {
 		undo()
@@ -206,6 +216,18 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	}
 	s.measureAfterOpen(task)
 	writeJSON(w, http.StatusCreated, ans)
+}
+
+// newWorkHarness is the runner asked for, else the repo's recipe's, else claude: a board that lost its runner list
+// sends "", and the room never takes that as a name.
+func (s *Server) newWorkHarness(asked, org, repo string) string {
+	if h := strings.TrimSpace(asked); h != "" {
+		return h
+	}
+	if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil && strings.TrimSpace(rec.Harness) != "" {
+		return rec.Harness
+	}
+	return "claude"
 }
 
 // prepareRepo is the `prepare` of POST /v1/new: the checkout is found, or cloned the way a worktree would clone it, and

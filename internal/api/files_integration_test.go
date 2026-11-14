@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -272,6 +273,40 @@ func TestUploadRefusesAnEmptyFileAndWritesNothing(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(filepath.Join(work, ".atrium", "incoming")); err == nil && len(entries) != 0 {
 		t.Fatalf("%d files landed", len(entries))
+	}
+}
+
+// Every pasted image is named pasted.png, so two pastes in one second used to collide on the exclusive create and
+// answer 500. Both seconds an upload can land in are taken first, so the collision does not depend on timing.
+func TestTwoPastesInOneSecondBothLand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	in := filepath.Join(work, ".atrium", "incoming")
+	if err := os.MkdirAll(in, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for _, at := range []time.Time{now, now.Add(time.Second)} {
+		if err := os.WriteFile(filepath.Join(in, at.Format("20060102-150405")+"-pasted.png"), []byte("first"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	s.uploadFiles(w, uploadReq(t, task.ID, []string{"pasted.png"}, []byte("second")))
+	if w.Code != http.StatusOK {
+		t.Fatalf("a second paste in the same second answered %d: %s", w.Code, w.Body.String())
+	}
+	entries, err := os.ReadDir(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("%d files in incoming, want the two placed and the new one", len(entries))
 	}
 }
 
