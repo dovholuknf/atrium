@@ -33,7 +33,10 @@ func TestResolveRepoMapsTheBareGithubHostToTheClone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%q: %v", repo, err)
 		}
-		if filepath.Clean(got) != filepath.Clean(clone) {
+		// the temp dir may be a symlink (macOS /private) or an 8.3 name (Windows), so compare the real paths
+		gotReal, _ := filepath.EvalSymlinks(got)
+		wantReal, _ := filepath.EvalSymlinks(clone)
+		if gotReal != wantReal || gotReal == "" {
 			t.Errorf("%q resolved to %q, want %q", repo, got, clone)
 		}
 	}
