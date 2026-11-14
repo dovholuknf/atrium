@@ -501,3 +501,114 @@ func (c *evalCtx) branch(dir string) string {
 	}
 	return "HEAD"
 }
+
+// worktreeValued and cloneValued are the options of `git worktree add` and `git clone` that take the next word.
+var worktreeValued = toSet(strings.Fields(`-b -B --reason`))
+var cloneValued = toSet(strings.Fields(`-o --origin -b --branch -u --upload-pack --reference --reference-if-able
+--separate-git-dir --depth --shallow-since --shallow-exclude -c --config --server-option --filter --template -j
+--jobs --bundle-uri --ref-format`))
+
+// operands is the words that are not options, skipping the value of each option in valued.
+func operands(ws []Word, valued map[string]bool) []Word {
+	var out []Word
+	for i := 0; i < len(ws); i++ {
+		w := ws[i]
+		if w.Lit == "--" && !w.Dyn {
+			return append(out, ws[i+1:]...)
+		}
+		if w.Dyn || !strings.HasPrefix(w.Lit, "-") {
+			out = append(out, w)
+			continue
+		}
+		if valued[w.Lit] {
+			i++
+		}
+	}
+	return out
+}
+
+// checkoutTarget is where a git command makes a new checkout, with ok false when it makes none. An empty place
+// means the guard cannot tell.
+func (c *evalCtx) checkoutTarget(g *gitCall) (written, place string, ok bool) {
+	var target Word
+	switch strings.ToLower(g.sub) {
+	case "worktree":
+		p := positional(g.args)
+		if len(p) == 0 || p[0].Dyn {
+			return "", "", false
+		}
+		switch strings.ToLower(p[0].Lit) {
+		case "add":
+			ops := operands(afterWord(g.args, p[0]), worktreeValued)
+			if len(ops) == 0 {
+				return "", "", false
+			}
+			target = ops[0]
+		case "move":
+			if len(p) < 3 {
+				return "", "", false
+			}
+			target = p[2]
+		default:
+			return "", "", false
+		}
+	case "clone":
+		ops := operands(g.args, cloneValued)
+		switch {
+		case len(ops) >= 2:
+			target = ops[1]
+		case len(ops) == 1:
+			u := strings.TrimRight(ops[0].Lit, `/\`)
+			u = u[strings.LastIndexAny(u, `/\:`)+1:]
+			target = Word{Lit: strings.TrimSuffix(u, ".git"), Dyn: ops[0].Dyn}
+		default:
+			return "", "", false
+		}
+	default:
+		return "", "", false
+	}
+	if target.Dyn {
+		return target.Lit, "", true
+	}
+	return target.Lit, dirResolver{env: c.env}.place(g.dir, target.Lit, false), true
+}
+
+// inside says whether p is home or under it.
+func inside(home, p string) bool {
+	rel, err := filepath.Rel(filepath.Clean(filepath.FromSlash(home)), p)
+	return err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// checkCheckoutHome matches a git worktree, a clone or a gwt verb that makes a checkout outside the card's home, the
+// folder Params.Env names. A session with no home is not checked.
+func checkCheckoutHome(c *evalCtx, r *Rule) (bool, string) {
+	home := strings.TrimSpace(c.env.Getenv(r.Params.Env))
+	if home == "" {
+		return false, ""
+	}
+	for _, g := range c.Gits() {
+		written, place, ok := c.checkoutTarget(g)
+		if ok && (place == "" || !inside(home, place)) {
+			return true, written
+		}
+	}
+	for _, cmd := range c.Script().Cmds {
+		if !contains(r.Params.Names, cmd.Name()) {
+			continue
+		}
+		if p := positional(cmd.Args()); len(p) > 0 && (p[0].Dyn || contains(r.Params.Verbs, p[0].Lit)) {
+			return true, cmd.Name() + " " + p[0].Lit
+		}
+	}
+	return false, ""
+}
+
+// afterWord is the words after the first one equal to w.
+func afterWord(ws []Word, w Word) []Word {
+	for i := range ws {
+		if ws[i] == w {
+			return ws[i+1:]
+		}
+	}
+	return nil
+}

@@ -310,3 +310,37 @@ func TestUserAgentsDirExempt(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckoutStaysInHome(t *testing.T) {
+	rules, _ := Builtin()
+	e := env0
+	e.vars = map[string]string{"ATRIUM_HOME": "D:/tmp/cards/c1"}
+	cwd := `D:\tmp\cards\c1\work`
+	cases := []struct{ tool, cmd, want string }{
+		{"Bash", `git worktree add D:/worktrees/claude/reviews/x claude/x`, "checkout-home"},
+		{"Bash", `git worktree add -b claude/x ../../other`, "checkout-home"},
+		{"Bash", `git worktree add $DIR claude/x`, "checkout-home"},
+		{"Bash", `git worktree move ../tmp/a D:/worktrees/a`, "checkout-home"},
+		{"Bash", `git clone https://github.com/o/r.git D:/worktrees/r`, "checkout-home"},
+		{"Bash", `cd D:/worktrees && git clone https://github.com/o/r.git`, "checkout-home"},
+		{"PowerShell", `git clone --depth 1 https://github.com/o/r D:\tmp\r`, "checkout-home"},
+		{"PowerShell", `gwt new some.work`, "checkout-home"},
+		{"Bash", `gwt pr 4397`, "checkout-home"},
+		{"Bash", `git worktree add -b claude/x ../tmp/x`, ""},
+		{"Bash", `git worktree add D:/tmp/cards/c1/tmp/x claude/x`, ""},
+		{"PowerShell", `git worktree add d:\TMP\Cards\c1\tmp\x claude/x`, ""},
+		{"Bash", `git clone https://github.com/o/r.git ../tmp/r`, ""},
+		{"Bash", `git clone https://github.com/o/r.git`, ""},
+		{"Bash", `git worktree list`, ""},
+		{"Bash", `git worktree remove D:/worktrees/x`, ""},
+		{"Bash", `gwt sessions`, ""},
+	}
+	for _, c := range cases {
+		if d := rules.Evaluate(call{tool: c.tool, cmd: c.cmd, cwd: cwd}.input(), e); d.Rule != c.want {
+			t.Errorf("%s %q: want %q, got %q (%s)", c.tool, c.cmd, c.want, d.Rule, d.Reason)
+		}
+	}
+	if d := rules.Evaluate(call{tool: "Bash", cmd: `git worktree add D:/worktrees/x`, cwd: cwd}.input(), env0); d.Rule != "" {
+		t.Errorf("a session with no home was checked: %s", d.Rule)
+	}
+}

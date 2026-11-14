@@ -73,6 +73,35 @@ func (k *KeyedMutex) Lock(keys ...string) func() {
 	}
 }
 
+// TryLock takes every key's mutex without waiting, or none of them and false.
+func (k *KeyedMutex) TryLock(keys ...string) (func(), bool) {
+	seen := map[string]bool{}
+	uniq := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		uniq = append(uniq, key)
+	}
+	sort.Strings(uniq)
+	held := make([]*sync.Mutex, 0, len(uniq))
+	release := func() {
+		for i := len(held) - 1; i >= 0; i-- {
+			held[i].Unlock()
+		}
+	}
+	for _, key := range uniq {
+		m := k.get(key)
+		if !m.TryLock() {
+			release()
+			return nil, false
+		}
+		held = append(held, m)
+	}
+	return release, true
+}
+
 // LaunchTaskKey and LaunchResumeKey namespace the two kinds of key so a card id
 // and a resume id that happen to be the same string cannot collide on one lock.
 func LaunchTaskKey(taskID string) string   { return "task:" + taskID }

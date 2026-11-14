@@ -247,8 +247,8 @@ func requiredRoom(t *testing.T, on bool) (*Daemon, string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if on {
-		if err := d.st.SetSetting(store.SettingCardRootRequired, "on"); err != nil {
+	if !on {
+		if err := d.st.SetSetting(store.SettingCardRootRequired, "off"); err != nil {
 			t.Fatal(err)
 		}
 	}
