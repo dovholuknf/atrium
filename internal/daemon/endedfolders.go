@@ -429,6 +429,15 @@ func worktreeRoots(tasks []*store.Task) []string {
 	return out
 }
 
+// worktreeKey names a checkout the way git lists it, with links resolved (macOS lists /private/var for /var).
+func worktreeKey(p string) string {
+	p = filepath.Clean(filepath.FromSlash(p))
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
+	}
+	return strings.ToLower(p)
+}
+
 // sweepWorktreeRoot removes each git worktree of the clone beside root, directly under root, whose cards all ended.
 func (d *Daemon) sweepWorktreeRoot(ctx context.Context, root string, users func(string, bool) ([]*store.Task, bool)) []FolderSwept {
 	clone := strings.TrimSuffix(root, "-worktrees")
@@ -442,9 +451,9 @@ func (d *Daemon) sweepWorktreeRoot(ctx context.Context, root string, users func(
 		line = strings.TrimSpace(line)
 		if p, ok := strings.CutPrefix(line, "worktree "); ok {
 			at = p
-			branches[strings.ToLower(filepath.Clean(filepath.FromSlash(p)))] = ""
+			branches[worktreeKey(p)] = ""
 		} else if b, ok := strings.CutPrefix(line, "branch refs/heads/"); ok && at != "" {
-			branches[strings.ToLower(filepath.Clean(filepath.FromSlash(at)))] = b
+			branches[worktreeKey(at)] = b
 		}
 	}
 	if _, ended := users(root, true); !ended {
@@ -463,7 +472,7 @@ func (d *Daemon) sweepWorktreeRoot(ctx context.Context, root string, users func(
 			continue
 		}
 		dir := filepath.Join(root, e.Name())
-		branch, ok := branches[strings.ToLower(dir)]
+		branch, ok := branches[worktreeKey(dir)]
 		if !ok {
 			continue
 		}

@@ -2,6 +2,7 @@ package guard
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -336,7 +337,16 @@ func TestCheckoutStaysInHome(t *testing.T) {
 		{"Bash", `gwt sessions`, ""},
 	}
 	for _, c := range cases {
-		if d := rules.Evaluate(call{tool: c.tool, cmd: c.cmd, cwd: cwd}.input(), e); d.Rule != c.want {
+		cmd, cwd := c.cmd, cwd
+		if runtime.GOOS != "windows" {
+			// A drive path and a backslash mean nothing to a posix host, so only the forward-slash cases run there.
+			if strings.Contains(cmd, `\`) {
+				continue
+			}
+			cmd, cwd = strings.ReplaceAll(cmd, "D:/", "/"), "/tmp/cards/c1/work"
+			e.vars = map[string]string{"ATRIUM_HOME": "/tmp/cards/c1"}
+		}
+		if d := rules.Evaluate(call{tool: c.tool, cmd: cmd, cwd: cwd}.input(), e); d.Rule != c.want {
 			t.Errorf("%s %q: want %q, got %q (%s)", c.tool, c.cmd, c.want, d.Rule, d.Reason)
 		}
 	}
