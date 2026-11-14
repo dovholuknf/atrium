@@ -21441,7 +21441,7 @@ async function heldStripSection(browser, base) {
     { id: "ow", status: "needs-permission", supervised: true, title: "ow", display_title: "owned and held", tags: [] },
     { id: "jn", status: "needs-permission", supervised: false, title: "jn", display_title: "resumed outside atrium", tags: [] }];
   const decided = [];
-  await p.route(u => u.pathname === "/v1/permissions", r => r.fulfill({ json: { permissions: held } }));
+  await p.route(u => u.pathname === "/v1/permissions", async r => { const snap = held; await new Promise(f => setTimeout(f, 250)); r.fulfill({ json: { permissions: snap } }); }); // a slow read is what left the room cache stale
   await p.route(u => u.pathname === "/v1/rooms", r => r.fulfill({ json: { rooms: [{ name: "sg3", requests: remote }] } }));
   await p.route(u => u.pathname === "/v1/tasks", r => r.fulfill({ json: { tasks: cards } }));
   await p.route(u => /\/decide$/.test(u.pathname), r => {

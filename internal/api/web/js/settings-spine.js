@@ -457,6 +457,7 @@ async function decide(id, decision, forever) {
   // Out of the held queue too, so the repaint below does not draw it again
   // from a list read before it was answered. The `permission` event the
   // answer raises reads the queue again.
+  roomsRead.at = 0; // the cached room list still holds the answered request
   permsLocal = permsLocal.filter(p => p.id !== id);
   remoteLocal = remoteLocal.filter(p => p.id !== id);
   permsSoon();
