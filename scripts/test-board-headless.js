@@ -5941,7 +5941,7 @@ async function termLinkFirstHoverSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "termLinkFirstHover", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: let the terminal lay out before measuring
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
     const cell = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
