@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -229,7 +230,13 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := saveUpload(h, dest); err != nil {
+		err := saveUpload(h, dest)
+		// Every pasted image is pasted.png, so two in one second collide: the next free number takes it.
+		for k := len(headers) + 1; errors.Is(err, fs.ErrExist) && k < 1000; k++ {
+			dest = filepath.Join(dir, fmt.Sprintf("%s-%d-%s", stamp, k, name))
+			err = saveUpload(h, dest)
+		}
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -258,8 +265,6 @@ func saveUpload(h *multipart.FileHeader, dest string) error {
 	defer src.Close()
 
 	// Exclusive create, so an upload never silently overwrites something.
-	// The name carries a timestamp, so a collision means two files in the same
-	// second with the same name, and the honest answer is to say so.
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
