@@ -48,3 +48,12 @@ func DiskOf(path string) (string, uint64, uint64, error) {
 	bs := uint64(st.Bsize)
 	return path, uint64(st.Bavail) * bs, uint64(st.Blocks) * bs, nil
 }
+
+// VolumeOf names the volume holding path, so two paths on one drive compare equal.
+func VolumeOf(path string) string {
+	var st syscall.Stat_t
+	if err := syscall.Stat(path, &st); err != nil {
+		return ""
+	}
+	return strconv.FormatUint(uint64(st.Dev), 10)
+}

@@ -634,6 +634,9 @@ func (d *Daemon) Launch(req shared.LaunchRequest) (*store.Task, error) {
 	if i := strings.IndexByte(req.TaskID, '~'); i > 0 {
 		req.TaskID = req.TaskID[i+1:]
 	}
+	if err := d.launchDiskFull(req); err != nil {
+		return nil, err
+	}
 	if lt := strings.TrimSpace(req.Lifetime); lt != "" && lt != store.LifetimeWork {
 		return nil, fmt.Errorf("lifetime %q is not one atrium knows. the only one is %q", lt, store.LifetimeWork)
 	}

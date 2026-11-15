@@ -47,16 +47,23 @@ func (d *Daemon) cycleLimit(t *store.Task) int64 {
 	return int64(k) * 1000
 }
 
-// cycleCheck starts a cycle on a card past its limit, or pokes the one already on it. A failed chip holds the
-// trigger off until it is dismissed, rerun or the clear is proven, so a broken cycle is not started again on
-// every tick. A part-written line or a key in the last few seconds holds the start off, the same gate a peer's message
+// cycleRetryGap is how long a failed automatic chip holds the trigger off. A variable for a test.
+var cycleRetryGap = 5 * time.Minute
+
+// cycleCheck starts a cycle on a card past its limit, or pokes the one already on it. A failed automatic chip holds
+// the trigger off for cycleRetryGap, then the card still over its limit is asked again, so a broken cycle is not
+// started again on every tick but never stops being retried. A failed chip from a button press waits to be
+// dismissed, rerun or proven. A part-written line or a key in the last few seconds holds the start off, the same gate a peer's message
 // waits on, and the next tick asks again.
 func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	if cur := d.Nctx.Get(t.ID); cur != nil {
 		if cur.Step != cycle.NewContextFailed {
 			d.Nctx.Kick(t.ID)
+			return
 		}
-		return
+		if !cur.Auto || time.Since(cur.Since) < cycleRetryGap {
+			return
+		}
 	}
 	if !d.cycleSubject(t) {
 		return

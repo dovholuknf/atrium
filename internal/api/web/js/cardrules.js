@@ -159,7 +159,14 @@ function cardHidden(t) {
   if (!isMinion(t) || minionShown() || cardNeedsYou(t)) return false;
   return !(typeof termTask !== "undefined" && termTask && termTask.id === t.id);
 }
-function nestsUnderLauncher(t) { return isSubagent(t) && !isInterview(t); }
+// A RESIDENT AN AGENT LAUNCHED (`resident: true`) carries `atrium:resident` and not `atrium:subagent`, and nests like a worker.
+// A director stays a top row.
+const RESIDENT_TAG = "atrium:resident";
+const DIRECTOR_TAG = "atrium:director";
+function nestsUnderLauncher(t) {
+  const has = tag => !!(t && Array.isArray(t.tags) && t.tags.some(x => String(x).trim().toLowerCase() === tag));
+  return (isSubagent(t) || (has(RESIDENT_TAG) && !has(DIRECTOR_TAG))) && !isInterview(t);
+}
 
 // THE CARD THAT LAUNCHED `t`, from `cards`, or null. Every list that nests a child under its launcher asks this one
 // function (terminals `termNest`, stack and board `subagentRollup`, reveal, the usage groups), so a child on another room

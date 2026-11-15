@@ -1351,8 +1351,8 @@ document.getElementById("l-model").addEventListener("input", paintModelPick);
 // TWO CALLERS WANT IT AT DIFFERENT MOMENTS. The launch dialog reads it as it
 // opens, and the card menu reads it as it draws, which is a click with nothing
 // to look at yet, so neither can assume the other has been anywhere first.
-async function loadHarnesses() {
-  if (allHarnesses.length) return allHarnesses;
+async function loadHarnesses(fresh) {
+  if (allHarnesses.length && !fresh) return allHarnesses;
   try {
     const got = await api("/v1/harnesses");
     allHarnesses = got.harnesses || [];

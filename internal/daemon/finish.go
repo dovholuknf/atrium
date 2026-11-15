@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,9 +14,11 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -89,6 +92,13 @@ type FinishRequest struct {
 	Learned string `json:"learned,omitempty"`
 	// Why is why a task of an item did it the way it did, carried to the task's result. Ignored for any other card.
 	Why string `json:"why,omitempty"`
+	// Skipped and Unverified are what a done left out and what it did not exercise, kept on the card and told to the launcher.
+	Skipped    string `json:"skipped,omitempty"`
+	Unverified string `json:"unverified,omitempty"`
+	// FollowUps is the backlog ids a spike's done filed, or none.
+	FollowUps string `json:"followups,omitempty"`
+	// onHub is the line the launcher reads that says where on the hub the done's commit is. Set by validEnd.
+	onHub string
 	// viaSay is a done that was read out of a worker's own atrium_say to its launcher. The launcher has the words
 	// already, so no second notice is queued to it. Never on the wire. See doneBySay.
 	viaSay bool
@@ -196,6 +206,21 @@ var commitExists = func(dir, sha string) bool {
 	return err == nil
 }
 
+// worktreeDirty lists what `git status` shows in a worktree besides atrium's own files, untracked ones included. A
+// variable so a test does not need a repository. Bounded, because it runs inside a request.
+var worktreeDirty = func(dir string) []string {
+	if strings.TrimSpace(dir) == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir)}, gitexec.Status{Untracked: "all"})
+	if err != nil {
+		return nil
+	}
+	return dirtyPaths(string(out))
+}
+
 // commitInDir says whether `git rev-parse --verify <sha>^{commit}` resolves in a directory. A variable so a test does
 // not need a repository.
 var commitInDir = func(dir, sha string) bool {
@@ -248,21 +273,47 @@ var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 
 // validEnd refuses atrium_done and atrium_blocked that the tool let through: a commit nobody has, a reason that is not
 // one short line. The card's own directory first, then the hub. Nothing is recorded when it refuses.
-func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
+func (d *Daemon) validEnd(task *store.Task, in *FinishRequest) error {
 	switch in.Status {
 	case ReportDone:
 		sha, artifact := strings.TrimSpace(in.SHA), strings.TrimSpace(in.Artifact)
 		if sha != "" && artifact != "" {
 			return small.ErrString("give sha or artifact, not both")
 		}
+		spike := strings.HasPrefix(workOfTags(task.Tags), SpikePrefix)
+		if spike {
+			if why := checkFollowUps(in.FollowUps); why != "" {
+				return small.ErrString(why)
+			}
+		}
 		if artifact != "" {
+			if spike && !strings.Contains(artifact, "://") {
+				return small.ErrString("a spike's writeup has to be on the hub: commit it on your branch and give its sha")
+			}
 			return checkArtifact(d.ap, task, artifact)
 		}
 		if !shaShape.MatchString(sha) {
 			return fmt.Errorf("sha %q is not a commit id: 7 to 40 hex characters", sha)
 		}
-		if !d.hk.commitInDir(task.Worktree, sha) && !d.hk.commitOnHub(d, task, sha) {
+		inDir, onHub := d.hk.commitInDir(task.Worktree, sha), d.hk.commitOnHub(d, task, sha)
+		if !inDir && !onHub {
 			return fmt.Errorf("neither your directory nor the hub has commit %s. commit the work first, then call again", sha)
+		}
+		if onHub {
+			in.onHub = "on the hub: " + sha
+		} else {
+			// A COMMIT ONLY ON THIS ROOM is lost when the card closes, so done pushes it first or refuses.
+			branch, err := d.hk.pushBranch(d, task)
+			if err != nil {
+				return fmt.Errorf("commit %s is not on the hub and pushing your branch to it failed, so done is refused. "+
+					"fix the push, then call again: %v", sha, err)
+			}
+			if branch != "" {
+				in.onHub = "on the hub: " + branch + " at " + sha
+			}
+		}
+		if spike && in.onHub == "" {
+			return small.ErrString("a spike's writeup has to be on the hub, and this room has no hub to push it to")
 		}
 	case ReportBlocked:
 		if why := CheckBlockedReason(in.Ask); why != "" {
@@ -272,6 +323,48 @@ func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 		return fmt.Errorf("an ending is done or blocked, not %q", in.Status)
 	}
 	return nil
+}
+
+// SpikePrefix starts a spike item's id. A spike's done names the follow-ups it filed and puts its writeup on the hub.
+const SpikePrefix = "s-"
+
+// checkFollowUps is why a spike's followups is refused, or "": backlog ids, or none.
+func checkFollowUps(s string) string {
+	ids := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	if len(ids) == 1 && strings.EqualFold(ids[0], "none") {
+		return ""
+	}
+	if len(ids) == 0 {
+		return "a spike's done names the follow-up items it filed, by id in followups, or says none. " +
+			"file each one with atrium_backlog first, then call again"
+	}
+	for _, id := range ids {
+		if !workIDRe.MatchString(id) {
+			return fmt.Sprintf("followups %q is not a backlog id. give the ids of the items you filed, or none", id)
+		}
+	}
+	return ""
+}
+
+// pushBranch pushes the branch a card's directory is on to the hub, as atrium_git_push does, and names it. "" and no
+// error when the room has no hub, keeps its cards' work local, or the card runs outside code. A variable so a test
+// does not need a hub.
+var pushBranch = func(d *Daemon, task *store.Task) (string, error) {
+	if _, err := d.HubTransport(); errors.Is(err, home.ErrNoHub) || d.st.GitPush() != store.GitPushHub ||
+		home.IsOutsideCode(shared.LaunchRequest{}, task) {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(task.Worktree)}, gitexec.RevParseAbbrevRef{Rev: "HEAD"})
+	branch := strings.TrimSpace(string(out))
+	if err != nil || branch == "" || branch == "HEAD" {
+		return "", small.ErrString("your directory is on no branch. commit on your own branch")
+	}
+	if _, err := d.GitPush(task.ID, branch); err != nil {
+		return "", err
+	}
+	return branch, nil
 }
 
 // artifactPath is where an artifact path is on this room: a relative one is the card's directory's. "" for a URL.
@@ -328,7 +421,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		return nil, http.StatusBadRequest, err
 	}
 	if in.Ended {
-		if err := d.validEnd(task, in); err != nil {
+		if err := d.validEnd(task, &in); err != nil {
 			return nil, http.StatusBadRequest, err
 		}
 		// A say of the same meaning already told the launcher this turn: record the end, send no second notice.
@@ -380,6 +473,10 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if status == store.StatusDone && sha != "" {
 		unverified = !d.hk.commitExists(task.Worktree, sha)
 	}
+	var dirty []string
+	if status == store.StatusDone {
+		dirty = d.hk.worktreeDirty(task.Worktree)
+	}
 
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
 		// A session whose work is over is not waiting on an answer any more,
@@ -402,6 +499,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if sha != "" {
 		ev["sha"], ev["unverified"] = sha, unverified
 	}
+	if status == store.StatusDone {
+		ev["dirty"], ev["dirty_files"] = len(dirty) > 0, len(dirty)
+	}
 
 	// ONE TRANSACTION for everything a report records: the recap, the commit,
 	// the event, the column, `reported_at`, the work item and the notice to the
@@ -416,7 +516,8 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// Only the launcher's verdict closes work.
 	write := store.ReportWrite{
 		TaskID: task.ID, Recap: recap, Event: ev,
-		SetSHA: status == store.StatusDone, SHA: sha, Unverified: unverified,
+		SetSHA: status == store.StatusDone, SHA: sha, Unverified: unverified, Dirty: len(dirty),
+		SkippedNote: in.Skipped, UnverifiedNote: in.Unverified,
 		MoveStatus: task.Status != store.StatusPaused && status != task.Status,
 		Status:     status, Reason: reason,
 		ReportStatus: in.Status, UnheardIsUnsent: agentLaunched(task) && itemEnd == nil,
@@ -457,12 +558,12 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		write.Notice = &store.NoticeSpec{
 			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
 			Key:  key,
-			Text: shared.TruncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
+			Text: shared.TruncatePeer(reportBody(task, in.Status, sha, unverified, dirty, recap) + leftoverTail(in) + doneTail(in)),
 		}
 	} else if !in.viaSay && itemEnd == nil {
 		// A launcher on another room hears it the same way, held in the relay
 		// outbox inside the same transaction. See relay.go.
-		write.Relay = d.LauncherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
+		write.Relay = d.LauncherRelay(task, reportBody(task, in.Status, sha, unverified, dirty, recap)+leftoverTail(in)+doneTail(in))
 	}
 	// A REPORT TO A PARKED LAUNCHER RESUMES IT, as if wake=true: the launcher is
 	// the one who has to act on it, and a report nobody reads is the failure
@@ -489,7 +590,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		d.startTaskCapture(task, in, false)
 	}
 	if itemEnd != nil && itemEnd.changed && !isTaskCard(task) {
-		d.itemNotify(task, itemEnd.item, itemNoticeText(task, itemEnd.item, in, sha, recap))
+		d.itemNotify(task, itemEnd.item, itemNoticeText(task, itemEnd.item, in, sha, recap)+doneTail(in))
 	}
 	// A QUESTION IN A REPORT is owed an answer until the launcher gives one; any report without
 	// one withdraws it. See owed.go.
@@ -503,7 +604,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// A REPORT THAT REACHED NOBODY is made visible, to the orchestrator, held. Before, it stamped
 	// reported_at and left the board saying a report was waiting.
 	if res.Notice == nil && !res.Relayed && in.Status != ReportProgress && agentLaunched(task) && !in.viaSay && itemEnd == nil {
-		d.orphanReport(task, reportBody(task, in.Status, sha, unverified, recap))
+		d.orphanReport(task, reportBody(task, in.Status, sha, unverified, dirty, recap)+leftoverTail(in)+doneTail(in))
 	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
 		// Whatever it was doing, it is not doing now. Not for a worker's
@@ -560,7 +661,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 }
 
 // reportBody is what a launcher reads when a worker reports.
-func reportBody(task *store.Task, status, sha string, unverified bool, recap string) string {
+func reportBody(task *store.Task, status, sha string, unverified bool, dirty []string, recap string) string {
 	if status == "" {
 		status = ReportDone
 	}
@@ -579,6 +680,9 @@ func reportBody(task *store.Task, status, sha string, unverified bool, recap str
 			head += " unverified"
 		}
 	}
+	if len(dirty) > 0 {
+		head += ", " + dirtyNote(dirty)
+	}
 	if recap != "" {
 		if status == ReportBlocked {
 			// A blocked worker's ask rides in the recap and is the point of the report: all of it, on one line.
@@ -589,6 +693,47 @@ func reportBody(task *store.Task, status, sha string, unverified bool, recap str
 		}
 	}
 	return head
+}
+
+// leftoverTail is what a done said it skipped and left unverified, one line each, for the launcher's notice.
+func leftoverTail(in FinishRequest) string {
+	out := ""
+	if s := strings.Join(strings.Fields(in.Skipped), " "); s != "" {
+		out += "\nskipped: " + s
+	}
+	if u := strings.Join(strings.Fields(in.Unverified), " "); u != "" {
+		out += "\nunverified: " + u
+	}
+	return out
+}
+
+// doneTail is where on the hub a done's commit is and the follow-ups a spike filed, one line each.
+func doneTail(in FinishRequest) string {
+	out := ""
+	if in.onHub != "" {
+		out += "\n" + in.onHub
+	}
+	if f := strings.Join(strings.Fields(in.FollowUps), " "); f != "" {
+		out += "\nfollow-ups: " + f
+	}
+	return out
+}
+
+// dirtyNote says how many files a done left uncommitted, naming up to five of them.
+func dirtyNote(dirty []string) string {
+	files := "files"
+	if len(dirty) == 1 {
+		files = "file"
+	}
+	named := dirty
+	if len(named) > 5 {
+		named = named[:5]
+	}
+	note := fmt.Sprintf("%d %s not committed (%s", len(dirty), files, strings.Join(named, ", "))
+	if more := len(dirty) - len(named); more > 0 {
+		note += fmt.Sprintf(" and %d more", more)
+	}
+	return note + ")"
 }
 
 // taskFor resolves a session to its card, by id when it has one and by wire
@@ -632,9 +777,11 @@ func (d *Daemon) ownCard(id string) *store.Task {
 
 // finishHooks are the seams of finishing a card.
 type finishHooks struct {
-	commitExists func(dir, sha string) bool
-	commitInDir  func(dir, sha string) bool
-	commitOnHub  func(h hubAsker, task *store.Task, sha string) bool
+	commitExists  func(dir, sha string) bool
+	commitInDir   func(dir, sha string) bool
+	commitOnHub   func(h hubAsker, task *store.Task, sha string) bool
+	pushBranch    func(d *Daemon, task *store.Task) (string, error)
+	worktreeDirty func(dir string) []string
 }
 
 // hubAsker is the part of the daemon commitOnHub asks the hub through.
@@ -644,5 +791,6 @@ type hubAsker interface {
 }
 
 func defaultFinishHooks() finishHooks {
-	return finishHooks{commitExists: commitExists, commitInDir: commitInDir, commitOnHub: commitOnHub}
+	return finishHooks{commitExists: commitExists, commitInDir: commitInDir, commitOnHub: commitOnHub,
+		pushBranch: pushBranch, worktreeDirty: worktreeDirty}
 }

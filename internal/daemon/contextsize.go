@@ -63,9 +63,11 @@ func lowLimitNote(limitK int, from string) string {
 // contextSeen is one card's last read, and what the file looked like then, so
 // a transcript that has not changed is not read again.
 type contextSeen struct {
-	path   string
-	mod    time.Time
-	size   int64
+	path string
+	mod  time.Time
+	size int64
+	// file is what the transcript said, tokens what read answered with it.
+	file   int64
 	tokens int64
 }
 
@@ -85,6 +87,8 @@ type contextSizes struct {
 	transcript func(cwd, sessionID string) string
 	// latest finds the newest session in a directory. api.LatestSession, swapped in tests.
 	latest func(cwd string) string
+	// heard is the card's last statusline figure and when it came, zero when none. Nil hears nothing.
+	heard func(taskID string) (int64, time.Time)
 }
 
 func newContextSizes() *contextSizes {
@@ -184,17 +188,34 @@ func (c *contextSizes) read(t *store.Task) (int64, bool) {
 	c.mu.Lock()
 	last, ok := c.m[t.ID]
 	c.mu.Unlock()
-	if ok && last.path == path && last.mod.Equal(info.ModTime()) && last.size == info.Size() {
-		return last.tokens, false
+	file := last.file
+	if !ok || last.path != path || !last.mod.Equal(info.ModTime()) || last.size != info.Size() {
+		r, err := c.replies.ReadLastReply(path)
+		if err != nil {
+			return 0, false
+		}
+		file = r.Context
 	}
-	r, err := c.replies.ReadLastReply(path)
-	if err != nil {
-		return 0, false
+	tokens := file
+	// The status line written after the transcript last moved is the newer figure: it has the size after a
+	// compaction before any reply says it, and it is the number the operator reads in the terminal.
+	if c.heard != nil {
+		if used, at := c.heard(t.ID); used > 0 && at.After(info.ModTime()) {
+			tokens = used
+		}
 	}
 	c.mu.Lock()
-	c.m[t.ID] = contextSeen{path: path, mod: info.ModTime(), size: info.Size(), tokens: r.Context}
+	c.m[t.ID] = contextSeen{path: path, mod: info.ModTime(), size: info.Size(), file: file, tokens: tokens}
 	c.mu.Unlock()
-	return r.Context, !ok || last.tokens != r.Context
+	return tokens, !ok || last.tokens != tokens
+}
+
+// seen is a card's context as the board last drew it, and whether there is one.
+func (c *contextSizes) seen(id string) (int64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s, ok := c.m[id]
+	return s.tokens, ok
 }
 
 // forgetSessions drops the started session of every card not in open.

@@ -319,7 +319,7 @@ func TestPriorityMigrationNormalisesExistingRows(t *testing.T) {
 		`INSERT INTO backlog_item (id, dept, title, priority, created_at, changed_at) VALUES
 			('a','fabric','t','HIGH','x','x'), ('b','fabric','t','','x','x'), ('c','fabric','t','Medium','x','x'),
 			('d','fabric','t','p2','x','x'), ('e','fabric','t',' low ','x','x')`,
-		`DELETE FROM schema_migration WHERE name = '0014_backlog_priority'`,
+		`DELETE FROM schema_migration WHERE name IN ('0014_backlog_priority', '0039_backlog_result')`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
@@ -338,5 +338,35 @@ func TestPriorityMigrationNormalisesExistingRows(t *testing.T) {
 	}
 	if _, err := s.db.Exec(`UPDATE backlog_item SET priority = 'HIGH' WHERE id = 'a'`); err == nil {
 		t.Error("the CHECK constraint is not there")
+	}
+}
+
+func TestAResultMovesTheItemOutOfOpenAndADoneItemStaysDone(t *testing.T) {
+	s := open(t)
+	for _, id := range []string{"f-1", "f-2"} {
+		if _, err := s.ItemFile(newItem(id, "fabric")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := s.ItemResult("f-1", "  done abc1234: the fix\x07 "+strings.Repeat("x", ItemResultMax), "abc1234", "sg4~c1", "sg4~c1")
+	if err != nil || b.Status != ItemBuilt || b.ResultRef != "abc1234" || b.ResultCard != "sg4~c1" || b.ResultAt == "" ||
+		!strings.HasPrefix(b.Result, "done abc1234: the fix ") || len([]rune(b.Result)) != ItemResultMax {
+		t.Fatalf("result: %+v %v", b, err)
+	}
+	if g, _ := s.ItemGet("f-1"); g.Result != b.Result {
+		t.Errorf("get lost the result: %+v", g)
+	}
+	if l, _ := s.ItemList(ItemFilter{}); len(l) != 2 {
+		t.Errorf("list: %+v", l)
+	}
+	if _, err := s.ItemSetStatus("f-2", ItemDone, "orch"); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := s.ItemResult("f-2", "done def5678", "def5678", "sg4~c2", "sg4~c2"); err != nil || b.Status != ItemDone ||
+		b.Result != "done def5678" {
+		t.Errorf("a done item: %+v %v", b, err)
+	}
+	if _, err := s.ItemResult("nope", "done", "", "sg4~c3", "sg4~c3"); !errors.Is(err, ErrItemNotFound) {
+		t.Errorf("an unknown item: %v", err)
 	}
 }

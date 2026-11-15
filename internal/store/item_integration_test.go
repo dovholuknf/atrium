@@ -4,6 +4,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -137,7 +138,7 @@ func TestItemOfTaskIsTheLatest(t *testing.T) {
 }
 
 func TestItemStuckMigrationIsLast(t *testing.T) {
-	if last := migrations[len(migrations)-1].name; last != "0118_harness_login" {
+	if last := migrations[len(migrations)-1].name; last != "0120_task_done_leftovers" {
 		t.Fatalf("the last migration is %q", last)
 	}
 }
@@ -172,5 +173,19 @@ func TestItemStuckMarksAreOncePerRevision(t *testing.T) {
 	blockedAgain, _, _ := s.ItemTransition(again.ID, ItemBlocked, "")
 	if blockedAgain.StuckAlerted != "" || blockedAgain.MissedWorker {
 		t.Fatalf("a new stall kept the old marks: %+v", blockedAgain)
+	}
+}
+
+// A FINISHING PUSH CARRIES THE DONE TEXT, which the hub files on the backlog item. No other push does.
+func TestAFinishingTransitionCarriesItsResultOnThePush(t *testing.T) {
+	s := open(t)
+	s.ItemCreate(newItem("it-1"))
+	if _, _, err := s.ItemTransitionResult("it-1", ItemFinished, "abc1234", "done abc1234: the fix"); err != nil {
+		t.Fatal(err)
+	}
+	owed, _ := s.ItemsOwed(10)
+	if len(owed) != 2 || !strings.Contains(owed[0].Body, `"result":""`) ||
+		!strings.Contains(owed[1].Body, `"result":"done abc1234: the fix"`) {
+		t.Fatalf("owed: %+v", owed)
 	}
 }

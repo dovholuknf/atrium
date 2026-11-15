@@ -112,7 +112,13 @@ func TestTheAliasMigrationKeepsTheNewestHolder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, stmt := range migrations[len(migrations)-3].stmts {
+	var stmts []string
+	for _, m := range migrations {
+		if m.name == "0116_alias_one_card" {
+			stmts = m.stmts
+		}
+	}
+	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
 			t.Fatal(err)
 		}

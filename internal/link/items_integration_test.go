@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -210,5 +211,40 @@ func TestSubmitCarriesAnItemToThePoolsRoom(t *testing.T) {
 	}
 	if code, _ := submit(map[string]any{"pool": "reviewer", "brief": "x", "by": "orch@sg4"}, "203.0.113.9:4000"); code != http.StatusForbidden {
 		t.Fatalf("from elsewhere: %d", code)
+	}
+}
+
+// A WORKER ON A BACKLOG ITEM THAT ENDS WITH atrium_done files its done text and sha on the item, which leaves open. A
+// cancel carries no result and moves nothing.
+func TestAFinishedAssignmentFilesItsResultOnTheBacklogItem(t *testing.T) {
+	x := newItemRig(t)
+	const sha = "abcdef1234567890abcdef1234567890abcdef12"
+	for _, id := range []string{"f-r", "f-c"} {
+		if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": id, "dept": "fabric", "title": "t"}), loopAddr); code != http.StatusCreated {
+			t.Fatalf("file %s: %d %s", id, code, body)
+		}
+	}
+	sync := func(item, card, work string, rev int, state, note, result string) {
+		t.Helper()
+		if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": item, "room": "sg4", "card": card,
+			"generation": 1, "state": state, "revision": rev, "owner_kind": "human", "created_by": "orch", "note": note,
+			"work_id": work, "result": result}), loopAddr); code != http.StatusOK {
+			t.Fatalf("sync %s r%d: %d %s", item, rev, code, body)
+		}
+	}
+	sync("it-r", "c1", "f-r", 1, "running", "", "")
+	sync("it-r", "c1", "f-r", 2, "finished", sha, "done "+sha+": the fix")
+	sync("it-c", "c2", "f-c", 1, "running", "", "")
+	sync("it-c", "c2", "f-c", 2, "finished", "cancelled by owner", "")
+	x.p.WaitWork(10 * time.Second)
+	_, body := x.send("GET", "/_hub/backlog/f-r", "", loopAddr)
+	o := obj(t, body)
+	if str(o, "status") != "built" || str(o, "result") != "done "+sha+": the fix" || str(o, "result_ref") != sha ||
+		str(o, "result_card") != "sg4~c1" {
+		t.Fatalf("f-r = %s", body)
+	}
+	if _, body = x.send("GET", "/_hub/backlog/f-c", "", loopAddr); str(obj(t, body), "status") != "open" ||
+		strings.Contains(body, `"result"`) {
+		t.Fatalf("a cancel moved f-c: %s", body)
 	}
 }

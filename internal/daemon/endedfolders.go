@@ -438,7 +438,8 @@ func worktreeKey(p string) string {
 	return strings.ToLower(p)
 }
 
-// sweepWorktreeRoot removes each git worktree of the clone beside root, directly under root, whose cards all ended.
+// sweepWorktreeRoot removes each git worktree of the clone beside root, directly under root, whose cards all ended. A
+// live card working at root itself keeps only the worktrees no card claims, which it may have just added.
 func (d *Daemon) sweepWorktreeRoot(ctx context.Context, root string, users func(string, bool) ([]*store.Task, bool)) []FolderSwept {
 	clone := strings.TrimSuffix(root, "-worktrees")
 	list, err := shared.GitIn(clone, gitexec.WorktreeList{})
@@ -456,9 +457,7 @@ func (d *Daemon) sweepWorktreeRoot(ctx context.Context, root string, users func(
 			branches[worktreeKey(at)] = b
 		}
 	}
-	if _, ended := users(root, true); !ended {
-		return nil
-	}
+	_, rootEnded := users(root, true)
 	ents, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -477,6 +476,9 @@ func (d *Daemon) sweepWorktreeRoot(ctx context.Context, root string, users func(
 			continue
 		}
 		if _, err := safepath.Contained(root, dir); err != nil {
+			continue
+		}
+		if cards, _ := users(dir, false); !rootEnded && len(cards) == 0 {
 			continue
 		}
 		if s, ok := d.sweepWorktree(ctx, clone, dir, branch, users); ok {

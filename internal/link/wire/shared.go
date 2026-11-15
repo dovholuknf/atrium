@@ -48,6 +48,8 @@ type Attached struct {
 	// LoginNeeded is why the room says its claude login needs doing, empty when it does not say or it is fine.
 	// Observed from the beat and never acted on here. See internal/daemon/loginneeded.go.
 	LoginNeeded string `json:"login_needed,omitempty"`
+	// DiskLow is the room's disk notice, empty when it does not say or every drive is fine.
+	DiskLow string `json:"disk_low,omitempty"`
 	// Paths is how each of the room's rungs looked from the room on its last beat, nil from a room that does not say.
 	Paths []PathState `json:"paths,omitempty"`
 }

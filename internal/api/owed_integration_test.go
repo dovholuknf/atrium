@@ -78,3 +78,25 @@ func TestOwedOnTheRowAndADismissFromTheHostClosesIt(t *testing.T) {
 		t.Fatalf("an unknown card answered %d", rec.Code)
 	}
 }
+
+func TestSkippedFiledKeepsTheItemOnTheCardAndRefusesNone(t *testing.T) {
+	srv, st, dir := fileServer(t)
+	card := cardIn(t, st, dir)
+	post := func(id, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+id+"/skipped-filed", strings.NewReader(body)))
+		return rec
+	}
+	if rec := post(card.ID, `{"item":" f-77 "}`); rec.Code != http.StatusOK {
+		t.Fatalf("the filing: %d %s", rec.Code, rec.Body)
+	}
+	if got, _ := st.Get(card.ID); got.SkippedFiled != "f-77" {
+		t.Fatalf("kept %q", got.SkippedFiled)
+	}
+	if rec := post(card.ID, `{"item":" "}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("an empty item: %d", rec.Code)
+	}
+	if rec := post("01a0ffff-ffff-7fff-bfff-ffffffffffff", `{"item":"f-1"}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("an unknown card: %d", rec.Code)
+	}
+}

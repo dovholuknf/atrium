@@ -593,6 +593,11 @@ func checkCheckoutHome(c *evalCtx, r *Rule) (bool, string) {
 		}
 	}
 	for _, cmd := range c.Script().Cmds {
+		if cmd.Name() == "gh" {
+			if written, place, ok := c.ghCloneTarget(cmd); ok && (place == "" || !inside(home, place)) {
+				return true, written
+			}
+		}
 		if !contains(r.Params.Names, cmd.Name()) {
 			continue
 		}
@@ -611,4 +616,24 @@ func afterWord(ws []Word, w Word) []Word {
 		}
 	}
 	return nil
+}
+
+// ghCloneTarget is the folder `gh repo clone <repo> <dir>` writes, with ok false when it names none. An empty place
+// means the guard cannot tell.
+func (c *evalCtx) ghCloneTarget(cmd *Cmd) (written, place string, ok bool) {
+	args := cmd.Args()
+	for i, w := range args {
+		if w.Lit == "--" && !w.Dyn {
+			args = args[:i]
+			break
+		}
+	}
+	ops := operands(args, nil)
+	if len(ops) < 4 || ops[0].Lit != "repo" || ops[1].Lit != "clone" {
+		return "", "", false
+	}
+	if ops[3].Dyn {
+		return ops[3].Lit, "", true
+	}
+	return ops[3].Lit, dirResolver{env: c.env}.place(cmd.Dir, ops[3].Lit, false), true
 }

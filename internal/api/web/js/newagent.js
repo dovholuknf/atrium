@@ -82,7 +82,7 @@ function naAutoTitle() {
   const r = naS.link, short = naShort(naS.ref);
   if (r && r.num) return r.title || (short + "#" + r.num + (what ? " " + what : ""));
   if (r && r.kind === "branch") return short + "@" + r.head + (what ? " " + what : "");
-  return what ? short + " " + what : short;
+  return what;
 }
 const naTitle = () => naS.titleTouched ? naS.title : naAutoTitle();
 const naStripRef = t => t.replace(/^\S+\/\S+?(?:#\d+|@\S+)?(\s+|$)/, "").trim();
@@ -161,7 +161,7 @@ function naPick(it) {
   if (it.none) { naS.check = null; naSetRepo("", null); naEl("na-what").focus(); return; }
   const p = naParse(naEl("na-repo").value);
   naSetRepo(it.ref, p && launchRepoKey(p.ref) === launchRepoKey(it.ref) ? p.link : null);
-  naEl("na-what").focus();
+  naEl("na-title").focus();
 }
 
 function naSetRepo(ref, link) {
@@ -448,7 +448,7 @@ async function naLoadRepos() {
 }
 
 async function openNewAgent(tw, prefill, clone) {
-  if (!allHarnesses.length) await loadHarnesses();
+  await loadHarnesses(true);
   if (!allHarnesses.some(h => h.enabled)) { openLaunch(); return; }
   naS = {
     tw: !!tw, ref: "", link: null, what: "", title: "", titleTouched: false, branch: "", branchTouched: false,

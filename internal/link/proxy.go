@@ -51,6 +51,11 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// authView and authSave are the hub board's own sign-in, nil on a hub that keeps none. See hubauth.go.
+	authView func() any
+	authSave func([]byte) error
+	// access is the Accessing Atrium screen's list of ways in, nil on a hub that keeps none. See hubaccess.go.
+	access HubAccess
 	// remind is atrium_remind's endpoint and loop, nil on a hub that never turned it on. See remind.go.
 	remind *Reminders
 	// handlers are what serveHubAPI dispatches through. See hubroutes.go.
@@ -721,6 +726,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if p.hubAuth(w, r) || p.hubAccess(w, r) {
+		return
+	}
 	room, named := p.roomFor(r)
 	if room == "" {
 		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
@@ -1146,7 +1154,7 @@ func isStream(r *http.Request) bool {
 		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
-// ── the inventory ───────────────────────────────────────
+// â”€â”€ the inventory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Known is one room as the rooms tab sees it: what the hub has written down
 // about it, and whether it is answering right now.
@@ -1197,6 +1205,8 @@ type Known struct {
 	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
 	// LoginNeeded is why an attached room says its claude login needs doing. See Attached.LoginNeeded.
 	LoginNeeded string `json:"login_needed,omitempty"`
+	// DiskLow is the room's disk notice. See Attached.DiskLow.
+	DiskLow string `json:"disk_low,omitempty"`
 	// Paths is each rung as the room last reported it, with the hub's own listeners laid over. See MergePaths.
 	Paths []PathState `json:"paths,omitempty"`
 }
@@ -1207,7 +1217,7 @@ type Known struct {
 // means a database, and this package holds none and must not learn to. Whoever
 // builds the hub implements it, and a hub without one answers the inventory
 // with what is attached, which is what a hub with no store can honestly say.
-// ── WHAT THE BOARD MAY DO TO A ROOM, AND WHAT IT MAY NOT ─
+// â”€â”€ WHAT THE BOARD MAY DO TO A ROOM, AND WHAT IT MAY NOT â”€
 //
 // It may read the list, and it may mark a room for deletion or take that mark
 // back off. Marking destroys nothing and is one click to undo, which is the
@@ -1270,29 +1280,6 @@ type Inventory interface {
 	// off, which is how the board's ALL view lands the toggle somewhere instead
 	// of being refused for want of a room.
 	SetBoardAuto(on bool, until *time.Time) error
-	// ShareAuth reports the login a PUBLIC zrok board share is created behind:
-	// the scheme ("updb", "oidc" or "" for none), the updb username and
-	// password, and the oidc provider. Board policy, so the hub's to hold, the
-	// same as the skin and the board-wide flag. See `hubSettings` in fanout.go
-	// and `docs/fabric/ziti-zrok-flow-design.md`.
-	ShareAuth() (ShareAuth, error)
-	// SetShareAuth writes that login, which is how the settings screen's share
-	// user/pass field lands somewhere. The password is written only when a new
-	// one is given, so a save that leaves the box blank keeps the stored one.
-	SetShareAuth(a ShareAuth) error
-}
-
-// ShareAuth is the public-share login the hub holds, mirrored from
-// `internal/hubstore.ShareAuth` so `internal/link` needs no import of the store.
-// The hub's inventory adapts between the two.
-type ShareAuth struct {
-	// Scheme is "updb", "oidc" or "" (none).
-	Scheme string
-	// User and Pass are the zrok updb credential, for the "updb" scheme.
-	User string
-	Pass string
-	// OIDCProvider is the zrok OIDC provider name, for the "oidc" scheme.
-	OIDCProvider string
 }
 
 // SetInventory wires the durable room list up. Optional.
@@ -1724,7 +1711,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.hubRoutes().Notify(w, r, sub)
-	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url":
+	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url", "git/walk":
 		p.hubRoutes().Git(w, r, sub)
 	case "launch-caps":
 		p.hubRoutes().LaunchCaps(w, r)

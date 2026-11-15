@@ -126,6 +126,9 @@ function sh(args, env) {
     ["success skipped skipped", ["--expected-skipped", "1"], "failure"],
     ["failure skipped", ["--expected-skipped", "1"], "failure"],
     ["cancelled skipped", ["--expected-skipped", "1"], "cancelled"],
+    ["success success", ["--jobs", "success skipped cancelled success"], "cancelled"],
+    ["success success", ["--jobs", "success failure cancelled"], "failure"],
+    ["success success", ["--jobs", "success skipped success"], "success"],
   ];
   for (const [needs, extra, want] of cases) {
     const got = await conclusionOf(needs, extra);

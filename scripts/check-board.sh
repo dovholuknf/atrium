@@ -198,6 +198,11 @@ if ! node "$here/scripts/test-term-nesting.js"; then
   fail=1
 fi
 
+if ! node "$here/scripts/test-launch-runners-fresh.js"; then
+  echo "the new agent dialog reuses a stale runner list. see above." >&2
+  fail=1
+fi
+
 if ! node "$here/scripts/test-launcher-same-room.js"; then
   echo "a worker launched on its launcher's room does not nest under it. see above." >&2
   fail=1

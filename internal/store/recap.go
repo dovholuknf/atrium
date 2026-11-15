@@ -58,3 +58,11 @@ func (t *Task) Recapped() bool { return strings.TrimSpace(t.Recap) != "" }
 
 // FinishedAt is when the work on this card was declared over, or nil.
 func (t *Task) FinishedAt() *time.Time { return t.RecapAt }
+
+// SetSkippedFiled keeps the backlog item the board filed for a done's skipped note.
+func (s *Store) SetSkippedFiled(id, item string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET skipped_filed = ? WHERE id = ?`, item, id)
+		return err
+	})
+}

@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,9 +11,29 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/scrypt"
 )
+
+// Settings is where a guard keeps its configuration, its cookie key and its session generation: the room's store
+// or the hub's.
+type Settings interface {
+	Setting(key string) (string, error)
+	SetSetting(key, value string) error
+}
+
+// Guard is the sign-in in front of a published board, whatever way in published it. It holds no password and no
+// refresh token.
+type Guard struct {
+	St Settings
+	// Running says a public exposure is up, so the sign-in cannot be turned off under it. Nil is never.
+	Running func() bool
+
+	Logins     LoginStates
+	Discovered ProviderCache
+	Jwks       JwksCache
+}
+
+// NewGuard is a guard over st.
+func NewGuard(st Settings, running func() bool) *Guard { return &Guard{St: st, Running: running} }
 
 // A login in front of the board, and ONLY in front of the published one.
 //
@@ -113,7 +132,8 @@ type AuthConfig struct {
 	ClientSecret string `json:"client_secret,omitempty"`
 	// Redirect is where the provider sends somebody back to. It has to be the
 	// PUBLISHED address, because that is where the browser is, and it has to
-	// match what the provider was told exactly.
+	// match what the provider was told exactly. Empty is the address each request came in on, so one
+	// provider client serves every exposure as long as each callback is registered with it.
 	Redirect string `json:"redirect"`
 	// Allow is who may in. Email addresses or subjects, whichever the provider
 	// puts in the token.
@@ -122,114 +142,12 @@ type AuthConfig struct {
 	// provider authenticated", which on a provider with open registration is
 	// the whole internet with an extra step.
 	Allow []string `json:"allow"`
-
-	// A NAME AND A PASSWORD, for a board published without an identity
-	// provider in front of it.
-	//
-	// The OIDC flow above is the better answer and it is not always an
-	// available one: it needs a provider, a client registered with it, and a
-	// redirect that matches the published address exactly. Somebody putting a
-	// board on a zrok share for an afternoon has none of those, and the
-	// alternative they actually reach for is publishing it with no login at
-	// all. The operator's words: "make sure it has auth now. basic auth is
-	// fine for starters".
-	//
-	// It is checked BEFORE the provider, so a board can have both configured
-	// and a password still works while the provider is down. The one thing it
-	// must not do is weaken the other: a request that fails here falls through
-	// to the OIDC path rather than being refused, so adding a password to a
-	// board that had a provider cannot lock its users out.
-	Basic bool `json:"basic"`
-	// User is the name to type. Empty is refused when `Basic` is on, since a
-	// password with no name is a password everybody shares and nobody owns.
-	User string `json:"user,omitempty"`
-	// PassHash is the password, salted and hashed. THE PASSWORD ITSELF IS
-	// NEVER STORED and never leaves the browser it was typed in: the board
-	// sends it once to be hashed here, and reads back only whether one is set.
-	//
-	// See `setBasicPassword`, which is the only thing that writes it.
-	PassHash string `json:"pass_hash,omitempty"`
-	PassSalt string `json:"pass_salt,omitempty"`
-}
-
-// HasPassword reports that a password is set without saying anything about it.
-// The board draws a different control for "change it" than for "set one".
-func (c AuthConfig) HasPassword() bool {
-	return strings.TrimSpace(c.PassHash) != "" && strings.TrimSpace(c.PassSalt) != ""
-}
-
-// basicReady says whether the name and password half could let somebody in.
-func (c AuthConfig) BasicReady() error {
-	if !c.Basic {
-		return nil
-	}
-	if strings.TrimSpace(c.User) == "" {
-		return fmt.Errorf("a password login needs a name to go with the password")
-	}
-	if !c.HasPassword() {
-		return fmt.Errorf("a password login needs a password")
-	}
-	return nil
-}
-
-// checks reports whether this name and password are the ones configured.
-//
-// CONSTANT TIME on the hash, because the comparison is against a secret and a
-// byte-by-byte one leaks how much of a guess was right. The name is compared
-// the same way for the same reason, since knowing the name is most of a guess.
-func (c AuthConfig) Checks(user, pass string) bool {
-	if !c.Basic || !c.HasPassword() {
-		return false
-	}
-	nameOK := subtle.ConstantTimeCompare(
-		[]byte(strings.TrimSpace(user)), []byte(strings.TrimSpace(c.User))) == 1
-	passOK := subtle.ConstantTimeCompare(
-		[]byte(HashPassword(pass, c.PassSalt)), []byte(c.PassHash)) == 1
-	// Both are evaluated before either is read, so a wrong NAME costs the same
-	// as a wrong password and the pair cannot be learned one at a time.
-	return nameOK && passOK
-}
-
-// hashPassword is scrypt over the password and its salt.
-//
-// Deliberately slow. The threat is somebody who has taken the database and is
-// trying every password offline, and the whole defence against that is how
-// long one guess costs. The parameters are the ones the Go documentation names
-// for interactive use, which is around a tenth of a second here.
-func HashPassword(pass, salt string) string {
-	key, err := scrypt.Key([]byte(pass), []byte(salt), 1<<15, 8, 1, 32)
-	if err != nil {
-		return ""
-	}
-	return base64.RawStdEncoding.EncodeToString(key)
-}
-
-// setBasicPassword hashes a new password into the configuration.
-//
-// A FRESH SALT EVERY TIME. Reusing one would mean two boards with the same
-// password store the same hash, which is the property that makes a stolen
-// table worth precomputing against.
-func SetBasicPassword(c *AuthConfig, pass string) error {
-	if strings.TrimSpace(pass) == "" {
-		return fmt.Errorf("a password of nothing is not a password")
-	}
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		return fmt.Errorf("could not make a salt: %w", err)
-	}
-	salt := base64.RawStdEncoding.EncodeToString(raw)
-	hash := HashPassword(pass, salt)
-	if hash == "" {
-		return fmt.Errorf("could not hash the password")
-	}
-	c.PassSalt, c.PassHash = salt, hash
-	return nil
 }
 
 // authConfig reads it, with the defaults that make being unconfigured safe.
-func (d *Service) AuthConfig() AuthConfig {
+func (d *Guard) AuthConfig() AuthConfig {
 	var c AuthConfig
-	raw, err := d.st.Setting(SettingAuth)
+	raw, err := d.St.Setting(SettingAuth)
 	if err == nil && raw != "" {
 		_ = json.Unmarshal([]byte(raw), &c)
 	}
@@ -246,24 +164,11 @@ func (c AuthConfig) Ready() error {
 	if !c.Enabled {
 		return nil
 	}
-	if err := c.BasicReady(); err != nil {
-		return err
-	}
-	// A NAME AND PASSWORD IS ENOUGH ON ITS OWN. The checks below are about
-	// the provider, and demanding an issuer from somebody who configured a
-	// password would refuse the simple case for missing the complicated one.
-	if c.Basic {
-		return nil
-	}
 	if strings.TrimSpace(c.Issuer) == "" {
 		return fmt.Errorf("a login needs an issuer: the provider's URL, such as a keycloak realm")
 	}
 	if strings.TrimSpace(c.ClientID) == "" {
 		return fmt.Errorf("a login needs a client id, registered with that provider")
-	}
-	if strings.TrimSpace(c.Redirect) == "" {
-		return fmt.Errorf("a login needs the address the provider sends people back to, and it " +
-			"has to be the PUBLISHED one rather than localhost")
 	}
 	if len(c.Allow) == 0 {
 		return fmt.Errorf("a login with nobody on the allow list would let nobody in. name at " +
@@ -298,11 +203,11 @@ func (c AuthConfig) Allows(subject, email string) bool {
 // turning the login off afterwards leaves the board open on a public address.
 // The share is not stopped on the operator's behalf. It is named, and stopping
 // it first is theirs to do.
-func (d *Service) SaveAuth(c AuthConfig) error {
+func (d *Guard) SaveAuth(c AuthConfig) error {
 	if err := c.Ready(); err != nil {
 		return err
 	}
-	if d.PublicShareRunning() && !(c.Enabled && c.Ready() == nil) {
+	if d.Running != nil && d.Running() && !(c.Enabled && c.Ready() == nil) {
 		return fmt.Errorf("the board is on a public zrok share right now, and turning its " +
 			"login off would leave it open to anyone with the link. stop the share first, " +
 			"then change the login")
@@ -312,7 +217,7 @@ func (d *Service) SaveAuth(c AuthConfig) error {
 	if err != nil {
 		return err
 	}
-	if err := d.st.SetSetting(SettingAuth, string(raw)); err != nil {
+	if err := d.St.SetSetting(SettingAuth, string(raw)); err != nil {
 		return err
 	}
 	if SessionsOutdatedBy(old, c) {
@@ -328,9 +233,61 @@ func (d *Service) SaveAuth(c AuthConfig) error {
 	return nil
 }
 
+// AuthView is the sign-in as the board reads it. The secret is NEVER sent back, only whether there is one. This
+// board is itself something people open and screenshot.
+func (d *Guard) AuthView() map[string]any {
+	c := d.AuthConfig()
+	return map[string]any{
+		"enabled": c.Enabled, "issuer": c.Issuer, "client_id": c.ClientID,
+		"redirect": c.Redirect, "allow": c.Allow,
+		"has_client_secret": strings.TrimSpace(c.ClientSecret) != "",
+	}
+}
+
+// SaveAuthBody saves the board's form, each field it names over the stored one.
+func (d *Guard) SaveAuthBody(body []byte) error {
+	// The stored secret is carried over when the form sends none, so
+	// saving any other field does not silently blank it. A form that has
+	// never been shown the secret cannot send it back.
+	next := d.AuthConfig()
+	var in struct {
+		Enabled      *bool    `json:"enabled"`
+		Issuer       *string  `json:"issuer"`
+		ClientID     *string  `json:"client_id"`
+		ClientSecret *string  `json:"client_secret"`
+		Redirect     *string  `json:"redirect"`
+		Allow        []string `json:"allow"`
+	}
+	if err := json.Unmarshal(body, &in); err != nil {
+		return err
+	}
+	if in.Enabled != nil {
+		next.Enabled = *in.Enabled
+	}
+	if in.Issuer != nil {
+		next.Issuer = *in.Issuer
+	}
+	if in.ClientID != nil {
+		next.ClientID = *in.ClientID
+	}
+	if in.Redirect != nil {
+		next.Redirect = *in.Redirect
+	}
+	if in.Allow != nil {
+		next.Allow = in.Allow
+	}
+	// Empty means "leave it alone". Clearing one means sending a single
+	// space, which is odd and is the safer way round: the alternative
+	// blanks a working secret every time somebody edits the allow list.
+	if in.ClientSecret != nil && strings.TrimSpace(*in.ClientSecret) != "" {
+		next.ClientSecret = strings.TrimSpace(*in.ClientSecret)
+	}
+	return d.SaveAuth(next)
+}
+
 // cookieKey returns the signing key, making one the first time.
-func (d *Service) CookieKey() ([]byte, error) {
-	raw, err := d.st.Setting(SettingAuthKey)
+func (d *Guard) CookieKey() ([]byte, error) {
+	raw, err := d.St.Setting(SettingAuthKey)
 	if err == nil && strings.TrimSpace(raw) != "" {
 		return base64.RawURLEncoding.DecodeString(raw)
 	}
@@ -338,7 +295,7 @@ func (d *Service) CookieKey() ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
-	if err := d.st.SetSetting(SettingAuthKey, base64.RawURLEncoding.EncodeToString(key)); err != nil {
+	if err := d.St.SetSetting(SettingAuthKey, base64.RawURLEncoding.EncodeToString(key)); err != nil {
 		return nil, err
 	}
 	return key, nil
@@ -358,7 +315,7 @@ func (d *Service) CookieKey() ([]byte, error) {
 // drift apart on the attributes that matter: `HttpOnly` keeps it away from
 // script, `Secure` keeps it off plain http, and `SameSite` is what stops
 // another site spending it.
-func (d *Service) SetSession(w http.ResponseWriter, key []byte, subject, email string) {
+func (d *Guard) SetSession(w http.ResponseWriter, key []byte, subject, email string) {
 	until := time.Now().Add(AuthSessionFor)
 	http.SetCookie(w, &http.Cookie{
 		Name: AuthCookie, Value: SignSession(key, Session{
@@ -430,8 +387,8 @@ func ReadSession(key []byte, v string) (Session, bool) {
 const SettingAuthGen = "auth_session_gen"
 
 // sessionGen reads the current generation. Unset is zero.
-func (d *Service) SessionGen() int64 {
-	raw, err := d.st.Setting(SettingAuthGen)
+func (d *Guard) SessionGen() int64 {
+	raw, err := d.St.Setting(SettingAuthGen)
 	if err != nil {
 		return 0
 	}
@@ -441,19 +398,16 @@ func (d *Service) SessionGen() int64 {
 }
 
 // bumpSessionGen ends every session issued so far.
-func (d *Service) BumpSessionGen() error {
-	return d.st.SetSetting(SettingAuthGen, fmt.Sprintf("%d", d.SessionGen()+1))
+func (d *Guard) BumpSessionGen() error {
+	return d.St.SetSetting(SettingAuthGen, fmt.Sprintf("%d", d.SessionGen()+1))
 }
 
 // sessionStillGood is the re-check the guard makes on every request: the
 // generation has not moved, and the subject is still somebody the current
 // configuration lets in. A valid MAC only proves this board issued it once.
-func (d *Service) SessionStillGood(cfg AuthConfig, s Session) bool {
+func (d *Guard) SessionStillGood(cfg AuthConfig, s Session) bool {
 	if s.Gen != d.SessionGen() {
 		return false
-	}
-	if strings.HasPrefix(s.Subject, "basic:") {
-		return cfg.Basic && cfg.HasPassword() && s.Subject == "basic:"+cfg.User
 	}
 	return cfg.Allows(s.Subject, s.Email)
 }
@@ -465,10 +419,7 @@ func SessionsOutdatedBy(old, next AuthConfig) bool {
 	if old.Enabled && !next.Enabled {
 		return true
 	}
-	if old.PassHash != next.PassHash || old.PassSalt != next.PassSalt ||
-		old.User != next.User || old.Basic != next.Basic ||
-		old.Issuer != next.Issuer || old.ClientID != next.ClientID ||
-		old.ClientSecret != next.ClientSecret {
+	if old.Issuer != next.Issuer || old.ClientID != next.ClientID || old.ClientSecret != next.ClientSecret {
 		return true
 	}
 	norm := func(in []string) map[string]bool {

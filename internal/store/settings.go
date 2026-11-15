@@ -39,6 +39,10 @@ const SettingEscalateTurnAfter = "escalate_turn_after"
 const (
 	SettingSweepDead  = "sweep_dead_after"
 	SettingPruneAfter = "prune_after"
+	// SettingDiskWarnFree and SettingDiskCriticalFree are the free space, in megabytes, under which a drive the room
+	// uses is warned about and under which the room refuses new launches. Empty means the default. See daemon/diskwatch.go.
+	SettingDiskWarnFree     = "disk_warn_free"
+	SettingDiskCriticalFree = "disk_critical_free"
 	// SettingArchiveWorkersAfter is how long a done worker card stays on the board, in seconds. `off` disables it, and
 	// unset means a day. See daemon/archiveworkers.go.
 	SettingArchiveWorkersAfter = "archive_workers_after"

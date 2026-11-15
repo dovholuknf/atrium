@@ -37,6 +37,9 @@ func newHubRooms(store *hubstore.Store) *hubRooms {
 func (k *hubRooms) attaching(name, host, ver string) error {
 	r, err := k.store.ByName(name)
 	switch {
+	case err == nil && r.State == hubstore.StatePending:
+		return fmt.Errorf("%q is waiting for this hub's operator to approve it. "+
+			"`%s %s` on the hub lets it in", name, atriumCmd("rooms approve"), name)
 	case err == nil:
 		k.mu.Lock()
 		k.known[name] = true

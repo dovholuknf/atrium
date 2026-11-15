@@ -173,9 +173,6 @@ prefLive(["atrium.sound", "atrium.termKeep*"], () => paintSettingsPrefs());
 function paintSettings() {
   buildSettingsNav();
   if (typeof paintTermGear === "function") paintTermGear();
-  // Not awaited. The gear opens on what the browser already knows and the
-  // login section fills itself in a moment later, the same way the overlays do.
-  loadAuth();
   paintSettingsPrefs();
 
   // The two housekeeping timers. Held by the daemon rather than the browser,
@@ -190,9 +187,7 @@ function paintSettings() {
   // only changes when something in here changes it, and the event stream
   // carries the ones that happen elsewhere.
   loadOverlays();
-  // The redo surface ("expose the board 2"), painted from the same overlay
-  // state. Guarded so removing js/expose2.js leaves this a no-op.
-  if (typeof loadExpose2 === "function") loadExpose2();
+  accessRefresh();
   const state = document.getElementById("s-notify-state");
   const hint = document.getElementById("s-notify-hint");
   const ask = document.getElementById("s-notify-ask");
@@ -2085,26 +2080,6 @@ function connect() {
     try { next = JSON.parse(e.data) || []; } catch (err) { return; }
     noticeSharesThatDied(overlays, next);
     overlays = next;
-    paintOverlays();
-  });
-  // How far a share has got. Only ever painted into a dialog this window
-  // opened, and only while that dialog is still waiting: the daemon broadcasts
-  // to every window, and a share is one machine's business but it is this
-  // operator's action.
-  // The same narration for the board's own share, painted into the panel that
-  // holds the button. Only while this window is the one waiting: `overlayBusy`
-  // is set by the click, so a start from another tab does not turn this one's
-  // button into a spinner that nothing here will ever clear.
-  es.addEventListener("overlay-progress", e => {
-    let d;
-    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
-    if (!d.kind || !(d.kind in overlayBusy)) return;
-    // Both endings are left to the POST. It carries the new overlay state and
-    // the error text, and clearing the busy line here would blank the panel a
-    // beat before there is anything to put in its place.
-    if (d.step === "done" || d.step === "failed") return;
-    overlayBusy[d.kind] = d.text || "starting";
-    paintOverlays();
   });
   es.addEventListener("share-progress", e => {
     let d;

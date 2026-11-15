@@ -96,6 +96,12 @@ function landFromSolo(taskFor, goTo, key) {
 // board is back where it was, then takes the query off the address so a reload
 // does not land again.
 function landFromURL() {
+  const wl = typeof walkLinkOf === "function" ? walkLinkOf(location.href) : null;
+  if (wl) {
+    history.replaceState(history.state, "", "/" + location.search);
+    walkLinkOpen(wl.id, wl.dir);
+    return;
+  }
   const q = new URLSearchParams(location.search);
   if (!q.has("land") && !q.has("view")) return;
   const taskFor = q.get("land") || "", goTo = q.get("view") || "", key = q.get("key") || "";

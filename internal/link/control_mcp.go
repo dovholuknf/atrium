@@ -1749,6 +1749,9 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		spec := strings.TrimSpace(in.Item)
 		if spec == "" {
 			spec = WorkOfTags(in.Tags)
+			if spec != "" && hasTag(in.Tags, RerunTag) {
+				spec = RerunPrefix + spec
+			}
 		}
 		hubCall := func(ctx context.Context, method, path string, body, out any) error {
 			return c.Ask(ctx, method, path, "", body, out)

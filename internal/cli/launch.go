@@ -128,7 +128,8 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --isolated: who owns it. empty is the creating session, human, or orchestrator or director")
 	c.Flags().StringVar(&o.item, "item", "",
 		"REQUIRED for a new session: the backlog item this works on, by id (f-new-thing), or new:\"a title\" to file one "+
-			"under the dept: tag in --tags. not needed with --resume or --onto, whose card already exists")
+			"under the dept: tag in --tags, or rerun:<id> for an item that already has a result. not needed with --resume "+
+			"or --onto, whose card already exists")
 	c.Flags().StringVar(&o.step, "step", "",
 		"with --item: the step of the item this card is for (designed, building, tested, reviewed, landed). a card with none "+
 			"is a builder. a designer is --step designed, and its finishing makes the design wait for the human to approve it")

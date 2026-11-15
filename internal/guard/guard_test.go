@@ -335,6 +335,11 @@ func TestCheckoutStaysInHome(t *testing.T) {
 		{"Bash", `git worktree list`, ""},
 		{"Bash", `git worktree remove D:/worktrees/x`, ""},
 		{"Bash", `gwt sessions`, ""},
+		{"Bash", `gh repo clone o/r D:/tmp/other/r`, "checkout-home"},
+		{"Bash", `gh repo clone o/r $DIR -- --depth 1`, "checkout-home"},
+		{"Bash", `gh repo clone o/r ../tmp/r`, ""},
+		{"Bash", `gh repo clone o/r`, ""},
+		{"Bash", `gh repo clone o/r -- --depth 1`, ""},
 	}
 	for _, c := range cases {
 		cmd, cwd := c.cmd, cwd

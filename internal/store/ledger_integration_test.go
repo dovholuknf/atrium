@@ -873,3 +873,27 @@ func TestTheLaunchThatMadeTheItemIsNotASecondRunWhenItsRunnerDiedFirst(t *testin
 		t.Fatalf("one death sent %d notices", len(msgs))
 	}
 }
+
+func TestADoneKeepsSkippedAndUnverifiedAndAFilingIsKeptUntilTheNextDone(t *testing.T) {
+	s := openTestStore(t)
+	task := mustRegister(t, s, "worker")
+	done := func(skipped, unverified string) {
+		t.Helper()
+		_, err := s.RecordReport(ReportWrite{TaskID: task.ID, ReportStatus: "done", SetSHA: true, SHA: "abc1234",
+			SkippedNote: skipped, UnverifiedNote: unverified, Event: map[string]any{"by": "agent", "kind": "finished"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	done("the retry path", "windows")
+	if err := s.SetSkippedFiled(task.ID, "f-12"); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGet(t, s, task.ID); got.DoneSkipped != "the retry path" || got.DoneUnverified != "windows" || got.SkippedFiled != "f-12" {
+		t.Fatalf("got %q %q %q", got.DoneSkipped, got.DoneUnverified, got.SkippedFiled)
+	}
+	done("", "")
+	if got := mustGet(t, s, task.ID); got.DoneSkipped != "" || got.DoneUnverified != "" || got.SkippedFiled != "" {
+		t.Fatalf("a later done kept %q %q %q", got.DoneSkipped, got.DoneUnverified, got.SkippedFiled)
+	}
+}

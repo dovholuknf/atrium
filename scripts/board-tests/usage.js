@@ -1,6 +1,6 @@
 // usage: usage: the tab, burn charts, context, turn limits, cache.
 //
-// Units: usageCacheReads, usageTurns, turnLimits, usagePolish, usageLimits, usageGroups, contextSize, ctxLine, ctxLimitLayers, contextCycle, cacheChip, clock, usageTab, usageWeekReset, boardUsage, burnChart, burnReadout.
+// Units: usageCacheReads, usageTurns, turnLimits, usagePolish, usageLimits, usageGroups, contextSize, ctxLine, ctxLimitLayers, contextCycle, cacheChip, clock, usageTab, usageWeekReset, boardUsage.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -1374,7 +1374,7 @@ async function usageTurnsSection(browser, base) {
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
-    await sp.evaluate(() => switchView("usage"));
+    await sp.evaluate(() => { UC.sub = "reports"; switchView("usage"); });
     await sp.waitForSelector("#uc-body [data-role=turns-kind]", { timeout: slow(10000) });
     if (!/since=/.test(asked)) fail("usageTurns: the read named no range: " + asked);
     const t = await sp.evaluate(() => ({
@@ -1486,9 +1486,12 @@ async function usageCacheReadsSection(browser, base) {
   const look = () => sp.evaluate(() => {
     const kinds = new Set([...document.querySelectorAll('#uc-body .ucchart[data-chart=burn] rect')].map(r => r.getAttribute("class")));
     const g = document.querySelector('#uc-body .ucchart[data-chart=burn] g[data-t]');
-    return { kinds: [...kinds].sort(), line: /not in these charts/.test(document.getElementById("uc-body").textContent),
-      causes: (document.querySelector("#uc-body .uccauses") || {}).textContent || "",
+    const out = { kinds: [...kinds].sort(), line: /not in these charts/.test(document.getElementById("uc-body").textContent),
       on: document.getElementById("uc-cache").getAttribute("aria-pressed"), hasG: !!g };
+    UC.sub = "reports"; ucPaint();
+    out.causes = (document.querySelector("#uc-body .uccauses") || {}).textContent || "";
+    UC.sub = "charts"; ucPaint();
+    return out;
   });
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
@@ -1507,11 +1510,11 @@ async function usageCacheReadsSection(browser, base) {
     let read = "";
     for (let i = 0; i < 3; i++) {
       await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect', { position: { x: 1, y: 1 + i } });
-      read = await sp.waitForFunction(() => { const r = document.querySelector("#uc-body .ucread"); return r && r.textContent !== "hover a bar" && r.textContent; },
+      read = await sp.waitForFunction(() => { const r = document.querySelector("#uc-body .ucchart[data-chart=burn] .ucread"); return r && r.textContent !== "hover a bar" && r.textContent; },
         null, { timeout: slow(1500) }).then(h => h.jsonValue()).catch(() => "");
       if (read) break;
     }
-    if (!read) read = await sp.textContent("#uc-body .ucread");
+    if (!read) read = await sp.textContent("#uc-body .ucchart[data-chart=burn] .ucread");
     if (!/cache read 90k/.test(read) || (read.match(/ · /g) || []).length !== 5) fail("usageCacheReads: the hover does not list five kinds: " + read);
 
     await sp.click("#uc-cache");
@@ -1526,9 +1529,9 @@ async function usageCacheReadsSection(browser, base) {
   if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
 }
 
-// u-027: the usage tab's neutral by-card colour, the toggle that says its state, and the cumulative line.
+// u-027: the usage tab's neutral by-card colour, the toggle that says its state, and the chart's total.
 // NOTHING HERE READS THE REAL CLOCK. Every fixture is built from one `now` chosen below and handed to the
-// functions that take it (ucCumulative(series, now), ucAxis(series, now), ucMidnight(now)) or set as UC.now,
+// functions that take it (ucAxis(series, now)) or set as UC.now,
 // which ucNow() answers for the whole tab. USAGE_SHOT=<file.png> also writes a screenshot of the tab.
 // A picture, not a check, so it may use the real clock: a day of turns, four cards, cache reads dominant.
 // It touches nothing that u-027 added, so USAGE_SHOT_ONLY=1 can take the "before" from the old board.
@@ -1644,65 +1647,7 @@ async function usageTabSection(browser, base) {
     l = await label();
     if (l.t !== "cache reads shown" || l.p !== "true") fail("usageTab: a settings event on reads " + JSON.stringify(l));
 
-    // the cumulative line, at an afternoon and at 23:50, with the projection worked out by hand
-    const cum = await sp.evaluate(() => {
-      const res = {};
-      const mk = i => ({ rows: 1, replies: 1, input: i, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: i * 10, cost: 0 });
-      // eight full 15 minute buckets before now, 3000 counted tokens each
-      const build = (now, ms, n, per) => {
-        const last = Math.floor(now / ms) * ms;
-        const series = [];
-        for (let i = n; i >= 1; i--) series.push({ t: last - i * ms, total: ucAdd(ucSums(), mk(per)) });
-        return series;
-      };
-      const read = (html) => {
-        const div = document.createElement("div");
-        div.innerHTML = html;
-        const paths = [...div.querySelectorAll("svg path:not(.ucarea)")];
-        const ys = paths[0] ? [...paths[0].getAttribute("d").matchAll(/[ML]\S+ (\S+)/g)].map(m => Number(m[1])) : [];
-        return { n: paths.length, dashed: !!div.querySelector(".uck-proj"), ys,
-          axis: div.querySelector(".ucaxis").textContent, total: (div.querySelector("[data-n=cumtotal]") || {}).textContent,
-          proj: (div.querySelector("[data-n=cumproj]") || {}).textContent || "" };
-      };
-      UC.now = 0;
-      UC.cacheReads = false;
-      const run = (label, range, now, ms, n, per) => {
-        UC.range = range; UC.bw = ms / 1000; UC.since = now - { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 }[range];
-        res[label] = read(ucCumulative(build(now, ms, n, per), now));
-      };
-      const pm = new Date(2026, 8, 15, 15, 30).getTime();
-      const late = new Date(2026, 8, 15, 23, 50).getTime();
-      run("pm24", "24h", pm, 900000, 8, 3000);
-      run("late24", "24h", late, 900000, 8, 3000);
-      run("pm7d", "7d", pm, 3600000, 8, 3000);
-      run("pm1h", "1h", pm, 60000, 8, 3000);
-      run("pm6h", "6h", pm, 300000, 8, 3000);
-      // the last hour empty: a burst two hours back and nothing since
-      UC.range = "24h"; UC.bw = 900; UC.since = pm - 86400000;
-      const old = build(pm - 7200000, 900000, 4, 3000);
-      res.quiet = read(ucCumulative(old, pm));
-      UC.cacheReads = true;
-      res.shown = read(ucCumulative(build(pm, 900000, 8, 3000), pm));
-      UC.now = 0;
-      return res;
-    });
-    // 8 buckets x 3000 = 24000 so far. 3pm: buckets from 14:30 on are 4 x 3000 over the 60 minutes to 15:30 is
-    // 200 a minute, and 510 minutes to midnight adds 102000, so 126k. At 23:50 the hour reaches back to 22:45,
-    // 4 x 3000 over 65 minutes, and 10 minutes to midnight adds 1846: 25846, so 26k.
-    const mono = ys => ys.every((y, i) => i === 0 || y <= ys[i - 1]);
-    for (const k of ["pm24", "late24", "pm7d", "pm1h", "pm6h", "quiet"]) {
-      const c = cum[k];
-      if (!mono(c.ys)) fail("usageTab: the " + k + " line goes down: " + c.ys);
-      if (c.total !== (k === "quiet" ? "12k" : "24k")) fail("usageTab: " + k + " ends at " + c.total + " and the range total is 24k");
-    }
-    if (!cum.pm24.proj.startsWith("at this pace: 126k by midnight") || !cum.pm24.dashed || cum.pm24.n !== 2) fail("usageTab: 24h at 15:30 reads " + JSON.stringify(cum.pm24));
-    if (!cum.late24.proj.startsWith("at this pace: 26k by midnight") || !cum.late24.dashed) fail("usageTab: 24h at 23:50 reads " + JSON.stringify(cum.late24));
-    if (!/^0.*24k$/.test(cum.pm24.axis.replace(/at this pace.*midnight/, ""))) fail("usageTab: the axis reads " + cum.pm24.axis);
-    if (!/^at this pace: \d+k by midnight, \S+ more by the reset Sun 18:00 E[SD]T$/.test(cum.pm7d.proj) || !cum.pm7d.dashed) fail("usageTab: 7d reads " + JSON.stringify(cum.pm7d));
-    for (const k of ["pm1h", "pm6h", "quiet"]) if (cum[k].dashed || cum[k].proj) fail("usageTab: " + k + " has a projection: " + JSON.stringify(cum[k]));
-    if (cum.shown.total !== "264k") fail("usageTab: with cache reads shown the line ends at " + cum.shown.total + ", 24k counted plus 240k of reads is 264k");
-
-    // the last point of the line equals the range total on the by-kind line in a real paint
+    // the chart's running total equals the range total on the by-kind line in a real paint
     const paint = await sp.evaluate(() => {
       const now = new Date(2026, 8, 15, 15, 30).getTime();
       UC.now = now; UC.range = "24h"; UC.bw = 900; UC.since = now - 86400000; UC.group = "card";
@@ -1719,7 +1664,7 @@ async function usageTabSection(browser, base) {
         ucPaint();
         const kinds = [...document.querySelectorAll('#uc-body [data-n^="kind:"]')].map(e => e.textContent);
         const h = [...document.querySelectorAll("#uc-body h4")].map(e => e.textContent.split(" ")[0] + " " + e.textContent.split(" ")[1]);
-        out.push({ total: (document.querySelector("#uc-body [data-n=cumtotal]") || {}).textContent, kinds, h,
+        out.push({ total: ((document.querySelector("#uc-body [data-n=corrun]") || {}).textContent || "").replace(/ counted$/, ""), kinds, h,
           want: usageTokens(on ? 131800 : 1800) });
       }
       UC.now = 0;
@@ -1727,9 +1672,9 @@ async function usageTabSection(browser, base) {
     });
     for (const [i, on] of ["off", "on"].entries()) {
       const p = paint[i];
-      if (p.total !== p.want) fail("usageTab: the cumulative line ends at " + p.total + ", the range total is " + p.want + " with cache reads " + on);
+      if (p.total !== p.want) fail("usageTab: the chart counts " + p.total + ", the range total is " + p.want + " with cache reads " + on);
       const order = p.h.join("|");
-      if (!/tokens by|cumulative tokens|tokens by cause/.test(order) || order.indexOf("cumulative") < order.indexOf("tokens by") || order.lastIndexOf("cumulative") > order.lastIndexOf("tokens by")) fail("usageTab: heading order " + order);
+      if (order !== "tokens and|by card|burn rate|tokens by") fail("usageTab: heading order " + order);
     }
 
     if (process.env.USAGE_SHOT) await usageShot(sp, process.env.USAGE_SHOT);
@@ -1786,16 +1731,12 @@ async function usageWeekResetSection(browser, base) {
       UC.rooms = { "": { state: "ok", why: "", buckets, noGroups: false } };
       ucPaint();
       const q = sel => [...document.querySelectorAll(sel)];
-      const cum = document.querySelector("#uc-body .ucchart[data-chart=cumulative]");
-      const ys = cum ? [...cum.querySelector("svg path.uck-line:not(.uck-proj)").getAttribute("d").matchAll(/[ML]\S+ (\S+)/g)].map(m => Number(m[1])) : [];
       return {
         on: q("#uc-ranges button.on").map(b => b.dataset.range).join(),
-        cumMarks: q(".ucchart[data-chart=cumulative] .ucwkresetln").map(l => Number(l.dataset.at)),
+        corMarks: q(".ucchart[data-chart=correlate] .ucwkresetln").map(l => Number(l.dataset.at)),
         burnMarks: q(".ucchart[data-chart=burn] .ucwkresetln").map(l => Number(l.dataset.at)),
-        label: (document.querySelector(".ucchart[data-chart=cumulative] .ucwkresetlab") || {}).textContent || "",
-        total: (cum && cum.querySelector("[data-n=cumtotal]") || {}).textContent || "",
-        proj: (cum && cum.querySelector("[data-n=cumproj]") || {}).textContent || "",
-        firstY: ys[0], floor: ys.length ? Math.max(...ys) : 0,
+        label: (document.querySelector(".ucchart[data-chart=burn] .ucwkresetlab") || {}).textContent || "",
+        total: (document.querySelector("#uc-body [data-n=corrun]") || {}).textContent || "",
       };
     }, range);
 
@@ -1830,20 +1771,16 @@ async function usageWeekResetSection(browser, base) {
     const wk = await draw("week");
     if (wk.on !== "week") fail("usageWeekReset: the range on is " + wk.on);
     // 18 hours at 40k an hour: 720k. last week's turns are not in it.
-    if (wk.total !== "720k") fail("usageWeekReset: this week totals " + wk.total + ", want 720k with last week left out");
-    if (wk.firstY !== wk.floor) fail("usageWeekReset: the line does not start at zero: first y " + wk.firstY + ", floor " + wk.floor);
-    if (wk.cumMarks.join() !== String(reset) || wk.burnMarks.join() !== String(reset)) fail("usageWeekReset: this week's marks " + wk.cumMarks + " and " + wk.burnMarks);
+    if (wk.total !== "720k counted") fail("usageWeekReset: this week totals " + wk.total + ", want 720k with last week left out");
+    if (wk.burnMarks.join() !== String(reset)) fail("usageWeekReset: this week's mark " + wk.burnMarks);
     if (wk.label !== "weekly reset Sun 18:00 EDT") fail("usageWeekReset: the mark reads '" + wk.label + "'");
-    // 720k and 12 hours at 40k to midnight is 1.2M, and the 150 hours to the next reset is 6.7M
-    if (wk.proj !== "at this pace: 1.2M by midnight, 6.7M by the reset Sun 18:00 EDT") fail("usageWeekReset: the pace line reads '" + wk.proj + "'");
 
     const w7 = await draw("7d");
-    if (!/^at this pace: \S+ by midnight, 6\.0M more by the reset Sun 18:00 EDT$/.test(w7.proj)) fail("usageWeekReset: 7d pace line reads '" + w7.proj + "'");
-    if (w7.cumMarks.join() !== String(reset) || w7.burnMarks.join() !== String(reset)) fail("usageWeekReset: 7d marks " + w7.cumMarks + " and " + w7.burnMarks);
+    if (w7.corMarks.join() !== String(reset) || w7.burnMarks.join() !== String(reset)) fail("usageWeekReset: 7d marks " + w7.corMarks + " and " + w7.burnMarks);
     const d24 = await draw("24h");
-    if (d24.cumMarks.join() !== String(reset) || d24.burnMarks.join() !== String(reset)) fail("usageWeekReset: 24h crosses the reset and shows " + d24.cumMarks + " and " + d24.burnMarks);
+    if (d24.corMarks.join() !== String(reset) || d24.burnMarks.join() !== String(reset)) fail("usageWeekReset: 24h crosses the reset and shows " + d24.corMarks + " and " + d24.burnMarks);
     const h1 = await draw("1h");
-    if (h1.cumMarks.length || h1.burnMarks.length) fail("usageWeekReset: 1h does not cross the reset and shows a mark");
+    if (h1.corMarks.length || h1.burnMarks.length) fail("usageWeekReset: 1h does not cross the reset and shows a mark");
 
     // a click on "this week" asks the room for turns since the reset
     await sp.evaluate(() => { UC.now = Date.UTC(2026, 9, 5, 16, 0); });
@@ -1929,7 +1866,7 @@ async function usageGroupsSection(browser, base) {
   const tiles = sp => sp.evaluate(() => [...document.querySelectorAll("#uc-body [data-role=groups] .ucmini")]
     .map(m => m.querySelector(".uctitle").textContent));
   const pick = async (sp, v) => {
-    await sp.selectOption("#uc-group", v);
+    await sp.evaluate(v => { UC.group = v; UC.groupKey = null; UC.stale = false; loadUsageTab(); }, v);
     await fakeWait(sp, v => UC.group === v && !UC.inflight, v, 5000);
     await fakeTick(sp, 200);
   };
@@ -1961,7 +1898,7 @@ async function usageGroupsSection(browser, base) {
     await sp.evaluate(() => { UC.cacheReads = false; });
     await pick(sp, "card");
     if (reads[reads.length - 1].group !== "") fail("usageGroups: back on card still sends a group.");
-    const items = await sp.evaluate(() => ({
+    const items = await sp.evaluate(() => (UC.sub = "reports", ucPaint(), {
       text: (document.querySelector("#uc-body .ucitems") || {}).textContent || "",
       n: document.querySelectorAll("#uc-body .ucitems > span:nth-child(4n+2)").length,
       foot: (document.querySelector("#uc-body [data-role=items-foot]") || {}).textContent || "",
@@ -1981,7 +1918,7 @@ async function usageGroupsSection(browser, base) {
     if (s.tiles !== 0 || s.cards !== 2) fail("usageGroups: a room without groups drew " + JSON.stringify(s));
   });
   await run({ items404: true }, async sp => {
-    const s = await sp.evaluate(() => ({ old: (document.querySelector("#uc-body [data-role=items-old]") || {}).textContent || "",
+    const s = await sp.evaluate(() => (UC.sub = "reports", ucPaint(), { old: (document.querySelector("#uc-body [data-role=items-old]") || {}).textContent || "",
       table: !!document.querySelector("#uc-body .ucitems") }));
     if (!/too old/.test(s.old) || s.table) fail("usageGroups: a 404 on items gave " + JSON.stringify(s));
   });
@@ -2023,8 +1960,9 @@ async function usageLimitsSection(browser, base) {
       await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
-      await sp.waitForSelector("#uc-body #ul-limits", { timeout: slow(5000) });
       await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) }); // the stream opening reloads the tab once
+      await sp.evaluate(() => { UC.sub = "reports"; ucPaint(); });
+      await sp.waitForSelector("#uc-body #ul-limits", { timeout: slow(5000) });
       await fn(sp, asked);
     } finally { await ctx.close(); }
   };
@@ -2048,6 +1986,14 @@ async function usageLimitsSection(browser, base) {
     return out;
   };
   const five = async sp => (await rowsText(sp)).find(x => x.kind === "five_hour");
+  const bands = sp => sp.evaluate(() => {
+    UC.sub = "charts"; ucPaint();
+    const b = document.querySelector("#uc-body .ulband");
+    const out = { n: document.querySelectorAll("#uc-body .ulband").length, label: (document.querySelector("#uc-body .ulbandlab") || {}).textContent,
+      fill: b ? getComputedStyle(b).fill : "" };
+    UC.sub = "reports"; ucPaint();
+    return out;
+  });
 
   // The bar, the card, the dash, and the band at 6h+ and not at 1h.
   await run(answer([reading(3, "sa-orch", "five_hour", 64, 156 * MIN), reading(8, "u-005", "weekly", 31, 3 * 24 * HOUR)]), async (sp, asked) => {
@@ -2057,11 +2003,10 @@ async function usageLimitsSection(browser, base) {
     if (!f || f.none || f.fill !== "64%" || !/64%/.test(f.text) || !/sa-orch/.test(f.text) || !/3m ago/.test(f.text) || !/resets .*\(in 2h 36m\)/.test(f.text))
       fail("usageLimits: the 5h row reads " + JSON.stringify(f));
     if (!week || week.none || !/31%/.test(week.text) || !/u-005/.test(week.text)) fail("usageLimits: the week row reads " + JSON.stringify(week));
-    const band = await sp.evaluate(() => ({ n: document.querySelectorAll("#uc-body .ulband").length, label: (document.querySelector("#uc-body .ulbandlab") || {}).textContent,
-      fill: document.querySelector("#uc-body .ulband") ? getComputedStyle(document.querySelector("#uc-body .ulband")).fill : "" }));
+    const band = await bands(sp);
     if (band.n !== 1 || band.label !== "5h window") fail("usageLimits: the 24h chart has no 5h band: " + JSON.stringify(band));
     if (!/rgba?\(/.test(band.fill)) fail("usageLimits: the band has no fill: " + band.fill);
-    await sp.evaluate(() => { UC.range = "1h"; loadUsageTab(); });
+    await sp.evaluate(() => { UC.sub = "charts"; UC.range = "1h"; loadUsageTab(); });
     await sp.waitForFunction(() => !UC.inflight && document.querySelector("#uc-body .ucchart"), null, { timeout: slow(5000) });
     if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband, #uc-body .ulbandlab").length)) fail("usageLimits: the 1h chart has a 5h band.");
     await sp.evaluate(() => { UC.range = "6h"; loadUsageTab(); });
@@ -2072,14 +2017,14 @@ async function usageLimitsSection(browser, base) {
   await run(answer([reading(90, "old", "five_hour", 50, 60 * MIN)]), async sp => {
     const rows = await rowsText(sp);
     if (rows.length !== 2 || !rows.every(r => r.none && /–/.test(r.text) && !/0%/.test(r.text))) fail("usageLimits: nothing recent should be two dashes: " + JSON.stringify(rows));
-    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband").length)) fail("usageLimits: a band with no recent reading.");
+    if ((await bands(sp)).n) fail("usageLimits: a band with no recent reading.");
   });
 
   // Two reset times are two accounts and two rows, never summed or blended. The projections run on this page.
   await run(answer([reading(3, "a1", "five_hour", 64, 156 * MIN), reading(4, "b1", "five_hour", 20, 250 * MIN)]), async sp => {
     const rows = (await rowsText(sp)).filter(r => r.kind === "five_hour");
     if (rows.length !== 2 || rows[0].fill !== "64%" || rows[1].fill !== "20%") fail("usageLimits: two resets should give two rows: " + JSON.stringify(rows));
-    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband").length) !== 2) fail("usageLimits: two windows should draw two bands.");
+    if ((await bands(sp)).n !== 2) fail("usageLimits: two windows should draw two bands.");
 
     // Warn: 100% lands before the reset.
     await set(sp, line(6, [40, 60], 60, 3, 156 * MIN));
@@ -2157,6 +2102,8 @@ async function usagePolishSection(browser, base) {
     sp.on("pageerror", e => errors.push(String(e)));
     await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
       { t: at, total, cards: { "uc-a": total }, causes: { operator: sums, keepalive: ka, backfill: bf } }] } }));
+    // a name arriving late repaints without the fade, so the card has none to ask for
+    await ctx.route("**/v1/tasks/uc-a", route => route.fulfill({ status: 404, body: "" }));
     await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
     try {
       await sp.goto(base, { waitUntil: "domcontentloaded" });
@@ -2173,6 +2120,7 @@ async function usagePolishSection(browser, base) {
     if (!/keep-alive spent 300 counted and kept 1 card warm/.test(line)) fail("usagePolish: the keep-alive phrase reads " + line);
     const tip = await sp.getAttribute("#uc-body .uccacheline", "data-tip");
     if (!tip) fail("usagePolish: the cache line has no hint.");
+    await sp.evaluate(() => { UC.sub = "reports"; ucPaint(); });
     const causes = await sp.textContent("#uc-body .uccauses");
     if (!/backfilled/.test(causes) || /\bbackfill\b/.test(causes)) fail("usagePolish: the backfill cause reads " + causes);
     const bt = await sp.evaluate(() => USAGE_TIPS.cause_backfill);
@@ -2183,7 +2131,7 @@ async function usagePolishSection(browser, base) {
     if (bare.length) fail("usagePolish: numbers with no data-tip: " + bare);
     // The too-old line, with a build and without.
     const old = await sp.evaluate(() => {
-      hubRooms = [{ name: "sg3", version: "2f715b5a9c1d" }]; hubInventory = [];
+      UC.sub = "charts"; hubRooms = [{ name: "sg3", version: "2f715b5a9c1d" }]; hubInventory = [];
       UC.rooms = { sg3: { state: "old", why: "too old to keep usage", buckets: new Map() },
         sg4: { state: "old", why: "too old to keep usage", buckets: new Map() } };
       ucPaint();
@@ -2276,377 +2224,107 @@ async function clockSection(browser, base) {
   }
 }
 
-// u-new-burn-chart-axes: the cumulative chart has a time axis, a percent-of-limit axis with the 100% line, the time
-// the projection crosses it, the resets, and a hover. Every fixture is built from one fixed `now` (UC.now), and the
-// limit readings are placed relative to it, so nothing reads the real clock. BURN_SHOT=<dir> writes the pictures.
-async function burnChartSection(browser, base) {
+// Past pages and the tokens-and-percent chart: the pager steps to yesterday and asks with until, the percents ride
+// a second axis, one cursor reads tokens and both percents, and the live-only sections stay off a past page.
+async function usageHistorySection(browser, base) {
+  const errors = [];
+  const HOUR = 3600000;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const sp = await ctx.newPage();
-  const errors = [];
   sp.on("pageerror", e => errors.push(String(e)));
-  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [] } }));
+  const asked = [];
+  const tot = n => ({ rows: 1, replies: 1, input: n, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cost: 0 });
+  await ctx.route("**/v1/usage*", route => {
+    const u = new URL(route.request().url());
+    asked.push(u.search);
+    if (!u.searchParams.get("since")) return route.fulfill({ json: {} });
+    const since = Date.parse(u.searchParams.get("since")), bw = Number(u.searchParams.get("bucket")) * 1000;
+    const t = new Date(Math.floor((since + 2 * HOUR) / bw) * bw).toISOString();
+    return route.fulfill({ json: { buckets: [{ t, total: tot(3000), cards: { "uc-a": tot(2000), "uc-b": tot(1000) }, causes: { operator: tot(3000) } }] } });
+  });
+  await ctx.route("**/v1/usage/limits*", route => {
+    const u = new URL(route.request().url());
+    const at = Date.parse(u.searchParams.get("since")) + 7 * 24 * HOUR + HOUR;
+    return route.fulfill({ json: { readings: [
+      { at: new Date(at).toISOString(), card: "uc-a", kind: "weekly", pct: 40, resets_at: new Date(at + 5 * 24 * HOUR).toISOString() },
+      { at: new Date(at).toISOString(), card: "uc-a", kind: "five_hour", pct: 100, resets_at: new Date(at + 3 * HOUR).toISOString() }] } });
+  });
   await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
-  // range: "24h" or "7d". hot: the last `hotN` buckets burn `hot` counted tokens, the older ones `cold`.
-  const draw = (range, spec) => sp.evaluate(({ range, spec }) => {
-    const HOUR = 3600000, ms = range === "7d" ? HOUR : 900000;
-    const now = new Date(2026, 8, 15, 15, 30).getTime();
-    UC.now = now; UC.cacheReads = false; UC.range = range; UC.bw = ms / 1000; UC.group = "card"; UC.card = null;
-    UC.since = now - (range === "7d" ? 7 * 24 * HOUR : 24 * HOUR);
-    const last = Math.floor(now / ms) * ms, buckets = new Map();
-    for (let i = 1; i <= (range === "7d" ? 168 : 96); i++) {
-      const v = i <= spec.hotN ? spec.hot : spec.cold;
-      if (!v) continue;
-      const s = { rows: 1, replies: 1, input: v, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: v * 10, cost: 0 };
-      buckets.set(last - i * ms, { t: last - i * ms, total: ucAdd(ucSums(), s), cards: { "c1": ucAdd(ucSums(), s) }, causes: { operator: ucAdd(ucSums(), s) }, groups: {} });
-    }
-    UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets } };
-    UL.readings = []; UL.last.clear(); UL.html = "";
-    for (const r of spec.readings) ulAdd({ at: now - 5 * 60000, room: "", card: "c1", kind: r.kind, pct: r.pct, reset: now + r.resetMs });
-    ucPaint();
-    const ch = document.querySelector('#uc-body .ucchart[data-chart=cumulative]');
-    const q = (sel, f) => [...ch.querySelectorAll(sel)].map(f);
-    const line = c => ch.querySelector("line." + c);
-    return {
-      now, first: UC.cum.first, end: UC.cum.end,
-      ys: q(".ucy:not(.ucyk)", e => e.textContent.trim()), pcts: q(".ucy:not(.ucyk)", e => e.dataset.pct), toks: q(".ucyk", e => e.textContent.trim()),
-      cap: line("ulcap") ? Number(line("ulcap").getAttribute("y1")) : null, zero: line("ulgrid") ? Number(line("ulgrid").getAttribute("y1")) : null,
-      times: q(".uctimes span", e => e.textContent),
-      nowLeft: ch.querySelector(".ucnowlab") ? ch.querySelector(".ucnowlab").style.left : "",
-      nowLine: !!line("ucnowln"),
-      phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "",
-      cross: line("ulcross") ? Number(line("ulcross").getAttribute("x1")) : null,
-      crossLab: (ch.querySelector(".ulcrosslab") || {}).textContent || "",
-      resets: q("line.ulresetln", e => [e.dataset.reset, Number(e.dataset.at)]),
-      resetLabs: q(".ulresetlab", e => e.textContent),
-      note: ch.parentNode.querySelector(".uch") ? [...ch.parentNode.querySelectorAll(".uch")].find(h => /cumulative/.test(h.textContent)).textContent : "",
-      dashed: !!ch.querySelector(".uck-proj"),
-    };
-  }, { range, spec });
-  const dir = process.env.BURN_SHOT;
-  const shot = async name => {
-    if (!dir) return;
-    fs.mkdirSync(dir, { recursive: true });
-    const h = await sp.$('#uc-body .ucchart[data-chart=cumulative]');
-    await h.scrollIntoViewIfNeeded();
-    await h.screenshot({ path: dir + "/" + name + ".jpg", type: "jpeg", quality: 85 });
-  };
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
-    await sp.evaluate(() => switchView("usage"));
-    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) });
-    const MIN = 60000, HOUR = 3600000;
+    await sp.evaluate(() => { UC.range = "24h"; switchView("usage"); });
+    await usageSettled(sp);
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=correlate]", { timeout: slow(10000) });
 
-    // A day range, the 5h limit at 70%, resetting in 2h. The window started 3h ago: 12 buckets of 5000 = 60000 tokens
-    // for 70 points, so 857 a point. The last hour is 20000 tokens, 23.3 points an hour, so 100% is 77 minutes away: 16:47.
-    const day = { hotN: 20, hot: 5000, cold: 1000, readings: [{ kind: "five_hour", pct: 70, resetMs: 2 * HOUR }] };
-    let r = await draw("24h", day);
-    if (r.pcts.join() !== "0,25,50,75,100,120" || !/^100%/.test(r.ys[4])) fail("burnChart: the y axis reads " + r.ys);
-    if (!(r.cap != null && r.zero != null && r.cap < r.zero && r.cap > 0)) fail("burnChart: the 100% line is at " + r.cap + " and 0% at " + r.zero);
-    // zoomed to the window: half an hour of lead-in before 12:30, out to the 17:30 reset, a label an hour
-    if (r.times.join() !== "12:00,13:00,14:00,15:00,16:00,17:00") fail("burnChart: the day's hour ticks read " + r.times);
-    if (!r.nowLine || r.nowLeft !== (((r.now - r.first) / (r.end - r.first)) * 100).toFixed(2) + "%") fail("burnChart: now is marked at " + r.nowLeft);
-    if (r.phrase !== "hits 5h limit 16:47" || r.crossLab !== "16:47") fail("burnChart: the crossing reads " + JSON.stringify([r.phrase, r.crossLab]));
-    const wantX = (r.now + 77.142857 * MIN - r.first) / (r.end - r.first) * 600;
-    if (r.cross == null || Math.abs(r.cross - wantX) > 0.1) fail("burnChart: the crossing is drawn at x " + r.cross + ", want " + wantX.toFixed(2));
-    const marks = r.resets.map(m => m[1]);
-    if (r.resets.some(m => m[0] !== "five_hour") || marks[0] !== r.now + 2 * HOUR || marks[1] !== r.now - 3 * HOUR || marks.length !== 2)
-      fail("burnChart: the 5h resets are " + marks.map(t => (t - r.now) / HOUR));
-    if (r.resetLabs.join() !== "5h reset 17:30") fail("burnChart: the reset labels read " + r.resetLabs);
-    if (!r.dashed || !/percent of its limit/.test(r.note)) fail("burnChart: the heading reads " + r.note);
-    await shot("day-hits-limit");
+    const pure = await sp.evaluate(() => {
+      const now = Date.now(), wk = ucPage("week", -1, now), day = ucPage("24h", -1, now);
+      const mid = new Date(now); mid.setHours(0, 0, 0, 0);
+      const H = 3600000;
+      const steps = ucPctSteps([{ at: 0, room: "", card: "a", kind: "five_hour", pct: 30, reset: 2 * H },
+        { at: H, room: "", card: "b", kind: "five_hour", pct: 70, reset: 4 * H }], "five_hour", 0, 6 * H);
+      return { wkEnds: wk.until === ucWeekSince(now), wkLong: wk.until - wk.since > 6 * 24 * H,
+        dayEnds: day.until === mid.getTime(), live: ucPage("week", 0, now).until, steps };
+    });
+    if (!pure.wkEnds || !pure.wkLong || !pure.dayEnds || pure.live !== 0) fail("usageHistory: the pages are off: " + JSON.stringify(pure));
+    if (JSON.stringify(pure.steps) !== JSON.stringify([[0, 30], [3600000, 70], [14400000, 0]])) fail("usageHistory: the percent steps read " + JSON.stringify(pure.steps));
 
-    // The same day at 40%: the projection stays under the limit, so the chart says where it ends at the reset.
-    // 60000 tokens for 40 points is 1500 a point, 20000 an hour is 13.3 points an hour, so 40 + 26.7 = 67%.
-    r = await draw("24h", { ...day, readings: [{ kind: "five_hour", pct: 40, resetMs: 2 * HOUR }] });
-    if (r.phrase !== "at this pace: 67% of the 5h limit at reset" || r.cross != null) fail("burnChart: under the limit reads " + JSON.stringify([r.phrase, r.cross]));
-    await shot("day-under-limit");
+    const state = () => sp.evaluate(() => ({
+      label: document.getElementById("uc-pagelab").textContent, next: document.getElementById("uc-next").disabled,
+      pw: document.querySelectorAll("#uc-body [data-chart=correlate] path.ucpw").length,
+      p5: document.querySelectorAll("#uc-body [data-chart=correlate] path.ucp5").length,
+      tok: document.querySelectorAll("#uc-body [data-chart=correlate] path.uck-line").length,
+      hit: document.querySelectorAll("#uc-body [data-chart=correlate] .ulhit").length,
+      top: document.querySelectorAll("#uc-body .ucmini[data-id]").length,
+      limits: !!document.getElementById("ul-limits"), cum: !!document.querySelector("#uc-body [data-chart=cumulative]"),
+      read: document.querySelector("#uc-body [data-chart=correlate] .ucread").textContent }));
+    let s = await state();
+    if (s.label !== "last 24h" || !s.next || s.limits || s.cum || s.pw !== 1 || s.p5 !== 0 || s.top !== 2 || s.read !== "")
+      fail("usageHistory: the live page reads " + JSON.stringify(s));
+    const reports = () => sp.evaluate(() => {
+      document.querySelector("#uc-sub [data-sub=reports]").click();
+      const r = { limits: !!document.getElementById("ul-limits"), causes: !!document.querySelector("#uc-body .uccauses") };
+      document.querySelector("#uc-sub [data-sub=charts]").click();
+      return r;
+    });
+    const rp = await reports();
+    if (!rp.limits || !rp.causes) fail("usageHistory: the live reports read " + JSON.stringify(rp));
 
-    // A week range on the weekly limit, 50%, resetting in 2 days: 120 hourly buckets of 2000 since the window began.
-    const week = { hotN: 120, hot: 2000, cold: 0, readings: [{ kind: "weekly", pct: 50, resetMs: 48 * HOUR }, { kind: "five_hour", pct: 90, resetMs: HOUR }] };
-    r = await draw("7d", week);
-    if (r.times.length !== 9) fail("burnChart: the week's date ticks are " + r.times);
-    if (r.resets.length !== 2 || r.resets.some(m => m[0] !== "weekly") || r.resets[0][1] !== r.now + 48 * HOUR || r.resets[1][1] !== r.now - 120 * HOUR) fail("burnChart: the week's resets are " + JSON.stringify(r.resets));
-    if (!/^weekly reset [A-Za-z]{3} 15:30$/.test(r.resetLabs.join())) fail("burnChart: the week's reset labels read " + r.resetLabs);
-    if (!/^at this pace: 63% of the weekly limit at reset$/.test(r.phrase)) fail("burnChart: the week reads " + r.phrase);
-    await shot("week");
+    asked.length = 0;
+    await sp.click("#uc-prev");
+    await sp.waitForFunction(() => UC.off === -1 && UC.until && !UC.inflight, null, { timeout: slow(5000) });
+    s = await state();
+    if (!asked.some(q => /until=/.test(q))) fail("usageHistory: yesterday was not asked with until: " + asked.join(" "));
+    if (!/^yesterday · \w{3} \w{3} \d+$/.test(s.label) || s.next || s.limits || s.cum || s.pw !== 1)
+      fail("usageHistory: yesterday reads " + JSON.stringify(s));
+    if ((await reports()).limits) fail("usageHistory: yesterday's reports show the live limits.");
 
-    // A weekly line that does cross: 90%, so the hour's pace reaches 100% before the reset.
-    r = await draw("7d", { ...week, readings: [{ kind: "weekly", pct: 90, resetMs: 48 * HOUR }] });
-    if (!/^hits weekly limit \w{3} \d\d:\d\d$/.test(r.phrase)) fail("burnChart: a weekly crossing reads " + r.phrase);
+    await sp.click("#uc-pick [data-line=p5]");
+    await sp.waitForFunction(() => document.querySelector("#uc-body [data-chart=correlate] path.ucp5"), null, { timeout: slow(5000) });
+    s = await state();
+    if (s.hit !== 1) fail("usageHistory: the 5h line at 100% drew no hit mark: " + JSON.stringify(s));
 
-    // Hover on the line: the time, the total and the percent of the limit, and past now it says projected.
-    await draw("24h", day);
-    const box = await (await sp.$('#uc-body .ucchart[data-chart=cumulative] .ucplot svg')).boundingBox();
-    await sp.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
-    let read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
-    let m = /^15:1\d · (\S+) tokens · (\d+)% of the 5h limit · (\S+)\/h · \d+ pts? (ahead of|behind) even pace$/.exec(read);
-    if (!m || Number(m[2]) < 1 || Number(m[2]) > 69) fail("burnChart: hovering near now reads " + read);
-    await sp.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2);
-    read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
-    if (!/ · \d+% of the 5h limit · \S+\/h · \d+ pts? (ahead of|behind) even pace · projected$/.test(read)) fail("burnChart: hovering past now reads " + read);
+    const tag = await sp.evaluate(() => {
+      const st = document.querySelector("#uc-body [data-chart=correlate] .ucstage"), r = st.getBoundingClientRect();
+      const x = r.left + r.width * ((2 + 7 / 60) / 24);
+      st.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: x, clientY: r.top + 20 }));
+      const t = st.querySelector(".uchovtag");
+      return { hidden: t.hidden, text: t.textContent, dots: st.querySelectorAll(".uchovdot:not([hidden])").length };
+    });
+    if (tag.hidden || !/\d\d-\d\d \d\d:\d\d\n\S+ tokens\n5h 100%\nweek 40%\n\S+\/h/.test(tag.text) || /top: /.test(tag.text) || tag.dots !== 3)
+      fail("usageHistory: the cursor reads " + JSON.stringify(tag));
 
-    // The 24h line starts where the 5h window did: 12:30, 3h before now, and the first point is not at the range's edge.
-    r = await draw("24h", day);
-    const winX = (r.now - 3 * HOUR - r.first) / (r.end - r.first) * 600;
-    const startX2 = await sp.evaluate(() => Number(document.querySelector("#uc-body .ucchart[data-chart=cumulative] path.uck-line").getAttribute("d").match(/^M([^ ]+) /)[1]));
-    if (Math.abs(startX2 - winX) > 0.1) fail("burnChart: the line starts at x " + startX2 + ", the window began at " + winX.toFixed(2));
-    if ((await sp.textContent("#uc-body .ucchart[data-chart=cumulative] [data-n=cumtotal]")) !== "60k") fail("burnChart: the total beside the line is not the window 60k: " + await sp.textContent("#uc-body .ucchart[data-chart=cumulative] [data-n=cumtotal]"));
-    // hovering before the window says so
-    let b2 = await (await sp.$('#uc-body .ucchart[data-chart=cumulative] .ucplot svg')).boundingBox();
-    await sp.mouse.move(b2.x + b2.width * 0.04, b2.y + b2.height / 2);
-    read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
-    if (!/before the 5h window$/.test(read)) fail("burnChart: hovering before the window reads " + read);
+    await sp.click("#uc-pick [data-line=tok]");
+    await sp.waitForFunction(() => !document.querySelector("#uc-body [data-chart=correlate] path.uck-line"), null, { timeout: slow(5000) });
 
-    // A 1h range holds one hour of a 5h window, and a card filter holds one card of the account: neither can say what a
-    // point of the limit weighs, so both keep the token chart and invent no crossing.
-    r = await draw("24h", day);
-    await sp.evaluate(() => { UC.range = "1h"; UC.bw = 60; UC.since = UC.now - 3600000; });
-    r = await sp.evaluate(() => { ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); return { ys: ch.querySelectorAll(".ucy:not(.ucyk)").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; });
-    if (r.ys || /limit/.test(r.phrase)) fail("burnChart: a 1h range reads " + JSON.stringify(r));
-    await draw("24h", day);
-    r = await sp.evaluate(() => { UC.card = { room: "", id: "c1" }; ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); const o = { ys: ch.querySelectorAll(".ucy:not(.ucyk)").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; UC.card = null; return o; });
-    if (r.ys || /limit/.test(r.phrase)) fail("burnChart: a card filter reads " + JSON.stringify(r));
-
-    // No reading, no percent: the old picture keeps its token axis and gains the time axis and now.
-    r = await draw("24h", { ...day, readings: [] });
-    if (r.ys.length || r.toks.join() !== "0,100k,200k,300k,400k" || r.cap != null || r.resets.length || !r.times.length || !r.nowLine || !/^at this pace: \d+k by midnight(, [0-9.]+[kM] more by the reset .+)?$/.test(r.phrase)) fail("burnChart: with no limit reading " + JSON.stringify(r));
-    if (errors.length) fail("burnChart: page errors " + errors.join("; "));
-    if (!bad) console.log("burnChart ok");
+    await sp.click("#uc-now");
+    await sp.waitForFunction(() => UC.off === 0 && !UC.until && !UC.inflight, null, { timeout: slow(5000) });
   } finally { await ctx.close(); }
-}
-
-// u-usage-chart: the cumulative chart's crosshair. Hover at x names the bucket, the total, the percent of the limit
-// and the rate; the edges clamp; a finger scrubs the same way and a vertical swipe stays the page's; a window with no
-// tokens or no turns draws no readout and no NaN; every text the chart adds reads at 4.5:1 on every skin.
-// One fixed `now` (UC.now). USAGE_SHOT=<dir> writes the pictures.
-async function burnReadoutSection(browser, base) {
-  const errors = [];
-  const setup = async (vp, touch) => {
-    const ctx = await browser.newContext({ viewport: vp, hasTouch: !!touch });
-    const sp = await ctx.newPage();
-    sp.on("pageerror", e => errors.push(String(e)));
-    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [] } }));
-    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
-    await sp.goto(base, { waitUntil: "domcontentloaded" });
-    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
-    await sp.evaluate(() => switchView("usage"));
-    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) });
-    return { ctx, sp };
-  };
-  // 24h of 15 minute buckets; the last 20 hold `hot` counted tokens each; the 5h limit (if `pct`) was read 5 minutes ago.
-  const draw = (sp, spec) => sp.evaluate(spec => {
-    const HOUR = 3600000, ms = 900000;
-    const now = new Date(2026, 8, 15, 15, 30).getTime();
-    UC.now = now; UC.cacheReads = false; UC.range = "24h"; UC.bw = ms / 1000; UC.group = "card"; UC.card = null; UC.since = now - 24 * HOUR;
-    const last = Math.floor(now / ms) * ms, buckets = new Map();
-    for (let i = 1; i <= 96; i++) {
-      if (spec.empty) break;
-      const v = i <= 20 ? spec.hot : 0;
-      if (!v && !spec.zeros) continue;
-      const s = { rows: 1, replies: 1, input: v, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cost: 0 };
-      buckets.set(last - i * ms, { t: last - i * ms, total: ucAdd(ucSums(), s), cards: { c1: ucAdd(ucSums(), s) }, causes: { operator: ucAdd(ucSums(), s) }, groups: {} });
-    }
-    UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets } };
-    UL.readings = []; UL.last.clear(); UL.html = "";
-    if (spec.pct) ulAdd({ at: now - 5 * 60000, room: "", card: "c1", kind: "five_hour", pct: spec.pct, reset: now + 2 * HOUR });
-    ucPaint();
-    return { now, cum: !!UC.cum, first: UC.cum && UC.cum.first, end: UC.cum && UC.cum.end };
-  }, spec);
-  const stage = '#uc-body .ucchart[data-chart=cumulative] .ucstage';
-  const state = sp => sp.evaluate(() => {
-    const ch = document.querySelector('#uc-body .ucchart[data-chart=cumulative]');
-    if (!ch) return null;
-    const hov = ch.querySelector(".uchov"), dot = ch.querySelector(".uchovdot"), tag = ch.querySelector(".uchovtag");
-    return {
-      read: ch.querySelector(".ucread").textContent, bucket: ch.querySelector(".ucread").dataset.t,
-      hovHidden: hov.hidden, hovLeft: hov.style.left, dotHidden: dot.hidden, tagHidden: tag.hidden, tag: tag.textContent,
-      on: [...ch.querySelectorAll(".ucrate rect.on")].map(r => r.dataset.t), strip: ch.querySelector(".ucstrip").textContent,
-      stats: ch.querySelectorAll(".ucstat").length, html: ch.outerHTML,
-    };
-  });
-  const ptr = (sp, type, x, y, kind) => sp.evaluate(({ type, x, y, kind }) => {
-    const el = document.elementFromPoint(x, y) || document.body;
-    el.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerType: kind, pointerId: 7, bubbles: true, cancelable: true, relatedTarget: null }));
-  }, { type, x, y, kind });
-  const day = { hot: 5000, pct: 70 };
-  const dir = process.env.USAGE_SHOT;
-  const shot = async (sp, name) => {
-    if (!dir) return;
-    fs.mkdirSync(dir, { recursive: true });
-    const h = await sp.$('#uc-body .ucchart[data-chart=cumulative]');
-    await h.scrollIntoViewIfNeeded();
-    await h.screenshot({ path: dir + "/" + name + ".png" });
-  };
-  {
-    const { ctx, sp } = await setup({ width: 1400, height: 900 });
-    try {
-      const r0 = await draw(sp, day);
-      const box = await (await sp.$(stage)).boundingBox();
-      const at = f => [box.x + box.width * f, box.y + 60];
-
-      // Hover at 60% of the chart: 15:18, in the 15:15 bucket. The window began 12:30 with 857 tokens a point; 11 whole
-      // buckets of 5000 and 3 of the 15 minutes of the twelfth is 56000 tokens, 65.3 points; 20000 tokens an hour.
-      await sp.mouse.move(...at(0.6));
-      let st = await state(sp);
-      const t60 = r0.first + 0.6 * (r0.end - r0.first), b60 = Math.floor(t60 / 900000) * 900000;
-      if (st.bucket !== String(b60) || st.on.join() !== String(b60)) fail("burnReadout: hover at 60% gives bucket " + st.bucket + " (bar " + st.on + "), want " + b60);
-      if (!/^15:18 · 56k tokens · 65% of the 5h limit · 20k\/h · \d+ pts? (ahead of|behind) even pace$/.test(st.read)) fail("burnReadout: the line reads " + st.read);
-      if (st.hovHidden || st.dotHidden || st.tagHidden || !/^[A-Z][a-z]{2} \d\d-\d\d \d\d:\d\d · 65% · 56k · 20k\/h$/.test(st.tag) || Math.abs(parseFloat(st.hovLeft) - 60) > 0.2) fail("burnReadout: the crosshair is " + JSON.stringify({ h: st.hovHidden, d: st.dotHidden, tag: st.tag, left: st.hovLeft }));
-      const a = await sp.evaluate(t => ucCumAt(UC.cum, t), t60);
-      if (Math.abs(a.tok - 56000) > 2 || Math.abs(a.pct - 65.33) > 0.05 || Math.abs(a.rate - 20000) > 1) fail("burnReadout: ucCumAt gives " + JSON.stringify(a));
-      // the dot sits on the line: its top is the line's y at that time
-      const dotOn = await sp.evaluate(() => { const c = UC.cum, d = document.querySelector(".uchovdot"), p = document.querySelector(".ucplot"); return [parseFloat(d.style.top), c.Y(ucCumAt(c, c.first + 0.6 * (c.end - c.first)).v) / 100 * p.offsetHeight]; });
-      if (Math.abs(dotOn[0] - dotOn[1]) > 1) fail("burnReadout: the dot is at " + dotOn[0] + ", the line at " + dotOn[1]);
-      await shot(sp, "hover-day");
-
-      // Another x is another bucket.
-      await sp.mouse.move(...at(0.35));
-      st = await state(sp);
-      if (st.bucket !== String(Math.floor((r0.first + 0.35 * (r0.end - r0.first)) / 900000) * 900000)) fail("burnReadout: hover at 35% gives bucket " + st.bucket);
-
-      // The edges clamp: far past either side reads the first and the last instant, and never more.
-      const edge = await sp.evaluate(() => ({ lo: ucCumAt(UC.cum, -1e15).t === UC.cum.first, hi: ucCumAt(UC.cum, 1e15).t === UC.cum.end, hiRead: ucCumLine(UC.cum, ucCumAt(UC.cum, 1e15)), loRead: ucCumLine(UC.cum, ucCumAt(UC.cum, -1e15)) }));
-      if (!edge.lo || !edge.hi || !/before the 5h window$/.test(edge.loRead) || !/projected$/.test(edge.hiRead)) fail("burnReadout: the edges read " + JSON.stringify(edge));
-      await sp.mouse.move(box.x + box.width + 300, box.y + 60);   // outside: the mouse has left, the crosshair goes
-      st = await state(sp);
-      if (!st.hovHidden || !st.dotHidden || !st.tagHidden || st.read !== "hover the chart" || st.on.length) fail("burnReadout: after the mouse left " + JSON.stringify({ h: st.hovHidden, read: st.read, on: st.on }));
-      await sp.mouse.move(box.x + box.width - 1, box.y + 60);
-      st = await state(sp);
-      if (Math.abs(parseFloat(st.hovLeft) - 100) > 0.5 || !/ · projected$/.test(st.read)) fail("burnReadout: at the right edge " + JSON.stringify([st.hovLeft, st.read]));
-
-      // A finger: touch-action leaves the vertical swipe to the page; a pointerdown shows the crosshair, a horizontal
-      // move scrubs it, lifting keeps it, a cancelled pointer (the browser took the swipe) clears it, and a touch
-      // elsewhere clears it too.
-      const ta = await sp.evaluate(s => getComputedStyle(document.querySelector(s)).touchAction, stage);
-      if (ta !== "pan-y") fail("burnReadout: the chart's touch-action is " + ta + ", a vertical swipe would not scroll");
-      await ptr(sp, "pointerdown", ...at(0.5), "touch");
-      const s1 = await state(sp);
-      await ptr(sp, "pointermove", ...at(0.7), "touch");
-      const s2 = await state(sp);
-      if (s1.hovHidden || Math.abs(parseFloat(s1.hovLeft) - 50) > 0.2 || Math.abs(parseFloat(s2.hovLeft) - 70) > 0.2 || s1.read === s2.read) fail("burnReadout: touch-drag " + JSON.stringify([s1.hovLeft, s2.hovLeft, s1.read, s2.read]));
-      await ptr(sp, "pointerup", ...at(0.7), "touch");
-      await ptr(sp, "pointerout", ...at(0.7), "touch");
-      if ((await state(sp)).hovHidden) fail("burnReadout: lifting the finger took the crosshair away");
-      await ptr(sp, "pointercancel", ...at(0.7), "touch");
-      if (!(await state(sp)).hovHidden) fail("burnReadout: a cancelled pointer (a vertical swipe) left the crosshair");
-      await ptr(sp, "pointerdown", ...at(0.5), "touch");
-      await sp.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch", bubbles: true })));
-      if (!(await state(sp)).hovHidden) fail("burnReadout: a touch elsewhere left the crosshair");
-
-      // No reading: plain tokens, no percent, no pace diagonal, and the line says so.
-      await draw(sp, { hot: 5000 });
-      const box2 = await (await sp.$(stage)).boundingBox();
-      await sp.mouse.move(box2.x + box2.width * 0.5, box2.y + 60);
-      st = await state(sp);
-      if (/%|even pace|NaN|undefined/.test(st.read) || !/ tokens · \S+\/h/.test(st.read) || /ucpace/.test(st.html) || /uclim/.test(st.html)) fail("burnReadout: with no reading " + st.read);
-      if (/NaN|undefined|Infinity/.test(st.html)) fail("burnReadout: NaN in the chart with no reading");
-
-      // Turns with zero tokens: a chart, no percent, no NaN, and hovering it is quiet.
-      await draw(sp, { hot: 0, zeros: true, pct: 0 });
-      const box3 = await (await sp.$(stage)).boundingBox();
-      await sp.mouse.move(box3.x + box3.width * 0.5, box3.y + 60);
-      st = await state(sp);
-      if (!st || /NaN|undefined|Infinity/.test(st.html) || /NaN|undefined/.test(st.read)) fail("burnReadout: zero-token window " + (st && st.read));
-
-      // A window with no turns draws no chart and no readout; a pointer over where it was does nothing.
-      await draw(sp, { empty: true, pct: 70 });
-      await sp.mouse.move(box.x + box.width * 0.5, box.y + 60);
-      await ptr(sp, "pointerdown", ...at(0.5), "touch");
-      if (await state(sp)) fail("burnReadout: an empty window drew a chart");
-      if ((await sp.evaluate(() => UC.cum)) !== null) fail("burnReadout: an empty window kept the last chart's readout data");
-      if (await sp.evaluate(() => !!document.querySelector(".uchov:not([hidden]), .uchovtag:not([hidden])"))) fail("burnReadout: an empty window shows a readout");
-    } finally { await ctx.close(); }
-  }
-  {
-    // The phone: the headline strip is the readout, the plot fits the screen, nothing scrolls sideways.
-    const { ctx, sp } = await setup({ width: 390, height: 844 }, true);
-    try {
-      await draw(sp, day);
-      await (await sp.$(stage)).scrollIntoViewIfNeeded();
-      const box = await (await sp.$(stage)).boundingBox();
-      await ptr(sp, "pointerdown", box.x + box.width * 0.6, box.y + 60, "touch");
-      const st = await state(sp);
-      const vis = await sp.evaluate(() => ({ read: getComputedStyle(document.querySelector(".ucchart[data-chart=cumulative] .ucread")).display, strip: getComputedStyle(document.querySelector(".ucchart[data-chart=cumulative] .ucstrip")).display,
-        over: document.documentElement.scrollWidth - innerWidth, chart: (() => { const c = document.querySelector(".ucchart[data-chart=cumulative]"); return c.scrollWidth - c.clientWidth; })() }));
-      if (vis.read !== "none" || vis.strip === "none" || st.stats !== 4 || !/^65%of the 5h limit56k/.test(st.strip) || /NaN/.test(st.strip)) fail("burnReadout: the phone headline " + JSON.stringify([vis, st.stats, st.strip]));
-      if (vis.over > 0 || vis.chart > 0) fail("burnReadout: the phone chart scrolls sideways " + JSON.stringify(vis));
-      await shot(sp, "hover-phone");
-    } finally { await ctx.close(); }
-  }
-  {
-    // Wide: the reset label stands clear of the window's end line (it sat on it at 2000px), and the rate strip starts with the curve.
-    const { ctx, sp } = await setup({ width: 2000, height: 900 });
-    try {
-      await draw(sp, day);
-      const m = await sp.evaluate(() => {
-        const ch = document.querySelector('#uc-body .ucchart[data-chart=cumulative]'), lab = ch.querySelector(".ulresetlab"), pl = ch.querySelector(".ucplot").getBoundingClientRect();
-        const ln = [...ch.querySelectorAll("line.ulresetln")].map(l => l.getBoundingClientRect()).sort((a, b) => b.left - a.left)[0], lb = lab.getBoundingClientRect();
-        const x0 = UC.cum.first, lim = UC.cum.lim, per = ch.querySelector(".ucrate svg").getBoundingClientRect();
-        const early = [...ch.querySelectorAll(".ucrate rect.uck-bar")].filter(r => Number(r.dataset.t) + UC.cum.ms <= lim.start).length;
-        return { gap: ln.left - lb.right, over: lb.right - pl.right, early, cls: lab.className, w: pl.width };
-      });
-      if (m.gap < 7 || m.over > 0) fail("burnReadout: the reset label meets the end line at 2000px " + JSON.stringify(m));
-      if (m.early) fail("burnReadout: " + m.early + " rate bars end before the limit window starts " + JSON.stringify(m));
-    } finally { await ctx.close(); }
-  }
-  {
-    // Contrast: every text the chart carries, against what it sits on, on every skin, hovered.
-    const { ctx, sp } = await setup({ width: 1400, height: 900 });
-    try {
-      await draw(sp, day);
-      const box = await (await sp.$(stage)).boundingBox();
-      await sp.mouse.move(box.x + box.width * 0.6, box.y + 60);
-      const skins = [...fs.readFileSync(path.join(SCRIPTS, "..", "internal/api/web/css/themes.css"), "utf8").matchAll(/:root\[data-skin="([^"]+)"\]/g)].map(m => m[1]);
-      const worst = [];
-      for (const skin of ["harbour"].concat(skins)) {
-        const rows = await sp.evaluate(skin => {
-          applySkin(skin);
-          const parse = c => { const k = /^color\(srgb ([^)]+)\)/.exec(c); if (k) { const p = k[1].split(/[ \/]+/).map(Number); return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255, a: p.length > 3 ? p[3] : 1 }; } const m = /rgba?\(([^)]+)\)/.exec(c); if (!m) return null; const p = m[1].split(/[ ,\/]+/).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 && !isNaN(p[3]) ? p[3] : 1 }; };
-          const over = (f, b) => ({ r: f.r * f.a + b.r * (1 - f.a), g: f.g * f.a + b.g * (1 - f.a), b: f.b * f.a + b.b * (1 - f.a), a: 1 });
-          const lum = c => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(c.r) + .7152 * f(c.g) + .0722 * f(c.b); };
-          const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
-          // what a text sits on: the backgrounds up the tree, composited; a gradient counts as each of its stops
-          const backs = el => {
-            const layers = [];
-            for (let e = el; e; e = e.parentElement) {
-              const cs = getComputedStyle(e), bg = parse(cs.backgroundColor);
-              if (cs.backgroundImage && cs.backgroundImage !== "none") { let cols = [...cs.backgroundImage.matchAll(/rgba?\([^)]+\)/g)].map(m => parse(m[0])); if (cols.some(c => c.a > .99)) cols = cols.filter(c => c.a > .99); if (cols.length) layers.push(cols); }
-              if (bg && bg.a > 0) layers.push([bg]);
-              if (bg && bg.a === 1) break;
-            }
-            const page = parse(getComputedStyle(document.documentElement).backgroundColor);
-            let outs = [page && page.a ? page : { r: 255, g: 255, b: 255, a: 1 }];
-            for (const L of layers.reverse()) outs = outs.flatMap(o => L.map(c => over(c, o)));
-            return outs;
-          };
-          const sels = [".ucy:not(.ucy100)", ".ucy100", ".ucy small", ".ucrl", ".uctimes span", ".ucnowlab", ".ucpacelab", ".ulresetlab", ".ulcrosslab", ".ucread", ".uchovtag", ".ucaxis span", ".ucaxis .ucwarn", "#uc-body .ucnote-cum", ".ucstat b", ".ucstat b small", ".ucstat i"];
-          const out = [];
-          for (const s of sels) {
-            const el = document.querySelector(s.startsWith("#") ? s : '#uc-body .ucchart[data-chart=cumulative] ' + s);
-            if (!el) { out.push([s, 0, "missing"]); continue; }
-            const cs = getComputedStyle(el), fg = parse(cs.color), own = parse(cs.backgroundColor);
-            const bs = own && own.a > 0.9 ? [own] : backs(el);
-            let min = 99;
-            for (const b of bs) min = Math.min(min, ratio(over(fg, b), b));
-            out.push([s, Math.round(min * 100) / 100]);
-          }
-          return out;
-        }, skin);
-        for (const [s, r, why] of rows) if (why || r < 4.5) worst.push(skin + " " + s + " " + (why || r));
-      }
-      await sp.evaluate(() => applySkin("harbour"));
-      if (process.env.USAGE_CONTRAST) console.log(worst.join("\n"));
-      if (worst.length) fail("burnReadout: text under 4.5:1 or missing: " + worst.slice(0, 12).join("; ") + (worst.length > 12 ? " ... " + worst.length : ""));
-    } finally { await ctx.close(); }
-  }
-  if (errors.length) fail("burnReadout: page errors " + errors.join("; "));
-  if (!bad) console.log("burnReadout ok");
+  if (errors.length) fail("usageHistory: the page threw: " + errors.join(" | "));
 }
 
 const units = [
+  { name: "usageHistory", run: ({ browser, base }) => usageHistorySection(browser, base) },
   { name: "usageCacheReads", run: ({ browser, base }) => usageCacheReadsSection(browser, base) },
   { name: "usageTurns", run: ({ browser, base }) => usageTurnsSection(browser, base) },
   { name: "turnLimits", run: ({ browser, base }) => turnLimitsSection(browser, base) },
@@ -2662,10 +2340,8 @@ const units = [
   { name: "usageTab", run: ({ browser, base }) => usageTabSection(browser, base) },
   { name: "usageWeekReset", run: ({ browser, base }) => usageWeekResetSection(browser, base) },
   { name: "boardUsage", run: ({ browser, base }) => boardUsageSection(browser, base) },
-  { name: "burnChart", run: ({ browser, base }) => burnChartSection(browser, base) },
-  { name: "burnReadout", run: ({ browser, base }) => burnReadoutSection(browser, base) },
 ];
-const sections = { usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, cacheChip: cacheChipSection, clock: clockSection, usageTab: usageTabSection, usageWeekReset: usageWeekResetSection, boardUsage: boardUsageSection, burnChart: burnChartSection, burnReadout: burnReadoutSection };
+const sections = { usageHistory: usageHistorySection, usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, cacheChip: cacheChipSection, clock: clockSection, usageTab: usageTabSection, usageWeekReset: usageWeekResetSection, boardUsage: boardUsageSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

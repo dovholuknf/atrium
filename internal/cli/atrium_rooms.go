@@ -48,7 +48,7 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&hub, "hub", "", "the hub's board address, when it is not the default")
-	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
+	c.AddCommand(roomAddCmd(prefix), roomApproveCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
 		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix),
 		roomSpecCmd(prefix), roomLockCmd(prefix), roomTransportsCmd(prefix), roomRetireShareCmd(prefix))
 	return c
@@ -227,6 +227,31 @@ func backupsIn(dir, db string) string {
 		return filepath.Join(filepath.Dir(db), "backups")
 	}
 	return filepath.Join(dir, "backups")
+}
+
+func roomApproveCmd(prefix string) *cobra.Command {
+	var f hubStoreFlags
+	c := &cobra.Command{
+		Use:   "approve <name>",
+		Short: "Let a room that reached this hub over an overlay in",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := f.open()
+			if err != nil {
+				return err
+			}
+			defer store.Close()
+			if err := store.Approve(args[0]); err != nil {
+				return err
+			}
+			f.nudge()
+			fmt.Fprintf(cmd.OutOrStdout(), "approved %q\n", args[0])
+			return nil
+		},
+	}
+	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
+	return c
 }
 
 // roomAddCmd is the command decision 8 is about.

@@ -110,7 +110,7 @@ func (l *typedLine) now() time.Time {
 const typedLineCap = 4096
 
 func (l *typedLine) empty() bool {
-	return len(l.text) == 0 && l.dropped == 0 && l.unsure == ""
+	return l.count() == 0 && l.unsure == ""
 }
 
 // exactLocked is whether the text is certainly the whole line: non empty, followed to the last key, nothing cut
@@ -119,7 +119,19 @@ func (l *typedLine) exactLocked() bool {
 	return len(l.text) > 0 && l.dropped == 0 && l.unsure == "" && !l.inPaste && len(l.pending) == 0
 }
 
-func (l *typedLine) count() int { return l.dropped + len(l.text) }
+// count is the characters the gate holds for. Whitespace at the front of the line is not counted: a stray space or tab
+// before anything was written is no draft, and holding every message behind it is the nuisance. A message typed after
+// it lands with the blanks in front. Once text was cut off the front, the front is unknown and everything counts.
+func (l *typedLine) count() int {
+	if l.dropped > 0 {
+		return l.dropped + len(l.text)
+	}
+	lead := 0
+	for lead < len(l.text) && unicode.IsSpace(l.text[lead]) {
+		lead++
+	}
+	return len(l.text) - lead
+}
 
 func (l *typedLine) clear() {
 	l.text = l.text[:0]
@@ -200,7 +212,7 @@ func isWordRune(r rune) bool {
 // written line the next edit may not land at the end, so the text is no longer
 // known.
 func (l *typedLine) moved(key string) {
-	if !l.empty() {
+	if len(l.text) > 0 || l.dropped > 0 {
 		l.unsure = key
 	}
 }

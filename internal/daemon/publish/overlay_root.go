@@ -8,9 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
-	"github.com/openziti/zrok/v2/environment"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/openziti/zrok/v2/environment/env_core"
 )
 
@@ -40,22 +39,6 @@ import (
 // THE MACHINE'S ENVIRONMENT IS NEVER WRITTEN TO when atrium has its own. Every
 // path that enables, disables or reserves goes through `zrokRoot`, so there is
 // no route that reaches `~/.zrok2` by forgetting to ask.
-
-// zrokDefaultRootDir is what the SDK uses when nothing has moved it. Restored
-// explicitly rather than assumed, because the global is shared and the last
-// caller wins.
-const ZrokDefaultRootDir = ".zrok2"
-
-// zrokRootMu guards the SDK's global while a root is being loaded.
-//
-// `SetRootDirName` writes an unsynchronised package variable and `LoadRoot`
-// reads it. Two goroutines reaching for different roots at once would
-// otherwise be able to load each other's, which on this data means atrium
-// enabling one instance's token into the other instance's environment.
-//
-// Held only across the load. The `Root` that comes back carries its own path,
-// so everything after that is free of the global.
-var ZrokRootMu sync.Mutex
 
 // zrokRootDir is the directory this daemon's zrok environment lives in.
 //
@@ -95,29 +78,7 @@ func (d *Service) ZrokRootDir() string {
 // something else moves it, and the failure is silent: the call succeeds
 // against the wrong account.
 func (d *Service) ZrokRoot() (env_core.Root, error) {
-	dir := d.ZrokRootDir()
-
-	ZrokRootMu.Lock()
-	defer ZrokRootMu.Unlock()
-	if dir == "" {
-		environment.SetRootDirName(ZrokDefaultRootDir)
-	} else {
-		// Created here rather than at enable time. `SetConfig` writes a file
-		// into this directory and does not make it, and the first thing that
-		// happens to a new own-environment is a config write.
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return nil, fmt.Errorf("could not make atrium's own zrok directory at %s: %w", dir, err)
-		}
-		environment.SetRootDirName(dir)
-	}
-	root, err := environment.LoadRoot()
-	// Put it back whatever happened, so a failure here cannot leave every
-	// later caller pointed at a directory this one was told to use.
-	environment.SetRootDirName(ZrokDefaultRootDir)
-	if err != nil {
-		return nil, err
-	}
-	return root, nil
+	return transport.LoadZrokRoot(d.ZrokRootDir())
 }
 
 // zrokWhere describes the environment in one line, for the board and the log.

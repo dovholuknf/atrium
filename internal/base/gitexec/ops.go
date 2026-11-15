@@ -384,9 +384,11 @@ func (o CheckRefFormat) build(b *builder) {
 }
 
 // Diff is `git diff` of Revs under Paths: the patch (binary when Binary), or --numstat, --stat, --name-only or
-// --name-status, limited to DiffFilter, written to the file Output when set. The rest are git's flags of the same name, FindRenames being -M.
+// --name-status, limited to DiffFilter, written to the file Output when set. Cached is the index against Revs or HEAD. The rest
+// are git's flags of the same name, FindRenames being -M.
 type Diff struct {
 	Revs        []string
+	Cached      bool
 	Paths       []string
 	Binary      bool
 	Numstat     bool
@@ -406,6 +408,7 @@ type Diff struct {
 
 func (o Diff) build(b *builder) {
 	b.sub("diff")
+	b.flag(o.Cached, "--cached")
 	b.flag(o.Binary, "--binary")
 	b.flag(o.Numstat, "--numstat")
 	b.flag(o.Stat, "--stat")

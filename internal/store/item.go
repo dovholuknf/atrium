@@ -72,7 +72,10 @@ type ItemRow struct {
 	WorkID string
 	// Step is the step the card was launched for (trium:step:<step>). It is carried by the FIRST push only and is not a
 	// column: the hub files it on the attachment, and a later push without one changes nothing.
-	Step      string
+	Step string
+	// Result is the done text of the ending that finished the item. Carried by that push only and not a column: the hub
+	// files it on the backlog item.
+	Result    string
 	CreatedAt string
 	UpdatedAt string
 }
@@ -117,7 +120,7 @@ func (it *ItemRow) pushBody() string {
 	b, _ := json.Marshal(map[string]any{
 		"item_id": it.ID, "card": it.TaskID, "generation": it.Generation, "state": it.State, "revision": it.Revision,
 		"owner_kind": it.OwnerKind, "owner": it.Owner, "created_by": it.CreatedBy, "note": it.Note,
-		"work_id": it.WorkID, "step": it.Step,
+		"work_id": it.WorkID, "step": it.Step, "result": it.Result,
 	})
 	return string(b)
 }
@@ -174,6 +177,11 @@ func (s *Store) ItemCreate(it ItemRow) (*ItemRow, error) {
 // ItemTransition moves an item to state with the words of the change, as one new revision and one owed push. Moving to
 // the state and the words it already has changes nothing, and says so. It also clears a wait for an unblock.
 func (s *Store) ItemTransition(id, state, note string) (*ItemRow, bool, error) {
+	return s.ItemTransitionResult(id, state, note, "")
+}
+
+// ItemTransitionResult is ItemTransition whose owed push also carries result, the done text of a finishing ending.
+func (s *Store) ItemTransitionResult(id, state, note, result string) (*ItemRow, bool, error) {
 	if !validItemState(state) {
 		return nil, false, errors.New("an item is queued, running, blocked or finished")
 	}
@@ -200,7 +208,7 @@ func (s *Store) ItemTransition(id, state, note string) (*ItemRow, bool, error) {
 			missed_owner = 0, missed_worker = 0, updated_at = ? WHERE item_id = ?`, state, note, cur.Revision, now, id); err != nil {
 			return err
 		}
-		cur.UpdatedAt = now
+		cur.UpdatedAt, cur.Result = now, result
 		if err := owe(tx, cur, now); err != nil {
 			return err
 		}

@@ -24,6 +24,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/roomstats"
 	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/zitijoin"
 	"github.com/spf13/cobra"
 )
 
@@ -63,9 +64,30 @@ func joinCmd() *cobra.Command {
 			"arguments at all.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			j, err := transport.ParseToken(args[0])
-			if err != nil {
-				return err
+			var j transport.Join
+			if zitijoin.IsJoinURL(args[0]) {
+				zj, err := zitijoin.ParseJoinURL(args[0])
+				if err != nil {
+					return err
+				}
+				path, err := zitijoin.Join(cmd.Context(), zitijoin.Params{
+					Dir: filepath.Join(orDefault(dir, roomDir()), "identities"),
+				}, zj, func(p zitijoin.Prompt) {
+					fmt.Println("  to sign in, open " + p.URL)
+					fmt.Println("  and enter the code " + p.Code)
+					fmt.Println("  waiting for you to approve it.")
+				})
+				if err != nil {
+					return fmt.Errorf("could not join the ziti network: %w", err)
+				}
+				fmt.Println("  enrolled a ziti identity at " + path)
+				identity = path
+				j = transport.Join{Transport: "ziti", Name: zj.Room, Service: zj.Service}
+			} else {
+				var err error
+				if j, err = transport.ParseToken(args[0]); err != nil {
+					return err
+				}
 			}
 			// THE FLAGS DECIDE THE TRANSPORT, layered on the token that names the
 			// room and pins the hub. With no flag the token decides, exactly as
@@ -450,6 +472,8 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 		IdleCPU: roomstats.NewIdleMeter().Idle,
 		// WHETHER CLAUDE'S LOGIN HERE IS REVOKED, on the beat, so the hub can show it and ring once.
 		Login: d.LoginNeededReason,
+		// THE ROOM'S DISK NOTICE, on the beat, so the hub's Terminals tab can show one banner per room that is low.
+		Disk: d.DiskNotice,
 		// WHETHER THIS ROOM WILL TAKE A BUILD ITS HUB IS RUNNING, which is the
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See

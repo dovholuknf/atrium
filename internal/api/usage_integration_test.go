@@ -56,11 +56,59 @@ func TestUsageRoomEndpointShapeAndBounds(t *testing.T) {
 		t.Fatalf("bucket %d leaves more than %d buckets", got.Bucket, store.UsageMaxBuckets)
 	}
 
-	for _, bad := range []string{"?since=yesterday", "?bucket=0", "?bucket=x"} {
+	// A past page: until before the row leaves it out.
+	w = httptest.NewRecorder()
+	s.roomUsage(w, httptest.NewRequest("GET", "/v1/usage?bucket=60&until="+end.Add(-time.Hour).Format(time.RFC3339), nil))
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Buckets) != 0 || !got.Until.Equal(end.Add(-time.Hour).Truncate(time.Second)) {
+		t.Fatalf("until read %v %+v", got.Until, got.Buckets)
+	}
+
+	for _, bad := range []string{"?since=yesterday", "?bucket=0", "?bucket=x", "?until=later"} {
 		w = httptest.NewRecorder()
 		s.roomUsage(w, httptest.NewRequest("GET", "/v1/usage"+bad, nil))
 		if w.Code != 400 {
 			t.Fatalf("%s answered %d, want 400", bad, w.Code)
 		}
+	}
+}
+
+// The limit readings read holds since and until, so a past page gets its own stretch.
+func TestRoomLimitsSinceAndUntil(t *testing.T) {
+	t.Parallel()
+	s, st, _ := fileServer(t)
+	at := time.Now().UTC().Add(-10 * 24 * time.Hour).Truncate(time.Second)
+	for i, pct := range []int{10, 20, 30} {
+		if _, err := st.AddLimitReading(store.LimitReading{Card: "c1", Kind: store.LimitWeekly, Pct: pct,
+			At: at.Add(time.Duration(i) * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(q string) []store.LimitReading {
+		t.Helper()
+		w := httptest.NewRecorder()
+		s.roomLimits(w, httptest.NewRequest("GET", "/v1/usage/limits"+q, nil))
+		if w.Code != 200 {
+			t.Fatalf("%s answered %d: %s", q, w.Code, w.Body.String())
+		}
+		var got struct{ Readings []store.LimitReading }
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Readings
+	}
+	f := func(t time.Time) string { return t.Format(time.RFC3339) }
+	if got := read("?since=" + f(at.Add(30*time.Minute)) + "&until=" + f(at.Add(2*time.Hour))); len(got) != 1 || got[0].Pct != 20 {
+		t.Fatalf("since and until read %+v", got)
+	}
+	if got := read("?since=" + f(at.Add(-time.Minute))); len(got) != 3 {
+		t.Fatalf("since alone read %+v", got)
+	}
+	w := httptest.NewRecorder()
+	s.roomLimits(w, httptest.NewRequest("GET", "/v1/usage/limits?until=soon", nil))
+	if w.Code != 400 {
+		t.Fatalf("a bad until answered %d, want 400", w.Code)
 	}
 }

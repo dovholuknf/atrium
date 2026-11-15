@@ -98,6 +98,12 @@ type BacklogItem struct {
 	CreatedAt string `json:"created_at"`
 	ChangedAt string `json:"changed_at"`
 	ChangedBy string `json:"changed_by"`
+	// Result is what the last worker attached to the item said with atrium_done, ResultRef the sha it named, ResultCard
+	// the card as the hub names it and ResultAt when. Empty until one ends.
+	Result     string `json:"result,omitempty"`
+	ResultRef  string `json:"result_ref,omitempty"`
+	ResultCard string `json:"result_card,omitempty"`
+	ResultAt   string `json:"result_at,omitempty"`
 }
 
 // ItemNew is an item to file.
@@ -131,14 +137,16 @@ func (n ItemNew) Check() string {
 	return ""
 }
 
-const itemCols = `id, dept, title, body, priority, status, card, filed_by, filed_room, created_at, changed_at, changed_by`
+const itemFileCols = `id, dept, title, body, priority, status, card, filed_by, filed_room, created_at, changed_at, changed_by`
+
+const itemCols = itemFileCols + `, result, result_ref, result_card, result_at`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
 func scanItem(sc rowScanner) (BacklogItem, error) {
 	var b BacklogItem
 	err := sc.Scan(&b.ID, &b.Dept, &b.Title, &b.Body, &b.Priority, &b.Status, &b.Card, &b.FiledBy, &b.FiledRoom,
-		&b.CreatedAt, &b.ChangedAt, &b.ChangedBy)
+		&b.CreatedAt, &b.ChangedAt, &b.ChangedBy, &b.Result, &b.ResultRef, &b.ResultCard, &b.ResultAt)
 	return b, err
 }
 
@@ -167,7 +175,7 @@ func (s *Store) ItemFile(in ItemNew) (BacklogItem, error) {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if _, err := t.Exec(`INSERT INTO backlog_item (`+itemCols+`) VALUES (?, ?, ?, ?, ?, 'open', '', ?, ?, ?, ?, ?)`,
+		if _, err := t.Exec(`INSERT INTO backlog_item (`+itemFileCols+`) VALUES (?, ?, ?, ?, ?, 'open', '', ?, ?, ?, ?, ?)`,
 			id, in.Dept, in.Title, in.Body, in.Priority, in.FiledBy, fold(in.FiledRoom), at, at, in.FiledBy); err != nil {
 			return err
 		}

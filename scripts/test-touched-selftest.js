@@ -175,7 +175,7 @@ check("lint: a unit matching one glob passes", r.status === 0, r.stderr);
 r = lint(["--probe-go-test", "internal/api/zzz_new_integration_test.go"]);
 check("lint: a new api test file in no bucket grows rest past its ceiling and fails", r.status === 1 && /api\/rest holds 30 test files, over its ceiling of 29/.test(r.stderr), r.stderr);
 r = lint(["--probe-go-test", "internal/link/zzz_new_integration_test.go"]);
-check("lint: a new link test file in no bucket fails", r.status === 1 && /hub\/rest holds 28 test files, over its ceiling/.test(r.stderr), r.stderr);
+check("lint: a new link test file in no bucket fails", r.status === 1 && /hub\/rest holds 27 test files, over its ceiling/.test(r.stderr), r.stderr);
 r = lint(["--probe-go-test", "internal/api/prs_zzz_integration_test.go"]);
 check("lint: a new test file a bucket glob owns passes and leaves rest alone", r.status === 0, r.stderr);
 r = spawnSync(process.execPath, [path.join(__dirname, "test-buckets.js"), "--go-run", "hub/backlog"], { encoding: "utf8" });

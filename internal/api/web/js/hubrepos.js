@@ -508,7 +508,9 @@ function hubReposBrRow(b, multi) {
   const evidence = b.status === "landed" ? '<span class="hr-bhow" data-tip="the weakest evidence that put it on main">' + esc(b.how || "") + "</span>"
     : b.kind ? '<span class="hr-bkind kind-' + esc(b.kind) + '">' + esc(b.kind) + "</span>" : "";
   return '<tr class="hr-brrow st-' + esc(b.status) + '"><td class="hr-brname"><span class="hr-name" data-tip="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
-    (multi ? '<span class="hr-who">' + esc(b.repo) + "</span>" : "") + "</td>" +
+    (multi ? '<span class="hr-who">' + esc(b.repo) + "</span>" : "") +
+    (typeof walkHubPage === "function" ? '<a class="hr-bwalk" target="_blank" rel="noopener" data-tip="walk this branch against main" href="' +
+      esc(walkHubPage(b.repo, b.name)) + '">walk</a>' : "") + "</td>" +
     '<td><span class="hr-bstatus st-' + esc(b.status) + '"><i></i>' + esc(b.status) + "</span>" + evidence + "</td>" +
     '<td class="hr-brahead" data-tip="commits main does not carry, of all the branch\'s commits">' + (b.status === "landed" ? "–" : b.uncarried + "/" + b.commits) + "</td>" +
     "<td>" + hubReposAge(b.last_commit, "hr-when") + "</td>" +

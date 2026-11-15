@@ -234,6 +234,17 @@ function termHeldLine(t) {
   return `<div class="theld" data-tip="held on this request. answer it on the permissions tab or the card"
     ><b>${esc(p.tool || "")}</b> ${esc(p.command || "")}</div>`;
 }
+// A done that left work out, unchecked or uncommitted: a warning and how many notes. Click opens the details.
+function termLeftoverChip(t) {
+  const parts = [t && t.report_dirty ? t.report_dirty + (t.report_dirty === 1 ? " file" : " files") + " not committed" : "",
+    t && t.done_skipped ? "1 skipped" : "", t && t.done_unverified ? "1 unverified" : ""].filter(Boolean);
+  if (!parts.length) return "";
+  const tip = parts.join(", ") + ". click for the details";
+  return `<span class="chip warn tleft" role="button" tabindex="0" data-tip="${esc(tip)}" data-id="${esc(t.id)}" ` +
+    `onclick="event.stopPropagation();openPeek(this.dataset.id,this,'menu')" ` +
+    `onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openPeek(this.dataset.id,this,'menu')}"` +
+    `><span class="tleft-i">&#9888;</span> ${parts.length}</span>`;
+}
 // Live but not attachable: joined from a terminal atrium does not hold.
 function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
 
@@ -1073,6 +1084,25 @@ function termTree(list) {
 }
 
 
+// A card whose ground is dark gets `.dk`, which brings its star and pie to the tile's text colour. CSS cannot read a ground that
+// a skin, a selected colour or a worn theme sets, so this reads it back. Run when the list is drawn and when the skin changes.
+function termTone(root) {
+  const cards = [...(root || document).querySelectorAll(".term-list .card")];
+  const probes = cards.map(c => {
+    const p = document.createElement("span");
+    const own = c.classList.contains("on") && !c.classList.contains("bare") && !c.classList.contains("plain");
+    p.style.backgroundColor = own ? "var(--tabbg, var(--card-0))" : "var(--card-0)";
+    c.appendChild(p);
+    return p;
+  });
+  const grounds = probes.map(p => (getComputedStyle(p).backgroundColor.match(/[\d.]+/g) || []).map(Number));
+  probes.forEach(p => p.remove());
+  cards.forEach((c, i) => {
+    const m = grounds[i];
+    if (m.length >= 3) c.classList.toggle("dk", 0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2] < 140);
+  });
+}
+
 // A ROW WHOSE NAME WOULD BE CUT DROPS ITS ROOM CHIP FIRST, and only then does the name shrink.
 function termRoomFit(root) {
   const cards = [...root.querySelectorAll(".term-list .card")].filter(c => c.querySelector(".card-line > .chips .chip.room"));
@@ -1373,7 +1403,7 @@ function termRowChips(t, lead) {
   const minion = isMinion(t) ? `<span class="chip" data-tip="a throwaway session an item launched. it is listed because it needs you">minion</span>` : "";
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
-  const inner = (lead || "") + minion + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -2110,6 +2140,7 @@ async function renderTermList() {
   // After the cards exist, since it is placed against one of them. A frame
   // later, so the measurement happens on the layout that was just written
   // rather than on the one being replaced.
+  termTone(host);
   termRoomFit(host);
   if (!host.dataset.roomfit && typeof ResizeObserver === "function") {
     host.dataset.roomfit = "1";

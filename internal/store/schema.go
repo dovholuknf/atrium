@@ -2547,6 +2547,21 @@ var migrations = []struct {
 			   WHERE id = 'codex' AND login_read = '' AND login_fix = ''`,
 		},
 	},
+	{
+		// How many files a done report left uncommitted or untracked in the card's worktree, f-done-dirty-worktree.
+		name: "0119_task_report_dirty",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN report_dirty INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
+	{
+		name: "0120_task_done_leftovers",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN done_skipped TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN done_unverified TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN skipped_filed TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

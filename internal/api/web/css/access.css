@@ -1,0 +1,107 @@
+  /* "Accessing Atrium": one screen for every way in. Sign-in block on top, then a list of entries, then the rooms
+     waiting at the door. Namespaced .ac. */
+  .ac-lead { margin: 0 0 var(--vs-3); max-width: 74ch; font: var(--fs-sm)/1.55 var(--sans); color: var(--dim); }
+  .ac-block, .ac-row, .ac-add, .ac-wait {
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: rgba(var(--sink-rgb),.35); margin-bottom: 10px; padding: 12px 13px;
+  }
+  .ac-block h4, .ac-sec { margin: 0 0 8px; color: var(--head); font: 600 var(--fs-md)/1.2 var(--sans); }
+  .ac-sec { margin-top: 18px; }
+  .ac-grid { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 10px 12px; align-items: center; }
+  .ac-status { margin: 8px 0 0; color: var(--dim); font: var(--fs-sm)/1.4 var(--sans); }
+  .ac-status.warn { color: var(--warn); }
+  .ac-grid label { color: var(--dim); font-size: var(--fs-sm); }
+  /* Fields wear the board's own look here too, so they match inside a dialog body and outside one. */
+  .ac-grid input, .ac-grid select, .ac-grid textarea {
+    width: 100%; box-sizing: border-box; font: var(--fs-md)/1.5 var(--sans); color: var(--head);
+    background: rgba(var(--sink-rgb),.55); border: 1px solid rgba(var(--stroke-dim-rgb),.8);
+    border-radius: var(--r-md); padding: 9px 12px; transition: border-color .14s, box-shadow .14s;
+    color-scheme: dark;
+  }
+  .ac-grid textarea { resize: vertical; display: block; min-height: 0; }
+  .ac-grid input:hover, .ac-grid select:hover, .ac-grid textarea:hover { border-color: var(--stroke); }
+  .ac-grid input:focus, .ac-grid select:focus, .ac-grid textarea:focus {
+    outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(var(--teal-rgb),.14);
+  }
+  .ac-grid ::placeholder { color: var(--dimmest); }
+  .ac-title { display: flex; align-items: center; gap: 8px; }
+  .ac-add .help { cursor: help; margin-left: 4px; vertical-align: middle; }
+  .ac-add .help:hover::after, .ac-add .help:focus::after {
+    content: attr(data-actip); position: absolute; left: 22px; top: -4px; z-index: 20; width: 300px;
+    padding: 9px 11px; border-radius: var(--r-md); border: 1px solid var(--stroke);
+    background: var(--bg-2); color: var(--head); font: var(--fs-sm)/1.5 var(--sans); text-align: left;
+    opacity: 1; visibility: visible; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  .ac-menu { position: relative; display: inline-block; margin-bottom: 14px; }
+  .ac-menu > button { font-weight: 600; padding: 10px 18px; display: inline-flex; align-items: center; gap: 8px; }
+  .ac-menu > button b { font-size: 1.15em; line-height: 1; }
+  .ac-menu .ac-drop {
+    position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; min-width: 100%; width: max-content; padding: 6px;
+    border-radius: 14px; border: 1px solid var(--stroke); background: var(--bg-2);
+    box-shadow: 0 2px 6px rgba(0,0,0,.25), 0 18px 44px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 2px;
+  }
+  .ac-drop button {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 1px solid transparent;
+    background: transparent; padding: 8px 18px 8px 8px; border-radius: 10px; color: var(--head);
+    font: 500 var(--fs-md)/1.2 var(--sans); box-shadow: none; transition: background .12s, border-color .12s;
+  }
+  .ac-drop button:hover, .ac-drop button:focus-visible {
+    background: rgba(var(--teal-rgb),.12); border-color: rgba(var(--teal-rgb),.4); outline: none;
+  }
+  .ac-add h4 { margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+  .ac-row { display: flex; align-items: center; gap: var(--sp-3); }
+  .ac-row.live { border-color: var(--chip-accent-stroke); box-shadow: 0 0 0 1px var(--chip-accent-stroke) inset; }
+  /* The logo tile: a rounded square in the brand's own tint, the logo at 24px inside it. */
+  .ac-ico {
+    position: relative; flex: none; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.07); color: var(--head);
+  }
+  .ac-ico > svg { width: 24px; height: 24px; display: block; }
+  .ac-ico .zrlogo { fill: #9bf316; }
+  .ac-ico[data-kind="zrok"] { background: linear-gradient(145deg, #1f2d0d, #0d1405); border-color: rgba(155,243,22,.25); }
+  .ac-ico[data-kind="ziti"] { background: linear-gradient(145deg, rgba(0,104,249,.24), rgba(252,1,71,.1)); }
+  .ac-ico[data-kind="address"] { background: linear-gradient(145deg, rgba(var(--teal-rgb),.24), rgba(var(--teal-rgb),.07)); color: var(--teal); }
+  .ac-badge {
+    position: absolute; right: -5px; bottom: -5px; width: 15px; height: 15px; display: grid; place-items: center;
+    border-radius: 50%; background: var(--bg-2); border: 1px solid var(--stroke); color: var(--head);
+  }
+  .ac-badge svg { width: 9px; height: 9px; display: block; }
+  .ac-signin { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--stroke-dim); }
+  .ac-signin h5 { margin: 0 0 8px; color: var(--head); font: 600 var(--fs-sm)/1.2 var(--sans); }
+  .ac-span, .ac-signin { grid-column: 1 / -1; }
+  .ac-file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ac-grid input[type=checkbox] { width: auto; padding: 0; accent-color: var(--teal); margin: 0; }
+  .ac-warn label { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; color: inherit; }
+  .ac-file input { width: 112px; flex: none; padding: 5px 6px; color: transparent; overflow: hidden; }
+  .ac-file input::file-selector-button { margin-right: 10px; border: 1px solid var(--stroke); border-radius: var(--r-md);
+    background: var(--chip); color: var(--head); padding: 5px 10px; cursor: pointer; }
+  .ac-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+  .ac-foot .ac-status { margin: 0 auto 0 0; }
+  .ac-foot button:disabled { opacity: .45; cursor: not-allowed; }
+  .ac-grid select {
+    appearance: none; -webkit-appearance: none; padding-right: 34px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238a98a8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; background-size: 12px;
+  }
+  .ac-check { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--dim); font-size: var(--fs-sm); }
+  .ac-check input { accent-color: var(--teal); }
+  .ac-warnbtns { display: flex; gap: 8px; margin-top: 8px; }
+  .ac-row { flex-wrap: wrap; }
+  .ac-row .grow { display: block; flex: 1 1 14em; min-width: 0; }
+  .ac-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+  .ac-name { display: block; color: var(--head); font: 600 var(--fs-md)/1.2 var(--sans); }
+  .ac-sub { display: block; margin-top: 2px; color: var(--dim); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+  .ac-chip {
+    flex: 0 1 auto; min-width: 0; max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .08em; text-transform: uppercase;
+    padding: 5px 9px; border-radius: var(--r-pill); border: 1px solid var(--stroke-dim); background: var(--chip);
+    color: var(--dim);
+  }
+  .ac-chip.on { color: var(--teal); border-color: var(--chip-accent-stroke); }
+  .ac-chip.warn { color: var(--warn); border-color: var(--warn-stroke); }
+  .ac-actions { display: flex; gap: 6px; flex: none; }
+  .ac-warn {
+    margin: 0; min-width: 0; box-sizing: border-box; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--warn-stroke);
+    color: var(--warn); font-size: var(--fs-sm); line-height: 1.5;
+  }
+  .ac-empty { color: var(--dim); font-size: var(--fs-sm); padding: 6px 2px; }

@@ -290,7 +290,7 @@ function ulBand(ax, W, H, now) {
 // A live reading: only the section and the band are redrawn, and only when they changed.
 function ulRefresh() {
   const box = document.getElementById("ul-limits");
-  if (!box) return;
+  if (!box) { ulPaintBand(); return; }
   const before = UL.html;
   const html = ulSection();
   if (html === before) return;
@@ -299,7 +299,6 @@ function ulRefresh() {
   const fresh = tmp.querySelector("#ul-limits");
   if (fresh) box.innerHTML = fresh.innerHTML;
   ulPaintBand();
-  if (typeof ucPaintCum === "function") ucPaintCum();
 }
 
 // The band, redrawn in the chart that is there.

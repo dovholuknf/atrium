@@ -12,8 +12,6 @@
   "bootClean": 19164,
   "borderColourLag": 2858,
   "bridge": 3062,
-  "burnChart": 3081,
-  "burnReadout": 9903,
   "busyGuard": 11357,
   "cacheChip": 10990,
   "cardRoute": 1002,
@@ -282,6 +280,7 @@
   "untaggedSort": 8373,
   "usageCacheReads": 1584,
   "usageGroups": 20353,
+  "usageHistory": 3000,
   "usageLimits": 10936,
   "usagePolish": 7785,
   "usageTab": 1819,
@@ -290,6 +289,9 @@
   "walk": 13902,
   "walkContext": 6808,
   "walkBranch": 5000,
+  "walkLate": 9000,
+  "walkSwitch": 6000,
+  "walkHubBranch": 6000,
   "websiteSkin": 2732,
   "worn": 5699
  }

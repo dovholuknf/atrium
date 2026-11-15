@@ -217,8 +217,25 @@ func (p *Proxy) itemSync(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		if got.WorkID != "" {
 			_, _ = st.TaskCardSeen(got.WorkID, got.Room, got.Card, got.CreatedAt)
 		}
+		p.itemResult(st, got, it.Result)
 	}
 	crJSON(w, http.StatusOK, map[string]any{"ok": true, "applied": applied, "item": got})
+}
+
+// itemResult records a finished assignment's done text on the backlog item it is attached to, which leaves open for
+// built. An adhoc assignment has no backlog row, and a cancel carries no result.
+func (p *Proxy) itemResult(st *hubstore.Store, got hubstore.Item, result string) {
+	if got.State != hubstore.ItemStateFinished || strings.TrimSpace(result) == "" || got.WorkID == "" ||
+		strings.HasPrefix(got.WorkID, hubstore.AdhocPrefix) {
+		return
+	}
+	card := wire.TagFor(got.Room, got.Card)
+	b, err := st.ItemResult(got.WorkID, result, NoteSHA(got.Note), card, card)
+	if err != nil {
+		return
+	}
+	p.RecordAudit("", "backlog-status", b.ID+" "+b.Status)
+	p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
 }
 
 // ownerMayAct is whether `by` is the owner of the item, and the sentence for a no.

@@ -1246,6 +1246,24 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS growl_state ON growl (state)`,
 		},
 	},
+	{
+		// A BACKLOG ITEM'S RESULT: what the last worker attached to it said when it ended with atrium_done, the sha it named,
+		// the card and when. See ItemResult in backlog_follow.go.
+		name: "0039_backlog_result",
+		stmts: []string{
+			`ALTER TABLE backlog_item ADD COLUMN result TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE backlog_item ADD COLUMN result_ref TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE backlog_item ADD COLUMN result_card TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE backlog_item ADD COLUMN result_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// A ROOM WAITING FOR THE OPERATOR. A column and not a state, because the state CHECK cannot take a new value.
+		name: "0040_room_pending",
+		stmts: []string{
+			`ALTER TABLE room ADD COLUMN pending INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

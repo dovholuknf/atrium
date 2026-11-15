@@ -19,8 +19,8 @@ const (
 
 // How long a reading is kept, by kind.
 const (
-	LimitKeepFiveHour = 8 * time.Hour
-	LimitKeepWeekly   = 7 * 24 * time.Hour
+	LimitKeepFiveHour = 35 * 24 * time.Hour
+	LimitKeepWeekly   = 35 * 24 * time.Hour
 )
 
 // LimitReading is one card's figure for one limit at one time.
@@ -70,11 +70,21 @@ func limitTS(t time.Time) string {
 
 // LimitReadings lists the readings at or after since, oldest first.
 func (s *Store) LimitReadings(since time.Time) ([]LimitReading, error) {
+	return s.LimitReadingsIn(since, time.Time{})
+}
+
+// LimitReadingsIn lists the readings at or after since and before until, oldest
+// first. A zero until is no end.
+func (s *Store) LimitReadingsIn(since, until time.Time) ([]LimitReading, error) {
+	end := "9999"
+	if !until.IsZero() {
+		end = ts(until)
+	}
 	out := []LimitReading{}
 	err := s.guard(func() error {
 		out = []LimitReading{}
-		rows, err := s.db.Query(`SELECT task_id, kind, pct, resets_at, at FROM limit_reading WHERE at >= ?
-			ORDER BY at, rowid`, ts(since))
+		rows, err := s.db.Query(`SELECT task_id, kind, pct, resets_at, at FROM limit_reading WHERE at >= ? AND at < ?
+			ORDER BY at, rowid`, ts(since), end)
 		if err != nil {
 			return err
 		}

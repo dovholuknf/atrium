@@ -207,7 +207,7 @@ function shareItem(t) {
   // say there is no overlay. It used to be able to say that over a live share.
   if (!sub.length) {
     sub.push({ quiet: "no overlay is set up yet" });
-    sub.push({ quiet: "see the gear, expose the board" });
+    sub.push({ quiet: "see the gear, accessing atrium" });
   }
 
   return {

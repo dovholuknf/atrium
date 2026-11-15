@@ -162,7 +162,12 @@ func (d *Daemon) flushItems() {
 
 // moveItem is one transition, published and pushed when it changed something.
 func (d *Daemon) moveItem(id, state, note string) (*store.ItemRow, bool) {
-	it, changed, err := d.st.ItemTransition(id, state, note)
+	return d.moveItemResult(id, state, note, "")
+}
+
+// moveItemResult is moveItem whose push carries the done text the hub files on the backlog item.
+func (d *Daemon) moveItemResult(id, state, note, result string) (*store.ItemRow, bool) {
+	it, changed, err := d.st.ItemTransitionResult(id, state, note, result)
 	if err != nil {
 		log.Printf("[atrium] could not move item %s to %s: %v", id, state, err)
 		return nil, false
@@ -213,11 +218,11 @@ func (d *Daemon) itemEnded(task *store.Task, in FinishRequest) *itemEnding {
 	}
 	// A FINISHED ITEM CARRIES THE COMMIT IT NAMED, as its note: the hub reads the sha from there, which is how a designer's
 	// finishing becomes a design it can look at. A blocked one has no note, as before.
-	note := ""
+	note, result := "", ""
 	if target == store.ItemFinished {
-		note = strings.TrimSpace(in.SHA)
+		note, result = strings.TrimSpace(in.SHA), strings.TrimSpace(in.Recap+doneTail(in))
 	}
-	moved, changed := d.moveItem(it.ID, target, note)
+	moved, changed := d.moveItemResult(it.ID, target, note, result)
 	if !isolated {
 		// AN ATTACHED CARD THAT IS NOT ISOLATED keeps the report it always had, to its launcher, in its own words. Its
 		// assignment moves, and nothing else about its ending does.

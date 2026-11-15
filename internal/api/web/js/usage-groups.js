@@ -48,9 +48,7 @@ function ucGroupLabel(key) {
 // ---- the heading with its select ----
 
 function ucCardsHead() {
-  return `<h4 class="uch">by card <select id="uc-group" aria-label="group by" data-tip="Group the spend by card, by department (the card's dept: tag) or by director (the card that launched it), kept as of each turn">` +
-    UC_GROUPS.map(g => `<option value="${g[0]}"${g[0] === UC.group ? " selected" : ""}>${g[1]}</option>`).join("") + `</select> ` +
-    `<span class="ucnote">top ${UC_TOP_CARDS} by ${UC.cacheReads ? "" : "counted "}tokens, the rest as others. Click one to filter</span></h4>`;
+  return `<h4 class="uch">by card <span class="help" tabindex="0" data-tip="Every card by ${UC.cacheReads ? "" : "counted "}tokens, most first. Click a card to draw it on the chart above, click it again to take it off">?</span></h4>`;
 }
 
 // ---- the group tiles ----

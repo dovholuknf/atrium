@@ -46,6 +46,27 @@ func TestAClearedCycleOverTheLimitIsNotStartedAgain(t *testing.T) {
 	until(t, "a cycle again once the card was under its limit", func() bool { return d.Nctx.Get(id) != nil })
 }
 
+func TestAFailedAutoCycleOverTheLimitIsAskedAgainAfterTheGap(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, _, _ := cycleCard(t, d, 300_000)
+	d.cycleCheck(task, 300_000)
+	until(t, "the cycle", func() bool { return d.Nctx.Get(task.ID) != nil })
+	first := d.Nctx.Get(task.ID).Gen
+	d.Nctx.Fail(task.ID, first, "input was held, released")
+	d.cycleCheck(task, 305_000)
+	if c := d.Nctx.Get(task.ID); c.Gen != first {
+		t.Fatal("asked again inside the gap")
+	}
+	d.Nctx.Mu.Lock()
+	d.Nctx.By[task.ID].Since = time.Now().Add(-2 * cycleRetryGap)
+	d.Nctx.Mu.Unlock()
+	d.cycleCheck(task, 310_000)
+	if c := d.Nctx.Get(task.ID); c == nil || c.Gen == first || c.Step == "failed" {
+		t.Fatalf("a card still over its limit was not asked again: %v", c)
+	}
+}
+
 func TestAReadyAfterTheBoardClearedTheCycleIsTheAck(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)

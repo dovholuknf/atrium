@@ -169,7 +169,7 @@ func (s *Store) SetReportSHA(id, sha string, unverified bool) error {
 		flag = 1
 	}
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET report_sha = ?, report_unverified = ? WHERE id = ?`,
+		_, err := s.db.Exec(`UPDATE task SET report_sha = ?, report_unverified = ?, report_dirty = 0 WHERE id = ?`,
 			sha, flag, id)
 		return err
 	})

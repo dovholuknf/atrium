@@ -18,14 +18,13 @@
 // `toast`, and they carry the pause and resume buttons, which are the only way to act on the restart. They stay
 // as toasts on a phone as well.
 
-const PHONE_NUDGE_MQ = "(max-width: 900px) and (pointer: coarse)";
-
+// The query is inline because a toast can fire from an earlier script, before a const here has been initialised.
 function phoneToasts() {
-  return !!(window.matchMedia && window.matchMedia(PHONE_NUDGE_MQ).matches);
+  return !!(window.matchMedia && window.matchMedia("(max-width: 900px) and (pointer: coarse)").matches);
 }
 
 // What `toast` answers on a phone, so a caller that takes the return value back finds the shape it expects.
-const phoneToastStub = {
+var phoneToastStub = {
   dismiss() {}, again() {}, answered() {}, remove() {}, dataset: {},
   classList: { contains() { return false; }, add() {}, remove() {} }
 };
@@ -61,7 +60,7 @@ function headerBellShown() {
   });
 }
 
-let phoneHeldN = 0;
+var phoneHeldN = 0; // var: a held count can arrive before this line runs
 
 // Repaints both bells' extras from what is known: the unseen count, the notify-off glyph and the held count.
 function phoneBellPaint() {

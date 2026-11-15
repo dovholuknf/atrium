@@ -85,13 +85,28 @@ func WithItemTags(ctx context.Context, call HubCall, tags []string, id string) [
 type ItemSpec struct {
 	ID    string
 	Title string
+	// Rerun is `rerun:<id>`: a launch on an item that already has a result, said on purpose.
+	Rerun bool
 }
+
+// RerunPrefix is how a launch says it runs an item again that already has a result: `rerun:r-037`.
+const RerunPrefix = "rerun:"
+
+// RerunTag rides a rerun's tags, so the hub that re-reads a relayed launch's item from its tags knows it was said.
+const RerunTag = "atrium:rerun"
 
 // ParseItemSpec reads an item argument. Empty is refused with ItemRequired, and an id that is not one is refused with
 // what an id looks like.
 func ParseItemSpec(spec string) (ItemSpec, error) {
 	spec = strings.TrimSpace(spec)
 	switch {
+	case strings.HasPrefix(strings.ToLower(spec), RerunPrefix):
+		s, err := ParseItemSpec(spec[len(RerunPrefix):])
+		if err == nil && s.ID == "" {
+			err = &ctl.RefusedError{Msg: "--item rerun: names the id of a backlog item that has a result: --item rerun:r-037"}
+		}
+		s.Rerun = err == nil
+		return s, err
 	case spec == "":
 		return ItemSpec{}, &ctl.RefusedError{Msg: ItemRequired}
 	case strings.HasPrefix(strings.ToLower(spec), NewItemPrefix):
@@ -130,6 +145,7 @@ func DeptOfTags(tags []string) string {
 //
 //   - An id must be a backlog item the hub holds. A hub that answers "no such item" refuses the launch. A hub that does
 //     not answer does NOT: a launch is not refused for a hub being down, and the attach waits in the room's outbox.
+//   - An id whose item already has a result is refused unless it is said as `rerun:<id>`.
 //   - `new:<title>` files the backlog item first, under dept (the launcher's), and attaches to it. Filing needs the hub,
 //     so a hub that is not answering refuses it.
 func ResolveItem(ctx context.Context, call HubCall, spec, dept, by, room string) (id string, filed bool, err error) {
@@ -144,6 +160,11 @@ func ResolveItem(ctx context.Context, call HubCall, spec, dept, by, room string)
 		if err != nil && errors.As(err, &se) && se.HTTPStatus() == http.StatusNotFound && !se.Bare() {
 			return "", false, &ctl.RefusedError{Msg: fmt.Sprintf("there is no backlog item %q. file it first with atrium_backlog, "+
 				"or say --item new:\"a title\" to file one as you launch", s.ID)}
+		}
+		if err == nil && b.Result != "" && !s.Rerun {
+			return "", false, &ctl.RefusedError{Msg: fmt.Sprintf("backlog item %s already has a result, from %s at %s: %s. "+
+				"read it with atrium_backlog get %s. to launch on it again on purpose say --item %s%s",
+				s.ID, b.ResultCard, b.ResultAt, b.Result, s.ID, RerunPrefix, s.ID)}
 		}
 		return s.ID, false, nil
 	}

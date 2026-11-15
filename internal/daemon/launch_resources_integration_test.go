@@ -58,7 +58,14 @@ func TestASessionStartIsToldTheRoomLinesAndAHubRoomIsNotToldGh(t *testing.T) {
 			t.Fatalf("roomLines lacks %q: %q", want, got)
 		}
 	}
-	if strings.Contains(d.roomLines(&store.Task{Tags: []string{home.OutsideCodeTag}}), "atrium_git_url") {
+	if strings.Contains(got, "walk=") {
+		t.Fatalf("a task with no id was told a walk link: %q", got)
+	}
+	d.opts.HumanAddr = "127.0.0.1:7781"
+	if got := d.roomLines(&store.Task{ID: "c1"}); !strings.Contains(got, "http://127.0.0.1:7781/#card=c1&walk=") {
+		t.Fatalf("roomLines lacks the walk link: %q", got)
+	}
+	if strings.Contains(d.roomLines(&store.Task{ID: "c1", Tags: []string{home.OutsideCodeTag}}), "atrium_git_url") {
 		t.Fatal("an outside-code card was told atrium_git_url")
 	}
 	d.SetHubForge(&forge.Remote{})

@@ -18,6 +18,12 @@
     <span class="wv-card" id="walk-title"></span>
     <span class="by" id="walk-note"></span>
     <span class="walk-bar" id="walk-bar"></span>
+    <span class="wk-mode" id="walk-mode" role="group" aria-label="what the walk compares" hidden>
+      <button type="button" data-mode="unstaged" data-tip="the working tree against the index">unstaged <span class="n"></span></button>
+      <button type="button" data-mode="staged" data-tip="the index against HEAD">staged <span class="n"></span></button>
+      <button type="button" data-mode="branch"
+        data-tip="HEAD plus edits against the merge base with the branch's base">branch <span class="n"></span></button>
+    </span>
     <span class="by" id="walk-count"></span>
     <span class="walk-pending" id="walk-more" hidden></span>
     <span class="grow"></span>

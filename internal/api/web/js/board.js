@@ -907,6 +907,10 @@ function cardHTML(t, wearAs) {
         data-tip="${esc("this session reported done at " + (t.report_sha || "") +
           ", and that commit is not in its worktree. it may have landed somewhere else.")}"
         >sha unverified</span>` : ""}
+      ${t.report_dirty ? `<span class="chip warn"
+        data-tip="${esc("this session reported done with changes in its worktree not committed or not tracked. " +
+          "only what it committed will land.")}"
+        >done, ${t.report_dirty} file${t.report_dirty === 1 ? "" : "s"} not committed</span>` : ""}
       ${t.restart_wake ? `<span class="chip"
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}

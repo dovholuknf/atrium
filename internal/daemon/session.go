@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"io"
 	"log"
 	"net/http"
@@ -188,6 +189,9 @@ func (d *Daemon) roomLines(t *store.Task) string {
 	var lines []string
 	if !home.IsOutsideCode(shared.LaunchRequest{}, t) {
 		lines = append(lines, gitURLLine)
+		if l := d.walkLinkLine(t); l != "" {
+			lines = append(lines, l)
+		}
 	}
 	lines = append(lines, resourcesLine)
 	var refused []string
@@ -198,6 +202,16 @@ func (d *Daemon) roomLines(t *store.Task) string {
 		lines = append(lines, tools)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// walkLinkLine tells a session how to print the link that opens a walk of a checkout in its own card's pane.
+func (d *Daemon) walkLinkLine(t *store.Task) string {
+	board := roomconf.AddressOf(d.opts.HumanAddr)
+	if t == nil || t.ID == "" || board == "" || strings.TrimSpace(d.opts.HumanAddr) == "-" {
+		return ""
+	}
+	return "When you finish changes someone should read or sign, print the walk link on its own line: " +
+		board + "/#card=" + t.ID + "&walk=<absolute path of the checkout, forward slashes, spaces as %20>"
 }
 
 func (d *Daemon) onSession(in SessionEvent) error {

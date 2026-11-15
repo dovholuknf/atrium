@@ -14,6 +14,14 @@ import (
 func (s *Server) roomUsage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	until := time.Now().UTC()
+	if v := q.Get("until"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			http.Error(w, `{"error":"until is not an RFC 3339 time"}`, http.StatusBadRequest)
+			return
+		}
+		until = t
+	}
 	since := until.Add(-time.Hour)
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)

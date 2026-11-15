@@ -20,14 +20,13 @@ type Service struct {
 	// publish forwards to Daemon.Publish at call time, so a test that replaces it is seen.
 	publish func(id string)
 
-	Logins     LoginStates
-	Discovered ProviderCache
-	Jwks       JwksCache
-	AuthLim    AuthLimiter
-	Nats       map[OverlayKind]*Native
-	NatsMu     sync.Mutex
-	Guests     GuestShares
-	Docs       DocShares
+	// Guard is the sign-in in front of every published board, the room's copy of the one the hub uses.
+	*Guard
+
+	Nats   map[OverlayKind]*Native
+	NatsMu sync.Mutex
+	Guests GuestShares
+	Docs   DocShares
 }
 
 // Config is what the root hands the service.
@@ -40,5 +39,7 @@ type Config struct {
 }
 
 func New(c Config) *Service {
-	return &Service{st: c.St, ap: c.Ap, opts: c.Opts, sup: c.Sup, publish: c.Publish, Nats: map[OverlayKind]*Native{}}
+	d := &Service{st: c.St, ap: c.Ap, opts: c.Opts, sup: c.Sup, publish: c.Publish, Nats: map[OverlayKind]*Native{}}
+	d.Guard = NewGuard(c.St, d.PublicShareRunning)
+	return d
 }

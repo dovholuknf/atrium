@@ -4,6 +4,7 @@ package roomstats
 
 import (
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -55,4 +56,13 @@ func DiskOf(path string) (string, uint64, uint64, error) {
 		return path, 0, 0, err
 	}
 	return filepath.ToSlash(path), free, total, nil
+}
+
+// VolumeOf names the volume holding path, so two paths on one drive compare equal.
+func VolumeOf(path string) string {
+	abs, err := filepath.Abs(filepath.FromSlash(path))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(filepath.VolumeName(abs))
 }

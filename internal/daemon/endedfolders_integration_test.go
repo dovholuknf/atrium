@@ -245,6 +245,41 @@ func TestTheSweepRemovesEndedWorktreesBesideTheClone(t *testing.T) {
 	}
 }
 
+func TestALiveCardAtTheWorktreeRootKeepsOnlyUnclaimedWorktrees(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	base := t.TempDir()
+	clone := filepath.Join(base, "repo")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cullGit(t, clone, "init", "-q", "-b", "main")
+	cullGit(t, clone, "commit", "-q", "--allow-empty", "-m", "root")
+	cullGit(t, clone, "branch", "claude/main")
+	root := filepath.Join(base, "repo-worktrees")
+	add := func(name string) string {
+		dir := filepath.Join(root, name)
+		cullGit(t, clone, "worktree", "add", "-q", "-b", "claude/"+name, dir, "claude/main")
+		return dir
+	}
+	ended, fresh := add("ended"), add("fresh")
+	e := dirCard(t, d, "ended", ended)
+	endCard(t, d, e.ID, store.StatusDone)
+	if err := archiveEnded(d, e.ID); err != nil {
+		t.Fatal(err)
+	}
+	l := dirCard(t, d, "setup", root)
+	endCard(t, d, l.ID, store.StatusRunning)
+
+	out := d.sweepEndedFolders(context.Background())
+	if len(out) != 1 || !strings.EqualFold(out[0].Path, filepath.ToSlash(ended)) {
+		t.Fatalf("swept %q", sweptPaths(out))
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("the unclaimed worktree went: %v", err)
+	}
+}
+
 func TestTheRoomSweepsOnStart(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)

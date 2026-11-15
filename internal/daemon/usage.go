@@ -729,6 +729,7 @@ func (d *Daemon) usageFor(taskID string, limit int) (any, error) {
 	// one's first Stop, and read by it the popup showed the old transcript's size
 	// (r-021: 709k against a status line saying 101k). The same fix item 62 made
 	// in contextsize.go.
+	read := false
 	if t, err := d.st.Get(taskID); err == nil && t != nil {
 		session := strings.TrimSpace(t.ResumeID)
 		if d.ctx != nil {
@@ -737,12 +738,18 @@ func (d *Daemon) usageFor(taskID string, limit int) (any, error) {
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
 				if r, err := d.replies.ReadLastReply(path); err == nil {
-					v.ContextNow, v.Model = r.Context, r.Model
+					v.ContextNow, v.Model, read = r.Context, r.Model, true
 				}
 			}
 		}
+		// The board's own figure, so the hover and the tile cannot disagree. See contextSizes.read.
+		if d.ctx != nil {
+			if n, ok := d.ctx.seen(t.ID); ok {
+				v.ContextNow, read = n, true
+			}
+		}
 	}
-	if v.ContextNow == 0 && len(rows) > 0 {
+	if !read && len(rows) > 0 {
 		v.ContextNow, v.Model = rows[0].Context, rows[0].Model
 	}
 	return v, nil

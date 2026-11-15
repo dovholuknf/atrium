@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
-	httptransport "github.com/go-openapi/runtime/client"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/openziti/zrok/v2/environment/env_core"
-	restEnvironment "github.com/openziti/zrok/v2/rest_client_zrok/environment"
 )
 
 // The setup half: getting to the point where a share can start.
@@ -150,35 +149,10 @@ func (d *Service) EnableZrok(token, description string) (string, error) {
 	// side by side in `zrok overview`, and telling them apart afterwards is
 	// the whole reason somebody made the second one.
 	hostDetail, description := d.DescribeEnvironment(description)
-
-	zrok, err := root.Client()
-	if err != nil {
-		return "", ZrokSays("could not reach the zrok api", err)
-	}
-	auth := httptransport.APIKeyAuth("X-TOKEN", "header", token)
-	req := restEnvironment.NewEnableParams()
-	req.Body.Description = description
-	req.Body.Host = hostDetail
-
-	api, _ := root.ApiEndpoint()
 	log.Printf("[atrium] enabling %s", d.ZrokWhere())
-	resp, err := zrok.Environment.Enable(req, auth)
+	api, err := transport.EnableZrokRoot(root, token, hostDetail, description)
 	if err != nil {
-		return "", ZrokSays("could not enable an environment on "+api, err)
-	}
-
-	// The token is written down as well as the identity. It is what every
-	// later call authenticates with, and losing it means the environment
-	// exists on the account and cannot be used from here.
-	if err := root.SetEnvironment(&env_core.Environment{
-		AccountToken: token, ZitiIdentity: resp.Payload.Identity, ApiEndpoint: api,
-	}); err != nil {
-		return "", fmt.Errorf("the environment was created on %s but could not be "+
-			"saved here: %w", api, err)
-	}
-	if err := root.SaveZitiIdentityNamed(root.EnvironmentIdentityName(), resp.Payload.Cfg); err != nil {
-		return "", fmt.Errorf("the environment was created on %s but its identity "+
-			"could not be written: %w", api, err)
+		return "", ZrokSays("could not enable", err)
 	}
 	return "enabled against " + api + ".\nthis is " + d.ZrokWhere() + ".", nil
 }
@@ -205,43 +179,16 @@ func (d *Service) DisableZrok() (string, error) {
 
 	api, _ := root.ApiEndpoint()
 	log.Printf("[atrium] disabling %s", d.ZrokWhere())
-	zrok, err := root.Client()
+	refused, err := transport.DisableZrokRoot(root)
 	if err != nil {
-		return "", ZrokSays("could not reach the zrok api", err)
+		return "", err
 	}
-	auth := httptransport.APIKeyAuth("X-TOKEN", "header", root.Environment().AccountToken)
-	req := restEnvironment.NewDisableParams()
-	// WHICH ENVIRONMENT, and it is not optional.
-	//
-	// The account token says who you are and this says which of that account's
-	// environments to remove. Sending the request without it answers `401
-	// disableUnauthorized`, which reads as a revoked token and is not: the
-	// controller could not find an environment to check the token against.
-	req.Body.Identity = root.Environment().ZitiIdentity
-
-	// A REFUSAL FROM THE ACCOUNT DOES NOT STOP THE LOCAL REMOVAL, which is what
-	// the zrok command does and it is right. An environment the account will
-	// not take off is one that cannot be used from here either, and stopping
-	// would mean it can never be got rid of: every retry sends the same
-	// credential to the same refusal.
-	//
-	// So it is reported and stepped over. What is left on the account is
-	// visible in `zrok overview` and removable from the console.
 	note := ""
-	if _, err := zrok.Environment.Disable(req, auth); err != nil {
-		log.Printf("[atrium] %s would not remove this environment: %v", api, err)
-		note = "\n\n" + api + " would not remove it: " + err.Error() +
+	if refused != nil {
+		log.Printf("[atrium] %s would not remove this environment: %v", api, refused)
+		note = "\n\n" + api + " would not remove it: " + refused.Error() +
 			"\nit is gone from this machine either way. if it is still listed on the " +
 			"account, remove it from the zrok console."
-	}
-	if err := root.DeleteEnvironment(); err != nil {
-		return "", fmt.Errorf("the environment could not be removed from disk: %w", err)
-	}
-	// The identity goes too. Leaving it behind means the next enable writes a
-	// second one beside a key that authenticates as an environment that no
-	// longer exists.
-	if err := root.DeleteZitiIdentityNamed(root.EnvironmentIdentityName()); err != nil {
-		log.Printf("[atrium] could not remove the zrok backend identity: %v", err)
 	}
 	return "disabled, and removed from this machine." + note, nil
 }
@@ -272,42 +219,16 @@ func EnrollZitiInto(token, name, dir string) (string, string, error) {
 	if claims, err := ReadJWT(token); err == nil && claims.Expired {
 		return "", "", fmt.Errorf("that token expired at %s. ask for a new one", claims.Expires)
 	}
-	exe := LookPath(OverlayCommand(OverlayZiti))
-
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", "", err
 	}
-	base := SafeName(name)
-	jwtPath := filepath.Join(dir, base+".jwt")
-	outPath := filepath.Join(dir, base+".json")
+	outPath := filepath.Join(dir, SafeName(name)+".json")
 
-	// NO CLI, SO THE SDK. See EnrollWithSDK.
-	if exe == "" {
-		log.Printf("[atrium] enrolling a ziti identity as %s, in process: no ziti CLI on PATH", base)
-		if err := EnrollWithSDK(token, outPath); err != nil {
-			return "", "", err
-		}
-		return filepath.ToSlash(outPath), "enrolled in process, no ziti CLI on PATH", nil
-	}
-
-	// The token goes to a file, not an argument. An argument is visible to
-	// anything on this machine that can list processes.
-	if err := os.WriteFile(jwtPath, []byte(token), 0o600); err != nil {
+	log.Printf("[atrium] enrolling a ziti identity as %s", SafeName(name))
+	if err := EnrollWithSDK(token, outPath); err != nil {
 		return "", "", err
 	}
-	// Gone either way. It is one use, and a spent credential lying around is
-	// still a credential lying around.
-	defer os.Remove(jwtPath)
-
-	log.Printf("[atrium] enrolling a ziti identity as %s", base)
-	out, err := RunSetup(exe, ZitiEnrollArgs(jwtPath, outPath))
-	if err != nil {
-		return "", out, err
-	}
-	if _, statErr := os.Stat(outPath); statErr != nil {
-		return "", out, fmt.Errorf("enrollment reported success but wrote no identity to %s", outPath)
-	}
-	return filepath.ToSlash(outPath), out, nil
+	return filepath.ToSlash(outPath), "enrolled in process", nil
 }
 
 // safeName turns whatever was typed into something usable as a filename.

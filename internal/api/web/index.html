@@ -71,8 +71,7 @@
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/filterdrawer.css">
 <link rel="stylesheet" href="/css/themes.css">
-<link rel="stylesheet" href="/css/expose2.css">
-<link rel="stylesheet" href="/css/expose3.css">
+<link rel="stylesheet" href="/css/access.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
 <link rel="stylesheet" href="/css/hubpush.css">
 <link rel="stylesheet" href="/css/topnav.css">
@@ -409,6 +408,8 @@ Exports honor whatever filter is applied.">?</span>
     <div id="fd-terms"></div>
     <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
     <div class="term-limits" id="term-limits" hidden></div>
+    <!-- A drive of this room is low on space. See js/disk-watch.js. -->
+    <div class="term-disk" id="term-disk" role="status" hidden></div>
     <!-- Every card held on a permission, on any room. Its panel floats over the terminal. See `renderHeldStrip`. -->
     <div class="held-strip" id="held-strip" hidden></div>
     <div class="term-layout" id="term-layout">
@@ -645,21 +646,25 @@ Exports honor whatever filter is applied.">?</span>
             <div class="walk-head term-bar">
               <a id="walk-pr" class="wk-pr" target="_blank" rel="noopener"><strong id="walk-title"></strong></a>
               <span class="by" id="walk-note"></span>
+              <span class="wk-mode" id="walk-mode" role="group" aria-label="what the walk compares" hidden>
+                <button type="button" data-mode="unstaged" data-tip="the working tree against the index">unstaged <span class="n"></span></button>
+                <button type="button" data-mode="staged" data-tip="the index against HEAD">staged <span class="n"></span></button>
+                <button type="button" data-mode="branch"
+                  data-tip="HEAD plus edits against the merge base with the branch's base">branch <span class="n"></span></button>
+              </span>
               <span class="by" id="walk-count"></span>
               <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
               <button type="button" id="walk-share" hidden onclick="walkShareToggle()"
                 data-tip="export this walk so another dev can open it, or open one you were sent">share walk</button>
               <button type="button" id="walk-popout" onclick="walkPopOut()"
-                data-tip="open the walk in a tab of its own">⧉ own tab</button>
-              <button type="button" class="go" onclick="walkDone()"
-                data-tip="type walk done into the walker and submit it">walk done</button>
-              <button type="button" class="walk-close" onclick="walkClose()"
-                data-tip="close this panel and keep the walk as it is (Esc)">close walk</button>
+                data-tip="open the walk in a tab of its own">⧉ pop out</button>
+              <button type="button" class="walk-close go" onclick="walkBackToTerm()"
+                data-tip="close the walk and go back to the terminal (Esc)">back to terminal</button>
             </div>
             <div class="walk-nav" id="walk-nav" hidden>
               <span class="navgrp"><button type="button" data-act="pc" data-tip="previous change (p)">&#8249; previous <kbd>p</kbd></button><span class="by" id="walk-chg"></span><button type="button" data-act="nc" data-tip="next change (n)">next <kbd>n</kbd> &#8250;</button></span>
-              <span class="navgrp"><button type="button" data-act="pm" data-tip="previous agent comment ([)">&#8249; previous <kbd>[</kbd></button><span class="by" id="walk-cmt"></span><button type="button" data-act="nm" data-tip="next agent comment (])">next <kbd>]</kbd> &#8250;</button></span>
+              <span class="navgrp"><button type="button" data-act="pm" data-tip="previous comment ([)">&#8249; previous <kbd>[</kbd></button><span class="by" id="walk-cmt"></span><button type="button" data-act="nm" data-tip="next comment (])">next <kbd>]</kbd> &#8250;</button></span>
             </div>
             <div class="walk-body">
               <nav id="walk-rail" class="walk-rail" role="listbox" aria-label="findings"></nav>
@@ -830,6 +835,7 @@ The useful cut is which ones left an account of themselves. A session that finis
       <span class="help" tabindex="0" data-tip="What every Claude card has spent, from the rows the room already keeps for each turn. A turn shows here within about two seconds of ending. A turn still running shows nothing until it ends.
 
 Tokens only, except the turns atrium caused, which carry an estimated dollar figure.">?</span>
+      <span class="ucranges ucsub" id="uc-sub"><button data-sub="charts">charts</button><button data-sub="reports">reports</button></span>
       <span class="grow"></span>
       <span class="by" id="uc-count"></span>
     </div>
@@ -837,8 +843,7 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
       <span class="ucranges" id="uc-ranges">
         <button data-range="1h">1h</button><button data-range="6h">6h</button><button data-range="24h">24h</button><button data-range="7d">7d</button><button data-range="week" id="uc-week" data-tip="From the last weekly reset to now. The weekly limit resets at a fixed time, not seven days after it did">this week</button>
       </span>
-      <select id="uc-room" hidden></select>
-      <span class="ucfilter" id="uc-card" hidden></span>
+      <span class="ucranges ucpager" id="uc-pager"><button id="uc-prev" aria-label="earlier" data-tip="earlier">‹</button><span class="ucpagelab" id="uc-pagelab"></span><button id="uc-next" aria-label="later" data-tip="later">›</button><button id="uc-now" data-tip="back to now">now</button><input type="date" id="uc-date" aria-label="jump to a day" data-tip="jump to a day"></span>
       <span class="grow"></span>
       <span class="ucranges"><button id="uc-reset" aria-label="When the weekly limit resets" data-tip="When the weekly limit resets. One setting for the whole board, used by the this week range and the reset marks"><span id="uc-reset-label">resets Sun 18:00 ET</span></button></span>
       <span class="ucranges"><button id="uc-cache" aria-pressed="false" data-tip="Draw cache reads in the charts. Off, they are counted apart, since they are most of the input and swamp the rest"><i class="uck-read"></i><span id="uc-cache-label">cache reads hidden</span></button></span>
@@ -851,6 +856,8 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
       <button id="uc-reset-save">save</button>
       <span class="ucreseterr" id="uc-reset-err"></span>
     </div>
+    <div class="ucpick" id="uc-pick"></div>
+    <div class="uccardpop" id="uc-cardpop" hidden><input id="uc-cardq" type="search" placeholder="find a card" spellcheck="false" autocomplete="off"><div class="uccardlist" id="uc-cardlist"></div></div>
     <div id="uc-body"></div>
   </div>
 
@@ -1508,17 +1515,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button onclick="document.getElementById('settings').close()">close</button>
   </div>
   <div class="dlg-body">
-    <!-- Reaching the board from elsewhere, first, because it is the only thing
-         in here that changes who can see the board.
-         Atrium listens on loopback and has no login, on purpose: an auth layer
-         invented here would be a worse one than the overlays that already
-         exist. This is atrium driving one of those rather than becoming one.
-         It never handles an identity and never proxies traffic. -->
-    <!-- `expose the board`, not `reach this board from elsewhere`. The old
-         name described a goal; this one names the action, and it is the phrase
-         somebody arrives with. It also has to pair with `share this session`
-         on a card, since there are two kinds of exposing now and the two names
-         have to tell them apart. -->
     <!-- FIRST, because it is the one everybody opens this dialog for: how the
          board looks, how big it is, how it groups. Named `board` rather than
          `the board` so the nav reads as a column of nouns beside `this
@@ -1849,140 +1845,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button id="rc-revert" onclick="repoColorsRevert()">revert</button>
       </div>
     </div>
-    <h3 class="s-section">expose the board</h3>
+    <!-- ACCESSING ATRIUM: every way into the board and the room link, drawn by js/access.js into the one container below. -->
+    <h3 class="s-section">accessing atrium</h3>
     <div class="field">
-      <div id="overlays"></div>
-      <span class="hintline">Atrium listens on this machine only and has no login. Both of these
-        publish it through something that already knows who is allowed to see it. To hand one
-        session to one person instead of the whole board, use <b>share this session</b> on that
-        card.</span>
+      <div id="access"></div>
     </div>
-
-    <!-- THE PUBLIC ZROK SHARE'S LOGIN, enforced at the zrok edge, not by this
-         hub. A public zrok share is a URL anyone can open, so it must carry a
-         login: either a name and password (zrok updb) or an OIDC provider, the
-         operator's choice. Held hub-side the same way the skin is, and sent to
-         zrok when the share is created. zrok PRIVATE and OpenZiti need none:
-         the overlay is already the gate. See docs/fabric/ziti-zrok-flow-design.md. -->
-    <h4 class="s-sub">public share login (zrok)</h4>
-    <div class="field">
-      <label class="eyebrow" for="s-share-auth">how a public zrok share asks people in</label>
-      <div class="picker">
-        <select id="s-share-auth" onchange="shareAuthChanged()">
-          <option value="">no login (a public share is refused)</option>
-          <option value="updb">a name and a password</option>
-          <option value="oidc">an OIDC provider</option>
-        </select>
-      </div>
-      <span class="hintline">Only the PUBLIC zrok share uses this, and zrok enforces it at the
-        edge. A private zrok share or an OpenZiti service needs nothing here: the overlay already
-        decides who may reach the board. With no login set, a public share is refused rather than
-        opened to everyone.</span>
-    </div>
-    <div class="field" id="s-share-updb">
-      <label class="eyebrow" for="s-share-user">name</label>
-      <input type="text" id="s-share-user" spellcheck="false" autocomplete="off"
-        onchange="saveShareAuth()" placeholder="who types the password">
-      <label class="eyebrow" for="s-share-pass">password</label>
-      <input type="password" id="s-share-pass" autocomplete="new-password"
-        onchange="saveShareAuth()" placeholder="typing here sets it">
-      <span class="hintline" id="s-share-pass-said"></span>
-      <span class="hintline">Sent to zrok to guard the public share, and never sent back to this
-        page. Atrium cannot tell you what it is, only that there is one. Leave the box empty to keep
-        the password already set.</span>
-    </div>
-    <div class="field" id="s-share-oidc-wrap">
-      <label class="eyebrow" for="s-share-oidc">OIDC provider</label>
-      <input type="text" id="s-share-oidc" spellcheck="false" onchange="saveShareAuth()"
-        placeholder="the provider name your zrok account is configured with">
-      <span class="hintline">The provider must already be configured on your zrok account. This
-        only names which one to put in front of the share.</span>
-    </div>
-
-    <!-- A SUB-HEADING, not a section, so it stays in this pane.
-         The login only ever applies to the published board, so somebody asking
-         about it is already here looking at what publishes it. As its own
-         entry in the nav it read as an unrelated setting, and the zrok panel
-         above says the board has no login while this says it does. -->
-    <h4 class="s-sub">who may open it</h4>
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="auth-on" onchange="saveAuth()">
-        <span>the published board asks people to sign in</span>
-      </label>
-      <span class="hintline">Only the PUBLISHED board. This machine's own
-        <code>localhost:7778</code> is untouched, and so are the hooks, the CLI and a session you
-        have lent to somebody: a lent link is the credential by design, and making a guest sign in
-        would defeat it.</span>
-    </div>
-
-    <!-- A form only so the browser stops warning about password fields outside one. Nothing submits it, and
-         display:contents keeps the layout exactly what it was. -->
-    <form id="auth-form" style="display:contents" onsubmit="return false" autocomplete="off">
-    <!-- A NAME AND A PASSWORD, for a board with no provider in front of it.
-         The flow below is the better answer and it needs a provider, a client
-         registered with it, and a redirect matching the published address
-         exactly. Somebody sharing a board for an afternoon has none of those,
-         and what they do instead is publish it with no login at all. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="auth-basic" onchange="saveAuth()">
-        <span>a name and a password</span>
-      </label>
-      <span class="hintline">The simple one, and enough on its own: with this set you can leave
-        everything below empty. The browser asks once and remembers for the rest of the day.
-        Checked before the provider, so a board with both still opens when the provider is
-        down.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-user">name</label>
-      <input type="text" id="auth-user" spellcheck="false" autocomplete="off"
-        onchange="saveAuth()" placeholder="who types the password">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-pass">password</label>
-      <input type="password" id="auth-pass" autocomplete="new-password" onchange="saveAuth()"
-        placeholder="typing here sets it">
-      <span class="hintline" id="auth-pass-said"></span>
-      <span class="hintline">Stored salted and hashed, never in plain, and never sent back to this
-        page. Atrium cannot tell you what it is, only that there is one.</span>
-    </div>
-
-    <div class="field">
-      <label class="eyebrow" for="auth-issuer">provider</label>
-      <input type="text" id="auth-issuer" spellcheck="false" onchange="saveAuth()"
-        placeholder="https://keycloak.example/realms/yours">
-      <span class="hintline">The realm URL, not the admin console. Everything else is read from
-        its <code>/.well-known/openid-configuration</code>.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-client">client id</label>
-      <input type="text" id="auth-client" spellcheck="false" onchange="saveAuth()"
-        placeholder="atrium">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-secret">client secret</label>
-      <input type="password" id="auth-secret" spellcheck="false" autocomplete="off"
-        onchange="saveAuth()" placeholder="leave empty to keep the one already set">
-      <span class="hintline" id="auth-secret-said"></span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-redirect">where the provider sends people back</label>
-      <input type="text" id="auth-redirect" spellcheck="false" onchange="saveAuth()"
-        placeholder="https://your-board-address/auth/callback">
-      <span class="hintline">The PUBLISHED address with <code>/auth/callback</code> on the end,
-        and it has to match what the provider was registered with exactly.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="auth-allow">who may in</label>
-      <input type="text" id="auth-allow" spellcheck="false" onchange="saveAuth()"
-        placeholder="you@example.com, someone-else@example.com">
-      <span class="hintline">Email addresses or subjects, comma separated. <b>Empty means
-        nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
-        with open registration, the whole internet with an extra step.</span>
-      <span class="hintline" id="auth-said"></span>
-    </div>
-    </form>
 
     <!-- The names the hub answers besides its own. Hidden until the hub answers, so a board with no hub never
          draws it. See js/hubhosts.js. -->
@@ -2012,32 +1879,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="s-ht-msg"></span>
       <span class="hintline">Turning one off closes its listener at once. The room link is refused while a room reaches
         the hub only over it. A flag given at start only seeds a value: the first change here replaces it.</span>
-    </div>
-
-    <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
-         Its own section so the settings spine gives it its own nav entry, and
-         so the whole thing can be deleted in one pass if it loses. Everything
-         in it is drawn by js/expose2.js into the one container below. See
-         docs/interview-log.md for the shape and why. -->
-    <h3 class="s-section">expose the board 2</h3>
-    <div class="field">
-      <p class="xb-lead">The same three ways out as above, redrawn: one quiet row each, collapsed
-        until you open it, so an untouched panel is a short list and the common case is one press.
-        Board authentication is shared across every transport and only zrok public is refused
-        without it.</p>
-      <div id="expose2"></div>
-    </div>
-
-    <!-- THE SECOND REDO, a different bet from `expose the board 2`. It hides
-         the transports and asks who needs to reach the board, turning the
-         answer into the right one. Own section, own nav entry, drawn by
-         js/expose3.js into the container below. Deletable in one pass. -->
-    <h3 class="s-section">expose the board 3</h3>
-    <div class="field">
-      <p class="x3-lead">A different take on the same three ways out: pick who needs to reach the
-        board and atrium picks the transport, so you never choose zrok or ziti by hand. One path is
-        on screen at a time.</p>
-      <div id="expose3"></div>
     </div>
 
     <!-- `notifications`, not `alerts`. Everything under it is a notification:
@@ -4121,14 +3962,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/phone-bell.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
-<script src="/js/expose2.js"></script>
-<script src="/js/expose3.js"></script>
+<script src="/js/access.js"></script>
 <script src="/js/files-rules.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/usage.js"></script>
 <script src="/js/hears.js"></script>
 <script src="/js/usage-charts.js"></script>
 <script src="/js/usage-limits.js"></script>
+<script src="/js/usage-history.js"></script>
 <script src="/js/usage-groups.js"></script>
 <script src="/js/usage-turns.js"></script>
 <script src="/js/peek.js"></script>
@@ -4158,6 +3999,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/walk.js"></script>
 <script src="/js/walk-pr.js"></script>
 <script src="/js/turn-limits.js"></script>
+<script src="/js/disk-watch.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>

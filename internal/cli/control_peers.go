@@ -678,7 +678,7 @@ type LaunchInput struct {
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// Item names the backlog item the worker works on. See link.WorkTagPrefix.
-	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker works on, by id (like f-new-thing), or new:<title> to file one under your department as you launch. work is named in the backlog, so find the id with atrium_backlog list. a launch with no item is refused"`
+	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker works on, by id (like f-new-thing), or new:<title> to file one under your department as you launch, or rerun:<id> to launch again on an item that already has a result. work is named in the backlog, so find the id with atrium_backlog list. a launch with no item is refused"`
 	// Isolated starts the worker as an isolated item. See link.ItemTag.
 	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with isolated: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
 	Isolated  bool   `json:"isolated,omitempty" jsonschema:"start the worker ISOLATED: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. leave it out for an ordinary worker, which is unchanged"`
@@ -794,6 +794,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		return nil, out, err
 	}
 	in.Tags = link.WithWorkTag(in.Tags, workID)
+	if s, _ := link.ParseItemSpec(in.Item); s.Rerun {
+		in.Tags = append(in.Tags, link.RerunTag)
+	}
 	// ANOTHER ROOM goes through this room's hub and touches nothing on this disk: no
 	// briefing written here and no directory looked at. This room's own name is the
 	// path below, untouched.

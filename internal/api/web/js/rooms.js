@@ -521,7 +521,7 @@ function zitiLogo() {
     `</svg>`;
 }
 
-// ZROK_MARK is the zrok rocket, the one copy: overlays.js builds its own mark from it. Source: github.com/openziti/zrok,
+// ZROK_MARK is the zrok rocket, the one copy. Source: github.com/openziti/zrok,
 // the project's logo SVG (Apache-2.0 licence, the repo's LICENSE), the rocket path traced unchanged in its own green.
 const ZROK_MARK = {
   viewBox: "41.62 64.03 125.8 166.27",
