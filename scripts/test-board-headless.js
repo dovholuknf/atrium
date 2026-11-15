@@ -857,6 +857,25 @@ async function groupRemoveSection(browser, base) {
       [...document.querySelectorAll("#term-list .tgroup")].filter(b => b.hasAttribute("oncontextmenu") &&
         !b.classList.contains("pinnedhead")).map(b => b.textContent.trim()));
     if (stray.length) fail("a heading that is not one of your groups takes the group menu: " + stray.join(", "));
+    // By age a pinned card active today is under Today, starred, and there is no pinned bucket.
+    const wasAt = FILED.last_activity_at;
+    FILED.last_activity_at = new Date().toISOString();
+    try {
+      await gp.evaluate(() => { setGrouping({ mode: "recency" }); });
+      await gp.waitForFunction(() => !document.querySelector("#term-list .termbucket") &&
+        document.querySelector('#term-list .card.tab[data-id="filed1"]'), null, { timeout: slow(5000) }).catch(() => {});
+      const age = await gp.evaluate(() => {
+        const row = document.querySelector('#term-list .card.tab[data-id="filed1"]');
+        const head = row && row.closest(".tnest") && row.closest(".tnest").previousElementSibling;
+        return { bucket: !!document.querySelector("#term-list .termbucket"),
+          head: head ? head.textContent.trim() : "", star: !!(row && row.querySelector(".pin.on")) };
+      });
+      if (age.bucket || !/^today/i.test(age.head) || !age.star) {
+        fail("by age a pinned card active today is not under Today with its star: " + JSON.stringify(age));
+      }
+    } finally {
+      FILED.last_activity_at = wasAt;
+    }
     if (errors.length) fail("the group remove page threw uncaught errors: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -5884,6 +5903,71 @@ async function termLinkLateSection(browser, base) {
   }
 }
 
+// The first hover over a path linking, wherever it sits on a wide row and however its folders answered.
+async function termLinkFirstHoverSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const asked = [];
+  const win = "D:\\git\\github\\dovholuknf\\atrium\\.uncommitted\\usage-history\\README.md";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route("**/files/probe", route => {
+    // The room's own bound: it answers for the first 64 candidates of a request and no more.
+    const paths = (JSON.parse(route.request().postData() || "{}").paths || []).slice(0, 64);
+    asked.push(paths.length);
+    const found = paths.filter(q => q.startsWith("D:\\git\\github\\dovholuknf\\atrium"))
+      .map(q => ({ path: q, rel: q, size: 1, dir: !/\.md$/.test(q) }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.setViewportSize({ width: 2600, height: 900 });
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termLinkFirstHover", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await p.waitForTimeout(300); // wait: let the terminal lay out before measuring
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height, cols: term.cols };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const first = async (what, write, col, r) => {
+      await p.evaluate(w => new Promise(res => { term.reset(); term.write(w, res); }), write);
+      await p.mouse.move(...at(cell.cols - 1, 20));
+      await p.mouse.move(...at(col, r), { steps: 3 });
+      const ok = await p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(3000) }).then(() => true, () => false);
+      if (!ok) fail("the first hover over " + what + " was not a link");
+    };
+    await first("a path with folders and `\\.` at the start of a row", "see " + win + " ok\r\n", 4 + win.length - 4, 0);
+    // 66 words ahead of the path: more candidates on the row than one request carries.
+    const other = win.replace("README", "NOTES");
+    const words = Array.from({ length: 66 }, (_, i) => (i % 10) + String.fromCharCode(97 + Math.floor(i / 10)) + " ").join("");
+    if (words.length + other.length + 4 > cell.cols) fail("the terminal is " + cell.cols + " columns, too narrow for the wide row");
+    await first("a path after 66 words on one row", words + other + "\r\n", words.length + other.length - 4, 0);
+    if (errors.length) fail("the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── terminal file links: an outside path tips without asking, the viewer shows by type (u-file-links-hover-view-external) ──
 // 1. An absolute path outside the card is asked, and when the room does not find it the link's tip says so. One inside is asked.
 // 2. read.html shows a png as the image, an md rendered, an svg as an image that ran nothing, json indented, a pdf in
@@ -6626,6 +6710,7 @@ async function phoneViewSection(browser, base) {
     // a zoom changes the font, not the grid
     const before = await dims();
     await p.evaluate(() => phoneSetFont(term.options.fontSize * 2));
+    await p.waitForFunction(f => term.options.fontSize > f * 1.9, before.font, { timeout: slow(5000) }).catch(() => {});
     d = await dims();
     if (d.font <= before.font * 1.9) fail("phoneView: zoom did not change the font: " + JSON.stringify([before, d]));
     if (d.cols !== 150 || d.rows !== 35) fail("phoneView: zoom changed the grid: " + JSON.stringify(d));
@@ -14304,6 +14389,24 @@ async function shiftMenuSection(browser, base) {
     // ctrl still belongs to the browser
     r = await fire({ ctrlKey: true });
     if (r.prevented || r.pasted) fail("shiftMenu: ctrl right click was taken: " + JSON.stringify(r));
+    // on a link: no paste, a small menu with the two a browser would offer
+    await p.evaluate(() => { termHoverURL = "https://example.com/x"; });
+    r = await fire({});
+    if (r.pasted) fail("shiftMenu: a right click on a link pasted");
+    await p.waitForFunction(() => document.querySelector("#cardmenu.on button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (m.labels.join("|") !== "Open in new tab|Copy link") fail("shiftMenu: link menu wrong: " + JSON.stringify(m));
+    await closeMenu();
+    const opens = await p.evaluate(() => {
+      const ev = (o) => Object.assign({ button: 0, clientX: 50, clientY: 50 }, o);
+      document.getElementById("t-screen").dispatchEvent(new MouseEvent("mousedown", { clientX: 50, clientY: 50 }));
+      return { plain: plainLinkClick(ev(), term), right: plainLinkClick(ev({ button: 2 }), term),
+        drag: plainLinkClick(ev({ clientX: 120 }), term) };
+    });
+    if (!opens.plain || opens.right || opens.drag) fail("shiftMenu: a link opens on more than a plain click: " + JSON.stringify(opens));
+    await p.evaluate(() => { termHoverURL = ""; });
+    r = await fire({});
+    if (r.pasted !== 1) fail("shiftMenu: a right click off the link stopped pasting: " + JSON.stringify(r));
 
     // mid-cycle card
     await attach("land-busy");
@@ -28082,7 +28185,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -30176,6 +30279,7 @@ async function main() {
     await unit("readerRaw", () => readerRawSection(browser, base));
     await unit("docShare", () => docShareSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
+    await unit("termLinkFirstHover", () => termLinkFirstHoverSection(browser, base));
     await unit("fileLinksView", () => fileLinksViewSection(browser, base));
     await unit("termFolderLink", () => termFolderLinkSection(browser, base));
     await unit("termProbeStorm", () => termProbeStormSection(browser, base));

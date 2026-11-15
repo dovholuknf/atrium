@@ -858,6 +858,9 @@ func (d *Daemon) decidedBy(permID string) string {
 // Store exposes the store.
 func (d *Daemon) Store() *store.Store { return d.st }
 
+// PreviewPort is whether the hub may forward to this loopback port. See api.Server.PreviewPort.
+func (d *Daemon) PreviewPort(port int) error { return d.ap.PreviewPort(port) }
+
 // Close releases the database.
 func (d *Daemon) Close() error {
 	if d.prr != nil {

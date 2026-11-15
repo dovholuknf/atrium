@@ -1,8 +1,12 @@
 package zitictx
 
 import (
+	"bytes"
 	"errors"
+	"log"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -142,5 +146,39 @@ func TestCloseAllClosesAndFreesTheKey(t *testing.T) {
 	CloseAll()
 	if Live() != 0 || (*built)[0].closed.Load() != 1 {
 		t.Fatalf("live %d closed %d", Live(), (*built)[0].closed.Load())
+	}
+}
+
+func TestSharedFileRaceSharesQuietly(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	var arrived sync.WaitGroup
+	arrived.Add(2)
+	restore := SetSDK(
+		func(string) (*ziti.Config, error) { return &ziti.Config{}, nil },
+		func(*ziti.Config) (ziti.Context, error) {
+			arrived.Done()
+			arrived.Wait()
+			return &fakeCtx{}, nil
+		})
+	t.Cleanup(func() { CloseAll(); restore() })
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if _, err := SharedFile("link", "a.json"); err != nil {
+			t.Error(err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if _, err := build("native", keyOf("a.json"), &ziti.Config{}); err != nil && !errors.Is(err, ErrDuplicate) {
+			t.Error(err)
+		}
+	}()
+	wg.Wait()
+	if Live() != 1 || strings.Contains(buf.String(), "BUG") {
+		t.Fatalf("live %d, log %q, want 1 and no BUG", Live(), buf.String())
 	}
 }

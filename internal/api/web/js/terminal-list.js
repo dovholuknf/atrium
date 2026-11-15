@@ -1718,7 +1718,7 @@ function termHeading(name, path, count, folded, group, style, movable, rows, emp
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
       ><span class="tgcount">${shown}</span>${
-      group ? `<span class="tgadd" role="button" aria-label="new agent in ${esc(group)}" data-tip="new agent in ${esc(group)}" data-gnew="${esc(group)}">+</span>` : ""}${
+      group && movable ? `<span class="tgadd" role="button" aria-label="new agent in ${esc(group)}" data-tip="new agent in ${esc(group)}" data-gnew="${esc(group)}">+</span>` : ""}${
       run ? `<span class="chip tkidrun" data-tip="${run} running"><i class="tkidspin"></i>${run}</span>` : ""}</button>`;
 }
 
@@ -2051,11 +2051,14 @@ async function renderTermList() {
   const top = shown.filter(t => !nest.nested.has(t.id));
   // What each heading would hold with nothing searched away, so it can say `7/15`.
   const nestAll = q ? termNest(tasks) : nest;
-  termTotals = termCountTotals(tasks.filter(t => !nestAll.nested.has(t.id) && (!t.pinned || termFiled(t))));
+  // By age every card is in its age bucket, pinned or not, so there is no pinned bucket.
+  const gp = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
+  const byAge = !!(gp && gp.on && gp.mode === "recency");
+  termTotals = termCountTotals(tasks.filter(t => !nestAll.nested.has(t.id) && (byAge || !t.pinned || termFiled(t))));
   // Before anything is drawn, and over the rows that will BE drawn: a card
   // filtered out above cannot be confused with one on screen.
   termNoteDuplicates(shown);
-  const pinnedTasks = top.filter(t => t.pinned);
+  const pinnedTasks = byAge ? [] : top.filter(t => t.pinned);
   pinnedNow = pinnedTasks.map(t => t.id);
 
   const host = document.getElementById("term-list");
@@ -2095,9 +2098,9 @@ async function renderTermList() {
   setHTML(host, tasks.length || ended.length || endedAll.length || deadCold.length
     ? termDropHTML() + `<div class="termbody">` +
       `<div class="termscroll">` +
-      termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
-        termFolded().has(PINNED_FOLD), deadPinned) +
-      termGroupsHTML(top.filter(t => !t.pinned || termFiled(t))) +
+      (byAge ? "" : termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
+        termFolded().has(PINNED_FOLD), deadPinned)) +
+      termGroupsHTML(top.filter(t => byAge || !t.pinned || termFiled(t))) +
       termEndedHTML(ended) +
       `</div><div class="tlcorner">${termListButtons()}</div></div>`
     : `<div class="panel"><div class="empty">

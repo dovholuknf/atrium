@@ -2494,7 +2494,7 @@ async function burnReadoutSection(browser, base) {
       const t60 = r0.first + 0.6 * (r0.end - r0.first), b60 = Math.floor(t60 / 900000) * 900000;
       if (st.bucket !== String(b60) || st.on.join() !== String(b60)) fail("burnReadout: hover at 60% gives bucket " + st.bucket + " (bar " + st.on + "), want " + b60);
       if (!/^15:18 · 56k tokens · 65% of the 5h limit · 20k\/h · \d+ pts? (ahead of|behind) even pace$/.test(st.read)) fail("burnReadout: the line reads " + st.read);
-      if (st.hovHidden || st.dotHidden || st.tagHidden || st.tag !== "65% · 56k" || Math.abs(parseFloat(st.hovLeft) - 60) > 0.2) fail("burnReadout: the crosshair is " + JSON.stringify({ h: st.hovHidden, d: st.dotHidden, tag: st.tag, left: st.hovLeft }));
+      if (st.hovHidden || st.dotHidden || st.tagHidden || !/^[A-Z][a-z]{2} \d\d-\d\d \d\d:\d\d · 65% · 56k · 20k\/h$/.test(st.tag) || Math.abs(parseFloat(st.hovLeft) - 60) > 0.2) fail("burnReadout: the crosshair is " + JSON.stringify({ h: st.hovHidden, d: st.dotHidden, tag: st.tag, left: st.hovLeft }));
       const a = await sp.evaluate(t => ucCumAt(UC.cum, t), t60);
       if (Math.abs(a.tok - 56000) > 2 || Math.abs(a.pct - 65.33) > 0.05 || Math.abs(a.rate - 20000) > 1) fail("burnReadout: ucCumAt gives " + JSON.stringify(a));
       // the dot sits on the line: its top is the line's y at that time

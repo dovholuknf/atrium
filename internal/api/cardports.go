@@ -287,3 +287,19 @@ func (s *Server) ownableDir(t *store.Task, want string) (string, error) {
 	}
 	return "", errors.New("a card owns only folders inside its own worktree or the scratch folder, and not the worktree itself")
 }
+
+// previewPorts is the block previews keep, outside every card range.
+var previewPorts = cardproc.Range{Lo: 50000, Hi: 50999}
+
+// PreviewPort is whether the hub may forward a browser to 127.0.0.1:port on this room: the room's card range or the
+// previews' block, so atrium's own listeners, which trust loopback, are never one.
+func (s *Server) PreviewPort(port int) error {
+	rng, err := s.cardPortRange()
+	if err != nil {
+		return err
+	}
+	if rng.Has(port) || previewPorts.Has(port) {
+		return nil
+	}
+	return fmt.Errorf("port %d is outside this room's card ports %s and the previews' %s", port, rng, previewPorts)
+}

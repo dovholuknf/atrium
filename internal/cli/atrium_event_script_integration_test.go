@@ -74,7 +74,14 @@ func TestTheEventScriptsWarnOnceAndExitZeroWhenNothingListens(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s exited non-zero: %v", name, err)
 		}
-		if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); len(lines) != 1 || !strings.Contains(lines[0], "atrium-event") {
+		var lines []string
+		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			// bash on Windows warns about its own environment, such as a missing /tmp, before the script runs.
+			if !strings.HasPrefix(l, "bash.exe: warning:") {
+				lines = append(lines, l)
+			}
+		}
+		if len(lines) != 1 || !strings.Contains(lines[0], "atrium-event") {
 			t.Fatalf("%s: %q", name, out)
 		}
 	}

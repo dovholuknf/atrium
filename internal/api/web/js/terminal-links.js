@@ -148,17 +148,22 @@ function tellHeld(id, h) {
 // as it did before any of this existed. A decoration that cannot be drawn is
 // not something to interrupt somebody about.
 async function askProbe(id, paths, row) {
-  const batch = paths.slice(0, probeBatch);
-  let found = [];
-  try {
-    const r = await api(`/v1/tasks/${id}/files/probe`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paths: batch })
-    });
-    found = r.found || [];
-    for (const h of r.held || []) tellHeld(id, h);
-  } catch (e) {
-    return;
+  // Every path, a request at a time: the room answers for the first probeBatch of a request and no more, and a
+  // path left out here is not cached, so it would wait for a second hover.
+  const found = [], asked = [];
+  for (let i = 0; i < paths.length; i += probeBatch) {
+    const batch = paths.slice(i, i + probeBatch);
+    try {
+      const r = await api(`/v1/tasks/${id}/files/probe`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paths: batch })
+      });
+      found.push(...(r.found || []));
+      for (const h of r.held || []) tellHeld(id, h);
+      asked.push(...batch);
+    } catch (e) {
+      break;
+    }
   }
   const hits = new Map(found.map(h => [h.path, h]));
   const known = probeKnown(id);
@@ -166,7 +171,7 @@ async function askProbe(id, paths, row) {
   // Remembering only the hits means every word that is not a file is asked
   // about again on the next hover, which is most of the words.
   if (known.size > probeMissCap) known.clear();
-  for (const p of batch) {
+  for (const p of asked) {
     if (hits.has(p)) known.set(p, hits.get(p));
     else known.set(probeMissKey(p, row), true);
   }
@@ -550,6 +555,18 @@ function useSearch(t) {
 // owns a run of text both matched. Reversing it lets the path matcher claim
 // the inside of a URL, and the failure is a link that opens the wrong thing
 // rather than a link that is missing.
+// The URL under the pointer, set by the addon's hover and leave. A canvas has no anchor, so this is the only way to know.
+let termHoverURL = "";
+
+// xterm activates a link on mouse up of ANY button, so a right click or the end of a drag-select opened it.
+let termDownAt = null;
+document.getElementById("t-screen").addEventListener("mousedown", e => { termDownAt = { x: e.clientX, y: e.clientY }; }, true);
+function plainLinkClick(ev, t) {
+  if (ev.button !== 0) return false;
+  if (t.hasSelection()) return false;
+  return !termDownAt || Math.abs(ev.clientX - termDownAt.x) < 4 && Math.abs(ev.clientY - termDownAt.y) < 4;
+}
+
 function useWebLinks(t) {
   // Loudly, for the same reason the search addon is: what a missing bundle
   // looks like is a URL that is simply not a link, which is also what this
@@ -560,7 +577,10 @@ function useWebLinks(t) {
     return;
   }
   try {
-    t.loadAddon(new WebLinksAddon.WebLinksAddon(openTermURL));
+    t.loadAddon(new WebLinksAddon.WebLinksAddon((ev, uri) => { if (plainLinkClick(ev, t)) openTermURL(ev, uri); }, {
+      hover: (ev, text) => { termHoverURL = text; },
+      leave: () => { termHoverURL = ""; },
+    }));
   } catch (e) {
     console.warn("the web links addon would not load:", e);
   }
