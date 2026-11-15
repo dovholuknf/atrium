@@ -75,7 +75,7 @@ function accessMenu() {
     ["address", "", "My own address", "Your interface, hostname or proxy"]];
   return `<div class="ac-menu"><button class="go" aria-haspopup="menu" aria-expanded="${!!accessUI.menu}"
       onclick="accessToggleMenu()">Access Atrium <b>+</b></button>${accessUI.menu ? `<div class="ac-drop" role="menu">${
-    items.map(([k, m, t, s]) => `<button role="menuitem" title="${acEsc(s)}" onclick="accessStartAdd('${k}','${m}')">` +
+    items.map(([k, m, t, s]) => `<button role="menuitem" data-tip="${acEsc(s)}" onclick="accessStartAdd('${k}','${m}')">` +
       `${accessIcon(k, m)}<span>${t}</span></button>`).join("")
   }</div>` : ""}</div>`;
 }
@@ -158,10 +158,10 @@ function accessEntry(e) {
   return `<div class="ac-row ${live ? "live" : ""}">
     ${accessIcon(e.kind, e.mode)}
     <span class="grow"><span class="ac-name">${acEsc(e.name)}</span>
-      <span class="ac-sub ac-desc" title="${desc}">${desc}</span>
+      <span class="ac-sub ac-desc" data-tip="${desc}">${desc}</span>
       ${e.prompt ? `<span class="ac-sub">Open <a href="${acEsc(e.prompt.url)}" target="_blank" rel="noopener">${acEsc(e.prompt.url)}</a>
         and enter <b>${acEsc(e.prompt.code)}</b> to finish signing in.</span>` : ""}</span>
-    <span class="ac-chip ${live ? "on" : ""}" title="${acEsc(e.state || "off")}">${acEsc(e.state || "off")}</span>
+    <span class="ac-chip ${live ? "on" : ""}" data-tip="${acEsc(e.state || "off")}">${acEsc(e.state || "off")}</span>
     <span class="ac-actions">${extra}<button onclick="accessRevoke('${acEsc(e.id)}')">revoke</button></span></div>`;
 }
 

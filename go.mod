@@ -79,7 +79,6 @@ require (
 	github.com/openziti/channel/v4 v4.3.14 // indirect
 	github.com/openziti/edge-api v0.36.1 // indirect
 	github.com/openziti/foundation/v2 v2.0.105 // indirect
-	github.com/openziti/identity v1.0.144 // indirect
 	github.com/openziti/metrics v1.4.5 // indirect
 	github.com/openziti/secretstream v0.1.53 // indirect
 	github.com/openziti/transport/v2 v2.0.226 // indirect
@@ -127,6 +126,7 @@ require (
 	github.com/dovholuknf/atrium/internal/hubstore v0.0.0
 	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
 	github.com/dovholuknf/atrium/internal/store v0.0.0
+	github.com/openziti/identity v1.0.144
 )
 
 replace (

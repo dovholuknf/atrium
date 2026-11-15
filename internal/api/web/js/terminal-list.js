@@ -1086,17 +1086,20 @@ function termTree(list) {
 
 // A card whose ground is dark gets `.dk`, which brings its star and pie to the tile's text colour. CSS cannot read a ground that
 // a skin, a selected colour or a worn theme sets, so this reads it back. Run when the list is drawn and when the skin changes.
+let termToneProbe = null;
 function termTone(root) {
   const cards = [...(root || document).querySelectorAll(".term-list .card")];
-  const probes = cards.map(c => {
-    const p = document.createElement("span");
-    const own = c.classList.contains("on") && !c.classList.contains("bare") && !c.classList.contains("plain");
-    p.style.backgroundColor = own ? "var(--tabbg, var(--card-0))" : "var(--card-0)";
-    c.appendChild(p);
-    return p;
+  // one probe outside the list, so reading a row never writes into it
+  if (!termToneProbe) {
+    termToneProbe = document.createElement("span");
+    termToneProbe.style.cssText = "position:fixed;left:-9999px;visibility:hidden;pointer-events:none";
+    document.body.appendChild(termToneProbe);
+  }
+  const grounds = cards.map(c => {
+    const cs = getComputedStyle(c), own = c.classList.contains("on") && !c.classList.contains("bare") && !c.classList.contains("plain");
+    termToneProbe.style.backgroundColor = (own && cs.getPropertyValue("--tabbg").trim()) || cs.getPropertyValue("--card-0").trim() || "transparent";
+    return (getComputedStyle(termToneProbe).backgroundColor.match(/[\d.]+/g) || []).map(Number);
   });
-  const grounds = probes.map(p => (getComputedStyle(p).backgroundColor.match(/[\d.]+/g) || []).map(Number));
-  probes.forEach(p => p.remove());
   cards.forEach((c, i) => {
     const m = grounds[i];
     if (m.length >= 3) c.classList.toggle("dk", 0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2] < 140);
