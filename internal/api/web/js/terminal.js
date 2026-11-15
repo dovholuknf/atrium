@@ -1797,6 +1797,15 @@ function wireTerminalPaste(screen) {
       ]);
       return;
     }
+    const branch = typeof walkBranchAt === "function" ? walkBranchAt(e) : "";
+    if (branch && typeof showMenu === "function") {
+      const repo = termTask.repo;
+      showMenu(e, [
+        { label: "Walk " + branch, act: () => walkHubOpen(repo, branch) },
+        { label: "Paste", act: () => pasteIntoTerm() },
+      ]);
+      return;
+    }
     // A LONG PRESS ON A PHONE IS NOT A RIGHT CLICK. Android fires `contextmenu` on one, and pasting the
     // clipboard on a press that meant to select or scroll is the bug. The menu stays suppressed and nothing
     // is pasted; paste on a phone is the paste box and the attach button.

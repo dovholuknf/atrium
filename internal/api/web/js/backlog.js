@@ -15,8 +15,8 @@ const BACKLOG_DEPT_KEY = "atrium.backlog.depts";
 const BACKLOG_KIND_KEY = "atrium.backlog.kinds";
 const BACKLOG_SORT_KEY = "atrium.backlog.sort";
 const BACKLOG_GROUP_KEY = "atrium.backlog.group";
-const BACKLOG_STATUSES = ["open", "in-progress", "held", "done", "dropped"];
-const BACKLOG_SHOW_DEFAULT = ["open", "in-progress"];
+const BACKLOG_STATUSES = ["open", "in-progress", "built", "held", "done", "dropped"];
+const BACKLOG_SHOW_DEFAULT = ["open", "in-progress", "built"];
 const BACKLOG_GROUPS = [["dept", "by dept"], ["status", "by status"], ["priority", "by priority"], ["", "off"]];
 const BACKLOG_SORTS = [["changed", "changed"], ["created", "created"], ["priority", "priority"], ["id", "id"]];
 
@@ -32,7 +32,8 @@ function backlogStore(key, value, isDefault) {
   } catch (e) {}
 }
 
-// Statuses shown. Open and in-progress unless the operator chose otherwise. Empty means every status.
+// Statuses shown. Open, in-progress and built (a result waiting on its owner) unless the operator chose otherwise.
+// Empty means every status.
 let backlogShow = new Set(backlogStored(BACKLOG_SHOW_KEY, BACKLOG_SHOW_DEFAULT));
 // Priorities shown, as a set. Empty means all of them. `unset` is the items with none.
 const backlogPrios = new Set(backlogStored(BACKLOG_PRIO_KEY, []));
@@ -215,7 +216,15 @@ function backlogItemRow(b) {
     '<span class="aud-detail">' + esc(b.title || "") + "</span>" +
     '<span class="aud-when" data-tip="' + esc(b.created_at || "") + '">' + esc(backlogStamp(b.created_at)) + "</span>" +
     '<span class="aud-when" data-tip="' + esc(b.changed_at || "") + '">' + esc(backlogStamp(b.changed_at)) + "</span>" +
-    "</div>";
+    backlogResultLine(b) + "</div>";
+}
+
+// The done text of the last worker on the item, under its title, so the result is where the human looks.
+function backlogResultLine(b) {
+  if (!b.result) return "";
+  const who = [b.result_card, backlogStamp(b.result_at)].filter(Boolean).join(" · ");
+  return '<span class="bl-result" data-tip="' + esc(b.result_at || "") + '"><b>result</b> ' + esc(b.result) +
+    (who ? ' <span class="bl-result-who">' + esc(who) + "</span>" : "") + "</span>";
 }
 
 // What each chip would add, counted over the other rows' filters.

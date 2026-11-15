@@ -1136,7 +1136,7 @@ func (r *runner) resetLine() bool {
 	// Where the keys stood when the turn began, so a Stop can tell a draft typed
 	// since from a line the prompt already took.
 	r.promptSeq = r.keySeq
-	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
+	if r.line.empty() && len(r.line.text) == 0 && len(r.line.pending) == 0 && !r.line.inPaste {
 		return false
 	}
 	if r.keySeq > r.enterSeq && r.keySeq > r.peerKeySeq {
@@ -1155,7 +1155,7 @@ func (r *runner) resetLine() bool {
 func (r *runner) resetLineAtStop() bool {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
-	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
+	if r.line.empty() && len(r.line.text) == 0 && len(r.line.pending) == 0 && !r.line.inPaste {
 		return false
 	}
 	if r.keySeq > r.promptSeq {

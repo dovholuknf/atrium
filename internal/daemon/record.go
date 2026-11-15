@@ -148,6 +148,12 @@ var atriumFiles = map[string]bool{"BRIEF.md": true, "REPORT.md": true, "LEARNING
 // dirtyStatus is whether `git status --porcelain` output shows a change that is not atrium's own brief. An untracked file of
 // the card's own counts, since a test may have run against it.
 func dirtyStatus(status string) bool {
+	return len(dirtyPaths(status)) > 0
+}
+
+// dirtyPaths are the paths in `git status --porcelain` output that are not atrium's own brief.
+func dirtyPaths(status string) []string {
+	var out []string
 	for _, l := range strings.Split(status, "\n") {
 		l = strings.TrimRight(l, "\r")
 		if strings.TrimSpace(l) == "" {
@@ -156,9 +162,16 @@ func dirtyStatus(status string) bool {
 		if name, ok := strings.CutPrefix(l, "?? "); ok && atriumFiles[strings.Trim(name, `"`)] {
 			continue
 		}
-		return true
+		name := strings.TrimSpace(l)
+		if len(l) > 3 {
+			name = l[3:]
+		}
+		if _, to, ok := strings.Cut(name, " -> "); ok {
+			name = to
+		}
+		out = append(out, strings.Trim(name, `"`))
 	}
-	return false
+	return out
 }
 
 // readTail reads at most max bytes from the end of a file.

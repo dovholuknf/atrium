@@ -302,6 +302,7 @@
   .hr-brname { min-width: 0; max-width: 460px; }
   .hr-brname .hr-who { display: block; }
   .hr-brname .hr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hr-brname .hr-bwalk { margin-left: 8px; font-size: var(--fs-xs); color: var(--chip-accent-text); }
   .hr-bstatus { display: inline-flex; align-items: center; gap: 6px; font: 700 var(--fs-xs)/1 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--c); }
   .hr-bstatus i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
   .hr-bkind, .hr-bhow { margin-left: 8px; font: 650 var(--fs-xs)/1 var(--mono); padding: 2px 7px; border-radius: 6px; color: var(--label); background: var(--lift); }

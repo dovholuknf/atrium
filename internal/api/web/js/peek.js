@@ -214,6 +214,7 @@ function peekRows(t) {
   }
   if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
   if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
+  if (t.report_dirty) need.push(row("done, " + t.report_dirty + " file" + (t.report_dirty === 1 ? "" : "s") + " not committed", "only what it committed will land"));
 
   const kids = typeof termChildInfo === "function" && typeof lastTasks !== "undefined" ? termChildInfo(t, lastTasks) : null;
   const age = t.recap ? peekRecapAge(t) : "";
@@ -227,7 +228,47 @@ function peekRows(t) {
     peekScratchHtml(t) +
     (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "") +
+    peekLeftoverHtml(t) +
     peekMemHtml(t);
+}
+
+// WHAT A DONE LEFT OUT AND DID NOT EXERCISE, under the recap. A skipped note can be filed to the backlog in one click.
+function peekLeftoverHtml(t) {
+  if (!t || (!t.done_skipped && !t.done_unverified)) return "";
+  const item = (t.tags || []).some(x => String(x).startsWith("atrium:item:"));
+  const act = !t.done_skipped ? "" : t.skipped_filed ? `<span class="peek-filed">filed as ${esc(t.skipped_filed)}</span>`
+    : `<button type="button" class="peek-file" data-id="${esc(t.id)}"${item ? "" : " disabled"} data-tip="${item ? "file it to the backlog, in the department of this card's item" : "this card has no backlog item to take a department from"}">file to backlog</button>`;
+  return `<div class="peek-sec peek-left">` +
+    (t.done_skipped ? `<div class="peek-row"><b>skipped</b><span>${esc(t.done_skipped)} ${act}</span></div>` : "") +
+    (t.done_unverified ? `<div class="peek-row"><b>unverified</b><span>${esc(t.done_unverified)}</span></div>` : "") + `</div>`;
+}
+
+// The skipped note filed as an open item in the card's item's department, its body linking the card, and the item's id
+// kept on the card so the button turns into the id.
+async function peekFileSkipped(btn) {
+  const id = btn.dataset.id, t = peekCard(id);
+  const item = (t.tags || []).filter(x => String(x).startsWith("atrium:item:")).map(x => x.slice(12))[0];
+  btn.disabled = true;
+  try {
+    const hub = (path, opts) => (typeof plainFetch === "function" ? plainFetch : window.fetch.bind(window))("/_hub/backlog" + path, opts);
+    const dept = (await (await hub("/" + encodeURIComponent(item))).json()).dept;
+    const link = location.origin + (t.room && t.wire_name ? "/room/" + encodeURIComponent(t.room) + "/" + encodeURIComponent(t.wire_name) : "/#term=" + id);
+    const res = await hub("", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dept, by: "board", room: t.room || "", title: "Skipped by " + (t.display_title || t.title) + ": " + t.done_skipped.slice(0, 60),
+        body: t.done_skipped + "\n\nLeft out by card " + link + " (item " + item + ")" })
+    });
+    const filed = await res.json();
+    if (!res.ok) throw new Error(filed.error || res.status);
+    await api(`/v1/tasks/${encodeURIComponent(id)}/skipped-filed`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item: filed.id })
+    });
+    toast("filed to the backlog", filed.id);
+    if (typeof refreshSoon === "function") refreshSoon();
+  } catch (e) {
+    btn.disabled = false;
+    toast("could not file it", e.message);
+  }
 }
 
 // What the card's runner, its shell and everything they started hold now, from the pty host's job object or cgroup.
@@ -593,6 +634,8 @@ function peekDrawers(box) {
 
 // The recap's tail behind a click: shown only where the text runs past its four lines.
 function peekRecap(box) {
+  const file = box.querySelector(".peek-file");
+  if (file) file.onclick = () => peekFileSkipped(file);
   const text = box.querySelector(".peek-rtext"), more = box.querySelector(".peek-more");
   if (typeof qaClamp === "function") qaClamp(box);
   if (!text || !more) return;

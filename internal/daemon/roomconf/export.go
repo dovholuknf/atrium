@@ -135,6 +135,8 @@ type ExportZiti struct {
 var ExportedSettings = []string{
 	store.SettingSweepDead,
 	store.SettingPruneAfter,
+	store.SettingDiskWarnFree,
+	store.SettingDiskCriticalFree,
 	api.SettingBrowseRoots,
 	store.SettingReviewsRoot,
 	api.SettingBoardSkin,

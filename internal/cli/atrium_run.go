@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
@@ -96,7 +98,7 @@ func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.boardService, "board-service", "atrium",
 		"with --board-transport ziti: the ziti service to bind the board to (uses --"+prefix+"identity)")
 	c.Flags().StringVar(&f.boardShareMode, "board-share", "private",
-		"with --board-transport zrok: private (needs zrok on the other end) or public (a URL, no login)")
+		"with --board-transport zrok: private (closed, needs zrok on the other end) or public (a URL, behind the board's OIDC sign-in)")
 	c.Flags().StringVar(&f.ciHookService, "ci-hook-service", "",
 		"bind this ziti service to hear CI webhooks, with --"+prefix+"identity. empty is off. keeps retrying while the controller is down")
 }
@@ -499,6 +501,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	proxy = link.NewProxy(h, assets, id, nil)
 	defer proxy.WaitWork(15 * time.Second)
+	// The sign-in in front of every exposure of this board, the room's guard over the hub's store.
+	var publicBoard atomic.Bool
+	guard := publish.NewGuard(store, publicBoard.Load)
+	proxy.SetHubAuth(func() any { return guard.AuthView() }, guard.SaveAuthBody)
+	if err := store.ForgetShareLogin(); err != nil {
+		return fmt.Errorf("forgetting the old share login: %w", err)
+	}
 	// ONE BOARD VIEW PER WORKER WORKTREE, at <name>.localhost. See link/views.go.
 	if len(f.views) > 0 {
 		for _, bad := range proxy.SetBoardViews(f.views, api.BoardID) {
@@ -599,6 +608,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		proxy.RecordAudit(name, "room-unproven", "refused over "+over+" without a certificate: "+why+
 			". if this is that room, check it dials with the certificate `"+atriumCmd("room join")+"` left it")
 	}
+	// A ROOM THE HUB DOES NOT KNOW, arriving over an overlay, is parked for the operator rather than turned away.
+	h.OnOverlayRoom = parkOverlayRoom(store)
 	h.Enrolled = func(name string) bool {
 		enrolled, err := store.Enrolled(name)
 		// A STORE THAT CANNOT ANSWER REFUSES the old path for this one name, unlike
@@ -639,7 +650,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		Serve: func(ctx context.Context, ln net.Listener) error {
 			_, svc := ht.Effective(link.TransportBoardZiti)
 			srv := &http.Server{
-				Handler:           zitiBoardEdge(edge.MarkReach(proxy, edge.ReachOverlay), svc),
+				Handler:           zitiBoardEdge(edge.MarkReach(guard.AuthGuard(proxy), edge.ReachOverlay), svc),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 			go func() {
@@ -651,6 +662,30 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}, boardZitiSeed(boardTransport, boardService))
 	proxy.SetTransports(ht)
 	ht.Start(ctx)
+	// THE ACCESS SCREEN'S ENTRIES, each starting the listeners it stands for through the transports above.
+	access := newHubAccess(store, guard, keys.Dir)
+	access.rt = &accessRuntime{transports: ht, share: func(mode string) (func(), string, error) {
+		bs, ln, err := openBoardShare(mode)
+		if err != nil {
+			return nil, "", err
+		}
+		reach := edge.ReachZrokPrivate
+		if bs.Mode == "public" {
+			reach = edge.ReachZrokPublic
+			publicBoard.Store(true)
+		}
+		sctx, cancel := context.WithCancel(ctx)
+		serveBoardOn(sctx, ln, edge.Named(edge.MarkReach(guard.AuthGuard(proxy), reach), bs.Address), "zrok share")
+		return func() {
+			cancel()
+			bs.release()
+			if bs.Mode == "public" {
+				publicBoard.Store(false)
+			}
+		}, bs.Address, nil
+	}}
+	proxy.SetHubAccess(access)
+	go access.StartAll()
 
 	// A room attaching is synced and collected, off the attach path. The timers stop and the
 	// git children are cancelled within ten seconds of the hub stopping.
@@ -769,30 +804,21 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if bt := strings.TrimSpace(boardTransport); bt != "" && bt != "none" {
 		switch bt {
 		case "zrok":
-			// The public share's login, from the hub's own store: the
-			// operator set it on the settings screen and it is applied
-			// when the share is created. A private share ignores it. See
-			// hubshare.go and docs/fabric/ziti-zrok-flow-design.md.
-			shareAuth, err := store.ShareAuth()
-			if err != nil {
-				log.Printf("[hub] could not read the share login, "+
-					"serving loopback only: %v", err)
-				break
+			if strings.TrimSpace(boardShareMode) == "public" {
+				if c := guard.AuthConfig(); !c.Enabled || c.Ready() != nil {
+					log.Printf("[hub] a public zrok share hands the board to anyone with the link, so it needs " +
+						"the board's OIDC sign-in first. set it under who may open it. serving loopback only")
+					break
+				}
 			}
-			bs, shareLn, err := openBoardShare(boardShareMode, shareAuth)
+			bs, shareLn, err := openBoardShare(boardShareMode)
 			if err != nil {
 				log.Printf("[hub] could not put the board on a zrok share, "+
 					"serving loopback only: %v", err)
 				break
 			}
 			defer bs.release()
-			if bs.Mode == "public" {
-				// A public share now always carries a login (updb or
-				// OIDC); openBoardShare refuses one with none. Name the
-				// scheme so the log says what guards the URL.
-				log.Printf("[hub] the board is on a PUBLIC zrok share, guarded by %s at the "+
-					"zrok edge", shareLoginName(shareAuth))
-			}
+			publicBoard.Store(bs.Mode == "public")
 			log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on a "+bs.Mode+" zrok share: "+bs.Address)
@@ -802,7 +828,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			if bs.Mode == "public" {
 				reach = edge.ReachZrokPublic
 			}
-			serveBoardOn(ctx, shareLn, edge.Named(edge.MarkReach(proxy, reach), bs.Address), "zrok share")
+			serveBoardOn(ctx, shareLn, edge.Named(edge.MarkReach(guard.AuthGuard(proxy), reach), bs.Address), "zrok share")
 
 		case "ziti":
 			// bound by the board-ziti transport, which this flag seeds

@@ -12,7 +12,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/zitictx"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/openziti/sdk-golang/ziti"
-	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	"github.com/openziti/zrok/v2/rest_client_zrok/metadata"
 	"github.com/openziti/zrok/v2/rest_client_zrok/share"
@@ -45,11 +44,8 @@ import (
 //
 // ── what it costs to set up ──────────────────────────────
 //
-// BOTH MACHINES NEED `zrok enable` ALREADY RUN. zrok is an account and an
-// environment before it is a share, and atrium does not create either: it holds
-// the NAME of a command that has a credential and never somebody else's
-// credential. That is the same line `docs/fabric/overlays.md` draws, and it is why the
-// hub says what to run rather than trying to do it.
+// BOTH MACHINES NEED A zrok ENVIRONMENT. Atrium makes one in the binary from an account token file, or with
+// `atrium zrok enable`, and never needs a `zrok` executable. See zrok_env.go.
 
 // ZrokAPI is what this file asks of zrok. The real one is the SDK on this machine's environment, and a test hands in
 // a fake so no controller is needed.
@@ -71,6 +67,10 @@ type Zrok struct {
 	Token string
 	// API, when set, stands in for the SDK.
 	API ZrokAPI
+	// EnvDir is the zrok environment to use, empty for the machine's. TokenFile, when set, holds an account token
+	// that enables EnvDir in the binary the first time it has no environment.
+	EnvDir    string
+	TokenFile string
 
 	once sync.Once
 	root env_core.Root
@@ -112,6 +112,8 @@ func (s sdkZrok) Create() (string, error) {
 		// translated. A tunnel carries bytes, so a websocket is a websocket.
 		BackendMode: zroksdk.TcpTunnelBackendMode,
 		ShareMode:   zroksdk.PrivateShareMode,
+		// Only this account, and accounts granted by name, may access it. The controller's default is open.
+		PermissionMode: zroksdk.ClosedPermissionMode,
 		// Names the share on the account. Nothing dials it: this process
 		// answers the listener itself.
 		Target: "atrium-hub",
@@ -217,14 +219,19 @@ func (z *Zrok) Env() string {
 // environmentRoot loads this machine's zrok environment, once.
 func (z *Zrok) environmentRoot() (env_core.Root, error) {
 	z.once.Do(func() {
-		root, err := environment.LoadRoot()
+		root, err := LoadZrokRoot(z.EnvDir)
 		if err != nil {
 			z.err = fmt.Errorf("could not read this machine's zrok environment: %w", err)
 			return
 		}
+		if !root.IsEnabled() && z.TokenFile != "" {
+			if z.err = EnableZrokFromFile(root, z.TokenFile); z.err != nil {
+				return
+			}
+		}
 		if !root.IsEnabled() {
 			z.err = errors.New("this machine has no zrok environment yet. " +
-				"run `zrok enable <your account token>` first")
+				"give the zrok entry an account token file, or run `atrium zrok enable`")
 			return
 		}
 		z.root = root

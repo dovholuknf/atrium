@@ -24,13 +24,24 @@ func TestPeerFramingIsShort(t *testing.T) {
 func TestReportBodyIsShort(t *testing.T) {
 	task := &store.Task{WireName: "w", ID: "card-1", Worktree: "/some/path"}
 	sha := "b550e917aabbccdd"
-	if got, want := reportBody(task, "done", sha, false, "shipped it\nmore detail"), "@w done b550e917: shipped it"; got != want {
+	if got, want := reportBody(task, "done", sha, false, nil, "shipped it\nmore detail"), "@w done b550e917: shipped it"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	if got, want := reportBody(task, "done", sha, true, ""), "@w done b550e917 unverified"; got != want {
+	if got, want := reportBody(task, "done", sha, true, nil, ""), "@w done b550e917 unverified"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	if got := reportBody(task, "blocked", "", false, "need a token"); got != "@w blocked: need a token" {
+	if got := reportBody(task, "blocked", "", false, nil, "need a token"); got != "@w blocked: need a token" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestLeftoverTailIsOneLineEachAndNothingWhenEmpty(t *testing.T) {
+	if got := leftoverTail(FinishRequest{}); got != "" {
+		t.Fatalf("got %q", got)
+	}
+	in := FinishRequest{Skipped: "the\nretry path, add it with the next pass", Unverified: "windows, run the suite there"}
+	want := "\nskipped: the retry path, add it with the next pass\nunverified: windows, run the suite there"
+	if got := leftoverTail(in); got != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }

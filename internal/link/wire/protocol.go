@@ -109,6 +109,9 @@ type Note struct {
 	// that never says (an older build) is not read as a room that is fine. Observed, and never acted on by the hub
 	// beyond showing it and ringing once. See internal/daemon/loginneeded.go.
 	Login *string `json:"login,omitempty"`
+	// Disk is the room's one-line disk notice, "" while every drive is above its warning level. A pointer for the same
+	// reason as Login. Observed, and the hub only shows it. See internal/daemon/diskwatch.go.
+	Disk *string `json:"disk,omitempty"`
 	// PathStates is a room saying how each of its rungs looks from where it stands, riding on the beat (not `paths`, which
 	// is the hub's own list going the other way). Observed, bounded by the hub, never acted on. An older hub ignores it and
 	// an older room never sends it. See pathstate.go.

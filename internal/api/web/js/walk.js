@@ -31,6 +31,7 @@ const dock = {
   gen: 0,           // bumped on every open and reset, so a slow answer for a card that has gone is dropped
   want: "",         // a card whose drawer the operator left open, so a reattach puts it back
   loading: false,
+  fileWalks: new Set(), // cards whose last read was a branch walk, so a reattach places it before the files are read again
   menu: false       // the finding's More menu is open
 };
 
@@ -43,10 +44,11 @@ async function walkProbe(task) {
   dockReset();
   const btn = document.getElementById("t-walk");
   if (!btn || !task) return;
+  walkHubBranchesLoad(task.repo);
   const gen = dock.gen;
   let yes = false;
   if (walkProbeFailed.has(task.id)) return;
-  try { yes = await walkTenant.probe(task); } catch (e) { yes = false; walkProbeFailed.add(task.id); }
+  try { yes = await walkTenant.probe(task); } catch (e) { yes = false; if (e && e.status === 404) walkProbeFailed.add(task.id); }
   if (gen !== dock.gen || !termTask || termTask.id !== task.id) return;
   btn.hidden = !yes;
   if (!yes) return;
@@ -71,6 +73,8 @@ function dockReset() {
   dock.conflict = null;
   dock.error = "";
   dock.menu = false;
+  dock.loading = false;
+  dock.again = false;
   walkSheet(false);
   const drawer = document.getElementById("walk-drawer");
   if (drawer) { drawer.hidden = true; walkPlace(); }
@@ -118,8 +122,18 @@ function walkClose() { dock.want = ""; dockClose(); }
 // writes during a turn and no event says one landed, so the card's own events stand in. A burst is one read.
 const DOCK_KICK_MS = 1000;
 function dockKick(id) {
-  if (!dock.tenant || (id && id !== dock.taskId) || dock.timer) return;
+  if (!dock.tenant) { walkReprobe(id); return; }
+  if ((id && id !== dock.taskId) || dock.timer) return;
   dock.timer = setTimeout(() => { dock.timer = 0; dockResync(); }, DOCK_KICK_MS);
+}
+// A card the probe said no to is asked again on its own events: a working card commits after it was attached.
+const WALK_REPROBE_MS = 5000;
+function walkReprobe(id) {
+  if (dock.timer || !id || typeof termTask === "undefined" || !termTask || termTask.id !== id || walkProbeFailed.has(id)) return;
+  dock.timer = setTimeout(() => {
+    dock.timer = 0;
+    if (!dock.tenant && termTask && termTask.id === id && !document.hidden) walkProbe(termTask);
+  }, WALK_REPROBE_MS);
 }
 function dockResync() {
   if (!dock.tenant || document.hidden) return;
@@ -145,18 +159,22 @@ async function dockLoad() {
   try {
     got = await t.load(termTask, dock);
   } catch (e) {
+    if (gen !== dock.gen) return;
     dock.loading = false;
     dock.error = (e && e.message) || "the walk could not be read";
-    if (gen === dock.gen && !dock.items.length) dockPaint();
+    if (!dock.items.length) dockPaint();
     return;
   }
+  // A read for a card that has gone leaves the flag alone: the reset cleared it and the new card's read may hold it.
+  if (gen !== dock.gen) return;
   dock.loading = false;
   dock.error = "";
   if (dock.again) { dock.again = false; dockResync(); }
-  if (gen !== dock.gen) return;
   const was = dock.cur;
   const wasIdx = dock.items.findIndex(i => i.key === was);
   dock.items = got.items;
+  if (dock.items.length && dock.items[0].kind === "file") dock.fileWalks.add(dock.taskId);
+  else if (dock.items.length) dock.fileWalks.delete(dock.taskId);
   let idx = dock.items.findIndex(i => i.key === was);
   if (idx < 0 && dock.items.length) idx = Math.min(Math.max(wasIdx, 0), dock.items.length - 1);
   dock.cur = idx >= 0 ? dock.items[idx].key : "";
@@ -186,6 +204,8 @@ function dockPaint() {
   if (!t) return;
   const label = document.getElementById("t-walk-label");
   if (label) label.textContent = t.label(dock);
+  const btn = document.getElementById("t-walk");
+  if (btn && !dock.open) btn.hidden = walkNothing(dock);
   if (!dock.open || !drawer) return;
   const head = t.header(dock);
   document.getElementById("walk-title").textContent = head.title;
@@ -204,6 +224,7 @@ function dockPaint() {
   }
   document.getElementById("walk-note").textContent = head.note;
   document.getElementById("walk-count").textContent = t.summary(dock.items);
+  walkModePaint();
   const more = document.getElementById("walk-more");
   more.textContent = head.more || "";
   more.hidden = !head.more;
@@ -488,6 +509,122 @@ function walkChange(dir) {
   if (el) el.scrollIntoView({ block: "center" });
 }
 
+// A HUB BRANCH, WALKED WITH NO CARD, against its repository's main (GET /_hub/git/walk). walk.html opens one from
+// #repo=&branch=, and a right click on a branch name in a terminal on the hub board opens that page.
+function walkHubDiffPath(repo, branch) {
+  return "/_hub/git/walk?repo=" + encodeURIComponent(repo) + "&branch=" + encodeURIComponent(branch);
+}
+function walkHubPage(repo, branch) {
+  return "/walk.html#repo=" + encodeURIComponent(repo) + "&branch=" + encodeURIComponent(branch);
+}
+function walkHubOpen(repo, branch) { window.open(walkHubPage(repo, branch), "_blank", "noopener"); }
+
+// The hub's branch names per repository, read from its snapshot when a card attaches, so a right click can tell a
+// branch from any other word with a slash in it. claude/ names count without it: one pushed a moment ago is not in it.
+const WALK_HUB_BRANCHES_MS = 60000;
+const walkHubBranches = new Map();
+async function walkHubBranchesLoad(repo) {
+  if (!repo || typeof hubIsHub === "undefined" || !hubIsHub) return;
+  const had = walkHubBranches.get(repo);
+  if (had && Date.now() - had.at < WALK_HUB_BRANCHES_MS) return;
+  walkHubBranches.set(repo, { at: Date.now(), names: had ? had.names : new Set() });
+  try {
+    const r = await api("/_hub/git/branches?repo=" + encodeURIComponent(repo));
+    walkHubBranches.set(repo, { at: Date.now(), names: new Set((r.branches || []).map(b => b.name)) });
+  } catch (e) {}
+}
+function walkHubIsBranch(repo, word) {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/.test(word) || word === "claude/main" || /\.\.|\/\/|\/$|\.$/.test(word)) return false;
+  const had = walkHubBranches.get(repo);
+  return /^claude\/./.test(word) || !!(had && had.names.has(word));
+}
+
+// The word under the pointer in the terminal, read off the buffer, a wrapped line joined to the rows it wraps into.
+function termWordAt(e) {
+  if (typeof term === "undefined" || !term || !term.element) return "";
+  const scr = term.element.querySelector(".xterm-screen");
+  if (!scr) return "";
+  const r = scr.getBoundingClientRect();
+  if (!r.width || !r.height || e.clientX < r.left || e.clientX >= r.right || e.clientY < r.top || e.clientY >= r.bottom) return "";
+  const buf = term.buffer.active;
+  let row = Math.floor((e.clientY - r.top) / (r.height / term.rows)) + buf.viewportY;
+  let col = Math.floor((e.clientX - r.left) / (r.width / term.cols));
+  const line = n => buf.getLine(n);
+  if (!line(row)) return "";
+  let first = row;
+  while (first > 0 && line(first) && line(first).isWrapped) first--;
+  let text = "";
+  for (let n = first; line(n) && (n === first || line(n).isWrapped); n++) {
+    if (n === row) col += text.length;
+    text += line(n).translateToString(n + 1 < buf.length && line(n + 1) && line(n + 1).isWrapped ? false : true);
+  }
+  const stop = /[\s"'`()[\]{}<>,;|]/;
+  if (col >= text.length || stop.test(text[col])) return "";
+  let a = col, b = col;
+  while (a > 0 && !stop.test(text[a - 1])) a--;
+  while (b < text.length && !stop.test(text[b])) b++;
+  return text.slice(a, b).replace(/[.:!?]+$/, "");
+}
+
+// A card's own branch walk with no file in any mode: clint clicked "walk branch: nothing" on a clean card.
+function walkNothing(d) {
+  const b = walkTenant.branch;
+  return d.tenant === walkTenant && !walkTenant.prId && !walkTenant.hub && !walkTenant.dir && !d.items.length &&
+    !!b && !!b.modes && !Object.values(b.modes).some(n => n > 0);
+}
+
+// The switch at the top of the walk: unstaged, staged or branch, each with how many files it holds.
+function walkModePaint() {
+  const box = document.getElementById("walk-mode");
+  if (!box) return;
+  const b = walkTenant.branch;
+  box.hidden = !b || !b.modes || !!walkTenant.hub || !!walkTenant.prId;
+  if (box.hidden) return;
+  box.querySelectorAll("button[data-mode]").forEach(x => {
+    x.classList.toggle("on", x.dataset.mode === walkTenant.mode);
+    x.setAttribute("aria-pressed", x.dataset.mode === walkTenant.mode ? "true" : "false");
+    x.querySelector(".n").textContent = b.modes[x.dataset.mode] || 0;
+  });
+  if (!box.onclick) box.onclick = e => { const x = e.target.closest("button[data-mode]"); if (x) walkModeSet(x.dataset.mode); };
+}
+function walkModeSet(m) {
+  if (m === walkTenant.mode) return;
+  walkTenant.mode = m;
+  dock.items = []; dock.cur = ""; dock.error = "";
+  dockLoad();
+}
+function walkBackToTerm() {
+  walkClose();
+  if (typeof term !== "undefined" && term) term.focus();
+}
+// The folder an agent's walk link names, walked in this card's pane.
+function walkDirOpen(dir) {
+  const btn = document.getElementById("t-walk");
+  dock.tenant = walkTenant; dock.taskId = termTask.id; if (btn) btn.hidden = false;
+  walkTenant.dir = dir; walkTenant.mode = ""; dock.items = []; dock.cur = ""; dock.error = "";
+  dockClose(); dockOpen();
+}
+// `<board>/#card=<card>&walk=<folder>`, the link an agent prints for a handoff: { id, dir }, or null.
+function walkLinkOf(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+  if (!sameBoardOrigin(u)) return null;
+  const q = new URLSearchParams(u.hash.slice(1));
+  return q.get("card") && q.get("walk") ? { id: q.get("card"), dir: q.get("walk") } : null;
+}
+async function walkLinkOpen(id, dir) {
+  if (!termTask || termTask.id !== id) await landOnAlert(id, "", "");
+  if (termTask && termTask.id === id) walkDirOpen(dir);
+}
+
+// The hub branch under a right click in the card's terminal, or "".
+function walkBranchAt(e) {
+  if (typeof hubIsHub === "undefined" || !hubIsHub || typeof termTask === "undefined" || !termTask || !termTask.repo) return "";
+  walkHubBranchesLoad(termTask.repo);
+  const w = termWordAt(e);
+  return w && walkHubIsBranch(termTask.repo, w) ? w : "";
+}
+
 // A file of the patch as a drawer item, with no finding behind it.
 function walkFileItem(f, i) {
   return { kind: "file", file: f, key: "file:" + f.path, num: String(i + 1).padStart(2, "0"), sev: "nit", sevText: f.status.toUpperCase(),
@@ -506,9 +643,13 @@ const walkTenant = {
   evOpen: new Set(),   // keys whose Evidence is unfolded
   drafts: new Map(),   // key -> a reply not sent yet, so a repaint or a step away keeps it
   prId: "",            // the pulls row this card walks, "" for a bare findings folder
+  hub: null,           // { repo, branch } of a hub branch walked with no card, in walk.html
 
   reset() {
     this.prId = "";
+    this.dir = "";
+    this.mode = "";
+    this.branch = null;
     this.diff = null; this.diffNote = ""; this.cache = new Map(); this.head = new Map(); this.at = null;
     this.ctx = { key: "", above: 3, below: 3 };
   },
@@ -519,20 +660,29 @@ const walkTenant = {
     if (!task.worktree) return false;
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
     if ((res.entries || []).some(e => !e.dir && walkParseName(e.name))) return true;
-    const br = await api(`/v1/tasks/${task.id}/diff`);
-    return !!(br && br.diff) && /^claude\/(?!main$)./.test(br.branch || "");
+    // Any answer is a git folder: one with nothing changed still walks. A folder not in git is refused.
+    await api(`/v1/tasks/${task.id}/diff`);
+    return true;
   },
 
   // No findings: the branch against its base, a file at a time.
   async loadFiles(task) {
-    const br = await api(`/v1/tasks/${task.id}/diff`);
+    this.branch = null;
+    const q = new URLSearchParams();
+    if (this.dir) q.set("dir", this.dir);
+    if (this.mode && dock.open) q.set("mode", this.mode);
+    const br = this.hub ? await api(walkHubDiffPath(this.hub.repo, this.hub.branch))
+      : await api(`/v1/tasks/${task.id}/diff` + (String(q) ? "?" + q : ""));
     this.branch = br;
-    if (typeof walkPrLoad === "function") await walkPrLoad(task.id);
+    if (!this.hub && br.mode) this.mode = br.mode;
+    if (!this.hub && !br.diff) throw new Error(br.why || "nothing to walk");
+    if (this.hub) { if (typeof walkPr !== "undefined" && !walkPr.s) walkPr.s = walkPrBlank(); }
+    else if (typeof walkPrLoad === "function") await walkPrLoad(task.id);
     return { items: walkSplitDiff(br.diff).map(walkFileItem) };
   },
 
   async opened(d) {
-    if (this.prId) { this.diff = null; this.diffNote = ""; return; }
+    if (this.prId || this.hub) { this.diff = null; this.diffNote = ""; return; }
     // The diff is read when the drawer opens, and not on the poll: it is the head as reviewed, and does not move.
     this.diff = null; this.diffNote = "";
     try {
@@ -563,6 +713,7 @@ const walkTenant = {
   },
 
   async load(task, d) {
+    if (this.hub) return this.loadFiles(task);
     if (this.prId) return this.loadPr(d);
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
     const entries = (res.entries || []).filter(e => !e.dir && walkParseName(e.name))
@@ -625,6 +776,7 @@ const walkTenant = {
 
   header(d) {
     const first = d.items[0];
+    if (!first && d.error) return { title: this.branch && this.branch.branch ? `${this.branch.branch} vs ${this.branch.base}` : "nothing to walk", note: "", more: "" };
     let title = "findings";
     if (first && first.kind === "file") {
       const b = this.branch || {};
@@ -654,7 +806,7 @@ const walkTenant = {
     const n = d.items.length;
     const row = walkPrOf(d.taskId);
     if (row) return "walk PR #" + row.number;
-    if (n && d.items[0].kind === "file") return "walk branch: " + n + (n === 1 ? " file" : " files");
+    if ((n && d.items[0].kind === "file") || (!n && d.error)) return "walk";
     return "walk " + n + (n === 1 ? " finding" : " findings");
   },
 
@@ -1155,24 +1307,6 @@ async function walkPanelAsk(prId) {
   }
 }
 
-// "walk done" types the words into the walker's terminal and submits them, which is the existing brief's way to
-// end a walk. A leak that is neither posted nor dismissed asks once first: rule 5 lets clint leave a leak out of the
-// comments, and does not let the tab do it for clint.
-async function walkDone() {
-  const open = dock.items.filter(i => i.leak && i.state !== "posted" && i.state !== "dismissed").map(i => "`" + i.num + "`");
-  if (open.length) {
-    const who = open.length === 1 ? open[0] + " is a leak and is not posted"
-      : open.slice(0, -1).join(", ") + " and " + open[open.length - 1] + " are leaks and are not posted";
-    const ok = await askUser({
-      title: "finish anyway?",
-      body: esc(who).replace(/`([^`]+)`/g, "<code>$1</code>") + ", finish anyway?",
-      buttons: [{ label: "not yet", value: null }, { label: "finish anyway", value: true, style: "go" }]
-    });
-    if (!ok) return;
-  }
-  walkAsk("walk done", true);
-}
-
 // ── the thread with the review card ─────────────────────
 
 // The finding in a few words for the rail: its first bullet, else the code on the label line.
@@ -1202,7 +1336,8 @@ function walkMenu(open) {
 // The walk in a tab of its own (walk.html), on the same card and the same findings.
 function walkPopOut() {
   if (!dock.taskId) return;
-  const q = "task=" + encodeURIComponent(dock.taskId) + (walkTenant.prId ? "&pr=" + encodeURIComponent(walkTenant.prId) : "");
+  const q = "task=" + encodeURIComponent(dock.taskId) + (walkTenant.prId ? "&pr=" + encodeURIComponent(walkTenant.prId) : "") +
+    (walkTenant.dir ? "&dir=" + encodeURIComponent(walkTenant.dir) : "") + (walkTenant.mode ? "&mode=" + walkTenant.mode : "");
   window.open("/walk.html#" + q, "atrium-walk-" + dock.taskId);
 }
 
@@ -1283,8 +1418,21 @@ function walkListSpot() {
   return { lay, list };
 }
 
+// Where a branch walk's files lie, by the whole window and never the pane or the divider: a narrow window gives the
+// left rail to the files, a wide one keeps the card tiles there and the files beside the diff.
+const WALK_WIDE = 1400;
+function walkRailSpot() {
+  if (window.innerWidth >= WALK_WIDE) return null;
+  const lay = document.getElementById("term-layout");
+  const list = document.getElementById("term-list");
+  if (!lay || !list || list.parentElement !== lay) return null;
+  if (window.matchMedia("(max-width: 900px)").matches || lay.classList.contains("tl-off")) return null;
+  if (getComputedStyle(list).display === "none") return null;
+  return { lay, list };
+}
+
 // The branch walk: the files replace the card list's column and the diff lies over the top of the terminal.
-function walkB() { return dock.open && dock.items.length > 0 && dock.items[0].kind === "file"; }
+function walkB() { return dock.open && (dock.items.length ? dock.items[0].kind === "file" : dock.fileWalks.has(dock.taskId)); }
 
 function walkPlace() {
   const d = document.getElementById("walk-drawer");
@@ -1295,12 +1443,13 @@ function walkPlace() {
   d.classList.toggle("wk-b", b);
   const files = document.getElementById("walk-files");
   const rail = document.getElementById("walk-rail");
-  const railTo = b && lspot ? files : d.querySelector(".walk-body");
+  const bspot = b && !d.hidden ? walkRailSpot() : null;
+  const railTo = bspot ? files : d.querySelector(".walk-body");
   if (files && rail && rail.parentElement !== railTo) railTo.insertBefore(rail, railTo.firstChild);
   if (files) {
     files.hidden = railTo !== files;
     if (!files.hidden) {
-      const l = lspot.list;
+      const l = bspot.list;
       Object.assign(files.style, { left: l.offsetLeft + "px", top: l.offsetTop + "px",
         width: l.offsetWidth + "px", height: l.offsetHeight + "px" });
     }
@@ -1318,7 +1467,7 @@ function walkPlace() {
     Object.assign(d.style, { left: l.offsetLeft + "px", top: l.offsetTop + "px",
       width: l.offsetWidth + "px", height: l.offsetHeight + "px" });
   } else {
-    Object.assign(d.style, { left: "", top: "", height: "" });
+    Object.assign(d.style, { left: "", top: "", width: "", height: "" });
     walkApplyWidth();
   }
   if (typeof walkPrBottom === "function") walkPrBottom();

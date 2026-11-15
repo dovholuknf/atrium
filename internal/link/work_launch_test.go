@@ -103,3 +103,23 @@ func TestABareItemIdTagBecomesTheWorkTag(t *testing.T) {
 		t.Fatalf("tags = %v, want %v", got, want)
 	}
 }
+
+func TestAnItemWithAResultIsRefusedUnlessTheLaunchSaysRerun(t *testing.T) {
+	call := func(_ context.Context, _, _ string, _, out any) error {
+		*out.(*hubstore.BacklogItem) = hubstore.BacklogItem{ID: "f-thing", Result: "done abc1234: it works",
+			ResultCard: "sg4~c1", ResultAt: "2026-11-14T19:00:00Z"}
+		return nil
+	}
+	_, _, err := ResolveItem(context.Background(), call, "f-thing", "", "me", "r")
+	if err == nil || !strings.Contains(err.Error(), "done abc1234: it works") || !strings.Contains(err.Error(), "rerun:f-thing") {
+		t.Fatalf("err = %v", err)
+	}
+	if id, _, err := ResolveItem(context.Background(), call, "rerun:f-thing", "", "me", "r"); err != nil || id != "f-thing" {
+		t.Fatalf("rerun: %q %v", id, err)
+	}
+	for _, bad := range []string{"rerun:", "rerun:new:a title", "rerun:Not An Id"} {
+		if s, err := ParseItemSpec(bad); err == nil || s.Rerun {
+			t.Errorf("%q: %+v %v", bad, s, err)
+		}
+	}
+}

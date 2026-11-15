@@ -2,7 +2,6 @@ package publish
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -12,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -210,15 +208,24 @@ func BackTo(v string) string {
 	return v
 }
 
-// authOutCookie marks a browser that signed out of a password login.
-const AuthOutCookie = "atrium_signed_out"
-
-// outMark is what the sign-out cookie holds: a MAC of the Authorization header
-// the browser signed out with.
-func OutMark(key []byte, header string) string {
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte("signed-out|" + header))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+// RedirectFor is where the provider sends a browser back to: the configured address, or the one this request came in
+// on, so each exposure's own callback is used.
+func RedirectFor(cfg AuthConfig, r *http.Request) string {
+	if u := strings.TrimSpace(cfg.Redirect); u != "" {
+		return u
+	}
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		proto = "http"
+		if r.TLS != nil {
+			proto = "https"
+		}
+	}
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	return proto + "://" + host + AuthPrefix + "callback"
 }
 
 // authGuard wraps a handler so it asks who you are.
@@ -229,11 +236,16 @@ func OutMark(key []byte, header string) string {
 //
 // Unconfigured is a pass-through, so turning sharing on before setting a
 // provider up leaves the board exactly as it was rather than locking it.
-func (d *Service) AuthGuard(next http.Handler) http.Handler {
+func (d *Guard) AuthGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := d.AuthConfig()
 		if !cfg.Enabled {
 			next.ServeHTTP(w, r)
+			return
+		}
+		// A stored sign-in that can no longer work, such as an old password-only one, refuses rather than opens.
+		if err := cfg.Ready(); err != nil {
+			http.Error(w, "this board's sign-in is not set up: "+err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, AuthPrefix) {
@@ -249,75 +261,6 @@ func (d *Service) AuthGuard(next http.Handler) http.Handler {
 			// RE-CHECKED, not just verified. See sessionStillGood.
 			if s, ok := ReadSession(key, c.Value); ok && d.SessionStillGood(cfg, s) {
 				next.ServeHTTP(w, r)
-				return
-			}
-		}
-		// A BROWSER THAT SIGNED OUT STILL HOLDS ITS BASIC CREDENTIALS AND SENDS
-		// THEM STRAIGHT BACK. Logout leaves a mark tied to the header it was sent
-		// with. The first request that presents that same header is answered with
-		// a fresh challenge instead of being let in, and the mark is cleared, so
-		// typing the password again works.
-		if cfg.Basic {
-			if out, err := r.Cookie(AuthOutCookie); err == nil && r.Header.Get("Authorization") != "" {
-				if hmac.Equal([]byte(out.Value), []byte(OutMark(key, r.Header.Get("Authorization")))) {
-					http.SetCookie(w, &http.Cookie{
-						Name: AuthOutCookie, Value: "", Path: "/", MaxAge: -1,
-						HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-					})
-					w.Header().Set("WWW-Authenticate", `Basic realm="atrium", charset="UTF-8"`)
-					http.Error(w, "signed out", http.StatusUnauthorized)
-					return
-				}
-			}
-		}
-		// A NAME AND A PASSWORD, CHECKED BEFORE THE PROVIDER.
-		//
-		// Ahead of the redirect so a board with both configured still opens
-		// when the provider is unreachable, and so an api client can present
-		// credentials rather than being told to visit a login page.
-		//
-		// A wrong password FALLS THROUGH rather than refusing. Adding a
-		// password to a board that already had a provider must not lock its
-		// users out, and somebody with a valid provider session is not made to
-		// know a password as well.
-		if cfg.Basic {
-			if user, pass, ok := r.BasicAuth(); ok {
-				src := AuthSource(r)
-				// BEFORE ANY SCRYPT. A source that has been guessing wrong is made
-				// to wait, and a refused request costs nothing.
-				if wait := d.AuthLim.Blocked(src); wait > 0 {
-					w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
-					http.Error(w, "too many wrong passwords. wait and try again",
-						http.StatusTooManyRequests)
-					return
-				}
-				// AND THE CHECKS THEMSELVES ARE BOUNDED, since each holds about
-				// 32 MiB while it runs.
-				if !d.AuthLim.Acquire() {
-					w.Header().Set("Retry-After", "1")
-					http.Error(w, "this board is busy checking passwords. try again",
-						http.StatusServiceUnavailable)
-					return
-				}
-				good := cfg.Checks(user, pass)
-				d.AuthLim.Release()
-				if good {
-					d.AuthLim.Succeed(src)
-					// A session cookie, so the browser is not asked again on every
-					// image and poll, and so signing out means the same thing
-					// whichever way somebody got in.
-					d.SetSession(w, key, "basic:"+cfg.User, "")
-					next.ServeHTTP(w, r)
-					return
-				}
-				d.AuthLim.Fail(src)
-			}
-			// NOTHING ELSE CONFIGURED MEANS ASK FOR IT. With a provider as
-			// well, the redirect below is the better prompt and this stays out
-			// of its way.
-			if strings.TrimSpace(cfg.Issuer) == "" {
-				w.Header().Set("WWW-Authenticate", `Basic realm="atrium", charset="UTF-8"`)
-				http.Error(w, "this board asks who you are", http.StatusUnauthorized)
 				return
 			}
 		}
@@ -339,7 +282,7 @@ func (d *Service) AuthGuard(next http.Handler) http.Handler {
 }
 
 // serveAuth handles the endpoints under the prefix.
-func (d *Service) ServeAuth(w http.ResponseWriter, r *http.Request, cfg AuthConfig) {
+func (d *Guard) ServeAuth(w http.ResponseWriter, r *http.Request, cfg AuthConfig) {
 	switch strings.TrimPrefix(r.URL.Path, AuthPrefix) {
 	case "login":
 		d.AuthStart(w, r, cfg, false)
@@ -358,17 +301,6 @@ func (d *Service) ServeAuth(w http.ResponseWriter, r *http.Request, cfg AuthConf
 			Name: AuthCookie, Value: "", Path: "/", MaxAge: -1,
 			HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 		})
-		// With a password login the browser would sign straight back in with
-		// the credentials it cached. Mark that header as signed out.
-		if h := r.Header.Get("Authorization"); cfg.Basic && h != "" {
-			if key, err := d.CookieKey(); err == nil {
-				http.SetCookie(w, &http.Cookie{
-					Name: AuthOutCookie, Value: OutMark(key, h), Path: "/",
-					MaxAge: int(AuthStateFor.Seconds()) * 12, HttpOnly: true,
-					Secure: true, SameSite: http.SameSiteLaxMode,
-				})
-			}
-		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
 		http.NotFound(w, r)
@@ -379,7 +311,7 @@ func (d *Service) ServeAuth(w http.ResponseWriter, r *http.Request, cfg AuthConf
 //
 // ONE FUNCTION FOR BOTH, because the two requests differ by a single parameter
 // and a second copy is how the renewal path ends up without PKCE on it.
-func (d *Service) AuthStart(w http.ResponseWriter, r *http.Request, cfg AuthConfig, silent bool) {
+func (d *Guard) AuthStart(w http.ResponseWriter, r *http.Request, cfg AuthConfig, silent bool) {
 	disc, err := d.Discovered.DiscoverFor(r.Context(), cfg.Issuer)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -392,7 +324,7 @@ func (d *Service) AuthStart(w http.ResponseWriter, r *http.Request, cfg AuthConf
 	}
 	q := url.Values{}
 	q.Set("client_id", cfg.ClientID)
-	q.Set("redirect_uri", cfg.Redirect)
+	q.Set("redirect_uri", RedirectFor(cfg, r))
 	q.Set("response_type", "code")
 	q.Set("scope", "openid email profile")
 	q.Set("state", state)
@@ -407,7 +339,7 @@ func (d *Service) AuthStart(w http.ResponseWriter, r *http.Request, cfg AuthConf
 	http.Redirect(w, r, disc.AuthURL+"?"+q.Encode(), http.StatusFound)
 }
 
-func (d *Service) AuthCallback(w http.ResponseWriter, r *http.Request, cfg AuthConfig) {
+func (d *Guard) AuthCallback(w http.ResponseWriter, r *http.Request, cfg AuthConfig) {
 	// THE STATE IS CONSUMED FIRST, before the provider's error is looked at,
 	// because the state is what says whether this was a silent renewal. Read
 	// the other way round, a renewal the provider declined becomes an error
@@ -446,7 +378,7 @@ func (d *Service) AuthCallback(w http.ResponseWriter, r *http.Request, cfg AuthC
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
-	form.Set("redirect_uri", cfg.Redirect)
+	form.Set("redirect_uri", RedirectFor(cfg, r))
 	form.Set("client_id", cfg.ClientID)
 	// The verifier, which never left this process until now. A stolen code is
 	// not spendable without it, and this board is the only holder.
@@ -522,7 +454,7 @@ func (d *Service) AuthCallback(w http.ResponseWriter, r *http.Request, cfg AuthC
 // VERIFIED, not decoded. An id token that is merely parsed is a claim anybody
 // can write: the signature is the entire reason to believe it, and skipping it
 // turns a login into a form where you type your own subject.
-func (d *Service) ClaimsOf(ctx context.Context, disc *Discovery, cfg AuthConfig, raw string) (
+func (d *Guard) ClaimsOf(ctx context.Context, disc *Discovery, cfg AuthConfig, raw string) (
 	subject, email string, err error) {
 
 	if disc.JWKSURL == "" {

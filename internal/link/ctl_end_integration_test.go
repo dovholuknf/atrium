@@ -112,3 +112,29 @@ func TestDoneTakesAnOptionalLineAndRefusesOver20Words(t *testing.T) {
 		t.Fatalf("err = %v, recorded %d, want a refusal and nothing recorded", err, len(*got))
 	}
 }
+
+func TestDoneCarriesSkippedAndUnverifiedAndCapsEach(t *testing.T) {
+	d, got := fakeEnd()
+	in := doneInput{SHA: "abc1234", Skipped: " the retry\npath ", Unverified: "windows: run the suite"}
+	if _, _, err := d.Done(context.Background(), nil, in); err != nil {
+		t.Fatal(err)
+	}
+	if b := (*got)[0]; b["skipped"] != "the retry path" || b["unverified"] != "windows: run the suite" {
+		t.Fatalf("body = %v", b)
+	}
+	long := strings.Repeat("x", 1001)
+	for name, in := range map[string]doneInput{
+		"skipped":    {SHA: "abc1234", Skipped: long},
+		"unverified": {SHA: "abc1234", Unverified: long},
+	} {
+		d, got := fakeEnd()
+		if _, _, err := d.Done(context.Background(), nil, in); err == nil || !strings.Contains(err.Error(), name) || len(*got) != 0 {
+			t.Fatalf("%s: err = %v, recorded %d, want a refusal and nothing recorded", name, err, len(*got))
+		}
+	}
+	for _, desc := range []string{doneToolDesc, itemDoneToolDesc} {
+		if !strings.Contains(desc, "`skipped`") || !strings.Contains(desc, "`unverified`") {
+			t.Fatalf("the description does not tell a worker to fill them: %s", desc)
+		}
+	}
+}

@@ -243,6 +243,7 @@ type Daemon struct {
 
 	// sweepStash stands in for StashTo in the folder sweep when set. See endedfolders.go.
 	sweepStash func(ctx context.Context, card, dir, branch string) (string, string, error)
+	disk       diskWatch
 
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
@@ -494,6 +495,8 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling
 	d.ap.LoginNeeded = d.loginHealth
+	d.ap.DiskWatch = d.DiskState
+	d.ap.DiskFree = d.DiskFree
 	d.ap.ToolchainMissing = d.toolchainHealth
 	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.LoginStatus = d.handleLoginStatus
@@ -570,6 +573,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		return d.SetupOverlay(kind, req)
 	}
 	d.ap.TeardownOverlay = d.TeardownOverlay
+	d.ap.AccessZitiDir = d.ZitiIdentityDir
 	d.ap.InspectToken = d.InspectToken
 	d.ap.ReserveName = d.ReserveZrokName
 	d.ap.Capabilities = func() any { return d.ZitiCapabilities() }
@@ -583,84 +587,8 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.StopDocShare = d.StopDocShare
 	d.ap.StopDocShareFor = d.StopDocShareFor
 	d.ap.DocShares = d.DocShares
-	// The secret is NEVER sent back, only whether there is one. This board is
-	// itself something people open and screenshot.
-	d.ap.AuthConfig = func() any {
-		c := d.AuthConfig()
-		return map[string]any{
-			"enabled": c.Enabled, "issuer": c.Issuer, "client_id": c.ClientID,
-			"redirect": c.Redirect, "allow": c.Allow,
-			"has_client_secret": strings.TrimSpace(c.ClientSecret) != "",
-			// The name is shown, the password never is: only whether one is
-			// set, which is the difference between drawing "set a password"
-			// and "change it". The hash and its salt do not leave the daemon
-			// either, since a hash somebody has is a hash somebody can attack
-			// offline.
-			"basic": c.Basic, "user": c.User, "has_password": c.HasPassword(),
-		}
-	}
-	d.ap.SaveAuth = func(body []byte) error {
-		// The stored secret is carried over when the form sends none, so
-		// saving any other field does not silently blank it. A form that has
-		// never been shown the secret cannot send it back.
-		next := d.AuthConfig()
-		var in struct {
-			Enabled      *bool    `json:"enabled"`
-			Issuer       *string  `json:"issuer"`
-			ClientID     *string  `json:"client_id"`
-			ClientSecret *string  `json:"client_secret"`
-			Redirect     *string  `json:"redirect"`
-			Allow        []string `json:"allow"`
-			Basic        *bool    `json:"basic"`
-			User         *string  `json:"user"`
-			// The password ARRIVES IN PLAIN and is never stored that way. It
-			// is hashed below and this field is the only place it exists in
-			// this process. `GET /v1/auth` answers whether one is set and
-			// never what it is, so the form cannot send back what it was
-			// shown, which is what the empty-means-leave-it rule below is for.
-			Password *string `json:"password"`
-		}
-		if err := json.Unmarshal(body, &in); err != nil {
-			return err
-		}
-		if in.Enabled != nil {
-			next.Enabled = *in.Enabled
-		}
-		if in.Issuer != nil {
-			next.Issuer = *in.Issuer
-		}
-		if in.ClientID != nil {
-			next.ClientID = *in.ClientID
-		}
-		if in.Redirect != nil {
-			next.Redirect = *in.Redirect
-		}
-		if in.Allow != nil {
-			next.Allow = in.Allow
-		}
-		// Empty means "leave it alone". Clearing one means sending a single
-		// space, which is odd and is the safer way round: the alternative
-		// blanks a working secret every time somebody edits the allow list.
-		if in.ClientSecret != nil && strings.TrimSpace(*in.ClientSecret) != "" {
-			next.ClientSecret = strings.TrimSpace(*in.ClientSecret)
-		}
-		if in.Basic != nil {
-			next.Basic = *in.Basic
-		}
-		if in.User != nil {
-			next.User = strings.TrimSpace(*in.User)
-		}
-		// Same rule as the client secret, and the same reason: a form that was
-		// never shown the password cannot send it back, so an empty one means
-		// leave it rather than clear it. Otherwise editing the name would blank
-		// the password every time.
-		if in.Password != nil && strings.TrimSpace(*in.Password) != "" {
-			if err := publish.SetBasicPassword(&next, *in.Password); err != nil {
-				return err
-			}
-		}
-		return d.SaveAuth(next)
-	}
+	d.ap.AuthConfig = func() any { return d.AuthView() }
+	d.ap.SaveAuth = d.SaveAuthBody
 	d.ap.Rooms = d.Rooms
 	d.ap.RoomCheckIn = d.HandleRoomCheckIn
 	d.ap.RoomDecide = d.HandleRoomDecide
@@ -729,6 +657,12 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
 	d.ctx.replies = &d.replies
+	d.ctx.heard = func(id string) (int64, time.Time) {
+		if tel := d.act.telemetry(id); tel != nil {
+			return int64(tel.Used), tel.Since
+		}
+		return 0, time.Time{}
+	}
 	d.Ka.Holding = d.Nctx.Holding
 	d.Ka.DeployHeld = d.DeployHeld
 	d.Ka.Cold = d.ColdHandoff
@@ -1179,6 +1113,7 @@ func (d *Daemon) BoardHandler() http.Handler { return d.boardWithHand() }
 
 func (d *Daemon) Run(ctx context.Context) error {
 	go d.probeAutocompact()
+	discoverTools()
 	d.resumePRReviews()
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/permission", d.handedOn("/permission", d.handlePermission))
@@ -1298,6 +1233,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if !d.opts.Passive {
 		d.reattached = make(chan struct{})
 		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
+		go d.diskWatcher(ctx, DiskWatchStart, DiskWatchEvery)
 	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.

@@ -65,6 +65,8 @@ type Room struct {
 	IdleCPU func() (float64, bool)
 	// Login says why this room's claude login needs doing, "" when it does not. Nil says nothing.
 	Login func() string
+	// Disk says the room's disk notice, "" while every drive is fine. Nil says nothing.
+	Disk func() string
 	// OnPaths is handed the hub's list of transports, in its order, each time a
 	// welcome carries one, in order, on its own goroutine. It is how the room writes the
 	// fallback down for a start when the hub cannot be reached. Nil ignores it.
@@ -516,6 +518,10 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 			if r.Login != nil {
 				v := r.Login()
 				n.Login = &v
+			}
+			if r.Disk != nil {
+				v := r.Disk()
+				n.Disk = &v
 			}
 			n.PathStates = r.pathsNow()
 			if err := r.say(conn, n); err != nil {

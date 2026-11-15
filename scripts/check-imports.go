@@ -28,6 +28,7 @@ type row struct {
 // Layer is one above the highest layer a package imports, so a new edge to the same layer or above is a cycle risk.
 var table = []row{
 	{0, "cmd/ptyhost-spike", nil},
+	{0, "internal/zitijoin", nil},
 	{0, "docs/runtime/contract", nil},
 	{0, "internal/base/address", nil},
 	{0, "internal/base/cardcolors", nil},
@@ -109,6 +110,7 @@ var table = []row{
 		"internal/base/mcprule", "internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/runnersetup",
 		"internal/base/rules", "internal/base/safepath", "internal/base/scratch", "internal/base/shellpick", "internal/store",
 		"internal/base/testguard", "internal/base/webasset", "internal/wtfree",
+		"internal/zitijoin",
 	}},
 	{4, "internal/link/deploy", []string{
 		"internal/base/address", "internal/base/edge", "internal/base/nowindow", "internal/deployready", "internal/gitsync", "internal/link/ctl",
@@ -145,6 +147,7 @@ var table = []row{
 	{5, "internal/daemon/publish", []string{
 		"internal/api", "internal/base/docshare", "internal/base/edge", "internal/base/nowindow", "internal/base/safepath",
 		"internal/store", "internal/zitictx",
+		"internal/link/transport",
 	}},
 	{5, "internal/daemon/roomconf", []string{
 		"internal/api", "internal/base/rules", "internal/daemon/publish", "internal/small", "internal/store",
@@ -177,6 +180,7 @@ var table = []row{
 		"internal/base/nowindow", "internal/ptyhost", "internal/base/remoteaccess", "internal/base/requirements", "internal/base/resources", "internal/roomspec",
 		"internal/roomstats", "internal/shepherd", "internal/base/sshcfg", "internal/base/sshtarget", "internal/sshwizard",
 		"internal/store", "internal/base/testguard", "internal/zitictx",
+		"internal/daemon/publish", "internal/zitijoin",
 	}},
 	{7, "cmd/atrium", []string{"internal/cli"}},
 }

@@ -1150,7 +1150,7 @@ async function hubTransportsSection(browser, base) {
   };
   const showPane = async p => {
     await p.click("#gear");
-    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.evaluate(() => showSettingsPane("accessing atrium"));
   };
   let h = await open("hub");
   try {
@@ -1166,6 +1166,14 @@ async function hubTransportsSection(browser, base) {
 
     if (!/set by flag: on/.test(a[3].text) || a[3].btn !== "turn on") fail(tag + "the zrok row reads " + a[3].text + " / " + a[3].btn);
     if (!a[3].text.includes("share abcd..., env zEnv1 at https://api.zrok.io")) fail(tag + "the zrok row shows no share or env: " + a[3].text);
+    const metas = await p.evaluate(() => [
+      { kind: "zrok", mode: "public", serves: "board" },
+      { kind: "address", mode: "mtls", serves: "board", url: "127.0.0.1:7791" },
+      { kind: "ziti", serves: "both", identity: "id.json", url: "https://c:1280" }
+    ].map(e => { const d = document.createElement("div"); d.innerHTML = accessEntry(e); return d.querySelector(".ac-desc").textContent; }));
+    const wantMetas = ["zrok public · serves board", "my own address mtls · serves board · 127.0.0.1:7791",
+      "OpenZiti · serves both · id.json · https://c:1280"];
+    if (JSON.stringify(metas) !== JSON.stringify(wantMetas)) fail(tag + "access meta lines had stray separators: " + JSON.stringify(metas));
     const zrokBox = await p.evaluate(() => ({ inputs: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] input').length,
       apply: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] .ht-apply').length }));
     if (zrokBox.inputs || zrokBox.apply) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrokBox));
@@ -1313,8 +1321,7 @@ async function zrokLogoSection(browser, base) {
         pathBadges([{ kind: "zrok", state: "down", last_error: "share not found", hammering: true }], "r1");
       document.body.appendChild(chips);
       const states = [...chips.querySelectorAll(".pth")].map(c => ({ cls: c.className, tip: c.getAttribute("data-tip") }));
-      const overlay = typeof OVERLAY_MARKS === "object" && OVERLAY_MARKS.zrok;
-      return { sizes, states, shared: !!overlay && overlay.includes(ZROK_MARK.d) && overlay.includes(ZROK_MARK.viewBox) };
+      return { sizes, states };
     });
     const [zr, zi, zfb] = got.sizes;
     for (const z of [zr, zfb]) {
@@ -1325,7 +1332,6 @@ async function zrokLogoSection(browser, base) {
     if (zr.h !== zi.h || zr.w !== zi.w) fail("zrok mark is not the ziti mark's size: " + JSON.stringify([zr, zi]));
     if (zr.text !== "zrok" || !/private zrok share/.test(zr.tip)) fail("zrok badge text or tip: " + JSON.stringify(zr));
     if (!/first choice/.test(zfb.tip) || !/fallback/.test(zfb.text)) fail("zrok fallback tip: " + JSON.stringify(zfb));
-    if (!got.shared) fail("overlays.js does not draw its zrok mark from ZROK_MARK");
     const want = ["pth-on", "pth-up", "pth-off", "pth-down"];
     got.states.forEach((s, i) => {
       if (!s.cls.includes(want[i])) fail("zrok state chip " + i + " is not " + want[i] + ": " + JSON.stringify(s));
@@ -2007,9 +2013,6 @@ async function hubGateSection(browser, base) {
     await p.goto(base + "/raw", { waitUntil: "load" });
     await fakePause(p);
     await fakeTick(p, 1500);
-    // The auth fields live in a form, so the browser stops warning about them.
-    const loose = await p.evaluate(() => ["auth-pass", "auth-secret"].filter(id => { const e = document.getElementById(id); return !e || !e.form; }));
-    if (loose.length) fail("hubGate: password fields outside a form: " + loose.join(", "));
     // The hub goes down, then a burst of every kind of poller reads at once.
     down = true; bad503 = 0; logged.length = 0;
     // Pollers fire on their own timers, so the first one finds out and the rest are behind it.

@@ -633,6 +633,8 @@ const atriumLinkWaitMs = 600;
 // Routes a board link in place. True when it was taken (or is being), false for anything the caller should open
 // as an ordinary link.
 function openAtriumLink(url) {
+  const wl = typeof walkLinkOf === "function" ? walkLinkOf(url) : null;
+  if (wl) { walkLinkOpen(wl.id, wl.dir); return true; }
   const r = atriumLinkRoute(url);
   if (!r) return false;
   if (termOnly()) {

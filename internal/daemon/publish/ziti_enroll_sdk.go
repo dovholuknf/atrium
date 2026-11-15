@@ -12,12 +12,8 @@ import (
 // EnrollWithSDK enrolls a one-time-token JWT in this process, with the ziti SDK
 // atrium already embeds, and writes the identity to outPath.
 //
-// THE FALLBACK FOR A MACHINE WITH NO ziti CLI, which is most machines a room is
-// provisioned onto. The CLI stays first when it is there, because it is what
-// the board's enroll has always run and what an operator can run by hand to
-// check. This does the same enrolment the CLI's `ziti edge enroll` does: a new
-// EC key made here, a certificate from the controller, and a config file that
-// holds both. The key never leaves this machine.
+// A new EC key is made here, a certificate comes from the controller, and the config file holds both. The key never
+// leaves this machine.
 func EnrollWithSDK(token, outPath string) error {
 	claims, tok, err := enroll.ParseToken(token)
 	if err != nil {

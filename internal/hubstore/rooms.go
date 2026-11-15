@@ -29,6 +29,9 @@ const (
 	// MARKING IS REVERSIBLE, which is what makes it safe to press. Nothing
 	// about it destroys anything.
 	StateMarked = "marked-for-deletion"
+	// StatePending is a room that reached the hub over an overlay and asked for a name. It attaches to nothing
+	// until the operator approves it.
+	StatePending = "pending"
 )
 
 // Transports a room may reach a hub over. The hub decides which are on offer;
@@ -141,6 +144,50 @@ func (s *Store) Add(name, transport string) (*Room, error) {
 	}
 	s.Log(r, "added", "named by the hub, reachable over "+transport)
 	return r, nil
+}
+
+// AddPending is a room that reached the hub and is waiting for the operator. Asking again for a name that is already
+// pending answers that row, so a room that redials is one entry on the board.
+func (s *Store) AddPending(name, transport string) (*Room, error) {
+	if r, err := s.ByName(name); err == nil {
+		if r.State == StatePending {
+			return r, nil
+		}
+		return nil, refuse(fmt.Errorf("there is already a room called %q on this hub", name))
+	}
+	r, err := s.Add(name, transport)
+	if err != nil {
+		return nil, err
+	}
+	err = s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE room SET pending = 1 WHERE id = ?`, r.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.State = StatePending
+	s.Log(r, "pending", "reached the hub and is waiting for approval")
+	return r, nil
+}
+
+// Approve lets a pending room in. Approving a room that is not pending changes nothing.
+func (s *Store) Approve(name string) error {
+	r, err := s.ByName(name)
+	if err != nil {
+		return err
+	}
+	if r.State != StatePending {
+		return nil
+	}
+	err = s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE room SET pending = 0 WHERE id = ?`, r.ID)
+		return err
+	})
+	if err == nil {
+		s.Log(r, "approved", "the operator let the room in")
+	}
+	return err
 }
 
 // DropDefunctLocalRooms removes rows left by the old "the hub can be its own
@@ -282,7 +329,7 @@ func (s *Store) Enrolled(name string) (bool, error) {
 }
 
 const roomCols = `SELECT id, name, self_name, transport, state, created_at,
-	first_seen_at, last_seen_at, version, cleared_at`
+	first_seen_at, last_seen_at, version, cleared_at, pending`
 
 func (s *Store) one(where string, args ...any) (*Room, error) {
 	var r *Room
@@ -306,9 +353,13 @@ type scanner interface{ Scan(...any) error }
 func scanRoom(sc scanner) (*Room, error) {
 	var r Room
 	var created, first, last, cleared string
+	var pending int
 	if err := sc.Scan(&r.ID, &r.Name, &r.SelfName, &r.Transport, &r.State,
-		&created, &first, &last, &r.Version, &cleared); err != nil {
+		&created, &first, &last, &r.Version, &cleared, &pending); err != nil {
 		return nil, err
+	}
+	if pending == 1 {
+		r.State = StatePending
 	}
 	if t, err := time.Parse(TimeFormat, created); err == nil {
 		r.CreatedAt = t

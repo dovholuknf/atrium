@@ -1,5 +1,6 @@
 // The walk in a tab of its own (walk.html). The drawer's code (js/walk.js) does all of the walking: this file is the
-// few board helpers it calls, and the boot. The address is `#task=<card>` and, for a pulls row, `&pr=<id>`.
+// few board helpers it calls, and the boot. The address is `#task=<card>` and, for a pulls row, `&pr=<id>`, or
+// `#repo=<host/owner/repo>&branch=<name>` for a hub branch against its main, with no card.
 
 let termTask = null;
 
@@ -68,6 +69,7 @@ addEventListener("DOMContentLoaded", async () => {
   const q = new URLSearchParams(location.hash.slice(1));
   const id = q.get("task") || "";
   const drawer = document.getElementById("walk-drawer");
+  if (!id && q.get("repo") && q.get("branch")) { walkViewHub(q.get("repo"), q.get("branch")); return; }
   if (!id) { setHTML(document.getElementById("walk-item"), `<div class="empty">no card in the address</div>`); return; }
   let task = { id, worktree: "" };
   try { task = Object.assign(task, await api(`/v1/tasks/${encodeURIComponent(id)}`)); } catch (e) {}
@@ -77,6 +79,8 @@ addEventListener("DOMContentLoaded", async () => {
   dock.tenant = walkTenant;
   dock.taskId = id;
   walkTenant.prId = q.get("pr") || "";
+  walkTenant.dir = q.get("dir") || "";
+  walkTenant.mode = q.get("mode") || "";
   dock.open = true;
   drawer.hidden = false;
   await walkTenant.opened(dock);
@@ -85,3 +89,19 @@ addEventListener("DOMContentLoaded", async () => {
   drawer.focus({ preventScroll: true });
   setInterval(() => dockResync(), WALK_VIEW_EVERY_MS);
 });
+
+// A hub branch is read once: it moves only when somebody pushes, and a reload reads it again.
+async function walkViewHub(repo, branch) {
+  const drawer = document.getElementById("walk-drawer");
+  termTask = { id: "", worktree: "" };
+  const back = document.getElementById("wv-board");
+  if (back) back.href = "/";
+  dock.tenant = walkTenant;
+  walkTenant.hub = { repo, branch };
+  dock.open = true;
+  drawer.hidden = false;
+  await walkTenant.opened(dock);
+  await dockLoad();
+  document.title = "walk · " + branch;
+  drawer.focus({ preventScroll: true });
+}

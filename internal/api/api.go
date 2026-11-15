@@ -135,7 +135,11 @@ type Server struct {
 	Settling func() bool
 	// LoginNeeded is the room's claude login flag for `/v1/health`: nil when fine. LoginHandler is
 	// `/v1/login-needed`, where DELETE lifts it. See internal/daemon/loginneeded.go.
-	LoginNeeded  func() map[string]any
+	LoginNeeded func() map[string]any
+	// DiskWatch is the room's last disk check, for GET /v1/room/disk. See daemon/diskwatch.go.
+	DiskWatch func() any
+	// DiskFree reclaims what atrium owns now and answers what it freed.
+	DiskFree     func() any
 	LoginHandler http.HandlerFunc
 	LoginStatus  http.HandlerFunc
 	// ToolchainMissing is the tools a worker launched here lacked, for `/v1/health`: nil when fine.
@@ -385,6 +389,8 @@ type Server struct {
 	// able to share at all: a zrok environment, or a ziti identity. Returns
 	// what the tool said, on failure as well as success.
 	SetupOverlay func(kind string, body []byte) (string, error)
+	// AccessZitiDir is where an OpenZiti entry's identity is kept, one file per entry.
+	AccessZitiDir func() string
 	// TeardownOverlay undoes that.
 	TeardownOverlay func(kind string) (string, error)
 	// InspectToken reads an enrollment token without acting on it, so the
@@ -547,6 +553,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/usage", s.postBoardUsage)
 	mux.HandleFunc("GET /v1/usage/board", s.getBoardUsage)
 	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
+	mux.HandleFunc("GET /v1/room/disk", s.roomDisk)
+	if s.DiskFree != nil {
+		mux.HandleFunc("POST /v1/room/disk/free", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.DiskFree()) })
+	}
 	mux.HandleFunc("POST /v1/room/procs/kill", s.roomKill)
 	mux.HandleFunc("GET /v1/settings", s.getSettings)
 	mux.HandleFunc("POST /v1/settings", s.setSettings)
@@ -566,6 +576,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/overlays/{kind}/setup", s.setupOverlay)
 	mux.HandleFunc("POST /v1/overlays/{kind}/teardown", s.teardownOverlay)
 	mux.HandleFunc("POST /v1/overlays/inspect-token", s.inspectToken)
+	mux.HandleFunc("POST /v1/access/ziti/{way}", s.accessZiti)
 	if s.Rooms != nil {
 		mux.HandleFunc("GET /v1/rooms", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, s.Rooms())
@@ -667,6 +678,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/asks", s.listAsks)
 	mux.HandleFunc("POST /v1/tasks/{id}/seen", s.markSeen)
 	mux.HandleFunc("POST /v1/tasks/{id}/questions/dismiss", s.dismissQuestions)
+	mux.HandleFunc("POST /v1/tasks/{id}/skipped-filed", s.skippedFiled)
 	if s.DismissAsks != nil {
 		mux.HandleFunc("DELETE /v1/tasks/{id}/asks", s.DismissAsks)
 	}
@@ -1099,6 +1111,14 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) roomDisk(w http.ResponseWriter, r *http.Request) {
+	if s.DiskWatch == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"level": "ok", "drives": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.DiskWatch())
 }
 
 // roomStats is the first paint of the rooms dashboard: exactly the last
@@ -1704,6 +1724,33 @@ func (s *Server) dismissQuestions(w http.ResponseWriter, r *http.Request) {
 		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"dismissed": dismissed, "stale": stale})
+}
+
+// skippedFiled is the board saying it filed the card's skipped note to the backlog, and under which id.
+func (s *Server) skippedFiled(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Item string `json:"item"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body); err != nil || strings.TrimSpace(body.Item) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "item is required"})
+		return
+	}
+	t, err := s.st.Get(r.PathValue("id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, NotOnRoom(r.PathValue("id"), s.Room))
+		return
+	}
+	if err == nil {
+		err = s.st.SetSkippedFiled(t.ID, strings.TrimSpace(body.Item))
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if t, err = s.st.Get(t.ID); err == nil {
+		s.PublishTask(t)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"item": strings.TrimSpace(body.Item)})
 }
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {

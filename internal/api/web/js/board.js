@@ -297,6 +297,14 @@ function morphAttrs(mine, want) {
   const wanted = want.attributes;
   for (let i = 0; i < wanted.length; i++) {
     const a = wanted[i];
+    // dk and noroom are put on a row by the page after it is drawn, so a redraw keeps them rather than strip and re-add them
+    if (a.name === "class") {
+      const has = e => (e.getAttribute("class") || "").split(/\s+/), mineC = has(mine), wantC = has(want);
+      const keep = ["dk", "noroom"].filter(t => mineC.includes(t) && !wantC.includes(t));
+      const v = keep.length ? (a.value + " " + keep.join(" ")).trim() : a.value;
+      if (mine.getAttribute("class") !== v) { mine.setAttribute("class", v); changed = true; }
+      continue;
+    }
     if (mine.getAttribute(a.name) === a.value) continue;
     mine.setAttribute(a.name, a.value);
     changed = true;
@@ -907,6 +915,10 @@ function cardHTML(t, wearAs) {
         data-tip="${esc("this session reported done at " + (t.report_sha || "") +
           ", and that commit is not in its worktree. it may have landed somewhere else.")}"
         >sha unverified</span>` : ""}
+      ${t.report_dirty ? `<span class="chip warn"
+        data-tip="${esc("this session reported done with changes in its worktree not committed or not tracked. " +
+          "only what it committed will land.")}"
+        >done, ${t.report_dirty} file${t.report_dirty === 1 ? "" : "s"} not committed</span>` : ""}
       ${t.restart_wake ? `<span class="chip"
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}

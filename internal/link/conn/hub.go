@@ -59,6 +59,9 @@ type Hub struct {
 	// certificate. It is how the operator learns who must re-join before the old
 	// path is switched off. Nil on a hub that records nothing.
 	OnUnproven func(name, transport string)
+	// OnOverlayRoom is told before Attaching that a room reached the hub over an overlay without a certificate, so a
+	// hub that does not know it can park it for approval. Nil on a hub that parks nothing.
+	OnOverlayRoom func(name, transport string)
 	// Enrolled says whether a room by this name has ever proved itself with a
 	// certificate. A connection on the old path under such a name is refused,
 	// attached or not: the name is proven, and a peer the overlay merely admits
@@ -265,6 +268,8 @@ type attached struct {
 	streams int
 	// login is why the room last said its claude login needs doing, "" when fine. Under mu.
 	login string
+	// disk is the room's last disk notice, "" when fine. Under mu.
+	disk string
 	// paths is what the room last said about each rung, on its beat. Under mu. Nil from a room that never says.
 	paths []PathState
 
@@ -461,6 +466,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// ASKED BEFORE ANYTHING IS ADOPTED, so a room the hub has no record of is
 	// turned away rather than half joined. Refusing later would mean it is in
 	// the map, being proxied to, while the hub says it does not exist.
+	if over := unprovenOver(conn); over != "" && h.OnOverlayRoom != nil {
+		h.OnOverlayRoom(name, over)
+	}
 	if h.Attaching != nil {
 		if err := h.Attaching(name, hi.Host, hi.Version); err != nil {
 			log.Printf("[hub] refused %q: %v", name, err)
@@ -598,6 +606,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 			a.lastBeat = time.Now()
 			if n.IdleCPU != nil && *n.IdleCPU >= 0 && *n.IdleCPU <= 100 {
 				a.idleCPU, a.haveIdle = *n.IdleCPU, true
+			}
+			if n.Disk != nil {
+				a.disk = *n.Disk
 			}
 			was := a.login
 			if n.Login != nil {
@@ -986,7 +997,7 @@ func (h *Hub) Rooms() []wire.Attached {
 			v := *a.access
 			acc = &v
 		}
-		login := a.login
+		login, disk := a.login, a.disk
 		paths := append([]PathState(nil), a.paths...)
 		a.mu.Unlock()
 		out = append(out, wire.Attached{
@@ -995,6 +1006,7 @@ func (h *Hub) Rooms() []wire.Attached {
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, Local: a.local, IdleCPU: idle,
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 			LoginNeeded: login,
+			DiskLow:     disk,
 			Paths:       paths,
 			Tools:       a.tools,
 		})

@@ -15,6 +15,9 @@ function liftFn(name) {
 }
 
 const launcherOf = new Function(["bareId", "roomOf", "launcherOf"].map(n => liftFn(n)).join("\n") + "\nreturn launcherOf;")();
+const termNest = new Function(page.match(/^const (SUBAGENT|INTERVIEW|RESIDENT|DIRECTOR)_TAG = .*$/gm).join("\n") + "\n" +
+  ["bareId", "roomOf", "launcherOf", "isSubagent", "isInterview", "nestsUnderLauncher", "termNest"].map(n => liftFn(n)).join("\n") +
+  "\nreturn termNest;")();
 
 let bad = 0;
 function is(got, want, what) {
@@ -28,6 +31,14 @@ const cards = [other, orch, kid];
 is(launcherOf(kid, cards), orch, "a bare spawned_by names a launcher on the child's own room");
 is(launcherOf({ id: "sg4~9", spawned_by: "ogorch@m1" }, cards), other, "a qualified spawned_by still names its own room");
 is(launcherOf({ id: "sg4~9", spawned_by: "nobody" }, cards), null, "a bare name nobody holds nests nowhere");
+
+const orch2 = { id: "sg4-control~01a0f2da", wire_name: "sg4-control/orchestrator-sg4-control", tags: ["origin:agent"] };
+const resident = { id: "sg3~01a1dd05", wire_name: "sg3/launch-runner-picker", spawned_by: "orchestrator-sg4-control@sg4-control",
+  spawned_by_id: "sg4-control~01a0f2da", tags: ["atrium:item:u-launch-runner-picker", "atrium:lean", "atrium:resident", "origin:agent"] };
+const nest = termNest([orch2, resident]);
+is((nest.kids.get(orch2.id) || []).map(x => x.id).join(), resident.id, "a resident launched on another room nests under its launcher");
+const director = Object.assign({}, resident, { id: "sg3~d1", tags: ["atrium:director", "atrium:resident", "origin:agent"] });
+is(termNest([orch2, director]).nested.has(director.id), false, "a director stays a top row");
 
 if (bad) process.exit(1);
 console.log("ok: launcherOf same room");

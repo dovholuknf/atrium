@@ -314,6 +314,11 @@ type Task struct {
 	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
 	// LaunchBranch is the branch the card's checkout was on when an agent launched it. Empty for any other card.
 	LaunchBranch string `json:"launch_branch,omitempty"`
+	// DoneSkipped and DoneUnverified are what the last done said it left out and did not exercise. SkippedFiled is the
+	// backlog item the board filed for the first.
+	DoneSkipped    string `json:"done_skipped,omitempty"`
+	DoneUnverified string `json:"done_unverified,omitempty"`
+	SkippedFiled   string `json:"skipped_filed,omitempty"`
 	// LaunchReplay is set on the card a launch answered from the key it was made under, and not stored: the answer is
 	// the card the first attempt filed, and no second session was started. See launchkey.go.
 	LaunchReplay bool `json:"launch_replay,omitempty"`
@@ -325,6 +330,8 @@ type Task struct {
 	// when that commit is not in this card's worktree, and the board flags it.
 	ReportSHA        string `json:"report_sha,omitempty"`
 	ReportUnverified bool   `json:"report_unverified,omitempty"`
+	// ReportDirty is how many files a `done` report left uncommitted or untracked in this card's worktree.
+	ReportDirty int `json:"report_dirty,omitempty"`
 	// ToolHookSeenAt and StopHookSeenAt are when the two hooks that can carry
 	// a queued message into the model were first heard from on this card. Nil
 	// means a message queued here has no hook known to take it.

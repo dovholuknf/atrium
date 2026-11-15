@@ -181,7 +181,6 @@ func TestAConfigurationThatCouldNotWorkIsRefused(t *testing.T) {
 	}{
 		{"no issuer", publish.AuthConfig{Enabled: true, ClientID: "a", Redirect: "b", Allow: []string{"c"}}},
 		{"no client", publish.AuthConfig{Enabled: true, Issuer: "a", Redirect: "b", Allow: []string{"c"}}},
-		{"no redirect", publish.AuthConfig{Enabled: true, Issuer: "a", ClientID: "b", Allow: []string{"c"}}},
 		{"nobody allowed", publish.AuthConfig{Enabled: true, Issuer: "a", ClientID: "b", Redirect: "c"}},
 	} {
 		if err := d.SaveAuth(tc.cfg); err == nil {

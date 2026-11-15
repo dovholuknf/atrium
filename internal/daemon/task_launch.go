@@ -86,6 +86,9 @@ func (d *Daemon) taskLaunchFromJSON(body []byte) (*store.Task, error) {
 	if err := d.launchNeedsLogin(req); err != nil {
 		return nil, err
 	}
+	if err := d.launchDiskFull(req); err != nil {
+		return nil, err
+	}
 	folder, err := d.taskFolder(spec)
 	if err != nil {
 		return nil, err

@@ -115,7 +115,7 @@ func newRoot() *cobra.Command {
 		Long: "Atrium runs claude-code sessions in real terminals, keeps their state durable, and " +
 			"shows every one of them on one board.",
 	}
-	root.AddCommand(newDaemon(),
+	root.AddCommand(newDaemon(), newZrokCmd(),
 		newJoin(), newLeave(), newStop(), newRestartPtyHost(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),

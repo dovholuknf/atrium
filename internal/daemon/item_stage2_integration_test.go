@@ -402,3 +402,16 @@ func TestNoticeKeyIsPerItemRevisionAndState(t *testing.T) {
 }
 
 var _ = errors.New
+
+// A DONE CARRIES ITS TEXT TO THE HUB on the finishing push, which files it on the backlog item. A block carries none.
+func TestTheFinishingPushCarriesTheDoneText(t *testing.T) {
+	d := testDaemon(t)
+	_, _, it := itemRunning(t, d, "")
+	blockWith(t, d, "need the staging key")
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Recap: "done abc1234: the fix", Ended: true})
+	owed, _ := d.st.ItemsOwed(10)
+	if len(owed) != 3 || owed[2].ID != it.ID || owed[2].State != store.ItemFinished ||
+		!strings.Contains(owed[2].Body, `"result":"done abc1234: the fix\non the hub: abc1234"`) || !strings.Contains(owed[1].Body, `"result":""`) {
+		t.Fatalf("owed: %+v", owed)
+	}
+}

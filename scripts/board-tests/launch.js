@@ -604,7 +604,8 @@ async function launchNewAgentSection(browser, base) {
     await p.waitForSelector("#na-repo-list .cb-opt");
     await p.press("#na-repo", "Enter");
     let s = await seen();
-    if (s.title !== "openziti/mcp-gateway" || s.branch !== "claude/work") fail("launchNewAgent: a picked repo " + JSON.stringify(s));
+    if (s.title !== "" || s.branch !== "claude/work") fail("launchNewAgent: a picked repo " + JSON.stringify(s));
+    if (await p.evaluate(() => document.activeElement.id) !== "na-title") fail("launchNewAgent: a picked repo did not focus NAME");
     await p.fill("#na-title", "allowlist");
     await p.waitForFunction(() => document.getElementById("na-conf").textContent.includes("already exists"), null, { timeout: slow(3000) })
       .catch(() => fail("launchNewAgent: no word on a branch that exists"));
@@ -670,6 +671,7 @@ async function launchNewAgentSection(browser, base) {
     await p.evaluate(() => openNewAgent(false, "openziti/mcp-gateway"));
     s = await seen();
     if (!s.sum.includes("lean") || s.sum.includes("changed")) fail("launchNewAgent: the saved default was not the next open's " + JSON.stringify(s));
+    await p.fill("#na-title", "lean");
     await p.click("#na-go");
     await closed("a lean launch");
     if ((launches[4] || {}).lean !== true) fail("launchNewAgent: the saved setup was not sent " + JSON.stringify(launches[4]));

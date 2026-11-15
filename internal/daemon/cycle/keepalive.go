@@ -229,6 +229,12 @@ func ScanMainReplies(r io.Reader, fn func(*MainReply)) (int64, error) {
 // scanReplies is scanMainReplies with the inline subagent replies offered too,
 // marked Sidechain. The usage record counts those as the subagent's.
 func ScanReplies(r io.Reader, fn func(*MainReply)) (int64, error) {
+	return scanRepliesCompact(r, fn, nil)
+}
+
+// scanRepliesCompact is ScanReplies that also calls compacted at every main-thread compact boundary, the line a
+// compaction writes before the conversation goes on from its summary. Nil compacted skips them.
+func scanRepliesCompact(r io.Reader, fn func(*MainReply), compacted func()) (int64, error) {
 	type usage struct {
 		Input         int64  `json:"input_tokens"`
 		CacheWrite    int64  `json:"cache_creation_input_tokens"`
@@ -241,6 +247,17 @@ func ScanReplies(r io.Reader, fn func(*MainReply)) (int64, error) {
 		} `json:"cache_creation"`
 	}
 	offer := func(line []byte) {
+		if compacted != nil && bytes.Contains(line, []byte(`"compact_boundary"`)) {
+			var b struct {
+				Type      string `json:"type"`
+				Subtype   string `json:"subtype"`
+				Sidechain bool   `json:"isSidechain"`
+			}
+			if json.Unmarshal(line, &b) == nil && b.Type == "system" && b.Subtype == "compact_boundary" && !b.Sidechain {
+				compacted()
+				return
+			}
+		}
 		if !bytes.Contains(line, []byte(`"assistant"`)) || !bytes.Contains(line, []byte(`"usage"`)) {
 			return
 		}
@@ -409,7 +426,10 @@ func (c *LastReplies) ReadLastReply(path string) (*LastReply, error) {
 			return nil, err
 		}
 		c.Scans.Add(1)
-		done, err = ScanMainReplies(f, func(r *MainReply) {
+		done, err = scanRepliesCompact(f, func(r *MainReply) {
+			if r.Sidechain {
+				return
+			}
 			switch {
 			case r.Write1h > 0:
 				ttl = time.Hour
@@ -417,6 +437,11 @@ func (c *LastReplies) ReadLastReply(path string) (*LastReply, error) {
 				ttl = 5 * time.Minute
 			}
 			out = &LastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
+		}, func() {
+			// The last reply answered on the conversation the summary replaced: zero until the next reply.
+			if out != nil {
+				out.Context = 0
+			}
 		})
 		if err != nil || out != nil || start == 0 {
 			break

@@ -71,7 +71,11 @@ func scanTouched(worktree string) []string {
 				if !filepath.IsAbs(p) {
 					continue
 				}
-				for _, d := range repoDirs(filepath.Dir(p)) {
+				at := filepath.Dir(p)
+				if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+					at = p
+				}
+				for _, d := range repoDirs(at) {
 					if !seen[d] {
 						seen[d] = true
 						out = append(out, d)
@@ -101,6 +105,7 @@ func toolPaths(line []byte) []string {
 		Input struct {
 			FilePath     string `json:"file_path"`
 			NotebookPath string `json:"notebook_path"`
+			Command      string `json:"command"`
 		} `json:"input"`
 	}
 	if json.Unmarshal(rec.Message.Content, &blocks) != nil {
@@ -113,6 +118,18 @@ func toolPaths(line []byte) []string {
 		}
 		if p := strings.TrimSpace(b.Input.FilePath + b.Input.NotebookPath); p != "" {
 			out = append(out, p)
+		}
+		out = append(out, commandPaths(b.Input.Command)...)
+	}
+	return out
+}
+
+// commandPaths is the absolute paths a shell command names, for a session that works in a folder by `cd` or `git -C`.
+func commandPaths(cmd string) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(cmd, func(r rune) bool { return strings.ContainsRune(" \t\r\n\"'`;&|<>()=", r) }) {
+		if strings.HasPrefix(w, "/") || (len(w) > 2 && w[1] == ':' && (w[2] == '/' || w[2] == '\\')) {
+			out = append(out, w)
 		}
 	}
 	return out

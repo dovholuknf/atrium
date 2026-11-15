@@ -10,7 +10,7 @@ import (
 )
 
 // toolNames are the toolchains a worker is told the location of, so it does not report "no go on this room".
-var toolNames = []string{"go", "node", "python", "git", "gh"}
+var toolNames = []string{"cc", "gcc", "c++", "cmake", "ninja", "make", "go", "node", "npm", "python", "git", "gh", "playwright"}
 
 // findTool resolves name against a PATH value, returning "" when it is not there.
 func findTool(name, path string) string {
@@ -37,7 +37,7 @@ func findTool(name, path string) string {
 func toolLocations(path string) map[string]string {
 	out := map[string]string{}
 	for _, n := range toolNames {
-		if p := findTool(n, path); p != "" {
+		if p := findToolOrAlt(n, path); p != "" {
 			out[n] = filepath.ToSlash(p)
 		}
 	}
@@ -60,7 +60,14 @@ func toolsLine(path string, refused ...string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return "Tools on this room, use them rather than reporting one missing: " + strings.Join(parts, ", ")
+	line := "Tools on this room, use them rather than reporting one missing: " + strings.Join(parts, ", ")
+	env := toolEnv(path)
+	for _, k := range []string{"CC", "CXX", "CGO_ENABLED"} {
+		if env[k] != "" {
+			line += ", " + k + "=" + env[k]
+		}
+	}
+	return line + ". A missing tool is yours to install: add it to the room's tools.json, never move to another room for it, never report it as a blocker."
 }
 
 // withToolsLine appends toolsLine to a brief or prompt, once.
@@ -84,19 +91,24 @@ func withToolDirs(env []string, roomPath string) []string {
 	seen := map[string]bool{}
 	for n, p := range toolLocations(roomPath) {
 		d := filepath.FromSlash(filepath.Dir(p))
-		if findTool(n, runnerPath) == "" && !seen[d] {
+		if findToolOrAlt(n, runnerPath) == "" && !seen[d] {
 			seen[d] = true
 			dirs = append(dirs, d)
 		}
 	}
+	out := append([]string(nil), env...)
+	for k, v := range toolEnv(roomPath) {
+		if !slices.ContainsFunc(out, func(kv string) bool { return strings.HasPrefix(strings.ToUpper(kv), k+"=") }) {
+			out = append(out, k+"="+v)
+		}
+	}
 	if len(dirs) == 0 {
-		return env
+		return out
 	}
 	added := strings.Join(dirs, string(os.PathListSeparator))
 	if idx < 0 {
-		return append(env, "PATH="+added)
+		return append(out, "PATH="+added)
 	}
-	out := append([]string(nil), env...)
 	out[idx] = env[idx][:strings.Index(env[idx], "=")+1] + added + string(os.PathListSeparator) + runnerPath
 	return out
 }

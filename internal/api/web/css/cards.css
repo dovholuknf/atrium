@@ -404,8 +404,27 @@
   /* A Terminals row already carries the runner dot, so its chip is only the dial. */
   .term-list .chip.cache:not(.pie) { display: none; }
   .term-list .tstate { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; margin-right: 4px; }
-  .term-list .tstate .kamark.on { margin: 0; }
-  .term-list .tstate .tkidspin { width: 16px; height: 16px; }
+  /* The state marks are drawn in the tile's own text colour, `--ic`: a selected card's `--tabc`, else `--head`, which a worn card
+     rewrites. `.dk` is put on a card by `termTone` when its ground is dark, and brings the star and the pie to the same colour. */
+  .term-list .card { --ic: var(--head); }
+  .term-list .card.on { --ic: var(--tabc, var(--head)); }
+  .term-list .card.worn, .term-list .card.on.bare, .term-list .card.on.plain { --ic: var(--head); }
+  .term-list .tstate { width: 20px; }
+  .term-list .tstate .kamark.on {
+    margin: 0; width: 18.7px; height: 18.7px; display: block; position: relative; top: 1px; font-size: 0; background: var(--ic);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.12' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(60 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(120 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(180 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(240 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(300 12 12)'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.12' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(60 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(120 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(180 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(240 12 12)'/%3E%3Cpath d='M12 12V2M9 4.5l3 2.5 3-2.5' transform='rotate(300 12 12)'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .term-list .tstate .tkidspin {
+    width: 18px; height: 18px; margin: 0; box-sizing: border-box; background: none; position: relative; top: 1px;
+    border: 2px solid transparent; border-top-color: var(--ic); border-right-color: var(--ic); border-radius: 50%;
+    animation: tkidspin .9s linear infinite;
+  }
+  @keyframes tkidspin { to { transform: rotate(360deg); } }
+  .term-list .card.dk .title .pin.on { color: var(--ic); }
+  .term-list .card.dk .tstate .chip.cache.pie, .term-list .card.on .tstate .chip.cache.pie, .term-list .card.worn .tstate .chip.cache.pie {
+    border-color: var(--ic); background: conic-gradient(var(--ic) var(--pie, 0deg), transparent 0);
+  }
   .term-list .tstate .chip.cache { margin: 0; }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
@@ -807,6 +826,11 @@
   .peek-more { padding: 0; font: inherit; font-size: var(--fs-xs); color: var(--dim); background: none; border: 0; cursor: pointer; }
   .peek-more:hover { color: var(--head); }
   .peek-more[hidden] { display: none; }
+  .peek-left { margin: 0 0 8px; }
+  .peek-file { padding: 0 6px; font: inherit; font-size: var(--fs-xs); color: var(--body); background: none; border: 1px solid var(--line, currentColor); border-radius: 4px; cursor: pointer; }
+  .peek-file:hover:not(:disabled) { color: var(--head); }
+  .peek-file:disabled { opacity: .5; cursor: default; }
+  .peek-filed { font-size: var(--fs-xs); color: var(--dim); }
   .peek-ctx.warn .peek-num b { color: var(--warn); }
   .peek-bar {
     position: relative; height: 10px; margin: 11px 0 5px; border-radius: var(--r-pill);

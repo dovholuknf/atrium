@@ -440,7 +440,7 @@
       radial-gradient(ellipse 50% 45% at 75% 8%, rgba(40,194,255,.16), transparent 70%) fixed,
       linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
   }
-  :root[data-skin="website"] header {
+  :root[data-skin="website"] header:not(.rh) {
     background: rgb(var(--bg1-rgb));
     border-bottom-color: var(--grid);
   }

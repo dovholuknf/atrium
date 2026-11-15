@@ -66,6 +66,9 @@ func globalAutoView(s *Server) map[string]any {
 		store.SettingMergedCullGrace: "merged_cull_grace",
 		// How many minutes a room deploy hold may last. Empty is sixty.
 		store.SettingDeployHoldMax: "deploy_hold_max",
+		// Megabytes free under which a drive is warned about, and under which launches are refused. Empty is the default.
+		store.SettingDiskWarnFree:     "disk_warn_free",
+		store.SettingDiskCriticalFree: "disk_critical_free",
 		// Minutes a `when: done` message waits for the turn. Empty is fifteen.
 		store.SettingEscalateHeldAfter: "escalate_held_after",
 		// How many minutes one turn may run before its card is flagged. Empty is 45.
@@ -273,6 +276,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		LandedReclaimGrace *string `json:"landed_reclaim_grace"`
 		// Minutes a room deploy hold may last before the room lifts it.
 		DeployHoldMax *string `json:"deploy_hold_max"`
+		// Megabytes of free space, or empty for the default.
+		DiskWarnFree     *string `json:"disk_warn_free"`
+		DiskCriticalFree *string `json:"disk_critical_free"`
 		// Minutes a `when: done` message waits for the turn to end before the next
 		// tool call carries it. Empty is fifteen.
 		EscalateHeldAfter *string `json:"escalate_held_after"`
@@ -503,6 +509,23 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := housekeeping(s, key, *value); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	for key, value := range map[string]*string{
+		store.SettingDiskWarnFree:     body.DiskWarnFree,
+		store.SettingDiskCriticalFree: body.DiskCriticalFree,
+	} {
+		if value == nil {
+			continue
+		}
+		v := strings.TrimSpace(*value)
+		if n, err := strconv.Atoi(v); v != "" && (err != nil || n <= 0) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("%s is a number of megabytes, or empty for the default", key))
+			return
+		}
+		if err := s.st.SetSetting(key, v); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}
 	}

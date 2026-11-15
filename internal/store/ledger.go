@@ -1016,10 +1016,13 @@ type ReportWrite struct {
 	UnheardIsUnsent bool
 	// Recap is the composed recap, bounded like SetRecap.
 	Recap string
-	// SetSHA writes SHA and Unverified onto the card, for a `done`.
+	// SkippedNote and UnverifiedNote are a done's own two notes, written with SetSHA. A new done clears the filed item.
+	SkippedNote, UnverifiedNote string
+	// SetSHA writes SHA, Unverified and Dirty onto the card, for a `done`.
 	SetSHA     bool
 	SHA        string
 	Unverified bool
+	Dirty      int
 	// Event is the `submitted` event's payload.
 	Event map[string]any
 	// Status and Reason move the card when MoveStatus is set.
@@ -1072,13 +1075,17 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 			return err
 		}
 		if r.SetSHA {
+			if _, err := tx.Exec(`UPDATE task SET done_skipped = ?, done_unverified = ?, skipped_filed = '' WHERE id = ?`,
+				r.SkippedNote, r.UnverifiedNote, r.TaskID); err != nil {
+				return err
+			}
 			sha := strings.TrimSpace(r.SHA)
 			flag := 0
 			if sha != "" && r.Unverified {
 				flag = 1
 			}
-			if _, err := tx.Exec(`UPDATE task SET report_sha = ?, report_unverified = ? WHERE id = ?`,
-				sha, flag, r.TaskID); err != nil {
+			if _, err := tx.Exec(`UPDATE task SET report_sha = ?, report_unverified = ?, report_dirty = ? WHERE id = ?`,
+				sha, flag, r.Dirty, r.TaskID); err != nil {
 				return err
 			}
 		}

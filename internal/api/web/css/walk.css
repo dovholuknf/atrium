@@ -65,6 +65,15 @@
   .walk-nav kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); margin-left: 4px; }
   .walk-head strong { color: var(--head); font-size: var(--fs-md); white-space: nowrap; }
   .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
+  .wk-mode { display: inline-flex; flex: none; border: 1px solid var(--stroke); border-radius: var(--r-sm); overflow: hidden; }
+  .wk-mode[hidden] { display: none; }
+  .walk-head .wk-mode button {
+    border: 0; border-radius: 0; margin: 0; background: transparent; color: var(--dim); padding: 3px 9px;
+    font-size: var(--fs-sm); line-height: 1.3; cursor: pointer;
+  }
+  .walk-head .wk-mode button + button { border-left: 1px solid var(--stroke); }
+  .walk-head .wk-mode button.on { background: var(--lift); color: var(--head); }
+  .wk-mode .n { opacity: .7; margin-left: 3px; }
   .walk-body { flex: 1 1 auto; min-height: 0; display: flex; }
   .walk-grip {
     all: unset; position: absolute; top: 0; left: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;

@@ -127,11 +127,11 @@ func TestAgentCheckoutRefusal(t *testing.T) {
 
 func TestAnAgentLaunchOutsideGitIsRefusedUnlessScratch(t *testing.T) {
 	t.Parallel()
-	d, root := homeRoom(t)
-	dir := filepath.Join(root, "notgit")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	d := testDaemon(t)
+	if err := d.st.SetSetting(store.SettingCardRootRequired, "off"); err != nil {
 		t.Fatal(err)
 	}
+	dir := t.TempDir()
 	_, err := d.launchLocked(shared.LaunchRequest{Harness: "claude", Cwd: dir, Tags: []string{OriginAgentTag}})
 	if err == nil || !strings.Contains(err.Error(), "scratch: true") || !strings.Contains(err.Error(), "not a git checkout") {
 		t.Fatalf("err = %v, want a refusal that says why and how out", err)

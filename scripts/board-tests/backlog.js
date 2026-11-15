@@ -1,6 +1,6 @@
 // backlog: the backlog page, the hub's items and the reports directors left (js/backlog.js).
 //
-// Units: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogBar, backlogSearch, backlogShow, backlogGroup, backlogNewItem, backlogKind, backlogScroll, backlogOpen.
+// Units: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogBar, backlogSearch, backlogShow, backlogGroup, backlogNewItem, backlogKind, backlogScroll, backlogOpen, backlogResult.
 // Until stage B2 only bootClean covered this page. These read it through the hub routes the page calls, answered here
 // from the page's own context so each unit shapes the items it needs, and none reads what another left on the mock.
 // `units` is what the harness runs, in suite order. Alone: `node scripts/board-tests/backlog.js`.
@@ -261,13 +261,13 @@ async function backlogBarSection(browser, base) {
     if (!got.mounted || !got.q) fail("backlogBar: the backlog tab has no view bar: " + JSON.stringify(got));
     if (got.rows !== "show,kind,priority,dept,sort by,group") fail("backlogBar: the rows are " + got.rows);
     if (/open only|department/i.test(await p.evaluate(() => document.getElementById("backlog").textContent.slice(0, 400)))) fail("backlogBar: the old department or open only controls are still drawn");
-    if ((await segText(p, "backlog-show")) !== "all 8|open 5|in-progress 1|held 1|done 1|dropped 0") fail("backlogBar: the show chips read " + await segText(p, "backlog-show"));
+    if ((await segText(p, "backlog-show")) !== "all 8|open 5|in-progress 1|built 0|held 1|done 1|dropped 0") fail("backlogBar: the show chips read " + await segText(p, "backlog-show"));
     const on = await p.evaluate(() => [...document.querySelectorAll("#backlog-show button.on")].map(x => x.dataset.v).join());
-    if (on !== "open,in-progress") fail("backlogBar: open and in-progress should be on by default, got " + on);
+    if (on !== "open,in-progress,built") fail("backlogBar: open, in-progress and built should be on by default, got " + on);
     if ((await segText(p, "backlog-depts")).replace(/ \d+/g, "") !== "fabric|ops|rnd|runtime|ui") fail("backlogBar: the dept chips are " + await segText(p, "backlog-depts"));
     if ((await segText(p, "backlog-sort")) !== "changed|created|priority|id") fail("backlogBar: the sort chips are " + await segText(p, "backlog-sort"));
     if ((await segText(p, "backlog-group")) !== "by dept|by status|by priority|off") fail("backlogBar: the group chips are " + await segText(p, "backlog-group"));
-    if (!/open \+ in-progress 6 · default order · by dept/.test(got.summary)) fail("backlogBar: the summary says " + got.summary);
+    if (!/open \+ in-progress \+ built 6 · default order · by dept/.test(got.summary)) fail("backlogBar: the summary says " + got.summary);
     const before = b.gets.length;
     await openBar(p);
     await p.click('#backlog-depts button[data-v="ui"]');
@@ -336,9 +336,10 @@ async function backlogShowSection(browser, base) {
     const sorted = async () => (await ids(p)).slice().sort().join();
     await chip("held");
     if (!(await ids(p)).includes("bk-held")) fail("backlogShow: the held chip did not bring held items in: " + await ids(p));
-    if ((await ids(p)).length !== 7) fail("backlogShow: open, in-progress and held gave " + (await ids(p)).length);
+    if ((await ids(p)).length !== 7) fail("backlogShow: open, in-progress, built and held gave " + (await ids(p)).length);
     await chip("open");
     await chip("in-progress");
+    await chip("built");
     if ((await sorted()) !== "bk-held") fail("backlogShow: held alone gave " + await sorted());
     if (await p.evaluate(() => localStorage.getItem("atrium.backlog.show")) !== '["held"]') fail("backlogShow: the choice is not kept");
     await chip("done");
@@ -352,6 +353,7 @@ async function backlogShowSection(browser, base) {
     await chip("open");
     await chip("dropped");
     await chip("in-progress");
+    await chip("built");
     if (await p.evaluate(() => localStorage.getItem("atrium.backlog.show")) !== null) fail("backlogShow: back on the default should store nothing");
     const stack = await p.evaluate(() => ["atrium.stack.show", "atrium.board.show"].map(k => localStorage.getItem(k)).join());
     if (/held|dropped/.test(stack)) fail("backlogShow: the backlog choice leaked into another tab: " + stack);
@@ -535,6 +537,30 @@ async function backlogOpenSection(browser, base) {
   if (!bad) console.log("backlogOpen ok");
 }
 
+// An item whose worker ended with atrium_done shows the done text and the card under its title, and one without shows none.
+async function backlogResultSection(browser, base) {
+  const was = mock.hubMode;
+  mock.hubMode = true;
+  let b;
+  try {
+    const items = ITEMS().map(x => x.id !== "bk-high-new" ? x : Object.assign({}, x, { status: "built",
+      result: "done abc1234: the result reaches the item", result_ref: "abc1234", result_card: "sg4~c7", result_at: ago(1) }));
+    b = await backlogBoard(browser, base, { items });
+    const got = await b.p.evaluate(() => {
+      const row = document.querySelector('#backlog-items .bl-row[data-id="bk-high-new"]');
+      const r = row && row.querySelector(".bl-result"), title = row && row.querySelector(".aud-detail");
+      return { text: r ? r.textContent.replace(/\s+/g, " ") : "", left: r ? Math.round(r.getBoundingClientRect().left) : -1,
+        titleLeft: title ? Math.round(title.getBoundingClientRect().left) : -2,
+        others: document.querySelectorAll('#backlog-items .bl-row[data-id]:not([data-id="bk-high-new"]) .bl-result').length };
+    });
+    if (!got.text.includes("done abc1234: the result reaches the item") || !got.text.includes("sg4~c7")) fail("backlogResult: the result line reads " + JSON.stringify(got.text));
+    if (got.left !== got.titleLeft) fail("backlogResult: the result is not under the title: " + got.left + " vs " + got.titleLeft);
+    if (got.others) fail("backlogResult: an item with no result shows one");
+    if (b.errors.length) fail("backlogResult: threw " + b.errors.join(" | "));
+  } finally { if (b) await b.ctx.close(); mock.hubMode = was; }
+  if (!bad) console.log("backlogResult ok");
+}
+
 const units = [
   { name: "backlogAbsent", run: ({ browser, base }) => backlogAbsentSection(browser, base) },
   { name: "backlogRows", run: ({ browser, base }) => backlogRowsSection(browser, base) },
@@ -549,12 +575,14 @@ const units = [
   { name: "backlogKind", run: ({ browser, base }) => backlogKindSection(browser, base) },
   { name: "backlogScroll", run: ({ browser, base }) => backlogScrollSection(browser, base) },
   { name: "backlogOpen", run: ({ browser, base }) => backlogOpenSection(browser, base) },
+  { name: "backlogResult", run: ({ browser, base }) => backlogResultSection(browser, base) },
 ];
 const sections = {
   backlogAbsent: backlogAbsentSection, backlogRows: backlogRowsSection, backlogSort: backlogSortSection,
   backlogPrios: backlogPriosSection, backlogPriority: backlogPrioritySection, backlogBar: backlogBarSection,
   backlogSearch: backlogSearchSection, backlogShow: backlogShowSection, backlogGroup: backlogGroupSection,
   backlogNewItem: backlogNewItemSection, backlogKind: backlogKindSection, backlogScroll: backlogScrollSection, backlogOpen: backlogOpenSection,
+  backlogResult: backlogResultSection,
 };
 
 module.exports = { units, sections };

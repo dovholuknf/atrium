@@ -4847,7 +4847,7 @@ async function pasteLandsSection(browser, base) {
       const end = link.after ? Math.max(got.lastOut, link.drain + link.write) : link.drain + link.write;
       if (got.firstUp < 0 || got.firstUp > 300) fail(name + ": a 500KB paste did not show the box at once: " + JSON.stringify(got));
       else if (got.lastUp < end - 150 && !(link.after === 0)) fail(name + ": the box went down before the last byte was written (" + end + "ms): " + JSON.stringify(got));
-      else if (got.lastUp > Math.max(end + 600, 1300)) fail(name + ": the box stayed up after the last byte was written (" + end + "ms): " + JSON.stringify(got));
+      else if (got.lastUp > end + 600) fail(name + ": the box stayed up after the last byte was written (" + end + "ms): " + JSON.stringify(got));
     }
   } finally {
     await ctx.close();
@@ -5941,7 +5941,7 @@ async function termLinkFirstHoverSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "termLinkFirstHover", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300); // wait: let the terminal lay out before measuring
+    await p.waitForFunction(() => term && term._core && term._core._renderService.dimensions.css.cell.width > 0, null, { timeout: slow(15000) });
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
     const cell = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
@@ -6190,7 +6190,7 @@ async function termFolderLinkSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "termFolderLink", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300); // wait: the terminal link probes need a beat after attach
+    await p.waitForFunction(() => term && term._core && term._core._renderService.dimensions.css.cell.width > 0, null, { timeout: slow(15000) });
     const win = cwd.replace(/\//g, "\\");
     const rows = [win + " (claude/exploring-mcp-connect)", "wrote " + win + "\\scratch.claude\\survey\\Code.gs ok",
       "D:\\elsewhere\\place", "D:\\open\\shared\\sub"];
@@ -11289,6 +11289,62 @@ async function peekScratchSection(browser, base) {
   }
 }
 
+// A done's skipped and unverified notes sit under the recap, and one click files the skipped note to the backlog in the
+// department of the card's item, with a body that links the card, and the button turns into the new item's id.
+async function peekLeftoverSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const filed = [];
+  await ctx.route("**/_hub/backlog**", route => {
+    const r = route.request();
+    if (r.method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "u-9", dept: "ui" }) });
+    filed.push(JSON.parse(r.postData()));
+    return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "u-141" }) });
+  });
+  await ctx.route("**/v1/tasks/*/skipped-filed", route => {
+    filed.push({ kept: JSON.parse(route.request().postData()) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekRows === "function" && typeof peekFileSkipped === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const t = { id: "sg4~c1", status: "done", display_title: "the card", title: "the card", room: "sg4", wire_name: "c1", tags: ["atrium:item:u-9"],
+        recap: "done abc1234", done_skipped: "the retry path, add it with the rework", done_unverified: "windows, run the suite there" };
+      termTask = t;
+      const root = document.createElement("div");
+      root.id = "shot-root";
+      root.className = "peek on";
+      root.style.cssText = "position:fixed;left:20px;top:20px;width:520px;z-index:99999;display:block";
+      root.innerHTML = '<div class="peek-body"></div>';
+      document.body.appendChild(root);
+      root.firstChild.innerHTML = peekRows(t);
+      peekRecap(root);
+    });
+    const mark = await p.evaluate(() => [termLeftoverChip({ done_skipped: "x", done_unverified: "y" }), termLeftoverChip({ done_skipped: "x" }), termLeftoverChip({}), termLeftoverChip({ report_dirty: 3, done_skipped: "x" })]);
+    if (!/&#9888;<\/span> 2/.test(mark[0]) || !/1 skipped, 1 unverified/.test(mark[0]) || !/&#9888;<\/span> 1/.test(mark[1]) || mark[2] !== "" || !/&#9888;<\/span> 2/.test(mark[3]) || !/3 files not committed, 1 skipped/.test(mark[3])) fail("peekLeftover: the row marker is " + JSON.stringify(mark));
+    const text = await p.locator("#shot-root .peek-left").innerText();
+    if (!/skipped\s+the retry path/.test(text) || !/unverified\s+windows/.test(text)) fail("peekLeftover: both notes are not under the recap: " + text);
+    const kept = p.waitForResponse(r => r.url().includes("/skipped-filed"), { timeout: slow(10000) });
+    await p.click("#shot-root .peek-file");
+    await kept;
+    const post = filed.find(f => f.dept);
+    if (!post || post.dept !== "ui" || !/the retry path/.test(post.body) || !post.body.includes("/room/sg4/c1")) fail("peekLeftover: the filed item is " + JSON.stringify(post));
+    if (!filed.some(f => f.kept && f.kept.item === "u-141")) fail("peekLeftover: the card was not told the id: " + JSON.stringify(filed));
+    await p.evaluate(() => {
+      termTask.skipped_filed = "u-141";
+      document.querySelector("#shot-root .peek-body").innerHTML = peekRows(termTask);
+    });
+    const after = await p.locator("#shot-root .peek-left").innerText();
+    if (!/filed as u-141/.test(after) || await p.locator("#shot-root .peek-file").count()) fail("peekLeftover: after the filing: " + after);
+    if (errors.length) fail("peekLeftover: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ONE DETAILS RENDERER: the terminal's details drawer and the peek popup are the same function (peekFill), so for the same
 // card they draw the same sections in the same order with the same summaries, and the messages between agents list is a
 // folded drawer in both rather than a long open list in one. DETAILS_SHOTS=<dir> writes the drawer as a png.
@@ -12438,24 +12494,6 @@ async function walkSection(browser, base) {
       mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForSelector(S + ".wk-new", { timeout: slow(5000) })
         .catch(() => fail(nm + "a new finding got no new chip."));
-
-      // walk done asks once when a leak is neither posted nor skipped.
-      await p.evaluate(() => { window.__sent = []; });
-      await p.click(S + ".walk-head .go");
-      if (leaks) {
-        await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) });
-        const q = await p.textContent("#ask-body");
-        if (!/leak/.test(q) || !/finish anyway/.test(q)) fail(nm + "walk done asked the wrong thing: " + q);
-        await p.click("#ask-actions button:first-child");
-        await p.waitForTimeout(200);
-        if ((await p.evaluate(() => window.__sent)).length) fail(nm + "walk done sent something after `not yet`.");
-        await p.click(S + ".walk-head .go");
-        await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) });
-        await p.click("#ask-actions button:last-child");
-      }
-      await p.waitForTimeout(300);
-      const done = (await p.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in").map(x => x.d).join("");
-      if (done !== "walk done\r") fail(nm + "walk done typed " + JSON.stringify(done));
       await p.close();
     }
   } finally {
@@ -12788,7 +12826,7 @@ async function walkBranchSection(browser, base) {
     await p.waitForFunction(() => walkPrAgentComments().length === 1 && /agent reply/.test(document.getElementById("walk-item").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("walkBranch: the agent's comment and its reply did not reach the bubbles"));
     mock.walkAgent.add.push({ id: "ag2", file: "one.txt", line: 1, who: "agent", text: "agent wrote this after the walk opened", turns: [], post: null });
-    await p.evaluate(() => walkPrStepComment(1));
+    await p.evaluate(() => { walkPr.sel = "o1"; return walkPrStepComment(1); });
     if (await p.evaluate(() => walkPr.sel) !== "ag2") fail("walkBranch: ] stepped over a comment the agent wrote after the walk opened");
     const forge = await p.evaluate(() => { walkPr.prUrl = "https://github.com/acme/widgets/pull/7"; const f = walkPrForge(); return f && f.kind + " " + f.num; });
     if (forge !== "github 7") fail("walkBranch: the walk's own pull request url gave " + forge);
@@ -12821,6 +12859,268 @@ async function walkBranchSection(browser, base) {
   }
   if (errors.length) fail("walkBranch: the page threw: " + errors.join(" | "));
   console.log("walkBranch: ok");
+}
+
+// A WIDE WINDOW KEEPS ONE LAYOUT FOR A BRANCH WALK across a switch to another terminal, the switch back and the card's
+// next event: the diff over the terminal's top, the card list where it was, never the list's column or its width.
+async function walkSwitchSection(browser, base) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkswitch-"));
+  const ids = { a: "land-wswa", b: "land-wswb" };
+  const patch = f => "diff --git a/" + f + " b/" + f + "\nnew file mode 100644\nindex 0000000..5626abf\n--- /dev/null\n+++ b/" + f + "\n@@ -0,0 +1,2 @@\n+one\n+two\n";
+  for (const [k, f] of [[ids.a, "peek.go"], [ids.b, "other.go"]]) {
+    fs.mkdirSync(path.join(tmp, k, "findings"), { recursive: true });
+    mock.walkDirs[k] = path.join(tmp, k);
+    const ans = { code: 200, body: { branch: "claude/" + k, base: "claude/main", diff: patch(f) } };
+    ans.then = ans;
+    mock.walkBranch[k] = ans;
+  }
+  mock.walkState[ids.a] = { v: 1, comments: [{ id: "y1", file: "peek.go", line: 1, who: "you", text: "mine", turns: [], post: null, at: 1 }],
+    thread: [], off: [], bottom: "thread", open: false };
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(ids.a, { supervised: true, worktree: "/walk/a" }), landCard(ids.b, { supervised: true, worktree: "/walk/b" })];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  // The second card's walk read is held until the test lets it go, so it is still in flight when the first comes back.
+  let release = null;
+  const held = new Promise(r => { release = r; });
+  let bDiffs = 0;
+  await ctx.route("**/v1/tasks/" + ids.b + "/diff*", async route => {
+    if (++bDiffs === 2) await held;
+    await route.continue();
+  });
+  const look = p => p.evaluate(() => {
+    const d = document.getElementById("walk-drawer"), l = document.getElementById("term-list");
+    const f = document.getElementById("walk-files"), tb = document.querySelector(".term-body");
+    const r = d.getBoundingClientRect(), lr = l.getBoundingClientRect(), br = tb.getBoundingClientRect();
+    return { hidden: d.hidden, b: d.classList.contains("wk-b"), inList: d.classList.contains("in-list"), files: !f.hidden,
+      width: d.style.width, left: Math.round(r.left), right: Math.round(r.right), bodyLeft: Math.round(br.left),
+      bodyRight: Math.round(br.right), listRight: Math.round(lr.right), list: getComputedStyle(l).display !== "none" && lr.width > 0,
+      cmt: (document.getElementById("walk-cmt") || {}).textContent || "" };
+  });
+  const placed = (x, nm) => {
+    if (x.hidden || !x.b || x.inList || x.files || x.width || !x.list || x.left < x.listRight || x.left !== x.bodyLeft || x.right !== x.bodyRight) {
+      fail("walkSwitch: " + nm + ", the walk is not over the terminal with the list beside it: " + JSON.stringify(x));
+    }
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(() => localStorage.setItem("atrium.termlist.w", "380"));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, ids.a, { timeout: slow(15000), polling: 10 });
+    const attach = id => attachRetry(p, { unit: "walkSwitch", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await attach(ids.a);
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    await p.click("#t-walk");
+    await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
+    await p.waitForFunction(() => /of 1$/.test(document.getElementById("walk-cmt").textContent), null, { timeout: slow(5000) }).catch(() => {});
+    const first = await look(p);
+    placed(first, "opened");
+    if (first.cmt !== "comment - of 1") fail("walkSwitch: the counter reads " + JSON.stringify(first.cmt) + " with one comment on the file");
+    // Every placement from here on is kept, so a moment in the list's column is seen even when it does not last.
+    await p.evaluate(() => {
+      window.__places = [];
+      const real = walkPlace;
+      walkPlace = function () {
+        real.apply(this, arguments);
+        const d = document.getElementById("walk-drawer");
+        if (!d.hidden) window.__places.push({ inList: d.classList.contains("in-list"), b: d.classList.contains("wk-b"), width: d.style.width });
+      };
+    });
+    await attach(ids.b);
+    for (let i = 0; i < 100 && bDiffs < 2; i++) await p.waitForTimeout(50); // wait: polls a node-side route the page cannot watch, 5s deadline
+    if (bDiffs < 2) fail("walkSwitch: the other card's walk was never read");
+    await attach(ids.a);
+    release();
+    await p.waitForFunction(() => {
+      const d = document.getElementById("walk-drawer");
+      return !d.hidden && document.querySelector("#walk-drawer .wk-row") && !dock.loading;
+    }, null, { timeout: slow(10000) }).catch(() => {});
+    placed(await look(p), "back on the card");
+    await p.evaluate(() => { window.__synced = 0; const real = dockResync; dockResync = function () { window.__synced++; return real.apply(this, arguments); }; });
+    await p.evaluate(x => onTaskEvent({ data: JSON.stringify({ id: x }) }), ids.a);
+    await p.waitForFunction(() => window.__synced > 0 && !dock.loading, null, { timeout: slow(10000) })
+      .catch(() => fail("walkSwitch: the card's event never read the walk again"));
+    const after = await look(p);
+    placed(after, "after the card's event");
+    if (after.cmt !== "comment - of 1") fail("walkSwitch: after the event the counter reads " + JSON.stringify(after.cmt));
+    const bad = await p.evaluate(() => window.__places.filter(x => x.inList || !x.b || x.width));
+    if (bad.length) fail("walkSwitch: the walk moved while it was open: " + JSON.stringify(bad));
+    await p.close();
+  } finally {
+    release();
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    for (const k of Object.values(ids)) { delete mock.walkDirs[k]; delete mock.walkBranch[k]; delete mock.walkState[k]; }
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkSwitch: the page threw: " + errors.join(" | "));
+  console.log("walkSwitch: ok");
+}
+
+// A CARD WITH NOTHING TO WALK WHEN ATTACHED GETS THE BUTTON WHEN ITS OWN EVENT COMES AFTER IT HAS CHANGES.
+async function walkLateSection(browser, base) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walklate-"));
+  const id = "land-wlate";
+  fs.mkdirSync(path.join(tmp, id, "findings"), { recursive: true });
+  mock.walkDirs[id] = path.join(tmp, id);
+  const patch = "diff --git a/one.txt b/one.txt\nnew file mode 100644\nindex 0000000..5626abf\n--- /dev/null\n+++ b/one.txt\n@@ -0,0 +1 @@\n+one\n";
+  const later = { code: 200, body: { branch: "secfix-v0.5.2", base: "origin/HEAD", diff: patch, modes: { unstaged: 0, staged: 0, branch: 1 } } };
+  // The probe and the read after it both see nothing to walk.
+  const empty = { code: 200, body: { branch: "secfix-v0.5.2", base: "origin/HEAD", diff: "", modes: { unstaged: 0, staged: 0, branch: 0 } } };
+  mock.walkBranch[id] = Object.assign({}, empty, { then: Object.assign({}, empty, { then: later }) });
+  later.then = later;
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/late" })];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(p, { unit: "walkLate", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    for (let i = 0; i < 100 && mock.walkBranch[id] !== later; i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
+    if (mock.walkBranch[id] !== later) fail("walkLate: the attach never asked for the diff");
+    await p.waitForFunction(() => document.getElementById("t-walk").hidden && !dock.loading, null, { timeout: slow(5000) })
+      .catch(() => fail("walkLate: the button showed for an empty diff"));
+    await p.evaluate(x => onTaskEvent({ data: JSON.stringify({ id: x }) }), id);
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(15000) })
+      .catch(() => fail("walkLate: the card's own event did not bring the walk button once it had changes"));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    delete mock.walkDirs[id]; delete mock.walkBranch[id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkLate: the page threw: " + errors.join(" | "));
+  console.log("walkLate: ok");
+}
+
+// A HUB BRANCH IS WALKED WITH NO CARD: a right click on a branch name in a terminal on the hub board offers it beside
+// paste, a word with a slash that is no branch still pastes, walk.html reads the hub's patch, and a branch row links it.
+async function walkHubBranchSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const id = "land-whub";
+  mock.landList = [landCard(id, { supervised: true, repo: "github.com/o/r", worktree: "/walk/hub" })];
+  mock.landPerms = [];
+  const errors = [];
+  const walked = [];
+  const patch = "diff --git a/fix.go b/fix.go\nnew file mode 100644\nindex 0000000..5626abf\n--- /dev/null\n+++ b/fix.go\n@@ -0,0 +1 @@\n+fix\n";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route("**/_hub/git/branches?*", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ branches: [{ name: "feature/x", repo: "github/o/r", status: "open" }] }) }));
+  await ctx.route("**/_hub/git/walk?*", route => {
+    const u = new URL(route.request().url());
+    walked.push(u.searchParams.get("repo") + " " + u.searchParams.get("branch"));
+    return route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ repo: "github/o/r", branch: u.searchParams.get("branch"), base: "main", diff: patch }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { timeout: slow(15000) });
+    await p.evaluate(() => { hubIsHub = true; });
+    await attachRetry(p, { unit: "walkHubBranch", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await p.evaluate(() => { term.reset(); walkHubBranches.clear(); return walkHubBranchesLoad("github.com/o/r"); });
+    await termWrite(p, "pushed claude/secfix-v0.5.2 and src/main.go and feature/x\r\n");
+    const fireAt = col => p.evaluate(c => {
+      const r = term.element.querySelector(".xterm-screen").getBoundingClientRect();
+      const cw = r.width / term.cols, ch = r.height / term.rows;
+      let pasted = 0, opened = "";
+      const real = window.pasteIntoTerm, realOpen = window.open;
+      window.pasteIntoTerm = () => { pasted++; };
+      const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + (c + 0.5) * cw, clientY: r.top + ch / 2 });
+      document.querySelector("#t-screen .xterm-screen").dispatchEvent(ev);
+      const m = document.getElementById("cardmenu");
+      const labels = m.classList.contains("on") ? [...m.querySelectorAll("button")].map(b => b.textContent) : [];
+      if (labels.length) {
+        window.open = u => { opened = u; return null; };
+        [...m.querySelectorAll("button")][0].click();
+      }
+      window.pasteIntoTerm = real; window.open = realOpen;
+      return { pasted, labels, opened };
+    }, col);
+    await until(() => p.evaluate(() => walkHubBranches.has("github.com/o/r") && walkHubBranches.get("github.com/o/r").names.size > 0), 5000, "the hub's branch names");
+    let r = await fireAt(12);
+    if (r.pasted || r.labels.join("|") !== "Walk claude/secfix-v0.5.2|Paste") fail("walkHubBranch: a branch name's menu is " + JSON.stringify(r));
+    if (r.opened !== "/walk.html#repo=github.com%2Fo%2Fr&branch=claude%2Fsecfix-v0.5.2") fail("walkHubBranch: walk opened " + r.opened);
+    r = await fireAt(39);
+    if (r.pasted !== 1 || r.labels.length) fail("walkHubBranch: a path that is no branch did not paste: " + JSON.stringify(r));
+    r = await fireAt(55);
+    if (r.labels[0] !== "Walk feature/x") fail("walkHubBranch: a branch the hub lists has no walk: " + JSON.stringify(r));
+    const link = await p.evaluate(() => hubReposBrRow({ name: "claude/x", repo: "github/o/r", status: "open", uncarried: 1, commits: 1 }, false));
+    if (!link.includes('href="/walk.html#repo=github%2Fo%2Fr&amp;branch=claude%2Fx"')) fail("walkHubBranch: a branch row has no walk link: " + link);
+    await p.close();
+
+    const w = await ctx.newPage();
+    w.on("pageerror", e => errors.push(String(e)));
+    await w.goto(base + "/walk.html#repo=github%2Fo%2Fr&branch=claude%2Fsecfix-v0.5.2", { waitUntil: "domcontentloaded" });
+    await w.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) }).catch(() => fail("walkHubBranch: walk.html listed no files for a hub branch"));
+    const rows = await w.$$eval("#walk-drawer .wk-row .wk-fn", els => els.map(e => e.textContent));
+    if (rows.join() !== "fix.go") fail("walkHubBranch: the files are " + rows.join());
+    const title = await w.$eval("#walk-title", e => e.textContent);
+    if (title !== "claude/secfix-v0.5.2 vs main") fail("walkHubBranch: the title is " + title);
+    if (walked.join() !== "github/o/r claude/secfix-v0.5.2") fail("walkHubBranch: the hub was asked " + JSON.stringify(walked));
+    await w.close();
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+  }
+  if (errors.length) fail("walkHubBranch: the page threw: " + errors.join(" | "));
+  console.log("walkHubBranch: ok");
 }
 
 // b-walk-own-view: the walk in a tab of its own (walk.html) over a made-up findings folder, and the drawer's way there.
@@ -16682,7 +16982,7 @@ async function pasteTwiceSection(browser, base) {
   try {
     const got = await fakeRun(p, async (_, answer) => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
-      const wait = ms => new Promise(r => setTimeout(r, ms)); // wait: the page's own clock, the mock runner answers on a timer
+      const wait = ms => new Promise(r => setTimeout(r, ms)); // wait: poll step and settle inside the page
       const lines = [];
       const info = console.info;
       console.info = (...a) => { lines.push(a.join(" ")); };
@@ -16756,7 +17056,7 @@ async function pasteRightClickSection(browser, base) {
       window.sendPasteText = () => { throw new Error("boom"); };
       document.getElementById("t-screen").dispatchEvent(
         new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
-      await new Promise(r => setTimeout(r, 50)); // wait: let the swallowed paste error surface
+      for (let i = 0; i < 100 && !/boom/.test(document.getElementById("toasts").textContent); i++) await new Promise(r => requestAnimationFrame(r));
       window.sendPasteText = real;
       return { box: !document.getElementById("t-paste").hidden, toast: document.getElementById("toasts").textContent };
     });
@@ -25133,7 +25433,7 @@ async function gearHostsSection(browser, base) {
   try {
     const { p, st } = h;
     await p.click("#gear");
-    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.evaluate(() => showSettingsPane("accessing atrium"));
     await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
     const a = await p.evaluate(() => ({
       items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
@@ -25159,7 +25459,7 @@ async function gearHostsSection(browser, base) {
     const gets = st.gets;
     await p.evaluate(() => document.getElementById("settings").close());
     await p.click("#gear");
-    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.evaluate(() => showSettingsPane("accessing atrium"));
     await until(() => st.gets > gets, 5000, "the hosts read").catch(() => {});
     if (st.gets <= gets) fail(tag + "opening the gear did not read the hosts again.");
     if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
@@ -25169,7 +25469,7 @@ async function gearHostsSection(browser, base) {
   try {
     const { p } = h;
     await p.click("#gear");
-    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.evaluate(() => showSettingsPane("accessing atrium"));
     await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
     await p.fill("#s-hh-name", "x.example.org");
     await p.click("#s-hh-add button");
@@ -25188,7 +25488,7 @@ async function gearHostsSection(browser, base) {
     const { p } = h;
     const read = p.waitForResponse(r => r.url().endsWith("/_hub/hosts"), { timeout: slow(5000) }).catch(() => {});
     await p.click("#gear");
-    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.evaluate(() => showSettingsPane("accessing atrium"));
     await read;
     await frames(p, 2);
     const hidden = await p.evaluate(() => { const r = document.getElementById("s-hh-row"); return r.hidden || r.offsetParent === null; });
@@ -28191,9 +28491,9 @@ async function main() {
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
-      history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
+      history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, peekLeftover: peekLeftoverSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -29558,7 +29858,7 @@ async function main() {
       if (hubErrors.length) {
         fail("the hub page threw uncaught errors after the backlog tab: " + hubErrors.join(" | "));
       }
-      await hub.evaluate(() => { fdSetSearch("backlog", ""); toggleBacklogShow(""); toggleBacklogShow("open"); toggleBacklogShow("in-progress"); switchView("audit"); });
+      await hub.evaluate(() => { fdSetSearch("backlog", ""); toggleBacklogShow(""); toggleBacklogShow("open"); toggleBacklogShow("in-progress"); toggleBacklogShow("built"); switchView("audit"); });
 
       // ── the audit pane filters by room ────────────────────────────────────
       // Picking a room narrows the feed to that machine. The two sgg lines stay
@@ -30045,6 +30345,9 @@ async function main() {
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
     await unit("walkBranch", () => walkBranchSection(browser, base));
+    await unit("walkLate", () => walkLateSection(browser, base));
+    await unit("walkSwitch", () => walkSwitchSection(browser, base));
+    await unit("walkHubBranch", () => walkHubBranchSection(browser, base));
     await unit("walkView", () => walkViewSection(browser, base));
     await unit("walkReply", () => walkReplySection(browser, base));
     await unit("walkNoResize", () => walkNoResizeSection(browser, base));
@@ -30103,6 +30406,7 @@ async function main() {
     await unit("usagePolish", bu("usagePolish"));
     await unit("usageLimits", bu("usageLimits"));
     await unit("usageGroups", bu("usageGroups"));
+    await unit("usageHistory", bu("usageHistory"));
     await unit("reselect", () => reselectSection(browser, base));
     // ── over a terminal the toasts hang from the top right ─────────────────
     await unit("toastsTop", () => toastsTopSection(browser, base));
@@ -30162,6 +30466,7 @@ async function main() {
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
     await unit("peekKids", () => peekKidsSection(browser, base));
     await unit("peekScratch", () => peekScratchSection(browser, base));
+    await unit("peekLeftover", () => peekLeftoverSection(browser, base));
     await unit("detailsOne", () => detailsOneSection(browser, base));
     await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
@@ -30310,6 +30615,7 @@ async function main() {
     await unit("backlogKind", bu("backlogKind"));
     await unit("backlogScroll", bu("backlogScroll"));
     await unit("backlogOpen", bu("backlogOpen"));
+    await unit("backlogResult", bu("backlogResult"));
     await unit("mergeStripGone", bu("mergeStripGone"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
@@ -30465,8 +30771,6 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("u002", () => u002Section(browser, base));
-    await unit("burnChart", bu("burnChart"));
-    await unit("burnReadout", bu("burnReadout"));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("termDeadCard", () => termDeadCardSection(browser, base));

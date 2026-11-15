@@ -383,10 +383,10 @@ function walkPrKeydown(e) {
   else walkPrSendReply(t);
 }
 
-// [ and ] step through the agent's comments, wherever they are.
+// [ and ] step through the comments, wherever they are, the ones the rail counts.
 async function walkPrStepComment(dir) {
   await walkPrSync();
-  const all = walkPrAgentComments().sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
+  const all = (walkPr.s ? walkPr.s.comments.slice() : []).sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
   if (!all.length) return;
   const now = all.findIndex(c => c.id === walkPr.sel);
   const c = all[Math.max(0, Math.min(all.length - 1, (now < 0 ? (dir > 0 ? -1 : all.length) : now) + dir))];
@@ -401,9 +401,9 @@ async function walkPrStepComment(dir) {
 }
 
 function walkPrCommentAt() {
-  const all = walkPrAgentComments().sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
+  const all = (walkPr.s ? walkPr.s.comments.slice() : []).sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
   const i = all.findIndex(c => c.id === walkPr.sel);
-  return "agent comment " + (i < 0 ? "-" : i + 1) + " of " + all.length;
+  return "comment " + (i < 0 ? "-" : i + 1) + " of " + all.length;
 }
 
 // A bubble's corner drag changes its width and height, which are kept with the comment.

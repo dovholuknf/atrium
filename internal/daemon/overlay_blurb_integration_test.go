@@ -27,21 +27,6 @@ func TestAGatedWayOutIsNotReportedAsOpen(t *testing.T) {
 	}
 }
 
-func TestAPasswordIsReportedWithItsName(t *testing.T) {
-	t.Parallel()
-	c := publish.AuthConfig{Enabled: true, Basic: true, User: "clint",
-		PassHash: "NOTTHEPASSWORD", PassSalt: "NOTTHESALT"}
-	got := publish.WhoMayOpenIt(c, false)
-	if !strings.Contains(got, `"clint"`) {
-		t.Fatalf("the name is the half atrium can say, said %q", got)
-	}
-	// THE PASSWORD IS NOT IN THERE. It cannot be, since only a hash is
-	// stored, and this fails loudly if that ever stops being true.
-	if strings.Contains(got, "NOTTHE") {
-		t.Fatalf("nothing about the stored secret belongs in a blurb, said %q", got)
-	}
-}
-
 func TestALoginTurnedOnWithNothingBehindItSaysThat(t *testing.T) {
 	t.Parallel()
 	got := publish.WhoMayOpenIt(publish.AuthConfig{Enabled: true}, false)

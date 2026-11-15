@@ -32,7 +32,7 @@ const doneToolDesc = "End your work: it is finished. THIS IS HOW TO END. Nothing
 	"recorded). `artifact` is a path or URL to what you made, for work with no commit, and a path has to exist on " +
 	"your own room. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
 	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call. " +
-	"Answer a launcher's stop with this and your last sha."
+	"Answer a launcher's stop with this and your last sha." + leftoverDesc
 
 const blockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
 	"Nothing else is needed. Give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
@@ -54,7 +54,7 @@ const itemDoneToolDesc = "End your work: it is finished. THIS IS HOW TO END. Not
 	"recorded). `artifact` is a path or URL to what you made, for work with no commit, and a path has to exist on " +
 	"your own room. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
 	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call. " +
-	"If you are asked to stop, answer with this and your last sha."
+	"If you are asked to stop, answer with this and your last sha." + leftoverDesc
 
 const itemBlockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
 	"Nothing else is needed. Give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
@@ -62,11 +62,14 @@ const itemBlockedToolDesc = "End your work: something stops you and you cannot g
 	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call."
 
 type doneInput struct {
-	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
-	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`
-	Line     string `json:"line,omitempty" jsonschema:"optional: one line, up to 20 words, shown after the sha"`
-	Learned  string `json:"learned,omitempty" jsonschema:"optional, for a card in a pool: one paragraph about the code and your own misses that the next item should know. atrium appends it to LEARNINGS.md"`
-	Why      string `json:"why,omitempty" jsonschema:"optional, for a task of an item: why you did it the way you did, up to 1000 bytes. the owner reads it beside the result"`
+	SHA        string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
+	Artifact   string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`
+	Line       string `json:"line,omitempty" jsonschema:"optional: one line, up to 20 words, shown after the sha"`
+	Learned    string `json:"learned,omitempty" jsonschema:"optional, for a card in a pool: one paragraph about the code and your own misses that the next item should know. atrium appends it to LEARNINGS.md"`
+	Why        string `json:"why,omitempty" jsonschema:"optional, for a task of an item: why you did it the way you did, up to 1000 bytes. the owner reads it beside the result"`
+	Skipped    string `json:"skipped,omitempty" jsonschema:"optional: what you left out of the brief and when it should be added, up to 1000 bytes. the card offers to file it to the backlog"`
+	Unverified string `json:"unverified,omitempty" jsonschema:"optional: what you did not exercise and how to try it, up to 1000 bytes"`
+	FollowUps  string `json:"followups,omitempty" jsonschema:"for a spike item (id s-*): the ids of the follow-up items you filed with atrium_backlog, or none. a spike's done without it is refused"`
 }
 
 // LearnedMax is the longest `learned` atrium_done takes, in bytes: one paragraph. The room's is the same, and cuts.
@@ -74,6 +77,14 @@ const LearnedMax = 1500
 
 // WhyMax is the longest `why` atrium_done takes, in bytes.
 const WhyMax = 1000
+
+// SkippedMax and UnverifiedMax are the longest `skipped` and `unverified` atrium_done takes, in bytes, as WhyMax is.
+const SkippedMax, UnverifiedMax = 1000, 1000
+
+const leftoverDesc = " Fill `skipped` with anything the brief asked for that you left out and when it should be added, " +
+	"and `unverified` with anything you did not exercise and how to try it. Leave them out when there is none. A commit " +
+	"only in your directory is pushed to the hub first, and done is refused if that push fails. A spike (item s-*) " +
+	"names the follow-up items it filed in `followups`, or none."
 
 type blockedInput struct {
 	Reason string `json:"reason" jsonschema:"what stops you, in up to 50 words"`
@@ -182,6 +193,13 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	if len(why) > WhyMax {
 		return nil, EndOutput{}, fmt.Errorf("why is %d bytes, over %d. shorten it, details go in REPORT.md", len(why), WhyMax)
 	}
+	skipped, unverified := strings.Join(strings.Fields(in.Skipped), " "), strings.Join(strings.Fields(in.Unverified), " ")
+	if len(skipped) > SkippedMax {
+		return nil, EndOutput{}, fmt.Errorf("skipped is %d bytes, over %d. shorten it, details go in REPORT.md", len(skipped), SkippedMax)
+	}
+	if len(unverified) > UnverifiedMax {
+		return nil, EndOutput{}, fmt.Errorf("unverified is %d bytes, over %d. shorten it, details go in REPORT.md", len(unverified), UnverifiedMax)
+	}
 	tail := ""
 	if line != "" {
 		tail = ": " + line
@@ -194,6 +212,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	case artifact != "":
 		out, err := d.Report(ctx, req, map[string]any{
 			"status": "done", "recap": "done " + artifact + tail, "artifact": artifact, "ended": true, "learned": learned, "why": why,
+			"skipped": skipped, "unverified": unverified, "followups": strings.TrimSpace(in.FollowUps),
 		})
 		return nil, out, err
 	}
@@ -202,6 +221,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	}
 	out, err := d.Report(ctx, req, map[string]any{
 		"status": "done", "recap": "done " + sha + tail, "sha": sha, "ended": true, "learned": learned, "why": why,
+		"skipped": skipped, "unverified": unverified, "followups": strings.TrimSpace(in.FollowUps),
 	})
 	return nil, out, err
 }

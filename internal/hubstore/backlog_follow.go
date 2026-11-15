@@ -81,7 +81,7 @@ func (s *Store) ItemUpsert(in ItemNew, status string) (BacklogItem, string, erro
 		prior, err := scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, in.ID))
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			if _, err := t.Exec(`INSERT INTO backlog_item (`+itemCols+`) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)`,
+			if _, err := t.Exec(`INSERT INTO backlog_item (`+itemFileCols+`) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)`,
 				in.ID, in.Dept, in.Title, in.Body, in.Priority, status, in.FiledBy, fold(in.FiledRoom), at, at, in.FiledBy); err != nil {
 				return err
 			}
@@ -170,4 +170,41 @@ func (s *Store) ItemFollow(card, report, by string) (BacklogItem, bool, error) {
 		return err
 	})
 	return out, found, err
+}
+
+// ItemResultMax bounds a result, in characters. A longer one is cut, never refused: the worker has already ended.
+const ItemResultMax = 2000
+
+// ItemResult records what a worker attached to the item said when it ended with atrium_done, and moves the item out of
+// open to built, where its owner accepts it. An item already done or dropped keeps its status. Control characters
+// become spaces, so a result from any room is stored rather than refused.
+func (s *Store) ItemResult(id, result, ref, card, by string) (BacklogItem, error) {
+	clean := []rune(strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && CRText("result", string(r), 1, true) != "" {
+			return ' '
+		}
+		return r
+	}, strings.TrimSpace(result)))
+	if len(clean) > ItemResultMax {
+		clean = clean[:ItemResultMax]
+	}
+	var out BacklogItem
+	err := s.tx(func(t *sql.Tx) error {
+		at := ts(s.now())
+		res, err := t.Exec(`UPDATE backlog_item SET result = ?, result_ref = ?, result_card = ?, result_at = ?,
+			status = CASE WHEN status IN (?, ?) THEN status ELSE ? END, changed_at = ?, changed_by = ? WHERE id = ?`,
+			string(clean), strings.TrimSpace(ref), card, at, ItemDone, ItemDropped, ItemBuilt, at, by, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return refuse(ErrItemNotFound)
+		}
+		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
+		return err
+	})
+	if errors.Is(err, ErrItemNotFound) {
+		return BacklogItem{}, ErrItemNotFound
+	}
+	return out, err
 }

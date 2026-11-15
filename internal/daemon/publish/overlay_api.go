@@ -6,7 +6,6 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/openziti/zrok/v2/environment/env_core"
@@ -362,22 +361,14 @@ func (d *Service) ReadyToShare(k OverlayKind) error {
 // a private share (an account holds the token) or a ziti service (a policy on
 // the network). With no login the board is handed to whoever finds the link, so
 // the share is refused until a login is configured that actually gates it.
-//
-// A LOGIN, NOT SPECIFICALLY OIDC. The design names OIDC as the login, and it is
-// the better answer, but this repository already treats a name and password as a
-// legitimate published-board login (see AuthConfig.Basic, the operator's "basic
-// auth is fine for starters"). Refusing that here would break the simple case to
-// enforce a preference the design states but the auth model does not. So this
-// closes the actual hole, a public share with NO login, and whether to narrow it
-// to OIDC only is left as a decision rather than made here. See auth.ready.
 func (d *Service) RequireLoginForPublic() error {
 	auth := d.AuthConfig()
 	if auth.Enabled && auth.Ready() == nil {
 		return nil
 	}
 	return fmt.Errorf("a public zrok share hands the board to anyone with the link, so it " +
-		"needs a login first. set one under who may open it (an OIDC provider, or a name and " +
-		"password to start with), then turn the public share on")
+		"needs a login first. set an OIDC provider under who may open it, " +
+		"then turn the public share on")
 }
 
 func (d *Service) StopOverlay(kind string) error {
@@ -465,13 +456,6 @@ func WhoMayOpenIt(c AuthConfig, gated bool) string {
 				"One can be set under who may open it, below."
 		}
 		return "This board has no login. Set one under who may open it, below."
-	}
-	if c.Basic && c.HasPassword() {
-		if c.User != "" {
-			return "Whoever opens it is asked for a name and a password, and the name is " +
-				strconv.Quote(c.User) + "."
-		}
-		return "Whoever opens it is asked for a name and a password."
 	}
 	if strings.TrimSpace(c.Issuer) != "" {
 		return "Whoever opens it is sent to " + c.Issuer + " to sign in first."

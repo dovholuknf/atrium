@@ -59,7 +59,9 @@ type Item struct {
 	WorkID string `json:"work_id,omitempty"`
 	// Step is the step the card was launched for, `atrium:step:<step>` on its tags. It rides the first push, and is not a
 	// column of this table: the attachment holds it (work_card.step).
-	Step      string `json:"step,omitempty"`
+	Step string `json:"step,omitempty"`
+	// Result is the done text a finishing push carries, filed on the backlog item and not a column of this table.
+	Result    string `json:"result,omitempty"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }

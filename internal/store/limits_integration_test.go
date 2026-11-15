@@ -38,14 +38,14 @@ func TestLimitReadings(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].Pct != 11 || got[0].Card != "c1" {
 		t.Fatalf("since read %+v (%v)", got, err)
 	}
-	// 9 hours on: the five-hour rows go, the weekly one stays.
-	if n, err := s.PruneLimitReadings(at.Add(9 * time.Hour)); err != nil || n != 3 {
-		t.Fatalf("pruned %d (%v), want 3", n, err)
+	if got, err := s.LimitReadingsIn(at, at.Add(2*time.Minute)); err != nil || len(got) != 2 || got[0].Pct != 10 || got[1].Kind != LimitWeekly {
+		t.Fatalf("until read %+v (%v)", got, err)
 	}
-	if got, _ := s.LimitReadings(at.Add(-time.Hour)); len(got) != 1 || got[0].Kind != LimitWeekly {
-		t.Fatalf("after prune %+v", got)
+	// Both kinds stay for weeks, so the usage tab can page back through them.
+	if n, err := s.PruneLimitReadings(at.Add(34 * 24 * time.Hour)); err != nil || n != 0 {
+		t.Fatalf("pruned %d (%v) at 34 days, want 0", n, err)
 	}
-	if n, _ := s.PruneLimitReadings(at.Add(8 * 24 * time.Hour)); n != 1 {
-		t.Fatalf("weekly pruned %d, want 1", n)
+	if n, _ := s.PruneLimitReadings(at.Add(36 * 24 * time.Hour)); n != 4 {
+		t.Fatalf("pruned %d at 36 days, want 4", n)
 	}
 }

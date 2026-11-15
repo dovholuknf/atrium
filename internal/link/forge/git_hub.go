@@ -61,8 +61,8 @@ func (p *Service) SetGitSettings(s GitSettings, hubDir string) {
 	p.gitSettings, p.gitDir = s, hubDir
 }
 
-// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos,branches,url}. Loopback only, like the
-// control server, for everything but the list of repos: these start work on a room or on the
+// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos,branches,url,walk}. Loopback only, like
+// the control server, for everything but the list of repos: these start work on a room or on the
 // hub's disk, and an overlay is not an auth layer.
 func (p *Service) ServeGit(w http.ResponseWriter, r *http.Request, sub string) {
 	g := p.Git()
@@ -124,6 +124,30 @@ func (p *Service) ServeGit(w http.ResponseWriter, r *http.Request, sub string) {
 		v, err := g.Store().BranchesSnapshot(repo, gitsync.BranchFilter{Statuses: q["status"], Kind: q.Get("kind"), Limit: lim})
 		if err != nil {
 			fail(http.StatusServiceUnavailable, "the hub could not read its store just now")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(v)
+		return
+	}
+	// OPEN LIKE THE BRANCHES: a read of one branch's patch, and the branch is only compared with the listed heads.
+	if sub == "git/walk" {
+		if r.Method != http.MethodGet {
+			fail(http.StatusMethodNotAllowed, "that has to be a GET")
+			return
+		}
+		q := r.URL.Query()
+		ref, err := gitsync.ParseName(q.Get("repo"))
+		if err != nil || q.Get("branch") == "" {
+			fail(http.StatusBadRequest, "repo is host/owner/repo, like github/o/r, and branch is one of its branches")
+			return
+		}
+		v, err := g.Store().BranchWalk(r.Context(), ref.Name(), q.Get("branch"))
+		if errors.Is(err, gitsync.ErrRefused) {
+			fail(http.StatusNotFound, err.Error())
+			return
+		}
+		if err != nil {
+			fail(http.StatusServiceUnavailable, "the hub could not read that branch just now")
 			return
 		}
 		_ = json.NewEncoder(w).Encode(v)
