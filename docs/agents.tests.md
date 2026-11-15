@@ -30,6 +30,7 @@ CI runs the same checks first. A job that fails with `FAILED: test waits` (or gl
 
 ## Board (playwright) tests
 
+- Set a card up once with `npm install` and `npx playwright install chromium` in its root, or the board units skip.
 - Board proof needs playwright. A machine without it SKIPS headless units silently. A real run prints a TIMING line. `ssh claudevm` has playwright.
 - Load, repeat and stress runs go on the sg box only, never a burner and never the full suite locally.
 - Tests that measure layout must wait for animations (tray slide-in) to end before measuring.

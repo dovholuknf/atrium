@@ -45,13 +45,13 @@ writes a policy or talks to a controller for you.
 
 ## A login on the published board
 
-A published board can ask who you are, with a name and a password, an OIDC provider, or both. The login guards
-only the published listener. The loopback board still has none.
+A published board can ask who you are, through an OIDC provider. The sign-in guards every published listener,
+private shares and ziti services included. The loopback board still has none.
 
-- A name and a password is a complete setup. Somebody sharing a board for an afternoon has no OIDC provider to
-  hand.
-- With both set, the password is checked first, so the board still opens when the provider is down.
-- The password is salted and hashed with scrypt, never stored in plain, and never sent back to the page.
+- Atrium keeps no passwords and no refresh tokens. The provider proves who you are, and a signed cookie says it did.
+- A public share is refused until the sign-in is on and complete.
+- Leave the callback empty and each address the board is published on uses its own, with `/auth/callback` on the
+  end. Register each one with the provider.
 
 The login settings sit under the panel that publishes the board.
 

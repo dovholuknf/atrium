@@ -74,7 +74,7 @@ Defaults are in `internal/cli/atrium_defaults.go`: board 7778, link 7779, room b
 - Hub (`internal/hubstore`, `internal/link`): `board_auto`, `board_skin`, `ci_hook.*`, `deploy_binary`, `deploy_owner`,
   `deploy_script`, `doc_debt.*`, `docs_settings`, `extra_hosts`, `files_settings`, `flow_repo`, `forge.entries`,
   `git.create_on_push`, `git.stash_retention_days`, `git.store`, `git_repos`, `launch_caps`, `overlay_legacy`,
-  `recognisers.rows`, `room_transport_order`, `share_auth`, `share_oidc`, `share_pass`, `share_user`.
+  `recognisers.rows`, `room_transport_order`, `auth_oidc`.
 - Also in the same tables, but state, not settings: `auth_cookie_key`, `auth_session_gen`, `room_stopped_at`,
   `room_viewport`, `runner_latest`, `recognisers.seeded`, `recognisers.backfilled`, `work_ledger_backfilled_at`,
   `alias_default_backfill`, `card_actions_seeded`, and per-card rows `owed:`, `owed_closed:`, `owed_ask:`,
