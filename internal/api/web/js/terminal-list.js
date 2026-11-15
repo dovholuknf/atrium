@@ -1109,7 +1109,8 @@ function termTone(root) {
 // A ROW WHOSE NAME WOULD BE CUT DROPS ITS ROOM CHIP FIRST, and only then does the name shrink.
 function termRoomFit(root) {
   const cards = [...root.querySelectorAll(".term-list .card")].filter(c => c.querySelector(".card-line > .chips .chip.room"));
-  cards.forEach(c => c.classList.remove("noroom"));
+  // remove writes the class attribute even when the token is absent, so only a row that has it is touched
+  cards.filter(c => c.classList.contains("noroom")).forEach(c => c.classList.remove("noroom"));
   cards.filter(c => { const n = c.querySelector(".tname"); return n && n.scrollWidth > n.clientWidth + 1; })
     .forEach(c => c.classList.add("noroom"));
 }
