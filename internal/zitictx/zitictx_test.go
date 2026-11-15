@@ -164,15 +164,19 @@ func TestSharedFileRaceSharesQuietly(t *testing.T) {
 		})
 	t.Cleanup(func() { CloseAll(); restore() })
 	var wg sync.WaitGroup
-	for _, who := range []string{"link", "native"} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := SharedFile(who, "a.json"); err != nil {
-				t.Error(err)
-			}
-		}()
-	}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if _, err := SharedFile("link", "a.json"); err != nil {
+			t.Error(err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if _, err := build("native", keyOf("a.json"), &ziti.Config{}); err != nil && !errors.Is(err, ErrDuplicate) {
+			t.Error(err)
+		}
+	}()
 	wg.Wait()
 	if Live() != 1 || strings.Contains(buf.String(), "BUG") {
 		t.Fatalf("live %d, log %q, want 1 and no BUG", Live(), buf.String())
