@@ -297,8 +297,11 @@ function morphAttrs(mine, want) {
   const wanted = want.attributes;
   for (let i = 0; i < wanted.length; i++) {
     const a = wanted[i];
-    if (mine.getAttribute(a.name) === a.value) continue;
-    mine.setAttribute(a.name, a.value);
+    let v = a.value;
+    // dk and noroom are put on a row by the page after it is drawn, so a redraw keeps them rather than strip and re-add them
+    if (a.name === "class") { const keep = ["dk", "noroom"].filter(t => mine.classList.contains(t) && !want.classList.contains(t)); if (keep.length) v = (v + " " + keep.join(" ")).trim(); }
+    if (mine.getAttribute(a.name) === v) continue;
+    mine.setAttribute(a.name, v);
     changed = true;
   }
   const have = mine.attributes;
