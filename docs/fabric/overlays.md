@@ -61,8 +61,9 @@ people are actually stuck on. Atrium shows the state and offers the next thing, 
 installed but not set up, ready.
 
 **zrok needs an environment.** That comes from an account token, which you get once and reuse on every machine.
-Paste it and press enable. Atrium runs `zrok enable <token> --headless`, and the description you give is what
-the zrok console lists this machine as.
+Paste it and press enable. Atrium enables in its own binary through the zrok SDK, with no `zrok` executable, and
+the description you give is what the zrok console lists this machine as. `atrium zrok enable --env DIR
+--token-file FILE` does the same from a shell, into any environment folder.
 
 Whether an environment exists is read off disk, from `~/.zrok2/environment.json`, which is the same file the
 zrok CLI itself checks. It is NOT read out of `zrok status`, which prints boxed tables for a person to look at:
@@ -93,9 +94,9 @@ board should be editing.
 | share token | Reuses a private share so its address survives a restart. |
 | reserved name | Keeps one address for a public share. The **reserve it** button holds it on your account. |
 
-**Private is the default.** A private share needs zrok on the other end, and the safe default for something with
-no login is the one that needs an account. Turning on a public share asks first, and says plainly that whoever
-opens the link can read every command and answer permission requests.
+**Private is the default.** A private share needs zrok on the other end, and it is created closed: only this
+account, and accounts granted to it by name, may access it. Turning on a public share asks first, and says plainly that
+whoever opens the link can read every command and answer permission requests.
 
 A private share prints no URL, because there is nothing to open. What the board shows is the command the other
 end runs: `zrok access private <token>`.
@@ -185,8 +186,9 @@ Two things this does not cover, and both are yours to get right:
 - **Never publish the agent listener.** `:7777` carries the permission gate. Anything that can reach it can
   answer a request on an agent's behalf. The default backend is the board on `:7778` for that reason.
 - **A public zrok share needs a login.** Whoever reaches it could read every command and answer permission
-  requests, so the hub refuses a public share that has neither a zrok username and password nor OIDC set
-  (`openBoardShare` in `internal/cli/atrium_share.go`). Private is the default.
+  requests, so the hub and the room both refuse a public share until the board's OIDC sign-in is on and complete
+  (`serveAtrium` in `internal/cli/atrium_run.go`, `RequireLoginForPublic` in `internal/daemon/publish`). Private is the
+  default.
 
 ## What it shows
 
@@ -358,8 +360,12 @@ the settled decision. It was right, and the password half was dropped rather tha
 
 ### Where it applies, which is what makes it safe
 
-The published board is a different `net.Listener` served by a different `http.Server`. The guard wraps THAT
-handler and nothing else, so the boundary is structural rather than a rule somebody has to remember:
+The published board is a different `net.Listener` served by a different `http.Server`. The guard
+(`publish.Guard`, the same one in the room and in the hub) wraps THAT handler on every way out, private shares and
+ziti services included, and nothing else, so the boundary is structural rather than a rule somebody has to
+remember. With the callback left empty it is the address each visit came in on, so one provider client serves
+every exposure once each callback is registered with it. A stored sign-in that cannot work refuses rather than
+opens.
 
 - **Loopback is untouched.** No login, exactly as before.
 - **Every hook, the CLI and the MCP server keep working**, because they talk to loopback and were never going

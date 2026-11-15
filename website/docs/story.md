@@ -145,8 +145,9 @@ hands back a listener and the board is one handler on it. It never proxies, neve
 decides who may connect. The loopback board still has no login.
 
 A published board is different. Somebody putting a board on a public zrok share for an afternoon has no OIDC
-provider to hand, and what they reach for instead is no login at all. So a published board can ask for a name and
-a password, and a public share is refused without one.
+provider to hand, and what they reach for instead is no login at all. A name and a password came first and was
+dropped, because atrium keeps no passwords. A published board asks for an OIDC sign-in, and a public share is
+refused without one.
 
 ## Installing it
 
