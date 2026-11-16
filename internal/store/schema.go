@@ -2562,6 +2562,30 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN skipped_filed TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// THE BOARD NO LONGER COUNTS ITS CONTROLS. Nothing read 0094_board_usage but its own dialog.
+		name: "0121_drop_board_usage",
+		stmts: []string{
+			`DROP TABLE IF EXISTS board_usage`,
+		},
+	},
+	{
+		name: "0122_artifact",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS artifact (
+				task_id  TEXT NOT NULL,
+				kind     TEXT NOT NULL,
+				ref      TEXT NOT NULL,
+				label    TEXT NOT NULL DEFAULT '',
+				source   TEXT NOT NULL DEFAULT '',
+				bytes    INTEGER NOT NULL DEFAULT 0,
+				first_at TEXT NOT NULL,
+				last_at  TEXT NOT NULL,
+				extra    TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (task_id, kind, ref)
+			)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

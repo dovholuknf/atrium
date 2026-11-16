@@ -1280,7 +1280,18 @@ function compiled(body, fallback, ...args) {
 // throw on one card cannot stop the board drawing the rest.
 // The buckets, newest first. Dormant last, which is where it belongs both in
 // order and in how much of your attention it deserves.
-const RECENCY_ORDER = ["today", "yesterday", "this week", "this month", "dormant"];
+const RECENCY_ORDER = ["1h", "4h", "today", "yesterday", "this week", "this month", "dormant"];
+
+// The newest activity anywhere in a card's tree. A child row is drawn under its parent and never gets a group of its
+// own, so the parent's age alone hid a child worked on today.
+function treeActivityAt(t) {
+  let at = new Date(t.last_activity_at);
+  for (const k of (typeof termKids !== "undefined" && termKids.get(t.id)) || []) {
+    const kid = treeActivityAt(k);
+    if (isNaN(at) || kid > at) at = kid;
+  }
+  return at;
+}
 
 // Which bucket a card falls in, from when it was last active.
 //
@@ -1292,8 +1303,12 @@ const RECENCY_ORDER = ["today", "yesterday", "this week", "this month", "dormant
 // yesterday, since those have their own. That is what the operator asked for
 // and it is also the only way a card lands in exactly one place.
 function recencyBucket(t) {
-  const at = new Date(t.last_activity_at);
+  const at = treeActivityAt(t);
   if (isNaN(at)) return "dormant";
+
+  const now = Date.now();
+  if (now - at <= 3600000) return "1h";
+  if (now - at <= 4 * 3600000) return "4h";
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);

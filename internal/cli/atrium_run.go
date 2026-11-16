@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"io/fs"
 	"log"
 	"net"
@@ -138,6 +139,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	raisePriority()
 	keys := linktransport.Keys{Dir: orDefault(dir, hubDir())}
+	seenhost.LogFile(filepath.Join(keys.Dir, "human-host.log"))
 
 	// THE HUB'S OWN STORE, and opening it is the first thing that can
 	// refuse to start.
@@ -893,7 +895,7 @@ func serveBoardOn(ctx context.Context, ln net.Listener, h http.Handler, what str
 // became something else.
 func greet(store *hubstore.Store, side *hubSide, boardAddr, id string, withRoom bool) {
 	fmt.Println()
-	fmt.Println("  the board is at   http://localhost" + portOf(boardAddr))
+	fmt.Println("  the board is at   http://127.0.0.1" + portOf(boardAddr))
 	fmt.Println("  rooms dial in on  " + side.says)
 	fmt.Println("  board build       " + id)
 	fmt.Println()

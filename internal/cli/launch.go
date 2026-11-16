@@ -127,7 +127,7 @@ func newLaunch() *cobra.Command {
 			"without --cwd it runs in the card's own directory")
 	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --isolated: who owns it. empty is the creating session, human, or orchestrator or director")
 	c.Flags().StringVar(&o.item, "item", "",
-		"REQUIRED for a new session: the backlog item this works on, by id (f-new-thing), or new:\"a title\" to file one "+
+		"a strong suggestion for a new session, leave it out only for a one-off: the backlog item this works on, by id (f-new-thing), or new:\"a title\" to file one "+
 			"under the dept: tag in --tags, or rerun:<id> for an item that already has a result. not needed with --resume "+
 			"or --onto, whose card already exists")
 	c.Flags().StringVar(&o.step, "step", "",
@@ -270,6 +270,9 @@ func launchBody(o launchOpts, cwd string) error {
 		}
 		if filed && !o.quiet {
 			fmt.Printf("filed backlog item %s\n", id)
+		}
+		if id == "" && !o.quiet {
+			fmt.Println(strings.TrimSpace(link.NoItemNote))
 		}
 		fields["tags"] = link.WithWorkTag(o.tags, id)
 	}

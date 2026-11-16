@@ -18,10 +18,10 @@ func (e fakeStatus) Error() string   { return "hub answered" }
 func (e fakeStatus) HTTPStatus() int { return e.code }
 func (e fakeStatus) Bare() bool      { return e.bare }
 
-func TestALaunchWithNoItemIsRefusedNamingTheFlag(t *testing.T) {
-	_, _, err := ResolveItem(context.Background(), nil, "  ", "fabric", "me", "r")
-	if err == nil || !strings.Contains(err.Error(), "--item") {
-		t.Fatalf("err = %v", err)
+func TestALaunchWithNoItemProceeds(t *testing.T) {
+	id, filed, err := ResolveItem(context.Background(), nil, "  ", "fabric", "me", "r")
+	if err != nil || id != "" || filed {
+		t.Fatalf("id=%q filed=%v err=%v", id, filed, err)
 	}
 }
 
@@ -75,8 +75,8 @@ func TestNewFilesTheBacklogItemUnderTheLaunchersDept(t *testing.T) {
 	if posted["dept"] != "fabric" || posted["title"] != "a title" {
 		t.Fatalf("posted %v", posted)
 	}
-	if _, _, err := ResolveItem(context.Background(), call, "new:x", "", "me", "r"); err == nil {
-		t.Fatal("new: with no department was not refused")
+	if _, _, err := ResolveItem(context.Background(), call, "new:x", "", "me", "r"); err != nil || posted["dept"] != DefaultDept {
+		t.Fatalf("new: with no department: posted %v err=%v", posted, err)
 	}
 }
 

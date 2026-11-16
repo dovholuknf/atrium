@@ -518,7 +518,7 @@ func (s *slowMachine) Run(ctx context.Context, name string, args ...string) (str
 }
 
 func TestASlowMachineIsBounded(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Millisecond)
 	defer cancel()
 	start := time.Now()
 	rep := Check(ctx, &slowMachine{winMachine()}, Options{})

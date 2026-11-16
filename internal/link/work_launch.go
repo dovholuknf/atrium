@@ -44,9 +44,11 @@ func WithStepTag(tags []string, step string) ([]string, error) {
 // NewItemPrefix is how a launch files the backlog item it runs on: `new:a title`.
 const NewItemPrefix = "new:"
 
-// ItemRequired is the refusal for a launch that names no item. It names the flag, in the words of each door.
-const ItemRequired = "a launch names the item it works on. pass --item <backlog id> (the `item` argument of atrium_launch), " +
-	"or --item new:\"a title\" to file one as you launch. work is named in the backlog, so find the id with atrium_backlog list"
+// NoItemNote is what a launch reply says when no item was attached.
+const NoItemNote = "no backlog item was attached. "
+
+// DefaultDept is the department a `new:` item is filed under when the launcher has none.
+const DefaultDept = "general"
 
 // WorkOfTags is the backlog id a launch's tags attach it to, or "".
 func WorkOfTags(tags []string) string {
@@ -95,8 +97,8 @@ const RerunPrefix = "rerun:"
 // RerunTag rides a rerun's tags, so the hub that re-reads a relayed launch's item from its tags knows it was said.
 const RerunTag = "atrium:rerun"
 
-// ParseItemSpec reads an item argument. Empty is refused with ItemRequired, and an id that is not one is refused with
-// what an id looks like.
+// ParseItemSpec reads an item argument. Empty is no item, and an id that is not one is refused with what an id looks
+// like.
 func ParseItemSpec(spec string) (ItemSpec, error) {
 	spec = strings.TrimSpace(spec)
 	switch {
@@ -108,7 +110,7 @@ func ParseItemSpec(spec string) (ItemSpec, error) {
 		s.Rerun = err == nil
 		return s, err
 	case spec == "":
-		return ItemSpec{}, &ctl.RefusedError{Msg: ItemRequired}
+		return ItemSpec{}, nil
 	case strings.HasPrefix(strings.ToLower(spec), NewItemPrefix):
 		title := strings.TrimSpace(spec[len(NewItemPrefix):])
 		if title == "" {
@@ -146,12 +148,16 @@ func DeptOfTags(tags []string) string {
 //   - An id must be a backlog item the hub holds. A hub that answers "no such item" refuses the launch. A hub that does
 //     not answer does NOT: a launch is not refused for a hub being down, and the attach waits in the room's outbox.
 //   - An id whose item already has a result is refused unless it is said as `rerun:<id>`.
-//   - `new:<title>` files the backlog item first, under dept (the launcher's), and attaches to it. Filing needs the hub,
+//   - An empty spec is no item: it returns "" and no error.
+//   - `new:<title>` files the backlog item first, under dept (the launcher's, else DefaultDept), and attaches to it. Filing needs the hub,
 //     so a hub that is not answering refuses it.
 func ResolveItem(ctx context.Context, call HubCall, spec, dept, by, room string) (id string, filed bool, err error) {
 	s, err := ParseItemSpec(spec)
 	if err != nil {
 		return "", false, err
+	}
+	if s.ID == "" && s.Title == "" {
+		return "", false, nil
 	}
 	if s.ID != "" {
 		var b hubstore.BacklogItem
@@ -169,8 +175,7 @@ func ResolveItem(ctx context.Context, call HubCall, spec, dept, by, room string)
 		return s.ID, false, nil
 	}
 	if strings.TrimSpace(dept) == "" {
-		return "", false, &ctl.RefusedError{Msg: "--item new: files the item under your department, and there is none to read: " +
-			"launch from a card tagged dept:<name>, or file it with atrium_backlog first and pass its id"}
+		dept = DefaultDept
 	}
 	var b hubstore.BacklogItem
 	if err := call(ctx, http.MethodPost, "/_hub/backlog", map[string]any{

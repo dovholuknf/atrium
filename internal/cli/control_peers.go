@@ -678,7 +678,7 @@ type LaunchInput struct {
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// Item names the backlog item the worker works on. See link.WorkTagPrefix.
-	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker works on, by id (like f-new-thing), or new:<title> to file one under your department as you launch, or rerun:<id> to launch again on an item that already has a result. work is named in the backlog, so find the id with atrium_backlog list. a launch with no item is refused"`
+	Item string `json:"item,omitempty" jsonschema:"a strong suggestion: pass an item, leave it out only for a one-off. the backlog item this worker works on, by id (like f-new-thing), or new:<title> to file one under your department (general when you have none) as you launch, or rerun:<id> to launch again on an item that already has a result. work is named in the backlog, so find the id with atrium_backlog list. a launch with no item proceeds, and the reply says none was attached"`
 	// Isolated starts the worker as an isolated item. See link.ItemTag.
 	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with isolated: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
 	Isolated  bool   `json:"isolated,omitempty" jsonschema:"start the worker ISOLATED: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. leave it out for an ordinary worker, which is unchanged"`
@@ -787,7 +787,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	if harness == "" {
 		harness = "claude"
 	}
-	// EVERY LAUNCH NAMES AN ITEM, refused before a briefing is written or anything is posted. The attachment is the tag
+	// A LAUNCH SHOULD NAME AN ITEM but need not, resolved before a briefing is written or anything is posted. The attachment is the tag
 	// `atrium:item:<id>`, which the room and the hub both read, so the cross-room road needs no new field.
 	workID, filedNote, err := resolveLaunchItem(ctx, in.Item, in.Tags)
 	if err != nil {
@@ -907,6 +907,12 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	if base, err := board(); err == nil {
 		// Where the human looks. Worth returning rather than leaving them to
 		// assemble it, because the fragment form is not guessable.
+		var seen struct {
+			Base string `json:"base"`
+		}
+		if ask(ctx, http.MethodGet, "/v1/human-base", nil, &seen) == nil && seen.Base != "" {
+			base = seen.Base
+		}
 		out.Watch = base + "/#term=" + url.PathEscape(t.ID)
 	}
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
@@ -921,6 +927,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	missed = append(missed, link.LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
 	if link.SuperleanDropped(in.Superlean, t.Tags) {
 		missed = append(missed, "superlean")
+	}
+	if strings.Contains(out.Note, link.NoItemNote) {
+		filedNote = strings.ReplaceAll(filedNote, link.NoItemNote, "")
 	}
 	out.Note = filedNote + link.LaunchDroppedWarning(missed) + out.Note
 	return nil, out, nil

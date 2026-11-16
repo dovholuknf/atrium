@@ -20,8 +20,9 @@ is the statusline. So the statusline posts the part that matters here.
 
 ## What atrium owns and what it does not
 
-Atrium owns the endpoint, what the board draws from it, and this document. The statusline script itself is not
-in this repository and will not be. What follows is everything needed to write it.
+Atrium owns the endpoint, what the board draws from it, and this document. The status line itself is `atrium statusline`
+(`internal/statusline`), which draws the line and does the post. Provisioning sets `statusLine.command` to
+`<atrium exe> statusline`. What follows is the contract it keeps, and what any other status line needs to do the same.
 
 ## The wire
 

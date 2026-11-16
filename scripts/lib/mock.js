@@ -761,19 +761,6 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/permissions") { sendJSON(res, { permissions: mock.tasksMode === "land" ? mock.landPerms : [] }); return; }
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
   if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
-  if (url === "/v1/usage" && req.method === "POST") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      try { for (const [k, n] of Object.entries(JSON.parse(raw).counts || {})) boardUsageSeen.set(k, (boardUsageSeen.get(k) || 0) + n); } catch (e) {}
-      res.writeHead(204); res.end();
-    });
-    return;
-  }
-  if (url === "/v1/usage/board") {
-    const controls = [...boardUsageSeen].map(([control, n]) => ({ control, n, last: "2026-10-10" })).sort((x, y) => y.n - x.n);
-    sendJSON(res, { controls }); return;
-  }
   if (url === "/v1/health") {
     sendJSON(res, { build: mock.healthBuild, settling: false, halted: false }); return;
   }
@@ -994,8 +981,4 @@ const mockWatch = setInterval(() => {
 }, 200);
 mockWatch.unref();
 
-/* The board counts its own controls (js/usage-board.js) and the ... menu lists them, most used first, with the ones
-   never used at the bottom. */
-const boardUsageSeen = new Map();
-
-module.exports = { mock, hooks, FILED, T1, SEEN, qclickCards, UNTAGGED_CARDS, AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1, UC_CARDS, UC_MANY, LOOP, T2, SKINS, openStreams, hubStreams, stallHeld, NEWC, landCard, settingsBody, resetSkins, boardUsageSeen, QC_AT, mockSay, WEB_ROOT, HTML, server, resetPin, resetAudit, resetSwitches, hungResponses };
+module.exports = { mock, hooks, FILED, T1, SEEN, qclickCards, UNTAGGED_CARDS, AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1, UC_CARDS, UC_MANY, LOOP, T2, SKINS, openStreams, hubStreams, stallHeld, NEWC, landCard, settingsBody, resetSkins, QC_AT, mockSay, WEB_ROOT, HTML, server, resetPin, resetAudit, resetSwitches, hungResponses };

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"io"
 	"io/fs"
 	"log"
@@ -248,6 +249,11 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 			// can reach. Nothing in the room reads it today, which is what
 			// makes this safe rather than what makes it unnecessary.
 			r.Out.Host = r.In.Host
+			// Always set or removed here, so a browser cannot name the host itself.
+			r.Out.Header.Del(seenhost.HeaderName)
+			if b := seenhost.Base(""); b != "" {
+				r.Out.Header.Set(seenhost.HeaderName, b)
+			}
 			r.SetXForwarded()
 		},
 		Transport: &http.Transport{
@@ -537,6 +543,7 @@ func (p *Proxy) rememberCardRoom(bare, room string) {
 
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	seenhost.Note(r)
 	// THE ROOM'S SSH ROUTE IS NOT REACHABLE FROM A BOARD REQUEST, and neither are the headers it trusts. Everything
 	// under `/_link/` is a 404 here, and the two headers the hub sets itself on a stream are dropped from whatever is
 	// forwarded, so no request can reach the route or forge who is calling. See stream.go.
@@ -556,7 +563,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(context.WithValue(r.Context(), viewKey{}, v))
 	}
 	// A ROOM'S LOOPBACK PORT, at /<room>/preview/<port>/. See preview.go.
-	if p.servePreview(w, r) {
+	if p.servePreview(w, r) || p.servePage(w, r) {
 		return
 	}
 	// THE CONTROL MCP SERVER, ahead of the rest of the hub API because it sets
@@ -803,14 +810,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// scoping to the room they mean. Writing one is still refused, because
 		// that is the question `needsARoom` exists to ask.
 		if r.Method == http.MethodGet && borrowed[r.URL.Path] {
-			if first := p.firstRoom(); first != "" {
-				room = first
-			}
-		}
-		// THE BOARD'S CLICK COUNTS HAVE NO ROOM TO BELONG TO in the ALL view, and a beacon cannot carry a
-		// header, so both halves asked and were refused: nothing was stored and "controls used" read back
-		// empty. They land on the first room, the same one every time. See js/usage-board.js.
-		if room == "" && boardUsagePath(r) {
 			if first := p.firstRoom(); first != "" {
 				room = first
 			}
@@ -1750,10 +1749,4 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
-}
-
-// boardUsagePath is the board counting its own controls: the batch it posts and the totals it reads back.
-func boardUsagePath(r *http.Request) bool {
-	return (r.Method == http.MethodPost && r.URL.Path == "/v1/usage") ||
-		(r.Method == http.MethodGet && r.URL.Path == "/v1/usage/board")
 }

@@ -9,17 +9,17 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// A LAUNCH THAT NAMES NO ITEM IS REFUSED before anything is posted to the room, naming the argument.
-func TestALaunchWithNoItemIsRefusedAndPostsNothing(t *testing.T) {
+// A LAUNCH THAT NAMES NO ITEM STARTS, and says no backlog item was attached.
+func TestALaunchWithNoItemStartsAndSaysSo(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	s := h.connect(t, "boss", "alpha")
 	res, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "atrium_launch_worker",
 		Arguments: map[string]any{"cwd": "/work/dir", "prompt": "do the thing"}})
-	if err == nil && (res == nil || !res.IsError) {
-		t.Fatalf("a launch with no item was not refused: %+v", res)
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("a launch with no item was refused: %+v, %v", res, err)
 	}
-	if len(*h.launches) != 0 {
-		t.Fatalf("launches = %d, want none", len(*h.launches))
+	if len(*h.launches) != 1 {
+		t.Fatalf("launches = %d, want 1", len(*h.launches))
 	}
 }
 

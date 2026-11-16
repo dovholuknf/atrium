@@ -1,0 +1,103 @@
+  /* What a session made, as a slide-out over the right of the terminal pane. It is the files drawer's list and bar with one
+     button style, so this file only adds what the drawer does not have. Load after rows.css. */
+  #t-arts { position: relative; display: inline-flex; gap: 5px; align-items: center; }
+  #t-arts .artn { font: 600 var(--fs-xxs)/1 var(--mono); color: var(--teal); }
+  #t-arts .artn:empty { display: none; }
+  #t-arts[aria-pressed="true"] { background: var(--chip); border-color: var(--stroke); color: var(--head); }
+
+  .term-pane { position: relative; }
+  .term-arts {
+    position: absolute; z-index: 5; box-sizing: border-box; top: var(--arts-top, 40px); right: 0; bottom: 0;
+    width: min(900px, 74%); border-left: 1px solid var(--stroke-dim);
+    background: linear-gradient(180deg, rgb(var(--shell0-rgb)), rgb(var(--shell1-rgb)));
+    box-shadow: 0 10px 34px rgba(var(--shadow-rgb), .35);
+    transition: transform .2s ease, visibility .2s;
+  }
+  .term-arts[hidden] { display: flex; visibility: hidden; transform: translateX(102%); }
+
+  /* One button for the whole panel: 26px tall, the same corner, border and fill, an icon alone or an icon and a word. */
+  .term-arts .ab {
+    all: unset; box-sizing: border-box; flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    height: 26px; min-width: 26px; padding: 0 6px; border-radius: var(--r-sm); cursor: pointer;
+    font: 500 var(--fs-xs)/1 var(--sans); color: var(--body); white-space: nowrap;
+    background: color-mix(in srgb, var(--body) 7%, transparent);
+    border: 1px solid color-mix(in srgb, var(--body) 24%, transparent);
+    transition: color .12s, background .12s, border-color .12s;
+  }
+  .term-arts .ab svg { display: block; width: 14px; height: 14px; flex: none; }
+  .term-arts .ab.w { padding: 0 9px 0 7px; }
+  .term-arts .ab:focus-visible { outline: 1px solid var(--teal); outline-offset: 1px; }
+  @media (hover: hover) {
+    .term-arts .ab:not(:disabled):hover { color: var(--head); border-color: var(--blue); background: var(--btn-hover); }
+  }
+  .term-arts .ab[aria-pressed="true"] { color: var(--teal); background: rgba(var(--teal-rgb), .12); border-color: color-mix(in srgb, var(--teal) 60%, transparent); }
+  .term-arts .ab:disabled { opacity: .35; cursor: default; }
+  .term-arts .ab.done { color: var(--teal); border-color: var(--teal); }
+  .abgroup { display: inline-flex; gap: 4px; flex: none; }
+  .absep { flex: none; width: 1px; height: 18px; background: var(--stroke-dim); margin: 0 2px; }
+
+  .term-arts > .filebar { flex-wrap: wrap; row-gap: 6px; }
+  .arthead { display: inline-flex; align-items: center; gap: 6px; font: 600 var(--fs-sm) var(--sans); color: var(--head); }
+  .artcount { font: var(--fs-xs) var(--mono); color: var(--dimmest); font-weight: 400; }
+  .term-arts .seg button {
+    height: 26px; box-sizing: border-box; padding: 0 9px; font-size: var(--fs-xs); line-height: 1;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .term-arts .seg button.on { background: var(--chip); color: var(--head); border-color: var(--stroke); }
+  .term-arts .ffilter input { height: 26px; box-sizing: border-box; }
+
+  /* The explorer's tracks: a tick, the name, where it lives, its size, when, and the actions the row is on. */
+  .term-arts .filelist .frow { grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) 7ch 10ch 86px; gap: var(--sp-3); min-height: 30px; box-sizing: border-box; }
+  .term-arts .filelist .frow.agroup {
+    display: flex; gap: 6px; align-items: center; cursor: pointer; user-select: none; min-height: 0;
+    position: sticky; top: 29px; z-index: 1; background: var(--bg-1);
+    font: var(--fs-xxs) var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--dimmest);
+    padding-top: 5px; padding-bottom: 5px;
+  }
+  .term-arts .filelist .frow.agroup:hover { background: var(--bg-1); color: var(--head); }
+  .term-arts .filelist .frow.agroup .n { font-family: var(--mono); letter-spacing: 0; }
+  .term-arts .filelist .frow.agroup svg { width: 12px; height: 12px; flex: none; transition: transform .15s; }
+  .term-arts .filelist .frow.agroup.shut svg { transform: rotate(-90deg); }
+  .term-arts .filelist .frow.agroup.cur { color: var(--head); }
+  .term-arts .filelist:focus .frow.agroup.cur { box-shadow: inset 2px 0 0 var(--teal); }
+  .term-arts .filelist .frow.fhead { min-height: 0; }
+  .term-arts .filelist .fwhen { min-width: 0; text-align: right; }
+  .aw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-xxs) var(--mono); color: var(--dimmest); direction: rtl; text-align: left; }
+  .aw bdi { direction: ltr; unicode-bidi: isolate; }
+  .fname .tag { flex: none; font: var(--fs-xxs) var(--mono); padding: 0 6px; border-radius: var(--r-sm); background: var(--chip); color: var(--label); }
+  .fname .tag.new { background: rgba(var(--teal-rgb), .14); color: var(--teal); }
+  .fname .tag.gone { background: rgba(var(--danger-rgb), .14); color: var(--danger); }
+  .fname .tag.pubd { background: rgba(var(--teal-rgb), .10); color: var(--teal); border: 1px solid rgba(var(--teal-rgb), .35); cursor: help; }
+  .fname .delta { flex: none; font: var(--fs-xxs) var(--mono); color: var(--dimmest); }
+  .fname .delta .p { color: var(--teal); }
+  .fname .delta .m { color: var(--danger); }
+  .filelist .frow.gone .fn { text-decoration: line-through; color: var(--dimmest); }
+  .filelist .ficon.rep { color: var(--warn); }
+  .filelist .ficon.pub, .filelist .ficon.link, .filelist .ficon.git { color: var(--teal); }
+  .filelist .ficon.bin { color: var(--label); }
+  .term-arts .filelist .fpick:disabled { visibility: hidden; }
+
+  /* The row's actions are the file header's buttons, and only on the row the pointer or the keyboard is on. */
+  .term-arts .filelist .facts { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity .12s; }
+  .term-arts .filelist .frow:hover .facts, .term-arts .filelist .frow.cur .facts, .term-arts .filelist .frow:focus-within .facts { opacity: 1; }
+  .term-arts .filelist .facts .ab { height: 22px; min-width: 22px; padding: 0 4px; }
+  .term-arts .filelist .facts .ab svg { width: 13px; height: 13px; }
+  .term-arts .fstate .big { font-size: var(--fs-md); color: var(--head); }
+  .term-arts.empty .artkinds, .term-arts.empty .ffilter, .term-arts.empty #t-arts-group { visibility: hidden; }
+  .abulk { display: inline-flex; gap: 4px; align-items: center; }
+  .abulk:empty { display: none; }
+
+  /* With a preview beside it the list keeps the tick, the name and when. */
+  .term-arts.viewing .filelist .frow:not(.agroup) { grid-template-columns: auto minmax(0, 1fr) 10ch; }
+  .term-arts.viewing .filelist .aw, .term-arts.viewing .filelist .fsize, .term-arts.viewing .filelist .facts,
+  .term-arts.viewing .filelist .fhead .fsort[data-sort="where"], .term-arts.viewing .filelist .fhead .fsort[data-sort="size"],
+  .term-arts.viewing .filelist .fhead .hacts, .term-arts.viewing .filelist .fname .delta { display: none; }
+  .term-arts.viewing .fside { flex: .9 1 0; }
+
+  .abar { gap: 6px; }
+  .abar .awhere { position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .abar .awhere code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; font: var(--fs-sm) var(--mono); color: var(--head); }
+  .abar .by { font: var(--fs-xxs) var(--mono); color: var(--dimmest); white-space: nowrap; }
+  .abar .fpathpop { top: 100%; }
+  .abar .awhere:hover .fpathpop:not(:empty), .abar .awhere:focus-within .fpathpop:not(:empty) { display: grid; }
+  .abar .fpathpop .ab { height: 22px; min-width: 22px; padding: 0 4px; }
