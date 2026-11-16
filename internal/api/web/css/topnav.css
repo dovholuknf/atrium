@@ -85,15 +85,3 @@
   .tabsdlg-row { display: flex; align-items: center; gap: var(--sp-3); }
   .tabsdlg-row .name { flex: 1; font-size: var(--fs-xl); }
   .tabsdlg-row button { padding: 2px 10px; }
-  .tabs-menu button.arrange + button.arrange { margin-top: 0; border-top: 0; }
-  dialog#usagedlg { width: min(640px, 94vw); }
-  .usagedlg-list { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-4); max-height: 45vh; overflow: auto; }
-  .usagedlg-row { display: flex; gap: var(--sp-3); }
-  .usagedlg-row .name { flex: 1; overflow-wrap: anywhere; }
-  .usagedlg-row .n { min-width: 4em; text-align: right; }
-  .usagedlg-row .last { min-width: 7em; opacity: .7; }
-  .usagedlg-row.never { opacity: .5; }
-  .usagedlg-head { margin-bottom: var(--sp-1); opacity: .8; }
-  .usagedlg-head button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
-  .usagedlg-head button.n { text-align: right; }
-  .usagedlg-head button::after { content: " " attr(data-arrow); }

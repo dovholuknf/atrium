@@ -219,6 +219,9 @@ func (d *Daemon) onTelemetry(in TelemetryEvent) string {
 	// card" mean "card nobody has looked at", and the whole point of that sort
 	// is to find the session that stopped.
 	d.act.setTelemetry(taskID, t)
+	if t.FiveHour != nil || t.Weekly != nil {
+		d.act.markUsage()
+	}
 	d.keepLimitReadings(taskID, t)
 	// But every update re-checks the card against its limit, which is how a limit
 	// prompt that went unanswered is typed again. See autocontext.go.
@@ -347,6 +350,20 @@ func (a *activityTracker) setTelemetry(taskID string, t Telemetry) {
 	defer a.mu.Unlock()
 	t.Since = a.now()
 	a.tel[taskID] = &t
+}
+
+func (a *activityTracker) markUsage() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.usageAt = a.now()
+}
+
+// usageFacts is how many runners are live and when a post last carried a usage limit, for `GET /v1/setup-check`.
+func (d *Daemon) usageFacts() (int, time.Time) {
+	live, _ := d.sup.ringCount()
+	d.act.mu.Lock()
+	defer d.act.mu.Unlock()
+	return live, d.act.usageAt
 }
 
 // telemetry returns a copy of a task's figure, or nil when none has arrived or

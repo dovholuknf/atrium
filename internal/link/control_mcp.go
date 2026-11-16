@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"net"
 	"net/http"
 	"net/url"
@@ -1740,7 +1741,7 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	superlean := superleanLaunch(in, harness)
 
-	// EVERY LAUNCH NAMES AN ITEM, before a slot is reserved or anything is posted. The argument is the one the caller gave,
+	// A LAUNCH SHOULD NAME AN ITEM but need not, before a slot is reserved or anything is posted. The argument is the one the caller gave,
 	// and a launch relayed from a room's stdio server has already resolved it into the tag. An interviewer is not a
 	// worker: it talks to the human, and no work is attached to it. See work_launch.go.
 	launcherTags := c.launcherTags(ctx, callerRoom, spawnedBy)
@@ -1763,6 +1764,9 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		workID = id
 		if filed {
 			filedNote = "filed backlog item " + id + " for --item new. "
+		}
+		if id == "" {
+			filedNote = NoItemNote
 		}
 	}
 
@@ -1964,7 +1968,7 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	// Where the human looks. Worth returning rather than leaving them to assemble
 	// it, because the fragment form is not guessable.
-	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
+	out.Watch = seenhost.Base(c.board) + "/#term=" + url.PathEscape(t.ID)
 	out.Note = LaunchStartedNote
 	if out.Recovered {
 		out.Note = LaunchRecoveredNote

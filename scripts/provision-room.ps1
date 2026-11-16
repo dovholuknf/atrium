@@ -2833,128 +2833,77 @@ echo "bin=$Bin"
 
 # ── 11b. the status line ────────────────────────────────────────────────────
 
-# CLINT'S CLAUDE CODE STATUS LINE on every room, so every agent on it shows one. The portable script is
-# scripts/statusline-command.sh, copied to ~/.claude/statusline-command.sh, and ONLY the `statusLine` key of the
-# account's settings.json is merged in: every other key stays, a settings.json.statusline-<stamp>.bak is written first,
-# and nothing is touched when the key already holds the wanted value. The merge is done here, in PowerShell, because
-# the remote may have no jq. Never a failure: the room works without it, and room-check.ps1 flags the gap.
+# THE STATUS LINE on every room, so every agent on it shows one. It is `atrium statusline`, drawn by the room's own atrium,
+# so nothing else is installed. ONLY the `statusLine` key of the account's settings.json is merged in: every other key
+# stays, a settings.json.statusline-<stamp>.bak is written first, and nothing is touched when the key already holds the
+# wanted value. The merge is done here, in PowerShell, because the remote may have no jq. Never a failure: the room works
+# without it, and room-check.ps1 flags the gap.
 #
 # settings.json is round-tripped through ConvertFrom-Json and ConvertTo-Json, so the whole file may be reformatted
 # (indent, spacing) and an ISO date string may change form. The backup holds the original.
-#
-# THE BASH. Windows: the `bash.exe` on PATH that is not a WSL launcher (System32, WindowsApps), else the first of the
-# usual git-bash and cygwin installs. Either way it is written to settings.json by its full path. macOS and Linux: /bin/bash.
 if (@($Runners + $Install) -contains 'claude') {
-    $slSrc = Join-Path $PSScriptRoot 'statusline-command.sh'
-    if (-not (Test-Path -LiteralPath $slSrc)) {
-        Step 'statusline' 'warn' "no scripts/statusline-command.sh beside this script, so none was installed"
-    } else {
-        $slProbe = if ($os -eq 'windows') {
+    $slProbe = if ($os -eq 'windows') {
 @'
 "home=$($HOME -replace '\\', '/')"
 New-Item -ItemType Directory -Force (Join-Path $HOME '.claude') | Out-Null
-$b = Get-Command bash.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '\\(Windows\\System32|WindowsApps)\\' } | Select-Object -First 1
-$bp = $null
-if ($b) { $bp = $b.Source -replace '\\', '/'; "bash=$bp" }
-else {
-    foreach ($c in ((Join-Path $HOME '.local\share\atrium-tools\git\bin\bash.exe') -replace '\\', '/'), 'C:/Program Files/Git/bin/bash.exe', 'C:/work/tools/cygwin/bin/bash.exe', 'C:/cygwin64/bin/bash.exe', 'C:/msys64/usr/bin/bash.exe') {
-        if (Test-Path -LiteralPath $c) { "bash=$c"; $bp = $c; break }
-    }
-}
-if ($bp) {
-    $eap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    & $bp -c 'command -v jq' 2>&1 | Out-Null
-    "jq=$(if ($LASTEXITCODE -eq 0) { 1 } else { 0 })"
-    $ErrorActionPreference = $eap
-}
 $f = Join-Path $HOME '.claude\settings.json'
 if (Test-Path -LiteralPath $f) { 'file=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($f)) }
-$s = Join-Path $HOME '.claude\statusline-command.sh'
-if (Test-Path -LiteralPath $s) { 'sha=' + (Get-FileHash -LiteralPath $s -Algorithm SHA256).Hash.ToLower() }
 '@
-        } else {
+    } else {
 @'
 echo "home=$HOME"
-echo "bash=/bin/bash"
-if /bin/bash -c 'command -v jq' >/dev/null 2>&1; then echo jq=1; else echo jq=0; fi
 mkdir -p "$HOME/.claude"
 [ -f "$HOME/.claude/settings.json" ] && echo "file=$(base64 < "$HOME/.claude/settings.json" | tr -d '\n')"
-s="$HOME/.claude/statusline-command.sh"
-if [ -f "$s" ]; then
-  if command -v sha256sum >/dev/null 2>&1; then h=$(sha256sum "$s"); else h=$(shasum -a 256 "$s"); fi
-  echo "sha=${h%% *}"
-fi
 '@
+    }
+    $slk = ConvertFrom-KeyValue (Invoke-Remote $slProbe).Out
+    if (-not $slk.home) {
+        Step 'statusline' 'warn' "could not read the home folder on $Name, so no status line was set. rerun"
+    } else {
+        $slExe = "$($slk.home.TrimEnd('/'))/$(if ($os -eq 'windows') { '.atrium/bin/atrium.exe' } else { '.local/bin/atrium' })"
+        # Quoted only when a space needs it: Claude Code on Windows draws nothing for a quoted program path.
+        $slCmd = if ($slExe -match ' ') { '"' + $slExe + '" statusline' } else { "$slExe statusline" }
+
+        $slSettings = 'ok'
+        $slDoc = $null
+        if ($slk.file) {
+            try { $slDoc = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($slk.file)) | ConvertFrom-Json }
+            catch { $slDoc = $null }
         }
-        $slk = ConvertFrom-KeyValue (Invoke-Remote $slProbe).Out
-        if (-not $slk.home -or -not $slk.bash) {
-            Step 'statusline' 'warn' "no bash found on $Name to run the status line. install git-bash or cygwin, then rerun"
-        } else {
-            $slPath = "$($slk.home.TrimEnd('/'))/.claude/statusline-command.sh"
-            # BOTH PARTS QUOTED: Claude Code runs the command through a shell, and C:/Program Files/Git/bin/bash.exe or a
-            # home with a space would split at the space. The quoted form is also what the idempotent check compares.
-            $slCmd = "`"$($slk.bash)`" `"$slPath`""
-
-            # LF ONLY: a checkout with autocrlf holds CRLF, and bash reads `\r` as part of the command.
-            $slBytes = [IO.File]::ReadAllBytes($slSrc)
-            $slText = [Text.Encoding]::UTF8.GetString($slBytes) -replace "`r", ''
-            $slLf = [Text.UTF8Encoding]::new($false).GetBytes($slText)
-            $slSha = ([BitConverter]::ToString([Security.Cryptography.SHA256]::HashData($slLf)) -replace '-', '').ToLower()
-            $slTmp = Join-Path $work 'statusline-command.sh'
-            New-Item -ItemType Directory -Force (Split-Path $slTmp) | Out-Null
-            [IO.File]::WriteAllBytes($slTmp, $slLf)
-
-            $slScript = 'ok'
-            if ($slk.sha -ne $slSha) {
-                $c = Copy-ToRemote $slTmp '.claude/statusline-command.sh'
-                $slScript = if ($c.Code -eq 0) { 'done' } else { 'fail' }
-            }
-
-            $slSettings = 'ok'
-            $slDoc = $null
-            if ($slk.file) {
-                try { $slDoc = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($slk.file)) | ConvertFrom-Json }
-                catch { $slDoc = $null }
-            }
-            if ($slk.file -and -not $slDoc) { $slSettings = 'bad' }
+        if ($slk.file -and -not $slDoc) { $slSettings = 'bad' }
+        else {
+            if (-not $slDoc) { $slDoc = [pscustomobject]@{} }
+            $slWant = [pscustomobject]@{ type = 'command'; command = $slCmd }
+            $slHave = $slDoc.PSObject.Properties['statusLine']
+            if ($slHave -and "$($slHave.Value.type)" -eq 'command' -and "$($slHave.Value.command)" -eq $slCmd) { $slSettings = 'ok' }
             else {
-                if (-not $slDoc) { $slDoc = [pscustomobject]@{} }
-                $slWant = [pscustomobject]@{ type = 'command'; command = $slCmd }
-                $slHave = $slDoc.PSObject.Properties['statusLine']
-                if ($slHave -and "$($slHave.Value.type)" -eq 'command' -and "$($slHave.Value.command)" -eq $slCmd) { $slSettings = 'ok' }
-                else {
-                    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-                    $bak = if ($os -eq 'windows') {
-                        "`$f = Join-Path `$HOME '.claude\settings.json'`nif (Test-Path -LiteralPath `$f) { Copy-Item -LiteralPath `$f `"`$f.statusline-$stamp.bak`"; 'bak=1' }"
-                    } else {
-                        "f=`"`$HOME/.claude/settings.json`"; if [ -f `"`$f`" ]; then cp `"`$f`" `"`$f.statusline-$stamp.bak`" && echo bak=1; fi"
-                    }
-                    $bk = ConvertFrom-KeyValue (Invoke-Remote $bak).Out
-                    if ($slk.file -and -not $bk.bak) {
-                        # An existing file with no backup is not rewritten.
-                        $slSettings = 'nobak'
-                    } else {
-                        $slDoc | Add-Member -NotePropertyName statusLine -NotePropertyValue $slWant -Force
-                        $slTmpJ = Join-Path $work 'settings.json'
-                        [IO.File]::WriteAllText($slTmpJ, ($slDoc | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
-                        $c = Copy-ToRemote $slTmpJ '.claude/settings.json'
-                        $slSettings = if ($c.Code -eq 0) { 'done' } else { 'fail' }
-                    }
+                $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+                $bak = if ($os -eq 'windows') {
+                    "`$f = Join-Path `$HOME '.claude\settings.json'`nif (Test-Path -LiteralPath `$f) { Copy-Item -LiteralPath `$f `"`$f.statusline-$stamp.bak`"; 'bak=1' }"
+                } else {
+                    "f=`"`$HOME/.claude/settings.json`"; if [ -f `"`$f`" ]; then cp `"`$f`" `"`$f.statusline-$stamp.bak`" && echo bak=1; fi"
+                }
+                $bk = ConvertFrom-KeyValue (Invoke-Remote $bak).Out
+                if ($slk.file -and -not $bk.bak) {
+                    # An existing file with no backup is not rewritten.
+                    $slSettings = 'nobak'
+                } else {
+                    $slDoc | Add-Member -NotePropertyName statusLine -NotePropertyValue $slWant -Force
+                    $slTmpJ = Join-Path $work 'settings.json'
+                    New-Item -ItemType Directory -Force (Split-Path $slTmpJ) | Out-Null
+                    [IO.File]::WriteAllText($slTmpJ, ($slDoc | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
+                    $c = Copy-ToRemote $slTmpJ '.claude/settings.json'
+                    $slSettings = if ($c.Code -eq 0) { 'done' } else { 'fail' }
                 }
             }
+        }
 
-            switch ("$slScript/$slSettings") {
-                'ok/ok' { Step 'statusline' 'ok' "$slCmd is the status line" }
-                { $_ -in 'done/done', 'done/ok', 'ok/done' } { Step 'statusline' 'done' "status line set to $slCmd, settings.json backed up first" }
-                { $_ -like '*/nobak' } { Step 'statusline' 'warn' "could not back up settings.json on $Name, so it was not changed and has no status line. rerun" }
-                { $_ -like '*/bad' }  { Step 'statusline' 'warn' "$($slk.home)/.claude/settings.json is not JSON. left as it is, so no status line" }
-                default { Step 'statusline' 'warn' "could not copy the status line to $Name ($slScript/$slSettings). rerun" }
-            }
-            # The script reads every percentage from one jq pass. Without jq it prints the folder, branch and clock only.
-            if ($slk.jq -ne '1') {
-                Step 'statusline' 'warn' "jq is not on $Name's PATH for $($slk.bash), so the status line shows only folder, branch and clock. install jq there (git-bash has none: put jq.exe in Git/usr/bin)"
-            }
+        switch ($slSettings) {
+            'ok'    { Step 'statusline' 'ok' "$slCmd is the status line" }
+            'done'  { Step 'statusline' 'done' "status line set to $slCmd, settings.json backed up first" }
+            'nobak' { Step 'statusline' 'warn' "could not back up settings.json on $Name, so it was not changed and has no status line. rerun" }
+            'bad'   { Step 'statusline' 'warn' "$($slk.home)/.claude/settings.json is not JSON. left as it is, so no status line" }
+            default { Step 'statusline' 'warn' "could not copy settings.json to $Name. rerun" }
         }
     }
 }

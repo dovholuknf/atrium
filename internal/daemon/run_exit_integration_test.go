@@ -267,3 +267,25 @@ func TestAStartupFailureKeepsItsTailAndWhy(t *testing.T) {
 		t.Fatalf("a long run kept a tail: %+v", ev)
 	}
 }
+
+// A runner that is not on PATH ends its card at once with the reason on it.
+func TestAMissingRunnerEndsItsCardWithTheReason(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+	task := cardAt(t, d, "nobinary", t.TempDir())
+	_, err := d.spawnPTYRunner(task.ID, "atrium-no-such-runner", nil, t.TempDir(), os.Environ(), false, nil)
+	if err == nil || !strings.Contains(err.Error(), "is not on PATH") {
+		t.Fatalf("err = %v", err)
+	}
+	d.launchFailed(task.ID, err.Error())
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.StatusDead || !strings.HasPrefix(got.Why, "failed to start: atrium-no-such-runner is not on PATH") {
+		t.Fatalf("status %q why %q", got.Status, got.Why)
+	}
+}

@@ -138,6 +138,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["merged_cull_grace_default"] = store.DefaultMergedCullGrace
 	out["turn_cause_limit_default"] = map[string]any{"turns": store.DefaultTurnLimit, "tokens": store.DefaultTokenLimit}
 	out["paste_preamble_none"] = PastePreambleNone
+	out["user_css"] = s.userCSSPath()
 	// What is actually in force, whatever the two boxes say. An empty box
 	// means the default, and the person reading it wants the number.
 	//

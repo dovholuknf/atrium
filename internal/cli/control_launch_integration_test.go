@@ -19,6 +19,10 @@ import (
 func TestStdioLaunchWarnsWhenARoomDropsItsOptions(t *testing.T) {
 	echo := true
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/human-base" {
+			http.NotFound(w, r)
+			return
+		}
 		var got struct {
 			Model  string   `json:"model"`
 			Effort string   `json:"effort"`
@@ -69,6 +73,10 @@ func TestStdioLaunchSendsLeanAgentsAndWarnsWhenARoomDropsThem(t *testing.T) {
 	applied := true
 	var sent []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/human-base" {
+			http.NotFound(w, r)
+			return
+		}
 		var got struct {
 			LeanAgents []string `json:"lean_agents"`
 		}

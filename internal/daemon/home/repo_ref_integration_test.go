@@ -12,6 +12,14 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
+// EvalSymlinks fails with access denied where a parent folder cannot be queried, so the cleaned path stands in for it.
+func real(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
 func TestResolveRepoMapsTheBareGithubHostToTheClone(t *testing.T) {
 	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "atrium.db"))
@@ -34,9 +42,7 @@ func TestResolveRepoMapsTheBareGithubHostToTheClone(t *testing.T) {
 			t.Fatalf("%q: %v", repo, err)
 		}
 		// the temp dir may be a symlink (macOS /private) or an 8.3 name (Windows), so compare the real paths
-		gotReal, _ := filepath.EvalSymlinks(got)
-		wantReal, _ := filepath.EvalSymlinks(clone)
-		if gotReal != wantReal || gotReal == "" {
+		if got == "" || real(got) != real(clone) {
 			t.Errorf("%q resolved to %q, want %q", repo, got, clone)
 		}
 	}

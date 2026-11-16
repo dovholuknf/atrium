@@ -185,6 +185,8 @@ type activityTracker struct {
 	// telAt is when each CALLER last got a post accepted, for the floor. Keyed
 	// by what the caller said it was, not by a card id.
 	telAt map[string]time.Time
+	// usageAt is when a post last carried a 5h or weekly figure, for the room-setup checklist.
+	usageAt time.Time
 	// held is the peer message waiting to be typed into each card's terminal,
 	// kept apart from `by` because it does not expire on the activity clock. See
 	// the HeldPeer note on Activity and `pendingInjector`.
@@ -809,6 +811,11 @@ type ActivityEvent struct {
 	Notification string `json:"notification,omitempty"`
 	// MissingTool is a known tool a shell answered command not found for, on a tool-end.
 	MissingTool string `json:"missing_tool,omitempty"`
+	// File is the file a Write, Edit or NotebookEdit changed, on a tool-end. See recordFileArtifact.
+	File       string `json:"file,omitempty"`
+	FileChange string `json:"file_change,omitempty"`
+	FileAdd    int    `json:"file_add,omitempty"`
+	FileDel    int    `json:"file_del,omitempty"`
 	// RoomSource is "daemon.json" when the hook guessed this room from the machine's file and not from its env.
 	RoomSource string `json:"room_source,omitempty"`
 }
@@ -897,6 +904,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// The turn continues, so the model has the floor again.
 		d.act.set(taskID, ActivityThinking, "")
 		d.toolNotFound(taskID, in.MissingTool)
+		d.recordFileArtifact(taskID, in)
 	case "prompt":
 		// The operator answered, so the agent is working again. This is the
 		// other half of the needs-input signal: without it a card stays in

@@ -38,7 +38,7 @@ const { slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
 const { attachRetry, landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
-const { mock, hooks, FILED, T1, SEEN, qclickCards, UNTAGGED_CARDS, AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1, UC_CARDS, UC_MANY, LOOP, T2, SKINS, openStreams, hubStreams, stallHeld, NEWC, landCard, settingsBody, resetSkins, boardUsageSeen, QC_AT, mockSay, WEB_ROOT, HTML, server, resetPin, resetAudit, resetSwitches, hungResponses } = require("./lib/mock.js");
+const { mock, hooks, FILED, T1, SEEN, qclickCards, UNTAGGED_CARDS, AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1, UC_CARDS, UC_MANY, LOOP, T2, SKINS, openStreams, hubStreams, stallHeld, NEWC, landCard, settingsBody, resetSkins, QC_AT, mockSay, WEB_ROOT, HTML, server, resetPin, resetAudit, resetSwitches, hungResponses } = require("./lib/mock.js");
 
 
 // What `/v1/tasks` answers right now: the list, or "hang" or "down". A
@@ -9385,6 +9385,19 @@ async function cleanCopySection(browser, base) {
     if (dr.list !== "- first item\n- second item\n- third item") fail("cleanCopy: list items de-rendered to " + JSON.stringify(dr.list));
     if (dr.para !== "A long first line of a paragraph here its tail.\n\nNext paragraph.") fail("cleanCopy: paragraphs de-rendered to " + JSON.stringify(dr.para));
     if (dr.box !== "output") fail("cleanCopy: a box de-rendered to " + JSON.stringify(dr.box));
+
+    // 4a4. A block padded to the width with spaces, each row wrapping into the next (Claude Code's prompt), copies as its
+    // own lines with no padding, and a line that genuinely runs on past the width stays one line.
+    const cols = await p.evaluate(() => term.cols);
+    const pad = s => s + " ".repeat(cols - s.length);
+    const long = "word ".repeat(Math.ceil(cols / 5) + 3).trim();
+    const padded = "\x1b[48;5;237m" + pad("> first line of the prompt") + pad("  second line") + pad("  third")
+      + "\x1b[0m\r\n" + long + "\r\n";
+    const pd = await select(padded, [0, 4]);
+    if (!/ {8}/.test(pd.sel) || /prompt\s*\n/.test(pd.sel)) fail("cleanCopy: the padded rows did not wrap as one line in xterm's own selection, so this proves nothing: " + JSON.stringify(pd.sel));
+    const pwant = "> first line of the prompt\n  second line\n  third\n" + long;
+    const pgot = (pd.clip[0] || "").replace(/\r\n/g, "\n");
+    if (pgot !== pwant) fail("cleanCopy: a padded block copied " + JSON.stringify(pgot) + ", not " + JSON.stringify(pwant));
 
     // 4b. A reply older than the last ten, and one from a prior transcript, both offer the button, and the second
     // selection in the same card reuses the one `?all=1` read.
@@ -21515,7 +21528,7 @@ async function mHostileSection(browser) {
 }
 
 // A URL or a /d/<slug> left as text in a bubble is a link: a URL opens a new tab, a document opens the docs sheet, trailing
-// punctuation stays text, and code, markdown links and a /d/ inside another path are left alone.
+// punctuation stays text, a lone URL in inline code links, and other code, markdown links and a /d/ inside another path are left alone.
 async function mBubbleLinksSection(browser) {
   const st = mServer({});
   st.tasks = [mCard("bl-1", { alias: "linker", display_title: "linker", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
@@ -21548,6 +21561,7 @@ async function mBubbleLinksSection(browser) {
         "https://example.com/a?b=1 https://example.com/a?b=1 _blank noopener noreferrer",
         "https://example.org/z https://example.org/z _blank noopener noreferrer",
         "/d/plan-notes /d/plan-notes md-doc", "/d/plan-notes@2 /d/plan-notes@2 md-doc",
+        "https://code.example/x https://code.example/x _blank noopener noreferrer",
         "https://md.example/y label _blank noopener noreferrer"];
       if (d.links.join("|") !== want.join("|")) fail(tag + "links are " + JSON.stringify(d.links));
       if (!d.text.includes("-approve. Also (https://example.com/a?b=1), [https://example.org/z], see /d/plan-notes, then /d/plan-notes@2."))
@@ -27155,6 +27169,69 @@ async function fileBackSection(browser, base) {
   } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
+// WHAT A SESSION MADE is one list beside the terminal: groups that fold and stay folded, one button size, a published tag on the
+// row of the file it came from, and markdown opening rendered.
+async function artifactsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = mock.tasksMode;
+  const root = "/tmp/ar/work";
+  const at = new Date().toISOString();
+  const row = (kind, ref, extra, bytes) => ({ task_id: "ar-a", kind, ref, label: "", source: "hook", bytes: bytes || 10, first_at: at, last_at: at, extra: JSON.stringify(extra || {}) });
+  const rows = [row("file", "a/one.go", { change: "new", add: 3 }), row("file", "a/two.go", { change: "edited", add: 2, del: 1 }),
+    row("file", "docs/note.md", { change: "new", add: 5 }), row("img", "shots/p.png"), row("bin", "build.claude/atrium.exe"),
+    row("pub", "docs/note", { from: "docs/note.md", where: "hub docs", href: "http://h/docs/note" })];
+  try {
+    mock.wornTasks = [Object.assign({}, T1, { id: "ar-a", display_title: "row ar-a", supervised: true, pinned: true, worktree: root })];
+    mock.tasksMode = "worn";
+    await wp.route(/\/v1\/tasks\/ar-a\/artifacts/, route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows) }));
+    await wp.route(/\/read\.html/, route => route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><body>x</body>" }));
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    await wp.evaluate(() => attachTask("ar-a"));
+    await until(() => wp.evaluate(() => !!termTask && termTask.id === "ar-a"), 5000, "artifacts: ar-a attached");
+    await wp.evaluate(() => { localStorage.removeItem("atrium.arts.collapsed"); arts.collapsed.clear(); });
+    await wp.click("#t-arts");
+    await wp.waitForSelector("#t-arts-list .frow[data-i]", { timeout: slow(5000) });
+    const heads = await wp.evaluate(() => [...document.querySelectorAll("#t-arts-list .agroup")].map(h => h.textContent.trim()));
+    if (heads.join("|") !== "files3|images1|builds1") fail("artifacts: the groups are " + JSON.stringify(heads) + ", the published one folds onto its file");
+    const tag = await wp.evaluate(() => [...document.querySelectorAll("#t-arts-list .frow[data-i]")].filter(r => r.querySelector(".tag.pubd")).map(r => r.querySelector(".fn").textContent + ":" +
+      !!r.querySelector('[data-act="pubopen"]')));
+    if (tag.join() !== "note.md:true") fail("artifacts: the published tag and globe sit on " + JSON.stringify(tag));
+    await wp.hover("#t-arts-list .frow[data-i]:not(.agroup)");
+    const sizes = await wp.evaluate(() => [...new Set([...document.querySelectorAll("#t-arts-list .facts .ab")].map(b => Math.round(b.getBoundingClientRect().height)))]);
+    const head = await wp.evaluate(() => [...new Set([...document.querySelectorAll("#t-arts-panel > .filebar .ab")].map(b => Math.round(b.getBoundingClientRect().height)))]);
+    if (sizes.length !== 1 || head.join() !== "26") fail("artifacts: the buttons are " + JSON.stringify(sizes) + " on a row and " + JSON.stringify(head) + " in the bar");
+
+    await wp.click("#t-arts-list .agroup >> text=images");
+    await wp.reload({ waitUntil: "domcontentloaded" });
+    await wp.waitForSelector('.tab[data-view="terms"]', { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    await wp.evaluate(() => attachTask("ar-a"));
+    await until(() => wp.evaluate(() => !!termTask && termTask.id === "ar-a"), 5000, "artifacts: ar-a attached again");
+    await wp.click("#t-arts");
+    await wp.waitForSelector("#t-arts-list .agroup", { timeout: slow(5000) });
+    const shut = await wp.evaluate(() => [...document.querySelectorAll("#t-arts-list .agroup.shut")].map(h => h.textContent.trim()));
+    if (shut.join() !== "images1") fail("artifacts: a folded group did not stay folded across a reload: " + JSON.stringify(shut));
+
+    await wp.click('#t-arts-list .frow:has(.fn:text-is("note.md"))');
+    await wp.waitForSelector("#t-aview:not([hidden])", { timeout: slow(3000) });
+    const pressed = await wp.evaluate(() => [...document.querySelectorAll('#t-aview-bar [data-v="rendered"],#t-aview-bar [data-v="raw"]')].map(b => b.dataset.v + ":" + b.getAttribute("aria-pressed")));
+    if (pressed.join() !== "rendered:true,raw:false") fail("artifacts: markdown opened as " + JSON.stringify(pressed));
+    await wp.keyboard.press("Escape");
+    if (!await wp.evaluate(() => document.getElementById("t-aview").hidden && !document.getElementById("t-arts-panel").hidden)) fail("artifacts: Esc did not step back to the list");
+    await wp.keyboard.press("Escape");
+    if (!await wp.evaluate(() => document.getElementById("t-arts-panel").hidden)) fail("artifacts: a second Esc did not close the panel");
+    if (errors.length) fail("artifacts: page errors " + errors.join("; "));
+    if (!bad) console.log("artifacts ok");
+  } finally { mock.tasksMode = was; await ctx.close(); }
+}
+
 // A FOLDER LINK IN A TERMINAL opens the one drawer, on that folder. The header names the folder clicked, even outside the
 // card, with the filter beside it. The drawer belongs to the terminal it opened from: switching cards hides it, and
 // coming back brings it back. Back closes it and Forward reopens it. Every row's size and date sit in the same columns,
@@ -28527,7 +28604,7 @@ async function main() {
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, keptFileLink: keptFileLinkSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, artifacts: artifactsSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, keptFileLink: keptFileLinkSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -30756,7 +30833,6 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("headerFold", () => headerFoldSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("emergingSwitch", () => emergingSwitchSection(browser, base));
-    await unit("boardUsage", bu("boardUsage"));
     await unit("pullsMorePending", bu("pullsMorePending"));
     await unit("pullsLiveSteps", bu("pullsLiveSteps"));
     await unit("pullsPasteOpening", bu("pullsPasteOpening"));
@@ -30777,6 +30853,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("deadCardId", () => deadCardIdSection(browser, base));
     await unit("fileView", () => fileViewSection(browser, base));
     await unit("fileBack", () => fileBackSection(browser, base));
+    await unit("artifacts", () => artifactsSection(browser, base));
     await unit("fileLinkDrawer", () => fileLinkDrawerSection(browser, base));
     await unit("draftReload", () => draftReloadSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));

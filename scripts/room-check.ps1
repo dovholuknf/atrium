@@ -722,30 +722,25 @@ true
             Row 'statusline' 'human' "the account's .claude/settings.json has no statusLine command, so every agent on $Room shows none. $fixHint"
             Unmet 'human'
         } else {
-            # RUN IT ONCE with `{}` on stdin: a key naming a missing script or an unusable bash reads the same as a good one.
-            # No session_id in the payload, so the script does not append to the usage log. jq is probed with the same bash.
+            # RUN IT ONCE with `{}` on stdin: a key naming a missing atrium reads the same as a good one.
+            # No session_id in the payload, so it does not append to the usage log.
             if ($script:remoteOS -eq 'windows') {
                 $m = [regex]::Match($slCmd, '^\s*(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))\s*$')
                 if (-not $m.Success) { $run = $null }
                 else {
                     $exe = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
                     $scr = if ($m.Groups[3].Success) { $m.Groups[3].Value } else { $m.Groups[4].Value }
-                    $run = "`$ErrorActionPreference = 'Continue'`n`$o = '{}' | & $(Quote-Ps $exe) $(Quote-Ps $scr) 2>&1`n`"rc=`$LASTEXITCODE`"`nif (`$o) { 'out=1' }`n" +
-                        "& $(Quote-Ps $exe) -c 'command -v jq' 2>&1 | Out-Null`n`"jq=`$(if (`$LASTEXITCODE -eq 0) { 1 } else { 0 })`""
+                    $run = "`$ErrorActionPreference = 'Continue'`n`$o = '{}' | & $(Quote-Ps $exe) $(Quote-Ps $scr) 2>&1`n`"rc=`$LASTEXITCODE`"`nif (`$o) { 'out=1' }"
                 }
             } else {
-                $run = "o=`$(echo '{}' | sh -c $(Quote-Sh $slCmd) 2>&1); echo rc=`$?; [ -n `"`$o`" ] && echo out=1`n" +
-                    "if sh -c 'command -v jq' >/dev/null 2>&1; then echo jq=1; else echo jq=0; fi"
+                $run = "o=`$(echo '{}' | sh -c $(Quote-Sh $slCmd) 2>&1); echo rc=`$?; [ -n `"`$o`" ] && echo out=1"
             }
             $rk = if ($run) { ConvertFrom-KeyValue (Invoke-Remote $run).Out } else { @{} }
-            if (-not $run) { Row 'statusline' 'human' "the statusLine command on $Room is $slCmd, which this cannot split into a bash and a script to try. $fixHint"; Unmet 'human' }
+            if (-not $run) { Row 'statusline' 'human' "the statusLine command on $Room is $slCmd, which this cannot split into a program and its argument to try. $fixHint"; Unmet 'human' }
             elseif ($rk.rc -ne '0' -or -not $rk.out) {
                 Row 'statusline' 'human' "the statusLine command on $Room did not run (exit $($rk.rc), output $(if ($rk.out) { 'yes' } else { 'none' })): $slCmd. $fixHint"
                 Unmet 'human'
-            } elseif ($rk.jq -ne '1') {
-                Row 'statusline' 'human' "the statusLine runs on $Room but jq is missing for its bash, so it shows only folder, branch and clock. install jq there (git-bash has none: jq.exe in Git/usr/bin)"
-                Unmet 'human'
-            } else { Row 'statusline' 'ok' "the statusLine command runs on $Room and jq is there: $slCmd" }
+            } else { Row 'statusline' 'ok' "the statusLine command runs on ${Room}: $slCmd" }
         }
     }
 }

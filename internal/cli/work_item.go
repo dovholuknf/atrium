@@ -40,6 +40,9 @@ func resolveLaunchItem(ctx context.Context, spec string, tags []string) (id, not
 	if filed {
 		note = "filed backlog item " + id + " for --item new. "
 	}
+	if id == "" {
+		note = link.NoItemNote
+	}
 	return id, note, nil
 }
 

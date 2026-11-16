@@ -3,8 +3,11 @@
 package detach
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestOutsideJobCommandLine(t *testing.T) {
@@ -15,6 +18,18 @@ func TestOutsideJobCommandLine(t *testing.T) {
 	}
 	if got := outsideJobCommandLine("x.exe", nil, ""); got != `"x.exe"` {
 		t.Fatalf("no log: %s", got)
+	}
+}
+
+func TestOutsideJobCommandLineKeepsQuotes(t *testing.T) {
+	args := []string{"statusline", "--post-body", `{"task_id":"c1","five_hour":{"pct":16}}`, `C:\dir\`, `a\"b`, ""}
+	got, err := windows.DecomposeCommandLine(outsideJobCommandLine(`C:\a b\atrium.exe`, args, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{`C:\a b\atrium.exe`}, args...)
+	if !slices.Equal(got, want) {
+		t.Fatalf("got  %q\nwant %q", got, want)
 	}
 }
 

@@ -94,6 +94,29 @@ func TestStopRunnersEndsHostRunners(t *testing.T) {
 	}
 }
 
+func TestRunnerReopenedUnderTheSameRoomKeepsItsScrollback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	task, r := hostRunnerCard(t, d, "restart-keeps")
+	r.buf.Write([]byte("before the pty host restart\r\n"))
+
+	d.stopRunners.Store(true)
+	d.stopSupervised(200 * time.Millisecond)
+
+	sh, args := someShell(t)
+	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	r2 := d.sup.get(task.ID)
+	if r2 == nil || r2.carried == nil || !bytes.Contains(r2.carried.bytes, []byte("before the pty host restart")) {
+		t.Fatalf("the reopened runner did not take the scrollback saved at the stop: %+v", r2)
+	}
+}
+
 func TestReattachedCardIsNotIdleParkableUntilStop(t *testing.T) {
 	d := testDaemon(t)
 	card := idleAgent(t, d, "reattached", store.StatusNeedsInput)
