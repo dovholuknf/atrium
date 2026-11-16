@@ -73,13 +73,24 @@ func holdProcess(pid int) (*os.Process, error) {
 func outsideJobCommandLine(exe string, args []string, log string) string {
 	parts := []string{`"` + exe + `"`}
 	for _, a := range args {
-		parts = append(parts, `"`+a+`"`)
+		parts = append(parts, quoteArg(a))
 	}
 	line := strings.Join(parts, " ")
 	if log == "" {
 		return line
 	}
 	return `cmd.exe /c "` + line + ` >> "` + log + `" 2>&1"`
+}
+
+// quoteArg is a always in quotes, escaped by CommandLineToArgvW's rules so a JSON body keeps its quotes. An unquoted
+// EscapeArg result holds no space or quote, so only its trailing backslashes need doubling before the closing quote.
+func quoteArg(a string) string {
+	q := syscall.EscapeArg(a)
+	if strings.HasPrefix(q, `"`) {
+		return q
+	}
+	t := strings.TrimRight(q, `\`)
+	return `"` + t + strings.Repeat(`\`, 2*(len(q)-len(t))) + `"`
 }
 
 // Answers the child's pid, not cmd's, skipping conhost.exe, and exits 4 when cmd is gone before any child appeared.

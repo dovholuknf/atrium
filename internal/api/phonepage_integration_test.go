@@ -33,6 +33,10 @@ func TestPhonePageLoadsEveryFile(t *testing.T) {
 	named := map[string]bool{}
 	for _, m := range regexp.MustCompile(`(?:src|href)="(/[^"]+\.(?:js|css|webmanifest|png))"`).FindAllStringSubmatch(page, -1) {
 		p := m[1]
+		// the room's own route, not a board file, and covered by usercss_integration_test.go
+		if p == "/user.css" {
+			continue
+		}
 		if strings.HasPrefix(p, "/m/") {
 			named[strings.TrimPrefix(p, "/m/")] = true
 			if phoneOptional[strings.TrimPrefix(p, "/m/")] {

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"io"
 	"log"
 	"net/http"
@@ -35,8 +36,6 @@ type Server struct {
 	hk  serverHooks
 	st  *store.Store
 	bus *bus
-	// The "controls used" totals, rebuilt after a write. See boardusage.go.
-	usageSnap boardUsageSnap
 	// pend coalesces PublishTask per card.
 	pend taskPending
 	// sweep holds the last sweep of the inventory. See sweep.go.
@@ -472,6 +471,8 @@ type Server struct {
 	// BoardDir serves board files from disk for development, allowing changes
 	// without restarting the daemon. Empty uses the embedded copy.
 	BoardDir string
+	// StateDir is the room's state folder, where the operator's board/user.css lives. Empty serves an empty one.
+	StateDir string
 
 	BuildExport func() (any, error)
 	// ApplyImport reads one back. `apply` false answers what it WOULD do, which
@@ -550,8 +551,7 @@ func (s *Server) Broadcast(kind string, payload any) { s.bus.publish(kind, paylo
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.health)
-	mux.HandleFunc("POST /v1/usage", s.postBoardUsage)
-	mux.HandleFunc("GET /v1/usage/board", s.getBoardUsage)
+	mux.HandleFunc("GET /v1/human-base", s.humanBase)
 	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
 	mux.HandleFunc("GET /v1/room/disk", s.roomDisk)
 	if s.DiskFree != nil {
@@ -698,6 +698,7 @@ func (s *Server) Handler() http.Handler {
 	// docs/runtime/file-transfer-design.md.
 	mux.HandleFunc("POST /v1/tasks/{id}/files", s.uploadFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files", s.downloadFile)
+	mux.HandleFunc("GET /v1/tasks/{id}/page/{path...}", s.servePage)
 	mux.HandleFunc("PUT /v1/tasks/{id}/files/drop", s.dropIn)
 	// Finding a file so it can be taken back out. Bounded to the card's own
 	// directory, and carried by whatever already carries the board.
@@ -746,6 +747,7 @@ func (s *Server) Handler() http.Handler {
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/atrium-review", s.getReview)
 	mux.HandleFunc("POST /v1/tasks/{id}/atrium-review", s.postReview)
+	mux.HandleFunc("GET /v1/tasks/{id}/artifacts", s.getArtifacts)
 	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
 	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)
 	// Ports handed out and processes recorded, as inventory. See cardports.go.
@@ -830,6 +832,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/rules/preview-claude", s.previewClaudeRules)
 	mux.HandleFunc("GET /v1/hooks", s.hookStatus)
 	mux.HandleFunc("POST /v1/hooks/install", s.installHooks)
+	mux.HandleFunc("GET /v1/setup-check", s.setupCheck)
+	mux.HandleFunc("POST /v1/setup-check/fix", s.setupFix)
 	mux.HandleFunc("GET /v1/harnesses", s.listHarnesses)
 	mux.HandleFunc("GET /v1/harnesses/discover", s.discoverRunners)
 	mux.HandleFunc("PUT /v1/harnesses/{id}", s.saveHarness)
@@ -1040,6 +1044,7 @@ func (s *Server) Handler() http.Handler {
 	// happened.
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.pendingMessages)
 	mux.HandleFunc("GET /v1/events", s.events)
+	mux.HandleFunc("GET /user.css", s.userCSS)
 	mux.Handle("/", stampBuild(s.boardID, webHandler(s.BoardDir)))
 	// A card by its handle as well as its id, on every route. See cardnames.go.
 	return s.byName(mux)
@@ -3188,4 +3193,9 @@ func (s *Server) roomKill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"killed": body.PID})
+}
+
+// humanBase is the host the human's browser last reached this board on, "" when none has.
+func (s *Server) humanBase(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"base": seenhost.Base("")})
 }

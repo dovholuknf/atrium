@@ -5,6 +5,22 @@ _The single open hall every agent passes through._
 > **If you are an agent, read [`docs/agents.md`](docs/agents.md) first.** It says what atrium is today, what runs
 > where, how to build and test, and which docs to trust.
 
+## Get started
+
+Paste one of these into any coding agent. You need git and Go 1.26 or newer.
+
+**Try it now**: [`docs/try-atrium.md`](docs/try-atrium.md)
+
+```text
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/try-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+```
+
+**Join a room to a hub**: get a join string from the hub's operator. [`docs/join-atrium.md`](docs/join-atrium.md)
+
+```text
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/join-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+```
+
 <p align="center">
   <img src="docs/atrium.svg" alt="A central open hall. Rooms around it hold agents, each with a door onto the
   hall. A person stands in the hall and can see into every room at once." width="900">
@@ -86,7 +102,8 @@ atrium room                      # every time after
 ```
 
 The room dials the hub over mutual TLS, so the hub's link port (7779) has to be reachable from it, or the two use a
-zrok share or OpenZiti instead. Its cards appear on the same board. `docs/fabric/hub-and-rooms.md` has the details.
+zrok share or OpenZiti instead. Its cards appear on the same board. `docs/fabric/hub-and-rooms.md` has the details,
+and [`docs/join-atrium.md`](docs/join-atrium.md) is a prompt that has an agent do it.
 
 ## What it gives you
 

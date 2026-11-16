@@ -61,6 +61,7 @@
 <link rel="stylesheet" href="/css/files.css">
 <link rel="stylesheet" href="/css/rows.css">
 <link rel="stylesheet" href="/css/terminal.css">
+<link rel="stylesheet" href="/css/artifacts.css">
 <link rel="stylesheet" href="/css/walk.css">
 <link rel="stylesheet" href="/css/pulls.css">
 <link rel="stylesheet" href="/css/hubrepos.css">
@@ -86,6 +87,7 @@
 <link rel="stylesheet" href="/m/files.css">
 <link rel="stylesheet" href="/css/homes.css">
 <link rel="stylesheet" href="/css/newagent.css">
+<link rel="stylesheet" href="/user.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
      then the script puts you back on the view you were reading. Between those
@@ -492,6 +494,11 @@ Exports honor whatever filter is applied.">?</span>
           <!-- Only when the card's directory holds findings, a pull request or a work branch's changes. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
             data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span id="t-walk-label">walk</span></button>
+          <button id="t-arts" class="icon" type="button" aria-pressed="false" onclick="toggleArts()"
+            aria-label="what this session made" data-tip="what this session made"><svg viewBox="0 0 16 16" width="15"
+            height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+            stroke-linejoin="round"><path d="M8 1.8 13.6 5v6L8 14.2 2.4 11V5Z"/><path d="M2.4 5 8 8.2 13.6 5M8 8.2v6"/></svg><span
+            class="artn" id="t-arts-n"></span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
             aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it"><svg
             viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
@@ -508,6 +515,30 @@ Exports honor whatever filter is applied.">?</span>
             aria-label="how this terminal looks and behaves" data-tip="how this terminal looks and behaves">&#9881;</button>
         </div>
         <div class="term-perm" id="term-perm" hidden></div>
+          <!-- What the session made, over the right of the pane. js/artifacts.js. -->
+        <div class="term-files term-arts" id="t-arts-panel" hidden>
+          <div class="filebar">
+            <span class="arthead">artifacts <span class="artcount" id="t-arts-count"></span><span class="help" tabindex="0"
+              data-tip="Everything this session produced: files it wrote or edited, images, built binaries. Kept with the card after the session ends.">?</span></span>
+            <span class="seg artkinds" id="t-arts-kinds"></span>
+            <span class="fgrow"></span>
+            <span class="abulk" id="t-arts-bulk"></span>
+            <span class="ffilter"><input type="search" id="t-arts-q" placeholder="filter" spellcheck="false"
+              aria-label="filter the artifacts" data-tip="filter by name or path (/)"><span id="t-arts-qn"></span></span>
+            <button type="button" class="ab" id="t-arts-group" aria-pressed="true" aria-label="group by kind"
+              data-tip="group by kind"></button>
+            <button type="button" class="ab" id="t-arts-close" aria-label="close" data-tip="back to the terminal (Esc)"></button>
+          </div>
+          <div class="fsplit">
+            <div class="fside">
+              <div class="filelist" id="t-arts-list" tabindex="0" role="listbox" aria-label="artifacts"></div>
+            </div>
+            <div class="fview" id="t-aview" hidden>
+              <div class="filebar abar" id="t-aview-bar"></div>
+              <iframe id="t-aview-frame" aria-label="the artifact"></iframe>
+            </div>
+          </div>
+        </div>
         <!-- This session's directory, in the pane rather than in a dialog.
              The terminal is where you are when you want a file out of it, and
              sending you to a card dialog to get one is leaving the room.
@@ -557,7 +588,7 @@ Exports honor whatever filter is applied.">?</span>
               <iframe id="t-fview-frame" aria-label="the file"></iframe>
             </div>
           </div>
-          <!-- The editor, over the list, for the case where you want to change
+        <!-- The editor, over the list, for the case where you want to change
                one line rather than fetch the whole file. Over an overlay it is
                the only way: `files/open` starts an editor on the daemon's
                machine, where nobody is sitting. -->
@@ -1273,27 +1304,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
-<!-- Every board control with its total and last-used day, and the ones nobody has used. See js/usage-board.js. -->
-<dialog id="usagedlg">
-  <div class="dlg-head">
-    <div class="grow"><div class="dlg-eyebrow">this room</div><h2>controls used</h2></div>
-  </div>
-  <div class="dlg-body">
-    <div class="usagedlg-row usagedlg-head" data-usage-skip>
-      <button type="button" id="usagedlg-h-name" class="name" data-usage-skip>control</button>
-      <button type="button" id="usagedlg-h-n" class="n" data-usage-skip>used</button>
-      <span class="last">last</span>
-    </div>
-    <div id="usagedlg-list" class="usagedlg-list"></div>
-    <span class="hintline">Counts of clicks on the board's own controls, kept in this room and never sent anywhere
-      else. A control in a menu that is closed is not known until the menu has been opened.</span>
-  </div>
-  <div class="dlg-foot">
-    <div class="grow"></div>
-    <button type="button" id="usagedlg-close" class="go">done</button>
-  </div>
-</dialog>
-
 <dialog id="ask">
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">atrium asks</div><h2 id="ask-title"></h2></div>
@@ -1538,6 +1548,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         small panel you can move anywhere, so you can walk every tab and open a card while you
         decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal
         keeps its own.</span>
+    </div>
+    <div class="field" id="s-userstyles-field" hidden>
+      <span class="hintline">Your styles: <code id="s-userstyles"></code>
+        <a href="/?safe" id="s-safemode" target="_blank" rel="noopener">open safe mode</a></span>
     </div>
     <div class="field">
       <label class="eyebrow" for="s-cardsize">text size</label>
@@ -3965,6 +3979,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/access.js"></script>
 <script src="/js/files-rules.js"></script>
 <script src="/js/notes-files.js"></script>
+<script src="/js/artifacts.js"></script>
 <script src="/js/usage.js"></script>
 <script src="/js/hears.js"></script>
 <script src="/js/usage-charts.js"></script>
@@ -4024,7 +4039,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/dictate.js"></script>
 <script src="/js/hubrestart.js"></script>
 <script src="/js/topnav.js"></script>
-<script src="/js/usage-board.js"></script>
 <script src="/js/down.js"></script>
 <script src="/js/route.js"></script>
 <script src="/js/ui-hold.js"></script>

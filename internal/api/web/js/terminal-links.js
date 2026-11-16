@@ -586,6 +586,52 @@ function useWebLinks(t) {
   }
 }
 
+// A URL a program broke with a newline of its own at the edge of the terminal. xterm joins only rows the terminal wrapped
+// itself, so the web links addon sees the first half of such a URL and a click opens a truncated address. A row that
+// runs to the last column and is followed by a row that did not wrap from it is read as one URL.
+function useHardWrapLinks(t) {
+  try {
+    t.registerLinkProvider({ provideLinks: (y, done) => done(hardWrapLinks(t, y)) });
+  } catch (e) {
+    console.warn("wrapped url links would not register:", e);
+  }
+}
+
+function hardWrapLinks(t, y) {
+  const buf = t.buffer.active;
+  const text = r => { const l = buf.getLine(r - 1); return l ? l.translateToString(true) : null; };
+  const full = r => { const x = text(r); return x !== null && x.length >= t.cols - 1 && !/\s$/.test(x); };
+  const joins = r => { const n = buf.getLine(r); return !!n && !n.isWrapped && /^\S/.test(n.translateToString(true)); };
+  let first = y;
+  while (first > 1 && full(first - 1) && joins(first - 1) && !buf.getLine(first - 1).isWrapped) first--;
+  const rows = [], lens = [];
+  for (let r = first; r <= buf.length; r++) {
+    const x = text(r);
+    rows.push(x); lens.push(x.length);
+    if (!(full(r) && joins(r) && r < first + probeWrapRows)) break;
+  }
+  if (rows.length < 2) return undefined;
+  const all = rows.join("");
+  const at = off => {
+    for (let i = 0, base = 0; i < rows.length; i++, base += lens[i - 1]) {
+      if (off < base + lens[i]) return { x: off - base + 1, y: first + i };
+    }
+    return { x: lens[lens.length - 1], y: first + rows.length - 1 };
+  };
+  const out = [];
+  for (const m of all.matchAll(/https?:\/\/[^\s<>"'`]+/g)) {
+    const uri = m[0].replace(/[.,;:!?)\]]+$/, "");
+    const start = at(m.index), end = at(m.index + uri.length - 1);
+    if (start.y === end.y || y < start.y || y > end.y) continue;
+    out.push({
+      range: { start, end }, text: uri,
+      activate: (ev, u) => { if (plainLinkClick(ev, t)) openTermURL(ev, u); },
+      hover: (ev, u) => { termHoverURL = u; }, leave: () => { termHoverURL = ""; },
+    });
+  }
+  return out.length ? out : undefined;
+}
+
 // A URL opens in a new tab, and that is all it does.
 //
 // NOT atrium's file viewer, which is where a clicked PATH goes. A URL is not a

@@ -523,7 +523,7 @@ async function deleteNow(id, t) {
 // list cannot drift apart in how their menus look or behave.
 //
 // Entries marked `more` sit behind a "more..." row until it is pressed, which redraws the menu with them in place and
-// keeps it open. They are the ones nobody has been seen using, kept until u-measure-board-usage has data.
+// keeps it open. They are the ones nobody has been seen using.
 function showMenu(e, items, opened) {
   const hidden = opened ? [] : items.filter(it => it && it.more);
   if (hidden.length) {

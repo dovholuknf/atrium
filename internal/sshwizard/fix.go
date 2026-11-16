@@ -72,6 +72,17 @@ func needed(steps []int) map[int]bool {
 	return out
 }
 
+// needsTodo is whether a step Sync would do waits on one it never does, such as the key a fresh room has not made yet.
+// Publishing then sends the hub an empty key, and the hub refuses it.
+func needsTodo(rep Report, n int) bool {
+	for _, d := range Steps()[n-1].Needs {
+		if rep.Results[d-1].Status == Todo {
+			return true
+		}
+	}
+	return false
+}
+
 func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool, only map[int]bool) (Report, []Action) {
 	ctx, cancel := context.WithTimeout(ctx, FixBound)
 	defer cancel()
@@ -91,6 +102,9 @@ func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool
 	r, rep := pass(ctx, m, opt, only)
 	for _, n := range steps {
 		if rep.Results[n-1].Status != Todo {
+			continue
+		}
+		if !saveUser && needsTodo(rep, n) {
 			continue
 		}
 		did, err := fixes[n](ctx, r)

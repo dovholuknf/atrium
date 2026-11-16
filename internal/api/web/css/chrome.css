@@ -131,8 +131,31 @@
      so: a green counter beside a red `reconnecting` was two controls contradicting each other. */
   /* Attached rooms set up differently (missing hooks, another build). The tooltip names each. */
   .rooms.warn { color: var(--warn); border-color: var(--warn); }
-  .rooms.warn .dot { background: var(--warn); box-shadow: 0 0 9px var(--warn); }
-  .setupline { display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px; }
+  .rooms.warn .dot { width: auto; height: auto; background: none; box-shadow: none; border-radius: 0; }
+  .rooms.warn .dot::before { content: "\26A0\FE0E"; font-size: var(--fs-xl); line-height: 1; }
+  #setuppop {
+    position: fixed; z-index: 400; width: max-content; max-width: calc(100vw - 16px); max-height: 80vh; overflow: auto;
+    padding: 10px 14px; user-select: text; white-space: nowrap; font-size: calc(var(--fs-sm) * 1.2);
+    background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke); border-radius: var(--r-md);
+    box-shadow: var(--shadow-pop);
+  }
+  #setuppop[hidden] { display: none; }
+  /* One grid for the whole popover so the room names are one column and every mark lines up under the last. */
+  #setuppop { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 10px; align-items: baseline; }
+  #setuppop[hidden] { display: none; }
+  #setuppop h5 { margin: 0; font: 600 1em/1.5 var(--mono); color: var(--head); text-align: left; }
+  #setuppop .rm { display: contents; }
+  #setuppop .rm b { font-weight: 400; }
+  #setuppop .rm.bad b, #setuppop .rm.bad span { color: var(--warn); }
+  #setuppop .ok { color: var(--body); }
+  #setuppop .it { grid-column: 2 / 4; display: flex; gap: 8px; align-items: baseline; font: 400 1em/1.5 var(--sans); color: var(--body); }
+  #setuppop .it.bad { color: var(--warn); }
+  #setuppop .it .tx { flex: 1; }
+  #setuppop .it .setuppick { flex: none; width: 1em; margin: 0; }
+  #setuppop .it .why { flex: none; margin-left: 16px; color: var(--dim); font-style: italic; }
+  #setuppop .setupall { grid-column: 1 / -1; margin-top: 10px; }
+  #setuppop .it .k { flex: none; font-family: var(--mono); opacity: .8; }
+  #setuppop .setupfix { margin-left: 16px; padding: 1px 8px; }  .setupline { display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px; }
   .setupline .chip.warn { color: var(--warn); border-color: var(--warn); }
   .rooms.down { color: var(--danger-text); border-color: var(--danger); }
   .rooms.down .dot { background: var(--danger); box-shadow: none; }

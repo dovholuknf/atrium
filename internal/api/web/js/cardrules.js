@@ -61,7 +61,7 @@ const GROUP_CHOICES = [
   ["prefix", "tag prefix", "the part of a tag before its colon, so origin:agent files under origin"],
   ["tag", "tag", "every tag on the card, a card with several appears under each"],
   ["custom", "your groups", "the named buckets you made with the + button"],
-  ["recency", "age", "today, yesterday, this week, this month, dormant"],
+  ["recency", "age", "1h, 4h, today, yesterday, this week, this month, dormant"],
   ["code", "your own code", "a JavaScript rule you type"]
 ];
 

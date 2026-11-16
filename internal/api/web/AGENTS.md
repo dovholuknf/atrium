@@ -64,6 +64,15 @@ and nowhere else. Scope any new one the same way, write it across several lines 
 one-line rule as a skin block and swallows what follows), and keep the headless check that harbour renders the
 same before and after `website` is worn.
 
+## Public CSS contract
+
+The room serves `<state>/board/user.css` at `/user.css`, linked after every other stylesheet in `index.html` and
+`m/index.html`, so it wins every tie. `?safe` on the board URL leaves the link out and sets `data-safe` on `<html>`.
+What `user.css` may rely on is the palette channels (`--sink-rgb`, `--bg1-rgb`, `--chip-rgb`, `--stroke-rgb`,
+`--stroke-dim-rgb`, `--teal-rgb`, `--path-rgb`, `--warn-rgb`, `--wait-rgb`, `--danger-rgb`, `--shadow-rgb`,
+`--shell0-rgb`, `--shell1-rgb`), `--uiscale`, `--density` and the `data-skin` attribute. Renaming or removing one
+breaks somebody's file, so it is a change to call out. Class names and ids are NOT stable and change without notice.
+
 ## One flow of headings, cut into panes at runtime
 
 The settings dialog and the runners page are both written as a single top-to-bottom flow of headings and their

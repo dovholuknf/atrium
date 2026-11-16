@@ -57,6 +57,10 @@ func TestStdioLaunchSendsSuperleanAndWarnsWhenARoomDropsIt(t *testing.T) {
 	applied := true
 	var sent any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/human-base" {
+			http.NotFound(w, r)
+			return
+		}
 		var got map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&got)
 		sent = got["superlean"]

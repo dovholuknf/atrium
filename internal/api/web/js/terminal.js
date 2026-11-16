@@ -1228,6 +1228,7 @@ function openTerm(task) {
   // THESE TWO ARE IN THIS ORDER ON PURPOSE. Both linkify the terminal, and
   // xterm gives a disputed run of text to whichever provider registered first,
   // so a URL wins over a path that matched inside it.
+  useHardWrapLinks(term);
   useWebLinks(term);
   // A path in the output is a path you can click. The card comes with it,
   // because what makes a word a link is whether it is a file in that card's
@@ -1472,11 +1473,34 @@ function resetTerm(t) {
 // CLEAN COPY. What a terminal selection holds is Claude Code's render of a reply: an indent, a `│`/`▎` bar on a quote,
 // hard line breaks where the TUI wrapped. The raw text is in the transcript, so `cleanCopy` looks for the selection in
 // the card's recent replies and, on a match, the "copy clean" button copies the source substring. No match, a slow or
-// failed endpoint: the button copies the selection de-rendered locally. This plain copy is always exactly `getSelection()`.
+// failed endpoint: the button copies the selection de-rendered locally. This plain copy is `termSelectionText`.
 function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
-  navigator.clipboard.writeText(term.getSelection())
+  navigator.clipboard.writeText(termSelectionText(term))
     .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
+}
+
+// xterm joins a soft-wrapped row to the next with no newline and keeps its real spaces, so a block a TUI paints by padding
+// each row to the width with spaces (Claude Code's prompt) copies as one line of space runs. A wrap after two or more
+// trailing spaces is padding and ends the line, a wrap after text runs on, and every line loses its trailing spaces.
+function termSelectionText(t) {
+  let p;
+  try { p = t.getSelectionPosition(); } catch (e) {}
+  const svc = t._core && t._core._selectionService;
+  if (!p || (svc && (svc._activeSelectionMode === 3 || svc._model.isSelectAllActive))) return t.getSelection();
+  let a = p.start, b = p.end;
+  if (a.y > b.y || (a.y === b.y && a.x > b.x)) [a, b] = [b, a];
+  const buf = t.buffer.active;
+  const wraps = y => { const n = y < b.y ? buf.getLine(y + 1) : null; return !!n && n.isWrapped; };
+  const out = [];
+  let joins = false;
+  for (let y = a.y; y <= b.y; y++) {
+    const l = buf.getLine(y);
+    const s = l ? l.translateToString(!wraps(y), y === a.y ? a.x : 0, y === b.y ? b.x : undefined) : "";
+    if (joins) out[out.length - 1] += s; else out.push(s);
+    joins = wraps(y) && !/[  ]{2}$/.test(s);
+  }
+  return out.map(s => s.replace(/ /g, " ").trimEnd()).join(/^Win/.test(navigator.platform) ? "\r\n" : "\n");
 }
 
 // THE COPY CLEAN BUTTON. A plain copy is the terminal's text as shown, and says nothing. A small button pops up beside
@@ -1536,7 +1560,7 @@ async function offerCleanCopy() {
   hideCleanCopy();
   if (!term || !term.hasSelection() || !termTask) return;
   const mine = term, seq = ccSeq;
-  const text = mine.getSelection();
+  const text = termSelectionText(mine);
   const edges = selectionEdges(mine);
   let best = ccDerender(text);
   showCleanCopyButton(mine, () => best);

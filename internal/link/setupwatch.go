@@ -175,6 +175,11 @@ func (p *Proxy) readSetup(ctx context.Context, room string) *wire.RoomSetup {
 	}
 	// A room too old to list its runners still has a setup worth checking.
 	_ = p.setupGet(ctx, room, "/v1/harnesses", &harnesses)
+	var check struct {
+		Issues []wire.SetupIssue `json:"issues"`
+	}
+	_ = p.setupGet(ctx, room, "/v1/setup-check", &check)
+	f.Checklist = check.Issues
 	f.Answering = true
 	f.HooksMissing, f.HooksUnreadable = hooks.Missing, hooks.Unreadable
 	f.HooksTwoGates = hooks.TwoGates
@@ -236,6 +241,10 @@ func (p *Proxy) setupIssues(ctx context.Context, f *wire.RoomSetup) []wire.Setup
 			}
 			issues = append(issues, wire.SetupIssue{Kind: "hooks", Text: text})
 		}
+	}
+	for _, c := range f.Checklist {
+		c.Kind = "checklist"
+		issues = append(issues, c)
 	}
 	if text := p.buildIssue(ctx, f); text != "" {
 		issues = append(issues, wire.SetupIssue{Kind: "build", Text: text})

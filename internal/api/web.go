@@ -159,11 +159,11 @@ func webHandler(dir string) http.Handler {
 					cardurl.NotFound(w, r.URL.Path)
 					return
 				}
-				if assets.Serve(w, r, strings.TrimPrefix(page, "/")) {
+				if servedSafe(w, r, fsys, strings.TrimPrefix(page, "/")) || assets.Serve(w, r, strings.TrimPrefix(page, "/")) {
 					return
 				}
 			}
-			if name, ok := fileName(r.URL.Path); ok && assets.Serve(w, r, name) {
+			if name, ok := fileName(r.URL.Path); ok && (servedSafe(w, r, fsys, name) || assets.Serve(w, r, name)) {
 				return
 			}
 		}

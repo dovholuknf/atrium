@@ -17,6 +17,9 @@
 // beside one in the new reads as a bug in both.
 bootSkin();
 
+// Safe mode is the server leaving user.css out. The attribute is for the board's own rules, which user.css cannot reach.
+if (new URLSearchParams(location.search).has("safe")) document.documentElement.setAttribute("data-safe", "");
+
 // The mark in the tab strip, in every window for the same reason as the skin.
 // A popped-out terminal is its own document and its own tab, and a board
 // carrying the A beside a terminal carrying the browser's default reads as two

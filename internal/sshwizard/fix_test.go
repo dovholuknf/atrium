@@ -311,3 +311,12 @@ func TestSyncRunsNoSSHAndNoScan(t *testing.T) {
 		t.Fatalf("authorized_keys:\n%s", got)
 	}
 }
+
+func TestSyncDoesNotPublishBeforeTheRoomHasAKey(t *testing.T) {
+	m := winMachine()
+	m.pubErr, m.published = nil, nil
+	_, acts := Sync(context.Background(), m, Options{}, 6)
+	if len(acts) != 0 || m.published != nil {
+		t.Fatalf("a room with no key published: %+v %+v", acts, m.published)
+	}
+}

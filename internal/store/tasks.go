@@ -1453,7 +1453,8 @@ func (s *Store) Prune(olderThan time.Duration, statuses ...string) (int, error) 
 			return err
 		}
 		n = int(got)
-		return nil
+		_, err = s.db.Exec(`DELETE FROM artifact WHERE task_id NOT IN (SELECT id FROM task)`)
+		return err
 	})
 	return n, err
 }

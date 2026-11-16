@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
@@ -464,6 +465,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	}
 	st.OnRelayHeld = d.KickRelays
 	d.ap.BoardDir = opts.BoardDir
+	d.ap.StateDir = filepath.Dir(opts.DBPath)
 	d.ap.Decide = d.decide
 	d.ap.DecideBy = d.decideBy
 	d.ap.Room = opts.Room
@@ -625,6 +627,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// How much context it has burned. Held the same way and for the same
 	// reason. See docs/runtime/statusline-telemetry.md.
 	api.TelemetryOf = d.telemetryFor
+	api.UsageFacts = d.usageFacts
 	// Which agent-launched cards are stuck, for the board to ring about. Held
 	// the same way. See a2a.go.
 	api.EscalationOf = d.escalationFor
@@ -1151,7 +1154,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
 	// rebind a name onto it, or open a terminal. See internal/edge.
 	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: edge.For(d.opts.AgentAddr, agentMux)}
-	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: edge.For(d.opts.HumanAddr, d.BoardHandler())}
+	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: edge.For(d.opts.HumanAddr, seenhost.Handler(d.BoardHandler()))}
 
 	d.mu.Lock()
 	d.agentServer = agentSrv

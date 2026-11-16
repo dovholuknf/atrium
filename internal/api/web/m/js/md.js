@@ -387,7 +387,7 @@
     else if (t.classList.contains("md-file")) { if (window.mViewer) window.mViewer.open(t.dataset.card, t.dataset.path); else saveFile(t); }
     else if (t.dataset.state === "ready") { const i = t.querySelector("img"); if (i) enlarge(i.src, i.alt); }
   });
-  // A URL, or a /d/<slug> where there are documents, left as text in a bubble becomes a link, built as nodes so no message
+  // A URL, or a /d/<slug> where there are documents, left as text in a bubble becomes a link, a lone URL in inline code too, built as nodes so no message
   // text is parsed as markup.
   const BARE = /https?:\/\/[^\s<>"'`]+|\/d\/[^\s<>"'`]+/g;
   function linkify(root) {
@@ -395,7 +395,7 @@
     const todo = [];
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
       const p = n.parentElement;
-      if (p && p.closest(".md, .own") && !p.closest("a, button, code, pre") && /https?:\/\/|\/d\//.test(n.data)) todo.push(n);
+      if (p && p.closest(".md, .own") && !p.closest("a, button, pre") && (!p.closest("code") || /^\s*https?:\/\/\S+\s*$/.test(n.data)) && /https?:\/\/|\/d\//.test(n.data)) todo.push(n);
     }
     todo.forEach(n => {
       const src = n.data, frag = document.createDocumentFragment();
