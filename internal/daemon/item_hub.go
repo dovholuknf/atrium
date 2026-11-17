@@ -118,6 +118,7 @@ type itemPush struct{ mu sync.Mutex }
 // kickItems pushes what is owed, off the caller's path.
 func (d *Daemon) kickItems() {
 	go d.flushItems()
+	go d.flushRoomEvents()
 	go d.flushTaskOwed()
 }
 

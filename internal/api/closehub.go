@@ -39,6 +39,7 @@ func (s *Server) freeHubBranches(t *store.Task, rows []*store.CardResource, aske
 		return
 	}
 	steps.begin("hubbranches", fmt.Sprintf("deleting %d %s on the hub", len(mine), plural(len(mine), "branch", "branches")))
+	dir := hubPushDir(context.Background(), t, rows)
 	for _, r := range mine {
 		if s.HubDelete == nil {
 			err := errors.New("this room has no hub remote to delete from")
@@ -48,7 +49,7 @@ func (s *Server) freeHubBranches(t *store.Task, rows []*store.CardResource, aske
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*closeGitWait)
-		err := s.HubDelete(ctx, t.ID, t.Worktree, r.Detail, r.Ref)
+		err := s.HubDelete(ctx, t.ID, dir, r.Detail, r.Ref)
 		cancel()
 		if err != nil {
 			failed(r, err)
@@ -60,11 +61,11 @@ func (s *Server) freeHubBranches(t *store.Task, rows []*store.CardResource, aske
 	}
 }
 
-// hubBranchMerged says whether a branch is an ancestor of the integration branch, as the card's own clone sees it, or
-// for a pull request's card of the forge's main, since that work lands there and never on claude/main. The tip is the
-// local branch, else the hub's copy of it as last fetched. A branch or a clone that cannot be read is NOT merged, so
-// the close asks rather than deletes.
-func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
+// hubBranchMerged says whether a branch is in the integration branch or the forge's main, as the card's own clone sees
+// them, by ancestry or by an equivalent patch (a squash PR keeps the change and loses the sha). The tip is the local
+// branch, else the hub's copy of it as last fetched. A branch or a clone that cannot be read is NOT merged, so the
+// close asks rather than deletes.
+func hubBranchMerged(ctx context.Context, dir, branch string) bool {
 	if strings.TrimSpace(dir) == "" {
 		return false
 	}
@@ -72,10 +73,7 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 	defer cancel()
 	tips := []string{"refs/heads/" + branch, "refs/remotes/hub/" + branch, "refs/remotes/atrium-hub/" + branch}
 	bases := []string{"refs/heads/claude/main", "refs/remotes/hub/claude/main", "refs/remotes/atrium-hub/claude/main",
-		"refs/heads/hub-main"}
-	if pr {
-		bases = append(bases, "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master")
-	}
+		"refs/heads/hub-main", "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master"}
 	have := commitRefs(ctx, dir, append(slices.Clone(tips), bases...))
 	tip := ""
 	for _, ref := range tips {
@@ -94,8 +92,31 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 		if _, err := gitIn(ctx, dir, gitexec.IsAncestor{Commit: tip, Of: base}); err == nil {
 			return true
 		}
+		if out, err := gitIn(ctx, dir, gitexec.Cherry{Upstream: base, Head: tip}); err == nil && !strings.Contains("\n"+out, "\n+") {
+			return true
+		}
 	}
 	return false
+}
+
+// hubPushDir is where a hub branch's delete is pushed from: a directory that is a repository, since the card's own
+// folder can be an emptied worktree.
+func hubPushDir(ctx context.Context, t *store.Task, rows []*store.CardResource) string {
+	var tries []string
+	for _, r := range rows {
+		if r.Live() && r.Kind == store.ResWorktree {
+			tries = append(tries, r.Ref, r.Detail)
+		}
+	}
+	for _, d := range append(tries, t.Worktree) {
+		if strings.TrimSpace(d) == "" {
+			continue
+		}
+		if _, err := gitIn(ctx, d, gitexec.RevParseGitDirs{GitDir: true}); err == nil {
+			return d
+		}
+	}
+	return t.Worktree
 }
 
 // commitRefs says which of the named refs exist and are commits, in one git call. A clone that cannot be read has none.

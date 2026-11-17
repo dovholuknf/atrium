@@ -30,7 +30,8 @@ Atrium is one binary with two long-running commands, and a third process a room 
 ```
 
 Rooms dial the hub over mutual TLS, never the reverse. `atrium run` starts this machine's room when none answers. The
-defaults are in `internal/cli/atrium_defaults.go`. `atrium daemon` still runs the older single process (board :7778,
+defaults are in `internal/cli/atrium_defaults.go`, and `docs/security/network-footprint.md` lists every listener and
+outbound connection. `atrium daemon` still runs the older single process (board :7778,
 agents :7777, no hub). `docs/fabric/hub-and-rooms.md` has the details.
 
 The pty host is the same binary again, `atrium ptyhost`, hidden from `--help`. With the `pty_host` setting on, the room
@@ -84,7 +85,7 @@ internal/daemon/            the room: wires store + api, owns hooks, launching, 
   supervisor.go               pseudo terminals atrium owns
   attach.go                   the websocket carrying one of those terminals
   messages.go                 saying something to a running session
-  peers.go                    one session messaging another, QUEUED, never typed
+  peers.go                    one session messaging another, typed when free, else queued
   session.go                  join, leave, start, end, and the gate question
   launch.go                   spawning a runner from a harness row
   shutdown.go                 stopping without killing
@@ -149,7 +150,7 @@ The main ones. `atrium --help` lists the rest.
 | `atrium turn --event end` | Claude Code's Stop hook. The only way to reach a session sitting idle. Optional, and never installed by "install all": it is the one hook whose answer changes what a session does. |
 | `atrium finish [recap]` | An agent saying its work is over, and what it did. A command rather than a tool, because a command is the channel every runner already has. |
 | `atrium peers` | The other sessions this one can address, with what each is doing and how much is already queued for it. |
-| `atrium tell <handle> <msg>` | Say something to another session. QUEUED, never typed: atrium owns a terminal a human may be mid-command in, and a peer is not that human. An unknown handle answers with the list of ones that would have worked. |
+| `atrium tell <handle> <msg>` | Say something to another session. Typed when its terminal is free, and queued when it is not. An unknown handle answers with the list of ones that would have worked. |
 | `atrium name [<name>]` | Name this atrium, once. Prefixes every wire name so two machines cannot collide. |
 | `atrium version` | What this binary is: the tag, the commit, the board hash, the platform. Stamped by the linker, `dev` when it is not. |
 | `atrium launch` | Start a runner in a directory you have already prepared. Takes `--tags`, `--prompt` and `--external` so a script can produce a card that is already filed, and `--item` (with `--item-owner`) to start it as an item (`docs/changes/items-stage1.md`, `docs/changes/items-stage2a.md`). |
@@ -159,9 +160,9 @@ The main ones. `atrium --help` lists the rest.
 ## Out of scope (intentional)
 
 - Injecting prompts into running claude sessions from outside MCP. There is no IPC channel into a claude
-  process. This holds for the peer bus too: one session messaging another is QUEUED and delivered by a hook,
-  never typed into the target's terminal, even where atrium owns one and could. See `internal/daemon/peers.go`,
-  which says so at length because the tempting simplification is to reuse `handleMessage`, which does type.
+  process. The peer bus types only into a terminal atrium owns: one session messaging another is typed when the
+  target's terminal is free, and queued and delivered by a hook when it is not. See `internal/daemon/peers.go`,
+  which says why at length.
 - Replacing `gwt sessions`. It remains the per-repo workflow tool.
 - Authentication on the board. The board binds loopback and has no login. Reaching it from elsewhere is an
   overlay's job, not an auth layer invented here. `--shutdown-token` is the one exception, and only because a kill

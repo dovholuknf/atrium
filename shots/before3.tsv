@@ -1,0 +1,1770 @@
+(default)	tab, off	8.64
+(default)	tab, off, border	2.70
+(default)	tab count, off	7.69
+(default)	tab, on	11.04
+(default)	tab, on, border	2.39
+(default)	tab count, on	11.04
+(default)	artifacts count	2.92
+(default)	toolbar file name	15.28
+(default)	toolbar file date	6.06
+(default)	toolbar back icon	8.64
+(default)	toolbar back, border	2.70
+(default)	toolbar next icon	8.64
+(default)	toolbar raw (off)	8.64
+(default)	toolbar rendered (on)	7.50
+(default)	toolbar download icon	8.64
+(default)	toolbar delete icon	8.64
+(default)	list group heading	3.34
+(default)	list file name	8.32
+(default)	code block	15.28
+(default) (term 1)	tab, off	1.13
+(default) (term 1)	tab, off, border	1.04
+(default) (term 1)	tab count, off	9.74
+(default) (term 1)	tab, on	11.04
+(default) (term 1)	tab, on, border	2.39
+(default) (term 1)	tab count, on	11.04
+(default) (term 1)	artifacts count	2.92
+(default) (term 1)	toolbar file name	15.28
+(default) (term 1)	toolbar file date	1.09
+(default) (term 1)	toolbar back icon	1.13
+(default) (term 1)	toolbar back, border	1.04
+(default) (term 1)	toolbar next icon	1.13
+(default) (term 1)	toolbar raw (off)	1.13
+(default) (term 1)	toolbar rendered (on)	7.50
+(default) (term 1)	toolbar download icon	1.13
+(default) (term 1)	toolbar delete icon	1.13
+(default) (term 1)	list group heading	3.34
+(default) (term 1)	list file name	8.32
+(default) (term 1)	code block	15.28
+(default) (term 2)	tab, off	10.96
+(default) (term 2)	tab, off, border	3.19
+(default) (term 2)	tab count, off	7.37
+(default) (term 2)	tab, on	11.04
+(default) (term 2)	tab, on, border	2.39
+(default) (term 2)	tab count, on	11.04
+(default) (term 2)	artifacts count	2.92
+(default) (term 2)	toolbar file name	15.28
+(default) (term 2)	toolbar file date	7.74
+(default) (term 2)	toolbar back icon	10.96
+(default) (term 2)	toolbar back, border	3.19
+(default) (term 2)	toolbar next icon	10.96
+(default) (term 2)	toolbar raw (off)	10.96
+(default) (term 2)	toolbar rendered (on)	7.50
+(default) (term 2)	toolbar download icon	10.96
+(default) (term 2)	toolbar delete icon	10.96
+(default) (term 2)	list group heading	3.34
+(default) (term 2)	list file name	8.32
+(default) (term 2)	code block	15.28
+graphite	tab, off	9.28
+graphite	tab, off, border	2.74
+graphite	tab count, off	9.48
+graphite	tab, on	13.82
+graphite	tab, on, border	1.80
+graphite	tab count, on	13.82
+graphite	artifacts count	2.50
+graphite	toolbar file name	16.27
+graphite	toolbar file date	6.37
+graphite	toolbar back icon	9.28
+graphite	toolbar back, border	2.74
+graphite	toolbar next icon	9.28
+graphite	toolbar raw (off)	9.28
+graphite	toolbar rendered (on)	9.07
+graphite	toolbar download icon	9.28
+graphite	toolbar delete icon	9.28
+graphite	list group heading	2.75
+graphite	list file name	9.40
+graphite	code block	16.27
+graphite (term 1)	tab, off	1.20
+graphite (term 1)	tab, off, border	1.07
+graphite (term 1)	tab count, off	11.86
+graphite (term 1)	tab, on	13.82
+graphite (term 1)	tab, on, border	1.80
+graphite (term 1)	tab count, on	13.82
+graphite (term 1)	artifacts count	2.50
+graphite (term 1)	toolbar file name	16.27
+graphite (term 1)	toolbar file date	1.14
+graphite (term 1)	toolbar back icon	1.20
+graphite (term 1)	toolbar back, border	1.07
+graphite (term 1)	toolbar next icon	1.20
+graphite (term 1)	toolbar raw (off)	1.20
+graphite (term 1)	toolbar rendered (on)	9.07
+graphite (term 1)	toolbar download icon	1.20
+graphite (term 1)	toolbar delete icon	1.20
+graphite (term 1)	list group heading	2.75
+graphite (term 1)	list file name	9.40
+graphite (term 1)	code block	16.27
+graphite (term 2)	tab, off	11.79
+graphite (term 2)	tab, off, border	3.25
+graphite (term 2)	tab count, off	9.09
+graphite (term 2)	tab, on	13.82
+graphite (term 2)	tab, on, border	1.80
+graphite (term 2)	tab count, on	13.82
+graphite (term 2)	artifacts count	2.50
+graphite (term 2)	toolbar file name	16.27
+graphite (term 2)	toolbar file date	8.15
+graphite (term 2)	toolbar back icon	11.79
+graphite (term 2)	toolbar back, border	3.25
+graphite (term 2)	toolbar next icon	11.79
+graphite (term 2)	toolbar raw (off)	11.79
+graphite (term 2)	toolbar rendered (on)	9.07
+graphite (term 2)	toolbar download icon	11.79
+graphite (term 2)	toolbar delete icon	11.79
+graphite (term 2)	list group heading	2.75
+graphite (term 2)	list file name	9.40
+graphite (term 2)	code block	16.27
+oxide	tab, off	9.19
+oxide	tab, off, border	2.75
+oxide	tab count, off	6.30
+oxide	tab, on	13.16
+oxide	tab, on, border	1.91
+oxide	tab count, on	13.16
+oxide	artifacts count	2.30
+oxide	toolbar file name	15.89
+oxide	toolbar file date	6.33
+oxide	toolbar back icon	9.19
+oxide	toolbar back, border	2.75
+oxide	toolbar next icon	9.19
+oxide	toolbar raw (off)	9.19
+oxide	toolbar rendered (on)	6.43
+oxide	toolbar download icon	9.19
+oxide	toolbar delete icon	9.19
+oxide	list group heading	2.51
+oxide	list file name	8.92
+oxide	code block	15.89
+oxide (term 1)	tab, off	1.19
+oxide (term 1)	tab, off, border	1.07
+oxide (term 1)	tab count, off	7.90
+oxide (term 1)	tab, on	13.16
+oxide (term 1)	tab, on, border	1.91
+oxide (term 1)	tab count, on	13.16
+oxide (term 1)	artifacts count	2.30
+oxide (term 1)	toolbar file name	15.89
+oxide (term 1)	toolbar file date	1.13
+oxide (term 1)	toolbar back icon	1.19
+oxide (term 1)	toolbar back, border	1.07
+oxide (term 1)	toolbar next icon	1.19
+oxide (term 1)	toolbar raw (off)	1.19
+oxide (term 1)	toolbar rendered (on)	6.43
+oxide (term 1)	toolbar download icon	1.19
+oxide (term 1)	toolbar delete icon	1.19
+oxide (term 1)	list group heading	2.51
+oxide (term 1)	list file name	8.92
+oxide (term 1)	code block	15.89
+oxide (term 2)	tab, off	11.66
+oxide (term 2)	tab, off, border	3.25
+oxide (term 2)	tab count, off	6.04
+oxide (term 2)	tab, on	13.16
+oxide (term 2)	tab, on, border	1.91
+oxide (term 2)	tab count, on	13.16
+oxide (term 2)	artifacts count	2.30
+oxide (term 2)	toolbar file name	15.89
+oxide (term 2)	toolbar file date	8.10
+oxide (term 2)	toolbar back icon	11.66
+oxide (term 2)	toolbar back, border	3.25
+oxide (term 2)	toolbar next icon	11.66
+oxide (term 2)	toolbar raw (off)	11.66
+oxide (term 2)	toolbar rendered (on)	6.43
+oxide (term 2)	toolbar download icon	11.66
+oxide (term 2)	toolbar delete icon	11.66
+oxide (term 2)	list group heading	2.51
+oxide (term 2)	list file name	8.92
+oxide (term 2)	code block	15.89
+moss	tab, off	9.20
+moss	tab, off, border	2.74
+moss	tab count, off	9.04
+moss	tab, on	13.10
+moss	tab, on, border	2.24
+moss	tab count, on	13.10
+moss	artifacts count	2.84
+moss	toolbar file name	16.36
+moss	toolbar file date	6.31
+moss	toolbar back icon	9.20
+moss	toolbar back, border	2.74
+moss	toolbar next icon	9.20
+moss	toolbar raw (off)	9.20
+moss	toolbar rendered (on)	8.65
+moss	toolbar download icon	9.20
+moss	toolbar delete icon	9.20
+moss	list group heading	3.13
+moss	list file name	9.58
+moss	code block	16.36
+moss (term 1)	tab, off	1.19
+moss (term 1)	tab, off, border	1.06
+moss (term 1)	tab count, off	11.32
+moss (term 1)	tab, on	13.10
+moss (term 1)	tab, on, border	2.24
+moss (term 1)	tab count, on	13.10
+moss (term 1)	artifacts count	2.84
+moss (term 1)	toolbar file name	16.36
+moss (term 1)	toolbar file date	1.13
+moss (term 1)	toolbar back icon	1.19
+moss (term 1)	toolbar back, border	1.06
+moss (term 1)	toolbar next icon	1.19
+moss (term 1)	toolbar raw (off)	1.19
+moss (term 1)	toolbar rendered (on)	8.65
+moss (term 1)	toolbar download icon	1.19
+moss (term 1)	toolbar delete icon	1.19
+moss (term 1)	list group heading	3.13
+moss (term 1)	list file name	9.58
+moss (term 1)	code block	16.36
+moss (term 2)	tab, off	11.68
+moss (term 2)	tab, off, border	3.24
+moss (term 2)	tab count, off	8.67
+moss (term 2)	tab, on	13.10
+moss (term 2)	tab, on, border	2.24
+moss (term 2)	tab count, on	13.10
+moss (term 2)	artifacts count	2.84
+moss (term 2)	toolbar file name	16.36
+moss (term 2)	toolbar file date	8.08
+moss (term 2)	toolbar back icon	11.68
+moss (term 2)	toolbar back, border	3.24
+moss (term 2)	toolbar next icon	11.68
+moss (term 2)	toolbar raw (off)	11.68
+moss (term 2)	toolbar rendered (on)	8.65
+moss (term 2)	toolbar download icon	11.68
+moss (term 2)	toolbar delete icon	11.68
+moss (term 2)	list group heading	3.13
+moss (term 2)	list file name	9.58
+moss (term 2)	code block	16.36
+plum	tab, off	9.69
+plum	tab, off, border	2.72
+plum	tab count, off	6.18
+plum	tab, on	13.69
+plum	tab, on, border	2.00
+plum	tab count, on	13.69
+plum	artifacts count	2.39
+plum	toolbar file name	16.42
+plum	toolbar file date	6.46
+plum	toolbar back icon	9.69
+plum	toolbar back, border	2.72
+plum	toolbar next icon	9.69
+plum	toolbar raw (off)	9.69
+plum	toolbar rendered (on)	6.29
+plum	toolbar download icon	9.69
+plum	toolbar delete icon	9.69
+plum	list group heading	2.57
+plum	list file name	8.81
+plum	code block	16.42
+plum (term 1)	tab, off	1.24
+plum (term 1)	tab, off, border	1.07
+plum (term 1)	tab count, off	7.62
+plum (term 1)	tab, on	13.69
+plum (term 1)	tab, on, border	2.00
+plum (term 1)	tab count, on	13.69
+plum (term 1)	artifacts count	2.39
+plum (term 1)	toolbar file name	16.42
+plum (term 1)	toolbar file date	1.16
+plum (term 1)	toolbar back icon	1.24
+plum (term 1)	toolbar back, border	1.07
+plum (term 1)	toolbar next icon	1.24
+plum (term 1)	toolbar raw (off)	1.24
+plum (term 1)	toolbar rendered (on)	6.29
+plum (term 1)	toolbar download icon	1.24
+plum (term 1)	toolbar delete icon	1.24
+plum (term 1)	list group heading	2.57
+plum (term 1)	list file name	8.81
+plum (term 1)	code block	16.42
+plum (term 2)	tab, off	12.33
+plum (term 2)	tab, off, border	3.22
+plum (term 2)	tab count, off	5.93
+plum (term 2)	tab, on	13.69
+plum (term 2)	tab, on, border	2.00
+plum (term 2)	tab count, on	13.69
+plum (term 2)	artifacts count	2.39
+plum (term 2)	toolbar file name	16.42
+plum (term 2)	toolbar file date	8.28
+plum (term 2)	toolbar back icon	12.33
+plum (term 2)	toolbar back, border	3.22
+plum (term 2)	toolbar next icon	12.33
+plum (term 2)	toolbar raw (off)	12.33
+plum (term 2)	toolbar rendered (on)	6.29
+plum (term 2)	toolbar download icon	12.33
+plum (term 2)	toolbar delete icon	12.33
+plum (term 2)	list group heading	2.57
+plum (term 2)	list file name	8.81
+plum (term 2)	code block	16.42
+ember	tab, off	9.53
+ember	tab, off, border	2.74
+ember	tab count, off	8.16
+ember	tab, on	13.90
+ember	tab, on, border	2.09
+ember	tab count, on	13.90
+ember	artifacts count	2.47
+ember	toolbar file name	16.76
+ember	toolbar file date	6.44
+ember	toolbar back icon	9.53
+ember	toolbar back, border	2.74
+ember	toolbar next icon	9.53
+ember	toolbar raw (off)	9.53
+ember	toolbar rendered (on)	8.01
+ember	toolbar download icon	9.53
+ember	toolbar delete icon	9.53
+ember	list group heading	2.66
+ember	list file name	9.59
+ember	code block	16.76
+ember (term 1)	tab, off	1.22
+ember (term 1)	tab, off, border	1.07
+ember (term 1)	tab count, off	10.13
+ember (term 1)	tab, on	13.90
+ember (term 1)	tab, on, border	2.09
+ember (term 1)	tab count, on	13.90
+ember (term 1)	artifacts count	2.47
+ember (term 1)	toolbar file name	16.76
+ember (term 1)	toolbar file date	1.15
+ember (term 1)	toolbar back icon	1.22
+ember (term 1)	toolbar back, border	1.07
+ember (term 1)	toolbar next icon	1.22
+ember (term 1)	toolbar raw (off)	1.22
+ember (term 1)	toolbar rendered (on)	8.01
+ember (term 1)	toolbar download icon	1.22
+ember (term 1)	toolbar delete icon	1.22
+ember (term 1)	list group heading	2.66
+ember (term 1)	list file name	9.59
+ember (term 1)	code block	16.76
+ember (term 2)	tab, off	12.11
+ember (term 2)	tab, off, border	3.24
+ember (term 2)	tab count, off	7.83
+ember (term 2)	tab, on	13.90
+ember (term 2)	tab, on, border	2.09
+ember (term 2)	tab count, on	13.90
+ember (term 2)	artifacts count	2.47
+ember (term 2)	toolbar file name	16.76
+ember (term 2)	toolbar file date	8.25
+ember (term 2)	toolbar back icon	12.11
+ember (term 2)	toolbar back, border	3.24
+ember (term 2)	toolbar next icon	12.11
+ember (term 2)	toolbar raw (off)	12.11
+ember (term 2)	toolbar rendered (on)	8.01
+ember (term 2)	toolbar download icon	12.11
+ember (term 2)	toolbar delete icon	12.11
+ember (term 2)	list group heading	2.66
+ember (term 2)	list file name	9.59
+ember (term 2)	code block	16.76
+glacier	tab, off	8.69
+glacier	tab, off, border	2.73
+glacier	tab count, off	7.73
+glacier	tab, on	12.78
+glacier	tab, on, border	2.37
+glacier	tab count, on	12.78
+glacier	artifacts count	2.94
+glacier	toolbar file name	15.89
+glacier	toolbar file date	6.12
+glacier	toolbar back icon	8.69
+glacier	toolbar back, border	2.73
+glacier	toolbar next icon	8.69
+glacier	toolbar raw (off)	8.69
+glacier	toolbar rendered (on)	7.49
+glacier	toolbar download icon	8.69
+glacier	toolbar delete icon	8.69
+glacier	list group heading	3.30
+glacier	list file name	9.75
+glacier	code block	15.89
+glacier (term 1)	tab, off	1.14
+glacier (term 1)	tab, off, border	1.05
+glacier (term 1)	tab count, off	9.80
+glacier (term 1)	tab, on	12.78
+glacier (term 1)	tab, on, border	2.37
+glacier (term 1)	tab count, on	12.78
+glacier (term 1)	artifacts count	2.94
+glacier (term 1)	toolbar file name	15.89
+glacier (term 1)	toolbar file date	1.10
+glacier (term 1)	toolbar back icon	1.14
+glacier (term 1)	toolbar back, border	1.05
+glacier (term 1)	toolbar next icon	1.14
+glacier (term 1)	toolbar raw (off)	1.14
+glacier (term 1)	toolbar rendered (on)	7.49
+glacier (term 1)	toolbar download icon	1.14
+glacier (term 1)	toolbar delete icon	1.14
+glacier (term 1)	list group heading	3.30
+glacier (term 1)	list file name	9.75
+glacier (term 1)	code block	15.89
+glacier (term 2)	tab, off	11.02
+glacier (term 2)	tab, off, border	3.22
+glacier (term 2)	tab count, off	7.40
+glacier (term 2)	tab, on	12.78
+glacier (term 2)	tab, on, border	2.37
+glacier (term 2)	tab count, on	12.78
+glacier (term 2)	artifacts count	2.94
+glacier (term 2)	toolbar file name	15.89
+glacier (term 2)	toolbar file date	7.83
+glacier (term 2)	toolbar back icon	11.02
+glacier (term 2)	toolbar back, border	3.22
+glacier (term 2)	toolbar next icon	11.02
+glacier (term 2)	toolbar raw (off)	11.02
+glacier (term 2)	toolbar rendered (on)	7.49
+glacier (term 2)	toolbar download icon	11.02
+glacier (term 2)	toolbar delete icon	11.02
+glacier (term 2)	list group heading	3.30
+glacier (term 2)	list file name	9.75
+glacier (term 2)	code block	15.89
+noir	tab, off	10.18
+noir	tab, off, border	2.69
+noir	tab count, off	13.25
+noir	tab, on	16.29
+noir	tab, on, border	1.92
+noir	tab count, on	16.29
+noir	artifacts count	2.47
+noir	toolbar file name	18.73
+noir	toolbar file date	6.64
+noir	toolbar back icon	10.18
+noir	toolbar back, border	2.69
+noir	toolbar next icon	10.18
+noir	toolbar raw (off)	10.18
+noir	toolbar rendered (on)	12.11
+noir	toolbar download icon	10.18
+noir	toolbar delete icon	10.18
+noir	list group heading	2.64
+noir	list file name	9.44
+noir	code block	18.73
+noir (term 1)	tab, off	1.28
+noir (term 1)	tab, off, border	1.09
+noir (term 1)	tab count, off	16.15
+noir (term 1)	tab, on	16.29
+noir (term 1)	tab, on, border	1.92
+noir (term 1)	tab count, on	16.29
+noir (term 1)	artifacts count	2.47
+noir (term 1)	toolbar file name	18.73
+noir (term 1)	toolbar file date	1.19
+noir (term 1)	toolbar back icon	1.28
+noir (term 1)	toolbar back, border	1.09
+noir (term 1)	toolbar next icon	1.28
+noir (term 1)	toolbar raw (off)	1.28
+noir (term 1)	toolbar rendered (on)	12.11
+noir (term 1)	toolbar download icon	1.28
+noir (term 1)	toolbar delete icon	1.28
+noir (term 1)	list group heading	2.64
+noir (term 1)	list file name	9.44
+noir (term 1)	code block	18.73
+noir (term 2)	tab, off	12.97
+noir (term 2)	tab, off, border	3.20
+noir (term 2)	tab count, off	12.74
+noir (term 2)	tab, on	16.29
+noir (term 2)	tab, on, border	1.92
+noir (term 2)	tab count, on	16.29
+noir (term 2)	artifacts count	2.47
+noir (term 2)	toolbar file name	18.73
+noir (term 2)	toolbar file date	8.52
+noir (term 2)	toolbar back icon	12.97
+noir (term 2)	toolbar back, border	3.20
+noir (term 2)	toolbar next icon	12.97
+noir (term 2)	toolbar raw (off)	12.97
+noir (term 2)	toolbar rendered (on)	12.11
+noir (term 2)	toolbar download icon	12.97
+noir (term 2)	toolbar delete icon	12.97
+noir (term 2)	list group heading	2.64
+noir (term 2)	list file name	9.44
+noir (term 2)	code block	18.73
+vapor	tab, off	9.82
+vapor	tab, off, border	2.71
+vapor	tab count, off	6.03
+vapor	tab, on	13.97
+vapor	tab, on, border	2.05
+vapor	tab count, on	13.97
+vapor	artifacts count	2.35
+vapor	toolbar file name	16.51
+vapor	toolbar file date	6.49
+vapor	toolbar back icon	9.82
+vapor	toolbar back, border	2.71
+vapor	toolbar next icon	9.82
+vapor	toolbar raw (off)	9.82
+vapor	toolbar rendered (on)	6.20
+vapor	toolbar download icon	9.82
+vapor	toolbar delete icon	9.82
+vapor	list group heading	2.52
+vapor	list file name	8.49
+vapor	code block	16.51
+vapor (term 1)	tab, off	1.25
+vapor (term 1)	tab, off, border	1.08
+vapor (term 1)	tab count, off	7.41
+vapor (term 1)	tab, on	13.97
+vapor (term 1)	tab, on, border	2.05
+vapor (term 1)	tab count, on	13.97
+vapor (term 1)	artifacts count	2.35
+vapor (term 1)	toolbar file name	16.51
+vapor (term 1)	toolbar file date	1.16
+vapor (term 1)	toolbar back icon	1.25
+vapor (term 1)	toolbar back, border	1.08
+vapor (term 1)	toolbar next icon	1.25
+vapor (term 1)	toolbar raw (off)	1.25
+vapor (term 1)	toolbar rendered (on)	6.20
+vapor (term 1)	toolbar download icon	1.25
+vapor (term 1)	toolbar delete icon	1.25
+vapor (term 1)	list group heading	2.52
+vapor (term 1)	list file name	8.49
+vapor (term 1)	code block	16.51
+vapor (term 2)	tab, off	12.50
+vapor (term 2)	tab, off, border	3.21
+vapor (term 2)	tab count, off	5.79
+vapor (term 2)	tab, on	13.97
+vapor (term 2)	tab, on, border	2.05
+vapor (term 2)	tab count, on	13.97
+vapor (term 2)	artifacts count	2.35
+vapor (term 2)	toolbar file name	16.51
+vapor (term 2)	toolbar file date	8.32
+vapor (term 2)	toolbar back icon	12.50
+vapor (term 2)	toolbar back, border	3.21
+vapor (term 2)	toolbar next icon	12.50
+vapor (term 2)	toolbar raw (off)	12.50
+vapor (term 2)	toolbar rendered (on)	6.20
+vapor (term 2)	toolbar download icon	12.50
+vapor (term 2)	toolbar delete icon	12.50
+vapor (term 2)	list group heading	2.52
+vapor (term 2)	list file name	8.49
+vapor (term 2)	code block	16.51
+sandstone	tab, off	8.67
+sandstone	tab, off, border	2.73
+sandstone	tab count, off	4.54
+sandstone	tab, on	11.84
+sandstone	tab, on, border	2.42
+sandstone	tab count, on	11.84
+sandstone	artifacts count	2.31
+sandstone	toolbar file name	15.33
+sandstone	toolbar file date	6.12
+sandstone	toolbar back icon	8.67
+sandstone	toolbar back, border	2.73
+sandstone	toolbar next icon	8.67
+sandstone	toolbar raw (off)	8.67
+sandstone	toolbar rendered (on)	4.85
+sandstone	toolbar download icon	8.67
+sandstone	toolbar delete icon	8.67
+sandstone	list group heading	2.57
+sandstone	list file name	8.80
+sandstone	code block	15.33
+sandstone (term 1)	tab, off	1.14
+sandstone (term 1)	tab, off, border	1.05
+sandstone (term 1)	tab count, off	5.77
+sandstone (term 1)	tab, on	11.84
+sandstone (term 1)	tab, on, border	2.42
+sandstone (term 1)	tab count, on	11.84
+sandstone (term 1)	artifacts count	2.31
+sandstone (term 1)	toolbar file name	15.33
+sandstone (term 1)	toolbar file date	1.10
+sandstone (term 1)	toolbar back icon	1.14
+sandstone (term 1)	toolbar back, border	1.05
+sandstone (term 1)	toolbar next icon	1.14
+sandstone (term 1)	toolbar raw (off)	1.14
+sandstone (term 1)	toolbar rendered (on)	4.85
+sandstone (term 1)	toolbar download icon	1.14
+sandstone (term 1)	toolbar delete icon	1.14
+sandstone (term 1)	list group heading	2.57
+sandstone (term 1)	list file name	8.80
+sandstone (term 1)	code block	15.33
+sandstone (term 2)	tab, off	10.99
+sandstone (term 2)	tab, off, border	3.23
+sandstone (term 2)	tab count, off	4.35
+sandstone (term 2)	tab, on	11.84
+sandstone (term 2)	tab, on, border	2.42
+sandstone (term 2)	tab count, on	11.84
+sandstone (term 2)	artifacts count	2.31
+sandstone (term 2)	toolbar file name	15.33
+sandstone (term 2)	toolbar file date	7.83
+sandstone (term 2)	toolbar back icon	10.99
+sandstone (term 2)	toolbar back, border	3.23
+sandstone (term 2)	toolbar next icon	10.99
+sandstone (term 2)	toolbar raw (off)	10.99
+sandstone (term 2)	toolbar rendered (on)	4.85
+sandstone (term 2)	toolbar download icon	10.99
+sandstone (term 2)	toolbar delete icon	10.99
+sandstone (term 2)	list group heading	2.57
+sandstone (term 2)	list file name	8.80
+sandstone (term 2)	code block	15.33
+abyss	tab, off	9.94
+abyss	tab, off, border	2.71
+abyss	tab count, off	7.92
+abyss	tab, on	14.41
+abyss	tab, on, border	2.09
+abyss	tab count, on	14.41
+abyss	artifacts count	2.52
+abyss	toolbar file name	17.30
+abyss	toolbar file date	6.55
+abyss	toolbar back icon	9.94
+abyss	toolbar back, border	2.71
+abyss	toolbar next icon	9.94
+abyss	toolbar raw (off)	9.94
+abyss	toolbar rendered (on)	7.83
+abyss	toolbar download icon	9.94
+abyss	toolbar delete icon	9.94
+abyss	list group heading	2.70
+abyss	list file name	8.36
+abyss	code block	17.30
+abyss (term 1)	tab, off	1.26
+abyss (term 1)	tab, off, border	1.08
+abyss (term 1)	tab count, off	9.70
+abyss (term 1)	tab, on	14.41
+abyss (term 1)	tab, on, border	2.09
+abyss (term 1)	tab count, on	14.41
+abyss (term 1)	artifacts count	2.52
+abyss (term 1)	toolbar file name	17.30
+abyss (term 1)	toolbar file date	1.17
+abyss (term 1)	toolbar back icon	1.26
+abyss (term 1)	toolbar back, border	1.08
+abyss (term 1)	toolbar next icon	1.26
+abyss (term 1)	toolbar raw (off)	1.26
+abyss (term 1)	toolbar rendered (on)	7.83
+abyss (term 1)	toolbar download icon	1.26
+abyss (term 1)	toolbar delete icon	1.26
+abyss (term 1)	list group heading	2.70
+abyss (term 1)	list file name	8.36
+abyss (term 1)	code block	17.30
+abyss (term 2)	tab, off	12.65
+abyss (term 2)	tab, off, border	3.22
+abyss (term 2)	tab count, off	7.61
+abyss (term 2)	tab, on	14.41
+abyss (term 2)	tab, on, border	2.09
+abyss (term 2)	tab count, on	14.41
+abyss (term 2)	artifacts count	2.52
+abyss (term 2)	toolbar file name	17.30
+abyss (term 2)	toolbar file date	8.40
+abyss (term 2)	toolbar back icon	12.65
+abyss (term 2)	toolbar back, border	3.22
+abyss (term 2)	toolbar next icon	12.65
+abyss (term 2)	toolbar raw (off)	12.65
+abyss (term 2)	toolbar rendered (on)	7.83
+abyss (term 2)	toolbar download icon	12.65
+abyss (term 2)	toolbar delete icon	12.65
+abyss (term 2)	list group heading	2.70
+abyss (term 2)	list file name	8.36
+abyss (term 2)	code block	17.30
+paper	tab, off	1.27
+paper	tab, off, border	1.10
+paper	tab count, off	3.62
+paper	tab, on	12.84
+paper	tab, on, border	2.07
+paper	tab count, on	12.84
+paper	artifacts count	2.23
+paper	toolbar file name	15.27
+paper	toolbar file date	1.20
+paper	toolbar back icon	1.27
+paper	toolbar back, border	1.10
+paper	toolbar next icon	1.27
+paper	toolbar raw (off)	1.27
+paper	toolbar rendered (on)	3.20
+paper	toolbar download icon	1.27
+paper	toolbar delete icon	1.27
+paper	list group heading	2.31
+paper	list file name	8.25
+paper	code block	16.67
+paper (term 1)	tab, off	10.43
+paper (term 1)	tab, off, border	2.13
+paper (term 1)	tab count, off	3.06
+paper (term 1)	tab, on	12.84
+paper (term 1)	tab, on, border	2.07
+paper (term 1)	tab count, on	12.84
+paper (term 1)	artifacts count	2.23
+paper (term 1)	toolbar file name	15.27
+paper (term 1)	toolbar file date	5.09
+paper (term 1)	toolbar back icon	10.43
+paper (term 1)	toolbar back, border	2.13
+paper (term 1)	toolbar next icon	10.43
+paper (term 1)	toolbar raw (off)	10.43
+paper (term 1)	toolbar rendered (on)	3.20
+paper (term 1)	toolbar download icon	10.43
+paper (term 1)	toolbar delete icon	10.43
+paper (term 1)	list group heading	2.31
+paper (term 1)	list file name	8.25
+paper (term 1)	code block	16.67
+paper (term 2)	tab, off	1.01
+paper (term 2)	tab, off, border	1.01
+paper (term 2)	tab count, off	3.72
+paper (term 2)	tab, on	12.84
+paper (term 2)	tab, on, border	2.07
+paper (term 2)	tab count, on	12.84
+paper (term 2)	artifacts count	2.23
+paper (term 2)	toolbar file name	15.27
+paper (term 2)	toolbar file date	1.01
+paper (term 2)	toolbar back icon	1.01
+paper (term 2)	toolbar back, border	1.01
+paper (term 2)	toolbar next icon	1.01
+paper (term 2)	toolbar raw (off)	1.01
+paper (term 2)	toolbar rendered (on)	3.20
+paper (term 2)	toolbar download icon	1.01
+paper (term 2)	toolbar delete icon	1.01
+paper (term 2)	list group heading	2.31
+paper (term 2)	list file name	8.25
+paper (term 2)	code block	16.67
+daylight	tab, off	1.30
+daylight	tab, off, border	1.11
+daylight	tab count, off	3.88
+daylight	tab, on	13.67
+daylight	tab, on, border	2.03
+daylight	tab count, on	13.67
+daylight	artifacts count	2.24
+daylight	toolbar file name	16.03
+daylight	toolbar file date	1.22
+daylight	toolbar back icon	1.30
+daylight	toolbar back, border	1.11
+daylight	toolbar next icon	1.30
+daylight	toolbar raw (off)	1.30
+daylight	toolbar rendered (on)	3.42
+daylight	toolbar download icon	1.30
+daylight	toolbar delete icon	1.30
+daylight	list group heading	2.32
+daylight	list file name	8.25
+daylight	code block	17.38
+daylight (term 1)	tab, off	10.66
+daylight (term 1)	tab, off, border	2.14
+daylight (term 1)	tab count, off	3.29
+daylight (term 1)	tab, on	13.67
+daylight (term 1)	tab, on, border	2.03
+daylight (term 1)	tab count, on	13.67
+daylight (term 1)	artifacts count	2.24
+daylight (term 1)	toolbar file name	16.03
+daylight (term 1)	toolbar file date	5.14
+daylight (term 1)	toolbar back icon	10.66
+daylight (term 1)	toolbar back, border	2.14
+daylight (term 1)	toolbar next icon	10.66
+daylight (term 1)	toolbar raw (off)	10.66
+daylight (term 1)	toolbar rendered (on)	3.42
+daylight (term 1)	toolbar download icon	10.66
+daylight (term 1)	toolbar delete icon	10.66
+daylight (term 1)	list group heading	2.32
+daylight (term 1)	list file name	8.25
+daylight (term 1)	code block	17.38
+daylight (term 2)	tab, off	1.01
+daylight (term 2)	tab, off, border	1.00
+daylight (term 2)	tab count, off	3.99
+daylight (term 2)	tab, on	13.67
+daylight (term 2)	tab, on, border	2.03
+daylight (term 2)	tab count, on	13.67
+daylight (term 2)	artifacts count	2.24
+daylight (term 2)	toolbar file name	16.03
+daylight (term 2)	toolbar file date	1.00
+daylight (term 2)	toolbar back icon	1.01
+daylight (term 2)	toolbar back, border	1.00
+daylight (term 2)	toolbar next icon	1.01
+daylight (term 2)	toolbar raw (off)	1.01
+daylight (term 2)	toolbar rendered (on)	3.42
+daylight (term 2)	toolbar download icon	1.01
+daylight (term 2)	toolbar delete icon	1.01
+daylight (term 2)	list group heading	2.32
+daylight (term 2)	list file name	8.25
+daylight (term 2)	code block	17.38
+linen	tab, off	1.24
+linen	tab, off, border	1.08
+linen	tab count, off	4.55
+linen	tab, on	11.82
+linen	tab, on, border	2.10
+linen	tab count, on	11.82
+linen	artifacts count	2.12
+linen	toolbar file name	14.05
+linen	toolbar file date	1.17
+linen	toolbar back icon	1.24
+linen	toolbar back, border	1.08
+linen	toolbar next icon	1.24
+linen	toolbar raw (off)	1.24
+linen	toolbar rendered (on)	3.97
+linen	toolbar download icon	1.24
+linen	toolbar delete icon	1.24
+linen	list group heading	2.18
+linen	list file name	7.61
+linen	code block	15.46
+linen (term 1)	tab, off	10.10
+linen (term 1)	tab, off, border	2.12
+linen (term 1)	tab count, off	3.84
+linen (term 1)	tab, on	11.82
+linen (term 1)	tab, on, border	2.10
+linen (term 1)	tab count, on	11.82
+linen (term 1)	artifacts count	2.12
+linen (term 1)	toolbar file name	14.05
+linen (term 1)	toolbar file date	5.00
+linen (term 1)	toolbar back icon	10.10
+linen (term 1)	toolbar back, border	2.12
+linen (term 1)	toolbar next icon	10.10
+linen (term 1)	toolbar raw (off)	10.10
+linen (term 1)	toolbar rendered (on)	3.97
+linen (term 1)	toolbar download icon	10.10
+linen (term 1)	toolbar delete icon	10.10
+linen (term 1)	list group heading	2.18
+linen (term 1)	list file name	7.61
+linen (term 1)	code block	15.46
+linen (term 2)	tab, off	1.04
+linen (term 2)	tab, off, border	1.02
+linen (term 2)	tab count, off	4.68
+linen (term 2)	tab, on	11.82
+linen (term 2)	tab, on, border	2.10
+linen (term 2)	tab count, on	11.82
+linen (term 2)	artifacts count	2.12
+linen (term 2)	toolbar file name	14.05
+linen (term 2)	toolbar file date	1.03
+linen (term 2)	toolbar back icon	1.04
+linen (term 2)	toolbar back, border	1.02
+linen (term 2)	toolbar next icon	1.04
+linen (term 2)	toolbar raw (off)	1.04
+linen (term 2)	toolbar rendered (on)	3.97
+linen (term 2)	toolbar download icon	1.04
+linen (term 2)	toolbar delete icon	1.04
+linen (term 2)	list group heading	2.18
+linen (term 2)	list file name	7.61
+linen (term 2)	code block	15.46
+frost	tab, off	1.27
+frost	tab, off, border	1.10
+frost	tab count, off	4.66
+frost	tab, on	12.20
+frost	tab, on, border	2.11
+frost	tab count, on	12.20
+frost	artifacts count	2.20
+frost	toolbar file name	14.33
+frost	toolbar file date	1.19
+frost	toolbar back icon	1.27
+frost	toolbar back, border	1.10
+frost	toolbar next icon	1.27
+frost	toolbar raw (off)	1.27
+frost	toolbar rendered (on)	4.06
+frost	toolbar download icon	1.27
+frost	toolbar delete icon	1.27
+frost	list group heading	2.26
+frost	list file name	7.73
+frost	code block	15.66
+frost (term 1)	tab, off	10.37
+frost (term 1)	tab, off, border	2.13
+frost (term 1)	tab count, off	3.94
+frost (term 1)	tab, on	12.20
+frost (term 1)	tab, on, border	2.11
+frost (term 1)	tab count, on	12.20
+frost (term 1)	artifacts count	2.20
+frost (term 1)	toolbar file name	14.33
+frost (term 1)	toolbar file date	5.07
+frost (term 1)	toolbar back icon	10.37
+frost (term 1)	toolbar back, border	2.13
+frost (term 1)	toolbar next icon	10.37
+frost (term 1)	toolbar raw (off)	10.37
+frost (term 1)	toolbar rendered (on)	4.06
+frost (term 1)	toolbar download icon	10.37
+frost (term 1)	toolbar delete icon	10.37
+frost (term 1)	list group heading	2.26
+frost (term 1)	list file name	7.73
+frost (term 1)	code block	15.66
+frost (term 2)	tab, off	1.02
+frost (term 2)	tab, off, border	1.01
+frost (term 2)	tab count, off	4.79
+frost (term 2)	tab, on	12.20
+frost (term 2)	tab, on, border	2.11
+frost (term 2)	tab count, on	12.20
+frost (term 2)	artifacts count	2.20
+frost (term 2)	toolbar file name	14.33
+frost (term 2)	toolbar file date	1.02
+frost (term 2)	toolbar back icon	1.02
+frost (term 2)	toolbar back, border	1.01
+frost (term 2)	toolbar next icon	1.02
+frost (term 2)	toolbar raw (off)	1.02
+frost (term 2)	toolbar rendered (on)	4.06
+frost (term 2)	toolbar download icon	1.02
+frost (term 2)	toolbar delete icon	1.02
+frost (term 2)	list group heading	2.26
+frost (term 2)	list file name	7.73
+frost (term 2)	code block	15.66
+slate	tab, off	6.29
+slate	tab, off, border	2.48
+slate	tab count, off	5.32
+slate	tab, on	9.04
+slate	tab, on, border	2.35
+slate	tab count, on	9.04
+slate	artifacts count	2.68
+slate	toolbar file name	11.19
+slate	toolbar file date	4.86
+slate	toolbar back icon	6.29
+slate	toolbar back, border	2.48
+slate	toolbar next icon	6.29
+slate	toolbar raw (off)	6.29
+slate	toolbar rendered (on)	5.30
+slate	toolbar download icon	6.29
+slate	toolbar delete icon	6.29
+slate	list group heading	3.26
+slate	list file name	7.34
+slate	code block	11.19
+slate (term 1)	tab, off	1.02
+slate (term 1)	tab, off, border	1.01
+slate (term 1)	tab count, off	7.02
+slate (term 1)	tab, on	9.04
+slate (term 1)	tab, on, border	2.35
+slate (term 1)	tab count, on	9.04
+slate (term 1)	artifacts count	2.68
+slate (term 1)	toolbar file name	11.19
+slate (term 1)	toolbar file date	1.02
+slate (term 1)	toolbar back icon	1.02
+slate (term 1)	toolbar back, border	1.01
+slate (term 1)	toolbar next icon	1.02
+slate (term 1)	toolbar raw (off)	1.02
+slate (term 1)	toolbar rendered (on)	5.30
+slate (term 1)	toolbar download icon	1.02
+slate (term 1)	toolbar delete icon	1.02
+slate (term 1)	list group heading	3.26
+slate (term 1)	list file name	7.34
+slate (term 1)	code block	11.19
+slate (term 2)	tab, off	7.96
+slate (term 2)	tab, off, border	2.90
+slate (term 2)	tab count, off	5.08
+slate (term 2)	tab, on	9.04
+slate (term 2)	tab, on, border	2.35
+slate (term 2)	tab count, on	9.04
+slate (term 2)	artifacts count	2.68
+slate (term 2)	toolbar file name	11.19
+slate (term 2)	toolbar file date	6.17
+slate (term 2)	toolbar back icon	7.96
+slate (term 2)	toolbar back, border	2.90
+slate (term 2)	toolbar next icon	7.96
+slate (term 2)	toolbar raw (off)	7.96
+slate (term 2)	toolbar rendered (on)	5.30
+slate (term 2)	toolbar download icon	7.96
+slate (term 2)	toolbar delete icon	7.96
+slate (term 2)	list group heading	3.26
+slate (term 2)	list file name	7.34
+slate (term 2)	code block	11.19
+dusk	tab, off	6.73
+dusk	tab, off, border	2.54
+dusk	tab count, off	4.66
+dusk	tab, on	9.89
+dusk	tab, on, border	2.26
+dusk	tab count, on	9.89
+dusk	artifacts count	2.56
+dusk	toolbar file name	11.78
+dusk	toolbar file date	5.12
+dusk	toolbar back icon	6.73
+dusk	toolbar back, border	2.54
+dusk	toolbar next icon	6.73
+dusk	toolbar raw (off)	6.73
+dusk	toolbar rendered (on)	4.79
+dusk	toolbar download icon	6.73
+dusk	toolbar delete icon	6.73
+dusk	list group heading	3.01
+dusk	list file name	7.41
+dusk	code block	11.78
+dusk (term 1)	tab, off	1.03
+dusk (term 1)	tab, off, border	1.01
+dusk (term 1)	tab count, off	6.12
+dusk (term 1)	tab, on	9.89
+dusk (term 1)	tab, on, border	2.26
+dusk (term 1)	tab count, on	9.89
+dusk (term 1)	artifacts count	2.56
+dusk (term 1)	toolbar file name	11.78
+dusk (term 1)	toolbar file date	1.02
+dusk (term 1)	toolbar back icon	1.03
+dusk (term 1)	toolbar back, border	1.01
+dusk (term 1)	toolbar next icon	1.03
+dusk (term 1)	toolbar raw (off)	1.03
+dusk (term 1)	toolbar rendered (on)	4.79
+dusk (term 1)	toolbar download icon	1.03
+dusk (term 1)	toolbar delete icon	1.03
+dusk (term 1)	list group heading	3.01
+dusk (term 1)	list file name	7.41
+dusk (term 1)	code block	11.78
+dusk (term 2)	tab, off	8.51
+dusk (term 2)	tab, off, border	2.98
+dusk (term 2)	tab count, off	4.45
+dusk (term 2)	tab, on	9.89
+dusk (term 2)	tab, on, border	2.26
+dusk (term 2)	tab count, on	9.89
+dusk (term 2)	artifacts count	2.56
+dusk (term 2)	toolbar file name	11.78
+dusk (term 2)	toolbar file date	6.51
+dusk (term 2)	toolbar back icon	8.51
+dusk (term 2)	toolbar back, border	2.98
+dusk (term 2)	toolbar next icon	8.51
+dusk (term 2)	toolbar raw (off)	8.51
+dusk (term 2)	toolbar rendered (on)	4.79
+dusk (term 2)	toolbar download icon	8.51
+dusk (term 2)	toolbar delete icon	8.51
+dusk (term 2)	list group heading	3.01
+dusk (term 2)	list file name	7.41
+dusk (term 2)	code block	11.78
+fern	tab, off	6.26
+fern	tab, off, border	2.47
+fern	tab count, off	5.04
+fern	tab, on	9.07
+fern	tab, on, border	2.61
+fern	tab count, on	9.07
+fern	artifacts count	2.72
+fern	toolbar file name	11.12
+fern	toolbar file date	4.84
+fern	toolbar back icon	6.26
+fern	toolbar back, border	2.47
+fern	toolbar next icon	6.26
+fern	toolbar raw (off)	6.26
+fern	toolbar rendered (on)	5.03
+fern	toolbar download icon	6.26
+fern	toolbar delete icon	6.26
+fern	list group heading	3.30
+fern	list file name	7.29
+fern	code block	11.12
+fern (term 1)	tab, off	1.04
+fern (term 1)	tab, off, border	1.02
+fern (term 1)	tab count, off	6.65
+fern (term 1)	tab, on	9.07
+fern (term 1)	tab, on, border	2.61
+fern (term 1)	tab count, on	9.07
+fern (term 1)	artifacts count	2.72
+fern (term 1)	toolbar file name	11.12
+fern (term 1)	toolbar file date	1.03
+fern (term 1)	toolbar back icon	1.04
+fern (term 1)	toolbar back, border	1.02
+fern (term 1)	toolbar next icon	1.04
+fern (term 1)	toolbar raw (off)	1.04
+fern (term 1)	toolbar rendered (on)	5.03
+fern (term 1)	toolbar download icon	1.04
+fern (term 1)	toolbar delete icon	1.04
+fern (term 1)	list group heading	3.30
+fern (term 1)	list file name	7.29
+fern (term 1)	code block	11.12
+fern (term 2)	tab, off	7.91
+fern (term 2)	tab, off, border	2.89
+fern (term 2)	tab count, off	4.81
+fern (term 2)	tab, on	9.07
+fern (term 2)	tab, on, border	2.61
+fern (term 2)	tab count, on	9.07
+fern (term 2)	artifacts count	2.72
+fern (term 2)	toolbar file name	11.12
+fern (term 2)	toolbar file date	6.14
+fern (term 2)	toolbar back icon	7.91
+fern (term 2)	toolbar back, border	2.89
+fern (term 2)	toolbar next icon	7.91
+fern (term 2)	toolbar raw (off)	7.91
+fern (term 2)	toolbar rendered (on)	5.03
+fern (term 2)	toolbar download icon	7.91
+fern (term 2)	toolbar delete icon	7.91
+fern (term 2)	list group heading	3.30
+fern (term 2)	list file name	7.29
+fern (term 2)	code block	11.12
+clay	tab, off	6.27
+clay	tab, off, border	2.47
+clay	tab count, off	4.04
+clay	tab, on	9.03
+clay	tab, on, border	2.37
+clay	tab count, on	9.03
+clay	artifacts count	2.45
+clay	toolbar file name	11.05
+clay	toolbar file date	4.85
+clay	toolbar back icon	6.27
+clay	toolbar back, border	2.47
+clay	toolbar next icon	6.27
+clay	toolbar raw (off)	6.27
+clay	toolbar rendered (on)	4.21
+clay	toolbar download icon	6.27
+clay	toolbar delete icon	6.27
+clay	list group heading	2.93
+clay	list file name	7.09
+clay	code block	11.05
+clay (term 1)	tab, off	1.04
+clay (term 1)	tab, off, border	1.02
+clay (term 1)	tab count, off	5.33
+clay (term 1)	tab, on	9.03
+clay (term 1)	tab, on, border	2.37
+clay (term 1)	tab count, on	9.03
+clay (term 1)	artifacts count	2.45
+clay (term 1)	toolbar file name	11.05
+clay (term 1)	toolbar file date	1.03
+clay (term 1)	toolbar back icon	1.04
+clay (term 1)	toolbar back, border	1.02
+clay (term 1)	toolbar next icon	1.04
+clay (term 1)	toolbar raw (off)	1.04
+clay (term 1)	toolbar rendered (on)	4.21
+clay (term 1)	toolbar download icon	1.04
+clay (term 1)	toolbar delete icon	1.04
+clay (term 1)	list group heading	2.93
+clay (term 1)	list file name	7.09
+clay (term 1)	code block	11.05
+clay (term 2)	tab, off	7.92
+clay (term 2)	tab, off, border	2.90
+clay (term 2)	tab count, off	3.85
+clay (term 2)	tab, on	9.03
+clay (term 2)	tab, on, border	2.37
+clay (term 2)	tab count, on	9.03
+clay (term 2)	artifacts count	2.45
+clay (term 2)	toolbar file name	11.05
+clay (term 2)	toolbar file date	6.15
+clay (term 2)	toolbar back icon	7.92
+clay (term 2)	toolbar back, border	2.90
+clay (term 2)	toolbar next icon	7.92
+clay (term 2)	toolbar raw (off)	7.92
+clay (term 2)	toolbar rendered (on)	4.21
+clay (term 2)	toolbar download icon	7.92
+clay (term 2)	toolbar delete icon	7.92
+clay (term 2)	list group heading	2.93
+clay (term 2)	list file name	7.09
+clay (term 2)	code block	11.05
+cobalt	tab, off	6.44
+cobalt	tab, off, border	2.47
+cobalt	tab count, off	5.87
+cobalt	tab, on	9.42
+cobalt	tab, on, border	2.55
+cobalt	tab count, on	9.42
+cobalt	artifacts count	2.75
+cobalt	toolbar file name	11.48
+cobalt	toolbar file date	4.91
+cobalt	toolbar back icon	6.44
+cobalt	toolbar back, border	2.47
+cobalt	toolbar next icon	6.44
+cobalt	toolbar raw (off)	6.44
+cobalt	toolbar rendered (on)	5.74
+cobalt	toolbar download icon	6.44
+cobalt	toolbar delete icon	6.44
+cobalt	list group heading	3.34
+cobalt	list file name	7.47
+cobalt	code block	11.48
+cobalt (term 1)	tab, off	1.01
+cobalt (term 1)	tab, off, border	1.01
+cobalt (term 1)	tab count, off	7.71
+cobalt (term 1)	tab, on	9.42
+cobalt (term 1)	tab, on, border	2.55
+cobalt (term 1)	tab count, on	9.42
+cobalt (term 1)	artifacts count	2.75
+cobalt (term 1)	toolbar file name	11.48
+cobalt (term 1)	toolbar file date	1.02
+cobalt (term 1)	toolbar back icon	1.01
+cobalt (term 1)	toolbar back, border	1.01
+cobalt (term 1)	toolbar next icon	1.01
+cobalt (term 1)	toolbar raw (off)	1.01
+cobalt (term 1)	toolbar rendered (on)	5.74
+cobalt (term 1)	toolbar download icon	1.01
+cobalt (term 1)	toolbar delete icon	1.01
+cobalt (term 1)	list group heading	3.34
+cobalt (term 1)	list file name	7.47
+cobalt (term 1)	code block	11.48
+cobalt (term 2)	tab, off	8.14
+cobalt (term 2)	tab, off, border	2.90
+cobalt (term 2)	tab count, off	5.60
+cobalt (term 2)	tab, on	9.42
+cobalt (term 2)	tab, on, border	2.55
+cobalt (term 2)	tab count, on	9.42
+cobalt (term 2)	artifacts count	2.75
+cobalt (term 2)	toolbar file name	11.48
+cobalt (term 2)	toolbar file date	6.24
+cobalt (term 2)	toolbar back icon	8.14
+cobalt (term 2)	toolbar back, border	2.90
+cobalt (term 2)	toolbar next icon	8.14
+cobalt (term 2)	toolbar raw (off)	8.14
+cobalt (term 2)	toolbar rendered (on)	5.74
+cobalt (term 2)	toolbar download icon	8.14
+cobalt (term 2)	toolbar delete icon	8.14
+cobalt (term 2)	list group heading	3.34
+cobalt (term 2)	list file name	7.47
+cobalt (term 2)	code block	11.48
+mint	tab, off	5.94
+mint	tab, off, border	2.41
+mint	tab count, off	5.59
+mint	tab, on	8.65
+mint	tab, on, border	2.61
+mint	tab count, on	8.65
+mint	artifacts count	2.61
+mint	toolbar file name	10.64
+mint	toolbar file date	4.62
+mint	toolbar back icon	5.94
+mint	toolbar back, border	2.41
+mint	toolbar next icon	5.94
+mint	toolbar raw (off)	5.94
+mint	toolbar rendered (on)	5.46
+mint	toolbar download icon	5.94
+mint	toolbar delete icon	5.94
+mint	list group heading	3.22
+mint	list file name	7.02
+mint	code block	10.64
+mint (term 1)	tab, off	1.07
+mint (term 1)	tab, off, border	1.03
+mint (term 1)	tab count, off	7.39
+mint (term 1)	tab, on	8.65
+mint (term 1)	tab, on, border	2.61
+mint (term 1)	tab count, on	8.65
+mint (term 1)	artifacts count	2.61
+mint (term 1)	toolbar file name	10.64
+mint (term 1)	toolbar file date	1.06
+mint (term 1)	toolbar back icon	1.07
+mint (term 1)	toolbar back, border	1.03
+mint (term 1)	toolbar next icon	1.07
+mint (term 1)	toolbar raw (off)	1.07
+mint (term 1)	toolbar rendered (on)	5.46
+mint (term 1)	toolbar download icon	1.07
+mint (term 1)	toolbar delete icon	1.07
+mint (term 1)	list group heading	3.22
+mint (term 1)	list file name	7.02
+mint (term 1)	code block	10.64
+mint (term 2)	tab, off	7.50
+mint (term 2)	tab, off, border	2.82
+mint (term 2)	tab count, off	5.34
+mint (term 2)	tab, on	8.65
+mint (term 2)	tab, on, border	2.61
+mint (term 2)	tab count, on	8.65
+mint (term 2)	artifacts count	2.61
+mint (term 2)	toolbar file name	10.64
+mint (term 2)	toolbar file date	5.86
+mint (term 2)	toolbar back icon	7.50
+mint (term 2)	toolbar back, border	2.82
+mint (term 2)	toolbar next icon	7.50
+mint (term 2)	toolbar raw (off)	7.50
+mint (term 2)	toolbar rendered (on)	5.46
+mint (term 2)	toolbar download icon	7.50
+mint (term 2)	toolbar delete icon	7.50
+mint (term 2)	list group heading	3.22
+mint (term 2)	list file name	7.02
+mint (term 2)	code block	10.64
+website	tab, off	8.64
+website	tab, off, border	2.70
+website	tab count, off	7.69
+website	tab, on	11.04
+website	tab, on, border	2.39
+website	tab count, on	11.04
+website	artifacts count	2.92
+website	toolbar file name	15.28
+website	toolbar file date	6.06
+website	toolbar back icon	8.64
+website	toolbar back, border	2.70
+website	toolbar next icon	8.64
+website	toolbar raw (off)	8.64
+website	toolbar rendered (on)	7.50
+website	toolbar download icon	8.64
+website	toolbar delete icon	8.64
+website	list group heading	3.34
+website	list file name	8.32
+website	code block	15.28
+website (term 1)	tab, off	1.13
+website (term 1)	tab, off, border	1.04
+website (term 1)	tab count, off	9.74
+website (term 1)	tab, on	11.04
+website (term 1)	tab, on, border	2.39
+website (term 1)	tab count, on	11.04
+website (term 1)	artifacts count	2.92
+website (term 1)	toolbar file name	15.28
+website (term 1)	toolbar file date	1.09
+website (term 1)	toolbar back icon	1.13
+website (term 1)	toolbar back, border	1.04
+website (term 1)	toolbar next icon	1.13
+website (term 1)	toolbar raw (off)	1.13
+website (term 1)	toolbar rendered (on)	7.50
+website (term 1)	toolbar download icon	1.13
+website (term 1)	toolbar delete icon	1.13
+website (term 1)	list group heading	3.34
+website (term 1)	list file name	8.32
+website (term 1)	code block	15.28
+website (term 2)	tab, off	10.96
+website (term 2)	tab, off, border	3.19
+website (term 2)	tab count, off	7.37
+website (term 2)	tab, on	11.04
+website (term 2)	tab, on, border	2.39
+website (term 2)	tab count, on	11.04
+website (term 2)	artifacts count	2.92
+website (term 2)	toolbar file name	15.28
+website (term 2)	toolbar file date	7.74
+website (term 2)	toolbar back icon	10.96
+website (term 2)	toolbar back, border	3.19
+website (term 2)	toolbar next icon	10.96
+website (term 2)	toolbar raw (off)	10.96
+website (term 2)	toolbar rendered (on)	7.50
+website (term 2)	toolbar download icon	10.96
+website (term 2)	toolbar delete icon	10.96
+website (term 2)	list group heading	3.34
+website (term 2)	list file name	8.32
+website (term 2)	code block	15.28
+(default): tab, off, border is 2.70:1, wants 3:1
+(default): tab, on, border is 2.39:1, wants 3:1
+(default): artifacts count is 2.92:1, wants 4.5:1
+(default): toolbar back, border is 2.70:1, wants 3:1
+(default): list group heading is 3.34:1, wants 4.5:1
+(default) (term 1): tab, off is 1.13:1, wants 4.5:1
+(default) (term 1): tab, off, border is 1.04:1, wants 3:1
+(default) (term 1): tab, on, border is 2.39:1, wants 3:1
+(default) (term 1): artifacts count is 2.92:1, wants 4.5:1
+(default) (term 1): toolbar file date is 1.09:1, wants 4.5:1
+(default) (term 1): toolbar back icon is 1.13:1, wants 3:1
+(default) (term 1): toolbar back, border is 1.04:1, wants 3:1
+(default) (term 1): toolbar next icon is 1.13:1, wants 3:1
+(default) (term 1): toolbar raw (off) is 1.13:1, wants 4.5:1
+(default) (term 1): toolbar download icon is 1.13:1, wants 3:1
+(default) (term 1): toolbar delete icon is 1.13:1, wants 3:1
+(default) (term 1): list group heading is 3.34:1, wants 4.5:1
+(default) (term 2): tab, on, border is 2.39:1, wants 3:1
+(default) (term 2): artifacts count is 2.92:1, wants 4.5:1
+(default) (term 2): list group heading is 3.34:1, wants 4.5:1
+graphite: tab, off, border is 2.74:1, wants 3:1
+graphite: tab, on, border is 1.80:1, wants 3:1
+graphite: artifacts count is 2.50:1, wants 4.5:1
+graphite: toolbar back, border is 2.74:1, wants 3:1
+graphite: list group heading is 2.75:1, wants 4.5:1
+graphite (term 1): tab, off is 1.20:1, wants 4.5:1
+graphite (term 1): tab, off, border is 1.07:1, wants 3:1
+graphite (term 1): tab, on, border is 1.80:1, wants 3:1
+graphite (term 1): artifacts count is 2.50:1, wants 4.5:1
+graphite (term 1): toolbar file date is 1.14:1, wants 4.5:1
+graphite (term 1): toolbar back icon is 1.20:1, wants 3:1
+graphite (term 1): toolbar back, border is 1.07:1, wants 3:1
+graphite (term 1): toolbar next icon is 1.20:1, wants 3:1
+graphite (term 1): toolbar raw (off) is 1.20:1, wants 4.5:1
+graphite (term 1): toolbar download icon is 1.20:1, wants 3:1
+graphite (term 1): toolbar delete icon is 1.20:1, wants 3:1
+graphite (term 1): list group heading is 2.75:1, wants 4.5:1
+graphite (term 2): tab, on, border is 1.80:1, wants 3:1
+graphite (term 2): artifacts count is 2.50:1, wants 4.5:1
+graphite (term 2): list group heading is 2.75:1, wants 4.5:1
+oxide: tab, off, border is 2.75:1, wants 3:1
+oxide: tab, on, border is 1.91:1, wants 3:1
+oxide: artifacts count is 2.30:1, wants 4.5:1
+oxide: toolbar back, border is 2.75:1, wants 3:1
+oxide: list group heading is 2.51:1, wants 4.5:1
+oxide (term 1): tab, off is 1.19:1, wants 4.5:1
+oxide (term 1): tab, off, border is 1.07:1, wants 3:1
+oxide (term 1): tab, on, border is 1.91:1, wants 3:1
+oxide (term 1): artifacts count is 2.30:1, wants 4.5:1
+oxide (term 1): toolbar file date is 1.13:1, wants 4.5:1
+oxide (term 1): toolbar back icon is 1.19:1, wants 3:1
+oxide (term 1): toolbar back, border is 1.07:1, wants 3:1
+oxide (term 1): toolbar next icon is 1.19:1, wants 3:1
+oxide (term 1): toolbar raw (off) is 1.19:1, wants 4.5:1
+oxide (term 1): toolbar download icon is 1.19:1, wants 3:1
+oxide (term 1): toolbar delete icon is 1.19:1, wants 3:1
+oxide (term 1): list group heading is 2.51:1, wants 4.5:1
+oxide (term 2): tab, on, border is 1.91:1, wants 3:1
+oxide (term 2): artifacts count is 2.30:1, wants 4.5:1
+oxide (term 2): list group heading is 2.51:1, wants 4.5:1
+moss: tab, off, border is 2.74:1, wants 3:1
+moss: tab, on, border is 2.24:1, wants 3:1
+moss: artifacts count is 2.84:1, wants 4.5:1
+moss: toolbar back, border is 2.74:1, wants 3:1
+moss: list group heading is 3.13:1, wants 4.5:1
+moss (term 1): tab, off is 1.19:1, wants 4.5:1
+moss (term 1): tab, off, border is 1.06:1, wants 3:1
+moss (term 1): tab, on, border is 2.24:1, wants 3:1
+moss (term 1): artifacts count is 2.84:1, wants 4.5:1
+moss (term 1): toolbar file date is 1.13:1, wants 4.5:1
+moss (term 1): toolbar back icon is 1.19:1, wants 3:1
+moss (term 1): toolbar back, border is 1.06:1, wants 3:1
+moss (term 1): toolbar next icon is 1.19:1, wants 3:1
+moss (term 1): toolbar raw (off) is 1.19:1, wants 4.5:1
+moss (term 1): toolbar download icon is 1.19:1, wants 3:1
+moss (term 1): toolbar delete icon is 1.19:1, wants 3:1
+moss (term 1): list group heading is 3.13:1, wants 4.5:1
+moss (term 2): tab, on, border is 2.24:1, wants 3:1
+moss (term 2): artifacts count is 2.84:1, wants 4.5:1
+moss (term 2): list group heading is 3.13:1, wants 4.5:1
+plum: tab, off, border is 2.72:1, wants 3:1
+plum: tab, on, border is 2.00:1, wants 3:1
+plum: artifacts count is 2.39:1, wants 4.5:1
+plum: toolbar back, border is 2.72:1, wants 3:1
+plum: list group heading is 2.57:1, wants 4.5:1
+plum (term 1): tab, off is 1.24:1, wants 4.5:1
+plum (term 1): tab, off, border is 1.07:1, wants 3:1
+plum (term 1): tab, on, border is 2.00:1, wants 3:1
+plum (term 1): artifacts count is 2.39:1, wants 4.5:1
+plum (term 1): toolbar file date is 1.16:1, wants 4.5:1
+plum (term 1): toolbar back icon is 1.24:1, wants 3:1
+plum (term 1): toolbar back, border is 1.07:1, wants 3:1
+plum (term 1): toolbar next icon is 1.24:1, wants 3:1
+plum (term 1): toolbar raw (off) is 1.24:1, wants 4.5:1
+plum (term 1): toolbar download icon is 1.24:1, wants 3:1
+plum (term 1): toolbar delete icon is 1.24:1, wants 3:1
+plum (term 1): list group heading is 2.57:1, wants 4.5:1
+plum (term 2): tab, on, border is 2.00:1, wants 3:1
+plum (term 2): artifacts count is 2.39:1, wants 4.5:1
+plum (term 2): list group heading is 2.57:1, wants 4.5:1
+ember: tab, off, border is 2.74:1, wants 3:1
+ember: tab, on, border is 2.09:1, wants 3:1
+ember: artifacts count is 2.47:1, wants 4.5:1
+ember: toolbar back, border is 2.74:1, wants 3:1
+ember: list group heading is 2.66:1, wants 4.5:1
+ember (term 1): tab, off is 1.22:1, wants 4.5:1
+ember (term 1): tab, off, border is 1.07:1, wants 3:1
+ember (term 1): tab, on, border is 2.09:1, wants 3:1
+ember (term 1): artifacts count is 2.47:1, wants 4.5:1
+ember (term 1): toolbar file date is 1.15:1, wants 4.5:1
+ember (term 1): toolbar back icon is 1.22:1, wants 3:1
+ember (term 1): toolbar back, border is 1.07:1, wants 3:1
+ember (term 1): toolbar next icon is 1.22:1, wants 3:1
+ember (term 1): toolbar raw (off) is 1.22:1, wants 4.5:1
+ember (term 1): toolbar download icon is 1.22:1, wants 3:1
+ember (term 1): toolbar delete icon is 1.22:1, wants 3:1
+ember (term 1): list group heading is 2.66:1, wants 4.5:1
+ember (term 2): tab, on, border is 2.09:1, wants 3:1
+ember (term 2): artifacts count is 2.47:1, wants 4.5:1
+ember (term 2): list group heading is 2.66:1, wants 4.5:1
+glacier: tab, off, border is 2.73:1, wants 3:1
+glacier: tab, on, border is 2.37:1, wants 3:1
+glacier: artifacts count is 2.94:1, wants 4.5:1
+glacier: toolbar back, border is 2.73:1, wants 3:1
+glacier: list group heading is 3.30:1, wants 4.5:1
+glacier (term 1): tab, off is 1.14:1, wants 4.5:1
+glacier (term 1): tab, off, border is 1.05:1, wants 3:1
+glacier (term 1): tab, on, border is 2.37:1, wants 3:1
+glacier (term 1): artifacts count is 2.94:1, wants 4.5:1
+glacier (term 1): toolbar file date is 1.10:1, wants 4.5:1
+glacier (term 1): toolbar back icon is 1.14:1, wants 3:1
+glacier (term 1): toolbar back, border is 1.05:1, wants 3:1
+glacier (term 1): toolbar next icon is 1.14:1, wants 3:1
+glacier (term 1): toolbar raw (off) is 1.14:1, wants 4.5:1
+glacier (term 1): toolbar download icon is 1.14:1, wants 3:1
+glacier (term 1): toolbar delete icon is 1.14:1, wants 3:1
+glacier (term 1): list group heading is 3.30:1, wants 4.5:1
+glacier (term 2): tab, on, border is 2.37:1, wants 3:1
+glacier (term 2): artifacts count is 2.94:1, wants 4.5:1
+glacier (term 2): list group heading is 3.30:1, wants 4.5:1
+noir: tab, off, border is 2.69:1, wants 3:1
+noir: tab, on, border is 1.92:1, wants 3:1
+noir: artifacts count is 2.47:1, wants 4.5:1
+noir: toolbar back, border is 2.69:1, wants 3:1
+noir: list group heading is 2.64:1, wants 4.5:1
+noir (term 1): tab, off is 1.28:1, wants 4.5:1
+noir (term 1): tab, off, border is 1.09:1, wants 3:1
+noir (term 1): tab, on, border is 1.92:1, wants 3:1
+noir (term 1): artifacts count is 2.47:1, wants 4.5:1
+noir (term 1): toolbar file date is 1.19:1, wants 4.5:1
+noir (term 1): toolbar back icon is 1.28:1, wants 3:1
+noir (term 1): toolbar back, border is 1.09:1, wants 3:1
+noir (term 1): toolbar next icon is 1.28:1, wants 3:1
+noir (term 1): toolbar raw (off) is 1.28:1, wants 4.5:1
+noir (term 1): toolbar download icon is 1.28:1, wants 3:1
+noir (term 1): toolbar delete icon is 1.28:1, wants 3:1
+noir (term 1): list group heading is 2.64:1, wants 4.5:1
+noir (term 2): tab, on, border is 1.92:1, wants 3:1
+noir (term 2): artifacts count is 2.47:1, wants 4.5:1
+noir (term 2): list group heading is 2.64:1, wants 4.5:1
+vapor: tab, off, border is 2.71:1, wants 3:1
+vapor: tab, on, border is 2.05:1, wants 3:1
+vapor: artifacts count is 2.35:1, wants 4.5:1
+vapor: toolbar back, border is 2.71:1, wants 3:1
+vapor: list group heading is 2.52:1, wants 4.5:1
+vapor (term 1): tab, off is 1.25:1, wants 4.5:1
+vapor (term 1): tab, off, border is 1.08:1, wants 3:1
+vapor (term 1): tab, on, border is 2.05:1, wants 3:1
+vapor (term 1): artifacts count is 2.35:1, wants 4.5:1
+vapor (term 1): toolbar file date is 1.16:1, wants 4.5:1
+vapor (term 1): toolbar back icon is 1.25:1, wants 3:1
+vapor (term 1): toolbar back, border is 1.08:1, wants 3:1
+vapor (term 1): toolbar next icon is 1.25:1, wants 3:1
+vapor (term 1): toolbar raw (off) is 1.25:1, wants 4.5:1
+vapor (term 1): toolbar download icon is 1.25:1, wants 3:1
+vapor (term 1): toolbar delete icon is 1.25:1, wants 3:1
+vapor (term 1): list group heading is 2.52:1, wants 4.5:1
+vapor (term 2): tab, on, border is 2.05:1, wants 3:1
+vapor (term 2): artifacts count is 2.35:1, wants 4.5:1
+vapor (term 2): list group heading is 2.52:1, wants 4.5:1
+sandstone: tab, off, border is 2.73:1, wants 3:1
+sandstone: tab, on, border is 2.42:1, wants 3:1
+sandstone: artifacts count is 2.31:1, wants 4.5:1
+sandstone: toolbar back, border is 2.73:1, wants 3:1
+sandstone: list group heading is 2.57:1, wants 4.5:1
+sandstone (term 1): tab, off is 1.14:1, wants 4.5:1
+sandstone (term 1): tab, off, border is 1.05:1, wants 3:1
+sandstone (term 1): tab, on, border is 2.42:1, wants 3:1
+sandstone (term 1): artifacts count is 2.31:1, wants 4.5:1
+sandstone (term 1): toolbar file date is 1.10:1, wants 4.5:1
+sandstone (term 1): toolbar back icon is 1.14:1, wants 3:1
+sandstone (term 1): toolbar back, border is 1.05:1, wants 3:1
+sandstone (term 1): toolbar next icon is 1.14:1, wants 3:1
+sandstone (term 1): toolbar raw (off) is 1.14:1, wants 4.5:1
+sandstone (term 1): toolbar download icon is 1.14:1, wants 3:1
+sandstone (term 1): toolbar delete icon is 1.14:1, wants 3:1
+sandstone (term 1): list group heading is 2.57:1, wants 4.5:1
+sandstone (term 2): tab count, off is 4.35:1, wants 4.5:1
+sandstone (term 2): tab, on, border is 2.42:1, wants 3:1
+sandstone (term 2): artifacts count is 2.31:1, wants 4.5:1
+sandstone (term 2): list group heading is 2.57:1, wants 4.5:1
+abyss: tab, off, border is 2.71:1, wants 3:1
+abyss: tab, on, border is 2.09:1, wants 3:1
+abyss: artifacts count is 2.52:1, wants 4.5:1
+abyss: toolbar back, border is 2.71:1, wants 3:1
+abyss: list group heading is 2.70:1, wants 4.5:1
+abyss (term 1): tab, off is 1.26:1, wants 4.5:1
+abyss (term 1): tab, off, border is 1.08:1, wants 3:1
+abyss (term 1): tab, on, border is 2.09:1, wants 3:1
+abyss (term 1): artifacts count is 2.52:1, wants 4.5:1
+abyss (term 1): toolbar file date is 1.17:1, wants 4.5:1
+abyss (term 1): toolbar back icon is 1.26:1, wants 3:1
+abyss (term 1): toolbar back, border is 1.08:1, wants 3:1
+abyss (term 1): toolbar next icon is 1.26:1, wants 3:1
+abyss (term 1): toolbar raw (off) is 1.26:1, wants 4.5:1
+abyss (term 1): toolbar download icon is 1.26:1, wants 3:1
+abyss (term 1): toolbar delete icon is 1.26:1, wants 3:1
+abyss (term 1): list group heading is 2.70:1, wants 4.5:1
+abyss (term 2): tab, on, border is 2.09:1, wants 3:1
+abyss (term 2): artifacts count is 2.52:1, wants 4.5:1
+abyss (term 2): list group heading is 2.70:1, wants 4.5:1
+paper: tab, off is 1.27:1, wants 4.5:1
+paper: tab, off, border is 1.10:1, wants 3:1
+paper: tab count, off is 3.62:1, wants 4.5:1
+paper: tab, on, border is 2.07:1, wants 3:1
+paper: artifacts count is 2.23:1, wants 4.5:1
+paper: toolbar file date is 1.20:1, wants 4.5:1
+paper: toolbar back icon is 1.27:1, wants 3:1
+paper: toolbar back, border is 1.10:1, wants 3:1
+paper: toolbar next icon is 1.27:1, wants 3:1
+paper: toolbar raw (off) is 1.27:1, wants 4.5:1
+paper: toolbar rendered (on) is 3.20:1, wants 4.5:1
+paper: toolbar download icon is 1.27:1, wants 3:1
+paper: toolbar delete icon is 1.27:1, wants 3:1
+paper: list group heading is 2.31:1, wants 4.5:1
+paper (term 1): tab, off, border is 2.13:1, wants 3:1
+paper (term 1): tab count, off is 3.06:1, wants 4.5:1
+paper (term 1): tab, on, border is 2.07:1, wants 3:1
+paper (term 1): artifacts count is 2.23:1, wants 4.5:1
+paper (term 1): toolbar back, border is 2.13:1, wants 3:1
+paper (term 1): toolbar rendered (on) is 3.20:1, wants 4.5:1
+paper (term 1): list group heading is 2.31:1, wants 4.5:1
+paper (term 2): tab, off is 1.01:1, wants 4.5:1
+paper (term 2): tab, off, border is 1.01:1, wants 3:1
+paper (term 2): tab count, off is 3.72:1, wants 4.5:1
+paper (term 2): tab, on, border is 2.07:1, wants 3:1
+paper (term 2): artifacts count is 2.23:1, wants 4.5:1
+paper (term 2): toolbar file date is 1.01:1, wants 4.5:1
+paper (term 2): toolbar back icon is 1.01:1, wants 3:1
+paper (term 2): toolbar back, border is 1.01:1, wants 3:1
+paper (term 2): toolbar next icon is 1.01:1, wants 3:1
+paper (term 2): toolbar raw (off) is 1.01:1, wants 4.5:1
+paper (term 2): toolbar rendered (on) is 3.20:1, wants 4.5:1
+paper (term 2): toolbar download icon is 1.01:1, wants 3:1
+paper (term 2): toolbar delete icon is 1.01:1, wants 3:1
+paper (term 2): list group heading is 2.31:1, wants 4.5:1
+daylight: tab, off is 1.30:1, wants 4.5:1
+daylight: tab, off, border is 1.11:1, wants 3:1
+daylight: tab count, off is 3.88:1, wants 4.5:1
+daylight: tab, on, border is 2.03:1, wants 3:1
+daylight: artifacts count is 2.24:1, wants 4.5:1
+daylight: toolbar file date is 1.22:1, wants 4.5:1
+daylight: toolbar back icon is 1.30:1, wants 3:1
+daylight: toolbar back, border is 1.11:1, wants 3:1
+daylight: toolbar next icon is 1.30:1, wants 3:1
+daylight: toolbar raw (off) is 1.30:1, wants 4.5:1
+daylight: toolbar rendered (on) is 3.42:1, wants 4.5:1
+daylight: toolbar download icon is 1.30:1, wants 3:1
+daylight: toolbar delete icon is 1.30:1, wants 3:1
+daylight: list group heading is 2.32:1, wants 4.5:1
+daylight (term 1): tab, off, border is 2.14:1, wants 3:1
+daylight (term 1): tab count, off is 3.29:1, wants 4.5:1
+daylight (term 1): tab, on, border is 2.03:1, wants 3:1
+daylight (term 1): artifacts count is 2.24:1, wants 4.5:1
+daylight (term 1): toolbar back, border is 2.14:1, wants 3:1
+daylight (term 1): toolbar rendered (on) is 3.42:1, wants 4.5:1
+daylight (term 1): list group heading is 2.32:1, wants 4.5:1
+daylight (term 2): tab, off is 1.01:1, wants 4.5:1
+daylight (term 2): tab, off, border is 1.00:1, wants 3:1
+daylight (term 2): tab count, off is 3.99:1, wants 4.5:1
+daylight (term 2): tab, on, border is 2.03:1, wants 3:1
+daylight (term 2): artifacts count is 2.24:1, wants 4.5:1
+daylight (term 2): toolbar file date is 1.00:1, wants 4.5:1
+daylight (term 2): toolbar back icon is 1.01:1, wants 3:1
+daylight (term 2): toolbar back, border is 1.00:1, wants 3:1
+daylight (term 2): toolbar next icon is 1.01:1, wants 3:1
+daylight (term 2): toolbar raw (off) is 1.01:1, wants 4.5:1
+daylight (term 2): toolbar rendered (on) is 3.42:1, wants 4.5:1
+daylight (term 2): toolbar download icon is 1.01:1, wants 3:1
+daylight (term 2): toolbar delete icon is 1.01:1, wants 3:1
+daylight (term 2): list group heading is 2.32:1, wants 4.5:1
+linen: tab, off is 1.24:1, wants 4.5:1
+linen: tab, off, border is 1.08:1, wants 3:1
+linen: tab, on, border is 2.10:1, wants 3:1
+linen: artifacts count is 2.12:1, wants 4.5:1
+linen: toolbar file date is 1.17:1, wants 4.5:1
+linen: toolbar back icon is 1.24:1, wants 3:1
+linen: toolbar back, border is 1.08:1, wants 3:1
+linen: toolbar next icon is 1.24:1, wants 3:1
+linen: toolbar raw (off) is 1.24:1, wants 4.5:1
+linen: toolbar rendered (on) is 3.97:1, wants 4.5:1
+linen: toolbar download icon is 1.24:1, wants 3:1
+linen: toolbar delete icon is 1.24:1, wants 3:1
+linen: list group heading is 2.18:1, wants 4.5:1
+linen (term 1): tab, off, border is 2.12:1, wants 3:1
+linen (term 1): tab count, off is 3.84:1, wants 4.5:1
+linen (term 1): tab, on, border is 2.10:1, wants 3:1
+linen (term 1): artifacts count is 2.12:1, wants 4.5:1
+linen (term 1): toolbar back, border is 2.12:1, wants 3:1
+linen (term 1): toolbar rendered (on) is 3.97:1, wants 4.5:1
+linen (term 1): list group heading is 2.18:1, wants 4.5:1
+linen (term 2): tab, off is 1.04:1, wants 4.5:1
+linen (term 2): tab, off, border is 1.02:1, wants 3:1
+linen (term 2): tab, on, border is 2.10:1, wants 3:1
+linen (term 2): artifacts count is 2.12:1, wants 4.5:1
+linen (term 2): toolbar file date is 1.03:1, wants 4.5:1
+linen (term 2): toolbar back icon is 1.04:1, wants 3:1
+linen (term 2): toolbar back, border is 1.02:1, wants 3:1
+linen (term 2): toolbar next icon is 1.04:1, wants 3:1
+linen (term 2): toolbar raw (off) is 1.04:1, wants 4.5:1
+linen (term 2): toolbar rendered (on) is 3.97:1, wants 4.5:1
+linen (term 2): toolbar download icon is 1.04:1, wants 3:1
+linen (term 2): toolbar delete icon is 1.04:1, wants 3:1
+linen (term 2): list group heading is 2.18:1, wants 4.5:1
+frost: tab, off is 1.27:1, wants 4.5:1
+frost: tab, off, border is 1.10:1, wants 3:1
+frost: tab, on, border is 2.11:1, wants 3:1
+frost: artifacts count is 2.20:1, wants 4.5:1
+frost: toolbar file date is 1.19:1, wants 4.5:1
+frost: toolbar back icon is 1.27:1, wants 3:1
+frost: toolbar back, border is 1.10:1, wants 3:1
+frost: toolbar next icon is 1.27:1, wants 3:1
+frost: toolbar raw (off) is 1.27:1, wants 4.5:1
+frost: toolbar rendered (on) is 4.06:1, wants 4.5:1
+frost: toolbar download icon is 1.27:1, wants 3:1
+frost: toolbar delete icon is 1.27:1, wants 3:1
+frost: list group heading is 2.26:1, wants 4.5:1
+frost (term 1): tab, off, border is 2.13:1, wants 3:1
+frost (term 1): tab count, off is 3.94:1, wants 4.5:1
+frost (term 1): tab, on, border is 2.11:1, wants 3:1
+frost (term 1): artifacts count is 2.20:1, wants 4.5:1
+frost (term 1): toolbar back, border is 2.13:1, wants 3:1
+frost (term 1): toolbar rendered (on) is 4.06:1, wants 4.5:1
+frost (term 1): list group heading is 2.26:1, wants 4.5:1
+frost (term 2): tab, off is 1.02:1, wants 4.5:1
+frost (term 2): tab, off, border is 1.01:1, wants 3:1
+frost (term 2): tab, on, border is 2.11:1, wants 3:1
+frost (term 2): artifacts count is 2.20:1, wants 4.5:1
+frost (term 2): toolbar file date is 1.02:1, wants 4.5:1
+frost (term 2): toolbar back icon is 1.02:1, wants 3:1
+frost (term 2): toolbar back, border is 1.01:1, wants 3:1
+frost (term 2): toolbar next icon is 1.02:1, wants 3:1
+frost (term 2): toolbar raw (off) is 1.02:1, wants 4.5:1
+frost (term 2): toolbar rendered (on) is 4.06:1, wants 4.5:1
+frost (term 2): toolbar download icon is 1.02:1, wants 3:1
+frost (term 2): toolbar delete icon is 1.02:1, wants 3:1
+frost (term 2): list group heading is 2.26:1, wants 4.5:1
+slate: tab, off, border is 2.48:1, wants 3:1
+slate: tab, on, border is 2.35:1, wants 3:1
+slate: artifacts count is 2.68:1, wants 4.5:1
+slate: toolbar back, border is 2.48:1, wants 3:1
+slate: list group heading is 3.26:1, wants 4.5:1
+slate (term 1): tab, off is 1.02:1, wants 4.5:1
+slate (term 1): tab, off, border is 1.01:1, wants 3:1
+slate (term 1): tab, on, border is 2.35:1, wants 3:1
+slate (term 1): artifacts count is 2.68:1, wants 4.5:1
+slate (term 1): toolbar file date is 1.02:1, wants 4.5:1
+slate (term 1): toolbar back icon is 1.02:1, wants 3:1
+slate (term 1): toolbar back, border is 1.01:1, wants 3:1
+slate (term 1): toolbar next icon is 1.02:1, wants 3:1
+slate (term 1): toolbar raw (off) is 1.02:1, wants 4.5:1
+slate (term 1): toolbar download icon is 1.02:1, wants 3:1
+slate (term 1): toolbar delete icon is 1.02:1, wants 3:1
+slate (term 1): list group heading is 3.26:1, wants 4.5:1
+slate (term 2): tab, off, border is 2.90:1, wants 3:1
+slate (term 2): tab, on, border is 2.35:1, wants 3:1
+slate (term 2): artifacts count is 2.68:1, wants 4.5:1
+slate (term 2): toolbar back, border is 2.90:1, wants 3:1
+slate (term 2): list group heading is 3.26:1, wants 4.5:1
+dusk: tab, off, border is 2.54:1, wants 3:1
+dusk: tab, on, border is 2.26:1, wants 3:1
+dusk: artifacts count is 2.56:1, wants 4.5:1
+dusk: toolbar back, border is 2.54:1, wants 3:1
+dusk: list group heading is 3.01:1, wants 4.5:1
+dusk (term 1): tab, off is 1.03:1, wants 4.5:1
+dusk (term 1): tab, off, border is 1.01:1, wants 3:1
+dusk (term 1): tab, on, border is 2.26:1, wants 3:1
+dusk (term 1): artifacts count is 2.56:1, wants 4.5:1
+dusk (term 1): toolbar file date is 1.02:1, wants 4.5:1
+dusk (term 1): toolbar back icon is 1.03:1, wants 3:1
+dusk (term 1): toolbar back, border is 1.01:1, wants 3:1
+dusk (term 1): toolbar next icon is 1.03:1, wants 3:1
+dusk (term 1): toolbar raw (off) is 1.03:1, wants 4.5:1
+dusk (term 1): toolbar download icon is 1.03:1, wants 3:1
+dusk (term 1): toolbar delete icon is 1.03:1, wants 3:1
+dusk (term 1): list group heading is 3.01:1, wants 4.5:1
+dusk (term 2): tab, off, border is 2.98:1, wants 3:1
+dusk (term 2): tab count, off is 4.45:1, wants 4.5:1
+dusk (term 2): tab, on, border is 2.26:1, wants 3:1
+dusk (term 2): artifacts count is 2.56:1, wants 4.5:1
+dusk (term 2): toolbar back, border is 2.98:1, wants 3:1
+dusk (term 2): list group heading is 3.01:1, wants 4.5:1
+fern: tab, off, border is 2.47:1, wants 3:1
+fern: tab, on, border is 2.61:1, wants 3:1
+fern: artifacts count is 2.72:1, wants 4.5:1
+fern: toolbar back, border is 2.47:1, wants 3:1
+fern: list group heading is 3.30:1, wants 4.5:1
+fern (term 1): tab, off is 1.04:1, wants 4.5:1
+fern (term 1): tab, off, border is 1.02:1, wants 3:1
+fern (term 1): tab, on, border is 2.61:1, wants 3:1
+fern (term 1): artifacts count is 2.72:1, wants 4.5:1
+fern (term 1): toolbar file date is 1.03:1, wants 4.5:1
+fern (term 1): toolbar back icon is 1.04:1, wants 3:1
+fern (term 1): toolbar back, border is 1.02:1, wants 3:1
+fern (term 1): toolbar next icon is 1.04:1, wants 3:1
+fern (term 1): toolbar raw (off) is 1.04:1, wants 4.5:1
+fern (term 1): toolbar download icon is 1.04:1, wants 3:1
+fern (term 1): toolbar delete icon is 1.04:1, wants 3:1
+fern (term 1): list group heading is 3.30:1, wants 4.5:1
+fern (term 2): tab, off, border is 2.89:1, wants 3:1
+fern (term 2): tab, on, border is 2.61:1, wants 3:1
+fern (term 2): artifacts count is 2.72:1, wants 4.5:1
+fern (term 2): toolbar back, border is 2.89:1, wants 3:1
+fern (term 2): list group heading is 3.30:1, wants 4.5:1
+clay: tab, off, border is 2.47:1, wants 3:1
+clay: tab count, off is 4.04:1, wants 4.5:1
+clay: tab, on, border is 2.37:1, wants 3:1
+clay: artifacts count is 2.45:1, wants 4.5:1
+clay: toolbar back, border is 2.47:1, wants 3:1
+clay: toolbar rendered (on) is 4.21:1, wants 4.5:1
+clay: list group heading is 2.93:1, wants 4.5:1
+clay (term 1): tab, off is 1.04:1, wants 4.5:1
+clay (term 1): tab, off, border is 1.02:1, wants 3:1
+clay (term 1): tab, on, border is 2.37:1, wants 3:1
+clay (term 1): artifacts count is 2.45:1, wants 4.5:1
+clay (term 1): toolbar file date is 1.03:1, wants 4.5:1
+clay (term 1): toolbar back icon is 1.04:1, wants 3:1
+clay (term 1): toolbar back, border is 1.02:1, wants 3:1
+clay (term 1): toolbar next icon is 1.04:1, wants 3:1
+clay (term 1): toolbar raw (off) is 1.04:1, wants 4.5:1
+clay (term 1): toolbar rendered (on) is 4.21:1, wants 4.5:1
+clay (term 1): toolbar download icon is 1.04:1, wants 3:1
+clay (term 1): toolbar delete icon is 1.04:1, wants 3:1
+clay (term 1): list group heading is 2.93:1, wants 4.5:1
+clay (term 2): tab, off, border is 2.90:1, wants 3:1
+clay (term 2): tab count, off is 3.85:1, wants 4.5:1
+clay (term 2): tab, on, border is 2.37:1, wants 3:1
+clay (term 2): artifacts count is 2.45:1, wants 4.5:1
+clay (term 2): toolbar back, border is 2.90:1, wants 3:1
+clay (term 2): toolbar rendered (on) is 4.21:1, wants 4.5:1
+clay (term 2): list group heading is 2.93:1, wants 4.5:1
+cobalt: tab, off, border is 2.47:1, wants 3:1
+cobalt: tab, on, border is 2.55:1, wants 3:1
+cobalt: artifacts count is 2.75:1, wants 4.5:1
+cobalt: toolbar back, border is 2.47:1, wants 3:1
+cobalt: list group heading is 3.34:1, wants 4.5:1
+cobalt (term 1): tab, off is 1.01:1, wants 4.5:1
+cobalt (term 1): tab, off, border is 1.01:1, wants 3:1
+cobalt (term 1): tab, on, border is 2.55:1, wants 3:1
+cobalt (term 1): artifacts count is 2.75:1, wants 4.5:1
+cobalt (term 1): toolbar file date is 1.02:1, wants 4.5:1
+cobalt (term 1): toolbar back icon is 1.01:1, wants 3:1
+cobalt (term 1): toolbar back, border is 1.01:1, wants 3:1
+cobalt (term 1): toolbar next icon is 1.01:1, wants 3:1
+cobalt (term 1): toolbar raw (off) is 1.01:1, wants 4.5:1
+cobalt (term 1): toolbar download icon is 1.01:1, wants 3:1
+cobalt (term 1): toolbar delete icon is 1.01:1, wants 3:1
+cobalt (term 1): list group heading is 3.34:1, wants 4.5:1
+cobalt (term 2): tab, off, border is 2.90:1, wants 3:1
+cobalt (term 2): tab, on, border is 2.55:1, wants 3:1
+cobalt (term 2): artifacts count is 2.75:1, wants 4.5:1
+cobalt (term 2): toolbar back, border is 2.90:1, wants 3:1
+cobalt (term 2): list group heading is 3.34:1, wants 4.5:1
+mint: tab, off, border is 2.41:1, wants 3:1
+mint: tab, on, border is 2.61:1, wants 3:1
+mint: artifacts count is 2.61:1, wants 4.5:1
+mint: toolbar back, border is 2.41:1, wants 3:1
+mint: list group heading is 3.22:1, wants 4.5:1
+mint (term 1): tab, off is 1.07:1, wants 4.5:1
+mint (term 1): tab, off, border is 1.03:1, wants 3:1
+mint (term 1): tab, on, border is 2.61:1, wants 3:1
+mint (term 1): artifacts count is 2.61:1, wants 4.5:1
+mint (term 1): toolbar file date is 1.06:1, wants 4.5:1
+mint (term 1): toolbar back icon is 1.07:1, wants 3:1
+mint (term 1): toolbar back, border is 1.03:1, wants 3:1
+mint (term 1): toolbar next icon is 1.07:1, wants 3:1
+mint (term 1): toolbar raw (off) is 1.07:1, wants 4.5:1
+mint (term 1): toolbar download icon is 1.07:1, wants 3:1
+mint (term 1): toolbar delete icon is 1.07:1, wants 3:1
+mint (term 1): list group heading is 3.22:1, wants 4.5:1
+mint (term 2): tab, off, border is 2.82:1, wants 3:1
+mint (term 2): tab, on, border is 2.61:1, wants 3:1
+mint (term 2): artifacts count is 2.61:1, wants 4.5:1
+mint (term 2): toolbar back, border is 2.82:1, wants 3:1
+mint (term 2): list group heading is 3.22:1, wants 4.5:1
+website: tab, off, border is 2.70:1, wants 3:1
+website: tab, on, border is 2.39:1, wants 3:1
+website: artifacts count is 2.92:1, wants 4.5:1
+website: toolbar back, border is 2.70:1, wants 3:1
+website: list group heading is 3.34:1, wants 4.5:1
+website (term 1): tab, off is 1.13:1, wants 4.5:1
+website (term 1): tab, off, border is 1.04:1, wants 3:1
+website (term 1): tab, on, border is 2.39:1, wants 3:1
+website (term 1): artifacts count is 2.92:1, wants 4.5:1
+website (term 1): toolbar file date is 1.09:1, wants 4.5:1
+website (term 1): toolbar back icon is 1.13:1, wants 3:1
+website (term 1): toolbar back, border is 1.04:1, wants 3:1
+website (term 1): toolbar next icon is 1.13:1, wants 3:1
+website (term 1): toolbar raw (off) is 1.13:1, wants 4.5:1
+website (term 1): toolbar download icon is 1.13:1, wants 3:1
+website (term 1): toolbar delete icon is 1.13:1, wants 3:1
+website (term 1): list group heading is 3.34:1, wants 4.5:1
+website (term 2): tab, on, border is 2.39:1, wants 3:1
+website (term 2): artifacts count is 2.92:1, wants 4.5:1
+website (term 2): list group heading is 3.34:1, wants 4.5:1
+FAILED: 515 artifacts pane pairs under their floor

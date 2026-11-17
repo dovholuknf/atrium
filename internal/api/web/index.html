@@ -494,6 +494,7 @@ Exports honor whatever filter is applied.">?</span>
           <!-- Only when the card's directory holds findings, a pull request or a work branch's changes. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
             data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span id="t-walk-label">walk</span></button>
+          <a id="t-walk-pr" target="_blank" rel="noopener" hidden data-tip="open the pull request on GitHub, in a new tab"></a>
           <button id="t-arts" class="icon" type="button" aria-pressed="false" onclick="toggleArts()"
             aria-label="what this session made" data-tip="what this session made"><svg viewBox="0 0 16 16" width="15"
             height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
@@ -676,6 +677,7 @@ Exports honor whatever filter is applied.">?</span>
           <aside id="walk-drawer" class="walk" hidden tabindex="-1" aria-label="walk the findings">
             <div class="walk-head term-bar">
               <a id="walk-pr" class="wk-pr" target="_blank" rel="noopener"><strong id="walk-title"></strong></a>
+              <a id="walk-ghlink" target="_blank" rel="noopener" hidden></a>
               <span class="by" id="walk-note"></span>
               <span class="wk-mode" id="walk-mode" role="group" aria-label="what the walk compares" hidden>
                 <button type="button" data-mode="unstaged" data-tip="the working tree against the index">unstaged <span class="n"></span></button>
@@ -688,8 +690,10 @@ Exports honor whatever filter is applied.">?</span>
               <span class="grow"></span>
               <button type="button" id="walk-share" hidden onclick="walkShareToggle()"
                 data-tip="export this walk so another dev can open it, or open one you were sent">share walk</button>
-              <button type="button" id="walk-popout" onclick="walkPopOut()"
-                data-tip="open the walk in a tab of its own">⧉ pop out</button>
+              <button type="button" id="walk-popout" class="icon" onclick="walkPopOut()" aria-label="pop out"
+                data-tip="open the walk in a tab of its own"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"
+                fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path
+                d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3.5"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></button>
               <button type="button" class="walk-close go" onclick="walkBackToTerm()"
                 data-tip="close the walk and go back to the terminal (Esc)">back to terminal</button>
             </div>
@@ -758,23 +762,17 @@ Exports honor whatever filter is applied.">?</span>
             <div class="peek-debug-rows" id="t-dbg-rows"></div>
             <label class="check peek-debug-sw">
               <input type="checkbox" id="s-typing" onchange="toggleTypingReadout(this.checked)">
-              <span>show the typing gate line</span>
+              <span>show the typing gate line <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="A line above the shortcut strip while a message waits behind your input line. This card only, in every window of this browser.">?</span></span>
             </label>
-            <span class="hintline">A line above the shortcut strip while a message waits behind your
-              input line. This card only, in every window of this browser.</span>
             <label class="check peek-debug-sw">
               <input type="checkbox" id="s-inputlag" onchange="saveInputLag(this.checked)">
-              <span>log terminal input lag</span>
+              <span>log terminal input lag <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Times every keystroke on this card to its echo and prints it to this browser's console. The hub and the room log their hops for the whole machine, with no restart, while any card here has this on.">?</span></span>
             </label>
-            <span class="hintline">Times every keystroke on this card to its echo and prints it to this
-              browser's console. The hub and the room log their hops for the whole machine, with no
-              restart, while any card here has this on.</span>
             <details class="peek-debug-det" id="t-dbg-det">
-              <summary class="peek-debug-head">colours</summary>
+              <summary class="peek-debug-head">colours <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Console trace: localStorage[&quot;atrium.debug.theme&quot;]=&quot;1&quot;, then reload.">?</span></summary>
               <button type="button" class="peek-debug-copy" id="t-dbg-colours-copy" aria-label="copy the colours block" data-tip="copy the colours block" onclick="themeDbgCopy(this)"></button>
               <pre class="peek-debug-colours" id="t-dbg-colours"></pre>
             </details>
-            <span class="hintline">Console trace: localStorage["atrium.debug.theme"]="1", then reload.</span>
             <span class="hintline" id="s-inputlag-pinned" hidden>ATRIUM_DEBUG_INPUTLAG is set on this
               machine, so the hub and the room log for every card as that says, and this box only
               switches this browser's timing.</span>
@@ -1535,7 +1533,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          is the chrome around them, there is one of it, and it is stored on the
          daemon so it follows to another browser and to a phone. -->
     <div class="field">
-      <label class="eyebrow" for="s-skin">how the board looks</label>
+      <label class="eyebrow" for="s-skin">how the board looks
+        <span class="help" tabindex="0" data-tip="Changes as you pick. try them closes this dialog and leaves a small panel you can move anywhere, so you can walk every tab and open a card while you decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal keeps its own.">?</span></label>
       <div class="picker">
         <select id="s-skin" onchange="saveSkin()"></select>
         <!-- The dialog covers the board, and the board is what you are judging.
@@ -1544,17 +1543,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="openSkinLab()" data-tip="close this and try them against the real board"
           >try them &#9673;</button>
       </div>
-      <span class="hintline">Changes as you pick. <b>try them</b> closes this dialog and leaves a
-        small panel you can move anywhere, so you can walk every tab and open a card while you
-        decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal
-        keeps its own.</span>
     </div>
     <div class="field" id="s-userstyles-field" hidden>
       <span class="hintline">Your styles: <code id="s-userstyles"></code>
         <a href="/?safe" id="s-safemode" target="_blank" rel="noopener">open safe mode</a></span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-cardsize">text size</label>
+      <label class="eyebrow" for="s-cardsize">text size
+        <span class="help" tabindex="0" data-tip="Everything: the board, permissions, the dialogs and the tooltips. Every size in the page comes off one scale, so none of it is left behind.">?</span></label>
       <div class="picker">
         <select id="s-cardsize">
           <option value="0.9">smaller</option>
@@ -1564,13 +1560,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="1.45">biggest</option>
         </select>
       </div>
-      <span class="hintline">Everything: the board, permissions, the dialogs and the tooltips. Every
-        size in the page comes off one scale, so none of it is left behind.</span>
     </div>
     <!-- The width floor. A room setting, enforced by the room on every runner
          terminal, so it lives on the daemon rather than in this browser. -->
     <div class="field" id="s-mincols-field">
-      <label class="eyebrow" for="s-mincols">narrowest a terminal goes, in columns</label>
+      <label class="eyebrow" for="s-mincols">narrowest a terminal goes, in columns
+        <span class="help" tabindex="0" data-tip="A runner's terminal never goes narrower than this. A narrower window scrolls sideways instead. Claude reprints its conversation at every width it passes through and keeps the old copy, so a narrow terminal leaves a narrow copy in the scrollback for good. A shell is not held to this. From 40 to 400.">?</span></label>
       <div class="picker">
         <input id="s-mincols" type="number" min="40" max="400" placeholder="120"
           onchange="saveMinCols()" style="max-width:110px">
@@ -1578,53 +1573,43 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <a href="#" id="s-mincols-reset" hidden onclick="resetMinCols(); return false"
           >reset to default (120)</a>
       </div>
-      <span class="hintline">A runner's terminal never goes narrower than this. A narrower window scrolls
-        sideways instead. Claude reprints its conversation at every width it passes through and keeps the
-        old copy, so a narrow terminal leaves a narrow copy in the scrollback for good. A shell is not held
-        to this. From 40 to 400.</span>
     </div>
     <!-- The context limit per harness. The hub owns it and hands it to every room, so a write here reaches
          every machine. See docs/runtime/context-cycle-design.md. -->
     <div class="field" id="s-ctxlimits-field">
-      <label class="eyebrow" for="s-ctxlimits">context limit per harness, in thousands of tokens</label>
+      <label class="eyebrow" for="s-ctxlimits">context limit per harness, in thousands of tokens
+        <span class="help" tabindex="0" data-tip="Past its limit atrium cycles a card's context: it asks the agent to write a handoff and run atrium ready, then clears it and has it read the handoff back. One harness=k per entry, separated by commas: claude=200, codex=300. A harness with no entry that runs claude takes the claude one. Every room gets this list. A card can set its own limit, or turn its cycle off, in its details. From 10 to 2000.">?</span></label>
       <div class="picker">
         <input id="s-ctxlimits" spellcheck="false" placeholder="claude=200"
           onchange="saveContextLimits()" style="max-width:260px">
         <a href="#" id="s-ctxlimits-reset" hidden onclick="resetContextLimits(); return false"
           >reset to default (claude=200)</a>
       </div>
-      <span class="hintline">Past its limit atrium cycles a card's context: it asks the agent to write a handoff and
-        run <code>atrium ready</code>, then clears it and has it read the handoff back. One <code>harness=k</code>
-        per entry, separated by commas: <code>claude=200, codex=300</code>. A harness with no entry that runs claude
-        takes the <code>claude</code> one. Every room gets this list. A card can set its own limit, or turn its
-        cycle off, in its details. From 10 to 2000.</span>
     </div>
     <!-- What an agent-launched card is held to. The hub owns it and hands it to every room, like the context
          limit. Both are off until typed. See docs/changes/r-worker-budget.md. -->
     <div class="field" id="s-workermodel-field">
-      <label class="eyebrow" for="s-workermodel">default worker model</label>
+      <label class="eyebrow" for="s-workermodel">default worker model
+        <span class="help" tabindex="0" data-tip="The model a worker gets when the agent that launched it named none, such as sonnet or claude-sonnet-5-5. Empty is off. A launch that names a model wins, and a card you start yourself is never changed.">?</span></label>
       <div class="picker">
         <input id="s-workermodel" spellcheck="false" placeholder="off, the runner's own default"
           onchange="saveWorkerPolicy()" style="max-width:260px">
       </div>
-      <span class="hintline">The model a worker gets when the agent that launched it named none, such as
-        <code>sonnet</code> or <code>claude-sonnet-5-5</code>. Empty is off. A launch that names a model wins, and a
-        card you start yourself is never changed.</span>
     </div>
     <div class="field" id="s-workerbudget-field">
-      <label class="eyebrow" for="s-workerbudget">worker budget, in dollars</label>
+      <label class="eyebrow" for="s-workerbudget">worker budget, in dollars
+        <span class="help" tabindex="0" data-tip="When a worker has spent this much, at list price, the agent that launched it is told once and the card shows it. Nothing is stopped. Empty or 0 is off.">?</span></label>
       <div class="picker">
         <input id="s-workerbudget" type="number" min="0" step="0.5" placeholder="off"
           onchange="saveWorkerPolicy()" style="max-width:110px">
         <span class="unit">USD</span>
       </div>
-      <span class="hintline">When a worker has spent this much, at list price, the agent that launched it is told once
-        and the card shows it. Nothing is stopped. Empty or 0 is off.</span>
     </div>
     <!-- The land-the-plane line. This browser's own setting (atrium.landThePlaneK), not the room's: the status
          line's zone is typed once here, and the board cannot read a shell script. -->
     <div class="field" id="s-landk-field">
-      <label class="eyebrow" for="s-landk">context size to land the plane at, in thousands of tokens</label>
+      <label class="eyebrow" for="s-landk">context size to land the plane at, in thousands of tokens
+        <span class="help" tabindex="0" data-tip="This browser's setting, kept here and not in the room. Match it to the status line's LAND THE PLANE. Past it a card's row floods red with a LAND badge and its bar is full. Between the warn size above and this it stays amber. Never below the warn size. From 10 to 2000.">?</span></label>
       <div class="picker">
         <input id="s-landk" type="number" min="10" max="2000" placeholder="200"
           onchange="saveLandK()" style="max-width:110px">
@@ -1632,16 +1617,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <a href="#" id="s-landk-reset" hidden onclick="resetLandK(); return false"
           >reset to default (200)</a>
       </div>
-      <span class="hintline">This browser's setting, kept here and not in the room. Match it to the status
-        line's LAND THE PLANE. Past it a card's row floods red with a LAND badge and its bar is full. Between
-        the warn size above and this it stays amber. Never below the warn size. From 10 to 2000.</span>
     </div>
     <!-- Separate from text size on purpose. Shrinking the type to fit more
          rows on screen makes the rows harder to read, which is the wrong
          trade: the names should stay legible and the room between them should
          go. -->
     <div class="field">
-      <label class="eyebrow" for="s-density">whitespace</label>
+      <label class="eyebrow" for="s-density">whitespace
+        <span class="help" tabindex="0" data-tip="How much room around things, without changing how big anything reads. Tight fits about a third more rows on a screen.">?</span></label>
       <div class="picker">
         <select id="s-density">
           <option value="1.35">roomy</option>
@@ -1654,38 +1637,33 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="0.3">tightest</option>
         </select>
       </div>
-      <span class="hintline">How much room around things, without changing how big anything reads.
-        Tight fits about a third more rows on a screen.</span>
     </div>
     <div class="field">
-      <label class="eyebrow">top bar tabs</label>
+      <label class="eyebrow">top bar tabs
+        <span class="help" tabindex="0" data-tip="Choose the order, and which tabs show in the bar, sit in the ... menu or are hidden.">?</span></label>
       <div class="picker"><button type="button" id="s-arrangetabs">arrange tabs...</button></div>
-      <span class="hintline">Choose the order, and which tabs show in the bar, sit in the ... menu or are hidden.</span>
     </div>
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-emerging" onchange="emergingSet(this.checked)">
         <span>use emerging features</span>
       </label>
-      <span class="help" tabindex="0" data-tip="Shows the areas that are not finished: the items, pulls, repos and backlog tabs, and the hub documents on the files tab. Kept in this browser only.">?</span>
+      <span class="help" tabindex="0" data-tip="Shows the areas that are not finished: the board, stack, history, audit, items, pulls, repos and backlog tabs, and the hub documents on the files tab. Kept in this browser only.">?</span>
     </div>
     <!-- Kept in this browser, like text size: it is how this screen reads the
          cards, and a phone or a second monitor may want the other answer. -->
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-cardcolors" onchange="toggleCardColors(this.checked)">
-        <span>board cards wear their terminal colours</span>
+        <span>board cards wear their terminal colours <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Every card on the stack and the board is drawn in its own terminal's theme, so you can find a session by its colour. The terminals list has its own three below. Kept in this browser only.">?</span></span>
       </label>
-      <span class="hintline">Every card on the stack and the board is drawn in its own terminal's
-        theme, so you can find a session by its colour. The terminals list has its own three below.
-        Kept in this browser only.</span>
     </div>
     <!-- The terminals list, one switch per kind of row. Per browser, as above. -->
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-termwear-selected"
           onchange="toggleTermWear('selected', this.checked)">
-        <span>terminals list: the selected row wears its theme</span>
+        <span>terminals list: the selected row wears its theme <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Which rows in the terminals list are drawn in their terminal's colours. With every row in colour, the selected one keeps a heavy frame. An exited row is always faded, and with the last switch off it is faded to grey. Kept in this browser only.">?</span></span>
       </label>
       <label class="check">
         <input type="checkbox" id="s-termwear-idle" onchange="toggleTermWear('idle', this.checked)">
@@ -1695,9 +1673,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input type="checkbox" id="s-termwear-exited" onchange="toggleTermWear('exited', this.checked)">
         <span>terminals list: exited rows keep their theme, faded</span>
       </label>
-      <span class="hintline">Which rows in the terminals list are drawn in their terminal's colours.
-        With every row in colour, the selected one keeps a heavy frame. An exited row is always faded,
-        and with the last switch off it is faded to grey. Kept in this browser only.</span>
     </div>
 
     <!-- THE SWITCHER'S KEY IS A SETTING BECAUSE IT HAS TO BE.
@@ -1714,64 +1689,44 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          free is a fact about the BROWSER, so a value synced from the desktop
          would arrive wrong. -->
     <div class="field">
-      <label class="eyebrow">the key that opens the switcher</label>
+      <label class="eyebrow">the key that opens the switcher
+        <span class="help" tabindex="0" data-tip="Press the button, then press the keys you want. Needs ctrl, alt or cmd in it, or it would fire while you are typing into a session. ctrl-shift-k is the default: Chrome, Edge and Brave leave it alone, and a terminal does not use it. Firefox takes it for the Web Console and will not give it back, so rebind to alt-k there. ctrl-k works in every browser and costs you readline's kill-line in every session, which is the trade it looks like.">?</span></label>
       <div class="picker">
         <button id="s-switchkey" onclick="captureSwitchKey(this)"></button>
         <button onclick="resetSwitchKey()">use the default</button>
       </div>
-      <span class="hintline">Press the button, then press the keys you want. Needs
-        <b>ctrl</b>, <b>alt</b> or <b>cmd</b> in it, or it would fire while you are typing into a
-        session. <b>ctrl-shift-k</b> is the default: Chrome, Edge and Brave leave it alone, and a
-        terminal does not use it. <b>Firefox takes it for the Web Console</b> and will not give it
-        back, so rebind to <b>alt-k</b> there. <b>ctrl-k</b> works in every browser and costs you
-        readline's kill-line in every session, which is the trade it looks like.</span>
     </div>
 
     <!-- Focus on hover is opt-in. -->
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)">
-        <span>hovering a session types into it</span>
+        <span>hovering a session types into it <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Moving the pointer onto a terminal gives it the keyboard, so typing goes to the session without clicking first. It waits a moment, so crossing the pane on the way somewhere else does not take the focus, and it never takes it while a dialog is open or while you are typing into a box. Leaving the pane leaves the focus in the session.">?</span></span>
       </label>
-      <span class="hintline">Moving the pointer onto a terminal gives it the keyboard, so typing
-        goes to the session without clicking first. It waits a moment, so crossing the pane on the
-        way somewhere else does not take the focus, and it never takes it while a dialog is open or
-        while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
     </div>
 
     <!-- Where a terminal opens when you come back to it. -->
     <div class="field" hidden style="display:none">
-      <label for="s-termreturn">coming back to a terminal</label>
+      <label for="s-termreturn">coming back to a terminal
+        <span class="help" tabindex="0" data-tip="Leaving a terminal, by another card, another tab or the window losing focus for a few seconds, remembers where you were. Where I left off brings you back there, draws a line at the first thing written after you left and shows how many lines are below. The bottom always opens at the latest, and keeps the line in the scrollback. Stored in this browser. A line that cannot be found again, after a restart or a new context, is not drawn.">?</span></label>
       <select id="s-termreturn" onchange="setTermReturn(this.value)">
         <option value="left">where I left off</option>
         <option value="bottom">the bottom</option>
       </select>
-      <span class="hintline">Leaving a terminal, by another card, another tab or the window losing focus for a few
-        seconds, remembers where you were. <b>Where I left off</b> brings you back there, draws a line at the first
-        thing written after you left and shows how many lines are below. <b>The bottom</b> always opens at the
-        latest, and keeps the line in the scrollback. Stored in this browser. A line that cannot be found again, after
-        a restart or a new context, is not drawn.</span>
     </div>
 
     <!-- Terminals kept alive when you switch away. -->
     <div class="field">
-      <label for="s-termkeep">terminals kept alive</label>
+      <label for="s-termkeep">terminals kept alive
+        <span class="help" tabindex="0" data-tip="Switching away hides a terminal instead of closing it, so coming back is instant and nothing is replayed. This many recently used terminals stay attached, plus every pinned one, and never more than 12 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not affected. A kept terminal still counts as watched, so a session you left is not given a fresh context automatically, and a kept shell is not closed for being idle, while this tab is open. It also keeps its vote on the terminal's size: the same session open in another window stays held to this board's last size until it is let go or the tab closes.">?</span></label>
       <input type="number" id="s-termkeep" min="0" max="12" step="1" style="width: 5em"
         onchange="setTermKeep('atrium.termKeep', Math.max(0, Math.min(12, Math.round(Number(this.value) || 0))))">
-      <span class="hintline">Switching away hides a terminal instead of closing it, so coming back is instant and
-        nothing is replayed. This many recently used terminals stay attached, plus every pinned one, and never more
-        than 12 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not
-        affected. A kept terminal still counts as watched, so a session you left is not given a fresh context
-        automatically, and a kept shell is not closed for being idle, while this tab is open. It also keeps its vote
-        on the terminal's size: the same session open in another window stays held to this board's last size until it
-        is let go or the tab closes.</span>
     </div>
     <div class="field">
-      <label for="s-termkeeplines">history kept for a hidden terminal</label>
+      <label for="s-termkeeplines">history kept for a hidden terminal
+        <span class="help" tabindex="0" data-tip="Lines of scrollback a hidden terminal holds (a full 50000 lines is over 100 MB). The terminal you are looking at keeps its whole history; lines cut from a hidden terminal do not come back.">?</span></label>
       <input type="number" id="s-termkeeplines" min="100" max="50000" step="100" style="width: 6em"
         onchange="setTermKeep('atrium.termKeepLines', Math.max(100, Math.min(50000, Math.round(Number(this.value) || 5000))))">
-      <span class="hintline">Lines of scrollback a hidden terminal holds (a full 50000 lines is over 100 MB). The
-        terminal you are looking at keeps its whole history; lines cut from a hidden terminal do not come back.</span>
     </div>
 
     <!-- The two terminal debug switches (input lag, typing gate readout) live in the terminal's
@@ -1784,7 +1739,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- Grouping. The rule is the operator's, because their worktree layout
          already has conventions atrium has no way to know. -->
     <div class="field">
-      <label class="eyebrow">group cards</label>
+      <label class="eyebrow">group cards
+        <span class="help" tabindex="0" data-tip="Groups cards inside every column. The default reads a project out of the worktree path. The pickers below choose a named rule.">?</span></label>
       <div class="picker">
         <button id="s-group-toggle" onclick="toggleGrouping()"></button>
         <!-- Says what it resets. `use the defaults` sat under a pane that now
@@ -1792,48 +1748,54 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
              all of it. It only ever touched the two grouping expressions. -->
         <button onclick="resetGrouping()">reset the grouping rule</button>
       </div>
-      <span class="hintline">Groups cards inside every column. The default reads a project out of
-        the worktree path. The pickers below choose a named rule.</span>
     </div>
     <div class="field">
-      <label class="eyebrow">for the tab</label>
+      <label class="eyebrow">for the tab
+        <span class="help" tabindex="0" data-tip="Every tab keeps its own grouping. The pickers below set the tab chosen here.">?</span></label>
       <div class="seg" id="s-group-view"></div>
-      <span class="hintline">Every tab keeps its own grouping. The pickers below set the tab chosen here.</span>
-      <label class="eyebrow" for="s-group-mode">group by</label>
+      <label class="eyebrow" for="s-group-mode">group by
+        <span class="help" tabindex="0" data-tip="Pick a rule by name. your own code shows the two boxes below.">?</span></label>
       <select id="s-group-mode"></select>
       <label class="eyebrow" for="s-group-orderby">order the groups by</label>
       <select id="s-group-orderby"></select>
-      <span class="hintline">Pick a rule by name. <b>your own code</b> shows the two boxes below.</span>
     </div>
     <div class="field" id="s-group-code" hidden>
-      <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code></label>
+      <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code>
+        <span class="help" tabindex="0" data-tip="The body of a function taking task. Return the group name, or &quot;&quot; to leave a card ungrouped. task has worktree, runner, status, title, why and pid.">?</span></label>
       <textarea id="s-group-by" rows="8" spellcheck="false"></textarea>
-      <span class="hintline">The body of a function taking <code>task</code>. Return the group name,
-        or <code>""</code> to leave a card ungrouped. <code>task</code> has
-        <code>worktree</code>, <code>runner</code>, <code>status</code>, <code>title</code>,
-        <code>why</code> and <code>pid</code>.</span>
     </div>
     <div class="field" id="s-order-code" hidden>
-      <label class="eyebrow" for="s-group-order">order the groups &mdash; <code>(a, b) =&gt; number</code></label>
+      <label class="eyebrow" for="s-group-order">order the groups &mdash; <code>(a, b) =&gt; number</code>
+        <span class="help" tabindex="0" data-tip="The body of a comparator over two group names. Broken code falls back to the default and says so rather than blanking the board.">?</span></label>
       <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
-      <span class="hintline">The body of a comparator over two group names. Broken code falls back
-        to the default and says so rather than blanking the board.</span>
     </div>
     <!-- The OTHER theme system, reachable from here because the terminal bar's
          edit button needs a terminal and somebody bringing their colours at
          nine in the morning has not started one yet. -->
     <h3 class="s-section">terminal themes</h3>
     <div class="field">
-      <label class="eyebrow">the terminal's colours</label>
+      <label class="eyebrow">the terminal's colours
+        <span class="help" tabindex="0" data-tip="Not the board. This is the sixteen ANSI colours a session is drawn in, and each card keeps its own choice. Import a Windows Terminal scheme, or edit any of them. Themes are kept on the daemon, so one brought here is there in every browser and on your phone. Which theme a card wears is picked on that terminal's own bar, against real output.">?</span></label>
       <div class="picker">
         <button onclick="document.getElementById('settings').close(); openThemeEditor('')"
           >bring or edit a theme</button>
       </div>
-      <span class="hintline">Not the board. This is the sixteen ANSI colours a session is drawn in,
-        and each card keeps its own choice. Import a <b>Windows Terminal</b> scheme, or edit any of
-        them. Themes are kept on the daemon, so one brought here is there in every browser and on
-        your phone. <b>Which</b> theme a card wears is picked on that terminal's own bar, against
-        real output.</span>
+    </div>
+    <h3 class="s-section">copying</h3>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-cleancopy" checked onchange="setCleanCopy(this.checked)">
+        <span>clean copy by default <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="ctrl-c and copy on select give the reply's own text, without the terminal's indents and line breaks. The button by the selection then copies it as shown. Off, every copy is as shown. Kept in this browser only.">?</span></span>
+      </label>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-cleanlimit">clean copy limit
+        <span class="help" tabindex="0" data-tip="A longer selection copies as shown, and the button by it copies it clean. 16000 by default.">?</span></label>
+      <div class="picker">
+        <input id="s-cleanlimit" type="number" min="1000" max="1000000" step="1000" value="16000" style="max-width:110px"
+          onchange="setCleanCopyLimit(this.value)">
+        <span class="unit">characters</span>
+      </div>
     </div>
     <h3 class="s-section">card colours</h3>
     <div class="field">
@@ -1868,7 +1830,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- The names the hub answers besides its own. Hidden until the hub answers, so a board with no hub never
          draws it. See js/hubhosts.js. -->
     <div class="field" id="s-hh-row" hidden>
-      <span class="eyebrow">host names the hub answers</span>
+      <span class="eyebrow">host names the hub answers
+        <span class="help" tabindex="0" data-tip="These are the HUB's names. Rooms do not read them. A wildcard is safe only for a domain one operator controls: a dynamic DNS domain is refused, and shows above as ignored with its reason. Applied from the next request, no restart.">?</span></span>
       <div id="s-hh-list"></div>
       <div id="s-hh-ignored" hidden></div>
       <div id="s-hh-env" hidden></div>
@@ -1879,20 +1842,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <span class="hintline" id="s-hh-ro" hidden>Set on the hub's machine.</span>
       <span class="hintline" id="s-hh-msg"></span>
-      <span class="hintline">These are the HUB's names. Rooms do not read them. A wildcard is safe only for a
-        domain one operator controls: a dynamic DNS domain is refused, and shows above as ignored with its reason.
-        Applied from the next request, no restart.</span>
     </div>
 
     <!-- The hub's ziti transports: the board, the room link and the CI hook. Hidden until the hub answers. See
          js/hubtransports.js. -->
     <div class="field" id="s-ht-row" hidden>
-      <span class="eyebrow">hub ziti transports</span>
+      <span class="eyebrow">hub ziti transports
+        <span class="help" tabindex="0" data-tip="Turning one off closes its listener at once. The room link is refused while a room reaches the hub only over it. A flag given at start only seeds a value: the first change here replaces it.">?</span></span>
       <div id="s-ht-list"></div>
       <span class="hintline" id="s-ht-ro" hidden>Set on the hub's machine.</span>
       <span class="hintline" id="s-ht-msg"></span>
-      <span class="hintline">Turning one off closes its listener at once. The room link is refused while a room reaches
-        the hub only over it. A flag given at start only seeds a value: the first change here replaces it.</span>
     </div>
 
     <!-- `notifications`, not `alerts`. Everything under it is a notification:
@@ -1927,20 +1886,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-notifyoff" onchange="setNotifyOff(this.checked)">
-        <span>turn notifications off</span>
+        <span>turn notifications off <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="The same switch as the one in the notification tray. No toast, sound or desktop notification, and it beats a card's own tone. Everything held back is still listed in the tray. A permission request still notifies. Kept in this browser.">?</span></span>
       </label>
-      <span class="hintline">The same switch as the one in the notification tray. No toast, sound or desktop
-        notification, and it beats a card's own tone. Everything held back is still listed in the tray. A permission
-        request still notifies. Kept in this browser.</span>
     </div>
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-growler" onchange="setGrowler(this.checked)">
-        <span>show the floating growler</span>
+        <span>show the floating growler <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Off by default. With it off, questions and ready alerts only go to the bell: no floating box, no undo bar and no growler sound, and desktop notifications follow the setting above. A permission request shows as its usual toast, on the permissions tab, and in the bell. Kept in this browser.">?</span></span>
       </label>
-      <span class="hintline">Off by default. With it off, questions and ready alerts only go to the bell: no floating box,
-        no undo bar and no growler sound, and desktop notifications follow the setting above. A permission request
-        shows as its usual toast, on the permissions tab, and in the bell. Kept in this browser.</span>
     </div>
     <!-- u-new-no-question-reminders: which reasons the hub re-raises. Hidden until the hub answers. See js/hubnotify.js. -->
     <div class="field" id="s-gl-row" hidden>
@@ -1959,7 +1912,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- u-030: the hub's notify command. Hidden until the hub answers, so a board with no hub never draws it.
          See js/hubnotify.js. -->
     <div class="field" id="s-hn-row" hidden>
-      <label class="eyebrow" for="s-hn-command">notify command (on the hub)</label>
+      <label class="eyebrow" for="s-hn-command">notify command (on the hub)
+        <span class="help" tabindex="0" data-tip="This runs ON THE HUB MACHINE, as the hub's user, not on this one. One argument per line, so a path with a space in it needs no quoting. Atrium keeps no credential: a token the command needs lives in that command's own config, never in this field.">?</span></label>
       <label class="check">
         <input type="checkbox" id="s-hn-enabled">
         <span>run it when something needs you and no board tab is open</span>
@@ -1973,13 +1927,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <pre class="hn-test" id="s-hn-test" hidden></pre>
       <div class="hn-status" id="s-hn-status"></div>
-      <span class="hintline">This runs ON THE HUB MACHINE, as the hub's user, not on this one. One argument per
-        line, so a path with a space in it needs no quoting. Atrium keeps no credential: a token the command needs
-        lives in that command's own config, never in this field.</span>
     </div>
     <!-- u-new-web-push-build: Web Push to phones. Hidden until the hub answers, and for a guest. See js/hubpush.js. -->
     <div class="field" id="s-hp-row" hidden>
-      <label class="eyebrow" for="s-hp-contact">phone alerts (on the hub)</label>
+      <label class="eyebrow" for="s-hp-contact">phone alerts (on the hub)
+        <span class="help" tabindex="0" data-tip="A phone turns this on for itself from the board's bell. Each device is listed here, and a new one also shows in the growler. A new key removes every device, and each phone has to subscribe again. Use a web address or a mailto for the contact, since the push service sees it.">?</span></label>
       <label class="check">
         <input type="checkbox" id="s-hp-enabled" onchange="setHubPush(this.checked)">
         <span>send phone alerts when something needs you</span>
@@ -1995,29 +1947,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <div class="hp-count" id="s-hp-count"></div>
       <ul class="hp-list" id="s-hp-list"></ul>
-      <span class="hintline">A phone turns this on for itself from the board's bell. Each device is listed here, and
-        a new one also shows in the growler. A new key removes every device, and each phone has to subscribe again.
-        Use a web address or a mailto for the contact, since the push service sees it.</span>
     </div>
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-quietdoers"onchange="alerting.set({ quietDoers: this.checked })">
-        <span>don't notify me about subagents</span>
+        <span>don't notify me about subagents <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="No toast, sound or desktop notification for a card tagged atrium:subagent, a worker an agent started. A director or the orchestrator still notifies. Its marks and its line in the notification log stay. A permission request from it still notifies, and so does a card you gave a tone of its own.">?</span></span>
       </label>
-      <span class="hintline">No toast, sound or desktop notification for a card tagged
-        <code>atrium:subagent</code>, a worker an agent started. A director or the orchestrator still notifies. Its marks
-        and its line in the notification log stay. A permission request from it still notifies, and so does a card you
-        gave a tone of its own.</span>
     </div>
     <div class="field" id="s-alerts-field">
-      <label class="eyebrow">what each kind of alert does</label>
+      <label class="eyebrow">what each kind of alert does
+        <span class="help" tabindex="0" data-tip="One row per kind of event. The tray records every one of them whatever is ticked here. The speaker and the bell's turn off stay the master switches over the whole table, and the operating system switch above has to be on for a notification to appear at all. A finished turn starts as sound only.">?</span></label>
       <table class="alerts-table" id="s-alerts"></table>
-      <span class="hintline">One row per kind of event. The tray records every one of them whatever is ticked here. The
-        speaker and the bell's <b>turn off</b> stay the master switches over the whole table, and the operating system
-        switch above has to be on for a notification to appear at all. A finished turn starts as sound only.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-expiry">notifications disappear after</label>
+      <label class="eyebrow" for="s-expiry">notifications disappear after
+        <span class="help" tabindex="0" data-tip="&quot;never&quot; keeps a waiting agent on screen, and keeps everything else there too.">?</span></label>
       <div class="picker">
         <select id="s-expiry">
           <option value="10">10 seconds</option>
@@ -2027,10 +1971,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="0">never, until answered</option>
         </select>
       </div>
-      <span class="hintline">"never" keeps a waiting agent on screen, and keeps everything else there too.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-debounce">wait before alerting</label>
+      <label class="eyebrow" for="s-debounce">wait before alerting
+        <span class="help" tabindex="0" data-tip="Anything that happens inside the wait is one alert instead of several. A later arrival extends the wait rather than starting a second one, up to three times the setting, so a steady trickle still gets announced.">?</span></label>
       <div class="picker">
         <select id="s-debounce">
           <option value="0">do not wait, alert immediately</option>
@@ -2039,12 +1983,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="10">10 seconds</option>
         </select>
       </div>
-      <span class="hintline">Anything that happens inside the wait is one alert instead of several. A later
-        arrival extends the wait rather than starting a second one, up to three times the setting, so a steady
-        trickle still gets announced.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-stuck">stuck agents</label>
+      <label class="eyebrow" for="s-stuck">stuck agents
+        <span class="help" tabindex="0" data-tip="A card another session launched is stuck when it ended a turn without reporting, or one tool call has run too long. The alert rings on a widening backoff. The mark stays on the card until it moves again.">?</span></label>
       <div class="picker">
         <select id="s-stuck">
           <option value="alert">alert me, and mark the card</option>
@@ -2052,18 +1994,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="off">off</option>
         </select>
       </div>
-      <span class="hintline">A card another session launched is stuck when it ended a turn without reporting, or one
-        tool call has run too long. The alert rings on a widening backoff. The mark stays on the card until it moves
-        again.</span>
     </div>
 
     <div class="field" id="s-skipped-field" hidden>
-      <label class="eyebrow">questions you turned off</label>
+      <label class="eyebrow">questions you turned off
+        <span class="help" tabindex="0" data-tip="Confirmations you ticked &quot;do not ask me again&quot; on.">?</span></label>
       <div class="picker">
         <span class="chip" id="s-skipped"></span>
         <button onclick="resetConfirms()">ask me again</button>
       </div>
-      <span class="hintline">Confirmations you ticked "do not ask me again" on.</span>
     </div>
 
     <!-- Housekeeping. Two timers that are easy to confuse and must not be:
@@ -2092,7 +2031,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
     <h3 class="s-section">housekeeping</h3>
     <div class="field">
-      <label class="eyebrow" for="s-sweep">take dead cards off the board</label>
+      <label class="eyebrow" for="s-sweep">take dead cards off the board
+        <span class="help" tabindex="0" data-tip="Archived, not deleted. The card and its whole audit log stay, which is what answers &ldquo;what have I had running this week&rdquo;. Dead only: done is you saying the work is finished, and a board that filed away what you just filed would make filing pointless.">?</span></label>
       <div class="picker">
         <select id="s-sweep">
           <option value="off">never, leave them there</option>
@@ -2102,13 +2042,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="86400">after a day</option>
         </select>
       </div>
-      <span class="hintline">Archived, not deleted. The card and its whole audit log stay, which is
-        what answers &ldquo;what have I had running this week&rdquo;. Dead only: done is you saying
-        the work is finished, and a board that filed away what you just filed would make filing
-        pointless.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-prune">delete finished cards for good</label>
+      <label class="eyebrow" for="s-prune">delete finished cards for good
+        <span class="help" tabindex="0" data-tip="This destroys the record. A card's audit log is the only account of what that session ran and what it was allowed to do. Off unless you turn it on, and worth answering &ldquo;how far back do I ever look&rdquo; rather than picking the first number that seems large. Never touches paused cards or the inbox.">?</span></label>
       <div class="picker">
         <select id="s-prune">
           <option value="off">never</option>
@@ -2118,10 +2055,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="31536000">after a year</option>
         </select>
       </div>
-      <span class="hintline"><b>This destroys the record.</b> A card's audit log is the only account
-        of what that session ran and what it was allowed to do. Off unless you turn it on, and worth
-        answering &ldquo;how far back do I ever look&rdquo; rather than picking the first number that
-        seems large. Never touches paused cards or the inbox.</span>
     </div>
 
     <!-- The terminal list's sort and group (the filter drawer's rows show the same two). Filled in by
@@ -2137,8 +2070,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="seg trayseg groupseg" id="term-group"></div>
     </div>
     <div class="field">
-      <span class="eyebrow">cache</span>
-      <span class="hintline">The keep-alive default is in the next section.</span>
+      <span class="eyebrow">cache
+        <span class="help" tabindex="0" data-tip="The keep-alive default is in the next section.">?</span></span>
     </div>
 
     <!-- The cache keep-alive. The default for NEW Claude cards, never applied to
@@ -2146,26 +2079,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          See docs/runtime/cache-keepalive-design.md. -->
     <h3 class="s-section">cache keep-alive</h3>
     <div class="field">
-      <label class="eyebrow" for="s-keepalive">keep idle Claude sessions' caches warm</label>
+      <label class="eyebrow" for="s-keepalive">keep idle Claude sessions' caches warm
+        <span class="help" tabindex="0" data-tip="A Claude session's prompt cache expires an hour after its last request, and the next turn then rewrites the whole context at twice the input price. With this on, atrium refreshes an idle card's cache a few minutes before it expires. It sends one word from a copy of the conversation and then throws the copy away. The card's own conversation is never touched. A card stops by itself once its refreshes have cost an eighth of one rewrite, and says so. This sets the default for cards started from now on. Cards already open keep their own switch, in each card's menu. On by default.">?</span></label>
       <div class="picker">
         <label><input id="s-keepalive" type="checkbox" onchange="saveKeepaliveDefault()">
           on for new Claude cards</label>
       </div>
-      <span class="hintline">A Claude session's prompt cache expires an hour after its last request, and
-        the next turn then rewrites the whole context at twice the input price. With this on, atrium
-        refreshes an idle card's cache a few minutes before it expires. It sends one word from a copy of
-        the conversation and then throws the copy away. The card's own conversation is never touched.
-        A card stops by itself once its refreshes have cost an eighth of one rewrite, and
-        says so. This sets the default for cards started from now on. Cards already open keep their own
-        switch, in each card's menu. On by default.</span>
       <div class="picker">
         <label><input id="s-cold-handoff" type="checkbox" onchange="saveColdHandoff()">
-          hand off and clear a card whose cache is going cold</label>
+          hand off and clear a card whose cache is going cold <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="When atrium is no longer warming an idle card's cache, because keep-alive stopped or is off for it, it has the session write its handoff and clears its context a few minutes before the cache expires, while the cache is still warm. The next turn then starts small. Each card can switch it off in its menu. On by default.">?</span></label>
       </div>
-      <span class="hintline">When atrium is no longer warming an idle card's cache, because keep-alive stopped
-        or is off for it, it has the session write its handoff and clears its context a few minutes before the
-        cache expires, while the cache is still warm. The next turn then starts small. Each card can switch it
-        off in its menu. On by default.</span>
       <span class="hintline" id="s-keepalive-spend"></span>
       <div class="hintline warn" id="s-keepalive-suspended" hidden>
         <b>Suspended for this room:</b> <span id="s-keepalive-why"></span>.
@@ -2214,16 +2137,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          filled in: guessing an editor means atrium picks a program to run on
          your machine, and a wrong guess is a process you did not want. -->
     <div class="field">
-      <label class="eyebrow" for="s-editor">editor command</label>
+      <label class="eyebrow" for="s-editor">editor command
+        <span class="help" tabindex="0" data-tip="Runs on the machine atrium is on, not the one this browser is on. That is the point over an overlay: the file is where the agent is. {path} is where the filename goes, and is appended when you leave it out. Never a shell, so nothing in a filename can become another command. Examples: code -g {path}, notepad, subl.">?</span></label>
       <div class="picker">
         <input id="s-editor" spellcheck="false" data-saves="saveEditorCommand"
           placeholder="empty means the open button does nothing">
       </div>
-      <span class="hintline">Runs on <b>the machine atrium is on</b>, not the one this browser is on.
-        That is the point over an overlay: the file is where the agent is. <code>{path}</code> is where the
-        filename goes, and is appended when you leave it out. Never a shell, so nothing in a filename can
-        become another command. Examples: <code>code -g {path}</code>, <code>notepad</code>,
-        <code>subl</code>.</span>
     </div>
 
     <!-- Where a pasted screenshot ends up. There is no third answer here: a
@@ -2231,28 +2150,23 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          the file has to exist somewhere the agent can open it. The choice is
          whether that somewhere is your repository or a scratch directory. -->
     <div class="field">
-      <label class="eyebrow" for="s-pastekeep">pasted files go</label>
+      <label class="eyebrow" for="s-pastekeep">pasted files go
+        <span class="help" tabindex="0" data-tip="The path is what reaches the agent either way. Stays means you still have the screenshot tomorrow, and also every screenshot you ever pasted. Scratch keeps your working directory clean, and the file is gone the next time atrium starts, so anything you want to keep gets saved before then.">?</span></label>
       <div class="picker">
         <select id="s-pastekeep" onchange="savePastePrefs()">
           <option value="keep">stays in the card, under .atrium/incoming</option>
           <option value="scrap">goes to a scratch folder, emptied on restart</option>
         </select>
       </div>
-      <span class="hintline">The path is what reaches the agent either way. <b>Stays</b> means you still
-        have the screenshot tomorrow, and also every screenshot you ever pasted. <b>Scratch</b> keeps your
-        working directory clean, and the file is gone the next time atrium starts, so anything you want to
-        keep gets saved before then.</span>
     </div>
 
     <div class="field">
-      <label class="eyebrow" for="s-pastepre">what is typed before a pasted path</label>
+      <label class="eyebrow" for="s-pastepre">what is typed before a pasted path
+        <span class="help" tabindex="0" data-tip="Typed in front of the path, into the line you are already writing. Nothing is submitted: pressing enter stays yours. Leave it empty for the bare path. The trailing space is part of what you type here, so keep one.">?</span></label>
       <div class="picker">
         <input id="s-pastepre" spellcheck="false" data-saves="savePastePrefs"
           placeholder="just the path, on its own">
       </div>
-      <span class="hintline">Typed in front of the path, into the line you are already writing. Nothing is
-        submitted: pressing enter stays yours. Leave it empty for the bare path. The trailing space is part
-        of what you type here, so keep one.</span>
     </div>
 
     </section>
@@ -2265,39 +2179,33 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          terminates here, so every request over one looks like loopback and
          nothing can be decided by address. -->
     <div class="field">
-      <label class="eyebrow" for="s-browseroots">directories the picker may open</label>
+      <label class="eyebrow" for="s-browseroots">directories the picker may open
+        <span class="help" tabindex="0" data-tip="One per line. Leave it empty and the picker offers your home directory plus every directory a card already uses, which is where work already is. Anything outside is refused whether or not it exists, so the refusal cannot be used to find out what is on the machine.">?</span></label>
       <div class="picker">
         <textarea id="s-browseroots" spellcheck="false" rows="3" data-saves="saveBrowseRoots"
           placeholder="one directory per line. empty means your home directory and every card's directory"
           ></textarea>
       </div>
-      <span class="hintline">One per line. Leave it empty and the picker offers your home directory plus
-        every directory a card already uses, which is where work already is. Anything outside is refused
-        whether or not it exists, so the refusal cannot be used to find out what is on the machine.
-        <b id="s-browseroots-now"></b></span>
+      <span class="hintline"><b id="s-browseroots-now"></b></span>
     </div>
 
     <div class="field">
-      <label class="eyebrow" for="s-openpaths">folders a terminal link may open outside its card</label>
+      <label class="eyebrow" for="s-openpaths">folders a terminal link may open outside its card
+        <span class="help" tabindex="0" data-tip="One per line. A path in a terminal opens when it is in the card, in a folder atrium already knows (the card root, every card's directory, the repository clones and the worktree root), or under one of these. Everything else is refused.">?</span></label>
       <div class="picker">
         <textarea id="s-openpaths" spellcheck="false" rows="3" data-saves="saveOpenPaths"
           placeholder="one absolute directory per line. empty means only atrium's own folders"
           ></textarea>
       </div>
-      <span class="hintline">One per line. A path in a terminal opens when it is in the card, in a folder atrium
-        already knows (the card root, every card's directory, the repository clones and the worktree root), or under
-        one of these. Everything else is refused.</span>
     </div>
 
     <div class="field">
-      <label class="eyebrow" for="s-openext-anywhere">open externally, anywhere on this machine</label>
+      <label class="eyebrow" for="s-openext-anywhere">open externally, anywhere on this machine
+        <span class="help" tabindex="0" data-tip="Off by default. On, any picture, pdf or text document path an agent prints can be handed to this room's default app on this machine, wherever it is. The board still never reads or shows the file. A program, a script or a shortcut is refused whatever this says. Switched only from this machine.">?</span></label>
       <div class="picker">
         <label><input id="s-openext-anywhere" type="checkbox" data-saves="saveOpenExtAnywhere">
           let a terminal link outside those folders open with this machine's default app</label>
       </div>
-      <span class="hintline">Off by default. On, any picture, pdf or text document path an agent prints can be
-        handed to this room's default app on this machine, wherever it is. The board still never reads or shows the
-        file. A program, a script or a shortcut is refused whatever this says. Switched only from this machine.</span>
     </div>
 
     <!-- Where to leave the address for somebody else.
@@ -2307,28 +2215,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          either gets told the port or gets a profile path hardcoded into it,
          and both are the thing the file was written to prevent. -->
     <div class="field">
-      <label class="eyebrow" for="s-shared-loc">shared address file</label>
+      <label class="eyebrow" for="s-shared-loc">shared address file
+        <span class="help" tabindex="0" data-tip="A file a different account can read, so a script running as somebody else finds the board without being told the port. A directory you both already reach is the answer: D:/worktrees/atrium/daemon.json if that is where the work is. It holds a loopback address, a pid and two paths, and nothing secret.&#10;Written on start, so this takes effect at the next restart.">?</span></label>
       <div class="picker">
         <input id="s-shared-loc" spellcheck="false" data-saves="saveSharedLocation"
           placeholder="empty means only this account can find the daemon">
       </div>
-      <span class="hintline">A file a <b>different account</b> can read, so a script running as somebody
-        else finds the board without being told the port. A directory you both already reach is the
-        answer: <code>D:/worktrees/atrium/daemon.json</code> if that is where the work is. It holds a
-        loopback address, a pid and two paths, and nothing secret.<br>
-        Written on start, so this takes effect at the next restart.
-        <b id="s-shared-loc-now"></b></span>
+      <span class="hintline"><b id="s-shared-loc-now"></b></span>
     </div>
     <!-- Where a card's handoff goes in a context cycle. A room setting: the file is on this machine. -->
     <div class="field">
-      <label class="eyebrow" for="s-handoffdir">handoff directory</label>
+      <label class="eyebrow" for="s-handoffdir">handoff directory
+        <span class="help" tabindex="0" data-tip="Where a card writes its handoff when atrium cycles its context, as &lt;card id&gt;.md. The limit prompt names the full path. A copy of each handoff is kept on its card, so this can be a temporary directory.">?</span></label>
       <div class="picker">
         <input id="s-handoffdir" spellcheck="false" data-saves="saveHandoffDir"
           placeholder="empty means the card's folder, else handoffs beside the room's database">
       </div>
-      <span class="hintline">Where a card writes its handoff when atrium cycles its context, as
-        <code>&lt;card id&gt;.md</code>. The limit prompt names the full path. A copy of each handoff is kept on
-        its card, so this can be a temporary directory.</span>
     </div>
 
     </section>
@@ -2342,29 +2244,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          WORKAROUND for a shell that always came up as cmd, so the escape
          hatch was unreachable by the person who needed it. -->
     <div class="field">
-      <label class="eyebrow" for="s-shell">shell command</label>
+      <label class="eyebrow" for="s-shell">shell command
+        <span class="help" tabindex="0" data-tip="The shell behind the shell button on a terminal. Empty searches this machine: pwsh, then powershell, then the command shell. Set it when that search finds the wrong one. Takes effect on the next shell you open, not on ones already running.&#10;Type off for no shells on this machine at all: the button stops being offered and a request for one is refused. The same word the worktree command takes, for the same reason.&#10;">?</span></label>
       <div class="picker">
         <input id="s-shell" spellcheck="false" data-saves="saveShellCommand"
           placeholder="empty means whatever this machine has">
       </div>
-      <span class="hintline">The shell behind the <b>shell</b> button on a terminal. Empty searches this
-        machine: <code>pwsh</code>, then <code>powershell</code>, then the command shell. Set it when
-        that search finds the wrong one. Takes effect on the next shell you open, not on ones already
-        running.<br>
-        Type <code>off</code> for no shells on this machine at all: the button stops being offered and
-        a request for one is refused. The same word the worktree command takes, for the same
-        reason.<br>
-        Right now that comes out as <b id="s-shell-now"></b></span>
+      <span class="hintline">Right now that comes out as <b id="s-shell-now"></b></span>
     </div>
 
     <!-- A room keeps no forge login. The hub runs gh and bb for every room, so the alert for a missing login is the
          hub's and the line under this says the open ones. -->
     <div class="field" id="forge-cfg">
-      <label class="eyebrow">forge logins</label>
-      <span class="hintline">Pull requests and issues are read by the hub, with the hub's own <code>gh</code> and
-        <code>bb</code> logins. This room never runs them. When one is missing the hub raises an alert that says what
-        to run on the hub.
-        <b id="s-forge-state"></b></span>
+      <label class="eyebrow">forge logins
+        <span class="help" tabindex="0" data-tip="Pull requests and issues are read by the hub, with the hub's own gh and bb logins. This room never runs them. When one is missing the hub raises an alert that says what to run on the hub.">?</span></label>
+      <span class="hintline"><b id="s-forge-state"></b></span>
     </div>
 
     <!-- Two buffers, one question. Kept side by side because the smaller of
@@ -2372,7 +2266,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          other is how somebody pays for 512MB of daemon and still scrolls back
          five thousand lines. -->
     <div class="field">
-      <label class="eyebrow" for="s-sbmb">scrollback a terminal keeps</label>
+      <label class="eyebrow" for="s-sbmb">scrollback a terminal keeps
+        <span class="help" tabindex="0" data-tip="The daemon keeps the last few megabytes of every running session and hands the lot over when you attach, so nothing older than that can reach the page at all. The browser then keeps that many lines of it. Whichever runs out first is what you get, and which one that is depends on how long the lines are: fifty thousand ordinary lines is about four megabytes, but one progress bar redrawing itself is a single line and can be megabytes on its own. Megabytes are resident per running session and lines are resident per open terminal, so ten sessions at 64MB is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either empty for the default.">?</span></label>
       <div class="picker">
         <input id="s-sbmb" type="number" min="1" placeholder="16" data-saves="saveScrollback"
           style="max-width:110px">
@@ -2381,14 +2276,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           style="max-width:130px">
         <span class="unit">lines in the browser</span>
       </div>
-      <span class="hintline">The daemon keeps the last few megabytes of every running session and hands
-        the lot over when you attach, so nothing older than that can reach the page at all. The browser
-        then keeps that many lines of it. <b>Whichever runs out first is what you get</b>, and which one
-        that is depends on how long the lines are: fifty thousand ordinary lines is about four megabytes,
-        but one progress bar redrawing itself is a single line and can be megabytes on its own. Megabytes
-        are resident per running session and lines are resident per open terminal, so ten sessions at 64MB
-        is 640MB of atrium. The daemon's half applies to sessions started after you save it. Leave either
-        empty for the default.</span>
       <!-- Show total scrollback capacity from live ring counts when the daemon supplies them. -->
       <span class="hintline" id="s-sbcost" hidden></span>
     </div>
@@ -2396,15 +2283,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- The unexpected-exit notice. A room setting: the room is what goes
          away, and the room types the notice. See docs/runtime/unexpected-exit-wake.md. -->
     <div class="field">
-      <label class="eyebrow" for="s-exitwake">after atrium goes away mid-turn</label>
+      <label class="eyebrow" for="s-exitwake">after atrium goes away mid-turn
+        <span class="help" tabindex="0" data-tip="When this room crashes, is killed or is restarted while a session is in the middle of a turn, the resumed session gets one grey [atrium] unexpected exit: line saying so, typed when its line is empty. A session that queued its own restart wake gets that instead. A session that had finished its turn gets nothing. On by default.">?</span></label>
       <div class="picker">
         <label><input id="s-exitwake" type="checkbox" data-saves="saveExitWake">
           tell the session, so it picks its work back up</label>
       </div>
-      <span class="hintline">When this room crashes, is killed or is restarted while a session is in the
-        middle of a turn, the resumed session gets one grey <code>[atrium] unexpected exit:</code> line
-        saying so, typed when its line is empty. A session that queued its own restart wake gets that
-        instead. A session that had finished its turn gets nothing. On by default.</span>
     </div>
 
     <!-- Idle parking: seconds on the wire, minutes here. The floor and the suggested value come from the room. Off unless set. -->
@@ -2427,32 +2311,26 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          kept, or that no card owns any more, is removed. Removal posts the ledger row's id and never a path.
          See docs/runtime/card-home-design.md section 7. -->
     <div class="field">
-      <label class="eyebrow" for="s-cardroot">card root</label>
+      <label class="eyebrow" for="s-cardroot">card root
+        <span class="help" tabindex="0" data-tip="Every card launched with a home of its own works in a folder here, so the room's work is in one place and its space can be taken back. Never a drive root, your home folder, atrium's own state folder or a folder under the git folder. Cards already running are not moved.">?</span></label>
       <div class="picker">
         <input id="s-cardroot" spellcheck="false" data-saves="saveCardRoot"
           placeholder="empty means atrium-cards under WORKTREE_ROOT, or ~/atrium/cards">
       </div>
-      <span class="hintline">Every card launched with a home of its own works in a folder here, so the room's work is in
-        one place and its space can be taken back. Never a drive root, your home folder, atrium's own state folder or a
-        folder under the git folder. Cards already running are not moved.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-cardrootreq">agents and the card root</label>
+      <label class="eyebrow" for="s-cardrootreq">agents and the card root
+        <span class="help" tabindex="0" data-tip="On by default. When on, an agent that launches a card with a directory of its own is told to pass repo and branch so the room makes the folder, unless it says scratch. Launches from the board are never refused.">?</span></label>
       <label><input id="s-cardrootreq" type="checkbox" data-saves="saveCardRootRequired">
         refuse an agent launch outside the card root</label>
-      <span class="hintline">On by default. When on, an agent that launches a card with a directory of its own is told to
-        pass repo and branch so the room makes the folder, unless it says scratch. Launches from the board are never
-        refused.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="s-scratchroot">scratch root</label>
+      <label class="eyebrow" for="s-scratchroot">scratch root
+        <span class="help" tabindex="0" data-tip="Where this room's cards put throwaway files: patches, logs, downloads and notes. Each card gets a folder of its own here, named in ATRIUM_SCRATCH and in the line a session starts with. An absolute path on this machine, never a drive root. Cards already running are told at their next start.">?</span></label>
       <div class="picker">
         <input id="s-scratchroot" spellcheck="false" data-saves="saveScratchRoot"
           placeholder="empty means each card's own folder, for example D:\tmp">
       </div>
-      <span class="hintline">Where this room's cards put throwaway files: patches, logs, downloads and notes. Each card gets
-        a folder of its own here, named in ATRIUM_SCRATCH and in the line a session starts with. An absolute path on this
-        machine, never a drive root. Cards already running are told at their next start.</span>
     </div>
     <div class="field" id="rc-disk"></div>
     </section>
@@ -2482,27 +2360,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <div class="picker"><select id="a-runner"></select></div>
       </div>
       <div class="field span">
-        <label class="eyebrow" for="a-prompt">what it says</label>
+        <label class="eyebrow" for="a-prompt">what it says
+          <span class="help" tabindex="0" data-tip="Sent as text, exactly as typed. Write it as an instruction to the agent, not as a note to yourself.">?</span></label>
         <textarea id="a-prompt" rows="5" spellcheck="false"
           placeholder="Run the test suite and tell me what failed, if anything."></textarea>
-        <span class="hintline">Sent as text, exactly as typed. Write it as an instruction to the
-          agent, not as a note to yourself.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="a-after">afterwards</label>
+        <label class="eyebrow" for="a-after">afterwards
+          <span class="help" tabindex="0" data-tip="Quitting sends the harness's own exit keys a moment after the prompt. Best effort: a runner that ignores them stays up, having been told to wrap up.">?</span></label>
         <div class="picker">
           <select id="a-after">
             <option value="keep">keep the session running</option>
             <option value="exit">ask the runner to quit</option>
           </select>
         </div>
-        <span class="hintline">Quitting sends the harness's own exit keys a moment after the prompt.
-          Best effort: a runner that ignores them stays up, having been told to wrap up.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="a-tag">only on cards tagged</label>
+        <label class="eyebrow" for="a-tag">only on cards tagged
+          <span class="help" tabindex="0" data-tip="One tag. Empty offers it on every card.">?</span></label>
         <input type="text" id="a-tag" spellcheck="false" placeholder="any (leave empty)">
-        <span class="hintline">One tag. Empty offers it on every card.</span>
       </div>
       <div class="field span">
         <label class="check"><input type="checkbox" id="a-enabled"> offer it</label>
@@ -2526,16 +2402,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <p class="hintline dlg-lead">Opens one shell per ticked room in its own window with the login line already run.
       Click the claude.com link it prints. Closing a window ends its shell.</p>
     <section class="dlg-sec">
-      <div class="dlg-sec-h">which rooms</div>
+      <div class="dlg-sec-h">which rooms
+        <span class="help" tabindex="0" data-tip="The line is the room's login command setting. Empty means ssh -t &lt;room&gt; claude auth login. An edit here is kept for that room when you open the shells.">?</span></div>
       <div id="ll-rows"></div>
-      <span class="hintline">The line is the room's login command setting. Empty means
-        <code>ssh -t &lt;room&gt; claude auth login</code>. An edit here is kept for that room when you open the shells.</span>
     </section>
     <section class="dlg-sec">
       <div class="field">
-        <label class="eyebrow" for="ll-host">open the shells on</label>
+        <label class="eyebrow" for="ll-host">open the shells on
+          <span class="help" tabindex="0" data-tip="The room the ssh line runs from, which is the machine you sit at.">?</span></label>
         <div class="picker"><select id="ll-host"></select></div>
-        <span class="hintline">The room the ssh line runs from, which is the machine you sit at.</span>
       </div>
     </section>
   </div>
@@ -2571,11 +2446,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="rj-reach-hint"></span>
     </div>
     <div class="field" id="rj-identity-field">
-      <label class="eyebrow" for="rj-identity">the ziti identity file, on that machine</label>
+      <label class="eyebrow" for="rj-identity">the ziti identity file, on that machine
+        <span class="help" tabindex="0" data-tip="A path on the room, not on this machine. Dialling a service means being somebody on that network, and that identity is enrolled there.">?</span></label>
       <input type="text" id="rj-identity" spellcheck="false" oninput="roomCommand()"
         placeholder="/opt/atrium/room.json">
-      <span class="hintline">A path on the room, not on this machine. Dialling a service means
-        being somebody on that network, and that identity is enrolled there.</span>
     </div>
     <div class="field" id="rj-hub-field">
       <label class="eyebrow" for="rj-hub">this board's address, as that machine sees it</label>
@@ -2586,19 +2460,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec dlg-grid">
     <div class="dlg-sec-h">how it shows up here</div>
     <div class="field">
-      <label class="eyebrow" for="rj-name">what to call it here</label>
+      <label class="eyebrow" for="rj-name">what to call it here
+        <span class="help" tabindex="0" data-tip="The name is the key. Two rooms sharing one name are one room that flaps, so leave it empty unless the hostname is not what you want to read.">?</span></label>
       <input type="text" id="rj-name" spellcheck="false" oninput="roomCommand()"
         placeholder="that machine's hostname">
-      <span class="hintline">The name is the key. Two rooms sharing one name are one room that
-        flaps, so leave it empty unless the hostname is not what you want to read.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="rj-board">where that machine's own board is</label>
+      <label class="eyebrow" for="rj-board">where that machine's own board is
+        <span class="help" tabindex="0" data-tip="Terminals do not travel. A pseudo terminal cannot leave the machine that made it, so attaching to a runner over there means opening that board. This is the link on the room's row, and without it the row has nowhere to send you.">?</span></label>
       <input type="text" id="rj-board" spellcheck="false" oninput="roomCommand()"
         placeholder="http://that-machine:7778">
-      <span class="hintline">Terminals do not travel. A pseudo terminal cannot leave the machine
-        that made it, so attaching to a runner over there means opening that board. This is the
-        link on the room's row, and without it the row has nowhere to send you.</span>
     </div>
     </section>
     <section class="dlg-sec dlg-cmd">
@@ -2623,19 +2494,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">what it runs</div>
       <div class="field">
-        <label class="eyebrow" for="s-id">id</label>
+        <label class="eyebrow" for="s-id">id
+          <span class="help" tabindex="0" data-tip="Used in the log when it says something. Cannot be changed later.">?</span></label>
         <input type="text" id="s-id" spellcheck="false" placeholder="assigned-issues">
-        <span class="hintline">Used in the log when it says something. Cannot be changed later.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="s-label">what to call it</label>
         <input type="text" id="s-label" spellcheck="false" placeholder="issues assigned to me">
       </div>
       <div class="field">
-        <label class="eyebrow" for="s-cmd">command</label>
+        <label class="eyebrow" for="s-cmd">command
+          <span class="help" tabindex="0" data-tip="Runs as whoever started the daemon, with the daemon's environment. As trusted as a runner. Put the credential in the tool, never here.">?</span></label>
         <input type="text" id="s-cmd" spellcheck="false" placeholder="pwsh">
-        <span class="hintline">Runs as whoever started the daemon, with the daemon's environment.
-          As trusted as a runner. Put the credential in the tool, never here.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="s-cwd">working directory</label>
@@ -2645,26 +2515,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         </div>
       </div>
       <div class="field span">
-        <label class="eyebrow" for="s-args">arguments</label>
+        <label class="eyebrow" for="s-args">arguments
+          <span class="help" tabindex="0" data-tip="One per line, never split by atrium. A path with a space in it is one line and stays one argument.">?</span></label>
         <textarea id="s-args" rows="3" spellcheck="false"
           placeholder="-NoProfile&#10;-File&#10;D:/git/github/you/atrium/scripts/sources/github-assigned.ps1"></textarea>
-        <span class="hintline">One per line, never split by atrium. A path with a space in it is
-          one line and stays one argument.</span>
       </div>
     </section>
     <section class="dlg-sec">
       <div class="dlg-sec-h">when it runs</div>
       <div class="field">
-        <label class="eyebrow" for="s-interval">how often, in seconds</label>
+        <label class="eyebrow" for="s-interval">how often, in seconds
+          <span class="help" tabindex="0" data-tip="There is no good default. A review request is stale in an hour, a CI failure is worth knowing in five minutes, and a queue somebody is paid to watch does not want a second watcher. Thirty seconds is the floor.">?</span></label>
         <input type="number" id="s-interval" min="30" step="30" value="900">
-        <span class="hintline">There is no good default. A review request is stale in an hour, a
-          CI failure is worth knowing in five minutes, and a queue somebody is paid to watch does
-          not want a second watcher. Thirty seconds is the floor.</span>
       </div>
       <div class="field">
-        <label class="check"><input type="checkbox" id="s-enabled"> run it on the timer</label>
-        <span class="hintline">Off keeps the definition without the behavior. You can still run
-          it by hand, which is how to test one before turning it on.</span>
+        <label class="check"><input type="checkbox" id="s-enabled"> run it on the timer <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Off keeps the definition without the behavior. You can still run it by hand, which is how to test one before turning it on.">?</span></label>
       </div>
       <div class="field" id="s-status-field" hidden>
         <label class="eyebrow">last run</label>
@@ -2693,106 +2558,89 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">what it matches</div>
       <div class="field">
-        <label class="eyebrow" for="r-id">id</label>
+        <label class="eyebrow" for="r-id">id
+          <span class="help" tabindex="0" data-tip="Used in the log and in an export. Cannot be changed later.">?</span></label>
         <input type="text" id="r-id" spellcheck="false" placeholder="github-pull-request">
-        <span class="hintline">Used in the log and in an export. Cannot be changed later.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-label">what to call this kind of thing</label>
+        <label class="eyebrow" for="r-label">what to call this kind of thing
+          <span class="help" tabindex="0" data-tip="Shown when a url matches, so you can tell which row answered.">?</span></label>
         <input type="text" id="r-label" spellcheck="false" placeholder="github pull request">
-        <span class="hintline">Shown when a url matches, so you can tell which row answered.</span>
       </div>
       <div class="field span">
-        <label class="eyebrow" for="r-pattern">pattern</label>
+        <label class="eyebrow" for="r-pattern">pattern
+          <span class="help" tabindex="0" data-tip="A Go regular expression with named groups. The names become the variables every template below reads. host, org and repo also go onto the card as themselves, which is how two forks of one repository stop landing in the same pile. Refused if it does not compile.">?</span></label>
         <input type="text" id="r-pattern" spellcheck="false"
           placeholder="^https?://(?P&lt;host&gt;github\.com)/(?P&lt;org&gt;[^/]+)/(?P&lt;repo&gt;[^/]+)/pull/(?P&lt;num&gt;\d+)">
-        <span class="hintline">A Go regular expression with named groups. The names become the
-          variables every template below reads. <code>host</code>, <code>org</code> and
-          <code>repo</code> also go onto the card as themselves, which is how two forks of one
-          repository stop landing in the same pile. Refused if it does not compile.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-rank">rank</label>
+        <label class="eyebrow" for="r-rank">rank
+          <span class="help" tabindex="0" data-tip="Lowest first, and this is the dispatch rather than decoration. A pull request url also matches a generic &ldquo;any repository&rdquo; pattern, so the specific row has to be asked first. Leave the shrug at the bottom: a url that matches nothing specific is still worth a dialog.">?</span></label>
         <input type="number" id="r-rank" step="10" value="100">
-        <span class="hintline">Lowest first, and this is the dispatch rather than decoration.
-          A pull request url also matches a generic &ldquo;any repository&rdquo; pattern, so the
-          specific row has to be asked first. Leave the shrug at the bottom: a url that matches
-          nothing specific is still worth a dialog.</span>
       </div>
       <div class="field">
-        <label class="check"><input type="checkbox" id="r-enabled"> ask this row when a url is pasted</label>
-        <span class="hintline">Off keeps the row without the behaviour.</span>
+        <label class="check"><input type="checkbox" id="r-enabled"> ask this row when a url is pasted <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Off keeps the row without the behaviour.">?</span></label>
       </div>
     </section>
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">the card it makes</div>
       <div class="field span">
-        <label class="eyebrow" for="r-cwd">working directory</label>
+        <label class="eyebrow" for="r-cwd">working directory
+          <span class="help" tabindex="0" data-tip="A template. ATRIUM NEVER CREATES IT: where it is not there, the dialog says so and you make it with whatever makes worktrees here.">?</span></label>
         <input type="text" id="r-cwd" spellcheck="false" placeholder="d:/worktrees/{org}/{repo}/pr-{num}">
-        <span class="hintline">A template. ATRIUM NEVER CREATES IT: where it is not there, the
-          dialog says so and you make it with whatever makes worktrees here.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="r-title">title</label>
         <input type="text" id="r-title" spellcheck="false" placeholder="{org}/{repo}#{num} {title}">
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-tags">tags</label>
+        <label class="eyebrow" for="r-tags">tags
+          <span class="help" tabindex="0" data-tip="A template, comma separated.">?</span></label>
         <input type="text" id="r-tags" spellcheck="false" placeholder="pull-request,{repo}">
-        <span class="hintline">A template, comma separated.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-branch">branch</label>
+        <label class="eyebrow" for="r-branch">branch
+          <span class="help" tabindex="0" data-tip="Recorded on the card. A url rarely says which branch, so this is usually something the fetch command below worked out.">?</span></label>
         <input type="text" id="r-branch" spellcheck="false" placeholder="{branch}">
-        <span class="hintline">Recorded on the card. A url rarely says which branch, so this is
-          usually something the fetch command below worked out.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-window">window</label>
+        <label class="eyebrow" for="r-window">window
+          <span class="help" tabindex="0" data-tip="Which pile the card lands in, and what the board groups by.">?</span></label>
         <input type="text" id="r-window" spellcheck="false" placeholder="pull-requests">
-        <span class="hintline">Which pile the card lands in, and what the board groups by.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="r-theme">theme</label>
         <input type="text" id="r-theme" spellcheck="false" placeholder="optional">
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-kind">what to call the source</label>
+        <label class="eyebrow" for="r-kind">what to call the source
+          <span class="help" tabindex="0" data-tip="Recorded as where the work came from and drawn as a badge. Atrium never interprets it.">?</span></label>
         <input type="text" id="r-kind" spellcheck="false" placeholder="github">
-        <span class="hintline">Recorded as where the work came from and drawn as a badge. Atrium
-          never interprets it.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-default-repo">default repo</label>
+        <label class="eyebrow" for="r-default-repo">default repo
+          <span class="help" tabindex="0" data-tip="host/org/repo, empty for a scratch folder. Where a link that names no repo (a ticket, a topic) opens its worktree.">?</span></label>
         <input type="text" id="r-default-repo" spellcheck="false" placeholder="github.com/openziti/ziti">
-        <span class="hintline">host/org/repo, empty for a scratch folder. Where a link that names no
-          repo (a ticket, a topic) opens its worktree.</span>
       </div>
       <div class="field span">
-        <label class="eyebrow" for="r-prompt">first instruction</label>
+        <label class="eyebrow" for="r-prompt">first instruction
+          <span class="help" tabindex="0" data-tip="The one field a newline belongs in, so an issue body can be dropped into it whole.">?</span></label>
         <textarea id="r-prompt" rows="3" spellcheck="false"
           placeholder="review the pull request at {url}"></textarea>
-        <span class="hintline">The one field a newline belongs in, so an issue body can be dropped
-          into it whole.</span>
       </div>
     </section>
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">fetching facts</div>
       <div class="field span">
-        <label class="eyebrow" for="r-fetch">fetch command</label>
+        <label class="eyebrow" for="r-fetch">fetch command
+          <span class="help" tabindex="0" data-tip="OPTIONAL, and this is the whole extensibility story. The pattern gives you an issue number; turning that into a title needs an authenticated call, and atrium does not make one. It runs this and reads a json object of facts off stdout, which every template above can then read. Put the credential in the tool: gh already has a token, in the keyring it already uses. There is nowhere here to put one.">?</span></label>
         <input type="text" id="r-fetch" spellcheck="false" placeholder="gh">
-        <span class="hintline">OPTIONAL, and this is the whole extensibility story. The pattern
-          gives you an issue number; turning that into a title needs an authenticated call, and
-          atrium does not make one. It runs this and reads a json object of facts off stdout,
-          which every template above can then read. Put the credential in the tool: gh already has
-          a token, in the keyring it already uses. There is nowhere here to put one.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="r-fetch-args">fetch arguments</label>
+        <label class="eyebrow" for="r-fetch-args">fetch arguments
+          <span class="help" tabindex="0" data-tip="One per line, templated the same way, never split by atrium. A value with a space in it stays one argument.">?</span></label>
         <textarea id="r-fetch-args" rows="3" spellcheck="false"
           placeholder="pr&#10;view&#10;{num}&#10;--repo&#10;{org}/{repo}&#10;--json&#10;title,headRefName"></textarea>
-        <span class="hintline">One per line, templated the same way, never split by atrium. A value
-          with a space in it stays one argument.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="r-fetch-cwd">fetch working directory</label>
@@ -2812,13 +2660,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
            template, paste again. It asks the SAVED table, so a more specific row
            above this one answering instead is a thing you find out here. -->
       <div class="field">
-        <label class="eyebrow" for="r-try">try a url</label>
+        <label class="eyebrow" for="r-try">try a url
+          <span class="help" tabindex="0" data-tip="Asks the whole table as it is saved, and names the row that answered. Save your edits first.">?</span></label>
         <div class="picker">
           <input type="text" id="r-try" spellcheck="false" placeholder="paste one and see what it resolves to">
           <button onclick="busyWhile(this, tryRecogniser)">try it</button>
         </div>
-        <span class="hintline">Asks the whole table as it is saved, and names the row that
-          answered. Save your edits first.</span>
         <pre class="hintline" id="r-try-out" hidden style="white-space:pre-wrap"></pre>
       </div>
     </section>
@@ -2847,72 +2694,56 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           silently orphan anything holding the old one.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="pv-kind">type</label>
+        <label class="eyebrow" for="pv-kind">type
+          <span class="help" tabindex="0" data-tip="Only git so far. It is a field rather than an assumption, so another kind is a new option here rather than a new feature.">?</span></label>
         <div class="picker"><select id="pv-kind"><option value="git">git</option></select></div>
-        <span class="hintline">Only git so far. It is a field rather than an assumption, so another
-          kind is a new option here rather than a new feature.</span>
       </div>
       <div class="field span">
-        <label class="eyebrow" for="pv-root">root folder</label>
+        <label class="eyebrow" for="pv-root">root folder
+          <span class="help" tabindex="0" data-tip="The directory your orgs live under, so a repository is root/org/repo. One sitting straight under the root with no org above it works too. A root that is not there yet saves fine, because a drive can be unplugged, and atrium never creates it: a typo would become a directory and then look like an empty provider.">?</span></label>
         <div class="picker">
           <input type="text" id="pv-root" spellcheck="false" placeholder="d:/git/github">
           <button onclick="browseInto('pv-root')">browse</button>
         </div>
-        <span class="hintline">The directory your orgs live under, so a repository is
-          <code>root/org/repo</code>. One sitting straight under the root with no org above it works
-          too. A root that is not there yet saves fine, because a drive can be unplugged, and atrium
-          never creates it: a typo would become a directory and then look like an empty provider.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="pv-host">host</label>
+        <label class="eyebrow" for="pv-host">host
+          <span class="help" tabindex="0" data-tip="Optional, and it is how an org and a repo turn back into a url. Empty means this provider is local only, which is a real arrangement.">?</span></label>
         <input type="text" id="pv-host" spellcheck="false" placeholder="github.com">
-        <span class="hintline">Optional, and it is how an org and a repo turn back into a url.
-          Empty means this provider is local only, which is a real arrangement.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="pv-max">how many to adopt at most</label>
+        <label class="eyebrow" for="pv-max">how many to adopt at most
+          <span class="help" tabindex="0" data-tip="Empty is 400 and the ceiling is 2000. Per provider, because one root holding five repositories beside one holding four hundred is the ordinary case.">?</span></label>
         <input type="number" id="pv-max" step="50" placeholder="400">
-        <span class="hintline">Empty is 400 and the ceiling is 2000. Per provider, because one root
-          holding five repositories beside one holding four hundred is the ordinary case.</span>
       </div>
     </section>
     <section class="dlg-sec">
       <div class="dlg-sec-h">worktrees</div>
       <div class="field">
         <label class="check"><input type="checkbox" id="pv-worktrees" onchange="paintProviderForm()">
-          worktree support</label>
-        <span class="hintline">Gives this provider a folder to put worktrees in, and a make button
-          on every repository. <b>It cannot be turned off while that folder holds anything</b>, since
-          that would leave checkouts on disk with nothing describing them.</span>
+          worktree support <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Gives this provider a folder to put worktrees in, and a make button on every repository. It cannot be turned off while that folder holds anything, since that would leave checkouts on disk with nothing describing them.">?</span></label>
       </div>
       <div class="field" id="pv-wt-field" hidden>
-        <label class="eyebrow" for="pv-worktree-root">worktree folder</label>
+        <label class="eyebrow" for="pv-worktree-root">worktree folder
+          <span class="help" tabindex="0" data-tip="Worktrees land at folder/org/repo/branch. The check button asks whether it is empty enough to turn the toggle off, without saving anything.">?</span></label>
         <div class="picker">
           <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="d:/worktrees/github">
           <button onclick="browseInto('pv-worktree-root')">browse</button>
           <button onclick="busyWhile(this, checkWorktreeRoot)">check</button>
         </div>
-        <span class="hintline">Worktrees land at <code>folder/org/repo/branch</code>. The check
-          button asks whether it is empty enough to turn the toggle off, without saving anything.</span>
         <pre class="hintline" id="pv-blockers" hidden style="white-space:pre-wrap"></pre>
       </div>
     </section>
     <section class="dlg-sec">
       <div class="dlg-sec-h">what it adopts</div>
       <div class="field">
-        <label class="eyebrow" for="pv-exclude">never adopt</label>
+        <label class="eyebrow" for="pv-exclude">never adopt
+          <span class="help" tabindex="0" data-tip="One glob per line, matched against the path under the root. Keeps a read-only mirror from burning the limit and filling the picker. This is &ldquo;never adopt these&rdquo;, where hide on a row is &ldquo;I adopted this and do not want it&rdquo;.">?</span></label>
         <textarea id="pv-exclude" rows="3" spellcheck="false"
           placeholder="archive&#10;.trash&#10;mirrors/*"></textarea>
-        <span class="hintline">One glob per line, matched against the path under the root. Keeps a
-          read-only mirror from burning the limit and filling the picker. This is
-          &ldquo;never adopt these&rdquo;, where <b>hide</b> on a row is &ldquo;I adopted this and
-          do not want it&rdquo;.</span>
       </div>
       <div class="field">
-        <label class="check"><input type="checkbox" id="pv-enabled"> use this provider</label>
-        <span class="hintline">Off keeps every row and contributes nothing to the picker. It is what
-          to do about a drive that is not plugged in, rather than deleting the provider and throwing
-          away everything you typed.</span>
+        <label class="check"><input type="checkbox" id="pv-enabled"> use this provider <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Off keeps every row and contributes nothing to the picker. It is what to do about a drive that is not plugged in, rather than deleting the provider and throwing away everything you typed.">?</span></label>
       </div>
       <div class="field" id="pv-scan-field" hidden>
         <label class="eyebrow">last look</label>
@@ -2938,15 +2769,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec dlg-grid">
     <div class="dlg-sec-h">what it runs</div>
     <div class="field">
-      <label class="eyebrow" for="f-label">what to call it</label>
+      <label class="eyebrow" for="f-label">what to call it
+        <span class="help" tabindex="0" data-tip="Shown on the card. Empty uses the directory name.">?</span></label>
       <input type="text" id="f-label" spellcheck="false" placeholder="dotfiles">
-      <span class="hintline">Shown on the card. Empty uses the directory name.</span>
     </div>
     <div class="field">
-      <label class="eyebrow" for="f-harness">runner</label>
+      <label class="eyebrow" for="f-harness">runner
+        <span class="help" tabindex="0" data-tip="A plain shell is a runner like any other, which is how &ldquo;always give me a terminal on this machine&rdquo; is said without a special case.">?</span></label>
       <div class="picker"><select id="f-harness"></select></div>
-      <span class="hintline">A plain shell is a runner like any other, which is how
-        &ldquo;always give me a terminal on this machine&rdquo; is said without a special case.</span>
     </div>
     <div class="field span">
       <label class="eyebrow" for="f-cwd">working directory</label>
@@ -2959,7 +2789,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec">
     <div class="dlg-sec-h">how it starts</div>
     <div class="field">
-      <label class="eyebrow" for="f-theme">theme</label>
+      <label class="eyebrow" for="f-theme">theme
+        <span class="help" tabindex="0" data-tip="What the terminal looks like. Empty lets the project choose. To see one against real output, start it and use the cog on the terminal bar.">?</span></label>
       <div class="picker">
         <!-- A SELECT, not a datalist, and the reason is written up under
              "Picking a terminal theme is the worst control on the board".
@@ -2972,24 +2803,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
              there is nothing to preview against and a plain list is right. -->
         <select id="f-theme"></select>
       </div>
-      <span class="hintline">What the terminal looks like. Empty lets the project choose. To see one
-        against real output, start it and use the cog on the terminal bar.</span>
     </div>
     <div class="field">
       <div class="picker">
-        <label class="check"><input type="checkbox" id="f-resume"> resume a conversation</label>
+        <label class="check"><input type="checkbox" id="f-resume"> resume a conversation <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Off starts fresh every time, which is what a plain shell wants. The latest one is what a fixture usually means: give me back the terminal I had. The one it started last time pins it to a single conversation, which goes stale as soon as anything else runs in that directory and points at nothing once that transcript is deleted. Turning off &ldquo;starts with atrium&rdquo; keeps the definition without the behavior.">?</span></label>
         <select id="f-resume-mode">
           <option value="latest">the latest one in that directory</option>
           <option value="card">the one this fixture started last time</option>
         </select>
         <label class="check"><input type="checkbox" id="f-enabled"> starts with atrium</label>
       </div>
-      <span class="hintline">Off starts fresh every time, which is what a plain shell wants.
-        <b>The latest one</b> is what a fixture usually means: give me back the terminal I had.
-        <b>The one it started last time</b> pins it to a single conversation, which goes stale as
-        soon as anything else runs in that directory and points at nothing once that transcript is
-        deleted. Turning off &ldquo;starts with atrium&rdquo; keeps the definition without the
-        behavior.</span>
     </div>
     </section>
   </div>
@@ -3018,7 +2841,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
   <div class="dlg-body">
     <div class="field dlg-sec">
-      <label class="eyebrow" for="th-import">bring one from windows terminal</label>
+      <label class="eyebrow" for="th-import">bring one from windows terminal
+        <span class="help" tabindex="0" data-tip="Paste your whole settings.json, or just its schemes array, or one scheme out of it. Comments and a trailing comma are fine: that is what the file Windows Terminal writes actually looks like. Names become atrium names, so One Half Dark arrives as one-half-dark. Windows Terminal calls magenta purple and atrium moves it to the right slot for you.">?</span></label>
       <textarea id="th-import" spellcheck="false" rows="4"
         placeholder='{"name": "Campbell", "background": "#0C0C0C", ... }'></textarea>
       <div class="picker">
@@ -3027,11 +2851,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button class="go" onclick="busyWhile(this, bringThemes)">import</button>
         <label class="check"><input type="checkbox" id="th-force"> replace ones already here</label>
       </div>
-      <span class="hintline">Paste your whole <b>settings.json</b>, or just its <b>schemes</b> array,
-        or one scheme out of it. Comments and a trailing comma are fine: that is what the file
-        Windows Terminal writes actually looks like. Names become atrium names, so
-        <b>One Half Dark</b> arrives as <b>one-half-dark</b>. Windows Terminal calls magenta
-        <b>purple</b> and atrium moves it to the right slot for you.</span>
     </div>
 
     <section class="dlg-sec">
@@ -3039,7 +2858,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field">
       <div class="picker">
         <select id="th-pick" onchange="editTheme(this.value)"></select>
-        <label class="eyebrow" for="th-name">saved as</label>
+        <label class="eyebrow" for="th-name">saved as
+          <span class="help" tabindex="0" data-tip="Pick a theme to load its colours, then change the name to keep a copy under a new one. Saving under a name atrium ships shadows it: every card set to that name gets yours, on every browser and on your phone. Deleting yours puts the shipped one back. Deleting a theme cards are wearing leaves them on their project's colour.">?</span></label>
         <input type="text" id="th-name" spellcheck="false" style="max-width:220px"
           placeholder="my-dracula">
         <button class="go" onclick="busyWhile(this, saveTheme, 'saving…')">save</button>
@@ -3049,10 +2869,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
            about to do it. Saving under a shipped theme's name is allowed
            because it is what somebody wants when they say "your dracula is
            wrong", and deleting the copy is the whole of putting it back. -->
-      <span class="hintline">Pick a theme to load its colours, then change the name to keep a copy
-        under a new one. Saving under a name atrium ships <b>shadows</b> it: every card set to that
-        name gets yours, on every browser and on your phone. Deleting yours puts the shipped one
-        back. Deleting a theme cards are wearing leaves them on their project's colour.</span>
     </div>
     <div class="thgrid" id="th-colours"></div>
     <div class="field" style="margin-top:var(--vs-4)">
@@ -3076,9 +2892,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">what it is</div>
       <div class="field">
-        <label class="eyebrow" for="h-id">id</label>
+        <label class="eyebrow" for="h-id">id
+          <span class="help" tabindex="0" data-tip="short and lowercase. cannot be changed later.">?</span></label>
         <input type="text" id="h-id" spellcheck="false" placeholder="codex">
-        <span class="hintline">short and lowercase. cannot be changed later.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="h-label">label</label>
@@ -3089,11 +2905,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input type="text" id="h-cmd" spellcheck="false" placeholder="codex">
       </div>
       <div class="field">
-        <label class="eyebrow" for="h-package">npm package</label>
+        <label class="eyebrow" for="h-package">npm package
+          <span class="help" tabindex="0" data-tip="so atrium can say a newer one is published, just before it starts this runner. read off disk and from the registry, never by running the runner to ask. leave it empty for anything a platform installer put there, which has no version atrium can check.">?</span></label>
         <input type="text" id="h-package" spellcheck="false" placeholder="@anthropic-ai/claude-code">
-        <span class="hintline">so atrium can say a newer one is published, just before it starts this
-          runner. read off disk and from the registry, never by running the runner to ask. leave it
-          empty for anything a platform installer put there, which has no version atrium can check.</span>
       </div>
       <div class="field span">
         <label class="eyebrow" for="h-notes">notes</label>
@@ -3103,18 +2917,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">how it starts</div>
       <div class="field">
-        <label class="eyebrow" for="h-args">arguments, one per line</label>
+        <label class="eyebrow" for="h-args">arguments, one per line
+          <span class="help" tabindex="0" data-tip="one per line, not one line. an argument with a space in it stays whole this way.">?</span></label>
         <textarea id="h-args" rows="3" spellcheck="false"
           placeholder="--dangerously-skip-permissions&#10;--model&#10;sonnet"></textarea>
-        <span class="hintline">one per line, not one line. an argument with a space in it stays whole
-          this way.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="h-resume">resume arguments, one per line</label>
+        <label class="eyebrow" for="h-resume">resume arguments, one per line
+          <span class="help" tabindex="0" data-tip="used instead of the arguments above when picking a conversation back up. put {resume} where the session id goes.">?</span></label>
         <textarea id="h-resume" rows="2" spellcheck="false"
           placeholder="--resume&#10;{resume}"></textarea>
-        <span class="hintline">used instead of the arguments above when picking a conversation back up.
-          put <code>{resume}</code> where the session id goes.</span>
       </div>
       <div class="field">
         <label class="eyebrow" for="h-fork">fork arguments, one per line <span class="help" tabindex="0"
@@ -3124,92 +2936,72 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <!-- Opening prompt arguments. Empty means the runner cannot accept a prompt. -->
       <div class="field">
-        <label class="eyebrow" for="h-prompt">prompt arguments, one per line</label>
+        <label class="eyebrow" for="h-prompt">prompt arguments, one per line
+          <span class="help" tabindex="0" data-tip="appended when a launch supplies an opening prompt. put {prompt} where the text goes. leave empty for a runner that cannot take one.">?</span></label>
         <textarea id="h-prompt" rows="2" spellcheck="false"
           placeholder="{prompt}"></textarea>
-        <span class="hintline">appended when a launch supplies an opening prompt. put
-          <code>{prompt}</code> where the text goes. leave empty for a runner that cannot take one.</span>
       </div>
       <!-- How this runner is told which model to use. Empty means it cannot be
            asked for one, which is right for a shell, and a launch that names a
            model for it is refused rather than started on the default. -->
       <div class="field">
-        <label class="eyebrow" for="h-model">model arguments, one per line</label>
+        <label class="eyebrow" for="h-model">model arguments, one per line
+          <span class="help" tabindex="0" data-tip="appended when a launch names a model. put {model} where the name goes. leave empty for a runner that has no model.">?</span></label>
         <textarea id="h-model" rows="2" spellcheck="false"
           placeholder="--model&#10;{model}"></textarea>
-        <span class="hintline">appended when a launch names a model. put <code>{model}</code> where
-          the name goes. leave empty for a runner that has no model.</span>
       </div>
       <!-- Thinking effort, the same shape as the model. Empty means a launch that
            asks for one is refused. -->
       <div class="field">
-        <label class="eyebrow" for="h-effort">effort arguments, one per line</label>
+        <label class="eyebrow" for="h-effort">effort arguments, one per line
+          <span class="help" tabindex="0" data-tip="appended when a launch names an effort. put {effort} where the level goes. codex takes -c and model_reasoning_effort={effort}.">?</span></label>
         <textarea id="h-effort" rows="2" spellcheck="false"
           placeholder="--effort&#10;{effort}"></textarea>
-        <span class="hintline">appended when a launch names an effort. put <code>{effort}</code> where
-          the level goes. codex takes <code>-c</code> and <code>model_reasoning_effort={effort}</code>.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="h-model-env">model and effort by environment</label>
+        <label class="eyebrow" for="h-model-env">model and effort by environment
+          <span class="help" tabindex="0" data-tip="for a runner that reads them from a variable instead of a flag. the launch sets the named variable to what was asked for.">?</span></label>
         <input type="text" id="h-model-env" spellcheck="false" placeholder="model env var, if any">
         <input type="text" id="h-effort-env" spellcheck="false" placeholder="effort env var, if any">
-        <span class="hintline">for a runner that reads them from a variable instead of a flag. the
-          launch sets the named variable to what was asked for.</span>
       </div>
     </section>
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">its terminal</div>
       <div class="field">
-        <label class="eyebrow">launch mode</label>
+        <label class="eyebrow">launch mode
+          <span class="help" tabindex="0" data-tip="atrium-owned means you can attach to it in the browser, type into it, and stop it. it also dies when the daemon does, so resuming is how you get it back.">?</span></label>
         <div class="seg" id="h-mode">
           <button data-v="window">own terminal window</button>
           <button class="on" data-v="pty">atrium owns it</button>
         </div>
-        <span class="hintline">atrium-owned means you can attach to it in the browser, type into it, and
-          stop it. it also dies when the daemon does, so resuming is how you get it back.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="h-exit">how to exit, one key per line</label>
+        <label class="eyebrow" for="h-exit">how to exit, one key per line
+          <span class="help" tabindex="0" data-tip="Sent in order when you press exit on its terminal, or when the card is paused. ctrl-c, ctrl-d, ctrl-z, esc, enter, or any text to type. claude wants ctrl-d twice, ollama and codex once, a shell wants exit.">?</span></label>
         <textarea id="h-exit" rows="2" spellcheck="false"
           placeholder="ctrl-d&#10;ctrl-d"></textarea>
-        <span class="hintline">Sent in order when you press <b>exit</b> on its terminal, or when the
-          card is paused. <code>ctrl-c</code>, <code>ctrl-d</code>, <code>ctrl-z</code>,
-          <code>esc</code>, <code>enter</code>, or any text to type. claude wants
-          <code>ctrl-d</code> twice, ollama and codex once, a shell wants <code>exit</code>.</span>
       </div>
       <!-- Persist paste support because the startup enable sequence can leave scrollback. -->
       <div class="field">
         <label class="check">
           <input type="checkbox" id="h-bracket">
-          <span>this runner asks for bracketed paste</span>
+          <span>this runner asks for bracketed paste <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="tick it for a terminal user interface that turns bracketed paste on for its whole run, which claude and codex both do. a paste is then delivered as one paste rather than as a line per newline, however long the session has been going. leave it off for a shell, and for anything that would print 200~ on screen instead.">?</span></span>
         </label>
-        <span class="hintline">tick it for a terminal user interface that turns bracketed paste on for
-          its whole run, which claude and codex both do. a paste is then delivered as one paste rather
-          than as a line per newline, however long the session has been going. leave it off for a
-          shell, and for anything that would print <code>200~</code> on screen instead.</span>
       </div>
       <!-- Whether a message may be typed in while the runner is working. Seeded
            from the runner profile. Off means every message waits for the turn. -->
       <div class="field">
         <label class="check">
           <input type="checkbox" id="h-midturn">
-          <span>this runner takes typed input mid-turn</span>
+          <span>this runner takes typed input mid-turn <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="tick it for a runner that reads a line typed while it is working at its next step, which claude and codex both do. a message sent immediately is then typed in as soon as the input line is empty, even mid-turn. leave it off and every message to this runner waits for its turn to end.">?</span></span>
         </label>
-        <span class="hintline">tick it for a runner that reads a line typed while it is working at its
-          next step, which claude and codex both do. a message sent <b>immediately</b> is then typed in
-          as soon as the input line is empty, even mid-turn. leave it off and every message to this
-          runner waits for its turn to end.</span>
       </div>
       <!-- Whether a line typed mid-turn only lands in the runner's own queued box. Seeded from the runner profile. -->
       <div class="field">
         <label class="check">
           <input type="checkbox" id="h-queuesmid">
-          <span>this runner queues a line typed mid-turn</span>
+          <span>this runner queues a line typed mid-turn <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="tick it for a runner that puts a line typed while it is working in its own queued-message box and reads it later, which claude does. atrium then never types into it mid-turn: the message waits for its next tool call or the end of its turn, and the sender is told queued. leave it off for a runner that reads typed input as it arrives, like codex.">?</span></span>
         </label>
-        <span class="hintline">tick it for a runner that puts a line typed while it is working in its own
-          queued-message box and reads it later, which claude does. atrium then never types into it
-          mid-turn: the message waits for its next tool call or the end of its turn, and the sender is told
-          <code>queued</code>. leave it off for a runner that reads typed input as it arrives, like codex.</span>
       </div>
     </section>
     <section class="dlg-sec dlg-grid">
@@ -3243,20 +3035,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input type="text" id="h-login-fix" spellcheck="false" placeholder="claude auth login">
       </div>
       <div class="field">
-        <label class="eyebrow" for="h-prepare">prepare</label>
+        <label class="eyebrow" for="h-prepare">prepare
+          <span class="help" tabindex="0" data-tip="A shell command run before this runner starts, in the same directory. Whatever it leaves in the environment, the runner gets. This is how a shell function that puts a toolchain on PATH reaches an agent started from here. Your profile is loaded, so your own functions are available.">?</span></label>
         <textarea id="h-prepare" rows="2" spellcheck="false"
           placeholder="add-clion_tools"></textarea>
-        <span class="hintline">A shell command run before this runner starts, in the same directory.
-          Whatever it leaves in the environment, the runner gets. This is how a shell function that
-          puts a toolchain on <code>PATH</code> reaches an agent started from here. Your profile is
-          loaded, so your own functions are available.</span>
       </div>
       <div class="field">
-        <label class="eyebrow" for="h-env">environment, one KEY=value per line</label>
+        <label class="eyebrow" for="h-env">environment, one KEY=value per line
+          <span class="help" tabindex="0" data-tip="added to whatever the daemon passes on. atrium already strips the markers of the session it was started from.">?</span></label>
         <textarea id="h-env" rows="2" spellcheck="false"
           placeholder="ATRIUM_PERM_GATE=on&#10;NO_COLOR=1"></textarea>
-        <span class="hintline">added to whatever the daemon passes on. atrium already strips the
-          markers of the session it was started from.</span>
       </div>
     </section>
   </div>
@@ -3378,7 +3166,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field" id="l-home-field">
       <label class="check">
         <input type="checkbox" id="l-home-on">
-        <span>new home</span>
+        <span>new home <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Atrium makes a folder for this card under the room's card root and starts here. With a repo it adds a worktree on a new branch inside it. When the card is culled and its work is pushed or landed, the whole folder is removed.">?</span></span>
       </label>
       <div class="picker" id="l-home-fields" hidden>
         <input type="text" id="l-home-repo" spellcheck="false" aria-label="repo of the new home"
@@ -3386,29 +3174,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input type="text" id="l-home-branch" spellcheck="false" aria-label="branch of the new home"
           placeholder="branch (optional)">
       </div>
-      <span class="hintline">Atrium makes a folder for this card under the room's card root and starts here. With a repo
-        it adds a worktree on a new branch inside it. When the card is culled and its work is pushed or landed, the whole
-        folder is removed.</span>
     </div>
     <!-- A LINK'S WORK IS MADE ON DISK (a worktree, maybe a clone, claude/* branches), and this is the way to have it
          taken away again. Shown for a link only. Wired to the card's own close (js/sharing.js, cleanupWhenDone). -->
     <div class="field" id="l-cleanup-field" hidden>
       <label class="check">
         <input type="checkbox" id="l-cleanup-on">
-        <span>clean up when the work is done</span>
+        <span>clean up when the work is done <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="When the card is done, atrium offers to close it, and closing deletes what it made: the worktree, a clone it had to make and its claude/* branches here and on the hub, and the space comes back. You are shown what goes first, and a worktree with work nowhere else is asked about.">?</span></span>
       </label>
-      <span class="hintline">When the card is done, atrium offers to close it, and closing deletes what it made:
-        the worktree, a clone it had to make and its claude/* branches here and on the hub, and the space comes
-        back. You are shown what goes first, and a worktree with work nowhere else is asked about.</span>
     </div>
     <!-- Only for a link that names no repo, a ticket or a topic. The open makes a worktree of the repo picked here, or
          a scratch folder of the card's own for "no repo". Nothing is read off the ticket to choose it. Filled by
          fillLaunchRepo in js/fixtures.js. -->
     <div class="field" id="l-repo-field" hidden>
-      <label class="eyebrow" for="l-repo">repo</label>
+      <label class="eyebrow" for="l-repo">repo
+        <span class="help" tabindex="0" data-tip="The worktree opens in this repo. No repo starts the card in an empty folder of its own.">?</span></label>
       <select id="l-repo"></select>
-      <span class="hintline">The worktree opens in this repo. No repo starts the card in an empty
-        folder of its own.</span>
     </div>
     <!-- WITH THE DIRECTORY, because it is an answer to the directory question
          rather than an option about something else: ticking it says "I am not
@@ -3555,10 +3336,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <input type="text" id="dp-room" spellcheck="false" placeholder="the name that machine reports itself under">
     </div>
     <div class="field">
-      <label class="eyebrow" for="dp-runner">runner</label>
+      <label class="eyebrow" for="dp-runner">runner
+        <span class="help" tabindex="0" data-tip="Named as THAT machine names it. This board's runner list says nothing about what is configured over there, so it is typed rather than picked.">?</span></label>
       <input type="text" id="dp-runner" spellcheck="false" value="claude">
-      <span class="hintline">Named as THAT machine names it. This board's runner list says
-        nothing about what is configured over there, so it is typed rather than picked.</span>
     </div>
     <div class="field span">
       <label class="eyebrow" for="dp-dir">working directory</label>
@@ -3663,10 +3443,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
    <div class="dlg-cols">
    <div class="dlg-main">
     <div class="field">
-      <label class="eyebrow" for="d-why">why am I doing this</label>
+      <label class="eyebrow" for="d-why">why am I doing this
+        <span class="help" tabindex="0" data-tip="Kept as soon as you leave the field. Nothing in here waits for a button.">?</span></label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
-      <span class="hintline">Kept as soon as you leave the field. Nothing in here waits for a
-        button.</span>
     </div>
     <!-- WHAT IT IS STOPPED ON. The stack row and the card both draw this and
          the dialog did not, so opening the card to answer a question took the
@@ -3722,11 +3501,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          the box rather than below it, because the whole point is not opening
          the box. -->
     <div class="field" id="d-actions-field" hidden>
-      <label class="eyebrow">do this</label>
+      <label class="eyebrow">do this
+        <span class="help" tabindex="0" data-tip="Your own, edited under rooms &rsaquo; actions. Each one is a prompt sent the same way as anything else you say, and the ones marked and exit ask the runner to quit afterwards.">?</span></label>
       <div class="toolbar" id="d-actions"></div>
-      <span class="hintline">Your own, edited under rooms &rsaquo; actions. Each one is a prompt sent the
-        same way as anything else you say, and the ones marked <b>and exit</b> ask the runner to
-        quit afterwards.</span>
     </div>
     <!-- Saying something to a session that is already running. There is no
          channel into a claude process from outside, so this goes one of two
@@ -3841,7 +3618,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          docs/runtime/context-cycle-design.md. -->
     <section class="dlg-sec" id="d-ctx-sec">
     <div class="field">
-      <label class="eyebrow">context cycle</label>
+      <label class="eyebrow">context cycle
+        <span class="help" tabindex="0" data-tip="Past the limit atrium asks the agent to write a handoff and run atrium ready, then clears it and has it read the handoff back. Empty uses the hub's limit for its harness, from settings.">?</span></label>
       <label class="check"><input type="checkbox" id="d-ctx-cycle" onchange="saveCardCycle()">
         cycle this card's context at its limit</label>
       <div class="picker">
@@ -3852,9 +3630,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           data-tip="remove this card's own limit, so the hub's applies again">clear</button>
       </div>
       <span class="hintline" id="d-ctx-now"></span>
-      <span class="hintline">Past the limit atrium asks the agent to write a handoff and run
-        <code>atrium ready</code>, then clears it and has it read the handoff back. Empty uses the hub's limit
-        for its harness, from settings.</span>
     </div>
     </section>
     <!-- What you call this, as opposed to what atrium worked out from the
@@ -3862,12 +3637,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          work exist. -->
     <section class="dlg-sec">
     <div class="field">
-      <label class="eyebrow" for="d-tags">tags</label>
+      <label class="eyebrow" for="d-tags">tags
+        <span class="help" tabindex="0" data-tip="Comma separated. Group and sort by these, and click one on a card to see only that. Lower cased, so Lab and lab stay one tag.">?</span></label>
       <input type="text" id="d-tags" spellcheck="false"
         placeholder="lab, discourse, prs, tangent">
-      <span class="hintline">Comma separated. Group and sort by these, and click one on a
-        card to see only that. Lower cased, so <code>Lab</code> and <code>lab</code> stay one
-        tag.</span>
       <div id="d-tag-known" class="tagsuggest"></div>
     </div>
     </section>
@@ -3876,20 +3649,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          for the same reason: knowing which agent it was without looking only
          works if the answer is the same tomorrow and in another browser. -->
     <div class="field">
-      <label class="eyebrow" for="d-sound">its bell</label>
+      <label class="eyebrow" for="d-sound">its bell
+        <span class="help" tabindex="0" data-tip="Rings instead of the board's tone whenever this one card wants you, whether that is a permission or the end of a turn. Which agent is the thing you cannot work out with your back turned, so it wins over telling the two kinds apart.">?</span></label>
       <div class="picker">
         <select id="d-sound"></select>
         <button onclick="previewCardSound()" data-tip="hear it">play</button>
       </div>
-      <span class="hintline">Rings instead of the board's tone whenever this one card wants you, whether
-        that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
-        back turned, so it wins over telling the two kinds apart.</span>
     </div>
     <!-- The mark this card wears on a desktop notification. Beside the bell,
          because it answers the same question in the other sense: one is which
          agent when you cannot see, the other is which agent when you can. -->
     <div class="field">
-      <label class="eyebrow" for="d-icon">its mark</label>
+      <label class="eyebrow" for="d-icon">its mark
+        <span class="help" tabindex="0" data-tip="One character, or an emoji. Drawn on desktop notifications from this card. Windows renders it small, so a single bold glyph reads and a word does not.">?</span></label>
       <div class="picker">
         <input id="d-icon" maxlength="16" spellcheck="false"
           placeholder="empty means the atrium mark">
@@ -3903,8 +3675,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           data-tip="png, jpeg, gif, webp or svg">use a picture</button>
         <button class="no" id="d-icon-clear" onclick="busyWhile(this, clearIcon, 'removing…')" hidden>back to a glyph</button>
       </div>
-      <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
-        Windows renders it small, so a single bold glyph reads and a word does not.</span>
     </div>
     </section>
    </aside>

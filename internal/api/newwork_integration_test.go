@@ -37,7 +37,21 @@ func newNewWorkHarness(t *testing.T) *newWorkHarness {
 	if err := oh.srv.st.SetSetting(SettingWorktreeHooks, filepath.ToSlash(filepath.Join(tmp, "hooks"))); err != nil {
 		t.Fatal(err)
 	}
+	nh.runner(t, "claude", true)
 	return nh
+}
+
+// runner saves a runner this room can start, its binary the test's own, or turned off.
+func (nh *newWorkHarness) runner(t *testing.T, id string, on bool) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nh.srv.st.SaveHarness(store.Harness{ID: id, Enabled: on, Cmd: id, BinPath: filepath.ToSlash(exe),
+		LaunchMode: store.LaunchPTY}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // pushBranch puts a branch with one new commit on the origin, off its main.
@@ -314,12 +328,60 @@ func TestNewWorkWithNoRunnerStartsTheRecipesOrClaude(t *testing.T) {
 	if got := ran("no.recipe"); got != "claude" {
 		t.Errorf("with no recipe the runner is %q", got)
 	}
+	nh.runner(t, "here", true)
 	if _, err := nh.srv.st.SavePRRecipe(store.PRRecipe{Name: "default", Harness: "here", Panel: store.DefaultPRPanel,
 		WalkerBrief: "walk", BudgetUSD: 1, TurnsCap: 5}); err != nil {
 		t.Fatal(err)
 	}
 	if got := ran("a.recipe"); got != "here" {
 		t.Errorf("with a recipe the runner is %q", got)
+	}
+}
+
+// NO RUNNER THIS ROOM CAN START: the recipe's and claude are off, so another that can start takes it, and with none
+// the open names the room before any worktree is made, never unknown harness "".
+func TestNewWorkWithNoStartableRunnerNamesTheRoom(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	nh.srv.Room = "m1mini"
+	hs, err := nh.srv.st.Harnesses()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range hs {
+		h.Enabled = false
+		if _, err := nh.srv.st.SaveHarness(*h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nh.runner(t, "here", false)
+	if _, err := nh.srv.st.SavePRRecipe(store.PRRecipe{Name: "default", Harness: "here", Panel: store.DefaultPRPanel,
+		WalkerBrief: "walk", BudgetUSD: 1, TurnsCap: 5}); err != nil {
+		t.Fatal(err)
+	}
+	nh.runner(t, "other", true)
+	code, out := nh.newWork(t, map[string]any{"name": "some.runner"})
+	var in struct {
+		Harness string `json:"harness"`
+	}
+	if code != 201 || len(nh.launched) != 1 {
+		t.Fatalf("%d %v", code, out)
+	}
+	if _ = json.Unmarshal(nh.launched[0], &in); in.Harness != "other" {
+		t.Errorf("with only other startable the runner is %q", in.Harness)
+	}
+	first, _ := out["worktree"].(string)
+
+	nh.launched = nil
+	nh.runner(t, "other", false)
+	code, out = nh.newWork(t, map[string]any{"name": "no.runner"})
+	if msg, _ := out["error"].(string); code != 400 || msg != "no runner is installed and turned on on m1mini" {
+		t.Errorf("%d %v", code, out)
+	}
+	if len(nh.launched) != 0 {
+		t.Errorf("a launch went out: %s", nh.launched)
+	}
+	if _, err := os.Stat(strings.TrimSuffix(first, "some.runner") + "no.runner"); err == nil {
+		t.Error("a worktree was made for an open no runner could start")
 	}
 }
 

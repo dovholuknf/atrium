@@ -9,6 +9,8 @@ import (
 	"net/http/httputil"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 )
 
 // Forwarder is a loopback HTTP listener that lives for the length of ONE git command.
@@ -43,7 +45,7 @@ func newForwarder(rt http.RoundTripper, host, prefix string, allow func(r *http.
 	if _, err := rand.Read(tok[:]); err != nil {
 		return nil, err
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := cardproc.ListenLoopback()
 	if err != nil {
 		return nil, err
 	}

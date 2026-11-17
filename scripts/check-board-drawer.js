@@ -216,6 +216,7 @@ async function open(browser, width, mobile) {
     : { viewport: { width, height: 900 } });
   // A real phone is sent to /m/ (the separate phone app, which has none of these tabs). This is the board at phone width.
   if (mobile) await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
+  await ctx.addInitScript(() => { try { localStorage.setItem("atrium.emerging", "1"); } catch (e) {} });
   const page = await ctx.newPage();
   page.on("pageerror", e => check(false, "page error: " + e.message));
   await page.goto("http://127.0.0.1:" + server.address().port + "/");

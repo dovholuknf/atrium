@@ -260,6 +260,9 @@ func forkArgs(h *store.Harness, conv, prompt string, o launchOptions) ([]string,
 		if len(h.PromptArgs) == 0 {
 			return nil, "", fmt.Errorf("%s has no way to take an opening prompt", h.Label)
 		}
+		if err := optionLike("opening prompt", p); err != nil {
+			return nil, "", err
+		}
 		for _, a := range h.PromptArgs {
 			args = append(args, strings.ReplaceAll(a, "{prompt}", p))
 		}

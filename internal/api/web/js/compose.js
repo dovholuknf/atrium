@@ -247,11 +247,34 @@ async function composePasteFiles(files) {
   ta.setSelectionRange(at + ins.length, at + ins.length);
 }
 
+// A box over the terminal keeps its own right click and Ctrl+Shift+V, and a Ctrl+Shift+V the browser did not turn into a
+// paste event reads the clipboard into the box instead.
+function boxOwnsPaste(ta) {
+  ta.addEventListener("contextmenu", e => e.stopPropagation());
+  let waiting = false;
+  ta.addEventListener("paste", () => { waiting = false; }, true);
+  ta.addEventListener("keydown", e => {
+    if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey || e.code !== "KeyV") return;
+    e.stopPropagation();
+    waiting = true;
+    setTimeout(async () => {
+      if (!waiting || !navigator.clipboard) return;
+      waiting = false;
+      let text = "";
+      try { text = await navigator.clipboard.readText(); } catch (err) { return; }
+      if (!text) return;
+      ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, "end");
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+    }, 0);
+  });
+}
+
 function composeWire() {
   const box = document.getElementById("t-ctxbox");
   const ta = document.getElementById("t-ctxbox-in");
   if (!box || !ta || box.dataset.wired) return;
   box.dataset.wired = "1";
+  boxOwnsPaste(ta);
   ta.addEventListener("paste", e => {
     const dt = e.clipboardData;
     const files = [];

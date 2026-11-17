@@ -193,8 +193,8 @@ func joinCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
-	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down")
-	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report")
+	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down (a non-loopback address starts with a warning)")
+	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report, loopback only (a non-loopback address is refused)")
 	c.Flags().StringVar(&identity, "identity", "",
 		"a ziti identity file, when the join string is for a ziti service")
 	// The transport flags: how to reach the hub and what to prove the right with,
@@ -290,8 +290,8 @@ func roomCmd() *cobra.Command {
 	c.Flags().StringVar(&name, "name", "",
 		"this room's name: --dir and --db default to <root>/<name>/config, card_root to <root>/<name>/cards")
 	c.Flags().StringVar(&root, "root", "", "the folder every room on this machine lives under (default $"+rootEnv+")")
-	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down")
-	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report")
+	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down (a non-loopback address starts with a warning)")
+	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report, loopback only (a non-loopback address is refused)")
 	isolatedFlag(c, &isolated)
 	startedByFlag(c, &startedBy)
 	c.Flags().BoolVar(&detach, "detach", false,
@@ -336,6 +336,10 @@ func askToStop() {
 // runRoom starts the daemon and attaches it to the hub.
 func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string,
 	lay roomLayout) error {
+	agent, err := loopbackAgent("--agent", agent)
+	if err != nil {
+		return err
+	}
 	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
 	// the ports. Wait for it to let go before anything tries to bind, or the new
 	// room fails to listen and exits, which looks like the restart doing nothing.

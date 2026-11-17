@@ -226,7 +226,7 @@ function walkPrBottomHtml() {
   const head = `<div class="wb-bar${open ? " open" : ""}"><button type="button" class="wb-toggle" data-wp="toggle" aria-expanded="${open}"
       data-tip="${open ? "collapse the thread" : "open the whole-walk thread with the walk agent"}">${
       mode === "terminal" ? "<b>the agent's terminal</b>"
-        : open ? `<b>chat with the agent about the whole walk</b>` : `<b>click here to ask the agent about the whole walk</b>`}</button>${tip}<span class="wb-last">${
+        : open ? `<b>chat with the agent about the whole walk</b>` : `<b>Ask the agent about the whole PR</b>`}</button>${tip}<span class="wb-last">${
       open || mode === "terminal" ? "" : esc(last)}</span>${open || mode === "terminal" ? "" : `<span class="by">${s.thread.length} messages &#9652;</span>`}${sw}</div>`;
   if (!open) return head;
   const log = `<div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">Ask me anything about the whole change here.
@@ -298,6 +298,15 @@ function walkPrClick(e) {
     walkPrSave(); walkPrBottom(); return;
   }
   if (act === "whole-send") return walkPrSendWhole();
+  if (act === "ask") {
+    const it = dockCurrent();
+    if (it && it.kind === "file") walkTenant.at = { key: it.key, li: Number(b.dataset.li) };
+    s.off = s.off.filter(k => k !== "file" && k !== "hunk");
+    s.open = true; s.bottom = "thread";
+    walkPrSave(); dockPaint(); walkPrBottom();
+    const t = document.querySelector('#walk-bottom [data-wpk="whole"]');
+    if (t) t.focus();
+  }
 }
 
 function walkPrSaveNew() {

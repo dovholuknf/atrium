@@ -14,14 +14,18 @@ import (
 // The room's setup checklist, which the hub reads beside `/v1/hooks` and puts in the rooms pill's tooltip. Only what
 // failed is listed, one line each. See internal/link/setupwatch.go.
 
-// UsageFacts is how many runners are live and when a status line last posted a 5h or weekly figure. Supplied by the
-// daemon, which holds telemetry in memory.
-var UsageFacts func() (live int, at time.Time)
+// UsageFacts is when a live runner last ended a turn and when a status line last posted a 5h or weekly figure.
+// Supplied by the daemon, which holds both in memory.
+var UsageFacts func() (ended, at time.Time)
 
 var apiStart = time.Now()
 
-// usagePostWait is how long a live runner may go without a usage post before the status line is called silent.
+// usagePostWait is how long a status line may go without a usage post, with a turn ended inside it, before it is
+// called silent.
 const usagePostWait = 15 * time.Minute
+
+// usagePostGrace lets the post that follows a turn's reply arrive after the Stop hook.
+const usagePostGrace = time.Minute
 
 // checkIssue is one failed item. Fix says atrium can fix it itself, with `POST /v1/setup-check/fix`.
 type checkIssue struct {
@@ -40,11 +44,11 @@ func (s *Server) setupCheck(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if UsageFacts != nil {
-		live, at := UsageFacts()
+		ended, at := UsageFacts()
 		if at.Before(apiStart) {
 			at = apiStart
 		}
-		if live > 0 && time.Since(at) > usagePostWait {
+		if quiet := time.Since(ended); quiet < usagePostWait && quiet > usagePostGrace && time.Since(at) > usagePostWait {
 			issues = append(issues, checkIssue{ID: "usage", Text: "status line is posting no usage: no 5h or weekly figure reached the room in 15 minutes"})
 		}
 	}

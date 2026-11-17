@@ -1,6 +1,6 @@
 // boot: what every page needs: the board loads with no page error, the service worker, contrast.
 //
-// Units: bootClean, pinHold.
+// Units: bootClean, pinHold, linkRoomPick.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/boot.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -66,25 +66,31 @@ async function pinHoldSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   try {
+    let land;
+    const landed = new Promise(r => { land = r; });
+    const json = (r, body) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    await p.route(/\/v1\/tasks(\?|$)/, r => json(r, { tasks: [{ id: "c1", name: "c1", pinned: false }] }));
+    await p.route(/\/v1\/tasks\/c1(\?|$)/, async r => {
+      if (r.request().method() !== "PATCH") return r.fallback();
+      await landed;
+      await json(r, {});
+    });
     await p.goto(base + "/raw", { waitUntil: "load" });
     await p.waitForFunction(() => typeof togglePin === "function" && typeof loadCards === "function");
-    const got = await p.evaluate(async () => {
-      const realApi = api;
-      let land;
-      const row = () => ({ id: "c1", name: "c1", pinned: false });
-      api = (url, o) => o && o.method === "PATCH" ? new Promise(r => { land = r; }) : Promise.resolve({ tasks: [row()] });
-      try {
-        cardRows = new Map([["c1", row()]]);
-        const done = togglePin("c1", true);
-        await loadCards();
-        const during = cardRows.get("c1").pinned;
-        land({});
-        await done;
-        await new Promise(r => setTimeout(r, 0));
-        await loadCards();
-        return { during, after: cardRows.get("c1").pinned, held: pinHeld.size };
-      } finally { api = realApi; }
+    const during = await p.evaluate(async () => {
+      cardRows = new Map([["c1", { id: "c1", name: "c1", pinned: false }]]);
+      window.pinDone = togglePin("c1", true);
+      await loadCards();
+      return cardRows.get("c1").pinned;
     });
+    land();
+    await p.evaluate(() => window.pinDone);
+    // wait: a board refresh still in flight when the PATCH landed holds the star until it ends
+    await p.waitForFunction(() => pinHeld.size === 0, null, { timeout: slow(5000) }).catch(() => {});
+    const got = await p.evaluate(async during => {
+      await loadCards();
+      return { during, after: cardRows.get("c1").pinned, held: pinHeld.size };
+    }, during);
     if (got.during !== true) fail("pinHold: a list read before the PATCH landed turned the star off");
     if (got.after !== false || got.held !== 0) fail("pinHold: the hold outlived the PATCH " + JSON.stringify(got));
   } finally {
@@ -93,11 +99,34 @@ async function pinHoldSection(browser, base) {
   console.log("pinHold ok");
 }
 
+// Two rooms both hold the repo: the room the last launch went to wins over the first one asked.
+async function linkRoomPickSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.route(/\/v1\/scm\/has(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ has: true }) }));
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForFunction(() => typeof linkRoomFor === "function" && typeof roomsHolding === "function");
+    const got = await p.evaluate(async () => {
+      localStorage.removeItem(ROOM_KEY);
+      localStorage.setItem(LAUNCH_ROOM_STORE, "b");
+      hubIsHub = true;
+      hubRooms = [{ name: "a" }, { name: "b" }];
+      return await linkRoomFor({ host: "github.com", vars: { org: "o", repo: "r" } });
+    });
+    if (got !== "b") fail("linkRoomPick: both rooms hold the repo, the last launch room b lost to " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  console.log("linkRoomPick ok");
+}
+
 const units = [
   { name: "bootClean", run: ({ browser, base }) => bootCleanSection(browser, base) },
   { name: "pinHold", run: ({ browser, base }) => pinHoldSection(browser, base) },
+  { name: "linkRoomPick", run: ({ browser, base }) => linkRoomPickSection(browser, base) },
 ];
-const sections = { bootClean: bootCleanSection, pinHold: pinHoldSection };
+const sections = { bootClean: bootCleanSection, pinHold: pinHoldSection, linkRoomPick: linkRoomPickSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

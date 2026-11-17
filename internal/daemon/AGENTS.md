@@ -26,10 +26,11 @@ do not do it without reading why each one sits where it does.
    rather than as a policy refusal. Ahead of everything else because a message is you reaching out.
 3. **A shelved card.** A standing no. Putting work down has to answer for that work, or the agent freezes
    behind a card you stopped looking at.
-4. **A standing rule.** The most specific match wins. Prefix, glob, or folder.
-5. **Auto mode.** Approve without asking, record everything. LAST on purpose: it means "stop asking me new
-   questions", not "forget the answers I already gave", so 2, 3 and 4 all still win.
-6. **Ask the human.** The card moves to `needs-permission` and the agent blocks.
+4. **A deploy hold.** A held card is refused so it parks before the room restarts, over rules and auto mode.
+5. **A standing rule.** The most specific match wins. Prefix, glob, or folder.
+6. **Auto mode.** Approve without asking, record everything. LAST on purpose: it means "stop asking me new
+   questions", not "forget the answers I already gave", so 2 to 5 all still win.
+7. **Ask the human.** The card moves to `needs-permission` and the agent blocks.
 
 ## Resilience guarantees. Do not weaken these
 
@@ -79,9 +80,9 @@ close of a Windows handle is not a Go panic: the process disappears with no outp
 **Injecting prompts into a running claude session from outside MCP.** There is no IPC channel into a claude
 process; the agent loop IS the IPC.
 
-This holds for the peer bus too: one session messaging another is QUEUED and delivered by a hook, never typed
-into the target's terminal, even where atrium owns one and could. `peers.go` says so at length because the
-tempting simplification is to reuse `handleMessage`, which does type.
+The peer bus types only into a terminal atrium owns. One session messaging another is typed when the target's
+terminal is free, and queued and delivered by a hook when it is not. `peers.go` says why at length: the pty is
+shared, so the question is contention, which `runner.howBusy` answers.
 
 **A lent session is the agent's terminal and never the card's shell.** `overlay_guest.go` is an allowlist, and
 the hazard it did not catch on its own is a route that grows a parameter: `<id>/attach` was already allowed when

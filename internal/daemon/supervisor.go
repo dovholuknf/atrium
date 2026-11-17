@@ -2274,7 +2274,9 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	if err != nil {
 		return nil, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
 	}
-	resolved, args = viaShellIfScript(resolved, args)
+	if resolved, args, err = viaShellIfScript(resolved, args); err != nil {
+		return nil, err
+	}
 
 	// The width this card was last looked at, so a reopened session draws its
 	// first screen for the window it is about to appear in. See

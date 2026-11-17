@@ -255,14 +255,13 @@ func TestTheHubFlagsARoomWhoseDataDialsFail(t *testing.T) {
 		Name: "starved", Dial: d, Handler: http.NotFoundHandler(),
 		T: Timings{Beat: 50 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond, DialWait: 200 * time.Millisecond},
 	}
+	d.room = room
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool {
 		a, ok := attachedAs(hub, "starved")
-		return ok && a.Starved
+		s := room.State()
+		return ok && a.Starved && s.Up && s.DataError != ""
 	})
-	if s := room.State(); !s.Up || s.DataError == "" {
-		t.Fatalf("the room's own state says %+v, want up with the data dial's error", s)
-	}
 
 	// Data dials get through again, and the next ask fills the pool.
 	d.open.Store(true)
@@ -279,24 +278,20 @@ func TestTheHubFlagsARoomWhoseDataDialsFail(t *testing.T) {
 	})
 }
 
-// onlyFirst lets the first dial that connects through, the control connection, and
-// refuses every one after it until open.
+// onlyFirst lets every control dial through and refuses every data dial until open.
 type onlyFirst struct {
-	addr  string
-	first atomic.Bool
-	open  atomic.Bool
+	addr string
+	room *Room
+	open atomic.Bool
 }
 
 func (o *onlyFirst) Dial(ctx context.Context) (net.Conn, error) {
-	if o.first.Load() && !o.open.Load() {
+	// The room dials control only while down, and again after any drop, so order cannot tell the two apart.
+	if o.room.State().Up && !o.open.Load() {
 		return nil, errors.New("dial tcp 192.168.1.68:7779: i/o timeout")
 	}
 	var d net.Dialer
-	c, err := d.DialContext(ctx, "tcp", o.addr)
-	if err == nil {
-		o.first.Store(true) // a real dial failing (port exhaustion) must not spend the control slot
-	}
-	return c, err
+	return d.DialContext(ctx, "tcp", o.addr)
 }
 
 func (o *onlyFirst) Describe() string { return o.addr }

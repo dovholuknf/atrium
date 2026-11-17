@@ -522,7 +522,7 @@ func (s *Server) overlayTunnel(w http.ResponseWriter, t *store.Task, in overlayR
 			return
 		}
 		for _, svc := range in.Services {
-			if strings.TrimSpace(svc) == "" || strings.ContainsAny(svc, ":\r\n") {
+			if strings.TrimSpace(svc) == "" || strings.ContainsAny(svc, ":\r\n") || strings.HasPrefix(strings.TrimSpace(svc), "-") {
 				writeErr(w, http.StatusBadRequest, fmt.Errorf("%q is not a service name", svc))
 				return
 			}

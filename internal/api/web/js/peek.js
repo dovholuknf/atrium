@@ -214,7 +214,7 @@ function peekRows(t) {
   }
   if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
   if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
-  if (t.report_dirty) need.push(row("done, " + t.report_dirty + " file" + (t.report_dirty === 1 ? "" : "s") + " not committed", "only what it committed will land"));
+  if (fn("cardLeftoverIsHumans", t)) need.push(row("done, " + t.report_dirty + " file" + (t.report_dirty === 1 ? "" : "s") + " not committed", "only what it committed will land"));
 
   const kids = typeof termChildInfo === "function" && typeof lastTasks !== "undefined" ? termChildInfo(t, lastTasks) : null;
   const age = t.recap ? peekRecapAge(t) : "";

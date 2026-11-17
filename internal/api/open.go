@@ -47,6 +47,10 @@ type openHeldKey struct{}
 // openRecognisedKey carries what the open verb recognised, to the review row it makes.
 type openRecognisedKey struct{}
 
+// openRestartedKey carries a *bool that postPR sets when it restarted a failed or aborted row, so a rollback stops
+// that run while leaving the row.
+type openRestartedKey struct{}
+
 // openRequest is the link, and what the launch dialog let somebody change first (shift-enter): an empty field takes
 // the recogniser's.
 type openRequest struct {
@@ -219,6 +223,8 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 
 	// 4. the review row, claimed for this room
 	steps.begin("review", "starting the review")
+	restarted := new(bool)
+	r = r.WithContext(context.WithValue(r.Context(), openRestartedKey{}, restarted))
 	row, created, failStatus, failBody := s.openRow(r, in, got)
 	if row == nil {
 		undoPRWorktree(wt)
@@ -242,6 +248,15 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	}
 	undoRow := func() {
 		if !created {
+			if *restarted {
+				prOpMu.Lock()
+				if _, err := s.st.MovePR(row.ID, []string{store.PRQueued, store.PRFetching, store.PRRunning},
+					store.PRAborted, "", "the card for it did not start"); err == nil {
+					s.prRunner().Abort(row.ID)
+				}
+				prOpMu.Unlock()
+				s.PublishPR(row.ID)
+			}
 			return
 		}
 		prOpMu.Lock()

@@ -34,9 +34,12 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 	case target == "" || wire.EqualFold(target, from):
 		return RelayAnswer{Code: http.StatusBadRequest,
 			Error: "the relay launches on another room. this one names the room it came from"}
-	case spec == nil || strings.TrimSpace(spec.Cwd) == "":
+	case spec == nil || strings.TrimSpace(spec.Cwd) == "" && strings.TrimSpace(spec.Repo) == "" && !spec.Home:
 		return RelayAnswer{Code: http.StatusBadRequest,
 			Error: "say where to run it. atrium does not create the directory"}
+	case strings.TrimSpace(spec.Cwd) != "" && strings.TrimSpace(spec.Repo) != "":
+		return RelayAnswer{Code: http.StatusBadRequest,
+			Error: "pass cwd for a directory you made, or repo for one atrium makes, not both"}
 	}
 	// A room the hub knows nothing of is a 404 that lists the rooms it does know. One it
 	// knows and cannot reach is unreachable. Either way nothing has been posted.
@@ -63,6 +66,8 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 		Cwd: spec.Cwd, Title: spec.Title, Why: spec.Why, Prompt: spec.Prompt, Brief: spec.Brief,
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
 		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: relaySuperlean(spec.Superlean), Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
+		Repo: spec.Repo, Branch: spec.Branch, Base: spec.Base, Home: spec.Home, Resident: spec.Resident,
+		Scratch: spec.Scratch, Lean: spec.Lean, MCP: spec.MCP, Theme: spec.Theme, Chat: spec.Chat, ItemOwner: spec.ItemOwner,
 	}
 	out, err := c.LaunchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)
@@ -75,6 +80,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 		Watch: out.Watch, Brief: out.Brief, Model: out.Model, Effort: out.Effort,
 		// The dropped-options sentence, without the note every launch ends on.
 		Warning: strings.TrimSuffix(out.Note, LaunchStartedNote),
+		Carried: true,
 	}
 }
 

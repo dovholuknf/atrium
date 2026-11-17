@@ -113,7 +113,10 @@ type preflightAnswer struct {
 // runPreflightCommand runs one resolved command, from this process's own
 // environment, with no shell, and bounded while reading.
 func runPreflightCommand(ctx context.Context, exe string, args []string, out io.Writer) error {
-	exe, args = viaShellIfScript(exe, args)
+	exe, args, err := viaShellIfScript(exe, args)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, exe, args...)
 	nowindow.Hide(cmd)
 	cmd.Stdout = out

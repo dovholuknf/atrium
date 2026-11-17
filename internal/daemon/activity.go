@@ -163,6 +163,9 @@ type Activity struct {
 	// IdleAt is when it was flagged, which keys the board's alert so each firing
 	// rings once.
 	IdleAt time.Time `json:"idle_at,omitzero"`
+	// Panel says the session started the review-panel skill this turn. Cleared when the turn ends, and gone with the
+	// rest of this on a session end, a restart or the staleness cutoff, so a crash cannot hold it. See notePanel.
+	Panel bool `json:"panel,omitempty"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -510,6 +513,9 @@ func (a *activityTracker) set(taskID, what, tool string) {
 		a.calls[taskID] = keep
 	}
 	cur.What, cur.Tool = what, tool
+	if what == ActivityIdle {
+		cur.Panel = false
+	}
 	// Any hook event is the runner speaking for itself, which settles the guess.
 	delete(a.looksIdle, taskID)
 	// ANYTHING HAPPENING MEANS THE DIALOG HAS GONE.
@@ -818,6 +824,22 @@ type ActivityEvent struct {
 	FileDel    int    `json:"file_del,omitempty"`
 	// RoomSource is "daemon.json" when the hook guessed this room from the machine's file and not from its env.
 	RoomSource string `json:"room_source,omitempty"`
+	// Skill is the skill a Skill call or a typed slash command starts, on a tool-start or a prompt.
+	Skill string `json:"skill,omitempty"`
+}
+
+// notePanel marks a card whose session starts the review-panel skill, so a walker's row is not ready before its
+// first panel card exists.
+func (a *activityTracker) notePanel(taskID, skill string) {
+	s := strings.ToLower(strings.TrimSpace(skill))
+	if s != "review-panel" && !strings.HasSuffix(s, ":review-panel") {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if cur := a.by[taskID]; cur != nil {
+		cur.Panel = true
+	}
 }
 
 // handleActivity records what a session is doing.
@@ -878,6 +900,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	switch in.Event {
 	case "tool-start":
 		d.act.set(taskID, ActivityTool, in.Tool)
+		d.act.notePanel(taskID, in.Skill)
 		// A tool call is work, so a card that was waiting is not any more.
 		d.turnResumed(taskID)
 		// ASKING is a tool, which is the whole reason this is knowable.
@@ -910,6 +933,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// other half of the needs-input signal: without it a card stays in
 		// needs-input for the rest of the session.
 		d.act.set(taskID, ActivityThinking, "")
+		d.act.notePanel(taskID, in.Skill)
 		d.act.promptSeen(taskID)
 		d.turnResumed(taskID)
 		// A submit emptied the runner's prompt, so a model that still holds text

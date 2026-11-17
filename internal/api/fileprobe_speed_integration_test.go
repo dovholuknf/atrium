@@ -52,9 +52,10 @@ func TestAProbeIsFastOnARoomWithManyCards(t *testing.T) {
 		t.Fatalf("only %d of %d tokens came back", want, len(toks))
 	}
 
-	const runs = 5
+	// The fastest of many runs, so a busy merge room (53ms once, 1ms idle) does not stand in for the 250ms regression.
+	const runs = 50
 	per := time.Hour
-	for i := 0; i < runs; i++ {
+	for i := 0; i < runs && per > 50*time.Millisecond; i++ {
 		at := time.Now()
 		if got := probed(t, s, tasks[5].ID, toks); len(got) != want {
 			t.Fatalf("%d tokens came back, then %d", want, len(got))

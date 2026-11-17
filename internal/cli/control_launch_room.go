@@ -29,16 +29,15 @@ func launchAcrossRoom(ctx context.Context, in LaunchInput, harness, room string)
 	if strings.EqualFold(room, strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))) {
 		return false, out, nil
 	}
-	if in.Scratch || in.Lean != nil || len(in.MCP) > 0 || strings.TrimSpace(in.Theme) != "" {
-		return true, out, fmt.Errorf("scratch, lean, mcp and theme are not carried to another room yet, so this launch on %s "+
-			"was not made. leave them out, or launch from that room", room)
-	}
 	req := map[string]any{
 		"room": room, "from": strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")),
 		"runner": harness, "cwd": in.Cwd, "title": in.Title, "why": in.Why,
 		"prompt": strings.TrimSpace(in.Prompt), "brief": strings.TrimSpace(in.Brief), "tags": in.Tags,
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
+		"repo": strings.TrimSpace(in.Repo), "branch": strings.TrimSpace(in.Branch), "base": strings.TrimSpace(in.Base),
+		"home": in.Home, "resident": in.Resident, "scratch": in.Scratch, "lean": in.Lean, "mcp": in.MCP,
+		"theme": strings.TrimSpace(in.Theme), "item_owner": strings.TrimSpace(in.ItemOwner),
 	}
 	if in.Isolated {
 		req["item"] = true

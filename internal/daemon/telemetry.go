@@ -358,12 +358,22 @@ func (a *activityTracker) markUsage() {
 	a.usageAt = a.now()
 }
 
-// usageFacts is how many runners are live and when a post last carried a usage limit, for `GET /v1/setup-check`.
-func (d *Daemon) usageFacts() (int, time.Time) {
-	live, _ := d.sup.ringCount()
+// usageFacts is when a live runner last ended a turn and when a post last carried a usage limit, for
+// `GET /v1/setup-check`.
+func (d *Daemon) usageFacts() (time.Time, time.Time) {
+	live := map[string]bool{}
+	for _, r := range d.sup.all() {
+		live[r.taskID] = true
+	}
 	d.act.mu.Lock()
 	defer d.act.mu.Unlock()
-	return live, d.act.usageAt
+	var ended time.Time
+	for id, a := range d.act.by {
+		if live[id] && a.What == ActivityIdle && a.Since.After(ended) {
+			ended = a.Since
+		}
+	}
+	return ended, d.act.usageAt
 }
 
 // telemetry returns a copy of a task's figure, or nil when none has arrived or

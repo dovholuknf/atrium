@@ -547,7 +547,9 @@ func RunForkProcess(ctx context.Context, spec ForkSpec, agentFork func(exe strin
 	defer cancel()
 	exe, args := agentFork(spec.Exe, spec.Args)
 	if resolved, err := exec.LookPath(exe); err == nil {
-		exe, args = shared.ViaShellIfScript(resolved, args)
+		if exe, args, err = shared.ViaShellIfScript(resolved, args); err != nil {
+			return nil, err
+		}
 	}
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = spec.Dir

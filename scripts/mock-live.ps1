@@ -12,17 +12,21 @@
 # The seed cards run pwsh scripts under the mock's own `mock` harness, never claude, so they cost no tokens. They say
 # needs-input, needs-permission and done through the room's agent port, as a real session's hooks would.
 #
-# -Stop asks the room to shut down (a kill is not a stop), ends the hub by pid, and deletes the data dir.
+# The room has pty_host on, so the cards run under the mock's own pty host as real cards do, not as its children.
+#
+# -Stop asks the room to shut down with its runners (a kill is not a stop), ends the hub by pid, then ends whatever is
+# still running from the data dir (the pty host, a card), and deletes the data dir. An error or a Ctrl+C before the
+# seed is done runs the same stop.
 param(
   [string]$Branch = 'claude/main',
   [int]$Port = 7950,
-  [switch]$Stop
+  [switch]$Stop,
+  [string]$Repo = 'D:/git/github/dovholuknf/atrium'
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$Repo = 'D:/git/github/dovholuknf/atrium'
 $Data = "$Repo/.uncommitted/mock/$Port"
 $Board = "127.0.0.1:$Port"
 $Link = "127.0.0.1:$($Port + 1)"
@@ -47,11 +51,41 @@ function Api([string]$method, [string]$path, $body = $null) {
   Invoke-RestMethod @call
 }
 
+# Every process whose image is under the data dir (hub, room, pty host) and everything under them (the cards). By
+# directory and parent, never by image name, and with no WMI, which a room's account may be denied.
+function Get-DataDirProcesses {
+  $dir = [WildcardPattern]::Escape(([IO.Path]::GetFullPath($Data) -replace '\\', '/').TrimEnd('/') + '/')
+  $all = @(Get-Process | Where-Object Id -ne $PID)
+  $ids = @{}
+  foreach ($p in $all) { if ((($p.Path -replace '\\', '/') -like "$dir*")) { $ids[$p.Id] = $p } }
+  do {
+    $grew = $false
+    foreach ($p in $all) {
+      if (-not $ids.ContainsKey($p.Id) -and $p.Parent -and $ids.ContainsKey($p.Parent.Id) -and
+        $p.StartTime -ge $ids[$p.Parent.Id].StartTime) { $ids[$p.Id] = $p; $grew = $true }
+    }
+  } while ($grew)
+  @($ids.Values | ForEach-Object { [pscustomobject]@{ Id = $_.Id; Name = $_.Name; StartTime = $_.StartTime } })
+}
+
+# $known is the tree taken before the stop, so a card whose pty host or room is already gone is still found.
+function Stop-DataDirProcesses($known) {
+  Wait-Until {
+    $left = @(Get-DataDirProcesses) + @($known | Where-Object {
+      $p = Get-Process -Id $_.Id -ErrorAction SilentlyContinue
+      $p -and $p.StartTime -eq $_.StartTime
+    })
+    foreach ($p in $left) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+    $left.Count -eq 0
+  } 30 "the processes running from $Data to end"
+}
+
 function Stop-Mock {
+  $tree = @(Get-DataDirProcesses)
   $state = "$Data/pids.json"
   if (Test-Path $state) {
     $pids = Get-Content $state -Raw | ConvertFrom-Json
-    try { Invoke-RestMethod -Method Post "http://$RoomHttp/v1/shutdown" -TimeoutSec 10 | Out-Null } catch {}
+    try { Invoke-RestMethod -Method Post "http://$RoomHttp/v1/shutdown?runners=1" -TimeoutSec 10 | Out-Null } catch {}
     $roomProc = Get-Process -Id $pids.room -ErrorAction SilentlyContinue
     if ($roomProc) { try { $roomProc.WaitForExit(30000) | Out-Null } catch {} }
     # By pid, never by image name: every hook on this machine is an atrium.exe.
@@ -64,6 +98,7 @@ function Stop-Mock {
       if ($p) { try { $p.WaitForExit(10000) | Out-Null } catch {} }
     }
   }
+  Stop-DataDirProcesses $tree
   if (Test-Path $Data) {
     Wait-Until { Remove-Item -Recurse -Force $Data; -not (Test-Path $Data) } 30 "the data dir to delete"
   }
@@ -72,12 +107,16 @@ function Stop-Mock {
 
 if ($Stop) { Stop-Mock; exit 0 }
 
+$listening = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
 foreach ($a in @($Board, $Link, $RoomHttp, $RoomAgent)) {
   $hp = $a.Split(':')
-  $busy = Get-NetTCPConnection -LocalPort ([int]$hp[1]) -State Listen -ErrorAction SilentlyContinue
+  $busy = $listening | Where-Object Port -eq ([int]$hp[1])
   if ($busy) { throw "port $($hp[1]) is in use. stop that mock with -Port $Port -Stop, or pick another -Port" }
 }
 
+# Not indented, to keep the diff to the try and its finally at the end.
+$seeded = $false
+try {
 # ── the build ────────────────────────────────────────────
 $slug = ($Branch -replace '[^A-Za-z0-9._-]', '-')
 $Src = "$Repo/.uncommitted/mock-src/$slug"
@@ -128,10 +167,11 @@ function Start-Atrium([string[]]$argv, [string]$name) {
   $line = '/d /s /c ""' + $Exe + '" ' + ($argv -join ' ') + " > `"$Data/$name.log`" 2>&1`""
   $cmd = Start-Process "$env:SystemRoot/System32/cmd.exe" -ArgumentList $line -WindowStyle Hidden -PassThru
   Wait-Until {
-    $script:child = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($cmd.Id) AND Name='atrium.exe'"
+    $script:child = Get-Process -Name atrium -ErrorAction SilentlyContinue |
+      Where-Object { $_.Parent -and $_.Parent.Id -eq $cmd.Id } | Select-Object -First 1
     $null -ne $script:child
   } 15 "atrium $name to start"
-  Get-Process -Id $script:child.ProcessId
+  $script:child
 }
 
 # The hub gets an empty home: with the real one it finds this machine's zrok env and reserves a share on the account.
@@ -222,6 +262,9 @@ foreach ($at in @($Board, $RoomHttp)) {
   Invoke-RestMethod -Method Post "http://$at/v1/settings" -ContentType 'application/json' `
     -Body '{"global_auto":false}' | Out-Null
 }
+Invoke-RestMethod -Method Post "http://$RoomHttp/v1/settings" -ContentType 'application/json' `
+  -Body '{"pty_host":true}' | Out-Null
+if (-not (Invoke-RestMethod "http://$RoomHttp/v1/preflight").pty_host.on) { throw "the mock room's pty_host is not on" }
 
 $seed = @(
   @{ kind = 'running';    title = 'retry-budget';     project = 'acme/payments-api'; tags = @('origin:agent', 'p1') },
@@ -257,6 +300,14 @@ try { Wait-Until {
   (@($ts | Where-Object status -eq 'done').Count -ge 2)
 } 60 'the seed cards to reach their states' } catch { Say "warning: $_" }
 
+$runners = (Invoke-RestMethod "http://$RoomHttp/v1/preflight").runners
+if ($runners.in_process -ne 0) { throw "$($runners.in_process) card(s) run in the room's own process, not the pty host" }
+Say "$($runners.host) card terminal(s) under the pty host, none in the room's process"
+
 Assert-NoShare
+$seeded = $true
+} finally {
+  if (-not $seeded) { Say "stopping the mock, the start did not finish"; Stop-Mock }
+}
 Say "board: http://$Board/"
-Say "stop:  pwsh -File scripts/mock-live.ps1 -Port $Port -Stop"
+Say "stop:  pwsh -File scripts/mock-live.ps1 -Port $Port -Repo $Repo -Stop"

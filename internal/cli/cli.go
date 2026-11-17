@@ -178,9 +178,9 @@ func newDaemon() *cobra.Command {
 	}
 	startedByFlag(c, &startedBy)
 	c.Flags().StringVar(&agentAddr, "addr", "127.0.0.1:7777",
-		"agent-facing listen address (loopback by default; a wider address is a choice you make here)")
+		"agent-facing listen address, loopback only (a non-loopback address is refused, it has no login)")
 	c.Flags().StringVar(&humanAddr, "http", "127.0.0.1:7778",
-		"human-facing listen address, API and board (loopback by default; a wider address is a choice you make here)")
+		"human-facing listen address, API and board (loopback by default; a wider address starts with a warning)")
 	c.Flags().StringVar(&dbPath, "db", "", "sqlite path (default: alongside the rest of atrium's state)")
 	c.Flags().IntVar(&timeoutSec, "long-poll", 60, "longest shutdown waits on parked agent requests, in seconds (capped at 5)")
 	c.Flags().StringVar(&shutdownToken, "shutdown-token", "",
@@ -245,6 +245,11 @@ func runDaemon(ctx context.Context, opts daemon.Options) error {
 	}
 
 	warnWideBoard(opts.HumanAddr)
+	agent, err := loopbackAgent("--addr", opts.AgentAddr)
+	if err != nil {
+		return err
+	}
+	opts.AgentAddr = agent
 
 	d, err := daemon.New(opts)
 	if err != nil {

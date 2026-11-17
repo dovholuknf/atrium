@@ -77,10 +77,16 @@ const updateBudget = 4 * time.Second
 // updateSetting is where the last answer per package is kept.
 const updateSetting = "runner_latest"
 
+// SettingRunnerUpdateCheck set to `off` stops every registry lookup, for a machine that cannot reach the registry.
+// Unset, or anything else, keeps the lookup on.
+const SettingRunnerUpdateCheck = "runner_update_check"
+
 // updateCheck is one package's published version and when that was learned.
 type updateCheck struct {
 	Latest string `json:"latest"`
 	At     string `json:"at"`
+	// FailedAt keeps a failed ask for the same window, so a blocked machine waits once per window, not per launch.
+	FailedAt string `json:"failed_at,omitempty"`
 }
 
 // updates holds the checks in flight, so a wave of launches produces one
@@ -174,18 +180,34 @@ func (d *Daemon) cachedLatest(pkg string) (string, bool) {
 		return "", false
 	}
 	got, ok := all[pkg]
-	if !ok || got.Latest == "" {
+	if !ok {
 		return "", false
+	}
+	failed, err := time.Parse(time.RFC3339, got.FailedAt)
+	failedFresh := err == nil && time.Since(failed) < updateFresh
+	if got.Latest == "" {
+		return "", failedFresh
 	}
 	at, err := time.Parse(time.RFC3339, got.At)
 	if err != nil {
-		return got.Latest, false
+		return got.Latest, failedFresh
 	}
-	return got.Latest, time.Since(at) < updateFresh
+	return got.Latest, failedFresh || time.Since(at) < updateFresh
 }
 
 // rememberLatest writes one package's answer back.
 func (d *Daemon) rememberLatest(pkg, latest string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	d.rememberCheck(pkg, func(c *updateCheck) { *c = updateCheck{Latest: latest, At: now} })
+}
+
+// rememberFailed marks one package's ask as failed now and keeps the last answer it had.
+func (d *Daemon) rememberFailed(pkg string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	d.rememberCheck(pkg, func(c *updateCheck) { c.FailedAt = now })
+}
+
+func (d *Daemon) rememberCheck(pkg string, set func(*updateCheck)) {
 	raw, _ := d.st.Setting(updateSetting)
 	all := map[string]updateCheck{}
 	if strings.TrimSpace(raw) != "" {
@@ -193,7 +215,9 @@ func (d *Daemon) rememberLatest(pkg, latest string) {
 			all = map[string]updateCheck{}
 		}
 	}
-	all[pkg] = updateCheck{Latest: latest, At: time.Now().UTC().Format(time.RFC3339)}
+	c := all[pkg]
+	set(&c)
+	all[pkg] = c
 	b, err := json.Marshal(all)
 	if err != nil {
 		return
@@ -268,6 +292,9 @@ func (d *Daemon) checkRunnerUpdate(h *store.Harness, blocking bool) {
 	}
 	pkg := strings.TrimSpace(h.Package)
 	if pkg == "" {
+		return
+	}
+	if v, err := d.st.Setting(SettingRunnerUpdateCheck); err == nil && strings.TrimSpace(v) == "off" {
 		return
 	}
 	exe := lookRunner(h.Cmd)
@@ -429,6 +456,7 @@ func (d *Daemon) askRegistry(pkg string, ch chan struct{}) string {
 		// Logged once and dropped. A registry that is unreachable is not the
 		// operator's problem at the moment they are starting a runner.
 		log.Printf("[atrium] could not ask about %s: %v", pkg, err)
+		d.rememberFailed(pkg)
 		got, _ := d.cachedLatest(pkg)
 		return got
 	}

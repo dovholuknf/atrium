@@ -97,6 +97,8 @@ type RelayResult struct {
 	// What a launch started: where to watch it, where its briefing was written on the
 	// target's disk, and the model and effort it ran with.
 	Watch, Brief, Model, Effort string
+	// Carried is a hub that read every launch field. See wire.RelayAnswer.
+	Carried bool
 	// Data is the hub endpoint's own JSON answer, for a hub ask. See hubask.go.
 	Data json.RawMessage
 }

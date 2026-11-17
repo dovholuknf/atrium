@@ -289,6 +289,9 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 	if row.State == store.PRFailed || row.State == store.PRAborted {
 		switch _, err := s.st.ResetPR(row.ID, named, store.PRFailed, store.PRAborted); {
 		case err == nil:
+			if restarted, _ := r.Context().Value(openRestartedKey{}).(*bool); restarted != nil {
+				*restarted = true
+			}
 			s.prRunner().Start(row.ID)
 		case errors.Is(err, store.ErrPRState):
 			// Somebody else retried it first. Theirs is the run.

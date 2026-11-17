@@ -126,6 +126,11 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 		s.prepareRepo(ctx, w, host, org, repo, pick)
 		return
 	}
+	harness := s.newWorkHarness(in.Harness, org, repo)
+	if harness == "" {
+		openFail(w, http.StatusBadRequest, "card", "no_runner", "no runner is installed and turned on on "+s.roomWord())
+		return
+	}
 	opts := branchOpts{fetch: true, from: strings.TrimSpace(in.From)}
 	if strings.TrimSpace(in.Twig) != "" {
 		src, head, status, err := s.twigSource(ctx, strings.TrimSpace(in.Twig))
@@ -192,7 +197,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 		title = name
 	}
 	launch := map[string]any{
-		"harness": s.newWorkHarness(in.Harness, org, repo), "cwd": wt.Path, "title": title, "why": in.Why,
+		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why,
 		"prompt": strings.TrimSpace(in.Prompt), "model": strings.TrimSpace(in.Model),
 		"effort": strings.TrimSpace(in.Effort), "repo": repo, "org": org, "host": host, "branch": wt.Branch,
 	}
@@ -218,16 +223,25 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ans)
 }
 
-// newWorkHarness is the runner asked for, else the repo's recipe's, else claude: a board that lost its runner list
-// sends "", and the room never takes that as a name.
+// newWorkHarness is the runner asked for, else the repo's recipe's, else claude, else any this room can start: a board
+// that lost its runner list sends "", and the room never takes that as a name. "" is that no runner here can start.
 func (s *Server) newWorkHarness(asked, org, repo string) string {
 	if h := strings.TrimSpace(asked); h != "" {
 		return h
 	}
-	if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil && strings.TrimSpace(rec.Harness) != "" {
+	if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil && s.runnerStartable(rec.Harness) {
 		return rec.Harness
 	}
-	return "claude"
+	if s.runnerStartable("claude") {
+		return "claude"
+	}
+	hs, _ := s.st.Harnesses()
+	for _, h := range hs {
+		if h.Enabled && RunnerFound(h) != "" {
+			return h.ID
+		}
+	}
+	return ""
 }
 
 // prepareRepo is the `prepare` of POST /v1/new: the checkout is found, or cloned the way a worktree would clone it, and

@@ -2586,6 +2586,24 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		name: "0123_room_event",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS room_event (
+				seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+				kind       TEXT NOT NULL,
+				key        TEXT NOT NULL DEFAULT '',
+				sender     TEXT NOT NULL DEFAULT '',
+				method     TEXT NOT NULL,
+				path       TEXT NOT NULL,
+				body       TEXT NOT NULL DEFAULT '',
+				at         TEXT NOT NULL,
+				sent_at    TEXT NOT NULL DEFAULT '',
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT NOT NULL DEFAULT ''
+			)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

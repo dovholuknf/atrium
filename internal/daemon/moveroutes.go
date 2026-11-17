@@ -8,6 +8,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -164,7 +166,15 @@ func (d *Daemon) moveRenew(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 var moveGitArgs = []string{"--", ".", ":(exclude)BRIEF.md", ":(glob,exclude)HANDOFF.*.md"}
 
 func moveGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	iso, err := gitexec.Isolation(gitexec.Opts{Dir: dir})
+	if err != nil {
+		return "", err
+	}
+	pre := []string{"-C", dir}
+	for _, kv := range iso {
+		pre = append(pre, "-c", kv)
+	}
+	cmd := exec.Command("git", append(pre, args...)...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	nowindow.Hide(cmd)
@@ -197,6 +207,7 @@ func (d *Daemon) moveCheck(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 					fails = append(fails, fmt.Sprintf("dirty: %d files", lines))
 				} else {
 					room := strings.TrimSpace(in.Room)
+					log.Printf("[atrium] move: the wip commit in %s runs none of the repository's hooks, the card's agent could have written them", t.Worktree)
 					if _, err := moveGit(t.Worktree, append([]string{"add", "-A"}, moveGitArgs...)...); err != nil {
 						fails = append(fails, "dirty: "+err.Error())
 					} else if _, err := moveGit(t.Worktree, "commit", "-m", "WIP: move to "+room); err != nil {

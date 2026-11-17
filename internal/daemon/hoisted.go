@@ -13,7 +13,7 @@ const (
 	ActivityThinking = shared.ActivityThinking
 )
 
-func viaShellIfScript(resolved string, args []string) (string, []string) {
+func viaShellIfScript(resolved string, args []string) (string, []string, error) {
 	return shared.ViaShellIfScript(resolved, args)
 }
 func atriumLabel(what string) string                               { return shared.AtriumLabel(what) }

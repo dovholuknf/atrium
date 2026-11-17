@@ -39,3 +39,12 @@ func TestWithToolDirsHandsOverCCButNotOverAnOperatorsOwn(t *testing.T) {
 		t.Fatalf("env = %s", got)
 	}
 }
+
+func TestToolsLineSaysToInstallOnThePathNotAToolsJSON(t *testing.T) {
+	dir := t.TempDir()
+	fakeTool(t, dir, "go")
+	got := toolsLine(dir)
+	if strings.Contains(got, "tools.json") || !strings.Contains(got, "put it in a folder on the room's PATH") {
+		t.Fatalf("toolsLine = %s", got)
+	}
+}

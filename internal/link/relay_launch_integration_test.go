@@ -118,6 +118,56 @@ func TestARelayedLaunchIsTheHubsOwnLaunchByAnotherDoor(t *testing.T) {
 	}
 }
 
+// A relayed launch keeps repo, home, scratch and every other launch field, and sends sg4 what the hub's own launch
+// with `room` sends. A spec with no cwd is fine when it names repo or home.
+func TestARelayedLaunchKeepsRepoHomeScratchAndTheRest(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	off := false
+	spec := &wire.RelayLaunchSpec{Repo: "github.com/o/r", Branch: "claude/x", Base: "claude/main", Title: "t",
+		Tags: []string{"atrium:item:f-test"}, Resident: true, Scratch: true, Lean: &off, MCP: []string{"m"}, Theme: "dusk",
+		Chat: true, Item: true, ItemOwner: "human"}
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: spec})
+	if err != nil || !ans.OK || !ans.Carried {
+		t.Fatalf("relay = %+v, %v", ans, err)
+	}
+	viaRelay := x.sg4.launchBody()
+	if viaRelay["repo"] != "github.com/o/r" || viaRelay["branch"] != "claude/x" || viaRelay["base"] != "claude/main" ||
+		viaRelay["scratch"] != true || viaRelay["lean"] != false || viaRelay["theme"] != "dusk" || viaRelay["chat"] != true {
+		t.Fatalf("sg4 was sent %+v", viaRelay)
+	}
+	tags := toStrings(viaRelay["tags"].([]any))
+	if !hasTag(tags, ResidentTag) || !hasTag(tags, ItemOwnerTag+"human") || !hasTag(tags, ItemTag) {
+		t.Fatalf("tags = %v", tags)
+	}
+	x.sg4.mu.Lock()
+	x.sg4.launched = nil
+	x.sg4.mu.Unlock()
+	if _, _, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Repo: spec.Repo,
+		Branch: spec.Branch, Base: spec.Base, Title: spec.Title, Tags: spec.Tags, Resident: true, Scratch: true, Lean: &off,
+		MCP: spec.MCP, Theme: spec.Theme, Chat: true, Isolated: true, ItemOwner: "human", Room: "sg4"}); err != nil {
+		t.Fatalf("hub launch: %v", err)
+	}
+	direct := x.sg4.launchBody()
+	delete(viaRelay, "launch_key")
+	delete(direct, "launch_key")
+	if !reflect.DeepEqual(viaRelay, direct) {
+		t.Fatalf("relay sent %+v, the hub's own launch sent %+v", viaRelay, direct)
+	}
+
+	ans, err = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
+		Launch: &wire.RelayLaunchSpec{Home: true, Tags: []string{"atrium:item:f-test"}}})
+	if err != nil || !ans.OK || x.sg4.launchBody()["home"] != true {
+		t.Fatalf("home = %+v, %v, sg4 got %+v", ans, err, x.sg4.launchBody())
+	}
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
+		Launch: &wire.RelayLaunchSpec{Cwd: "/w", Repo: "github.com/o/r"}})
+	if ans.OK || ans.Code != http.StatusBadRequest || !strings.Contains(ans.Error, "not both") {
+		t.Fatalf("cwd and repo = %+v", ans)
+	}
+}
+
 // THE LAUNCHING ROOM COMES FROM THE CONNECTION. sg4 launching on m1mini is `orch@sg4`,
 // found on sg4's own list, whatever the request claims.
 func TestARelayedLaunchNamesTheLauncherOnTheRoomItCameFrom(t *testing.T) {

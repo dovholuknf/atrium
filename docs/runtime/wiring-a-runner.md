@@ -82,7 +82,7 @@ delivers it.
 
 - `atrium finish [recap]`: a session declaring its work over, with a short account of what it did.
 - `atrium peers`: the other sessions this one can address. `atrium tell <handle> <msg>`: say something to
-  one. Queued, never typed into its terminal.
+  one. Typed when its terminal is free, queued when it is not.
 - The hub's control MCP server, at `/_hub/mcp` on the board port, exposes `atrium_status`, `atrium_peers`,
   `atrium_say`, `atrium_launch` and similar. A runner that can register an MCP server could use these directly.
   `atrium control` is a separate stdio server for sessions that do not reach the hub. It serves `atrium_status`,

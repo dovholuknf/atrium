@@ -284,7 +284,7 @@ func TurnsOf(path string) (*turnIndex, error) {
 // transcript's tool calls name absolute ones, and a relative one means whatever the
 // reader's directory is.
 func insideWorktree(worktree string, calls []editCall) (rels []string, outside int) {
-	return InsideWorktreeVia(worktree, calls, resolveInside)
+	return InsideWorktreeVia(worktree, calls, resolveInsideByDir())
 }
 
 // resolveInside is one path resolved against the worktree's real root: its relative form and true when it is inside.
@@ -298,6 +298,34 @@ func resolveInside(worktree, realRoot, p string) (string, bool) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+// resolveInsideByDir is resolveInside that resolves each directory once. A turn names hundreds of files in a few
+// directories, and a full resolution of every one spent 24s of the changes view's 30 on a loaded machine. A file that is
+// a link, or that cannot be examined, is resolved in full, and a file's own name is kept as written.
+func resolveInsideByDir() func(worktree, realRoot, p string) (string, bool) {
+	dirs := map[string]string{}
+	return func(worktree, realRoot, p string) (string, bool) {
+		full := filepath.FromSlash(p)
+		dir, base := filepath.Dir(full), filepath.Base(full)
+		real, seen := dirs[dir]
+		if !seen {
+			real, _ = safepath.Contained(worktree, dir)
+			dirs[dir] = real
+		}
+		if real == "" {
+			return resolveInside(worktree, realRoot, p)
+		}
+		if fi, err := os.Lstat(safepath.NoNUL(full)); err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 ||
+			err != nil && !os.IsNotExist(err) {
+			return resolveInside(worktree, realRoot, p)
+		}
+		rel, ok := under(realRoot, filepath.Join(real, base))
+		if !ok || rel == "" {
+			return "", false
+		}
+		return filepath.ToSlash(rel), true
+	}
 }
 
 func InsideWorktreeVia(worktree string, calls []editCall, resolve func(worktree, realRoot, p string) (string, bool)) (rels []string, outside int) {

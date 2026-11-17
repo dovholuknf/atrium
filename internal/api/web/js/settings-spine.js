@@ -136,6 +136,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
+  paintCleanCopy();
   document.getElementById("s-termreturn").value = termReturnMode();
   document.getElementById("s-termkeep").value = String(termKeepN());
   document.getElementById("s-termkeeplines").value = String(termKeepLines());
@@ -153,7 +154,7 @@ function paintAlertKinds(p) {
   const t = document.getElementById("s-alerts");
   if (!t) return;
   t.innerHTML = `<thead><tr><th></th><th>notification</th><th>sound</th></tr></thead><tbody>` +
-    ALERT_KINDS.map(k => `<tr><td><b>${esc(k.label)}</b><span class="hintline">${esc(k.note)}</span></td>` +
+    ALERT_KINDS.map(k => `<tr><td><b>${esc(k.label)}</b> <span class="help" tabindex="0" data-tip="${esc(k.note)}">?</span></td>` +
       ["os", "sound"].map(w => `<td><input type="checkbox" data-kind="${k.id}" data-which="${w}"` +
         ` aria-label="${esc(k.label)}: ${w === "os" ? "notification" : "sound"}"` +
         `${alertWants(p, k.id, w) ? " checked" : ""}></td>`).join("") + `</tr>`).join("") + `</tbody>`;
@@ -1940,6 +1941,8 @@ function connect() {
     if (typeof onHubStreamDrop === "function") onHubStreamDrop();
     // And the down cover, when nobody said atrium would go. See js/down.js.
     if (typeof onBoardStreamDown === "function") onBoardStreamDown();
+    // A refusal (a 4xx) closes an EventSource for good, so nothing would clear the pill: open it again.
+    if (es.readyState === EventSource.CLOSED) setTimeout(connect, 3000);
   };
   // Each event re-reads only what it is about. See `want`.
   es.addEventListener("task", onTaskEvent);

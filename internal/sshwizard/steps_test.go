@@ -529,3 +529,22 @@ func TestASlowMachineIsBounded(t *testing.T) {
 		t.Fatal("a pass that ran out of time is ready")
 	}
 }
+
+// A ROOM THE HUB NAMES THAT IS NOT A NAME never reaches ssh, where -oProxyCommand= would run a local command.
+func TestStep9NeverPassesAHostileRoomToSSH(t *testing.T) {
+	m := winMachine().withKey()
+	m.peersErr = nil
+	m.peers = []PeerKey{
+		{Room: "-oProxyCommand=x", Online: true, SSHOn: true},
+		{Room: "sg4", Online: true, SSHOn: true},
+	}
+	m.runs["ConnectTimeout=10 sg4"] = ranAnswer{out: "atrium-ok"}
+	r := m.step(t, 9, Options{SelfTest: true})
+	want(t, r, Failed, "reached 1 of 2")
+	want(t, r, Failed, "not a room name")
+	for _, l := range m.ran {
+		if strings.Contains(l, "ProxyCommand") {
+			t.Fatalf("a hostile room reached ssh: %q", l)
+		}
+	}
+}

@@ -189,6 +189,8 @@ type Daemon struct {
 	// stopAsked is what the first shutdown request asked for (stopAskedNone, Plain or Runners), claimed by
 	// compare-and-set so a later request cannot change stopRunners under a stop in flight. See handleShutdown.
 	stopAsked atomic.Int32
+	// listening is the ports this room's own listeners bound, which a port preview never forwards to.
+	listening atomic.Pointer[map[int]bool]
 	// gatePoll and gateGiveUp override the short gate's timings when set. Zero is the default, see stopkeep.go.
 	gatePoll, gateGiveUp time.Duration
 	// hooksIn counts the turn-end and session hook calls being answered, which the short gate waits out.
@@ -257,6 +259,8 @@ type Daemon struct {
 
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
+	// roomEvents is the one pass at a time that carries the room's held hub writes. See room_events.go.
+	roomEvents roomEventPush
 	// taskHandled is the task cards whose end is already being filed, by a capture or by a failure. See task_capture.go.
 	taskHandled sync.Map
 	// poolFeed is the one pass at a time that types queued items to a pool's idle cards. See item_pool.go.
@@ -319,6 +323,8 @@ type Daemon struct {
 	// so a repeat of that launch answers with the card rather than a refusal. See
 	// repeatLaunch in launch.go.
 	startedAt *sync.Map
+	// bootAt fences reopenLostRuns off the runs this daemon starts while it is still sweeping the last one's.
+	bootAt time.Time
 	// kept is the cards a wake is delivering held messages to. See injectKept.
 	kept sync.Map
 
@@ -795,8 +801,18 @@ func (d *Daemon) decidedBy(permID string) string {
 // Store exposes the store.
 func (d *Daemon) Store() *store.Store { return d.st }
 
-// PreviewPort is whether the hub may forward to this loopback port. See api.Server.PreviewPort.
-func (d *Daemon) PreviewPort(port int) error { return d.ap.PreviewPort(port) }
+// PreviewPort is whether the hub may forward to this loopback port: never one of this room's own listeners, and none
+// before they are bound. See api.Server.PreviewPort.
+func (d *Daemon) PreviewPort(port int) error {
+	own := d.listening.Load()
+	if own == nil {
+		return errors.New("this room's own listeners are not bound yet")
+	}
+	if (*own)[port] {
+		return fmt.Errorf("port %d is one of this room's own listeners", port)
+	}
+	return d.ap.PreviewPort(port)
+}
 
 // Close releases the database.
 func (d *Daemon) Close() error {
@@ -1115,6 +1131,7 @@ func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.Publish }
 func (d *Daemon) BoardHandler() http.Handler { return d.boardWithHand() }
 
 func (d *Daemon) Run(ctx context.Context) error {
+	d.bootAt = time.Now()
 	go d.probeAutocompact()
 	discoverTools()
 	d.resumePRReviews()
@@ -1186,6 +1203,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// See pprof.go.
 		humanSrv.Handler = roomconf.WithProfiling(humanSrv.Handler, humanLn)
 	}
+	own := map[int]bool{agentLn.Addr().(*net.TCPAddr).Port: true}
+	if humanLn != nil {
+		own[humanLn.Addr().(*net.TCPAddr).Port] = true
+	}
+	d.listening.Store(&own)
 
 	// `addressOf`, not concatenation. An address that already names a host,
 	// which is what `atrium preview` passes, came out as
@@ -1591,6 +1613,7 @@ func (d *Daemon) initServices() {
 			},
 			SenderTask:          func(from string) string { return d.senderTask(from) },
 			KickItems:           func() { d.kickItems() },
+			RoomName:            func() string { return d.RoomName() },
 			ItemSayRefused:      func(from string) bool { return d.itemSayRefused(from) },
 			WriteItemSayRefused: writeItemSayRefused,
 			HandoutFor:          func(rep hublink.RoomReport) []dispatchHandout { return d.handoutFor(rep) },

@@ -1264,6 +1264,20 @@ var migrations = []struct {
 			`ALTER TABLE room ADD COLUMN pending INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		name: "0041_room_event_seen",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS room_event_seen (
+				room    TEXT NOT NULL,
+				seq     INTEGER NOT NULL,
+				kind    TEXT NOT NULL,
+				key     TEXT NOT NULL DEFAULT '',
+				applied INTEGER NOT NULL DEFAULT 0,
+				at      TEXT NOT NULL,
+				PRIMARY KEY (room, seq)
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

@@ -65,3 +65,33 @@ if (missing.length) {
 }
 console.log("\nall " + wanted.length + " settings controls are inside the body.");
 console.log("the partition is sound.");
+
+// Help under a field is a ? after its label (house rule), so a new paragraph of it fails here. A hintline that holds
+// an id is a status line the code writes, and a field with no label has nowhere for the ? to go.
+const helpParas = [];
+for (const id of ["settings", "roomcfg"]) {
+  const at = html.indexOf(`<dialog id="${id}"`);
+  const dlg = html.slice(at, html.indexOf("</dialog>", at));
+  const field = /<div class="field\b[^>]*>/g;
+  let f;
+  while ((f = field.exec(dlg))) {
+    const div = /<(\/?)div\b[^>]*>/g;
+    div.lastIndex = field.lastIndex;
+    let n = 1, e;
+    while (n && (e = div.exec(dlg))) n += e[1] ? -1 : 1;
+    const block = dlg.slice(f.index, e ? e.index : dlg.length);
+    if (!/<label\b|class="eyebrow"/.test(block)) continue;
+    const para = /<(span|div|p) class="hintline"(?![^>]*\bid=)[^>]*>([^]*?)<\/\1>/g;
+    let p;
+    while ((p = para.exec(block))) {
+      if (/\bid=/.test(p[2]) || !p[2].replace(/<[^>]*>/g, "").trim()) continue;
+      helpParas.push(`#${id}: ${p[2].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 70)}`);
+    }
+  }
+}
+if (helpParas.length) {
+  console.error("\nFAIL: help written as a paragraph under a field. Put it in a <span class=\"help\" tabindex=\"0\" " +
+    "data-tip=\"...\">?</span> after the label:\n  " + helpParas.join("\n  "));
+  process.exit(1);
+}
+console.log("no field help is written as a paragraph.");

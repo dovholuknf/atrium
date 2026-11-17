@@ -203,6 +203,13 @@ func DeleteFromHub(ctx context.Context, r *Runner, dir, forwarderBase, token, br
 	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, true, false)
 }
 
+// branchGoneOnHub says the hub lists no such branch, as when the merge queue deleted it once it landed.
+func branchGoneOnHub(ctx context.Context, r *Runner, dir, forwarderBase, token, remote, branch string) bool {
+	out, err := r.GitCall(ctx, dir, Call{Env: PushEnv(forwarderBase, token, 0)}, gitexec.LsRemote{Heads: true, Remote: remote,
+		Refs: []string{"refs/heads/" + branch}})
+	return err == nil && strings.TrimSpace(out) == ""
+}
+
 func pushSpecToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string, del, forceURL bool) (string, error) {
 	if why := CheckPushBranch(branch); why != "" {
 		return "", fmt.Errorf("%s", why)
@@ -237,6 +244,9 @@ func pushSpecToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, br
 	config = append(config, "http."+target+".proxy=", "http."+forwarderBase+".proxy=")
 	out, err := r.GitCall(ctx, dir, Call{Env: PushEnv(forwarderBase, token, 0), Config: config}, gitexec.Push{Porcelain: true,
 		NoVerify: true, NoRecurseSubmodules: true, Remote: remote, Refspecs: []string{spec}})
+	if err != nil && del && branchGoneOnHub(ctx, r, dir, forwarderBase, token, remote, branch) {
+		return "the branch is already gone from the hub", nil
+	}
 	if err != nil {
 		var ge *Error
 		if errors.As(err, &ge) && strings.TrimSpace(ge.Stderr) != "" {

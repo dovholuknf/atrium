@@ -64,6 +64,8 @@ func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.Rel
 			Cwd: r.Cwd, Title: r.Title, Why: r.Why, Prompt: r.Prompt, Brief: r.Brief, Runner: r.Runner, Tags: r.Tags,
 			Model: r.Model, Effort: r.Effort, Args: r.Args, Env: r.Env, LeanAgents: r.LeanAgents,
 			LeanSkills: r.LeanSkills, Superlean: r.Superlean, Lifetime: r.Lifetime, Item: r.Item,
+			Repo: r.Repo, Branch: r.Branch, Base: r.Base, Home: r.Home, Resident: r.Resident, Scratch: r.Scratch,
+			Lean: r.Lean, MCP: r.MCP, Theme: r.Theme, Chat: r.Chat, ItemOwner: r.ItemOwner,
 		}})
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)
@@ -71,7 +73,7 @@ func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.Rel
 	res := daemon.RelayResult{
 		OK: ans.OK, Code: ans.Code, Error: ans.Error, Unreachable: ans.Unreachable, Unconfirmed: ans.Unconfirmed,
 		To: ans.To, Card: ans.Card, Warning: ans.Warning, Watch: ans.Watch, Brief: ans.Brief, Model: ans.Model,
-		Effort: ans.Effort,
+		Effort: ans.Effort, Carried: ans.Carried,
 	}
 	if t := ans.Task; t != nil {
 		res.Task = &daemon.RemoteTask{Card: t.Card, Handle: t.Handle, Title: t.Title, Status: t.Status}

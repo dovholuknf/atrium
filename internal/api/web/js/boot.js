@@ -98,6 +98,7 @@ startRooms().then(() => {
 async function bootBoard() {
   if (await guestKnown) { showGuestPage(); return; }
   routeBoot();
+  if (!emergingOn() && EMERGING_VIEWS.includes(document.querySelector(".tab.on").dataset.view)) switchView("terms");
   connect();
   // The runner list, read once now so the launch dialog opens with its options already in place. Not awaited: nothing
   // here needs it, and it is re-read in the background when opened.

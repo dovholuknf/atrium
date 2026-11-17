@@ -301,6 +301,43 @@ func TestOpenUndoesTheWorktreeAndTheRowWhenTheCardDoesNotStart(t *testing.T) {
 	}
 }
 
+func TestOpenStopsTheRunItRestartedWhenTheCardDoesNotStart(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.checkout(t, "o", "r")
+	rec := post(t, oh.h, "/v1/prs", map[string]any{"url": openURL})
+	var made struct {
+		PR store.PRReview `json:"pr"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &made); err != nil || made.PR.ID == "" {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := oh.srv.st.SetPRState(made.PR.ID, store.PRFailed, "", "fetch: gone"); err != nil {
+		t.Fatal(err)
+	}
+	run := oh.srv.PRRunner.(*fakePRRunner)
+	oh.refuse = errors.New("no runner called ghost")
+	if code, out := oh.open(t, openURL); code != 400 || out["step"] != "card" {
+		t.Fatalf("%d %v", code, out)
+	}
+	if len(run.started) != 2 {
+		t.Fatalf("the open did not restart the failed row: started %v", run.started)
+	}
+	if len(run.aborted) != 1 || run.aborted[0] != made.PR.ID {
+		t.Errorf("the run the open restarted was not stopped: aborted %v", run.aborted)
+	}
+	p, err := oh.srv.st.PRByID(made.PR.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.State != store.PRAborted || p.Archived != "" {
+		t.Errorf("state %q archived %q, want an aborted row that stays in the index", p.State, p.Archived)
+	}
+}
+
 func TestOpenRefusesALinkNothingKnowsAndOneThatNamesNoWork(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")

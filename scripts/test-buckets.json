@@ -10,7 +10,7 @@
     "boot": {
       "file": "scripts/board-tests/boot.js",
       "page": "what every page needs: the board loads with no page error, the service worker, contrast",
-      "units": ["bootClean", "pinHold"],
+      "units": ["bootClean", "pinHold", "linkRoomPick"],
       "sources": [
         "internal/api/web/sw.js",
         "internal/api/web/js/board.js",
@@ -30,7 +30,7 @@
         "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepaliveMark", "coldHandoff", "keepMemory",
         "idle*", "looksIdle", "joined*", "heldStrip", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
         "bridge", "collapsedBridge", "groupBridge", "selectedFits", "childFits", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
-        "newContextSse", "composerStaysPut", "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
+        "newContextSse", "composerStaysPut", "composePasteDefault", "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
       ],
       "sources": [
         "internal/api/web/js/term*.js",
@@ -70,7 +70,7 @@
       ],
       "checks": [
         "scripts/check-terminal.js", "scripts/check-terminal-titles.js", "scripts/check-morph.js", "scripts/check-runner-panes.js",
-        "scripts/check-switcher.js", "scripts/check-path-tokens.js"
+        "scripts/check-switcher.js", "scripts/check-path-tokens.js", "scripts/check-artifacts-skins.js"
       ],
       "needs": ["internal/api/web/js/cards.js"]
     },
@@ -272,7 +272,7 @@
       "file": "scripts/board-tests/rooms.js",
       "page": "rooms, the hub gate, the restart menu, transports, the down page",
       "units": [
-        "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
+        "atriumDown", "reconnectPill", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
       ],
       "sources": [
         "internal/api/web/js/rooms.js",
@@ -296,7 +296,7 @@
       "file": "scripts/board-tests/settings.js",
       "page": "settings, themes and skins, providers, preferences",
       "units": [
-        "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "emergingSwitch", "dropdownsInstant", "prefsEverywhere", "alias", "parent"
+        "help*", "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "emergingSwitch", "dropdownsInstant", "prefsEverywhere", "alias", "parent"
       ],
       "sources": [
         "internal/api/web/js/alias.js",
@@ -387,7 +387,7 @@
   },
   "go": {
     "api/cards": {"package": "./internal/api", "sources": ["internal/api/cardcolors.go", "internal/api/cardnames.go", "internal/api/cardoverlay.go", "internal/api/cardports.go", "internal/api/parent.go", "internal/api/cardprocstart.go", "internal/api/cardsarchive.go", "internal/api/state.go", "internal/api/actions.go", "internal/api/replies.go", "internal/api/placement.go", "internal/api/sweep.go", "internal/api/fixtures.go", "internal/api/changes.go"], "tests": ["internal/api/cardcolors_*test.go", "internal/api/cardnames_*test.go", "internal/api/cardoverlay_*test.go", "internal/api/cardports_*test.go", "internal/api/cardprocstart_*test.go", "internal/api/cardsarchive_*test.go", "internal/api/state_*test.go", "internal/api/revive_*test.go", "internal/api/sweep_*test.go"]},
-    "api/sessions": {"package": "./internal/api", "sources": ["internal/api/sessions.go", "internal/api/sessionexport.go", "internal/api/export.go", "internal/api/deliveryexport.go", "internal/api/hooks.go", "internal/api/setupcheck.go", "internal/api/serverhooks.go", "internal/api/exitguard.go"], "tests": ["internal/api/exitguard_*test.go", "internal/api/sessionexport_*test.go", "internal/api/sessions_*test.go"]},
+    "api/sessions": {"package": "./internal/api", "sources": ["internal/api/sessions.go", "internal/api/sessionexport.go", "internal/api/export.go", "internal/api/deliveryexport.go", "internal/api/hooks.go", "internal/api/setupcheck.go", "internal/api/serverhooks.go", "internal/api/exitguard.go"], "tests": ["internal/api/exitguard_*test.go", "internal/api/sessionexport_*test.go", "internal/api/sessions_*test.go", "internal/api/setupcheck_*test.go"]},
     "api/settings": {"package": "./internal/api", "sources": ["internal/api/settings.go", "internal/api/limits.go", "internal/api/overlays.go", "internal/api/access_ziti.go", "internal/api/resources.go", "internal/api/auth.go", "internal/api/web.go", "internal/api/api.go", "internal/api/icon.go", "internal/api/discover.go", "internal/api/recognisers.go", "internal/api/keepalive.go", "internal/api/inputlag.go", "internal/api/review.go"], "tests": ["internal/api/review_integration_test.go", "internal/api/auth_*test.go", "internal/api/inputlag_*test.go", "internal/api/keepalive_*test.go", "internal/api/overlays_*test.go", "internal/api/recognisers_*test.go", "internal/api/settings_*test.go", "internal/api/webnames_*test.go", "internal/api/websplit_*test.go"]},
     "api/files": {"package": "./internal/api", "sources": ["internal/api/artifacts.go", "internal/api/files.go", "internal/api/filedrop.go", "internal/api/filelist.go", "internal/api/fileopen.go", "internal/api/fileprobe.go", "internal/api/touched.go", "internal/api/openpaths.go", "internal/api/filetext.go", "internal/api/fileview.go", "internal/api/docshare.go", "internal/api/filezip.go", "internal/api/homes.go", "internal/api/browse.go", "internal/api/browseroots.go", "internal/api/longpath_other.go", "internal/api/longpath_windows.go", "internal/api/open.go", "internal/api/openkinds.go", "internal/api/openprogress.go"], "tests": ["internal/api/artifacts_*test.go", "internal/api/browse_*test.go", "internal/api/browseroots_*test.go", "internal/api/filedrop_*test.go", "internal/api/filelist_*test.go", "internal/api/fileprobe_*test.go", "internal/api/files_*test.go", "internal/api/homes_*test.go", "internal/api/fileview_*test.go", "internal/api/open_*test.go", "internal/api/openkinds_*test.go"]},
     "api/prs": {"package": "./internal/api", "sources": ["internal/api/prs.go", "internal/api/prsdrawer.go", "internal/api/prpanel.go", "internal/api/prsfolder.go", "internal/api/prsmove.go", "internal/api/prbrief.go", "internal/api/prclaim.go", "internal/api/prworktree.go", "internal/api/worktreeleft.go", "internal/api/checkoutcase.go", "internal/api/checkouts.go"], "tests": ["internal/api/checkoutcase_*test.go", "internal/api/checkouts_*test.go", "internal/api/prbrief_*test.go", "internal/api/prclaim_*test.go", "internal/api/prs_*test.go", "internal/api/prsdrawer_*test.go", "internal/api/prsmove_*test.go", "internal/api/prworktree_*test.go"]},
@@ -399,7 +399,7 @@
     "api/providers": {"package": "./internal/api", "sources": ["internal/api/providers.go", "internal/api/providerapi.go"], "tests": ["internal/api/providerapi_*test.go", "internal/api/providers_*test.go"]},
     "api/runnersetup": {"package": "./internal/api", "sources": ["internal/api/runnersetup.go"], "tests": ["internal/api/runnersetup_*test.go"]},
     "api/termopen": {"package": "./internal/api", "sources": ["internal/api/termopen.go", "internal/api/termwidth.go", "internal/api/scrollback.go"], "tests": ["internal/api/scrollback_*test.go", "internal/api/termopen_*test.go", "internal/api/termwidth_*test.go"]},
-    "hub/rooms": {"package": "./internal/link", "sources": ["internal/link/roomsevent.go", "internal/link/roomspec.go", "internal/link/roomssh.go", "internal/link/hosts.go", "internal/link/hubtransports.go", "internal/link/link.go", "internal/link/proxy.go", "internal/link/hubroutes.go", "internal/link/setupwatch.go", "internal/link/fanout.go", "internal/link/everywhere.go", "internal/link/everywhere_http.go", "internal/link/stream_door.go", "internal/link/preview.go", "internal/link/events.go", "internal/link/cardroute.go", "internal/link/resolve.go", "internal/link/hubask.go", "internal/link/hubauth.go", "internal/link/hubaccess.go"], "tests": ["internal/link/hubaccess_*test.go", "internal/link/resolve_*test.go", "internal/link/cardroute_*test.go", "internal/link/events_*test.go", "internal/link/everywhere_*test.go", "internal/link/fanout_*test.go", "internal/link/hosts_*test.go", "internal/link/hubtransports_*test.go", "internal/link/hubask_*test.go", "internal/link/hubauth_*test.go", "internal/link/link_*test.go", "internal/link/newcontexts_*test.go", "internal/link/overlaytls_*test.go", "internal/link/transport_*test.go", "internal/link/conn_*test.go", "internal/link/relay_*test.go", "internal/link/roomsevent_*test.go", "internal/link/roomspec_*test.go", "internal/link/roomssh_*test.go", "internal/link/setupwatch_*test.go", "internal/link/stream_*test.go", "internal/link/preview_*test.go"]},
+    "hub/rooms": {"package": "./internal/link", "sources": ["internal/link/roomsevent.go", "internal/link/roomspec.go", "internal/link/roomssh.go", "internal/link/hosts.go", "internal/link/hubtransports.go", "internal/link/link.go", "internal/link/proxy.go", "internal/link/hubroutes.go", "internal/link/setupwatch.go", "internal/link/fanout.go", "internal/link/everywhere.go", "internal/link/everywhere_http.go", "internal/link/stream_door.go", "internal/link/preview.go", "internal/link/events.go", "internal/link/cardroute.go", "internal/link/resolve.go", "internal/link/hubask.go", "internal/link/roomevents.go", "internal/link/hubauth.go", "internal/link/hubaccess.go"], "tests": ["internal/link/hubaccess_*test.go", "internal/link/resolve_*test.go", "internal/link/cardroute_*test.go", "internal/link/events_*test.go", "internal/link/everywhere_*test.go", "internal/link/fanout_*test.go", "internal/link/hosts_*test.go", "internal/link/hubtransports_*test.go", "internal/link/hubask_*test.go", "internal/link/roomevents_*test.go", "internal/link/hubauth_*test.go", "internal/link/link_*test.go", "internal/link/newcontexts_*test.go", "internal/link/overlaytls_*test.go", "internal/link/transport_*test.go", "internal/link/conn_*test.go", "internal/link/relay_*test.go", "internal/link/roomsevent_*test.go", "internal/link/roomspec_*test.go", "internal/link/roomssh_*test.go", "internal/link/setupwatch_*test.go", "internal/link/stream_*test.go", "internal/link/preview_*test.go"]},
     "hub/merge": {"package": "./internal/link", "sources": ["internal/link/merge_mcp.go", "internal/link/profile.go"], "tests": ["internal/link/merge_*test.go"]},
     "hub/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog.go", "internal/link/docdebt.go", "internal/link/docdebt_landed.go"], "tests": ["internal/link/backlog_*test.go", "internal/link/docdebt_*test.go"]},
     "hub/items": {"package": "./internal/link", "sources": ["internal/link/items.go", "internal/link/tasks.go", "internal/link/tasks_launch.go", "internal/link/shepherd.go", "internal/link/item_brief.go", "internal/link/interview.go", "internal/link/lifecycle.go", "internal/link/lifecycle_engine.go", "internal/link/lifecycle_spike.go", "internal/link/lifecycle_git.go", "internal/link/work.go", "internal/link/work_launch.go", "internal/link/work_record.go", "internal/link/workcost.go", "internal/link/workusage.go", "internal/link/launchcaps.go", "internal/link/launchroute.go", "internal/link/launchfind.go", "internal/link/pinorder.go", "internal/link/predates.go", "internal/link/logline.go"], "tests": ["internal/link/interview_*test.go", "internal/link/item_*test.go", "internal/link/items_integration_test.go", "internal/link/tasks_integration_test.go", "internal/link/shepherd_*test.go", "internal/link/launchcaps_*test.go", "internal/link/launchroute_*test.go", "internal/link/lifecycle_*test.go", "internal/link/pinorder_*test.go", "internal/link/work_*test.go", "internal/link/workcost_*test.go", "internal/link/workerpolicy_*test.go", "internal/link/workusage_*test.go"]},

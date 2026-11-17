@@ -38,7 +38,7 @@ func hubAskPath(p string) bool {
 	if base == "/_hub/backlog/follow" || base == "/_hub/backlog/follow/" {
 		return false
 	}
-	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" {
+	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" || base == hubRoomEventsPath {
 		return true
 	}
 	if base == "/_hub/merge" || strings.HasPrefix(base, "/_hub/merge/") {
@@ -75,6 +75,9 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req wire.RelayRequ
 	}
 	if base, _, _ := strings.Cut(req.Path, "?"); base == hubPublishPath {
 		return c.publishAsk(ctx, from, method, req)
+	}
+	if base, _, _ := strings.Cut(req.Path, "?"); base == hubRoomEventsPath {
+		return c.roomEventAsk(ctx, from, req)
 	}
 	var body any
 	if method == http.MethodPost {

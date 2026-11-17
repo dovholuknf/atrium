@@ -58,6 +58,7 @@ harness_lines="$( { git diff -U0 "$mb" -- scripts/test-board-headless.js
 
 nfiles=$(printf '%s\n' "$files" | grep -c . || true)
 echo "test-touched: base $base, merge base $(git rev-parse --short "$mb"), $nfiles changed file(s)"
+bash scripts/check-card-files.sh "$base" || exit 1
 plan_args=()
 [ -n "$harness_lines" ] && plan_args+=(--harness-lines "$harness_lines")
 [ -n "$budget" ] && plan_args+=(--budget "$budget")

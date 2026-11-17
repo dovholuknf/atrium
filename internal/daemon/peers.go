@@ -537,13 +537,18 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	if why != "" {
 		note = why
 	}
+	_, waking := d.kept.Load(target.ID)
+	woke := small.IsParked(target) || waking
+	if woke {
+		note = wokeNote
+	}
 	if d.HoldingMessages(target.ID) {
 		note = cycle.NewContextHoldNote
 	} else if d.DeployHeld(target.ID) {
 		note = d.DeployHoldNote()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"queued": true, "to": to, "note": note, "reachable": reach, "when": whenWord(waitTurn),
+		"queued": true, "to": to, "note": note, "reachable": reach, "when": whenWord(waitTurn), "resumed": woke,
 	})
 }
 

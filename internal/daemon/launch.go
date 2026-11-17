@@ -48,7 +48,21 @@ func defaultTerminal() []string {
 	if _, err := exec.LookPath("wt.exe"); err == nil {
 		return []string{"wt.exe", "-w", "atrium", "new-tab", "--title", "{title}", "-d", "{cwd}", "{cmd}"}
 	}
-	return []string{"cmd.exe", "/c", "start", "{title}", "/D", "{cwd}", "cmd.exe", "/k", "{cmd}"}
+	return ownConsole
+}
+
+// ownConsole is the runner alone, started in a new console with cmd.Dir as its cwd. The template it replaces,
+// `cmd.exe /c start {title} ... cmd.exe /k {cmd}`, parsed the title and the prompt as cmd syntax, twice.
+var ownConsole = []string{"{cmd}"}
+
+// windowTemplate is tmpl, or ownConsole when wt.exe would read card text as its own syntax: `;` splits
+// wt commands and a `"` does not survive its rejoin of the command line.
+func windowTemplate(tmpl []string, cwd, title, cmd string, args []string) []string {
+	text := strings.Join(append([]string{cwd, title, cmd}, args...), "")
+	if tmpl[0] == "wt.exe" && strings.ContainsAny(text, `;"`) {
+		return ownConsole
+	}
+	return tmpl
 }
 
 // expandTemplate builds the argv for the terminal wrapper.
@@ -116,6 +130,9 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 	rawModel := o.Model
 	args = h.Args
 	if resume != "" {
+		if err := optionLike("conversation id", resume); err != nil {
+			return nil, "", err
+		}
 		if len(h.ResumeArgs) == 0 {
 			return nil, "", fmt.Errorf("%s has no resume arguments configured", h.Label)
 		}
@@ -196,12 +213,25 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		return nil, "", fmt.Errorf("%s has no way to take an opening prompt. "+
 			"set prompt arguments on the runner, using {prompt} where the text goes", h.Label)
 	}
+	if err := optionLike("opening prompt", prompt); err != nil {
+		return nil, "", err
+	}
 	next := make([]string, 0, len(args)+len(h.PromptArgs))
 	next = append(next, args...)
 	for _, a := range h.PromptArgs {
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+// optionLike refuses card text that would reach argv starting with "-". Refused for every runner, since which of them
+// would parse it as an option of its own is not something atrium can know.
+func optionLike(what, value string) error {
+	if strings.HasPrefix(strings.TrimSpace(value), "-") {
+		return fmt.Errorf("the %s starts with -, so the runner could read it as an option of its own. "+
+			"start it with something else", what)
+	}
+	return nil
 }
 
 func namesSandbox(args []string) bool {
@@ -269,6 +299,9 @@ func withMapped(h *store.Harness, args []string, field, noun string, tmpl []stri
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return args, nil
+	}
+	if err := optionLike(field, value); err != nil {
+		return nil, err
 	}
 	if len(tmpl) == 0 {
 		if strings.TrimSpace(envName) != "" {
@@ -1235,6 +1268,16 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 			return nil, err
 		}
 	}
+	// A non-claude runner's brief is written before its card has an id, so the walk link is added once it has one.
+	if briefPath != "" && !outside && !shared.IsClaude(h) {
+		if err := appendBriefLine(briefPath, d.walkLinkLine(task)); err != nil {
+			log.Printf("[atrium] %v", err)
+		}
+	}
+	// A prompt with no brief is built before the card has an id too, so the walk link is added to it here.
+	if briefPath == "" && prompt != "" && req.Resume == "" && !outside && !shared.IsClaude(h) {
+		args, prompt = withPromptLine(args, prompt, d.walkLinkLine(task))
+	}
 
 	// Mark the card before spawning so even an immediate exit cleans up its
 	// temporary directory. Use the default cleanup note unless the operator
@@ -1410,12 +1453,18 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		// file that is on PATH.
 		cmdName, cmdArgs := d.hk.agentSpawn(h.Exe(), args)
 		if resolved, err := exec.LookPath(cmdName); err == nil {
-			cmdName, cmdArgs = viaShellIfScript(resolved, cmdArgs)
+			if cmdName, cmdArgs, err = viaShellIfScript(resolved, cmdArgs); err != nil {
+				d.launchFailed(task.ID, err.Error())
+				return nil, err
+			}
 		}
-		argv := expandTemplate(TerminalTemplate, cwd, title, cmdName, cmdArgs)
+		argv := expandTemplate(windowTemplate(TerminalTemplate, cwd, title, cmdName, cmdArgs), cwd, title, cmdName, cmdArgs)
 		cmd := exec.Command(argv[0], argv[1:]...)
 		cmd.Dir = cwd
 		cmd.Env = env
+		if argv[0] == cmdName {
+			shared.NewConsole(cmd)
+		}
 		if err := cmd.Start(); err != nil {
 			d.launchFailed(task.ID, err.Error())
 			return nil, fmt.Errorf("could not start %s: %w", h.Label, err)
@@ -1848,6 +1897,30 @@ func writeBrief(cwd, body string) (string, error) {
 	return filepath.ToSlash(path), nil
 }
 
+// appendBriefLine adds line to the brief at path, once.
+func appendBriefLine(path, line string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil || line == "" || strings.Contains(string(raw), line) {
+		return err
+	}
+	_, err = writeBrief(filepath.Dir(path), strings.TrimRight(string(raw), "\n")+"\n\n"+line)
+	return err
+}
+
+// withPromptLine adds line to the opening prompt, once, in the prompt and in every argument carrying it.
+func withPromptLine(args []string, prompt, line string) ([]string, string) {
+	p := strings.TrimSpace(prompt)
+	if line == "" || p == "" || strings.Contains(p, line) {
+		return args, prompt
+	}
+	lined := p + "\n\n" + line
+	next := make([]string, len(args))
+	for i, a := range args {
+		next[i] = strings.ReplaceAll(a, p, lined)
+	}
+	return next, lined
+}
+
 // gitURLLine is the line a launched card's brief carries, worded "if you have" because a runner
 // without atrium's control MCP cannot see the tool (and never on an outside-code card, which has no git token) (hub-forge design,
 // section 4): where to read code that is not in its directory. The hub's
@@ -1996,23 +2069,21 @@ func childEnvFrom(base []string, harnessEnv map[string]string, atrium map[string
 	return out
 }
 
-// Kill stops the runner behind a card.
-//
-// This only works when atrium knows a process id for the card. A window-mode
-// launch has none at spawn, since the terminal wrapper hands off and exits, so
-// the session hook reports the runner's, or failing that its shell's.
+// Kill stops the runner behind a card. A window-mode launch has no pid atrium owns, so it cannot be stopped here.
 func (d *Daemon) Kill(taskID string) error {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return err
 	}
 	if t.PID <= 0 {
-		return errors.New("close its terminal window yourself")
+		if r := d.sup.get(taskID); r != nil && r.tm() != nil {
+			t.PID = r.tm().Pid()
+		}
 	}
-	// A process that is already gone is not a failure. The request was "make
-	// this stop running", and it is not running, so the card converges to dead
-	// and the caller is told it worked. Reporting an error here made asking to
-	// terminate an already-dead card produce a dialog and change nothing.
+	if t.PID <= 0 {
+		return errors.New("atrium does not know this runner's process. " +
+			"a window-mode launch is handed to the terminal and owns itself, so close it there")
+	}
 	gone := false
 	proc, err := os.FindProcess(t.PID)
 	if err == nil {
@@ -2027,10 +2098,11 @@ func (d *Daemon) Kill(taskID string) error {
 			return fmt.Errorf("could not stop process %d: %w", t.PID, err)
 		}
 	}
+	for end := time.Now().Add(5 * time.Second); processAlive(t.PID) && time.Now().Before(end); {
+		time.Sleep(25 * time.Millisecond)
+	}
 
-	// TERMINATE IS A DECISION, like an asked exit, and keeps the card down across
-	// a restart. Recorded once the process is stopped or gone, never before: a
-	// kill that failed leaves the card running, and it must not stay down.
+	// Recorded only once the process is stopped or gone: a failed kill must not keep the card down.
 	if err := d.st.SetExitAsked(taskID); err != nil {
 		return err
 	}

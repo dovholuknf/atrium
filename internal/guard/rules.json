@@ -57,6 +57,29 @@
       "reason": "claude may not create or unset git aliases (an alias can hide a blocked verb or run a shell command). Hand it to the user."
     },
     {
+      "id": "git-program-config",
+      "check": "git-program-config",
+      "tools": ["shell"],
+      "params": {"patterns": [
+        "^core\\.(fsmonitor|hookspath|sshcommand|pager|editor|askpass|gitproxy|alternaterefscommand)$",
+        "^diff\\.external$", "^diff\\..+\\.(textconv|command)$", "^merge\\..+\\.driver$",
+        "^filter\\..+\\.(clean|smudge|process)$", "^credential\\.(.+\\.)?helper$", "^gpg\\.(.+\\.)?program$",
+        "^sequence\\.editor$", "^pager\\..+$", "^uploadpack\\.packobjectshook$", "^include\\.path$",
+        "^includeif\\..+\\.path$", "^hook\\..+$", "^(difftool|mergetool|browser|man)\\..+\\.(cmd|path)$",
+        "^guitool\\..+\\.cmd$", "^trailer\\..+\\.(command|cmd)$", "^remote\\..+\\.(uploadpack|receivepack|vcs)$",
+        "^protocol\\.(.+\\.)?allow$", "^submodule\\..+\\.update$", "^interactive\\.difffilter$", "^web\\.browser$",
+        "^sendemail\\.(.+\\.)?smtpserver$", "^instaweb\\.httpd$"
+      ]},
+      "reason": "'git config' may not write {name}: that key names a program git runs, and the room runs git in this worktree as itself, outside the permission chain. Read it with --get, or hand the change to the user."
+    },
+    {
+      "id": "git-config-file",
+      "check": "path",
+      "tools": ["Write", "Edit"],
+      "params": {"patterns": ["(?i)/\\.git/(.+/)?(config|config\\.worktree)$", "(?i)/\\.git/(.+/)?hooks/", "(?i)(^|/)\\.gitconfig$", "(?i)/\\.config/git/config$"]},
+      "reason": "Do not write {name}: git config and hooks name programs the room runs as itself, outside the permission chain. Hand the change to the user."
+    },
+    {
       "id": "git-global-option",
       "check": "git-global-option",
       "tools": ["shell"],

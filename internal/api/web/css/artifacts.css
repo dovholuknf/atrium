@@ -13,6 +13,7 @@
     box-shadow: 0 10px 34px rgba(var(--shadow-rgb), .35);
     transition: transform .2s ease, visibility .2s;
   }
+  .term-arts { --term-fg: var(--body); --term-bg: var(--bg-2); --term-line: var(--stroke-dim); }
   .term-arts[hidden] { display: flex; visibility: hidden; transform: translateX(102%); }
 
   /* One button for the whole panel: 26px tall, the same corner, border and fill, an icon alone or an icon and a word. */
@@ -21,16 +22,17 @@
     height: 26px; min-width: 26px; padding: 0 6px; border-radius: var(--r-sm); cursor: pointer;
     font: 500 var(--fs-xs)/1 var(--sans); color: var(--body); white-space: nowrap;
     background: color-mix(in srgb, var(--body) 7%, transparent);
-    border: 1px solid color-mix(in srgb, var(--body) 24%, transparent);
+    border: 1px solid color-mix(in srgb, var(--body) 72%, transparent);
     transition: color .12s, background .12s, border-color .12s;
   }
+  .term-arts .filebar .ab { border-color: color-mix(in srgb, var(--body) 72%, transparent); }
   .term-arts .ab svg { display: block; width: 14px; height: 14px; flex: none; }
   .term-arts .ab.w { padding: 0 9px 0 7px; }
   .term-arts .ab:focus-visible { outline: 1px solid var(--teal); outline-offset: 1px; }
   @media (hover: hover) {
     .term-arts .ab:not(:disabled):hover { color: var(--head); border-color: var(--blue); background: var(--btn-hover); }
   }
-  .term-arts .ab[aria-pressed="true"] { color: var(--teal); background: rgba(var(--teal-rgb), .12); border-color: color-mix(in srgb, var(--teal) 60%, transparent); }
+  .term-arts .ab[aria-pressed="true"] { color: color-mix(in srgb, var(--teal) 65%, var(--head)); background: rgba(var(--teal-rgb), .12); border-color: color-mix(in srgb, var(--teal) 60%, transparent); }
   .term-arts .ab:disabled { opacity: .35; cursor: default; }
   .term-arts .ab.done { color: var(--teal); border-color: var(--teal); }
   .abgroup { display: inline-flex; gap: 4px; flex: none; }
@@ -38,12 +40,14 @@
 
   .term-arts > .filebar { flex-wrap: wrap; row-gap: 6px; }
   .arthead { display: inline-flex; align-items: center; gap: 6px; font: 600 var(--fs-sm) var(--sans); color: var(--head); }
-  .artcount { font: var(--fs-xs) var(--mono); color: var(--dimmest); font-weight: 400; }
+  .artcount { font: var(--fs-xs) var(--mono); color: var(--label); font-weight: 400; }
   .term-arts .seg button {
     height: 26px; box-sizing: border-box; padding: 0 9px; font-size: var(--fs-xs); line-height: 1;
     display: inline-flex; align-items: center; gap: 5px;
   }
-  .term-arts .seg button.on { background: var(--chip); color: var(--head); border-color: var(--stroke); }
+  .term-arts .seg button { color: var(--body); border-color: color-mix(in srgb, var(--body) 72%, transparent); }
+  .term-arts .seg button .pillcount { color: var(--body); }
+  .term-arts .seg button.on { background: var(--chip); color: var(--head); border-color: color-mix(in srgb, var(--body) 72%, transparent); }
   .term-arts .ffilter input { height: 26px; box-sizing: border-box; }
 
   /* The explorer's tracks: a tick, the name, where it lives, its size, when, and the actions the row is on. */
@@ -51,7 +55,7 @@
   .term-arts .filelist .frow.agroup {
     display: flex; gap: 6px; align-items: center; cursor: pointer; user-select: none; min-height: 0;
     position: sticky; top: 29px; z-index: 1; background: var(--bg-1);
-    font: var(--fs-xxs) var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--dimmest);
+    font: var(--fs-xxs) var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--label);
     padding-top: 5px; padding-bottom: 5px;
   }
   .term-arts .filelist .frow.agroup:hover { background: var(--bg-1); color: var(--head); }
@@ -101,3 +105,4 @@
   .abar .fpathpop { top: 100%; }
   .abar .awhere:hover .fpathpop:not(:empty), .abar .awhere:focus-within .fpathpop:not(:empty) { display: grid; }
   .abar .fpathpop .ab { height: 22px; min-width: 22px; padding: 0 4px; }
+  .term-arts .abar .by { color: var(--label); opacity: 1; }

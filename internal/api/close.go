@@ -364,7 +364,7 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			it.Note = "the clone this card's open made, deleted after its worktree. kept if its worktree is"
 		case store.ResHubBranch:
 			it.Note = hubBranchNote(r)
-			if !hubBranchMerged(ctx, t.Worktree, r.Ref, prCard) {
+			if !hubBranchMerged(ctx, hubPushDir(ctx, t, rows), r.Ref) {
 				it.Action, it.Note = "ask", "not merged into claude/main, so it is asked about: keep or delete"
 				if prCard {
 					it.Note = "not merged into claude/main or the forge's main, so it is asked about: keep or delete"

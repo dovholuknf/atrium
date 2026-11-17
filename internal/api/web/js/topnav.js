@@ -156,7 +156,8 @@
   function paintArrange() {
     const p = prefs();
     list.replaceChildren();
-    p.order.forEach((v, i) => {
+    const vis = p.order.filter(v => emergingOn() || !EMERGING_VIEWS.includes(v));
+    vis.forEach((v, i) => {
       const row = document.createElement("div");
       row.className = "tabsdlg-row";
       row.dataset.view = v;
@@ -180,12 +181,13 @@
       };
       const move = (d) => () => {
         const q = prefs(); const j = q.order.indexOf(v);
-        q.order.splice(j, 1); q.order.splice(j + d, 0, v);
+        const to = q.order.indexOf(vis[vis.indexOf(v) + d]);
+        q.order.splice(j, 1); q.order.splice(to, 0, v);
         savePrefs(q); paintArrange();
         const again = list.querySelector('[data-view="' + v + '"] button[aria-label^="move ' + (d < 0 ? "up" : "down") + '"]');
         if (again && !again.disabled) again.focus();
       };
-      row.append(mk("\u2191", "move up", i === 0, move(-1)), mk("\u2193", "move down", i === p.order.length - 1, move(1)), name, sel);
+      row.append(mk("\u2191", "move up", i === 0, move(-1)), mk("\u2193", "move down", i === vis.length - 1, move(1)), name, sel);
       list.append(row);
     });
   }
@@ -230,6 +232,7 @@
   new MutationObserver(layoutSoon).observe(nav, { attributes: true, subtree: true, attributeFilter: ["class", "hidden"] });
   // A count that changes is what lets a hidden tab through, and what the `...` badge sums.
   new MutationObserver(layoutSoon).observe(nav, { childList: true, characterData: true, subtree: true });
+  window.addEventListener("emerging", () => { if (dlg.open) paintArrange(); });
   desktop.addEventListener("change", layout);
   layout();
 })();
