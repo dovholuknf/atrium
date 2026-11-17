@@ -8,10 +8,11 @@ import "github.com/modelcontextprotocol/go-sdk/mcp"
 // this list and not on a list of exclusions, so a tool added later, such as the
 // git tools a `registerGit` adds, lands in `full` alone with no further change.
 var WorkerTools = map[string]bool{
-	"atrium_status": true,
-	"atrium_peers":  true,
-	"atrium_say":    true,
-	"atrium_report": true,
+	"atrium_status":       true,
+	"atrium_peers":        true,
+	"atrium_say":          true,
+	"atrium_capabilities": true,
+	"atrium_report":       true,
 	// How a worker ends, in one line. See ctl_end.go.
 	"atrium_done":    true,
 	"atrium_blocked": true,

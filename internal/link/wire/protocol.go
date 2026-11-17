@@ -112,6 +112,9 @@ type Note struct {
 	// Disk is the room's one-line disk notice, "" while every drive is above its warning level. A pointer for the same
 	// reason as Login. Observed, and the hub only shows it. See internal/daemon/diskwatch.go.
 	Disk *string `json:"disk,omitempty"`
+	// Runaway is the room's host watch lines, one per flagged process, "" while none is. A pointer for the same reason as
+	// Login. Observed, and the hub only shows it. See internal/daemon/hostwatch.go.
+	Runaway *string `json:"runaway,omitempty"`
 	// PathStates is a room saying how each of its rungs looks from where it stands, riding on the beat (not `paths`, which
 	// is the hub's own list going the other way). Observed, bounded by the hub, never acted on. An older hub ignores it and
 	// an older room never sends it. See pathstate.go.

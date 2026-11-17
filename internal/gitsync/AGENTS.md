@@ -56,6 +56,8 @@ header of the file you are in, not only the package comment.
 - **`CleanLocks` removes stale `*.lock` files ONLY under refs the caller owns.** A git killed mid-fetch leaves locks
   and every later git fails with "File exists". Everything else in a clone is the operator's, `packed-refs` included,
   and a stale lock there is reported, not removed.
+- **A push and the operator's delete WAIT for a repository's locks only a bounded time** (`lockWithin`), then are
+  refused with a sentence. A mirror pass or a merge holding the lock must never leave a request hanging.
 - **Refusals must look like receive-pack's** (`remote: atrium: <sentence>`, `! [remote rejected]`), so a person's
   git shows them.
 - **Ref names pass a strict ASCII allowlist before git's own check** (`refname.go`), because a branch lands as a file

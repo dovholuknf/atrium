@@ -1,0 +1,29 @@
+version: 1
+caps:
+  - {id: go, kind: toolchain, probe: [go, version], version: 'go(\d+\.\d+(\.\d+)?)'}
+  - {id: gcc, kind: toolchain, probe: [gcc, --version], version: '(\d+\.\d+\.\d+)'}
+  - {id: cmake, kind: toolchain, probe: [cmake, --version], version: '(\d+\.\d+\.\d+)'}
+  - {id: ninja, kind: toolchain, probe: [ninja, --version], version: '(\d+\.\d+(\.\d+)?)'}
+  - {id: make, kind: toolchain, probe: [make, --version], version: '(\d+\.\d+(\.\d+)?)'}
+  - {id: vcpkg, kind: toolchain, probe: [vcpkg, version], version: '(\d{4}-\d{2}-\d{2}|\d+\.\d+(\.\d+)?)', optional: true}
+  - {id: msbuild, kind: toolchain, probe: [msbuild, -version, -nologo], version: '(\d+\.\d+\.\d+(\.\d+)?)', optional: true}
+  - {id: node, kind: toolchain, probe: [node, -v], version: 'v(\d+\.\d+\.\d+)'}
+  - {id: docker, kind: toolchain, probe: [docker, version, --format, '{{.Server.Version}}'], optional: true}
+  - {id: playwright, kind: toolchain, probe: [playwright, --version], version: '(\d+\.\d+\.\d+)', optional: true}
+  - {id: python, kind: toolchain, probe: [python, --version], version: '(\d+\.\d+\.\d+)', optional: true}
+  - {id: ziti, kind: toolchain, probe: [ziti, version], version: 'v?(\d+\.\d+\.\d+)', optional: true}
+  - {id: zrok, kind: toolchain, probe: [zrok, version], optional: true}
+  - {id: ssh, kind: toolchain, probe: [ssh, -V], version: 'OpenSSH_(\S+)'}
+  - {id: ssh:cdwsl, kind: reach, probe: [ssh, -o, BatchMode=yes, -o, ConnectTimeout=5, cdwsl, "true"], timeout: 10s, needs: [ssh], optional: true, every: 15m}
+  - {id: ssh:agentwsl, kind: reach, probe: [ssh, -o, BatchMode=yes, -o, ConnectTimeout=5, agentwsl, "true"], timeout: 10s, needs: [ssh], optional: true, every: 15m}
+  - {id: ssh:cdaws, kind: reach, probe: [ssh, -o, BatchMode=yes, -o, ConnectTimeout=5, cdaws, "true"], timeout: 10s, needs: [ssh], optional: true, every: 15m}
+  - {id: ssh:cdzrok, kind: reach, probe: [ssh, -o, BatchMode=yes, -o, ConnectTimeout=5, cdzrok, "true"], timeout: 10s, needs: [ssh], optional: true, every: 15m}
+  - {id: ziti:ctrl1, kind: reach, probe: [ziti, edge, list, identities, -j, --limit, "1"], timeout: 15s, needs: [ziti], optional: true, every: 15m}
+  - {id: ziti:ctrl2, kind: reach, probe: [ziti, edge, list, identities, -j, --limit, "1"], timeout: 15s, needs: [ziti], optional: true, every: 15m}
+  - {id: build:atrium, kind: build, probe: [go, list, ./...], dir: '${ATRIUM_REPOS}/atrium', timeout: 120s, needs: [go, make]}
+  - {id: build:ziti, kind: build, probe: [go, build, -o, '${SCRATCH}/ziti.out', ./ziti], dir: '${ATRIUM_REPOS}/ziti', timeout: 120s, needs: [go], optional: true}
+  - {id: build:sdk-golang, kind: build, probe: [go, vet, ./...], dir: '${ATRIUM_REPOS}/sdk-golang', timeout: 120s, needs: [go], optional: true}
+  - {id: build:ziti-edge-tunnel, kind: build, probe: [cmake, --version], dir: '${ATRIUM_REPOS}/ziti-tunnel-sdk-c', timeout: 60s, needs: [cmake, ninja], optional: true}
+  - {id: gh-auth, kind: access, probe: [gh, auth, status], timeout: 10s}
+  - {id: hub-push, kind: access, probe: [git, ls-remote, --heads, hub, claude/main], dir: '${ATRIUM_REPOS}/atrium', timeout: 15s}
+  - {id: signing, kind: access, probe: [git, config, --get, commit.gpgsign], match: '^true$', timeout: 5s}

@@ -479,6 +479,8 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 		Login: d.LoginNeededReason,
 		// THE ROOM'S DISK NOTICE, on the beat, so the hub's Terminals tab can show one banner per room that is low.
 		Disk: d.DiskNotice,
+		// THE ROOM'S RUNAWAY PROCESSES, on the beat, beside the disk banner.
+		Runaway: d.HostNotice,
 		// WHETHER THIS ROOM WILL TAKE A BUILD ITS HUB IS RUNNING, which is the
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See

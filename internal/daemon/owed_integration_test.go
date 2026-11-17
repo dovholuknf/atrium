@@ -78,6 +78,23 @@ func TestAWorkerThatEndsWithNoReportOpensAnItemOnItsLauncher(t *testing.T) {
 	}
 }
 
+func TestAnOwedNoticeStaysOnTheLaunchersCardAndNeverToastsTheBoard(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	w := watchNotices(t, d, launcher.ID)
+	endWorker(t, d, worker)
+	d.owedPass(time.Now())
+	if owedHeld(t, d, launcher.ID, "no report") != 1 {
+		t.Fatalf("held = %v", heldOn(t, d, launcher.ID))
+	}
+	d.holdNotice(launcher, worker, NoticeSilentStop, "stopped without a word")
+	ns := w.notices()
+	if len(ns) != 1 || !strings.Contains(ns[0], NoticeSilentStop) {
+		t.Fatalf("board notices %v, want only the silent stop", ns)
+	}
+}
+
 func TestTheOrchestratorHearsOnceAtTenMinutesAndNothingIsTyped(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)

@@ -623,7 +623,17 @@ func (r *Room) viaNow() string {
 
 // enforceAccess ends every open stream the switch no longer allows.
 func (r *Room) enforceAccess() {
-	st := readAccess(r.RemoteDir)
+	// One unreadable tick is a rename in flight, not the switch turned off.
+	var st RemoteAccess
+	if r.RemoteDir != "" {
+		e := remoteaccess.Effective(r.RemoteDir)
+		skip := e.Err != nil && !r.unread
+		r.unread = e.Err != nil
+		if skip {
+			return
+		}
+		st = RemoteAccess{On: e.On, From: e.From, Addr: e.Addr, Port: e.Port, Forced: e.Forced}
+	}
 	r.smu.Lock()
 	var drop []*openStream
 	for _, o := range r.streams {

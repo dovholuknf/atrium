@@ -283,7 +283,7 @@ async function landThePlaneSection(browser, base) {
       fillLandK();
       const box = document.getElementById("s-landk");
       if (!box) return { missing: true };
-      const out = { placeholder: box.placeholder, hint: (document.querySelector("#s-landk-field .help") || { dataset: {} }).dataset.tip || "" };
+      const out = { placeholder: box.placeholder, hint: ((document.querySelector('label[for="s-landk"] .help') || {}).dataset || {}).tip || "" };
       box.value = "5"; saveLandK(); out.junk = localStorage.getItem("atrium.landThePlaneK");
       const before = document.querySelector('#term-list [data-id="lp-170"] .ctxline.over') ? "badge" : "none";
       box.value = "160"; saveLandK(); out.saved = localStorage.getItem("atrium.landThePlaneK");

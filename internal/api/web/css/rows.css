@@ -491,6 +491,25 @@
      neither setting can stop an image: a browser plays it whatever the tab is doing. That is the price of the
      frame rate being this file's to choose rather than the display's. */
 
+  /* The Spinner setting (`atrium.spinner`, js/settings.js) swaps the mark above. `steps` is an eight-frame sprite
+     moved four times a second by one timer (`applySpinner`) setting `data-f` on each working mark, since a CSS
+     animation of it kept every mark ticking on the main thread every frame. `none` is a still dot. Neither is the default, so `current` is the rules above, unchanged. */
+  :root[data-spinner="steps"] .rmark.working:not(.compacting)::after {
+    inset: auto; top: 50%; left: 50%; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px;
+    background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='104' height='13'><g fill='none' stroke='%23b0b6c0' stroke-width='2' stroke-linecap='round' stroke-dasharray='9 22'><circle cx='6.5' cy='6.5' r='5' transform='rotate(0 6.5 6.5)'/><circle cx='19.5' cy='6.5' r='5' transform='rotate(45 19.5 6.5)'/><circle cx='32.5' cy='6.5' r='5' transform='rotate(90 32.5 6.5)'/><circle cx='45.5' cy='6.5' r='5' transform='rotate(135 45.5 6.5)'/><circle cx='58.5' cy='6.5' r='5' transform='rotate(180 58.5 6.5)'/><circle cx='71.5' cy='6.5' r='5' transform='rotate(225 71.5 6.5)'/><circle cx='84.5' cy='6.5' r='5' transform='rotate(270 84.5 6.5)'/><circle cx='97.5' cy='6.5' r='5' transform='rotate(315 97.5 6.5)'/></g></svg>") 0 0 / 104px 13px no-repeat;
+  }
+  :root[data-spinner="steps"] .rmark.working[data-f="1"]::after { background-position: -13px 0; }
+  :root[data-spinner="steps"] .rmark.working[data-f="2"]::after { background-position: -26px 0; }
+  :root[data-spinner="steps"] .rmark.working[data-f="3"]::after { background-position: -39px 0; }
+  :root[data-spinner="steps"] .rmark.working[data-f="4"]::after { background-position: -52px 0; }
+  :root[data-spinner="steps"] .rmark.working[data-f="5"]::after { background-position: -65px 0; }
+  :root[data-spinner="steps"] .rmark.working[data-f="6"]::after { background-position: -78px 0; }
+  :root[data-spinner="steps"] .rmark.working[data-f="7"]::after { background-position: -91px 0; }
+  :root[data-spinner="none"] .rmark.working:not(.compacting)::after {
+    inset: auto; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    background: #b0b6c0; border-radius: 50%;
+  }
+
   /* A project group in the stack. Its panel carries the color down the left edge, the same as a group on the
      board. */
   .stackgroup { margin-bottom: var(--vs-4); }

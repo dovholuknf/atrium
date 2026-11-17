@@ -67,6 +67,8 @@ type Room struct {
 	Login func() string
 	// Disk says the room's disk notice, "" while every drive is fine. Nil says nothing.
 	Disk func() string
+	// Runaway says the room's host watch lines, "" while nothing is flagged. Nil says nothing.
+	Runaway func() string
 	// OnPaths is handed the hub's list of transports, in its order, each time a
 	// welcome carries one, in order, on its own goroutine. It is how the room writes the
 	// fallback down for a start when the hub cannot be reached. Nil ignores it.
@@ -87,7 +89,9 @@ type Room struct {
 	// serving counts the serveSSH handlers still running, which write to RemoteDir after their stream ends.
 	serving    sync.WaitGroup
 	accessPoke chan struct{}
-	wmu        sync.Mutex
+	// unread is true after one tick that could not read the switch file, only the watcher touches it.
+	unread bool
+	wmu    sync.Mutex
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -522,6 +526,10 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 			if r.Disk != nil {
 				v := r.Disk()
 				n.Disk = &v
+			}
+			if r.Runaway != nil {
+				v := r.Runaway()
+				n.Runaway = &v
 			}
 			n.PathStates = r.pathsNow()
 			if err := r.say(conn, n); err != nil {

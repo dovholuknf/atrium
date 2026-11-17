@@ -65,7 +65,7 @@ func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.Rel
 			Model: r.Model, Effort: r.Effort, Args: r.Args, Env: r.Env, LeanAgents: r.LeanAgents,
 			LeanSkills: r.LeanSkills, Superlean: r.Superlean, Lifetime: r.Lifetime, Item: r.Item,
 			Repo: r.Repo, Branch: r.Branch, Base: r.Base, Home: r.Home, Resident: r.Resident, Scratch: r.Scratch,
-			Lean: r.Lean, MCP: r.MCP, Theme: r.Theme, Chat: r.Chat, ItemOwner: r.ItemOwner,
+			Lean: r.Lean, MCP: r.MCP, Theme: r.Theme, Chat: r.Chat, ItemOwner: r.ItemOwner, Needs: r.Needs,
 		}})
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)

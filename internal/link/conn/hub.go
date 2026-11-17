@@ -270,6 +270,8 @@ type attached struct {
 	login string
 	// disk is the room's last disk notice, "" when fine. Under mu.
 	disk string
+	// runaway is the room's last host watch lines, "" when none. Under mu.
+	runaway string
 	// paths is what the room last said about each rung, on its beat. Under mu. Nil from a room that never says.
 	paths []PathState
 
@@ -609,6 +611,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 			}
 			if n.Disk != nil {
 				a.disk = *n.Disk
+			}
+			if n.Runaway != nil {
+				a.runaway = *n.Runaway
 			}
 			was := a.login
 			if n.Login != nil {
@@ -997,7 +1002,7 @@ func (h *Hub) Rooms() []wire.Attached {
 			v := *a.access
 			acc = &v
 		}
-		login, disk := a.login, a.disk
+		login, disk, runaway := a.login, a.disk, a.runaway
 		paths := append([]PathState(nil), a.paths...)
 		a.mu.Unlock()
 		out = append(out, wire.Attached{
@@ -1007,6 +1012,7 @@ func (h *Hub) Rooms() []wire.Attached {
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 			LoginNeeded: login,
 			DiskLow:     disk,
+			HostRunaway: runaway,
 			Paths:       paths,
 			Tools:       a.tools,
 		})

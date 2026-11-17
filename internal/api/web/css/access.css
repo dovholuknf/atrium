@@ -105,3 +105,20 @@
     color: var(--warn); font-size: var(--fs-sm); line-height: 1.5;
   }
   .ac-empty { color: var(--dim); font-size: var(--fs-sm); padding: 6px 2px; }
+
+  /* The board pane: the same grid and blocks, a narrower label column, and hints in a ? bubble. */
+  .s-one > .ac-block { max-width: 600px; }
+  .s-grid { grid-template-columns: 7.5em minmax(0, 1fr); }
+  .s-pair { display: contents; }
+  .s-pair[hidden] { display: none; }
+  .s-grid > label .help, .ac-title .help { vertical-align: middle; margin-left: 4px; }
+  .s-grid .picker { flex-wrap: wrap; gap: 10px; min-width: 0; }
+  .s-grid .picker select, .s-grid .picker input:not(.s-num) { flex: 1 1 12em; width: auto; min-width: 0; }
+  .s-grid input.s-num { width: 7em; flex: none; }
+  .s-grid .ac-check { margin-top: 0; }
+  .s-grid .s-checks { display: grid; gap: 8px; }
+  .s-grid .s-checks .ac-check { margin: 0; }
+  .s-grid code { font: var(--fs-sm) var(--mono); color: var(--body); overflow-wrap: anywhere; }
+  .s-grid textarea { font-family: var(--mono); font-size: var(--fs-sm); }
+  .s-grid input[type=checkbox] { color-scheme: inherit; }
+  .s-grid a { color: var(--teal); font-size: var(--fs-sm); }

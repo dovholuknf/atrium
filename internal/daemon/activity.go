@@ -188,8 +188,6 @@ type activityTracker struct {
 	// telAt is when each CALLER last got a post accepted, for the floor. Keyed
 	// by what the caller said it was, not by a card id.
 	telAt map[string]time.Time
-	// usageAt is when a post last carried a 5h or weekly figure, for the room-setup checklist.
-	usageAt time.Time
 	// held is the peer message waiting to be typed into each card's terminal,
 	// kept apart from `by` because it does not expire on the activity clock. See
 	// the HeldPeer note on Activity and `pendingInjector`.

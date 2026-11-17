@@ -8,7 +8,7 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'Invoke-WindowsSwap') {
+foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -87,27 +87,25 @@ Check 'mac: runs under nohup, output to a file, from a decoded script' ($mac -ma
 $b64 = [regex]::Match($mac, 'echo ([A-Za-z0-9+/=]+) \|').Groups[1].Value
 Check 'mac: the script file ends in SWAP-DONE' ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) -eq ($script + ' ; echo SWAP-DONE'))
 $threw = $false
-try { [void](New-DetachedCommand 'windows' $script) } catch { $threw = $true }
-Check 'windows has no detached command' $threw
+try { [void](New-DetachedCommand 'linux-or-other' $script) } catch { $threw = $true }
+Check 'an unknown os has no detached command' $threw
 
-$script:polls = 0
-$run = { [pscustomobject]@{ Code = 255; TimedOut = $false; Out = 'client_loop: send disconnect: Connection reset' } }
-$back = { $script:polls++; $script:polls -ge 2 }
-$w = Invoke-WindowsSwap $run $back 30 0
-Check 'windows: the swap session drops and the hub check is still reached' ($w.Back -and -not $w.TimedOut -and $script:polls -eq 2)
-
-$run = { [pscustomobject]@{ Code = 0; TimedOut = $false; Out = 'started' } }
-$script:polls = 0
-$w = Invoke-WindowsSwap $run { $script:polls++; $true } 30 0
-Check 'windows: a swap that finished is returned for the hub check without waiting here' (-not $w.TimedOut -and $script:polls -eq 0 -and $w.Out -eq 'started')
-
-$run = { [pscustomobject]@{ Code = 3; TimedOut = $false; Out = 'PORT-WAIT-TIMEOUT' } }
-$w = Invoke-WindowsSwap $run { $true } 30 0
-Check 'windows: a verdict the swap printed is returned, not waited past' ($w.Out -eq 'PORT-WAIT-TIMEOUT' -and -not $w.Back)
-
-$run = { [pscustomobject]@{ Code = -1; TimedOut = $true; Out = '' } }
-$w = Invoke-WindowsSwap $run { $true } 30 0
-Check 'windows: a hung swap is reported hung' $w.TimedOut
+$SwapTask = 'atrium-swap'
+$win = New-DetachedCommand 'windows' $script
+$errs = $null
+[void][System.Management.Automation.Language.Parser]::ParseInput($win, [ref]$null, [ref]$errs)
+Check 'windows: the command parses and has no double quote for sshd to mangle' ($errs.Count -eq 0 -and $win -notmatch '"')
+Check 'windows: the ssh call only runs the scheduled task' ($win -match 'schtasks\.exe /Run /TN atrium-swap' -and $win -notmatch 'room --detach')
+$files = @{}
+foreach ($m in [regex]::Matches($win, "Join-Path \`$d '([^']+)'\), \[Text\.Encoding\]::UTF8\.GetString\(\[Convert\]::FromBase64String\('([A-Za-z0-9+/=]+)'\)")) {
+  $files[$m.Groups[1].Value] = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.Groups[2].Value))
+}
+Check 'windows: the swap script is written as it was given' ($files['deploy-swap.ps1'] -ceq $script)
+$task = [string]$files['swap-task.ps1']
+Check 'windows: the task runs the swap in its own powershell and ends the output file in SWAP-DONE' (
+  $task -match "-File \(Join-Path \`$HOME '\.atrium\\deploy-swap\.ps1'\)" -and $task -match "'SWAP-DONE' \} \*> \(Join-Path \`$HOME '\.atrium\\deploy-swap\.out'\)")
+Check 'windows: a task that would not run is not read as detached' ($win -match "else \{ 'the atrium-swap task would not run[^']*' \+ \`$o ; exit 1 \}" -and 'the atrium-swap task would not run' -notmatch 'detached')
 Check 'the mac read command names the output file' ((Read-DetachedCommand 'mac') -match 'deploy-swap\.out')
+Check 'the windows read command names the output file' ((Read-DetachedCommand 'windows') -match "'\.atrium\\deploy-swap\.out'")
 if ($fail -gt 0) { Write-Host "$fail failed"; exit 1 }
 Write-Host 'all passed'

@@ -67,7 +67,10 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
 		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: relaySuperlean(spec.Superlean), Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
 		Repo: spec.Repo, Branch: spec.Branch, Base: spec.Base, Home: spec.Home, Resident: spec.Resident,
-		Scratch: spec.Scratch, Lean: spec.Lean, MCP: spec.MCP, Theme: spec.Theme, Chat: spec.Chat, ItemOwner: spec.ItemOwner,
+		Scratch: spec.Scratch, Lean: spec.Lean, MCP: spec.MCP, Theme: spec.Theme, Chat: spec.Chat, ItemOwner: spec.ItemOwner, Needs: spec.Needs,
+	}
+	if _, err := c.needsRoom(ctx, in, target, true); err != nil {
+		return launchRefusal(err)
 	}
 	out, err := c.LaunchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)

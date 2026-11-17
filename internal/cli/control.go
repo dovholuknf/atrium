@@ -136,6 +136,7 @@ func controlServer() *mcp.Server {
 	addGitCloneTool(s)
 	addGitTools(s)
 	addCITool(s)
+	addCapabilityTool(s)
 	addBacklogTools(s)
 	addOpenTool(s)
 	addCloseTool(s)

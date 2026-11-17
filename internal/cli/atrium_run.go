@@ -703,7 +703,6 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	proxy.SetLandGit(landGit{store: store, hub: gitHub})
 	proxy.SetHubBuild(runningCommit())
-	proxy.SetHubCode(api.CodeID)
 	gitHub.Observed = func() { go proxy.RefreshAllGitSteps(ctx, true) }
 	{
 		before := h.OnAttach
@@ -723,6 +722,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// WORK THAT WAITS ON OTHER WORK, checked against the integration branch and this
 	// hub's own build commit. See internal/link/deps.go.
 	proxy.SetDeps(store, Commit)
+	proxy.SetCapabilities(store)
 	// WHETHER THE INSTALLED BUILD CAN BE REPLACED, and the one click that does it. Nothing deploys on its own.
 	proxy.SetDeployReady()
 	// WHAT THIS HUB RUNS, for the deploy queue to compare with the branch and with each room's own commit.
@@ -730,6 +730,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	go proxy.RunDeps(ctx)
 	// EACH ROOM'S SETUP, read on attach and every few minutes, for the rooms pill. See internal/link/setupwatch.go.
 	go proxy.RunSetupWatch(ctx)
+	go proxy.RunCapabilityWatch(ctx)
 
 	if zrokFirst != nil {
 		b, on := zrokBinder(zrokFirst, h, nil), true

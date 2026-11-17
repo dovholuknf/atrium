@@ -317,7 +317,7 @@ const api = async (path, opts) => {
 
 // A READ THAT DOES NOT ANSWER GIVES ITS SLOT BACK.
 //
-// After a hub-only restart the room can sit attached and silent for minutes,
+// After a hub-only restart, the room can sit attached and silent for minutes,
 // and the hub holds every proxied read open for as long as that lasts. Each of
 // those held a slot above until the room came back, so a board filled the cap
 // with them and queued everything behind: the watchdog aborts only what carries

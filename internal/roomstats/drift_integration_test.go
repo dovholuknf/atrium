@@ -85,3 +85,15 @@ func TestTickCarriesLatency(t *testing.T) {
 		t.Fatalf("series %v", got)
 	}
 }
+
+func TestIdleProbeWakesFewTimesASecond(t *testing.T) {
+	d := &Drift{}
+	stop := make(chan struct{})
+	go d.Run(stop)
+	time.Sleep(time.Second) // wait: the window the probe is counted over
+	close(stop)
+	_, n, _ := d.Drain()
+	if n > 12 {
+		t.Fatalf("the probe woke %d times in a second, an idle room should not wake more than a dozen", n)
+	}
+}

@@ -2316,3 +2316,132 @@ func TestOrchestratorDeletesABranchSquashedIntoAnAdoptedMirrorsForgeMain(t *test
 		t.Errorf("claude/sq is still there at %s", got)
 	}
 }
+
+func TestTheOperatorDeletesABranchOfAnAdoptedMirrorAtOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	forge := filepath.ToSlash(t.TempDir())
+	ck := filepath.ToSlash(filepath.Join(t.TempDir(), "ck"))
+	x := newRecv(t, func(h *Hub) {
+		h.Repos = func() ([]Repo, error) { return []Repo{{Name: hubRepo, Checkout: ck, Branch: "claude/main"}}, nil }
+	})
+	git(t, forge, "init", "-q", "--bare")
+	git(t, x.work, "push", "-q", forge, "main:refs/heads/main")
+	git(t, "", "clone", "-q", forge, ck)
+	git(t, ck, "branch", "-q", "claude/main", "origin/main")
+	if _, err := x.h.Mirror(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMarker(x.h.Bare(hubRepo), KindAdopted); err != nil {
+		t.Fatal(err)
+	}
+	x.branch("claude/gone", "g.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone"))
+	done := make(chan struct{})
+	var out string
+	var err error
+	go func() {
+		defer close(done)
+		out, err = x.push(operator, hubRepo, ":refs/heads/claude/gone")
+	}()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the operator's delete hung")
+	}
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got := x.refOn(hubRepo, "refs/heads/claude/gone"); got != "" {
+		t.Errorf("still there at %s", got)
+	}
+}
+
+func TestAPushIsRefusedPromptlyWhileAPassHoldsTheRepository(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	for _, key := range []string{"store:" + strings.ToLower(hubRepo), "mirror:" + hubRepo} {
+		x := newRecv(t, func(h *Hub) {
+			h.hk.lockWait = 200 * time.Millisecond
+			h.Repos = func() ([]Repo, error) { return []Repo{{Name: hubRepo, Branch: "claude/main"}}, nil }
+		})
+		if _, err := x.h.Mirror(bg); err == nil {
+			t.Log("mirrored")
+		}
+		if err := writeMarker(x.h.Bare(hubRepo), KindAdopted); err != nil {
+			t.Fatal(err)
+		}
+		l := x.h.lock(key)
+		l.Lock()
+		done := make(chan struct{})
+		var out string
+		var err error
+		go func() {
+			defer close(done)
+			out, err = x.push(operator, hubRepo, ":refs/heads/claude/gone")
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			l.Unlock()
+			t.Fatalf("%s held: the push hung", key)
+		}
+		l.Unlock()
+		if err == nil || !strings.Contains(out, "is busy with another job") {
+			t.Errorf("%s held: %v\n%s", key, err, out)
+		}
+	}
+}
+
+func TestTheOperatorDeletesABranchAndTheHubRefusesWhatIsNotHers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t, func(h *Hub) { h.hk.lockWait = 200 * time.Millisecond })
+	x.seedMain(hubRepo)
+	x.branch("claude/gone", "g.txt")
+	x.branch("claude/open", "o.txt")
+	x.branch("fix/y", "y.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(operator, hubRepo, "fix/y:refs/heads/fix/y"))
+	open := func(repo, branch string) (bool, error) { return branch == "claude/open", nil }
+	for _, b := range []string{"main", "claude/main", "fix/y", "claude/open", "claude/none", "tags/v1", "claude/../x"} {
+		if _, err := x.h.DeleteBranch(bg, hubRepo, b, open); !errors.Is(err, ErrRefused) {
+			t.Errorf("%s: %v", b, err)
+		}
+	}
+	if x.refOn(hubRepo, "refs/heads/claude/open") == "" || x.refOn(hubRepo, "refs/heads/fix/y") == "" {
+		t.Fatal("a refused delete moved a ref")
+	}
+	l := x.h.lock("store:" + strings.ToLower(hubRepo))
+	l.Lock()
+	done := make(chan error, 1)
+	go func() { _, err := x.h.DeleteBranch(bg, hubRepo, "claude/gone", open); done <- err }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrRefused) {
+			t.Errorf("busy: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a busy repository hung the delete")
+	}
+	l.Unlock()
+	if _, err := x.h.DeleteBranch(bg, hubRepo, "claude/gone", open); err != nil {
+		t.Fatal(err)
+	}
+	if x.refOn(hubRepo, "refs/heads/claude/gone") != "" {
+		t.Error("claude/gone is still there")
+	}
+	if _, _, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/claude/gone"); ok {
+		t.Error("the deleted branch still has an owner")
+	}
+	x.must(x.push(operator, hubRepo, ":refs/heads/claude/open"))
+	if x.refOn(hubRepo, "refs/heads/claude/open") != "" {
+		t.Error("the operator's push --delete did not delete")
+	}
+}

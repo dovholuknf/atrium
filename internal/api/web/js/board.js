@@ -396,7 +396,7 @@ function firstSeen(iso) {
 
 const isWaiting = cardWaiting;
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items", "caps"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -542,6 +542,8 @@ function switchView(name) {
   if (name === "hubrepos" && typeof loadHubRepos === "function") loadHubRepos();
   // Read on the way in, and again on a `backlog` or `report` event. See js/backlog.js.
   if (name === "backlog" && typeof loadBacklog === "function") loadBacklog();
+  // Read on the way in, and every 3s while a probe is running. See js/caps.js.
+  if (name === "caps" && typeof loadCaps === "function") loadCaps();
   // Read on the way in, on an `item` event, and every 5s while it is on screen. See js/items.js.
   if (name === "items" && typeof startItems === "function") startItems();
   // Where you were, so a reload puts you back. A restart of the daemon

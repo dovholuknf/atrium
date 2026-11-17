@@ -15747,7 +15747,7 @@ async function notifyCommandSection(browser, base) {
       on: document.getElementById("s-hn-enabled").checked,
       cmd: document.getElementById("s-hn-command").value,
       status: document.getElementById("s-hn-status").textContent,
-      help: (r => r.textContent + [...r.querySelectorAll("[data-tip]")].map(e => e.dataset.tip).join(" "))(document.getElementById("s-hn-row"))
+      help: document.getElementById("s-hn-row").textContent + " " + [...document.querySelectorAll("#s-hn-row [data-tip]")].map(e => e.dataset.tip).join(" ")
     }));
     if (!shown.on) fail("notifyCommand: the enabled box was not checked");
     if (shown.cmd !== "ntfy\npublish\nmy topic") fail("notifyCommand: the argv is not one per line: " + JSON.stringify(shown.cmd));
@@ -23250,8 +23250,7 @@ async function quickPasteSection(browser, base) {
     if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
     if (m === "GET" && p === "/v1/tasks/t-q") { st.cardReads = (st.cardReads || 0) + 1;
       return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" }); }
-    // The attached card's own background reads are not calls the paste made.
-    if (!(m === "GET" && /^\/v1\/tasks\/t-q\//.test(p))) st.calls.push(m + " " + p + " " + (req.postData() || ""));
+    st.calls.push(m + " " + p + " " + (req.postData() || ""));
     if (p === "/v1/open") {
       const url = JSON.parse(req.postData() || "{}").url || "";
       (st.rooms = st.rooms || []).push(req.headers()["x-atrium-room"] || "");
@@ -25716,7 +25715,7 @@ async function gearHostsSection(browser, base) {
       items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
       why: document.getElementById("s-hh-list").textContent,
       env: document.getElementById("s-hh-env").textContent,
-      help: (r => r.textContent + [...r.querySelectorAll("[data-tip]")].map(e => e.dataset.tip).join(" "))(document.getElementById("s-hh-row"))
+      help: document.getElementById("s-hh-row").textContent + " " + [...document.querySelectorAll("#s-hh-row [data-tip]")].map(e => e.dataset.tip).join(" ")
     }));
     if (a.items.join("|") !== "*.shares.zrok.io|*.duckdns.org") fail(tag + "the list was " + JSON.stringify(a.items));
     if (!/dynamic DNS/.test(a.why)) fail(tag + "an ignored entry shows no reason: " + a.why);
@@ -28704,8 +28703,6 @@ async function composePasteDefaultSection(browser, base) {
     });
     for (const [id, open] of [["t-ctxbox-in", () => composeNoEntry({ step: "clear", n: 2, of: 3, label: "clearing the context" })], ["t-paste-in", () => { document.getElementById("t-ctxbox").hidden = true; openPasteBox(""); }]]) {
       await p.evaluate(open);
-      // A task refresh with no hold hides an empty context box, so give it text for the click.
-      await p.evaluate(id => { const t = document.getElementById(id); if (id === "t-ctxbox-in") t.value = "draft"; }, id);
       const ta = p.locator("#" + id);
       await p.evaluate(() => term.focus());
       await ta.click({ button: "right" });

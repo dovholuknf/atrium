@@ -12,6 +12,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
 // The hub's git side, as the board API and the control tools see it. See git.go for the
@@ -172,6 +173,9 @@ func (p *Service) ServeGit(w http.ResponseWriter, r *http.Request, sub string) {
 	case "git/release":
 		p.serveGitRelease(w, r, g, fail)
 		return
+	case "git/delete":
+		p.serveGitDelete(w, r, g, fail)
+		return
 	}
 	if sub == "git/status" {
 		if r.Method != http.MethodGet {
@@ -263,6 +267,40 @@ func (p *Service) serveGitRelease(w http.ResponseWriter, r *http.Request, g *git
 		return
 	}
 	note, err := g.ReleaseBranch(r.Context(), in.Repo, in.Branch)
+	switch {
+	case errors.Is(err, gitsync.ErrRefused):
+		fail(http.StatusBadRequest, err.Error())
+	case err != nil:
+		fail(http.StatusInternalServerError, err.Error())
+	default:
+		_ = json.NewEncoder(w).Encode(map[string]string{"note": note})
+	}
+}
+
+// serveGitDelete answers POST /_hub/git/delete {"repo": ..., "branch": ...} with {"note": ...}: the operator deletes a
+// claude/* branch, for a branch whose card is closed.
+func (p *Service) serveGitDelete(w http.ResponseWriter, r *http.Request, g *gitsync.Hub, fail func(int, string)) {
+	if r.Method != http.MethodPost {
+		fail(http.StatusMethodNotAllowed, "that has to be a POST")
+		return
+	}
+	var in struct {
+		Repo   string `json:"repo"`
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in); err != nil {
+		fail(http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	st := p.BacklogStore()
+	open := func(repo, branch string) (bool, error) {
+		if st == nil {
+			return false, errors.New("this hub keeps no merge queue to ask")
+		}
+		ms, err := st.MergeList(hubstore.MergeFilter{Repo: repo, Branch: branch, Open: true, Limit: 1})
+		return len(ms) > 0, err
+	}
+	note, err := g.DeleteBranch(r.Context(), in.Repo, in.Branch, open)
 	switch {
 	case errors.Is(err, gitsync.ErrRefused):
 		fail(http.StatusBadRequest, err.Error())

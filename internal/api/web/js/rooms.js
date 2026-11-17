@@ -211,9 +211,7 @@ const setupPicked = new Set();
 const setupKey = (room, id) => room + "\n" + id;
 function setupWhyNot(r, i) {
   if (i.kind === "hooks") return "settings.json unreadable";
-  if (i.kind === "build") return "restart the room";
   if (i.id === "git") return "install git there";
-  if (i.id === "usage") return "";
   return "fix it on the machine";
 }
 function setupChecklistHtml(drift, hint) {
@@ -322,8 +320,7 @@ function roomsWithSetupIssues() {
   return out;
 }
 
-// roomSetupNote is what a room's row says about its setup: the problems, one line each, a fix button for the hooks,
-// and nothing for a build mismatch, which only an upgrade fixes.
+// roomSetupNote is what a room's row says about its setup: the problems, one line each, and a fix button for the hooks.
 function roomSetupNote(name) {
   const s = roomSetup(name);
   if (!s || !s.answering || !s.issues || !s.issues.length) return "";
@@ -1477,6 +1474,7 @@ async function applyHubRooms(rooms, inv) {
   if (typeof pullsPaint === "function") pullsPaint();
   if (typeof paintBacklogTab === "function") paintBacklogTab();
   if (typeof paintItemsTab === "function") paintItemsTab();
+  if (typeof paintCapsTab === "function") paintCapsTab();
   // The chip repainted above; the OPEN dropdown has to as well, or a room that
   // just attached keeps reading "disconnected" in a menu the user left open.
   refreshRoomsMenu();

@@ -556,7 +556,10 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 
 	name := ref.Name()
 	l := rc.h.lock("store:" + strings.ToLower(name))
-	l.Lock()
+	if !rc.h.lockWithin(ctx, l) {
+		refuseAll(busySentence(name))
+		return
+	}
 	defer l.Unlock()
 
 	dir, exists := rc.dir(ref)
@@ -564,7 +567,10 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	if exists {
 		// A git_repos mirror the operator took in is under the mirror pass's lock as well, as Init takes it.
 		if ml := rc.h.Store().mirrorLock(dir); ml != nil {
-			ml.Lock()
+			if !rc.h.lockWithin(ctx, ml) {
+				refuseAll(busySentence(name))
+				return
+			}
 			defer ml.Unlock()
 		}
 		// NOBODY PUSHES WHAT AN ADOPTED MIRROR KEEPS IN STEP, the operator included: the mirror pass force-fetches
@@ -744,6 +750,10 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	if len(landed) == 0 && len(rows) > 0 {
 		rc.h.audit(who.Room, "git-hub-push-failed", fmt.Sprintf("%s refs=%d card=%s", name, len(req.Updates), who.Card))
 	}
+}
+
+func busySentence(name string) string {
+	return name + " is busy with another job on the hub and this push was not taken. try again in a minute"
 }
 
 // settleLeftovers settles what a crash, or a Settle that failed, left pending in a repository. A pending row whose

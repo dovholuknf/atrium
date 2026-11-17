@@ -69,6 +69,9 @@ func globalAutoView(s *Server) map[string]any {
 		// Megabytes free under which a drive is warned about, and under which launches are refused. Empty is the default.
 		store.SettingDiskWarnFree:     "disk_warn_free",
 		store.SettingDiskCriticalFree: "disk_critical_free",
+		// Percent of one core a process holds, and for how many minutes, before it is flagged. Empty is 90 and 5.
+		store.SettingHostHogPct:     "host_hog_pct",
+		store.SettingHostHogMinutes: "host_hog_minutes",
 		// Minutes a `when: done` message waits for the turn. Empty is fifteen.
 		store.SettingEscalateHeldAfter: "escalate_held_after",
 		// How many minutes one turn may run before its card is flagged. Empty is 45.
@@ -280,6 +283,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Megabytes of free space, or empty for the default.
 		DiskWarnFree     *string `json:"disk_warn_free"`
 		DiskCriticalFree *string `json:"disk_critical_free"`
+		// Percent of one core, and minutes, or empty for the default.
+		HostHogPct     *string `json:"host_hog_pct"`
+		HostHogMinutes *string `json:"host_hog_minutes"`
 		// Minutes a `when: done` message waits for the turn to end before the next
 		// tool call carries it. Empty is fifteen.
 		EscalateHeldAfter *string `json:"escalate_held_after"`
@@ -523,6 +529,23 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimSpace(*value)
 		if n, err := strconv.Atoi(v); v != "" && (err != nil || n <= 0) {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("%s is a number of megabytes, or empty for the default", key))
+			return
+		}
+		if err := s.st.SetSetting(key, v); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	for key, value := range map[string]*string{
+		store.SettingHostHogPct:     body.HostHogPct,
+		store.SettingHostHogMinutes: body.HostHogMinutes,
+	} {
+		if value == nil {
+			continue
+		}
+		v := strings.TrimSpace(*value)
+		if n, err := strconv.Atoi(v); v != "" && (err != nil || n <= 0) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("%s is a whole number, or empty for the default", key))
 			return
 		}
 		if err := s.st.SetSetting(key, v); err != nil {

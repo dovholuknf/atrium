@@ -43,6 +43,10 @@ const (
 	// uses is warned about and under which the room refuses new launches. Empty means the default. See daemon/diskwatch.go.
 	SettingDiskWarnFree     = "disk_warn_free"
 	SettingDiskCriticalFree = "disk_critical_free"
+	// SettingHostHogPct is the share of one core, in percent, a process must hold for SettingHostHogMinutes before the room
+	// flags it. Empty means the default. See daemon/hostwatch.go.
+	SettingHostHogPct     = "host_hog_pct"
+	SettingHostHogMinutes = "host_hog_minutes"
 	// SettingArchiveWorkersAfter is how long a done worker card stays on the board, in seconds. `off` disables it, and
 	// unset means a day. See daemon/archiveworkers.go.
 	SettingArchiveWorkersAfter = "archive_workers_after"

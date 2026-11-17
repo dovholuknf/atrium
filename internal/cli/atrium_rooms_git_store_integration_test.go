@@ -145,3 +145,26 @@ func TestHubGitVerbsHaveNoPathBranchOrRefspecFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestHubGitDeleteAsksTheHubAndPrintsTheNote(t *testing.T) {
+	var got map[string]string
+	var path, method string
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_ = json.NewEncoder(w).Encode(map[string]string{"note": "claude/x was at abc and is deleted"})
+	}))
+	defer hub.Close()
+	out, err := runHub(t, "git", "delete", "o/r", "claude/x", "--atrium-board-addr", strings.TrimPrefix(hub.URL, "http://"))
+	if err != nil || !strings.Contains(out, "is deleted") {
+		t.Fatalf("out = %q err = %v", out, err)
+	}
+	if method != "POST" || path != "/_hub/git/delete" || got["repo"] != "o/r" || got["branch"] != "claude/x" {
+		t.Fatalf("hub was sent %s %s %v", method, path, got)
+	}
+	for _, args := range [][]string{{"git", "delete"}, {"git", "delete", "o/r"}, {"git", "delete", "o/r", "a", "b"}} {
+		if _, err := runHub(t, args...); err == nil {
+			t.Errorf("%v was taken", args)
+		}
+	}
+}

@@ -161,9 +161,6 @@ type stamp struct {
 }
 
 func stampOf(p string) stamp {
-	if !filepath.IsAbs(p) || strings.Contains(p, "..") {
-		return stamp{}
-	}
 	fi, err := os.Stat(p)
 	if err != nil {
 		return stamp{}

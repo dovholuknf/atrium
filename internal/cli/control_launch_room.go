@@ -38,6 +38,7 @@ func launchAcrossRoom(ctx context.Context, in LaunchInput, harness, room string)
 		"repo": strings.TrimSpace(in.Repo), "branch": strings.TrimSpace(in.Branch), "base": strings.TrimSpace(in.Base),
 		"home": in.Home, "resident": in.Resident, "scratch": in.Scratch, "lean": in.Lean, "mcp": in.MCP,
 		"theme": strings.TrimSpace(in.Theme), "item_owner": strings.TrimSpace(in.ItemOwner),
+		"needs": in.Needs,
 	}
 	if in.Isolated {
 		req["item"] = true

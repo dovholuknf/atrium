@@ -1,0 +1,55 @@
+/* The capabilities tab (js/caps.js). Existing tokens only, so a skin repaints it. Pass is the accent, fail is danger,
+   running is the one orange, and an optional miss is neutral. */
+  main > #caps { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #caps[hidden] { display: none; }
+  #caps > * { flex: 0 0 auto; }
+  #caps > .cap-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 2px 28px; }
+  #caps > #caps-note { margin: 0; padding: 0 2px; }
+  #caps > #caps-note:empty { display: none; }
+  .cap-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; padding: var(--sp-2) 2px var(--sp-3); }
+  .cap-head label { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--label); }
+  .cap-head select, .cap-head input { font: inherit; font-size: var(--fs-sm); color: var(--head); background: var(--bg-2);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 3px 8px; }
+  .cap-sp { flex: 1; }
+  .cap-sum { display: flex; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); font-size: var(--fs-sm); color: var(--label); }
+  .cap-wrap { border: 1px solid var(--stroke-dim); border-radius: var(--r-md); background: var(--card-0); overflow: auto; }
+  #caps-matrix { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
+  #caps-matrix th, #caps-matrix td { padding: 3px var(--sp-4); border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
+  #caps-matrix thead th { position: sticky; top: 0; z-index: 1; background: var(--shell-1); color: var(--label); font-weight: 600; vertical-align: bottom; }
+  #caps-matrix tr.cap-kind th { background: var(--bg-2); color: var(--dim); font-size: var(--fs-xxs); text-transform: uppercase;
+    letter-spacing: .08em; cursor: pointer; }
+  .cap-chev { display: inline-block; width: 1em; }
+  .cap-count { font-weight: 400; margin-left: 4px; }
+  .cap-roll { margin-left: var(--sp-4); text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--label); font-size: var(--fs-xs); }
+  .cap-name { font-family: var(--mono); color: var(--head); }
+  td.cap-cell { cursor: pointer; min-width: 200px; }
+  td.cap-cell:hover { background: var(--lift); }
+  td.cap-cell.offline { background: repeating-linear-gradient(135deg, transparent 0 6px, var(--lift) 6px 12px); }
+  .cap-ver, .cap-when { margin-left: 6px; font-size: var(--fs-xxs); color: var(--dim); }
+  .cap-ver { font-family: var(--mono); color: var(--label); }
+  .cap-rh { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }
+  .cap-rn { color: var(--head); font-size: var(--fs-base); }
+  .cap-rs { font-size: var(--fs-xxs); color: var(--dim); font-weight: 400; }
+  .cap-rs.off { color: var(--danger); }
+  .cap-mini, .cap-head button { font: inherit; font-size: var(--fs-xs); color: var(--head); background: var(--chip); cursor: pointer;
+    border: 1px solid var(--stroke); border-radius: var(--r-sm); padding: 1px 8px; align-self: flex-start; }
+  .cap-mini:hover, .cap-head button:hover { background: var(--btn-hover); }
+  .cap-mini:disabled { opacity: .45; cursor: default; }
+  .cap-pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: var(--r-pill); font-size: var(--fs-xs);
+    font-weight: 600; border: 1px solid transparent; }
+  .cap-pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .cap-pill.pass { color: var(--teal); background: var(--teal-bg); border-color: rgba(var(--teal-rgb), .3); }
+  .cap-pill.fail { color: var(--danger); background: rgba(var(--danger-rgb), .14); border-color: rgba(var(--danger-rgb), .35); }
+  .cap-pill.unknown { color: var(--dim); border: 1px dashed var(--stroke-dim); }
+  .cap-pill.na { color: var(--dim); background: var(--lift); border-color: var(--stroke-dim); }
+  .cap-pill.run { color: var(--wait); background: var(--wait-bg); border-color: var(--wait-stroke); }
+  .cap-pill.stale { opacity: .6; }
+  #caps-detail { margin-top: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    background: var(--card-0); font-size: var(--fs-sm); color: var(--body); }
+  #caps-detail h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-md); color: var(--head); font-family: var(--mono); }
+  #caps-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px var(--sp-4); margin: 0; }
+  #caps-detail dt { color: var(--label); }
+  #caps-detail dd { margin: 0; font-family: var(--mono); color: var(--head); overflow-wrap: anywhere; }
+  .cap-q { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid var(--dim);
+    border-radius: 50%; color: var(--dim); font-size: 10px; font-weight: 700; cursor: help; vertical-align: middle; }
+  .cap-q:hover { color: var(--head); border-color: var(--head); }

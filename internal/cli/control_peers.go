@@ -702,6 +702,7 @@ type LaunchInput struct {
 	Lean    *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. false starts it with the operator's whole setup"`
 	MCP     []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
 	Theme   string   `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
+	Needs   []string `json:"needs,omitempty" jsonschema:"capability ids the room must pass, like ssh:agentwsl. the launch goes only to a room where every one passes, newer than 24h, and is refused with each room's reason when none does. see atrium_capabilities"`
 }
 
 type LaunchOutput struct {
@@ -796,6 +797,13 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	in.Tags = link.WithWorkTag(in.Tags, workID)
 	if s, _ := link.ParseItemSpec(in.Item); s.Rerun {
 		in.Tags = append(in.Tags, link.RerunTag)
+	}
+	if len(in.Needs) > 0 {
+		placed, err := placeByNeeds(ctx, in)
+		if err != nil {
+			return nil, out, err
+		}
+		in.Room = placed
 	}
 	// ANOTHER ROOM goes through this room's hub and touches nothing on this disk: no
 	// briefing written here and no directory looked at. This room's own name is the

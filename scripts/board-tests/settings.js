@@ -1372,18 +1372,19 @@ async function helpTipSection(browser, base) {
     await p.waitForFunction(() => typeof showSettingsPane === "function", null, { timeout: slow(15000) });
     await p.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("board"); });
     const tip = () => p.evaluate(() => { const t = document.getElementById("tip"); return t.classList.contains("on") ? t.textContent : ""; });
-    const want = await p.evaluate(() => (document.querySelector("#s-mincols-field .help") || { dataset: {} }).dataset.tip || "");
+    const want = await p.evaluate(() => (document.querySelector('label[for="s-mincols"] .help') || { dataset: {} }).dataset.tip || "");
     if (!/never goes narrower/.test(want)) { fail("helpTip: the columns field has no ? holding its help: " + want); return; }
     await p.focus("#s-mincols");
     await p.keyboard.press("Shift+Tab");
-    const focused = await p.evaluate(() => document.activeElement.matches("#s-mincols-field .help"));
+    const focused = await p.evaluate(() => document.activeElement.matches('label[for="s-mincols"] .help'));
     if (!focused) fail("helpTip: Shift+Tab from the columns box did not reach its ?");
     await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) }).catch(() => {});
     if ((await tip()) !== want) fail("helpTip: keyboard focus on the ? did not show its help: " + (await tip()));
     await p.keyboard.press("Escape");
     if (await tip()) fail("helpTip: Escape left the tip up");
     if (!(await p.evaluate(() => document.getElementById("settings").open))) fail("helpTip: Escape on a tip closed the dialog too");
-    await p.hover("#s-landk-field .help");
+    await p.evaluate(() => document.querySelector('label[for="s-landk"] .help').scrollIntoView({ block: "center" }));
+    await p.hover('label[for="s-landk"] .help');
     await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000) }).catch(() => {});
     if (!/LAND THE PLANE/.test(await tip())) fail("helpTip: hovering the ? did not show its help: " + (await tip()));
     await p.keyboard.press("Escape");

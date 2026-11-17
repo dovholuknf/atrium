@@ -247,6 +247,7 @@ type Daemon struct {
 	// sweepStash stands in for StashTo in the folder sweep when set. See endedfolders.go.
 	sweepStash func(ctx context.Context, card, dir, branch string) (string, string, error)
 	disk       diskWatch
+	host       hostWatch
 
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
@@ -505,6 +506,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.LoginNeeded = d.loginHealth
 	d.ap.DiskWatch = d.DiskState
 	d.ap.DiskFree = d.DiskFree
+	d.ap.HostWatch = d.HostState
 	d.ap.ToolchainMissing = d.toolchainHealth
 	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.LoginStatus = d.handleLoginStatus
@@ -536,6 +538,8 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.HubGitURL = d.HandleHubGitURL
 	d.ap.HubCI = pulls.HubCI(d.HubForge, home.ErrNoHub)
 	d.ap.HubAsk = d.HandleHubAsk
+	d.ap.RoomCaps = d.handleCapabilities
+	d.ap.RoomCapsRun = d.handleCapabilitiesRun
 	d.ap.HubCall = d.HubCallFrom
 	d.ap.ItemAct = d.handleItemAct
 	d.ap.PoolSubmit = d.handlePoolSubmit
@@ -633,7 +637,6 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// How much context it has burned. Held the same way and for the same
 	// reason. See docs/runtime/statusline-telemetry.md.
 	api.TelemetryOf = d.telemetryFor
-	api.UsageFacts = d.usageFacts
 	// Which agent-launched cards are stuck, for the board to ring about. Held
 	// the same way. See a2a.go.
 	api.EscalationOf = d.escalationFor
@@ -977,7 +980,12 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	}
 
 	// Queued messages precede policy and carry attribution so delivery is not mistaken for a refusal on merit.
-	msgs, merr := d.takeMessages(task.ID, "permission")
+	var msgs []*store.Message
+	var merr error
+	// A call failed for a say is a handoff Write that never lands, so the say waits for the Stop hook.
+	if !d.Nctx.Writing(task.ID) {
+		msgs, merr = d.takeMessages(task.ID, "permission")
+	}
 	if merr == nil && len(msgs) > 0 {
 		reason := messageBanner(msgs, true)
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, store.DecidedByMessage); err != nil {
@@ -1259,6 +1267,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.reattached = make(chan struct{})
 		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
 		go d.diskWatcher(ctx, DiskWatchStart, DiskWatchEvery)
+		go d.hostWatcher(ctx, HostWatchStart, HostWatchEvery)
 	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
@@ -1288,6 +1297,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// settling.go, and note this opens BEFORE the goroutine: a window that
 		// started inside it would race the first fixture.
 		d.settle.begin()
+		// Probes what is due and reads the hub's declared list. See capabilities.go.
+		go d.capabilityLoop(ctx)
 		// Say so on the stream, and say again when the window closes. See health.go.
 		go d.WatchSettle(ctx)
 		// Terminals that come up with the daemon, and then the ones that were

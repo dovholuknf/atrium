@@ -42,9 +42,6 @@ var (
 	previewURL  = regexp.MustCompile(`(?i)url\(\s*["']?/`)
 )
 
-// previewRoom is what a room name may be, so none reaches a redirect with a slash or a scheme in it.
-var previewRoom = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
 // previewOf reads `/<room>/preview/<port...>`: the room, and what follows `preview`, which is "" or starts with a
 // slash.
 func previewOf(p string) (room, after string, ok bool) {
@@ -52,7 +49,7 @@ func previewOf(p string) (room, after string, ok bool) {
 		return "", "", false
 	}
 	room, tail, found := strings.Cut(p[1:], "/")
-	if !found || room == "" || strings.HasPrefix(room, "_") || !previewRoom.MatchString(room) {
+	if !found || room == "" || strings.HasPrefix(room, "_") {
 		return "", "", false
 	}
 	if tail != "preview" && !strings.HasPrefix(tail, "preview/") {

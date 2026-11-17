@@ -330,11 +330,13 @@ func (d *Daemon) holdNotice(launcher, worker *store.Task, source, text string) {
 	log.Printf("[atrium] held for %s that %s: %s", launcher.DisplayTitle(), worker.DisplayTitle(), source)
 }
 
-// ringHeld is the board's bell for a held notice: one `notice` event, with the
-// words the board shows. See docs/changes/r-hold-notices.md for what the board
-// does with it.
+// ringHeld is the board's bell for a held notice: one `notice` event, with the words the board shows.
 func (d *Daemon) ringHeld(launcherID, workerID, source, text string) {
 	d.Publish(launcherID)
+	// An owed answer is agent bookkeeping: it stays on the launcher's card and never toasts the human.
+	if source == NoticeOwed {
+		return
+	}
 	d.ap.Broadcast("notice", map[string]any{
 		"task_id": launcherID, "about_card": workerID, "source": source, "toast": text,
 	})

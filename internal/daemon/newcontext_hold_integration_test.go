@@ -364,3 +364,26 @@ func TestTheLineMovedIntoTheComposeBoxIsClearedOffTheTerminal(t *testing.T) {
 		t.Fatalf("the room still counts %d character(s) on the line", n)
 	}
 }
+
+func TestSayDuringTheHandoffWriteDoesNotFailTheCall(t *testing.T) {
+	d := testDaemon(t)
+	task, _, _ := ncCard(t, d)
+	id := task.ID
+	peerCard(t, d, "alice")
+	gen, ok := d.Nctx.Claim(id, &cycle.NewContext{Step: cycle.NewContextFailed, File: "h.md"})
+	if !ok {
+		t.Fatal("claim refused")
+	}
+	d.Nctx.NotePrompt(id, gen, 1, time.Now())
+	if _, err := d.st.QueueFromPeer(id, heldSay, "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, auto, err := d.onPermRequest(PermissionRequest{Agent: "cycler", Tool: "Write", Command: "h.md", DedupKey: "k1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auto != nil && strings.Contains(auto.Reason, heldSay) {
+		t.Fatalf("the handoff Write was failed to deliver a say: %q", auto.Reason)
+	}
+}
