@@ -236,8 +236,10 @@ function termHeldLine(t) {
 }
 // A done that left work out, unchecked or uncommitted: a warning and how many notes. Click opens the details.
 function termLeftoverChip(t) {
-  const parts = [t && t.report_dirty ? t.report_dirty + (t.report_dirty === 1 ? " file" : " files") + " not committed" : "",
-    t && t.done_skipped ? "1 skipped" : "", t && t.done_unverified ? "1 unverified" : ""].filter(Boolean);
+  // A launched card's leftovers are its launcher's, and a card that works again drops them.
+  if (!t || t.status !== "done" || t.spawned_by_id || t.spawned_by) return "";
+  const parts = [t.report_dirty ? t.report_dirty + (t.report_dirty === 1 ? " file" : " files") + " not committed" : "",
+    t.done_skipped ? "1 skipped" : "", t.done_unverified ? "1 unverified" : ""].filter(Boolean);
   if (!parts.length) return "";
   const tip = parts.join(", ") + ". click for the details";
   return `<span class="chip warn tleft" role="button" tabindex="0" data-tip="${esc(tip)}" data-id="${esc(t.id)}" ` +

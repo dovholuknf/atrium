@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -203,5 +204,23 @@ func TestAWakeReminderTypesIntoTheCardAndRetriesWhileItCannotBeReached(t *testin
 	}
 	if pending, _ := x.st.ReminderPendingOf("alpha~c1"); len(pending) != 0 {
 		t.Fatal("still pending after the wake was said")
+	}
+}
+
+func TestALongReminderFiresWholeAndAnOversizeOneIsRefused(t *testing.T) {
+	x := newRemindRig(t)
+	long := strings.Repeat("x", 2000)
+	if code, out := x.post(map[string]any{"action": "set", "room": "alpha", "card": "c1", "in": "1d", "text": long}); code != http.StatusOK {
+		t.Fatalf("set: %d %v", code, out)
+	}
+	x.now = x.now.Add(25 * time.Hour)
+	x.h.Pass(context.Background())
+	x.h.Pass(context.Background())
+	if rows := x.live(); len(rows) != 1 || rows[0].Body != long {
+		t.Fatalf("body not whole: %+v", rows)
+	}
+	code, out := x.post(map[string]any{"action": "set", "room": "alpha", "card": "c1", "in": "1d", "text": strings.Repeat("x", remindTextMax+1)})
+	if code != http.StatusUnprocessableEntity || !strings.Contains(fmt.Sprint(out), "8000") {
+		t.Fatalf("oversize: %d %v", code, out)
 	}
 }

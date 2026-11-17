@@ -280,3 +280,32 @@ func TestTheWalkerBriefNamesThePullRequestNumber(t *testing.T) {
 		t.Fatalf("%s", prompt)
 	}
 }
+
+func TestTheWalkerBriefEndsWithTheThreadRuleAndSettingsKeepTheirs(t *testing.T) {
+	t.Parallel()
+	s, st, id, dir := readyPR(t)
+	var sent map[string]any
+	s.Launch = func(body []byte) (*store.Task, error) {
+		json.Unmarshal(body, &sent)
+		return cardIn(t, st, dir), nil
+	}
+	p, err := st.PRByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := st.RecipeFor(p.OrgRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := rec.WalkerBrief
+	if w := drawerDo(s, s.walkerPR, "POST", ``, id); w.Code != 201 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	prompt := sent["prompt"].(string)
+	if !strings.HasSuffix(prompt, "\n\n"+walkerThreadRule) || !strings.Contains(prompt, "Thread: reviewer <UTC time> <its answer>") {
+		t.Fatalf("%s", prompt)
+	}
+	if after, _ := st.RecipeFor(p.OrgRepo); after.WalkerBrief != before || strings.Contains(after.WalkerBrief, "Thread:") {
+		t.Fatalf("the brief in settings changed: %s", after.WalkerBrief)
+	}
+}

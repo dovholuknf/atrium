@@ -78,3 +78,17 @@ func TestWalkMergeAnswersTheWholeThreadOnceInOrder(t *testing.T) {
 		t.Fatalf("second answer %v", a)
 	}
 }
+
+func TestWalkMergeKeepsAReviewCardAnswerAsTheReviewCards(t *testing.T) {
+	t.Parallel()
+	id := walkHash("a", "a.go", "3", "q")
+	state := map[string]any{"comments": []any{map[string]any{"id": id, "file": "a.go", "line": 3.0, "who": "agent", "text": "q"}}}
+	lines := [][]byte{[]byte(`{"reply":"` + id + `","who":"reviewer","text":"keep it"}`), []byte(`{"reply":"` + id + `","who":"root","text":"plain"}`)}
+	if n := walkMerge(state, lines); n != 2 {
+		t.Fatalf("two turns expected, got %d", n)
+	}
+	turns := state["comments"].([]any)[0].(map[string]any)["turns"].([]any)
+	if turns[0].(map[string]any)["who"] != "reviewer" || turns[1].(map[string]any)["who"] != "agent" {
+		t.Fatalf("%v", turns)
+	}
+}
