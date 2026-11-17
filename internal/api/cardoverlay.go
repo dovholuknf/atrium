@@ -153,7 +153,7 @@ func (s *Server) overlayUp(w http.ResponseWriter, ctx context.Context, t *store.
 		writeErr(w, http.StatusBadRequest, errors.New("an overlay's name is lowercase letters, digits and dashes, up to 32"))
 		return
 	}
-	bin, err := zitiBin()
+	bin, err := s.zitiPath()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, errors.New("ziti is not on this room's PATH, so it cannot start an overlay"))
 		return
@@ -335,7 +335,7 @@ func (s *Server) overlayIdentity(w http.ResponseWriter, ctx context.Context, t *
 		writeErr(w, http.StatusBadRequest, errors.New("an identity's name is lowercase letters, digits and dashes, up to 32"))
 		return
 	}
-	bin, err := zitiBin()
+	bin, err := s.zitiPath()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, errors.New("ziti is not on this room's PATH"))
 		return
@@ -506,7 +506,7 @@ func (s *Server) overlayTunnel(w http.ResponseWriter, t *store.Task, in overlayR
 				"stops it. or use host or proxy mode, which need neither"})
 		return
 	}
-	bin, err := zitiBin()
+	bin, err := s.zitiPath()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, errors.New("ziti is not on this room's PATH"))
 		return

@@ -248,9 +248,7 @@ func TestAProxyServiceThatIsAFlagIsRefused(t *testing.T) {
 	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	fakeOverlay(t, oh, card.ID, "o1")
-	was := zitiBin
-	zitiBin = func() (string, error) { return "ziti-is-never-run", nil }
-	t.Cleanup(func() { zitiBin = was })
+	oh.srv.hk.zitiBin = func() (string, error) { return "ziti-is-never-run", nil }
 	for _, svc := range []string{"-x", " --verbose"} {
 		rec := post(t, oh.h, "/v1/tasks/"+card.ID+"/overlay", map[string]any{"action": "tunnel", "identity": "alice",
 			"mode": "proxy", "services": []string{svc}})

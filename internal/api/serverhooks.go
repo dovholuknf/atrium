@@ -28,6 +28,17 @@ type serverHooks struct {
 	scrapDir *string
 	// removeWaits and leftoverWaits, when non-nil, replace closeRemoveWaits and closeLeftoverWaits.
 	removeWaits, leftoverWaits *[]time.Duration
+	// zitiBin replaces the lookup of the ziti binary; usageFacts replaces UsageFacts; startedAt replaces apiStart.
+	zitiBin    func() (string, error)
+	usageFacts func() (ended, at time.Time)
+	startedAt  *time.Time
+}
+
+func (s *Server) zitiPath() (string, error) {
+	if s.hk.zitiBin != nil {
+		return s.hk.zitiBin()
+	}
+	return zitiBin()
 }
 
 func (s *Server) closeWaits() (now, later []time.Duration) {
