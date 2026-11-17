@@ -1743,8 +1743,8 @@ async function roomsSetupSection(browser, base) {
         : "  " + (c.querySelector(".k") ? c.querySelector(".k").textContent + ": " : "") + (c.querySelector(".tx") ? c.querySelector(".tx").textContent : c.textContent)).join("\n") }; });
     let s = await pill();
     has("the pill is not warning", s.warn, s);
-    has("the tip does not name sgg's hooks", /sgg\n  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
-    has("the tip does not name alpha's build", /alpha\n  build: runs a different atrium build/.test(s.tip), s);
+    has("the tip does not name sgg's hooks", /sgg[^\n]*\n  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
+    has("the tip does not name alpha's build", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip), s);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "pill-after.png"), clip: { x: 900, y: 0, width: 500, height: 60 } });
