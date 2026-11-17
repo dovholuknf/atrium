@@ -134,6 +134,29 @@ function sh(args, env) {
     const got = await conclusionOf(needs, extra);
     if (got !== want) fail("--needs '" + needs + "' " + extra.join(" ") + " gave " + got + ", wanted " + want);
   }
+  // Run 43449456173: every need success, one macOS leg cancelled. Only the forge's job list shows it, and a lookup that
+  // fails must not leave the run green.
+  const bin = path.join(tmp, "bin");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "gh"), "#!/usr/bin/env bash\n[ \"$FAKE_GH_EXIT\" = 0 ] || exit \"$FAKE_GH_EXIT\"\nprintf '%s\\n' $FAKE_GH_JOBS\n", { mode: 0o755 });
+  const forge = (code, jobs) => ({ PATH: bin + path.delimiter + process.env.PATH, GH_TOKEN: "t", GITHUB_RUN_ID: "43449456173",
+    GITHUB_RUN_ATTEMPT: "1", GITHUB_REPOSITORY: "o/r", FAKE_GH_EXIT: String(code), FAKE_GH_JOBS: jobs });
+  const lookups = [
+    [forge(0, "success skipped cancelled success"), "cancelled"],
+    [forge(0, "success startup_failure"), "failure"],
+    [forge(1, ""), "failure"],
+    [forge(0, ""), "failure"],
+    [forge(0, "success skipped success"), "success"],
+  ];
+  for (const [env, want] of lookups) {
+    const f = path.join(tmp, "forge.json");
+    const res = await sh(["--needs", "success success", "--out", f], env);
+    const got = res.code === 0 ? JSON.parse(fs.readFileSync(f, "utf8")).workflow_run.conclusion : "exit " + res.code;
+    if (got !== want) fail("gh exit " + env.FAKE_GH_EXIT + " jobs '" + env.FAKE_GH_JOBS + "' gave " + got + ", wanted " + want);
+    const chk = await sh(["--check", "--needs", "success success"], env);
+    if ((chk.code === 0) !== (want === "success")) fail("--check with jobs '" + env.FAKE_GH_JOBS + "' exited " + chk.code);
+  }
+
   r = await sh(["--needs", "success", "--expected-skipped", "x"]);
   if (r.code !== 2) fail("a bad --expected-skipped exited " + r.code + ", wanted 2");
 
