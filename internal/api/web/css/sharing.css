@@ -577,4 +577,5 @@
     background: var(--bg-2); border: 1px solid rgba(var(--teal-rgb), .6); color: var(--head);
     font: var(--fs-xxs)/1.4 var(--sans); white-space: nowrap;
   }
+  .card.tab.noreorder { cursor: not-allowed; }
   .tnest:has(> .tdropslot) > .groupempty { display: none; }

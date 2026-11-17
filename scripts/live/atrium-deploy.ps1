@@ -35,7 +35,8 @@
 # it (deploy-batch.ps1, Test-RunnersSurvive). Turning it on per room is docs/changes/blue-green-1-2.md.
 #
 # Remote rooms are built for their platform with the same stamp, copied over with scp, stopped with `atrium stop`, and
-# swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude.
+# swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude. A
+# Windows room is asked through the hub to restart into the copied build (POST /v1/restart-into) and swaps itself.
 #
 # THE SKEW CHECK ends every deploy: the hub is asked for every room it knows and the commit each runs, one line per room
 # (`<room>  <commit>  ok`, `<room>  <commit>  STALE (hub <commit>)`, `<room>  offline`). Any stale or offline room exits 1
@@ -193,8 +194,7 @@ $bareOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 $bareCap = 35
 $readOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 # Over <room>.atrium the ssh session rides the room being stopped. On mac the swap runs detached (nohup) and writes to a
-# file, and the hub is waited on, reading the file whenever ssh answers. On Windows the atrium-swap scheduled task runs
-# it the same way, so the new room is never a child of the sshd session.
+# file, and the hub is waited on, reading the file whenever ssh answers. A Windows room swaps itself (Request-RestartInto).
 function Start-DetachedSwap([string]$Name, [string]$SshHost, [string]$Os, [string]$Script, [datetime]$Since, [int]$Budget) {
   $back = { Test-RoomBackOnHub $Name $Since $commit }
   $launch = Invoke-SshOnce "ssh $Name swap launch" @($SshHost, (New-DetachedCommand $Os $Script)) $diagCap
@@ -209,6 +209,22 @@ function Start-DetachedSwap([string]$Name, [string]$SshHost, [string]$Os, [strin
   }
   Wait-SwapDone $back $read $Budget
 }
+# Request-RestartInto reads the copied build's path and the room's restart token over ssh, then asks the room through
+# the hub to restart into it. The answer is in Out, and DETACH-FAILED leads it when the room was not asked or refused.
+function Request-RestartInto([string]$Name, [string]$SshHost, $Room) {
+  $x = Invoke-SshOnce "ssh $Name restart token" @($SshHost, (New-RestartIntoRead $Room.Exe $Room.Token)) $diagCap
+  $line = @($x.Out -split "`r?`n" | Where-Object { $_.StartsWith('{') }) | Select-Object -Last 1
+  if ($x.TimedOut -or $x.Code -ne 0 -or -not $line) {
+    return [pscustomobject]@{ Out = "DETACH-FAILED could not read the room's restart token: $($x.Out)"; TimedOut = $x.TimedOut }
+  }
+  $ask = $line | ConvertFrom-Json
+  $a = Invoke-RestartInto $Name $ask.exe $ask.token "deploy $($commit.Substring(0, 8))"
+  if (-not $a.Ok) {
+    $why = if ($a.Code -eq 404) { 'the room runs a build without restart-into, swap it in by hand once' } else { 'the room refused' }
+    return [pscustomobject]@{ Out = "DETACH-FAILED $why ($($a.Code) $($a.Out))"; TimedOut = $false }
+  }
+  [pscustomobject]@{ Out = "restart-into: $($a.Out)"; TimedOut = $false }
+}
 function Get-HungMsg([string]$Label, [int]$Cap) { "failed - $Label hung past ${Cap}s and was killed" }
 $built = @()
 
@@ -219,47 +235,23 @@ $built = @()
 # out prints $portTimeout and exits before the swap, so the old room is neither swapped nor detached over.
 $portWait = (Get-WrapWait) + 60
 $portTimeout = 'PORT-WAIT-TIMEOUT'
-$waitFree = '$n = 0 ; while ($n -lt ' + $portWait + ') { $c = New-Object Net.Sockets.TcpClient ; ' +
-  'try { if (-not $c.ConnectAsync(''127.0.0.1'', 7781).Wait(500)) { break } } catch { break } ' +
-  'finally { $c.Dispose() } ; Start-Sleep 1 ; $n++ } ; ' +
-  'if ($n -ge ' + $portWait + ') { ''' + $portTimeout + ''' ; exit 3 } ; '
 # The port going quiet is not the room letting go of its store: the old room can still hold atrium.db, and the new one
 # then exits "store held by another process" (sgg). So each swap also waits, up to $StoreBudget, for the store itself.
-$winWaitStore = New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium\atrium.db'')'
-$sg3WaitStore = New-StoreWaitScript 'windows' '''C:/Users/claude/.atrium/atrium.db'''
 $macWaitStore = New-StoreWaitScript 'mac' '~/.atrium/atrium.db'
-# A running atrium.prev.exe can be renamed but not replaced, so a locked one is moved aside and stale ones swept.
-# A failed move prints $swapFailed and exits before anything is started, so the old binary is never restarted.
-$swapFailed = 'SWAP-FAILED'
-$swapExe = '$p = ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
-  'if (Test-Path $p) { try { Remove-Item -Force $p -ErrorAction Stop } catch { ' +
-  'try { Rename-Item $p (''atrium.prev-'' + (Get-Date -Format yyyyMMddHHmmss) + ''.exe'') -ErrorAction Stop } catch { } } } ; ' +
-  'Get-ChildItem (Split-Path $p) -Filter ''atrium.prev-*.exe'' | ForEach-Object { ' +
-  'try { Remove-Item -Force $_.FullName -ErrorAction Stop } catch { } } ; ' +
-  'try { Move-Item -Force $b $p -ErrorAction Stop ; Move-Item -Force $n $b -ErrorAction Stop } ' +
-  'catch { ''' + $swapFailed + ' '' + $_.Exception.Message ; exit 4 } ; '
-$winSwap = $winEnv + '& $b stop ; ' +
-  $waitFree + $winWaitStore +
-  '$n = (Join-Path $HOME ''atrium.new.exe'') ; ' + $swapExe + '& $b room --detach'
 $macWait = 'for i in {1..' + $portWait + '}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
   'if lsof -iTCP:7781 -sTCP:LISTEN >/dev/null ; then echo ' + $portTimeout + ' ; exit 3 ; fi ; '
-# sgg-zrok keeps its address beside its own --dir (--isolated), so a bare `atrium stop` would reach sgg: it names its board.
-$zrokWait = $waitFree.Replace('7781', '7791') + (New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium-zrok\atrium.db'')')
 # Retry is run when the detach after the swap found the old room still answering. It waits for the port again, then detaches.
+# A Windows room names the copied build (Exe) and its restart token (Token) as expressions evaluated on the room.
 # Log is how to read the room's own log over ssh, for Get-RoomLink.
 $remote = @{
   'sg3'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'
-    Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' + $waitFree + $sg3WaitStore +
-      '$b = ''C:/Users/claude/.atrium/bin/atrium.exe'' ; $n = ''C:/Users/claude/atrium.new.exe'' ; ' + $swapExe + $sg3Detach
-    Retry = $waitFree + $sg3WaitStore + $sg3Detach
+    Exe = '''C:/Users/claude/atrium.new.exe'''; Token = '''C:/Users/claude/.atrium/room/restart.token'''
     Log = 'Get-Content C:/Users/claude/.atrium/room/room.log -Tail 300' }
-  'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap
-    Retry = $winEnv + $waitFree + $winWaitStore + '& $b room --detach'
+  'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'
+    Exe = '(Join-Path $HOME ''atrium.new.exe'')'; Token = '(Join-Path $HOME ''.atrium\room\restart.token'')'
     Log = 'Get-Content (Join-Path $HOME ''.atrium\room\room.log'') -Tail 300' }
   'sgg-zrok' = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium-zrok.new.exe'; SshName = 'sgg'
-    Swap = $zrokEnv + '& $b stop --url http://127.0.0.1:7791 ; ' + $zrokWait +
-      '$n = (Join-Path $HOME ''atrium-zrok.new.exe'') ; ' + $swapExe + $zrokDetach
-    Retry = $zrokEnv + $zrokWait + $zrokDetach
+    Exe = '(Join-Path $HOME ''atrium-zrok.new.exe'')'; Token = '(Join-Path $HOME ''.atrium-zrok\room\restart.token'')'
     Log = 'Get-Content (Join-Path $HOME ''.atrium-zrok\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
     Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait + $macWaitStore +
@@ -337,23 +329,24 @@ foreach ($name in $remoteNames) {
   $swapCap = $portWait + 120
   $swapRes = $null
   $os = if ($r.GOOS -eq 'windows') { 'windows' } else { 'mac' }
-  Invoke-Step "ssh ${name}: stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start" {
-    $script:swapRes = Start-DetachedSwap $name $sshHost $os $r.Swap $start $swapCap
+  $how = if ($os -eq 'windows') { 'ask the room through the hub to restart into the new build (old kept as atrium.prev)' }
+    else { "stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start" }
+  Invoke-Step "ssh ${name}: $how" {
+    $script:swapRes = if ($os -eq 'windows') { Request-RestartInto $name $sshHost $r }
+      else { Start-DetachedSwap $name $sshHost $os $r.Swap $start $swapCap }
     $script:swapOut = @($swapRes.Out -split "`r?`n" | Where-Object { $_ -and $_ -ne $SwapDone })
     $swapOut | ForEach-Object { Say "  ${name}: $_" }
   }
   if ($WhatIf) { $results[$name] = 'success (WhatIf)'; continue }
   # A swap call that hung is not a verdict either way: the hub decides below whether the room came back.
-  if ($swapRes.Out -like 'DETACH-FAILED*') { $results[$name] = 'failed - the swap could not be started on the room'; continue }
+  if ($swapRes.Out -like 'DETACH-FAILED*') {
+    $results[$name] = "failed - the swap could not be started on the room, it still runs the old build ($($swapRes.Out -replace '^DETACH-FAILED ', ''))"
+    continue
+  }
   $swapHung = $swapRes.TimedOut
   if ($swapHung) { Say "${name}: the swap output was not seen within ${swapCap}s. checking the hub for the room anyway" }
   if ($swapOut -contains $portTimeout) {
     $results[$name] = "failed - the room still held its port after ${portWait}s, so nothing was swapped or started"
-    continue
-  }
-  $swapFail = $swapOut | Where-Object { $_ -like "$swapFailed*" } | Select-Object -First 1
-  if ($swapFail) {
-    $results[$name] = "failed - the swap failed, the old binary was not replaced and the room was not started ($swapFail)"
     continue
   }
   $storeLine = $swapOut | Where-Object { $_ -like "$StoreTimeout*" } | Select-Object -First 1

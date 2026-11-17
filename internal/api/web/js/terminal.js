@@ -1877,6 +1877,8 @@ function wireTerminalPaste(screen) {
       ]);
       return;
     }
+    // A file, doc or OSC 8 link sets no termHoverURL, but xterm marks the pointer over any link: never paste on one.
+    if (term && term.element && term.element.classList.contains("xterm-cursor-pointer")) return;
     const branch = typeof walkBranchAt === "function" ? walkBranchAt(e) : "";
     if (branch && typeof showMenu === "function") {
       const repo = termTask.repo;

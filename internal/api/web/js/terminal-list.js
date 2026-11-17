@@ -1233,8 +1233,8 @@ function termRow(t, deep, kid, inherit, plain) {
            // so the bucket keeps the shape you gave it, and it still answers
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
-           termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
-         data-id="${t.id}"${kid || plain ? "" : ` draggable="true"`}
+           termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${!kid && !plain && termAgeOrder() ? " noreorder" : ""}${wear.cls}${newCardClass(t)}"
+         data-id="${t.id}"${kid || plain ? "" : termAgeOrder() ? "" : ` draggable="true"`}
          data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. resume it from the right-click menu"
            : "\nthis one has exited. resume it from the right-click menu") +
            (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
@@ -1275,7 +1275,7 @@ let termKidsPool = new Map();
 // THE COUNT ON A ROW IS WHAT EXPANDING IT SHOWS. A collapsed parent said 3 while its open row listed 1, because the other
 // two were hidden by a chip. So this counts the children that are drawn, and nothing about the hidden ones goes on the
 // row: the popup says how many there are and what hides them.
-function termKidTotal(t) { return (termKids.get(t.id) || []).length; }
+function termKidTotal(t) { return termKidsCount(t.id, () => true); }
 
 // A parent's fold lives in the same list as the group folds, keyed by the bare id so a room-set change keeps it.
 // Like the groups it records what is NOT as it comes, and what it comes as is the subagents chip's say: off, a parent
@@ -2361,6 +2361,12 @@ let termDragEl = null;
 // replaces the whole strip and an unguarded listener per render is the leak
 // the terminal's paste handler already taught this file about.
 function wireTermDrag(host) {
+  host.onmousemove = e => {
+    const over = !termAgeQuiet && termAgeOrder() && e.target.closest(".card.tab:not(.kid)");
+    termSortNote(over ? e : null, AGE_LOCK_WORDS);
+  };
+  host.onmouseleave = () => { termAgeQuiet = false; termSortNote(null); };
+  host.onmouseup = () => { termAgeQuiet = true; termSortNote(null); };
   host.querySelectorAll(".card.tab:not(.kid)").forEach(el => {
     el.ondragstart = e => {
       termDragID = el.dataset.id;
@@ -2538,12 +2544,20 @@ function termDropSlot(nest, name, e) {
   if (slot.parentNode !== nest || slot.nextSibling !== before) nest.insertBefore(slot, before);
 }
 
+// Age order cuts the list into age buckets, so there is no hand order to drag a row into.
+const AGE_LOCK_WORDS = "order by age disables rearrange";
+let termAgeQuiet = false;
+function termAgeOrder() {
+  const gp = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
+  return !!(gp && gp.on && gp.mode === "recency");
+}
+
 function termSortWords() {
   return termSortStarted ? "newest first" : sortByActivity ? "sorted by activity" : "sorted by name";
 }
 
 // The badge above the pointer, clear of the drag image, while a row is over its own list. No event hides it.
-function termSortNote(e) {
+function termSortNote(e, words) {
   let note = document.getElementById("tdragnote");
   if (!e) { if (note) note.hidden = true; return; }
   if (!note) {
@@ -2551,7 +2565,7 @@ function termSortNote(e) {
     note.id = "tdragnote";
     document.body.appendChild(note);
   }
-  note.textContent = termSortWords();
+  note.textContent = words || termSortWords();
   note.style.left = (e.clientX + 14) + "px";
   note.style.top = (e.clientY - 44) + "px";
   note.hidden = false;

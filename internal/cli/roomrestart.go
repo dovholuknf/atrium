@@ -61,10 +61,16 @@ type roomLaunch struct {
 	isolated, upgrades    bool
 	// root and name are the room's layout, which also gives it its card root. See roomlayout.go.
 	root, name string
+	// swapIn is a new build the restarter swaps in before it starts the room. See restartinto.go.
+	swapIn string
 }
 
 // restartArgs is the command line the detached restarter runs.
 func (l roomLaunch) restartArgs() []string {
+	if l.swapIn != "" {
+		return l.args("--restart-after", roomRestartDelay.String(),
+			"--swap-in", l.swapIn, "--swap-pid", strconv.Itoa(os.Getpid()))
+	}
 	return l.args("--restart-after", roomRestartDelay.String())
 }
 

@@ -422,6 +422,32 @@ func TestTheHubRefusesToStopARoom(t *testing.T) {
 	}
 }
 
+// The deploy asks a room to restart into a new build through the hub, and the room checks the token itself.
+func TestTheHubCarriesARestartIntoWithItsToken(t *testing.T) {
+	var gotPath, gotToken, gotBody string
+	front, _, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotToken = r.URL.Path, r.Header.Get("X-Atrium-Token")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer done()
+
+	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/restart-into", strings.NewReader(`{"exe":"C:/u/atrium.new.exe"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Atrium-Token", "tok")
+	req.Header.Set("X-Atrium-Room", "testroom")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusAccepted || gotPath != "/v1/restart-into" || gotToken != "tok" ||
+		!strings.Contains(gotBody, "atrium.new.exe") {
+		t.Fatalf("got %d, the room saw %q token %q body %q", res.StatusCode, gotPath, gotToken, gotBody)
+	}
+}
+
 // The hub serves what it has and forwards what it does not. This is the rule
 // the whole design rests on, so it is asserted rather than assumed.
 func TestTheHubServesItsOwnFilesAndForwardsTheRest(t *testing.T) {

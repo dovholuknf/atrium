@@ -1147,33 +1147,39 @@ function Get-SshFailure($Route, [string]$User = '') {
 # The swap stops the room, and over "<room>.atrium" the ssh session rides that room, so it can die mid-swap. On mac
 # New-DetachedCommand builds the ssh command that writes $Script to a file on the room machine and starts it there under
 # nohup, its output going to ~/.atrium/<Tag>.out and ending in $SwapDone. Read-DetachedCommand reads that file back.
-# On Windows a room started in the session stays a child of sshd and spins a core once the client is gone (sg3), and
-# Win32_Process Create is denied over ssh (sgg), so it writes ~/.atrium/swap-task.ps1 and runs the $SwapTask scheduled
-# task, which scripts/room-swap-task.ps1 registers once as an administrator. No double quote: sshd hands it to powershell.
+# A Windows room swaps itself instead, see Invoke-RestartInto.
 $SwapDone = 'SWAP-DONE'
-$SwapTask = 'atrium-swap'
 function ConvertTo-Base64Utf8([string]$Text) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Text)) }
 function New-DetachedCommand([string]$Os, [string]$Script, [string]$Tag = 'deploy-swap') {
-  if ($Os -eq 'windows') {
-    $run = "& { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path `$HOME '.atrium\$Tag.ps1') ; " +
-      "'$SwapDone' } *> (Join-Path `$HOME '.atrium\$Tag.out')"
-    $put = foreach ($f in @(@("$Tag.ps1", $Script), @('swap-task.ps1', $run))) {
-      "[IO.File]::WriteAllText((Join-Path `$d '$($f[0])'), " +
-        "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$(ConvertTo-Base64Utf8 $f[1])'))) ; "
-    }
-    return '$d = Join-Path $HOME ''.atrium'' ; $null = New-Item -ItemType Directory -Force $d ; ' + ($put -join '') +
-      "Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path `$d '$Tag.out') ; " +
-      "`$o = schtasks.exe /Run /TN $SwapTask 2>&1 ; if (`$LASTEXITCODE -eq 0) { 'detached' } else { " +
-      "'the $SwapTask task would not run, an administrator registers it with scripts/room-swap-task.ps1: ' + `$o ; exit 1 }"
-  }
-  if ($Os -ne 'mac') { throw "New-DetachedCommand is for mac, linux and windows, not $Os" }
+  if ($Os -ne 'mac') { throw "New-DetachedCommand is for mac, not ${Os}, a windows room swaps itself" }
   $body = $Script + ' ; echo ' + $SwapDone
   return 'mkdir -p ~/.atrium ; echo ' + (ConvertTo-Base64Utf8 $body) + ' | base64 --decode > ~/.atrium/' + $Tag + '.sh ; ' +
     'rm -f ~/.atrium/' + $Tag + '.out ; nohup sh ~/.atrium/' + $Tag + '.sh > ~/.atrium/' + $Tag + '.out 2>&1 < /dev/null & echo detached'
 }
 function Read-DetachedCommand([string]$Os, [string]$Tag = 'deploy-swap') {
-  if ($Os -eq 'windows') { return "Get-Content -Raw (Join-Path `$HOME '.atrium\$Tag.out') -ErrorAction SilentlyContinue" }
   return 'cat ~/.atrium/' + $Tag + '.out 2>/dev/null'
+}
+
+# A Windows room started from an ssh session stays a child of sshd and spins a core once the client is gone (sg3), so a
+# Windows room swaps itself. New-RestartIntoRead is the ssh command that answers, as one line of JSON, the copied
+# build's full path and the token the room wrote beside its keys. Invoke-RestartInto then asks the room through the
+# hub to restart into that build (POST /v1/restart-into). The room runs the build once, starts it detached from
+# itself, and keeps the old binary when the new one never answers. No double quote: sshd hands it to powershell.
+$HubRestartInto = 'http://127.0.0.1:7778/v1/restart-into'
+function New-RestartIntoRead([string]$ExeExpr, [string]$TokenExpr) {
+  "@{ exe = $ExeExpr ; token = (Get-Content -Raw $TokenExpr -ErrorAction Stop).Trim() } | ConvertTo-Json -Compress"
+}
+function Invoke-RestartInto([string]$Room, [string]$Exe, [string]$Token, [string]$Why, [string]$Url = $HubRestartInto) {
+  $body = @{ exe = $Exe; why = $Why } | ConvertTo-Json -Compress
+  try {
+    $r = Invoke-WebRequest $Url -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 90 -UseBasicParsing `
+      -Headers @{ 'X-Atrium-Room' = $Room; 'X-Atrium-Token' = $Token }
+    [pscustomobject]@{ Ok = ($r.StatusCode -eq 202); Code = [int]$r.StatusCode; Out = "$($r.Content)".Trim() }
+  } catch {
+    $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+    $out = if ($_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+    [pscustomobject]@{ Ok = $false; Code = $code; Out = "$out".Trim() }
+  }
 }
 
 # Wait-SwapDone polls while a detached swap runs. $Back says whether the hub sees the room back. $ReadOut returns the

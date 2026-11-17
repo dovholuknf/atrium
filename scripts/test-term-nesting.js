@@ -94,7 +94,7 @@ const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
   "termRoomChip", "termRowChips", "termCold", "termHeldLine", "termLeftoverChip", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
   "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
-  "termFlatGroupsHTML"];
+  "termFlatGroupsHTML", "termAgeOrder"];
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which
 // is a confusing way to be told the file was reordered.

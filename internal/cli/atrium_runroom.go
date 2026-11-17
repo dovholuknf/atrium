@@ -180,6 +180,10 @@ func startRoom(l roomLaunch) (*os.Process, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	return startRoomFrom(self, l)
+}
+
+func startRoomFrom(self string, l roomLaunch) (*os.Process, string, error) {
 	if err := os.MkdirAll(l.dir, 0o700); err != nil {
 		return nil, "", err
 	}
