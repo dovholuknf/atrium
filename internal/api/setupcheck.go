@@ -43,10 +43,17 @@ func (s *Server) setupCheck(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if UsageFacts != nil {
-		ended, at := UsageFacts()
-		if at.Before(apiStart) {
-			at = apiStart
+	facts, started := UsageFacts, apiStart
+	if s.hk.usageFacts != nil {
+		facts = s.hk.usageFacts
+	}
+	if s.hk.startedAt != nil {
+		started = *s.hk.startedAt
+	}
+	if facts != nil {
+		ended, at := facts()
+		if at.Before(started) {
+			at = started
 		}
 		if quiet := time.Since(ended); quiet < usagePostWait && quiet > usagePostGrace && time.Since(at) > usagePostWait {
 			issues = append(issues, checkIssue{ID: "usage", Text: "status line is posting no usage: no 5h or weekly figure reached the room in 15 minutes"})

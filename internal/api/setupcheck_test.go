@@ -8,9 +8,9 @@ import (
 )
 
 func TestUsageCheckFiresOnlyAfterARecentTurnWithNoPost(t *testing.T) {
-	keepFacts, keepStart := UsageFacts, apiStart
-	t.Cleanup(func() { UsageFacts, apiStart = keepFacts, keepStart })
-	apiStart = time.Now().Add(-24 * time.Hour)
+	start := time.Now().Add(-24 * time.Hour)
+	srv := &Server{}
+	srv.hk.startedAt = &start
 	now := time.Now()
 	stale := now.Add(-time.Hour)
 	cases := []struct {
@@ -25,9 +25,9 @@ func TestUsageCheckFiresOnlyAfterARecentTurnWithNoPost(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			UsageFacts = func() (time.Time, time.Time) { return c.ended, c.at }
+			srv.hk.usageFacts = func() (time.Time, time.Time) { return c.ended, c.at }
 			rec := httptest.NewRecorder()
-			(&Server{}).setupCheck(rec, httptest.NewRequest("GET", "/v1/setup-check", nil))
+			srv.setupCheck(rec, httptest.NewRequest("GET", "/v1/setup-check", nil))
 			var out struct {
 				Issues []checkIssue `json:"issues"`
 			}
