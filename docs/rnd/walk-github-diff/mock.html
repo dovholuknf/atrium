@@ -1880,7 +1880,7 @@ function paint() {
   document.getElementById("t-walk-label").textContent = lab;
   const url = document.getElementById("forge").value;
   for (const id of ["t-walk-pr", "walk-ghlink"]) {
-    const a = document.getElementById(id); a.hidden = !v.pr; a.href = url; a.textContent = "View it on " + walkForgeName(url);
+    const a = document.getElementById(id); a.hidden = !v.pr; a.href = /^https?:\/\//i.test(url) ? url : "#"; a.textContent = "View it on " + walkForgeName(url);
   }
   const mode = document.getElementById("walk-mode"); mode.hidden = v.pr;
   if (!v.pr) mode.querySelectorAll("button").forEach((b, i) => { b.classList.toggle("on", i === 0); b.querySelector(".n").textContent = v.modes[i]; });
