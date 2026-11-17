@@ -1878,7 +1878,8 @@ function paint() {
   document.getElementById("walk-title").textContent = v.title;
   const lab = v.pr ? "walk PR #1245" : "walk " + files.length + " changed files";
   document.getElementById("t-walk-label").textContent = lab;
-  const url = document.getElementById("forge").value;
+  // The address comes from this list by the chosen index, not from the page text.
+  const url = ["https://github.com/openziti/ziti-sdk-c/pull/1245", "https://gitlab.com/g/p/-/merge_requests/12", "https://bitbucket.org/w/r/pull-requests/7", "http://127.0.0.1:7950/_hub/pr/3", "https://code.example.com/o/r/pulls/9"][document.getElementById("forge").selectedIndex];
   for (const id of ["t-walk-pr", "walk-ghlink"]) {
     const a = document.getElementById(id); a.hidden = !v.pr; a.href = /^https?:\/\//i.test(url) ? url : "#"; a.textContent = "View it on " + walkForgeName(url);
   }
