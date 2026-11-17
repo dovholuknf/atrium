@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 		os.Stderr.WriteString("nope\n")
 		os.Exit(3)
 	case "hang":
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) // wait: the hung hook the test kills
 		os.Exit(0)
 	}
 	os.Exit(m.Run())

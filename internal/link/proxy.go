@@ -1719,7 +1719,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.hubRoutes().Notify(w, r, sub)
-	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url", "git/walk":
+	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url", "git/walk", "git/delete":
 		p.hubRoutes().Git(w, r, sub)
 	case "launch-caps":
 		p.hubRoutes().LaunchCaps(w, r)

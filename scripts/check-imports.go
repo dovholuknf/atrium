@@ -70,6 +70,7 @@ var table = []row{
 	{0, "internal/link/wire", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
+	{1, "internal/capability", []string{"internal/base/nowindow"}},
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
 	{1, "internal/base/claudeconf", []string{"internal/base/mcprule", "internal/base/rolebin"}},
 	{1, "internal/base/detach", []string{"internal/base/nowindow"}},
@@ -136,6 +137,7 @@ var table = []row{
 		"internal/base/inputlag", "internal/base/rules", "internal/link/wire",
 	}},
 	{4, "internal/link", []string{
+		"internal/capability",
 		"internal/base/seenhost",
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
@@ -166,6 +168,7 @@ var table = []row{
 		"internal/api", "internal/base/cardroot", "internal/base/nowindow", "internal/daemon/home", "internal/daemon/shared", "internal/small", "internal/store",
 	}},
 	{5, "internal/daemon", []string{
+		"internal/capability",
 		"internal/base/seenhost",
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
@@ -178,6 +181,7 @@ var table = []row{
 		"internal/zitictx",
 	}},
 	{6, "internal/cli", []string{
+		"internal/capability",
 		"internal/base/seenhost", "internal/statusline",
 		"docs/runtime/contract", "internal/base/dblock", "internal/base/testwait", "internal/worktrees",
 		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",

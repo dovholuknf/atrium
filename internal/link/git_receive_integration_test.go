@@ -277,6 +277,24 @@ func TestTheReleaseRouteIsTheLoopbackOperatorsAndLetsGoOfABranch(t *testing.T) {
 	}
 }
 
+func TestTheDeleteRouteIsDispatchedByTheProxy(t *testing.T) {
+	x := newPushFix(t)
+	x.repo(t, boardRepo)
+	call := func(method, remote string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, "http://127.0.0.1:7778/_hub/git/delete", nil)
+		req.RemoteAddr = remote
+		x.p.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := call("GET", offLoopback); code != http.StatusForbidden {
+		t.Errorf("off loopback = %d", code)
+	}
+	if code := call("GET", "127.0.0.1:1"); code != http.StatusMethodNotAllowed {
+		t.Errorf("GET = %d", code)
+	}
+}
+
 type roomPush struct {
 	*pushFix
 	hub *Hub

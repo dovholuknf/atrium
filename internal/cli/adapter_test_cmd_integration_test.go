@@ -27,7 +27,7 @@ func TestTodaysClaudeHooksPassTheKit(t *testing.T) {
 	}
 	// The kit kills a hung hook's shell, not the atrium.exe it started, which Windows keeps open until its own budget ends.
 	t.Cleanup(func() {
-		for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) { // wait: windows keeps the exe open until its own budget ends
 			if err := os.Remove(exe); err == nil || os.IsNotExist(err) {
 				return
 			}
