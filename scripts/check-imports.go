@@ -29,6 +29,7 @@ type row struct {
 var table = []row{
 	{0, "cmd/ptyhost-spike", nil},
 	{0, "internal/zitijoin", nil},
+	{0, "internal/statusline", nil},
 	{0, "docs/runtime/contract", nil},
 	{0, "internal/base/address", nil},
 	{0, "internal/base/cardcolors", nil},
@@ -53,6 +54,7 @@ var table = []row{
 	{0, "internal/base/rolebin", nil},
 	{0, "internal/base/safepath", nil},
 	{0, "internal/base/scratch", nil},
+	{0, "internal/base/seenhost", nil},
 	{0, "internal/base/shellpick", nil},
 	{0, "internal/base/sshcfg", nil},
 	{0, "internal/base/sshkey", nil},
@@ -105,6 +107,7 @@ var table = []row{
 	{3, "internal/shepherd", []string{"internal/base/gitexec", "internal/gitsync", "internal/base/nowindow"}},
 	{3, "internal/worktrees", []string{"internal/base/gitexec", "internal/gitsync"}},
 	{4, "internal/api", []string{
+		"internal/base/seenhost",
 		"internal/base/cardcolors", "internal/base/cardproc", "internal/cardreview", "internal/base/cardroot", "internal/base/cardurl",
 		"internal/base/claudeconf", "internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/base/inputlag",
 		"internal/base/mcprule", "internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/runnersetup",
@@ -133,6 +136,7 @@ var table = []row{
 		"internal/base/inputlag", "internal/base/rules", "internal/link/wire",
 	}},
 	{4, "internal/link", []string{
+		"internal/base/seenhost",
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
 		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules", "internal/base/safepath",
@@ -162,6 +166,7 @@ var table = []row{
 		"internal/api", "internal/base/cardroot", "internal/base/nowindow", "internal/daemon/home", "internal/daemon/shared", "internal/small", "internal/store",
 	}},
 	{5, "internal/daemon", []string{
+		"internal/base/seenhost",
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
 		"internal/daemon/cycle", "internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
@@ -173,6 +178,7 @@ var table = []row{
 		"internal/zitictx",
 	}},
 	{6, "internal/cli", []string{
+		"internal/base/seenhost", "internal/statusline",
 		"docs/runtime/contract", "internal/base/dblock", "internal/base/testwait", "internal/worktrees",
 		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/daemon", "internal/daemon/screen", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync",
