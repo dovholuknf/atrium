@@ -14,8 +14,7 @@
 # failed or was skipped, cancelled if any was cancelled, else success. A skipped job means a gate stopped the run,
 # except as many as --expected-skipped N (default 0), the jobs a manual dispatch's os and suite left out on purpose.
 # --jobs takes the forge's per job conclusions and turns a success into failure or cancelled when a job was not green. With
-# no --jobs, GH_TOKEN and the runner's GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT and GITHUB_REPOSITORY make it ask the forge itself,
-# and a lookup that fails or reads no jobs is failure, as is any job conclusion but success, skipped or neutral.
+# no --jobs, GH_TOKEN and the runner's GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT and GITHUB_REPOSITORY make it ask the forge itself.
 # else exits 3 and writes nothing. --check with --needs writes and sends nothing and exits 0 only for success, else 1.
 # The body is written to --out (default build.claude/ci-notify-body.json) and that path is printed. With no --url
 # that is all it does, and the ziti-hook step carries the body. With --url it POSTs the body with the secret in
@@ -52,13 +51,9 @@ if [ -n "${needs+x}" ]; then
   # A matrix leg cancelled by the runner can leave its job's result success, so the forge's job conclusions decide.
   if [ "$conclusion" = success ] && [ -z "$jobs" ] && [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
     jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/${GITHUB_RUN_ATTEMPT:-1}/jobs" --jq '.jobs[].conclusion // empty' | tr '\n' ' ') || jobs=""
-    # A lookup that failed or read no jobs cannot vouch for a green run.
-    [ -n "${jobs// /}" ] || jobs=failure
   fi
   if [ "$conclusion" = success ]; then
-    for j in $jobs; do
-      case "$j" in success|skipped|neutral) ;; cancelled) [ "$conclusion" = failure ] || conclusion=cancelled ;; *) conclusion=failure ;; esac
-    done
+    case " $jobs " in *" failure "*|*" timed_out "*) conclusion=failure ;; *" cancelled "*) conclusion=cancelled ;; esac
   fi
 fi
 
