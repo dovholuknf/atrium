@@ -1467,6 +1467,10 @@ async function walkReply() {
   const text = `About review finding ${it.num} ${it.path}:${it.line} (${file}): ${said}\n\n` +
     `Answer in that finding's file: add one line at the end of Evidence, "Thread: reviewer <UTC time> <your answer>", ` +
     `with any newline in the answer written as \\n. Change nothing else in the file.`;
+  await walkReviewSay(text);
+}
+
+async function walkReviewSay(text) {
   try {
     await api(`/v1/tasks/${encodeURIComponent(dock.taskId)}/message`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text })

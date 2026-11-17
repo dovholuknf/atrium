@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
@@ -1458,7 +1460,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 				return nil, err
 			}
 		}
-		argv := expandTemplate(windowTemplate(TerminalTemplate, cwd, title, cmdName, cmdArgs), cwd, title, cmdName, cmdArgs)
+		argv := expandTemplate(windowTemplate(d.hk.terminal, cwd, title, cmdName, cmdArgs), cwd, title, cmdName, cmdArgs)
 		cmd := exec.Command(argv[0], argv[1:]...)
 		cmd.Dir = cwd
 		cmd.Env = env
@@ -2069,7 +2071,30 @@ func childEnvFrom(base []string, harnessEnv map[string]string, atrium map[string
 	return out
 }
 
-// Kill stops the runner behind a card. A window-mode launch has no pid atrium owns, so it cannot be stopped here.
+// hookPID is the pid the card's hooks last reported on a launch, which a report from another conversation takes off
+// the card. Taken only while that process still runs in the card's worktree, so a reused pid is never stopped.
+func (d *Daemon) hookPID(t *store.Task) int {
+	evs, err := d.st.Events(t.ID, 0)
+	if err != nil {
+		return 0
+	}
+	for _, e := range evs {
+		var p struct {
+			PID int `json:"pid"`
+		}
+		if e.Kind != store.EventLaunched || json.Unmarshal(e.Payload, &p) != nil || p.PID <= 0 {
+			continue
+		}
+		if _, in := cardproc.InDir(t.Worktree)[p.PID]; in {
+			return p.PID
+		}
+		return 0
+	}
+	return 0
+}
+
+// Kill stops the runner behind a card. A window-mode launch has no pid atrium owns, so it takes the one its hook
+// last reported.
 func (d *Daemon) Kill(taskID string) error {
 	t, err := d.st.Get(taskID)
 	if err != nil {
@@ -2079,6 +2104,9 @@ func (d *Daemon) Kill(taskID string) error {
 		if r := d.sup.get(taskID); r != nil && r.tm() != nil {
 			t.PID = r.tm().Pid()
 		}
+	}
+	if t.PID <= 0 {
+		t.PID = d.hookPID(t)
 	}
 	if t.PID <= 0 {
 		return errors.New("atrium does not know this runner's process. " +

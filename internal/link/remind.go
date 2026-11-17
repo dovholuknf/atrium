@@ -28,8 +28,8 @@ import (
 // A room asks over the hub relay, which stamps `room` from the link, so a room can only name its own cards.
 
 const (
-	remindBodyMax    = 4 << 10
-	remindTextMax    = 500
+	remindBodyMax    = 64 << 10
+	remindTextMax    = 8000
 	remindTick       = 30 * time.Second
 	remindWakeGiveUp = 24 * time.Hour
 	remindFrom       = "remind@hub"
@@ -181,6 +181,9 @@ func (h *Reminders) set(w http.ResponseWriter, in remindRequest) {
 	text := remindClean(in.Text, remindTextMax)
 	var due time.Time
 	switch {
+	case len([]rune(strings.TrimSpace(in.Text))) > remindTextMax:
+		remindFail(w, http.StatusUnprocessableEntity, fmt.Sprintf("text is at most %d characters", remindTextMax))
+		return
 	case text == "":
 		remindFail(w, http.StatusUnprocessableEntity, "say what to remind about, in text")
 		return

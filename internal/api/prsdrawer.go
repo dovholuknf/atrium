@@ -521,6 +521,11 @@ func (s *Server) walkerPR(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// walkerThreadRule follows the repo's walker brief at launch, so an edited brief still gets it and settings never change.
+const walkerThreadRule = `Write replies as Thread: lines. When the operator replies to the review card about a finding, add one line at the end of ` +
+	`that finding's Evidence: Thread: operator <UTC time> <what the operator said>. The review card answers in the same file with ` +
+	`Thread: reviewer <UTC time> <its answer>. Write any newline as \n and change nothing else in the file.`
+
 func (s *Server) launchWalker(w http.ResponseWriter, p *store.PRReview) {
 	if s.Launch == nil {
 		prError(w, http.StatusNotImplemented, "not_wired", "no launcher wired", nil)
@@ -549,7 +554,7 @@ func (s *Server) launchWalker(w http.ResponseWriter, p *store.PRReview) {
 		"harness": rec.Harness,
 		"cwd":     filepath.ToSlash(dir),
 		"title":   fmt.Sprintf("walk %s#%d", p.OrgRepo, p.Number),
-		"prompt":  strings.ReplaceAll(rec.WalkerBrief, "<n>", strconv.Itoa(p.Number)),
+		"prompt":  strings.ReplaceAll(rec.WalkerBrief, "<n>", strconv.Itoa(p.Number)) + "\n\n" + walkerThreadRule,
 		"url":     p.URL,
 		"tags": []string{"atrium:subagent", "dept:review", "review", "pr",
 			fmt.Sprintf("pr:%s#%d", p.OrgRepo, p.Number)},

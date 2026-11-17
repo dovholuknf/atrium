@@ -1075,7 +1075,7 @@ function Format-RoomSkew($Row, [string]$HubCommit) {
 # Get-DeployNext is the command that deploys the rooms Get-RoomSkew found stale or offline. sg4-control takes the
 # opt-in form and a room deploy does not know is named on its own line, to be done by hand.
 function Get-DeployNext([string[]]$Names, [string]$Script) {
-  $deployable = 'hub', 'claude-sg4', 'sg3', 'm1mini', 'sgg'
+  $deployable = 'hub', 'claude-sg4', 'sg3', 'm1mini', 'sgg', 'sgg-zrok'
   $rooms = @($Names | Where-Object { $_ -in $deployable })
   $cmds = @()
   if ($rooms.Count) { $cmds += "pwsh -NoProfile -File $Script -Rooms $($rooms -join ',')" }

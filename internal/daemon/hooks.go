@@ -47,6 +47,7 @@ type runnerHooks struct {
 	runnerFound func(h *store.Harness) string
 	agentSpawn  func(exe string, args []string) (string, []string)
 	agentFork   func(exe string, args []string) (string, []string)
+	terminal    []string
 }
 
 type idleHooks struct {
@@ -109,6 +110,7 @@ func defaultHooks() hooks {
 			runnerFound: runnerFound,
 			agentSpawn:  agentSpawn,
 			agentFork:   cycle.AgentFork,
+			terminal:    TerminalTemplate,
 		},
 		idleHooks: idleHooks{idleLeave: idleLeave, idleGoneWait: idleGoneWait},
 		windDownHooks: windDownHooks{

@@ -6709,7 +6709,8 @@ async function phoneViewSection(browser, base) {
 
     // a zoom changes the font, not the grid
     const before = await dims();
-    await p.evaluate(() => phoneSetFont(term.options.fontSize * 2));
+    await p.evaluate(() => { localStorage.setItem(termZoomKey(termTask.id), String(term.options.fontSize * 2));
+      phoneSetFont(term.options.fontSize * 2); });
     await p.waitForFunction(f => term.options.fontSize > f * 1.9, before.font, { timeout: slow(5000) }).catch(() => {});
     d = await dims();
     if (d.font <= before.font * 1.9) fail("phoneView: zoom did not change the font: " + JSON.stringify([before, d]));
@@ -9577,7 +9578,8 @@ async function cleanCopyGestureSection(browser, base) {
     window.__clip = [];
     window.__refused = 0;
     let inGesture = false;
-    window.addEventListener("keydown", () => { inGesture = true; setTimeout(() => { inGesture = false; }, 0); }, true);
+    window.addEventListener("keydown", () => { inGesture = true; }, true);
+    window.addEventListener("keyup", () => { inGesture = false; window.__gestureEnded = true; if (window.__whenEnded) window.__whenEnded(true); }, true);
     const no = () => { window.__refused++; return Promise.reject(new DOMException("not in a gesture", "NotAllowedError")); };
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       writeText: t => { if (!inGesture) return no(); window.__clip.push(t); return Promise.resolve(); },
@@ -9589,7 +9591,7 @@ async function cleanCopyGestureSection(browser, base) {
   });
   const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\nThanks.";
   await ctx.route("**/v1/tasks/*/replies*", async route => {
-    await new Promise(r => setTimeout(r, 750)); // wait: a slow lookup is what this checks
+    await route.request().frame().evaluate(() => window.__gestureEnded || new Promise(done => { window.__whenEnded = done; }));
     await route.fulfill({ contentType: "application/json",
       body: JSON.stringify({ source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) });
   });
@@ -9603,16 +9605,17 @@ async function cleanCopyGestureSection(browser, base) {
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
     const want = "> Please review the plan and tell me what is missing from it.";
     const copy = async () => {
-      await p.evaluate(out => { window.__clip = []; window.__refused = 0; ccLook = null; resetTerm(term); termSock.onmessage({ data: out }); }, shown);
+      await p.evaluate(out => { window.__clip = []; window.__refused = 0; window.__gestureEnded = false; ccLook = null; resetTerm(term); termSock.onmessage({ data: out }); }, shown);
       await termWrite(p, "");
       const sel = await p.evaluate(() => { term.selectLines(2, 3); term.focus(); return termSelectionText(term); });
+      await frames(p, 3);
       await p.keyboard.press("Control+c");
       await p.waitForFunction(() => window.__clip.length || window.__refused, null, { timeout: slow(5000) }).catch(() => {});
       return Object.assign(await p.evaluate(() => ({ clip: window.__clip.slice(), refused: window.__refused })), { sel });
     };
 
     const a = await copy();
-    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopyGesture: ctrl-c with a 750ms lookup copied " + JSON.stringify(a) + ", not " + JSON.stringify(want));
+    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopyGesture: ctrl-c with a lookup that answers after the gesture copied " + JSON.stringify(a) + ", not " + JSON.stringify(want));
 
     await p.evaluate(() => { window.__CI = window.ClipboardItem; delete window.ClipboardItem; });
     const b = await copy();
@@ -11542,8 +11545,9 @@ async function peekLeftoverSection(browser, base) {
       root.firstChild.innerHTML = peekRows(t);
       peekRecap(root);
     });
-    const mark = await p.evaluate(() => [termLeftoverChip({ done_skipped: "x", done_unverified: "y" }), termLeftoverChip({ done_skipped: "x" }), termLeftoverChip({}), termLeftoverChip({ report_dirty: 3, done_skipped: "x" })]);
-    if (!/&#9888;<\/span> 2/.test(mark[0]) || !/1 skipped, 1 unverified/.test(mark[0]) || !/&#9888;<\/span> 1/.test(mark[1]) || mark[2] !== "" || !/&#9888;<\/span> 2/.test(mark[3]) || !/3 files not committed, 1 skipped/.test(mark[3])) fail("peekLeftover: the row marker is " + JSON.stringify(mark));
+    const mark = await p.evaluate(() => [termLeftoverChip({ status: "done", done_skipped: "x", done_unverified: "y" }), termLeftoverChip({ status: "done", done_skipped: "x" }), termLeftoverChip({ status: "done" }), termLeftoverChip({ status: "done", report_dirty: 3, done_skipped: "x" }),
+      termLeftoverChip({ status: "done", report_dirty: 1, spawned_by: "orch@sg3" }), termLeftoverChip({ status: "done", report_dirty: 1, spawned_by_id: "sg3~o1" }), termLeftoverChip({ status: "running", report_dirty: 1 })]);
+    if (!/&#9888;<\/span> 2/.test(mark[0]) || !/1 skipped, 1 unverified/.test(mark[0]) || !/&#9888;<\/span> 1/.test(mark[1]) || mark[2] !== "" || !/&#9888;<\/span> 2/.test(mark[3]) || !/3 files not committed, 1 skipped/.test(mark[3]) || mark[4] !== "" || mark[5] !== "" || mark[6] !== "") fail("peekLeftover: the row marker is " + JSON.stringify(mark));
     const text = await p.locator("#shot-root .peek-left").innerText();
     if (!/skipped\s+the retry path/.test(text) || !/unverified\s+windows/.test(text)) fail("peekLeftover: both notes are not under the recap: " + text);
     const kept = p.waitForResponse(r => r.url().includes("/skipped-filed"), { timeout: slow(10000) });
@@ -13593,6 +13597,86 @@ async function walkReplySection(browser, base) {
   if (errors.length) fail("walkReply: the page threw: " + errors.join(" | "));
 }
 
+// A review card reply is a queued say, so it never types over the walk agent's terminal the ask box writes to.
+async function walkReviewBoxSection(browser, base) {
+  const id = "land-wreviewbox";
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-wreviewbox-"));
+  fs.mkdirSync(path.join(tmp, "findings"), { recursive: true });
+  const diff = "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,3 @@\n x := 1\n+y := 2\n z := 3\n";
+  mock.walkDirs[id] = tmp;
+  mock.walkBranch[id] = { code: 200, body: { branch: "claude/feature", base: "main", diff } };
+  mock.walkState[id] = { v: 1, thread: [], off: [], bottom: "thread", open: false, comments: [
+    { id: "ag1", file: "a.go", line: 2, who: "agent", text: "y shadows the outer y", turns: [], post: null },
+    { id: "me1", file: "a.go", line: 3, who: "you", text: "my own note", turns: [], post: null }] };
+  mock.walkSays = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/reviewbox" })];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const B = '#walk-drawer .cmt[data-cid="ag1"] ';
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(p, { unit: "walkReviewBox", id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    await p.click("#t-walk");
+    await p.waitForSelector(B + ".wk-two", { timeout: slow(10000) }).catch(() => fail("walkReviewBox: the agent's comment has no second box"));
+    const boxes = await p.$$eval(B + ".wk-two > div", ds => ds.map(d => d.querySelector("textarea").placeholder + "|" + (d.querySelector(".help") || {}).dataset.tip));
+    if (boxes.length !== 2 || !/^Ask the agent about this line\|to the walk agent$/.test(boxes[0]) ||
+      !/^Reply to the review card about this finding\|sent to the review card/.test(boxes[1])) fail("walkReviewBox: the boxes are " + JSON.stringify(boxes));
+    if (await p.$('#walk-drawer .cmt[data-cid="me1"] .wk-two') || await p.$$eval('#walk-drawer .cmt[data-cid="me1"] textarea', t => t.length) !== 1)
+      fail("walkReviewBox: your own comment got a review card box");
+
+    await p.fill(B + 'textarea[data-wpk="rc:ag1"]', "Is that reachable?");
+    await p.press(B + 'textarea[data-wpk="rc:ag1"]', "Enter");
+    await until(() => mock.walkSays.length === 1, 5000).catch(() => fail("walkReviewBox: nothing was said to the review card"));
+    const say = mock.walkSays[0] || { id: "", text: "" };
+    if (say.id !== id || !say.text.includes("a.go:2") || !say.text.includes("Is that reachable?") ||
+      !say.text.includes('{"reply":"ag1","who":"reviewer","text":"<your answer>"}')) fail("walkReviewBox: the say is not tagged with the comment: " + JSON.stringify(say));
+    await p.waitForFunction(b => document.querySelector(b + 'textarea[data-wpk="rc:ag1"]').value === "" &&
+      /waiting for the review card/.test(document.querySelector(b + ".wk-wait").textContent), B, { timeout: slow(5000) })
+      .catch(() => fail("walkReviewBox: the sent reply did not clear the box and wait for the review card"));
+    await until(() => (mock.walkState[id].comments.find(c => c.id === "ag1").turns || []).some(t => t.to === "rc"), 5000)
+      .catch(() => fail("walkReviewBox: the sent reply was not kept with the walk"));
+
+    mock.walkState[id].comments.find(c => c.id === "ag1").turns.push({ who: "reviewer", text: "Yes, on a retry.", id: "t9", at: Date.now() });
+    await p.evaluate(() => walkPrSync());
+    await p.waitForFunction(b => { const t = [...document.querySelectorAll(b + ".wk-turn")].pop(); return t && /Yes, on a retry/.test(t.textContent); }, B, { timeout: slow(5000) })
+      .catch(() => fail("walkReviewBox: the review card's answer never showed"));
+    const last = await p.$$eval(B + ".wk-turn", els => { const e = els[els.length - 1]; return e.className + "|" + e.querySelector(".wk-av").textContent + "|" + e.querySelector(".wk-who b").textContent; });
+    if (last !== "wk-turn rv|rv|review card") fail("walkReviewBox: the answer is drawn as " + last);
+    if (await p.$(B + ".wk-wait")) fail("walkReviewBox: still waiting after the answer");
+    await p.close();
+  } finally {
+    await ctx.close();
+    mock.walkSays = [];
+    mock.tasksMode = was;
+    delete mock.walkDirs[id]; delete mock.walkBranch[id]; delete mock.walkState[id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkReviewBox: the page threw: " + errors.join(" | "));
+}
+
 // u-review-walk-no-resize: opening and closing the walk never moves the terminal. A list at 380px takes the drawer in
 // its column, the default 260px list gets it over the terminal's right edge. Either way the grid, the pane's box and
 // the frames sent are what they were, so the runner never redraws for a resize. WALK_SHOTS=<dir> writes PNGs.
@@ -14788,6 +14872,7 @@ async function phoneNudgeSection(browser, base) {
     if (Number(pb.n) !== 1) fail("phoneNudge: the corner bell's count is wrong " + JSON.stringify(pb));
 
     // a held message: the envelope nudges with its count and no notice box is drawn
+    mock.LAND["land-live"].activity = { held_peer: true, held_for: "line", held_count: 3 };
     await p.evaluate(() => {
       followHeldLine([{ id: "land-live", supervised: true, activity: { held_peer: true, held_for: "line", held_count: 3 } }]);
     });
@@ -28673,7 +28758,7 @@ async function newContextSseSection(browser, base) {
 async function composePasteDefaultSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z", new_context: { step: "clear", n: 2, of: 3, label: "clearing the context" } });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -28702,7 +28787,8 @@ async function composePasteDefaultSection(browser, base) {
       window.addEventListener("contextmenu", e => window.__menus.push(e.target.id));
       return navigator.clipboard.writeText("pasted words");
     });
-    for (const [id, open] of [["t-ctxbox-in", () => composeNoEntry({ step: "clear", n: 2, of: 3, label: "clearing the context" })], ["t-paste-in", () => { document.getElementById("t-ctxbox").hidden = true; openPasteBox(""); }]]) {
+    for (const [id, open] of [["t-ctxbox-in", () => composeNoEntry(termTask.new_context)], ["t-paste-in", () => { document.getElementById("t-ctxbox").hidden = true; openPasteBox(""); }]]) {
+      if (id === "t-paste-in") delete mock.LAND["land-live"].new_context;
       await p.evaluate(open);
       // A task refresh with no hold hides an empty context box, so give it text for the click.
       await p.evaluate(id => { const t = document.getElementById(id); if (id === "t-ctxbox-in") t.value = "draft"; }, id);
@@ -28713,6 +28799,7 @@ async function composePasteDefaultSection(browser, base) {
       if (menu.focus !== id || menu.reached) fail("composePasteDefault: right click in " + id + " did not stay with the box: " + JSON.stringify(menu));
       await ta.fill("");
       await p.keyboard.press("Control+Shift+V");
+      await p.waitForFunction(id => document.getElementById(id).value !== "", id, { timeout: slow(3000) }).catch(() => {});
       await p.evaluate(() => new Promise(done => setTimeout(() => done(), 0))); // wait: a fallback read would land after this tick
       const native = await ta.inputValue();
       if (native !== "pasted words") fail("composePasteDefault: ctrl-shift-v in " + id + " did not paste once: " + JSON.stringify(native));
@@ -28891,12 +28978,12 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, peekLeftover: peekLeftoverSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkRoomBack: walkRoomBackSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkRoomBack: walkRoomBackSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkReviewBox: walkReviewBoxSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -30755,6 +30842,7 @@ async function main() {
     await unit("walkHubBranch", () => walkHubBranchSection(browser, base));
     await unit("walkView", () => walkViewSection(browser, base));
     await unit("walkReply", () => walkReplySection(browser, base));
+    await unit("walkReviewBox", () => walkReviewBoxSection(browser, base));
     await unit("walkNoResize", () => walkNoResizeSection(browser, base));
     await unit("linkReuse", () => linkReuseSection(browser, base));
     await unit("linkBoard", () => linkBoardSection(browser, base));

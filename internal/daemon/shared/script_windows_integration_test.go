@@ -17,15 +17,18 @@ func cardText() []string {
 
 func TestBatchShimArgsAreNotLiveToCmd(t *testing.T) {
 	dir := t.TempDir()
-	shim := filepath.Join(dir, "fake.cmd")
-	if err := os.WriteFile(shim, []byte("@echo off\r\necho ARGS=%*\r\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "fake.cmd"), []byte("@echo off\r\necho ARGS=%*\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Relative to the working dir: on a room that denies the account the drive root, cmd.exe fails on an absolute path.
+	shim := `.\fake.cmd`
 	t.Setenv("ATRIUM_PROOF_VAR", "EXPANDED")
 	for _, prompt := range cardText() {
 		exe, args, err := ViaShellIfScript(shim, []string{"-p", prompt})
 		if err == nil {
-			out, _ := exec.Command(exe, args...).CombinedOutput()
+			cmd := exec.Command(exe, args...)
+			cmd.Dir = dir
+			out, _ := cmd.CombinedOutput()
 			t.Errorf("cmd.exe was handed %q: %q", prompt, out)
 		}
 	}
@@ -33,7 +36,9 @@ func TestBatchShimArgsAreNotLiveToCmd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(exe, args...).CombinedOutput()
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), `ARGS=--model opus-4 "two words"`) {
 		t.Errorf("plain args through the shim: %q %v", out, err)
 	}

@@ -40,11 +40,11 @@ Check 'the hub commit is its local room''s, not the fallback' ($text -notmatch '
 Check 'stale or offline rooms make it not ok' (-not $rep.Ok)
 Check 'and name every one of them' (($rep.Bad -join ',') -eq 'm1mini,sg4-control,sgg-zrok')
 
-$next = (Get-DeployNext $rep.Bad 'X:/atrium-deploy.ps1') -join "`n"
-Check 'a deployable room gets the -Rooms command' ($next -match '(?m)^pwsh -NoProfile -File X:/atrium-deploy.ps1 -Rooms m1mini$')
+$next = (Get-DeployNext (@($rep.Bad) + 'nowhere') 'X:/atrium-deploy.ps1') -join "`n"
+Check 'a deployable room gets the -Rooms command' ($next -match '(?m)^pwsh -NoProfile -File X:/atrium-deploy.ps1 -Rooms m1mini,sgg-zrok$')
 Check 'sg4-control gets the -Control -IKnowItKillsMyShell form' ($next -match '(?m)-File X:/atrium-deploy.ps1 -Control -IKnowItKillsMyShell$')
 Check 'sg4-control is not in -Rooms' ($next -notmatch '-Rooms [^\r\n]*sg4-control')
-Check 'a room the script cannot deploy is said, not dropped' ($next -match 'sgg-zrok has no deploy target')
+Check 'a room the script cannot deploy is said, not dropped' ($next -match '(?m)^nowhere has no deploy target')
 
 $attached = @($attached | ForEach-Object { [pscustomobject]@{ name = $_.name; commit = $hub; local = $_.local } })
 $inventory = @($inventory | Where-Object { $_.attached })

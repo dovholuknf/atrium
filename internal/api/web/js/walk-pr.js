@@ -73,7 +73,7 @@ async function walkPrSync() {
 }
 
 // While an answer is awaited the agent's file is read every few seconds, so the spinner clears when the turn lands.
-function walkPrPending() { return !!walkPr.s && (walkPrWholeWaiting() || walkPr.s.comments.some(walkPrWaiting)); }
+function walkPrPending() { return !!walkPr.s && (walkPrWholeWaiting() || walkPr.s.comments.some(c => walkPrWaiting(c) || walkPrReviewWaiting(c))); }
 function walkPrPoll() {
   if (walkPr.poll || !walkPrPending()) return;
   walkPr.poll = setInterval(async () => {
@@ -105,6 +105,10 @@ const walkPrWait = 10 * 60 * 1000;
 const walkPrAgentTurns = c => (c.turns || []).filter(t => t.who === "agent").length;
 function walkPrAsk(c) { c.ask = { at: Date.now(), n: walkPrAgentTurns(c) }; }
 function walkPrWaiting(c) { return !!c.ask && walkPrAgentTurns(c) === c.ask.n && Date.now() - c.ask.at < walkPrWait; }
+function walkPrReviewWaiting(c) {
+  const t = (c.turns || [])[(c.turns || []).length - 1];
+  return !!t && t.to === "rc" && Date.now() - t.at < walkPrWait;
+}
 function walkPrWholeWaiting() {
   const x = walkPr.s && walkPr.s.thread[walkPr.s.thread.length - 1];
   return !!x && !x.a && Date.now() - x.at < walkPrWait;
@@ -126,8 +130,8 @@ function walkPrBubble(c) {
   const sel = walkPr.sel === c.id;
   const size = (c.w ? "width:" + c.w + ";" : "") + (c.h ? "height:" + c.h + ";" : "");
   const forge = walkPrForge();
-  const turns = (c.turns || []).map(t => `<div class="wk-turn ${t.who === "agent" ? "rv" : "op"}"><div class="wk-av">${t.who === "agent" ? "ag" : "you"}</div>
-    <div class="wk-bub"><div class="wk-who"><b>${t.who === "agent" ? "agent" : "you"}</b>${walkPrStamp(t.at)}</div><div class="wk-said">${walkPrMd(t.text)}</div></div></div>`).join("");
+  const turns = (c.turns || []).map(t => `<div class="wk-turn ${t.who === "you" ? "op" : "rv"}"><div class="wk-av">${t.who === "reviewer" ? "rv" : t.who === "agent" ? "ag" : "you"}</div>
+    <div class="wk-bub"><div class="wk-who"><b>${t.who === "reviewer" ? "review card" : t.who === "agent" ? "agent" : "you"}</b>${walkPrStamp(t.at)}</div><div class="wk-said">${walkPrMd(t.text)}</div></div></div>`).join("");
   const foot = c.who === "agent" && (c.scope || c.summary)
     ? `<pre class="rv-foot">CHANGE SCOPE : ${esc(c.scope || "")}\nSUMMARY      : ${esc(c.summary || "")}</pre>` : "";
   const key = "reply:" + c.id;
@@ -135,13 +139,27 @@ function walkPrBubble(c) {
     <div class="chead"><b>${c.who === "you" ? "you" : "agent"}</b>${walkPrStamp(c.at)} &middot; ${esc(c.file.split("/").pop())}:${c.line}${
       c.post ? ` <span class="st">copied for ${esc(forge ? forge.f.label : "the forge")}</span>` : ""}${
       walkPrHelp("Enter sends it to the walk agent, with the walk's scope in front. Shift+Enter or Ctrl+Enter is a new line.")}</div>
-    <div class="wk-said">${walkPrMd(c.text)}</div>${foot}${turns}${walkPrWaiting(c) ? walkPrSpin : ""}
-    <textarea data-wpk="${esc(key)}" data-morph-key="${esc(key)}" rows="2" spellcheck="true"
-      placeholder="Ask the agent about this line">${esc(walkPr.drafts.get(key) || "")}</textarea>
+    <div class="wk-said">${walkPrMd(c.text)}</div>${foot}${turns}${walkPrWaiting(c) ? walkPrSpin : ""}${
+      walkPrReviewWaiting(c) ? `<div class="wk-wait">waiting for the review card to answer</div>` : ""}
+    ${c.who === "agent" ? walkPrTwoBoxes(c, key) : walkPrAskBox(key)}
     <div class="row2"><span class="grow"></span>${forge
       ? `<button type="button" class="wk-btn" data-wp="post" data-cid="${esc(c.id)}" data-tip="copies the comment, then opens line ${c.line} of the files page on ${esc(forge.f.label)} in a new tab, so you paste it there">Post to ${esc(forge.f.label)}</button>` : ""}
       <button type="button" class="wk-btn" data-wp="drop" data-cid="${esc(c.id)}" data-tip="delete this comment">Delete</button></div>
     ${c.post ? `<code class="gh" data-tip="the same thing from a terminal">${esc(c.post)}</code>` : ""}</div>`;
+}
+
+function walkPrAskBox(key) {
+  return `<textarea data-wpk="${esc(key)}" data-morph-key="${esc(key)}" rows="2" spellcheck="true"
+      placeholder="Ask the agent about this line">${esc(walkPr.drafts.get(key) || "")}</textarea>`;
+}
+
+// The ask goes to the walk agent in its terminal, the reply to the review card as a queued say (js/walk.js walkReviewSay).
+function walkPrTwoBoxes(c, key) {
+  const rc = "rc:" + c.id;
+  return `<div class="wk-two"><div>${walkPrAskBox(key)}${walkPrHelp("to the walk agent")}</div>
+      <div><textarea data-wpk="${esc(rc)}" data-morph-key="${esc(rc)}" rows="2" spellcheck="true"
+        placeholder="Reply to the review card about this finding">${esc(walkPr.drafts.get(rc) || "")}</textarea>${
+        walkPrHelp("sent to the review card tagged with this finding. Its answer comes back here as a review card turn.")}</div></div>`;
 }
 
 function walkPrEditor(file, line) {
@@ -339,6 +357,21 @@ function walkPrSendReply(t) {
   dockPaint();
 }
 
+function walkPrSendReview(t) {
+  const c = walkPrComment(t.dataset.wpk.slice(3)), v = t.value.trim();
+  if (!c || !v) return;
+  walkPr.sel = c.id;
+  c.turns = (c.turns || []).concat({ who: "you", to: "rc", text: v, at: Date.now() });
+  walkPr.drafts.delete(t.dataset.wpk);
+  t.value = "";
+  walkPrSave();
+  walkPrPoll();
+  dockPaint();
+  walkReviewSay(`About review finding ${c.file}:${c.line} (comment ${c.id} in .atrium/walk-agent.jsonl): ${v}\n\n` +
+    `Answer by appending one JSON line to .atrium/walk-agent.jsonl: {"reply":"${c.id}","who":"reviewer","text":"<your answer>"}. ` +
+    `Change nothing else in the file.`);
+}
+
 function walkPrSendWhole() {
   const t = document.querySelector('#walk-bottom [data-wpk="whole"]');
   const v = t && t.value.trim();
@@ -389,6 +422,7 @@ function walkPrKeydown(e) {
   }
   if (t.id === "walk-new") walkPrSaveNew();
   else if (t.dataset.wpk === "whole") walkPrSendWhole();
+  else if (t.dataset.wpk.startsWith("rc:")) walkPrSendReview(t);
   else walkPrSendReply(t);
 }
 

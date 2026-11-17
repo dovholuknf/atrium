@@ -63,3 +63,5 @@ mercurius.yaml
 
 # UI mocks stay local, never committed.
 /mocks/
+
+shots/
