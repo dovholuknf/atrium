@@ -45,6 +45,7 @@ type RelayLaunch struct {
 	Theme                                  string
 	Chat                                   bool
 	ItemOwner                              string
+	Needs                                  []string
 }
 
 // roomLaunchIn is the body of `POST /v1/peers/launch`: the launch the stdio atrium_launch
@@ -79,6 +80,7 @@ type RoomLaunchIn struct {
 	Theme      string            `json:"theme"`
 	Chat       bool              `json:"chat"`
 	ItemOwner  string            `json:"item_owner"`
+	Needs      []string          `json:"needs"`
 }
 
 // handleRoomLaunch is `POST /v1/peers/launch`: start a session on another room, through
@@ -117,7 +119,7 @@ func (d *Service) HandleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 		Runner: in.Runner, Tags: in.Tags, Model: in.Model, Effort: in.Effort, Args: in.Args, Env: in.Env,
 		LeanAgents: in.LeanAgents, LeanSkills: in.LeanSkills, Superlean: in.Superlean, Lifetime: in.Lifetime, Item: in.Item,
 		Repo: in.Repo, Branch: in.Branch, Base: in.Base, Home: in.Home, Resident: in.Resident, Scratch: in.Scratch,
-		Lean: in.Lean, MCP: in.MCP, Theme: in.Theme, Chat: in.Chat, ItemOwner: in.ItemOwner,
+		Lean: in.Lean, MCP: in.MCP, Theme: in.Theme, Chat: in.Chat, ItemOwner: in.ItemOwner, Needs: in.Needs,
 	})
 	code, body := LaunchAnswer(other, res, err)
 	if dropped := droppedByOldHub(in, res); code < 400 && dropped != "" {
@@ -143,7 +145,7 @@ func droppedByOldHub(in RoomLaunchIn, res RelayResult) string {
 		on   bool
 	}{{"repo", in.Repo != ""}, {"branch", in.Branch != ""}, {"base", in.Base != ""}, {"home", in.Home},
 		{"resident", in.Resident}, {"scratch", in.Scratch}, {"lean", in.Lean != nil}, {"mcp", len(in.MCP) > 0},
-		{"theme", in.Theme != ""}, {"chat", in.Chat}, {"item_owner", in.ItemOwner != ""}} {
+		{"theme", in.Theme != ""}, {"chat", in.Chat}, {"item_owner", in.ItemOwner != ""}, {"needs", len(in.Needs) > 0}} {
 		if f.on {
 			set = append(set, f.name)
 		}

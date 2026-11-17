@@ -118,6 +118,34 @@ func gitReleaseCmd(prefix string) *cobra.Command {
 	return c
 }
 
+func gitDeleteCmd(prefix string) *cobra.Command {
+	var f hubStoreFlags
+	c := &cobra.Command{
+		Use:   "delete <repo> <branch>",
+		Short: "Delete a claude/* branch on the hub, as the operator, for a branch whose card is closed",
+		Long: "A card deletes only a branch it pushed, so a branch from a closed card has no other way out. This\n" +
+			"deletes it as the operator, from the machine the hub runs on. Only a claude/* branch is deleted, never\n" +
+			"claude/main or main, and a branch with an open merge request is refused. A repository busy with another\n" +
+			"job is refused after a wait, and never hangs.\n\n" +
+			"<repo> is <owner>/<repo> or <host>/<owner>/<repo>, and <branch> is the name without refs/heads/.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var out struct {
+				Note string `json:"note"`
+			}
+			if err := hubCall(&f, http.MethodPost, "/_hub/git/delete",
+				map[string]string{"repo": args[0], "branch": args[1]}, &out); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), out.Note)
+			return nil
+		},
+	}
+	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
+	return c
+}
+
 func gitSettingsCmd(prefix string) *cobra.Command {
 	var f hubStoreFlags
 	var storeDir, createOnPush string

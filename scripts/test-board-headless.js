@@ -15747,7 +15747,7 @@ async function notifyCommandSection(browser, base) {
       on: document.getElementById("s-hn-enabled").checked,
       cmd: document.getElementById("s-hn-command").value,
       status: document.getElementById("s-hn-status").textContent,
-      help: (r => r.textContent + [...r.querySelectorAll("[data-tip]")].map(e => e.dataset.tip).join(" "))(document.getElementById("s-hn-row"))
+      help: document.getElementById("s-hn-row").textContent + " " + [...document.querySelectorAll("#s-hn-row [data-tip]")].map(e => e.dataset.tip).join(" ")
     }));
     if (!shown.on) fail("notifyCommand: the enabled box was not checked");
     if (shown.cmd !== "ntfy\npublish\nmy topic") fail("notifyCommand: the argv is not one per line: " + JSON.stringify(shown.cmd));
@@ -25716,7 +25716,7 @@ async function gearHostsSection(browser, base) {
       items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
       why: document.getElementById("s-hh-list").textContent,
       env: document.getElementById("s-hh-env").textContent,
-      help: (r => r.textContent + [...r.querySelectorAll("[data-tip]")].map(e => e.dataset.tip).join(" "))(document.getElementById("s-hh-row"))
+      help: document.getElementById("s-hh-row").textContent + " " + [...document.querySelectorAll("#s-hh-row [data-tip]")].map(e => e.dataset.tip).join(" ")
     }));
     if (a.items.join("|") !== "*.shares.zrok.io|*.duckdns.org") fail(tag + "the list was " + JSON.stringify(a.items));
     if (!/dynamic DNS/.test(a.why)) fail(tag + "an ignored entry shows no reason: " + a.why);

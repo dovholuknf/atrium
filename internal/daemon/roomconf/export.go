@@ -137,6 +137,8 @@ var ExportedSettings = []string{
 	store.SettingPruneAfter,
 	store.SettingDiskWarnFree,
 	store.SettingDiskCriticalFree,
+	store.SettingHostHogPct,
+	store.SettingHostHogMinutes,
 	api.SettingBrowseRoots,
 	store.SettingReviewsRoot,
 	api.SettingBoardSkin,

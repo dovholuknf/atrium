@@ -478,6 +478,7 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	c.registerDeps(s, class)
 	c.registerBacklog(s, class)
 	c.registerItems(s, class)
+	c.registerCapabilities(s, class)
 	c.registerFlow(s, class)
 	c.registerMerge(s, class)
 	c.registerDocs(s, class)
@@ -1696,6 +1697,17 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	}
 	room := ctl.RoomOf(req)
 	callerRoom := room
+	if len(in.Needs) > 0 {
+		want := room
+		if r := strings.TrimSpace(in.Room); r != "" {
+			want = r
+		}
+		placed, err := c.needsRoom(ctx, in, want, strings.TrimSpace(in.Room) != "")
+		if err != nil {
+			return nil, out, err
+		}
+		in.Room = placed
+	}
 	// ANOTHER ROOM. The lineage then names the launcher as `me@myroom`, and its
 	// card as `myroom~id`, so the worker's reports and notices come back across
 	// to exactly this card. See docs/fabric/cross-room-say-design.md.

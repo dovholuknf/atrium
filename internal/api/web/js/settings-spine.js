@@ -135,6 +135,7 @@ function paintSettingsPrefs() {
   paintAlertKinds(p);
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
+  document.getElementById("s-spinner").value = spinnerKind();
   document.getElementById("s-hoverfocus").checked = hoverFocus;
   paintCleanCopy();
   document.getElementById("s-termreturn").value = termReturnMode();

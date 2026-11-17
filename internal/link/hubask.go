@@ -38,7 +38,8 @@ func hubAskPath(p string) bool {
 	if base == "/_hub/backlog/follow" || base == "/_hub/backlog/follow/" {
 		return false
 	}
-	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" || base == hubRoomEventsPath {
+	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" || base == hubRoomEventsPath ||
+		base == "/_hub/capabilities" || base == "/_hub/capability-list" {
 		return true
 	}
 	if base == "/_hub/merge" || strings.HasPrefix(base, "/_hub/merge/") {

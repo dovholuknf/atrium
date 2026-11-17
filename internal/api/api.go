@@ -138,7 +138,9 @@ type Server struct {
 	// DiskWatch is the room's last disk check, for GET /v1/room/disk. See daemon/diskwatch.go.
 	DiskWatch func() any
 	// DiskFree reclaims what atrium owns now and answers what it freed.
-	DiskFree     func() any
+	DiskFree func() any
+	// HostWatch is the room's last look at its host's processes, for GET /v1/room/host. See daemon/hostwatch.go.
+	HostWatch    func() any
 	LoginHandler http.HandlerFunc
 	LoginStatus  http.HandlerFunc
 	// ToolchainMissing is the tools a worker launched here lacked, for `/v1/health`: nil when fine.
@@ -255,6 +257,8 @@ type Server struct {
 	// HubAsk is atrium_backlog and atrium_reports for a session here, `POST /v1/hub/ask`, asked of the hub over the
 	// link. Owned by the daemon. See internal/daemon/hubask.go.
 	HubAsk http.HandlerFunc
+	// RoomCaps and RoomCapsRun are `GET /v1/capabilities` and `POST /v1/capabilities/run`. Owned by the daemon.
+	RoomCaps, RoomCapsRun http.HandlerFunc
 	// HubCall is one ask of the hub over the link, answered as a status, the hub's data and a refusal's sentence. It is
 	// what a card's subscriptions ride. Owned by the daemon. See internal/daemon/hubask.go.
 	HubCall func(ctx context.Context, from, method, path string, body json.RawMessage) (int, json.RawMessage, string)
@@ -554,6 +558,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/human-base", s.humanBase)
 	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
 	mux.HandleFunc("GET /v1/room/disk", s.roomDisk)
+	mux.HandleFunc("GET /v1/room/host", s.roomHost)
 	if s.DiskFree != nil {
 		mux.HandleFunc("POST /v1/room/disk/free", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.DiskFree()) })
 	}
@@ -948,6 +953,10 @@ func (s *Server) Handler() http.Handler {
 	if s.HubAsk != nil {
 		mux.HandleFunc("POST /v1/hub/ask", s.HubAsk)
 	}
+	if s.RoomCaps != nil {
+		mux.HandleFunc("GET /v1/capabilities", s.RoomCaps)
+		mux.HandleFunc("POST /v1/capabilities/run", s.RoomCapsRun)
+	}
 	if s.HubCall != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/subscriptions", s.cardSubscriptions)
 		mux.HandleFunc("POST /v1/tasks/{id}/remind", s.cardRemind)
@@ -1124,6 +1133,14 @@ func (s *Server) roomDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.DiskWatch())
+}
+
+func (s *Server) roomHost(w http.ResponseWriter, r *http.Request) {
+	if s.HostWatch == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"flags": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.HostWatch())
 }
 
 // roomStats is the first paint of the rooms dashboard: exactly the last

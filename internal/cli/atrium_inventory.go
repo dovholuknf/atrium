@@ -69,6 +69,7 @@ func (i inventory) Known() ([]link.Known, error) {
 			k.RemoteAccess = a.RemoteAccess
 			k.LoginNeeded = a.LoginNeeded
 			k.DiskLow = a.DiskLow
+			k.HostRunaway = a.HostRunaway
 			k.Paths = conn.MergePaths(a.Paths, i.hub.Listeners())
 			// PREFERRED OVER WHAT IS WRITTEN DOWN, because a live connection is
 			// telling us right now and the record is what it said last time.

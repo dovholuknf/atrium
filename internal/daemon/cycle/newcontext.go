@@ -703,6 +703,17 @@ func (n *NewContexts) HoldsInput(taskID string) bool {
 	return cur.Step != NewContextLimit || cur.Prompted > 0 || cur.Acked || cur.Typing
 }
 
+// Writing reports whether the card was told to write its handoff and has not run `atrium ready`, held or not.
+func (n *NewContexts) Writing(taskID string) bool {
+	if n == nil {
+		return false
+	}
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	cur := n.By[taskID]
+	return cur != nil && cur.Prompted > 0 && !cur.Acked
+}
+
 func (n *NewContexts) Get(taskID string) *NewContext {
 	n.Mu.Lock()
 	defer n.Mu.Unlock()

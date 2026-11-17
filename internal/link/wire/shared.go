@@ -50,6 +50,8 @@ type Attached struct {
 	LoginNeeded string `json:"login_needed,omitempty"`
 	// DiskLow is the room's disk notice, empty when it does not say or every drive is fine.
 	DiskLow string `json:"disk_low,omitempty"`
+	// HostRunaway is the room's host watch lines, empty when it does not say or nothing is flagged.
+	HostRunaway string `json:"host_runaway,omitempty"`
 	// Paths is how each of the room's rungs looked from the room on its last beat, nil from a room that does not say.
 	Paths []PathState `json:"paths,omitempty"`
 }
@@ -159,6 +161,7 @@ type RelayLaunchSpec struct {
 	Theme     string   `json:"theme,omitempty"`
 	Chat      bool     `json:"chat,omitempty"`
 	ItemOwner string   `json:"item_owner,omitempty"`
+	Needs     []string `json:"needs,omitempty"`
 }
 
 type ErrStatus int

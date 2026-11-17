@@ -117,20 +117,9 @@ func TestAStaleHookIsCountedAndSaid(t *testing.T) {
 	}
 }
 
-func TestADifferentBuildIsNamedAndHasNoHooksIssue(t *testing.T) {
+func TestADifferentBuildRaisesNoIssue(t *testing.T) {
 	b := newBench(t)
 	b.proxy.boardID = "aaaaaaaaaaaa"
-	b.attach("alpha", setupRoom(0, 0, "bbbbbbbbbbbb"))
-	sweep(b)
-	s := setupOf(t, b, "alpha")
-	if len(s.Issues) != 1 || s.Issues[0].Kind != "build" {
-		t.Fatalf("setup = %+v", s)
-	}
-}
-
-// A hub that does not know its own build, as in a test, compares nothing.
-func TestNoHubBuildMeansNoBuildMismatch(t *testing.T) {
-	b := newBench(t)
 	b.attach("alpha", setupRoom(0, 0, "bbbbbbbbbbbb"))
 	sweep(b)
 	if s := setupOf(t, b, "alpha"); len(s.Issues) != 0 {

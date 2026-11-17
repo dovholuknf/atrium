@@ -427,6 +427,74 @@ func (h *Hub) ReleaseBranch(ctx context.Context, repo, branch string) (string, e
 	return trimHead(full) + " was owned by " + who + " and is released. the next card to push a fast-forward owns it", nil
 }
 
+// DeleteBranch deletes a claude/* branch of a store repository at the operator's word, for a branch whose card is
+// closed and so cannot delete it. It refuses main, claude/main, anything not claude/*, and a branch openMerge says a
+// request is open on. The locks are waited for as a push waits, so a busy repository is refused and never hangs.
+func (h *Hub) DeleteBranch(ctx context.Context, repo, branch string, openMerge func(repo, branch string) (bool, error)) (string, error) {
+	ref, err := ParseName(repo)
+	if err != nil {
+		return "", err
+	}
+	branch = strings.TrimPrefix(branch, headsPrefix)
+	full := headsPrefix + branch
+	if why := CheckPushBranch(branch); why != "" || checkRefName(full) != "" || isMainRef(full) || !strings.HasPrefix(branch, "claude/") {
+		return "", refuse("only a claude/* branch other than claude/main is deleted here")
+	}
+	s := h.Store()
+	dir, err := s.bareFor(ref.Name())
+	if err != nil {
+		return "", err
+	}
+	if dir == "" {
+		return "", refuse("%s is not in the hub's store", ref.Name())
+	}
+	l := h.lock("store:" + strings.ToLower(ref.Name()))
+	if !h.lockWithin(ctx, l) {
+		return "", refuse("%s", busySentence(ref.Name()))
+	}
+	defer l.Unlock()
+	if ml := s.mirrorLock(dir); ml != nil {
+		if !h.lockWithin(ctx, ml) {
+			return "", refuse("%s", busySentence(ref.Name()))
+		}
+		defer ml.Unlock()
+		if r, ok := s.mirrorOf(dir); ok {
+			if why := mirrorRefuses(ref.Name(), full, r.Branch); why != "" {
+				return "", refuse("%s", why)
+			}
+		}
+	}
+	if openMerge != nil {
+		open, err := openMerge(ref.Name(), branch)
+		if err != nil {
+			return "", err
+		}
+		if open {
+			return "", refuse("%s has an open merge request. cancel it or let it end first", branch)
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, readBound)
+	defer cancel()
+	tip, ok, err := s.tipOf(ctx, dir, branch)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", refuse("the hub has no branch %s in %s", branch, ref.Name())
+	}
+	if _, err := s.git(ctx, dir, gitexec.DeleteRef{Ref: full, Old: tip}); err != nil {
+		return "", err
+	}
+	if h.PushLog != nil {
+		if err := h.PushLog.Release(ctx, ref.Name(), full, "deleted by operator"); err != nil {
+			h.audit("", "git-hub-push-unsettled", fmt.Sprintf("%s %s the push log could not release a deleted branch", ref.Name(), full))
+		}
+	}
+	h.audit("", "git-hub-branch-deleted", fmt.Sprintf("%s %s by=operator was %s", ref.Name(), full, short(tip)))
+	s.RefreshView()
+	return branch + " was at " + short(tip) + " and is deleted", nil
+}
+
 // removeCreated takes away a repository a push made and that took nothing, and the owner and host
 // directories it left empty, which would make a later differently cased name collide with them.
 func (rc *Receiver) removeCreated(dir string) {

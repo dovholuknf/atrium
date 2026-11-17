@@ -193,14 +193,10 @@ $bareOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 $bareCap = 35
 $readOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 # Over <room>.atrium the ssh session rides the room being stopped. On mac the swap runs detached (nohup) and writes to a
-# file, and the hub is waited on, reading the file whenever ssh answers. On Windows it runs in the session, which survives
-# the drop (sg3), and a dropped session is no verdict: the hub decides.
+# file, and the hub is waited on, reading the file whenever ssh answers. On Windows the atrium-swap scheduled task runs
+# it the same way, so the new room is never a child of the sshd session.
 function Start-DetachedSwap([string]$Name, [string]$SshHost, [string]$Os, [string]$Script, [datetime]$Since, [int]$Budget) {
   $back = { Test-RoomBackOnHub $Name $Since $commit }
-  if ($Os -eq 'windows') {
-    $run = { Invoke-SshOnce "ssh $Name swap" @($SshHost, $Script) $Budget }
-    return Invoke-WindowsSwap $run $back $Budget
-  }
   $launch = Invoke-SshOnce "ssh $Name swap launch" @($SshHost, (New-DetachedCommand $Os $Script)) $diagCap
   if ($launch.TimedOut -or $launch.Code -ne 0 -or $launch.Out -notmatch 'detached') {
     return [pscustomobject]@{ Back = $false; Out = "DETACH-FAILED $($launch.Out)"; TimedOut = $launch.TimedOut }

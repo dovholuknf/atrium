@@ -1147,36 +1147,38 @@ function Get-SshFailure($Route, [string]$User = '') {
 # The swap stops the room, and over "<room>.atrium" the ssh session rides that room, so it can die mid-swap. On mac
 # New-DetachedCommand builds the ssh command that writes $Script to a file on the room machine and starts it there under
 # nohup, its output going to ~/.atrium/<Tag>.out and ending in $SwapDone. Read-DetachedCommand reads that file back.
-# Windows does not use it: Win32_Process Create answers Access denied over ssh (sgg), and the in-session swap there
-# survives the session dropping (sg3), so Invoke-WindowsSwap runs it in the session and lets the hub decide.
+# On Windows a room started in the session stays a child of sshd and spins a core once the client is gone (sg3), and
+# Win32_Process Create is denied over ssh (sgg), so it writes ~/.atrium/swap-task.ps1 and runs the $SwapTask scheduled
+# task, which scripts/room-swap-task.ps1 registers once as an administrator. No double quote: sshd hands it to powershell.
 $SwapDone = 'SWAP-DONE'
+$SwapTask = 'atrium-swap'
 function ConvertTo-Base64Utf8([string]$Text) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Text)) }
 function New-DetachedCommand([string]$Os, [string]$Script, [string]$Tag = 'deploy-swap') {
-  if ($Os -ne 'mac') { throw "New-DetachedCommand is for mac and linux, not $Os" }
+  if ($Os -eq 'windows') {
+    $run = "& { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path `$HOME '.atrium\$Tag.ps1') ; " +
+      "'$SwapDone' } *> (Join-Path `$HOME '.atrium\$Tag.out')"
+    $put = foreach ($f in @(@("$Tag.ps1", $Script), @('swap-task.ps1', $run))) {
+      "[IO.File]::WriteAllText((Join-Path `$d '$($f[0])'), " +
+        "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$(ConvertTo-Base64Utf8 $f[1])'))) ; "
+    }
+    return '$d = Join-Path $HOME ''.atrium'' ; $null = New-Item -ItemType Directory -Force $d ; ' + ($put -join '') +
+      "Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path `$d '$Tag.out') ; " +
+      "`$o = schtasks.exe /Run /TN $SwapTask 2>&1 ; if (`$LASTEXITCODE -eq 0) { 'detached' } else { " +
+      "'the $SwapTask task would not run, an administrator registers it with scripts/room-swap-task.ps1: ' + `$o ; exit 1 }"
+  }
+  if ($Os -ne 'mac') { throw "New-DetachedCommand is for mac, linux and windows, not $Os" }
   $body = $Script + ' ; echo ' + $SwapDone
   return 'mkdir -p ~/.atrium ; echo ' + (ConvertTo-Base64Utf8 $body) + ' | base64 --decode > ~/.atrium/' + $Tag + '.sh ; ' +
     'rm -f ~/.atrium/' + $Tag + '.out ; nohup sh ~/.atrium/' + $Tag + '.sh > ~/.atrium/' + $Tag + '.out 2>&1 < /dev/null & echo detached'
 }
 function Read-DetachedCommand([string]$Os, [string]$Tag = 'deploy-swap') {
+  if ($Os -eq 'windows') { return "Get-Content -Raw (Join-Path `$HOME '.atrium\$Tag.out') -ErrorAction SilentlyContinue" }
   return 'cat ~/.atrium/' + $Tag + '.out 2>/dev/null'
 }
 
 # Wait-SwapDone polls while a detached swap runs. $Back says whether the hub sees the room back. $ReadOut returns the
 # swap's output file as text or throws when the ssh read fails, which it will while the room is down over "<room>.atrium".
 # It returns when the room is back, the output ends in $SwapDone, or $Budget seconds pass. A failed read is not a verdict.
-# Invoke-WindowsSwap runs the swap in the ssh session. $Run returns the call's result (Code, TimedOut, Out). A session that
-# drops (non-zero exit, no verdict in what it printed) decides nothing, so the hub is waited on for $Budget seconds,
-# and the caller goes on to the hub check either way. A hung call is returned as hung and not retried.
-function Invoke-WindowsSwap([scriptblock]$Run, [scriptblock]$Back, [int]$Budget, [int]$PollSec = 5) {
-  $x = & $Run
-  $out = [string]$x.Out
-  if ($x.TimedOut -or $x.Code -eq 0 -or $out -match 'PORT-WAIT-TIMEOUT|STORE-WAIT-TIMEOUT|left it running|not attached') {
-    return [pscustomobject]@{ Back = $false; Out = $out; TimedOut = [bool]$x.TimedOut }
-  }
-  $w = Wait-SwapDone $Back { throw 'ssh session dropped' } $Budget $PollSec
-  [pscustomobject]@{ Back = $w.Back; Out = $out; TimedOut = $w.TimedOut }
-}
-
 function Wait-SwapDone([scriptblock]$Back, [scriptblock]$ReadOut, [int]$Budget, [int]$PollSec = 5) {
   $t0 = Get-Date
   $out = ''

@@ -8,11 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -216,7 +214,7 @@ func (p *Proxy) setupGet(ctx context.Context, room, path string, out any) error 
 	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
 }
 
-// setupIssues names what is wrong with an answering room. A build is only compared when both sides say one.
+// setupIssues names what is wrong with an answering room.
 func (p *Proxy) setupIssues(ctx context.Context, f *wire.RoomSetup) []wire.SetupIssue {
 	issues := []wire.SetupIssue{}
 	if !f.Answering {
@@ -246,65 +244,7 @@ func (p *Proxy) setupIssues(ctx context.Context, f *wire.RoomSetup) []wire.Setup
 		c.Kind = "checklist"
 		issues = append(issues, c)
 	}
-	if text := p.buildIssue(ctx, f); text != "" {
-		issues = append(issues, wire.SetupIssue{Kind: "build", Text: text})
-	}
 	return issues
-}
-
-// SetHubCode says the fingerprint of this hub's own Go, apart from its board. Empty says nothing, and a room's build is
-// then compared by board hash alone.
-func (p *Proxy) SetHubCode(code string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.hubCode = strings.TrimSpace(code)
-}
-
-// buildIssue is the text of the build issue, or "" when there is none. When both sides carry a code fingerprint it alone
-// decides: a board-only difference is the same room code and says nothing. A room with no fingerprint (an old build)
-// keeps the board-hash compare.
-func (p *Proxy) buildIssue(ctx context.Context, f *wire.RoomSetup) string {
-	p.mu.Lock()
-	hubCode, hubCommit, g := p.hubCode, p.hubBuild, p.landGit
-	p.mu.Unlock()
-	if hubCode != "" && f.Code != "" {
-		if hubCode == f.Code {
-			return ""
-		}
-		return fmt.Sprintf("runs different atrium code than the hub (%s, hub %s)%s",
-			shortID(f.Code), shortID(hubCode), newerBuild(ctx, g, f.Commit, hubCommit))
-	}
-	if p.boardID != "" && f.Build != "" && f.Build != p.boardID {
-		return fmt.Sprintf("runs a different atrium build than the hub (%s, hub %s)", shortID(f.Build), shortID(p.boardID))
-	}
-	return ""
-}
-
-// newerBuild words the two commits and which one is newer, when git can say. It is "" when either commit is missing, and
-// names only the commits when neither holds the other.
-func newerBuild(ctx context.Context, g LandGit, room, hub string) string {
-	room, hub = strings.ToLower(strings.TrimSpace(room)), strings.ToLower(strings.TrimSpace(hub))
-	if !gitsync.ValidSHA(room) || !gitsync.ValidSHA(hub) {
-		return ""
-	}
-	out := fmt.Sprintf(": room commit %s, hub commit %s", shortID(room), shortID(hub))
-	if g == nil {
-		return out
-	}
-	if has, known, _ := g.Contains(ctx, hub, room); known && has {
-		return out + ", the hub is newer"
-	}
-	if has, known, _ := g.Contains(ctx, room, hub); known && has {
-		return out + ", the room is newer"
-	}
-	return out
-}
-
-func shortID(s string) string {
-	if len(s) > 8 {
-		return s[:8]
-	}
-	return s
 }
 
 // serveSetupCheck is `POST /_hub/setup-check?room=<name>`: read one room now. The board calls it after a fix, so the pill

@@ -54,6 +54,32 @@ function applyDensity() {
 }
 applyDensity();
 
+// Which spinner a working card wears. Held in the browser like the density, since what a screen can afford to animate
+// is about that screen.
+const SPINNER_KEY = "atrium.spinner";
+
+function spinnerKind() {
+  const v = localStorage.getItem(SPINNER_KEY);
+  return v === "steps" || v === "none" ? v : "current";
+}
+
+let spinTimer = 0;
+function applySpinner() {
+  const root = document.documentElement;
+  root.dataset.spinner = spinnerKind();
+  clearInterval(spinTimer);
+  spinTimer = 0;
+  if (spinnerKind() !== "steps") return;
+  let f = 0;
+  // Stopped with the tab, so a hidden board does not wake eight times a second for nothing.
+  spinTimer = setInterval(() => {
+    if (document.hidden) return;
+    f = (f + 2) % 8;
+    for (const el of document.querySelectorAll(".rmark.working")) el.dataset.f = String(f);
+  }, 250);
+}
+applySpinner();
+
 document.getElementById("s-sweep").addEventListener("change", e => {
   saveHousekeeping("sweep_dead_after", e.target.value);
 });
@@ -84,9 +110,15 @@ document.getElementById("s-density").addEventListener("change", e => {
   localStorage.setItem(DENSITY_KEY, e.target.value);
   applyDensity();
 });
-prefLive([UI_SCALE_KEY, DENSITY_KEY], () => {
+document.getElementById("s-spinner").addEventListener("change", e => {
+  localStorage.setItem(SPINNER_KEY, e.target.value);
+  applySpinner();
+});
+prefLive([UI_SCALE_KEY, DENSITY_KEY, SPINNER_KEY], () => {
   applyUiScale();
   applyDensity();
+  applySpinner();
+  document.getElementById("s-spinner").value = spinnerKind();
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
 });

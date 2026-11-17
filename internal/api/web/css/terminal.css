@@ -848,6 +848,12 @@
   .td-row.critical { border-bottom-color: var(--danger); background: rgba(var(--danger-rgb),.1); }
   .td-free { flex: 0 0 auto; margin-right: 12px; padding: 0 10px; min-height: 0; line-height: 1.6; font-size: var(--fs-sm); }
   .td-text { flex: 1; min-width: 0; padding: 4px 12px; font-size: var(--fs-sm); color: var(--head); overflow-wrap: anywhere; }
+  .term-host { flex: 0 0 auto; }
+  .term-host[hidden] { display: none; }
+  .th-row { display: flex; align-items: center; gap: var(--sp-4); border-bottom: 1px solid var(--danger); background: rgba(var(--danger-rgb),.1); }
+  .th-text { flex: 1; min-width: 0; padding: 4px 12px; font-size: var(--fs-sm); color: var(--head); overflow-wrap: anywhere; }
+  .th-cmd { font-family: var(--mono); user-select: all; }
+  .th-copy { flex: 0 0 auto; margin-right: 12px; padding: 0 10px; min-height: 0; line-height: 1.6; font-size: var(--fs-sm); }
   /* Every card held on a permission. The head is one line in flow, and its panel floats over the terminal so showing
      it never reflows the pane. */
   .held-strip {

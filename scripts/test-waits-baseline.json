@@ -1,8 +1,7 @@
 {
   "scripts/board-tests/backlog.js": 1,
-  "scripts/board-tests/boot.js": 1,
   "scripts/board-tests/items.js": 1,
   "scripts/board-tests/pulls.js": 4,
   "scripts/board-tests/rooms.js": 4,
-  "scripts/test-board-headless.js": 121
+  "scripts/test-board-headless.js": 119
 }

@@ -166,12 +166,11 @@ type Proxy struct {
 	landGit   LandGit
 	ciRuns    func(context.Context) ([]CIPoint, error)
 	hubBuild  string
-	// hubCode is the fingerprint of the hub's own Go, apart from its board. See internal/codeid.
-	hubCode string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// setup is what each attached room's setup was last read as. See setupwatch.go.
 	setup setupWatch
+	cap   capWatch
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1206,6 +1205,8 @@ type Known struct {
 	LoginNeeded string `json:"login_needed,omitempty"`
 	// DiskLow is the room's disk notice. See Attached.DiskLow.
 	DiskLow string `json:"disk_low,omitempty"`
+	// HostRunaway is the room's host watch lines. See Attached.HostRunaway.
+	HostRunaway string `json:"host_runaway,omitempty"`
 	// Paths is each rung as the room last reported it, with the hub's own listeners laid over. See MergePaths.
 	Paths []PathState `json:"paths,omitempty"`
 }
@@ -1700,6 +1701,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		// attention. The inventory is a different question and has its own
 		// endpoint.
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.attachedView()})
+	case "capabilities":
+		p.serveCapabilities(w, r)
+	case "capability-list":
+		p.serveCapabilityList(w, r)
 	case "setup-check":
 		p.serveSetupCheck(w, r)
 	case "nudge":
@@ -1714,7 +1719,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.hubRoutes().Notify(w, r, sub)
-	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url", "git/walk":
+	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url", "git/walk", "git/delete":
 		p.hubRoutes().Git(w, r, sub)
 	case "launch-caps":
 		p.hubRoutes().LaunchCaps(w, r)

@@ -653,5 +653,6 @@ async function renderTerms() {
   await renderTermPerm();
   if (typeof renderTurnLimits === "function") await renderTurnLimits();
   if (typeof renderDiskWatch === "function") await renderDiskWatch();
+  if (typeof renderHostWatch === "function") await renderHostWatch();
 }
 

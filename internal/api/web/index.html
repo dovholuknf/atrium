@@ -66,6 +66,7 @@
 <link rel="stylesheet" href="/css/pulls.css">
 <link rel="stylesheet" href="/css/hubrepos.css">
 <link rel="stylesheet" href="/css/items.css">
+<link rel="stylesheet" href="/css/caps.css">
 <link rel="stylesheet" href="/css/efficacy.css">
 <link rel="stylesheet" href="/css/changereq.css">
 <link rel="stylesheet" href="/css/dialogs.css">
@@ -202,6 +203,7 @@
       <div class="tab" data-view="hubrepos" hidden>repos</div>
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
       <div class="tab" data-view="backlog" hidden>backlog</div>
+      <div class="tab" data-view="caps" hidden>capabilities</div>
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
@@ -412,6 +414,8 @@ Exports honor whatever filter is applied.">?</span>
     <div class="term-limits" id="term-limits" hidden></div>
     <!-- A drive of this room is low on space. See js/disk-watch.js. -->
     <div class="term-disk" id="term-disk" role="status" hidden></div>
+    <!-- A process on this host has run away. See js/host-watch.js. -->
+    <div class="term-host" id="term-host" role="status" hidden></div>
     <!-- Every card held on a permission, on any room. Its panel floats over the terminal. See `renderHeldStrip`. -->
     <div class="held-strip" id="held-strip" hidden></div>
     <div class="term-layout" id="term-layout">
@@ -947,6 +951,26 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
   <div id="items" hidden>
     <p class="pane-lead" id="items-note" role="status"></p>
     <div id="items-list"></div>
+  </div>
+
+  <!-- What each room can do, a room by capability matrix drawn by js/caps.js. Hub only. -->
+  <div id="caps" hidden>
+    <div class="cap-head">
+      <label>Show <span class="cap-q" data-tip="Narrow the matrix to one kind of capability.">?</span>
+        <select id="caps-kind"><option value="">all kinds</option><option>reach</option><option>toolchain</option><option>build</option><option>access</option></select></label>
+      <label>Result <span class="cap-q" data-tip="Keep only capabilities where at least one room has this result.">?</span>
+        <select id="caps-result"><option value="">any</option><option value="pass">pass</option><option value="fail">fail</option><option value="unknown">unknown</option><option value="na">n/a</option></select></label>
+      <label>Find <span class="cap-q" data-tip="Part of a capability name, such as ssh: or ziti.">?</span>
+        <input id="caps-find" type="search" aria-label="find a capability"></label>
+      <span class="cap-sp"></span>
+      <button id="caps-all" type="button">Re-run all</button>
+    </div>
+    <p class="pane-lead" id="caps-note" role="status"></p>
+    <div class="cap-scroll">
+      <div class="cap-sum" id="caps-sum"></div>
+      <div class="cap-wrap"><table id="caps-matrix"></table></div>
+      <div id="caps-detail" hidden></div>
+    </div>
   </div>
 
   <!-- The hub's backlog and director reports, drawn by js/backlog.js. Hub only. -->
@@ -1528,246 +1552,155 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          `the board` so the nav reads as a column of nouns beside `this
          machine` and `notifications`. -->
     <h3 class="s-section">board</h3>
-    <!-- The board's own colours, which are NOT the terminal's. A terminal
-         theme is picked on the terminal bar and belongs to that terminal. This
-         is the chrome around them, there is one of it, and it is stored on the
-         daemon so it follows to another browser and to a phone. -->
-    <div class="field">
-      <label class="eyebrow" for="s-skin">how the board looks
-        <span class="help" tabindex="0" data-tip="Changes as you pick. try them closes this dialog and leaves a small panel you can move anywhere, so you can walk every tab and open a card while you decide. Not the terminal's colours: those are on the terminal's own bar, and each terminal keeps its own.">?</span></label>
-      <div class="picker">
-        <select id="s-skin" onchange="saveSkin()"></select>
-        <!-- The dialog covers the board, and the board is what you are judging.
-             This closes it and leaves a small panel you can drag anywhere and
-             walk the list with, against the real thing. -->
-        <button onclick="openSkinLab()" data-tip="close this and try them against the real board"
-          >try them &#9673;</button>
+    <div class="field s-one">
+      <div class="ac-block">
+        <h4>Look</h4>
+        <div class="ac-grid s-grid">
+          <label for="s-skin">skin <span class="help" tabindex="0" data-tip="Changes as you pick. try them closes this dialog and leaves a small panel you can move anywhere, so you can walk every tab and open a card while you decide. Not the terminal's colours: each terminal keeps its own, on its own bar.">?</span></label>
+          <div class="picker">
+            <select id="s-skin" onchange="saveSkin()"></select>
+            <button onclick="openSkinLab()" data-tip="close this and try them against the real board"
+              >try them &#9673;</button>
+          </div>
+          <div class="s-pair" id="s-userstyles-field" hidden>
+          <label>your styles <span class="help" tabindex="0" data-tip="Your own user.css, served after every other stylesheet. Safe mode opens the board without it.">?</span></label>
+          <div class="picker"><code id="s-userstyles"></code>
+            <a href="/?safe" id="s-safemode" target="_blank" rel="noopener">open safe mode</a></div>
+          </div>
+          <label for="s-cardsize">text size <span class="help" tabindex="0" data-tip="Everything: the board, permissions, the dialogs and the tooltips. Every size in the page comes off one scale, so none of it is left behind.">?</span></label>
+          <select id="s-cardsize">
+            <option value="0.9">smaller</option>
+            <option value="1">normal</option>
+            <option value="1.1">a little bigger</option>
+            <option value="1.25">bigger</option>
+            <option value="1.45">biggest</option>
+          </select>
+          <label for="s-density">whitespace <span class="help" tabindex="0" data-tip="How much room around things, without changing how big anything reads. Tight fits about a third more rows on a screen.">?</span></label>
+          <select id="s-density">
+            <option value="1.35">roomy</option>
+            <option value="1">normal</option>
+            <option value="0.72">tight</option>
+            <option value="0.5">tighter</option>
+            <option value="0.3">tightest</option>
+          </select>
+          <label for="s-spinner">spinner <span class="help" tabindex="0" data-tip="What a working card's mark shows. Steps redraws a few times a second and none is a still dot, both lighter on the CPU than the default.">?</span></label>
+          <select id="s-spinner">
+            <option value="current">current</option>
+            <option value="steps">steps</option>
+            <option value="none">none</option>
+          </select>
+          <label>top bar <span class="help" tabindex="0" data-tip="Choose the order, and which tabs show in the bar, sit in the ... menu or are hidden.">?</span></label>
+          <div class="picker"><button type="button" id="s-arrangetabs">arrange tabs...</button></div>
+          <label>card colours <span class="help" tabindex="0" data-tip="Every card on the stack and the board is drawn in its own terminal's theme, so you can find a session by its colour. Kept in this browser only.">?</span></label>
+          <label class="ac-check"><input type="checkbox" id="s-cardcolors" onchange="toggleCardColors(this.checked)"> board cards wear their terminal colours</label>
+          <label>terminals list <span class="help" tabindex="0" data-tip="Which rows in the terminals list are drawn in their terminal's colours. With every row in colour, the selected one keeps a heavy frame. An exited row is always faded, and with the last one off it is faded to grey. Kept in this browser only.">?</span></label>
+          <div class="s-checks">
+            <label class="ac-check"><input type="checkbox" id="s-termwear-selected"
+              onchange="toggleTermWear('selected', this.checked)"> the selected row wears its theme</label>
+            <label class="ac-check"><input type="checkbox" id="s-termwear-idle"
+              onchange="toggleTermWear('idle', this.checked)"> rows wear their theme when not selected</label>
+            <label class="ac-check"><input type="checkbox" id="s-termwear-exited"
+              onchange="toggleTermWear('exited', this.checked)"> exited rows keep their theme, faded</label>
+          </div>
+          <label>emerging <span class="help" tabindex="0" data-tip="Shows the areas that are not finished: the items, pulls, repos and backlog tabs, and the hub documents on the files tab. Kept in this browser only.">?</span></label>
+          <label class="ac-check"><input type="checkbox" id="s-emerging" onchange="emergingSet(this.checked)"> use emerging features</label>
+        </div>
       </div>
-    </div>
-    <div class="field" id="s-userstyles-field" hidden>
-      <span class="hintline">Your styles: <code id="s-userstyles"></code>
-        <a href="/?safe" id="s-safemode" target="_blank" rel="noopener">open safe mode</a></span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-cardsize">text size
-        <span class="help" tabindex="0" data-tip="Everything: the board, permissions, the dialogs and the tooltips. Every size in the page comes off one scale, so none of it is left behind.">?</span></label>
-      <div class="picker">
-        <select id="s-cardsize">
-          <option value="0.9">smaller</option>
-          <option value="1">normal</option>
-          <option value="1.1">a little bigger</option>
-          <option value="1.25">bigger</option>
-          <option value="1.45">biggest</option>
-        </select>
-      </div>
-    </div>
-    <!-- The width floor. A room setting, enforced by the room on every runner
-         terminal, so it lives on the daemon rather than in this browser. -->
-    <div class="field" id="s-mincols-field">
-      <label class="eyebrow" for="s-mincols">narrowest a terminal goes, in columns
-        <span class="help" tabindex="0" data-tip="A runner's terminal never goes narrower than this. A narrower window scrolls sideways instead. Claude reprints its conversation at every width it passes through and keeps the old copy, so a narrow terminal leaves a narrow copy in the scrollback for good. A shell is not held to this. From 40 to 400.">?</span></label>
-      <div class="picker">
-        <input id="s-mincols" type="number" min="40" max="400" placeholder="120"
-          onchange="saveMinCols()" style="max-width:110px">
-        <span class="unit">columns</span>
-        <a href="#" id="s-mincols-reset" hidden onclick="resetMinCols(); return false"
-          >reset to default (120)</a>
-      </div>
-    </div>
-    <!-- The context limit per harness. The hub owns it and hands it to every room, so a write here reaches
-         every machine. See docs/runtime/context-cycle-design.md. -->
-    <div class="field" id="s-ctxlimits-field">
-      <label class="eyebrow" for="s-ctxlimits">context limit per harness, in thousands of tokens
-        <span class="help" tabindex="0" data-tip="Past its limit atrium cycles a card's context: it asks the agent to write a handoff and run atrium ready, then clears it and has it read the handoff back. One harness=k per entry, separated by commas: claude=200, codex=300. A harness with no entry that runs claude takes the claude one. Every room gets this list. A card can set its own limit, or turn its cycle off, in its details. From 10 to 2000.">?</span></label>
-      <div class="picker">
-        <input id="s-ctxlimits" spellcheck="false" placeholder="claude=200"
-          onchange="saveContextLimits()" style="max-width:260px">
-        <a href="#" id="s-ctxlimits-reset" hidden onclick="resetContextLimits(); return false"
-          >reset to default (claude=200)</a>
-      </div>
-    </div>
-    <!-- What an agent-launched card is held to. The hub owns it and hands it to every room, like the context
-         limit. Both are off until typed. See docs/changes/r-worker-budget.md. -->
-    <div class="field" id="s-workermodel-field">
-      <label class="eyebrow" for="s-workermodel">default worker model
-        <span class="help" tabindex="0" data-tip="The model a worker gets when the agent that launched it named none, such as sonnet or claude-sonnet-5-5. Empty is off. A launch that names a model wins, and a card you start yourself is never changed.">?</span></label>
-      <div class="picker">
-        <input id="s-workermodel" spellcheck="false" placeholder="off, the runner's own default"
-          onchange="saveWorkerPolicy()" style="max-width:260px">
-      </div>
-    </div>
-    <div class="field" id="s-workerbudget-field">
-      <label class="eyebrow" for="s-workerbudget">worker budget, in dollars
-        <span class="help" tabindex="0" data-tip="When a worker has spent this much, at list price, the agent that launched it is told once and the card shows it. Nothing is stopped. Empty or 0 is off.">?</span></label>
-      <div class="picker">
-        <input id="s-workerbudget" type="number" min="0" step="0.5" placeholder="off"
-          onchange="saveWorkerPolicy()" style="max-width:110px">
-        <span class="unit">USD</span>
-      </div>
-    </div>
-    <!-- The land-the-plane line. This browser's own setting (atrium.landThePlaneK), not the room's: the status
-         line's zone is typed once here, and the board cannot read a shell script. -->
-    <div class="field" id="s-landk-field">
-      <label class="eyebrow" for="s-landk">context size to land the plane at, in thousands of tokens
-        <span class="help" tabindex="0" data-tip="This browser's setting, kept here and not in the room. Match it to the status line's LAND THE PLANE. Past it a card's row floods red with a LAND badge and its bar is full. Between the warn size above and this it stays amber. Never below the warn size. From 10 to 2000.">?</span></label>
-      <div class="picker">
-        <input id="s-landk" type="number" min="10" max="2000" placeholder="200"
-          onchange="saveLandK()" style="max-width:110px">
-        <span class="unit">k tokens</span>
-        <a href="#" id="s-landk-reset" hidden onclick="resetLandK(); return false"
-          >reset to default (200)</a>
-      </div>
-    </div>
-    <!-- Separate from text size on purpose. Shrinking the type to fit more
-         rows on screen makes the rows harder to read, which is the wrong
-         trade: the names should stay legible and the room between them should
-         go. -->
-    <div class="field">
-      <label class="eyebrow" for="s-density">whitespace
-        <span class="help" tabindex="0" data-tip="How much room around things, without changing how big anything reads. Tight fits about a third more rows on a screen.">?</span></label>
-      <div class="picker">
-        <select id="s-density">
-          <option value="1.35">roomy</option>
-          <option value="1">normal</option>
-          <option value="0.72">tight</option>
-          <option value="0.5">tighter</option>
-          <!-- The floor. Below this the padding is gone rather than small, and
-               rows start touching, which costs more in readability than the
-               extra row is worth. -->
-          <option value="0.3">tightest</option>
-        </select>
-      </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow">top bar tabs
-        <span class="help" tabindex="0" data-tip="Choose the order, and which tabs show in the bar, sit in the ... menu or are hidden.">?</span></label>
-      <div class="picker"><button type="button" id="s-arrangetabs">arrange tabs...</button></div>
-    </div>
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-emerging" onchange="emergingSet(this.checked)">
-        <span>use emerging features</span>
-      </label>
-      <span class="help" tabindex="0" data-tip="Shows the areas that are not finished: the board, stack, history, audit, items, pulls, repos and backlog tabs, and the hub documents on the files tab. Kept in this browser only.">?</span>
-    </div>
-    <!-- Kept in this browser, like text size: it is how this screen reads the
-         cards, and a phone or a second monitor may want the other answer. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-cardcolors" onchange="toggleCardColors(this.checked)">
-        <span>board cards wear their terminal colours <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Every card on the stack and the board is drawn in its own terminal's theme, so you can find a session by its colour. The terminals list has its own three below. Kept in this browser only.">?</span></span>
-      </label>
-    </div>
-    <!-- The terminals list, one switch per kind of row. Per browser, as above. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-termwear-selected"
-          onchange="toggleTermWear('selected', this.checked)">
-        <span>terminals list: the selected row wears its theme <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Which rows in the terminals list are drawn in their terminal's colours. With every row in colour, the selected one keeps a heavy frame. An exited row is always faded, and with the last switch off it is faded to grey. Kept in this browser only.">?</span></span>
-      </label>
-      <label class="check">
-        <input type="checkbox" id="s-termwear-idle" onchange="toggleTermWear('idle', this.checked)">
-        <span>terminals list: rows wear their theme when not selected</span>
-      </label>
-      <label class="check">
-        <input type="checkbox" id="s-termwear-exited" onchange="toggleTermWear('exited', this.checked)">
-        <span>terminals list: exited rows keep their theme, faded</span>
-      </label>
-    </div>
 
-    <!-- THE SWITCHER'S KEY IS A SETTING BECAUSE IT HAS TO BE.
-         A browser keeps a handful of accelerators for itself, the list differs
-         per browser, and a page asking to keep one is sometimes refused
-         SILENTLY. That is the worst shape a default can have: it works on the
-         machine it was chosen on and does nothing anywhere else. So the
-         default is one that survives Chrome, Edge and Brave, this field names
-         the browser that takes it, and anybody it fails for rebinds it in two
-         seconds without reading anything.
-
-         Stored in this browser rather than on the daemon, which is the
-         opposite of every setting above it and is the point: which key is
-         free is a fact about the BROWSER, so a value synced from the desktop
-         would arrive wrong. -->
-    <div class="field">
-      <label class="eyebrow">the key that opens the switcher
-        <span class="help" tabindex="0" data-tip="Press the button, then press the keys you want. Needs ctrl, alt or cmd in it, or it would fire while you are typing into a session. ctrl-shift-k is the default: Chrome, Edge and Brave leave it alone, and a terminal does not use it. Firefox takes it for the Web Console and will not give it back, so rebind to alt-k there. ctrl-k works in every browser and costs you readline's kill-line in every session, which is the trade it looks like.">?</span></label>
-      <div class="picker">
-        <button id="s-switchkey" onclick="captureSwitchKey(this)"></button>
-        <button onclick="resetSwitchKey()">use the default</button>
+      <div class="ac-block">
+        <h4 class="ac-title">Terminals <span class="help" tabindex="0" data-tip="The input lag log and the typing gate readout are in a terminal's details, under debug.">?</span></h4>
+        <div class="ac-grid s-grid">
+          <label for="s-mincols">min width <span class="help" tabindex="0" data-tip="A runner's terminal never goes narrower than this. A narrower window scrolls sideways instead. Claude reprints its conversation at every width it passes through and keeps the old copy, so a narrow terminal leaves a narrow copy in the scrollback for good. A shell is not held to this. From 40 to 400.">?</span></label>
+          <div class="picker" id="s-mincols-field">
+            <input id="s-mincols" type="number" min="40" max="400" placeholder="120" class="s-num"
+              onchange="saveMinCols()">
+            <span class="unit">columns</span>
+            <a href="#" id="s-mincols-reset" hidden onclick="resetMinCols(); return false"
+              >reset to default (120)</a>
+          </div>
+          <label>hover <span class="help" tabindex="0" data-tip="Moving the pointer onto a terminal gives it the keyboard, so typing goes to the session without clicking first. It waits a moment, and never takes it while a dialog is open or while you are typing into a box.">?</span></label>
+          <label class="ac-check"><input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)"> hovering a session types into it</label>
+          <label for="s-termkeep">kept alive <span class="help" tabindex="0" data-tip="Switching away hides a terminal instead of closing it, so coming back is instant and nothing is replayed. This many recently used terminals stay attached, plus every pinned one, never more than 12. 0 closes a terminal when you leave it. A kept terminal still counts as watched and keeps its vote on the terminal's size while this tab is open.">?</span></label>
+          <div class="picker">
+            <input type="number" id="s-termkeep" min="0" max="12" step="1" class="s-num"
+              onchange="setTermKeep('atrium.termKeep', Math.max(0, Math.min(12, Math.round(Number(this.value) || 0))))">
+            <span class="unit">terminals</span>
+          </div>
+          <label for="s-termkeeplines">history <span class="help" tabindex="0" data-tip="Lines of scrollback a hidden terminal holds (a full 50000 lines is over 100 MB). The terminal you are looking at keeps its whole history. Lines cut from a hidden terminal do not come back.">?</span></label>
+          <div class="picker">
+            <input type="number" id="s-termkeeplines" min="100" max="50000" step="100" class="s-num"
+              onchange="setTermKeep('atrium.termKeepLines', Math.max(100, Math.min(50000, Math.round(Number(this.value) || 5000))))">
+            <span class="unit">lines, hidden terminals</span>
+          </div>
+          <label>switcher key <span class="help" tabindex="0" data-tip="Press the button, then the keys you want. Needs ctrl, alt or cmd. ctrl-shift-k is the default: Chrome, Edge and Brave leave it alone. Firefox takes it for the Web Console, so rebind to alt-k there. ctrl-k works everywhere and costs readline's kill-line.">?</span></label>
+          <div class="picker">
+            <button id="s-switchkey" onclick="captureSwitchKey(this)"></button>
+            <button onclick="resetSwitchKey()">use the default</button>
+          </div>
+        </div>
+        <div class="field" hidden style="display:none">
+          <label for="s-termreturn">coming back to a terminal</label>
+          <select id="s-termreturn" onchange="setTermReturn(this.value)">
+            <option value="left">where I left off</option>
+            <option value="bottom">the bottom</option>
+          </select>
+        </div>
       </div>
-    </div>
 
-    <!-- Focus on hover is opt-in. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-hoverfocus" onchange="toggleHoverFocus(this.checked)">
-        <span>hovering a session types into it <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="Moving the pointer onto a terminal gives it the keyboard, so typing goes to the session without clicking first. It waits a moment, so crossing the pane on the way somewhere else does not take the focus, and it never takes it while a dialog is open or while you are typing into a box. Leaving the pane leaves the focus in the session.">?</span></span>
-      </label>
-    </div>
-
-    <!-- Where a terminal opens when you come back to it. -->
-    <div class="field" hidden style="display:none">
-      <label for="s-termreturn">coming back to a terminal
-        <span class="help" tabindex="0" data-tip="Leaving a terminal, by another card, another tab or the window losing focus for a few seconds, remembers where you were. Where I left off brings you back there, draws a line at the first thing written after you left and shows how many lines are below. The bottom always opens at the latest, and keeps the line in the scrollback. Stored in this browser. A line that cannot be found again, after a restart or a new context, is not drawn.">?</span></label>
-      <select id="s-termreturn" onchange="setTermReturn(this.value)">
-        <option value="left">where I left off</option>
-        <option value="bottom">the bottom</option>
-      </select>
-    </div>
-
-    <!-- Terminals kept alive when you switch away. -->
-    <div class="field">
-      <label for="s-termkeep">terminals kept alive
-        <span class="help" tabindex="0" data-tip="Switching away hides a terminal instead of closing it, so coming back is instant and nothing is replayed. This many recently used terminals stay attached, plus every pinned one, and never more than 12 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not affected. A kept terminal still counts as watched, so a session you left is not given a fresh context automatically, and a kept shell is not closed for being idle, while this tab is open. It also keeps its vote on the terminal's size: the same session open in another window stays held to this board's last size until it is let go or the tab closes.">?</span></label>
-      <input type="number" id="s-termkeep" min="0" max="12" step="1" style="width: 5em"
-        onchange="setTermKeep('atrium.termKeep', Math.max(0, Math.min(12, Math.round(Number(this.value) || 0))))">
-    </div>
-    <div class="field">
-      <label for="s-termkeeplines">history kept for a hidden terminal
-        <span class="help" tabindex="0" data-tip="Lines of scrollback a hidden terminal holds (a full 50000 lines is over 100 MB). The terminal you are looking at keeps its whole history; lines cut from a hidden terminal do not come back.">?</span></label>
-      <input type="number" id="s-termkeeplines" min="100" max="50000" step="100" style="width: 6em"
-        onchange="setTermKeep('atrium.termKeepLines', Math.max(100, Math.min(50000, Math.round(Number(this.value) || 5000))))">
-    </div>
-
-    <!-- The two terminal debug switches (input lag, typing gate readout) live in the terminal's
-         details drawer, under "debug". See js/peek-debug.js. -->
-    <div class="field">
-      <span class="hintline">The input lag log and the typing gate readout are in a terminal's
-        details, under debug.</span>
-    </div>
-
-    <!-- Grouping. The rule is the operator's, because their worktree layout
-         already has conventions atrium has no way to know. -->
-    <div class="field">
-      <label class="eyebrow">group cards
-        <span class="help" tabindex="0" data-tip="Groups cards inside every column. The default reads a project out of the worktree path. The pickers below choose a named rule.">?</span></label>
-      <div class="picker">
-        <button id="s-group-toggle" onclick="toggleGrouping()"></button>
-        <!-- Says what it resets. `use the defaults` sat under a pane that now
-             opens with a skin picker and a text size, and read as a reset for
-             all of it. It only ever touched the two grouping expressions. -->
-        <button onclick="resetGrouping()">reset the grouping rule</button>
+      <div class="ac-block">
+        <h4 class="ac-title">Agents <span class="help" tabindex="0" data-tip="The first three are the hub's and reach every room. Land the plane is this browser's.">?</span></h4>
+        <div class="ac-grid s-grid">
+          <label for="s-ctxlimits">context limit <span class="help" tabindex="0" data-tip="Past its limit atrium cycles a card's context: the agent writes a handoff, runs atrium ready, is cleared and reads the handoff back. One harness=k per entry, in thousands of tokens: claude=200, codex=300. A card can set its own in its details. From 10 to 2000.">?</span></label>
+          <div class="picker" id="s-ctxlimits-field">
+            <input id="s-ctxlimits" type="text" spellcheck="false" placeholder="claude=200"
+              onchange="saveContextLimits()">
+            <a href="#" id="s-ctxlimits-reset" hidden onclick="resetContextLimits(); return false"
+              >reset to default (claude=200)</a>
+          </div>
+          <label for="s-workermodel">worker model <span class="help" tabindex="0" data-tip="The model a worker gets when the agent that launched it named none, such as sonnet or claude-sonnet-5-5. Empty is off. A launch that names a model wins, and a card you start yourself is never changed.">?</span></label>
+          <input id="s-workermodel" type="text" spellcheck="false" placeholder="off, the runner's own default"
+            onchange="saveWorkerPolicy()">
+          <label for="s-workerbudget">worker budget <span class="help" tabindex="0" data-tip="When a worker has spent this much at list price, its launcher is told once and the card shows it. Nothing is stopped. Empty or 0 is off.">?</span></label>
+          <div class="picker" id="s-workerbudget-field">
+            <input id="s-workerbudget" type="number" min="0" step="0.5" placeholder="off" class="s-num"
+              onchange="saveWorkerPolicy()">
+            <span class="unit">USD</span>
+          </div>
+          <label for="s-landk">land the plane <span class="help" tabindex="0" data-tip="This browser's setting. Match it to the status line's LAND THE PLANE. Past it a card's row floods red with a LAND badge. From 10 to 2000.">?</span></label>
+          <div class="picker" id="s-landk-field">
+            <input id="s-landk" type="number" min="10" max="2000" placeholder="200" class="s-num"
+              onchange="saveLandK()">
+            <span class="unit">k tokens</span>
+            <a href="#" id="s-landk-reset" hidden onclick="resetLandK(); return false"
+              >reset to default (200)</a>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow">for the tab
-        <span class="help" tabindex="0" data-tip="Every tab keeps its own grouping. The pickers below set the tab chosen here.">?</span></label>
-      <div class="seg" id="s-group-view"></div>
-      <label class="eyebrow" for="s-group-mode">group by
-        <span class="help" tabindex="0" data-tip="Pick a rule by name. your own code shows the two boxes below.">?</span></label>
-      <select id="s-group-mode"></select>
-      <label class="eyebrow" for="s-group-orderby">order the groups by</label>
-      <select id="s-group-orderby"></select>
-    </div>
-    <div class="field" id="s-group-code" hidden>
-      <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code>
-        <span class="help" tabindex="0" data-tip="The body of a function taking task. Return the group name, or &quot;&quot; to leave a card ungrouped. task has worktree, runner, status, title, why and pid.">?</span></label>
-      <textarea id="s-group-by" rows="8" spellcheck="false"></textarea>
-    </div>
-    <div class="field" id="s-order-code" hidden>
-      <label class="eyebrow" for="s-group-order">order the groups &mdash; <code>(a, b) =&gt; number</code>
-        <span class="help" tabindex="0" data-tip="The body of a comparator over two group names. Broken code falls back to the default and says so rather than blanking the board.">?</span></label>
-      <textarea id="s-group-order" rows="5" spellcheck="false"></textarea>
+
+      <div class="ac-block">
+        <h4>Grouping</h4>
+        <div class="ac-grid s-grid">
+          <label>group cards <span class="help" tabindex="0" data-tip="Groups cards inside every column. The default reads a project out of the worktree path.">?</span></label>
+          <div class="picker">
+            <button id="s-group-toggle" onclick="toggleGrouping()"></button>
+            <button onclick="resetGrouping()">reset the grouping rule</button>
+          </div>
+          <label>for the tab <span class="help" tabindex="0" data-tip="Every tab keeps its own grouping. The two below set the tab chosen here.">?</span></label>
+          <div class="seg" id="s-group-view"></div>
+          <label for="s-group-mode">group by <span class="help" tabindex="0" data-tip="Pick a rule by name. your own code shows a box for it.">?</span></label>
+          <select id="s-group-mode"></select>
+          <label for="s-group-orderby">order by</label>
+          <select id="s-group-orderby"></select>
+          <div class="s-pair" id="s-group-code" hidden>
+          <label for="s-group-by">group a card <span class="help" tabindex="0" data-tip="The body of a function taking task. Return the group name, or an empty string to leave a card ungrouped. task has worktree, runner, status, title, why and pid.">?</span></label>
+          <textarea id="s-group-by" rows="6" spellcheck="false"></textarea>
+          </div>
+          <div class="s-pair" id="s-order-code" hidden>
+          <label for="s-group-order">order groups <span class="help" tabindex="0" data-tip="The body of a comparator over two group names, a and b. Broken code falls back to the default and says so.">?</span></label>
+          <textarea id="s-group-order" rows="4" spellcheck="false"></textarea>
+          </div>
+        </div>
+      </div>
     </div>
     <!-- The OTHER theme system, reachable from here because the terminal bar's
          edit button needs a terminal and somebody bringing their colours at
@@ -3719,6 +3652,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/items-data.js"></script>
 <script src="/js/efficacy.js"></script>
 <script src="/js/items.js"></script>
+<script src="/js/caps.js"></script>
 <script src="/js/changereq-mock.js"></script>
 <script src="/js/changereq-core.js"></script>
 <script src="/js/changereq.js"></script>
@@ -3785,6 +3719,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/walk-pr.js"></script>
 <script src="/js/turn-limits.js"></script>
 <script src="/js/disk-watch.js"></script>
+<script src="/js/host-watch.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>
