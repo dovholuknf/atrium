@@ -45,7 +45,9 @@ against and the operator chose on purpose.
 
 - **A hub cannot stop a room.** `/v1/shutdown` and `/v1/restart-wrap` are refused in `proxy.go`, because through a link
   the room's loopback check would pass for anybody who could reach the hub. Once something else can reach a room,
-  loopback stops meaning "this machine".
+  loopback stops meaning "this machine". `/v1/restart-into` is the one exception, and it never trusts loopback: the
+  room takes it only with the token it wrote to `restart.token` beside its keys, which the hub cannot read
+  (`internal/cli/restartinto.go`).
 - **`/v1/git/` is never proxied from the board.** A room's git is reached by the hub's own sync and collect only.
 - **The hub OFFERS a binary, the room decides, fetches and checks** (`conn/upgrade.go`). Shipping an executable is more
   power than stopping one, so there is no push of a binary down the link.

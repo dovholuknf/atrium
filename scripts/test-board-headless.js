@@ -1109,6 +1109,30 @@ async function groupDragSection(browser, base) {
     if (!tag.some(t => /custom grouping/.test(t.title))) {
       fail("a heading outside custom mode does not say where reordering lives: " + JSON.stringify(tag));
     }
+    // In age order a row cannot be rearranged: it says so at the pointer, and the cursor is not-allowed.
+    const rowBox = async () => { const c = dp.locator("#term-list .card.tab:not(.kid)").first(); await c.scrollIntoViewIfNeeded(); return c.boundingBox(); };
+    const noteShown = () => dp.evaluate(() => { const n = document.getElementById("tdragnote"); return !!n && !n.hidden && n.textContent; });
+    let box = await rowBox();
+    await dp.mouse.move(box.x + 20, box.y + box.height / 2);
+    await dp.mouse.move(box.x + 30, box.y + box.height / 2);
+    await dp.waitForFunction(() => { const n = document.getElementById("tdragnote"); return n && !n.hidden; }, null, { timeout: slow(5000) })
+      .catch(() => fail("age order: no badge followed the pointer over a card"));
+    const ageRow = await dp.evaluate(() => { const c = document.querySelector("#term-list .card.tab:not(.kid)"); return { drag: c.draggable, cursor: getComputedStyle(c).cursor }; });
+    if (await noteShown() !== "order by age disables rearrange" || ageRow.drag || ageRow.cursor !== "not-allowed") {
+      fail("age order: wrong badge, drag or cursor: " + JSON.stringify({ note: await noteShown(), ageRow }));
+    }
+    await dp.mouse.down();
+    await dp.mouse.up();
+    if (await noteShown()) fail("age order: the badge stayed after the mouse was released");
+    await dp.mouse.move(2, 2);
+    await dp.evaluate(() => { setGrouping({ mode: "project" }); });
+    await dp.waitForFunction(() => { const c = document.querySelector("#term-list .card.tab:not(.kid)"); return c && c.draggable; }, null, { timeout: slow(5000) })
+      .catch(() => fail("a row is not draggable outside age order"));
+    box = await rowBox();
+    await dp.mouse.move(box.x + 20, box.y + box.height / 2);
+    await dp.mouse.move(box.x + 30, box.y + box.height / 2);
+    const projRow = await dp.evaluate(() => ({ note: (document.getElementById("tdragnote") || {}).hidden === false, cursor: getComputedStyle(document.querySelector("#term-list .card.tab:not(.kid)")).cursor }));
+    if (projRow.note || projRow.cursor === "not-allowed") fail("a rearrangeable order shows the age badge or cursor: " + JSON.stringify(projRow));
     if (errors.length) fail("the group drag page threw uncaught errors: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -15065,6 +15089,10 @@ async function shiftMenuSection(browser, base) {
     });
     if (!opens.plain || opens.right || opens.drag) fail("shiftMenu: a link opens on more than a plain click: " + JSON.stringify(opens));
     await p.evaluate(() => { termHoverURL = ""; });
+    await p.evaluate(() => term.element.classList.add("xterm-cursor-pointer"));
+    r = await fire({});
+    if (r.pasted || !r.prevented) fail("shiftMenu: a right click on a file or doc link pasted: " + JSON.stringify(r));
+    await p.evaluate(() => term.element.classList.remove("xterm-cursor-pointer"));
     r = await fire({});
     if (r.pasted !== 1) fail("shiftMenu: a right click off the link stopped pasting: " + JSON.stringify(r));
 
@@ -22813,6 +22841,16 @@ async function childFoldSection(browser, base) {
     });
     v = await look(p);
     if (!/^1$/.test(v.run) || !v.runCls) fail("childFold: a working child does not show on the folded parent: " + JSON.stringify(v));
+    // A grandchild counts in the folded total and, when working, in the running chip.
+    await p.evaluate(async () => {
+      const all = await boardCards();
+      all.push({ ...all.find(c => c.id === "kid-b"), id: "grand", title: "grand", display_title: "grand",
+        spawned_by_id: "kid-b", activity: { what: "thinking" } });
+      await renderTermList();
+    });
+    v = await look(p);
+    if (v.count !== "4" || v.run !== "2") fail("childFold: a grandchild is left out of the folded badge: " + JSON.stringify(v));
+    await p.evaluate(async () => { const all = await boardCards(); all.splice(all.findIndex(c => c.id === "grand"), 1); await renderTermList(); });
     // CHILDFOLD_SHOTS=<dir> draws the folded parent with two kids working, for the before and after PNGs.
     if (process.env.CHILDFOLD_SHOTS) {
       await p.evaluate(async () => {

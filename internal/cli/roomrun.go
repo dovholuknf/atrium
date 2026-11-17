@@ -276,7 +276,17 @@ func roomCmd() *cobra.Command {
 					isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
 				})
 			}
-			err = runRoom(keys, db, human, agent, restartAfter, isolated, startedBy, lay)
+			after := restartAfter
+			if swapIn != "" {
+				if swapRoomBinary(roomLaunch{
+					dir: keys.Dir, db: db, human: human, agent: agent,
+					isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
+				}, swapIn, swapPid, after) {
+					return nil
+				}
+				after = 0
+			}
+			err = runRoom(keys, db, human, agent, after, isolated, startedBy, lay)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
 			if err != nil && restartAfter > 0 {
@@ -301,6 +311,10 @@ func roomCmd() *cobra.Command {
 	// by hand just adds a pointless pause. See restart.go.
 	c.Flags().DurationVar(&restartAfter, "restart-after", 0, "internal: wait this long for the old room to exit first")
 	_ = c.Flags().MarkHidden("restart-after")
+	c.Flags().StringVar(&swapIn, "swap-in", "", "internal: the new build a restart-into swaps in")
+	c.Flags().IntVar(&swapPid, "swap-pid", 0, "internal: the room a restart-into waits to exit")
+	_ = c.Flags().MarkHidden("swap-in")
+	_ = c.Flags().MarkHidden("swap-pid")
 	acceptUpgradeFlag(c)
 	// `atrium room join <string>`, the first time. `atrium join` is the
 	// session command the /atrium-join skill runs, so a room's join lives here.
@@ -505,7 +519,10 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	// MESSAGES TO OTHER ROOMS go through this link, and what is owed goes the
 	// moment it reattaches. See internal/daemon/relay.go.
 	// MARKED AS THE LINK, so a terminal attach knows the hub's edge checked it. See internal/edge.
-	room.Handler = edge.MarkLink(roomHandler(d, room))
+	room.Handler = edge.MarkLink(restartIntoRoute(roomHandler(d, room), "http://"+human, roomLaunch{
+		dir: keys.Dir, db: db, human: human, agent: agent,
+		isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
+	}, stop))
 	room.OnAttach = func() {
 		d.RelayAttached()
 		// PR rows made while the hub could not be reached ask for their claim now. Event driven, no timer.

@@ -8,12 +8,13 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone') {
+foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'New-RestartIntoRead', 'Invoke-RestartInto') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
 }
 $SwapDone = 'SWAP-DONE'
+$HubRestartInto = 'http://127.0.0.1:7778/v1/restart-into'
 $script:calls = @()
 $script:answers = @{}
 $probe = {
@@ -90,22 +91,33 @@ $threw = $false
 try { [void](New-DetachedCommand 'linux-or-other' $script) } catch { $threw = $true }
 Check 'an unknown os has no detached command' $threw
 
-$SwapTask = 'atrium-swap'
-$win = New-DetachedCommand 'windows' $script
-$errs = $null
-[void][System.Management.Automation.Language.Parser]::ParseInput($win, [ref]$null, [ref]$errs)
-Check 'windows: the command parses and has no double quote for sshd to mangle' ($errs.Count -eq 0 -and $win -notmatch '"')
-Check 'windows: the ssh call only runs the scheduled task' ($win -match 'schtasks\.exe /Run /TN atrium-swap' -and $win -notmatch 'room --detach')
-$files = @{}
-foreach ($m in [regex]::Matches($win, "Join-Path \`$d '([^']+)'\), \[Text\.Encoding\]::UTF8\.GetString\(\[Convert\]::FromBase64String\('([A-Za-z0-9+/=]+)'\)")) {
-  $files[$m.Groups[1].Value] = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.Groups[2].Value))
-}
-Check 'windows: the swap script is written as it was given' ($files['deploy-swap.ps1'] -ceq $script)
-$task = [string]$files['swap-task.ps1']
-Check 'windows: the task runs the swap in its own powershell and ends the output file in SWAP-DONE' (
-  $task -match "-File \(Join-Path \`$HOME '\.atrium\\deploy-swap\.ps1'\)" -and $task -match "'SWAP-DONE' \} \*> \(Join-Path \`$HOME '\.atrium\\deploy-swap\.out'\)")
-Check 'windows: a task that would not run is not read as detached' ($win -match "else \{ 'the atrium-swap task would not run[^']*' \+ \`$o ; exit 1 \}" -and 'the atrium-swap task would not run' -notmatch 'detached')
+$threw = $false
+try { [void](New-DetachedCommand 'windows' $script) } catch { $threw = $true }
+Check 'windows: no detached command, the room swaps itself' $threw
 Check 'the mac read command names the output file' ((Read-DetachedCommand 'mac') -match 'deploy-swap\.out')
-Check 'the windows read command names the output file' ((Read-DetachedCommand 'windows') -match "'\.atrium\\deploy-swap\.out'")
+
+$read = New-RestartIntoRead '(Join-Path $HOME ''atrium-zrok.new.exe'')' '(Join-Path $HOME ''.atrium-zrok\room\restart.token'')'
+$errs = $null
+[void][System.Management.Automation.Language.Parser]::ParseInput($read, [ref]$null, [ref]$errs)
+Check 'windows: the restart-into read parses and has no double quote for sshd to mangle' ($errs.Count -eq 0 -and $read -notmatch '"')
+$tok = Join-Path ([IO.Path]::GetTempPath()) "restart-token-$PID"
+"abc123`n" | Set-Content $tok
+$got = Invoke-Expression (New-RestartIntoRead "'C:/x/atrium.new.exe'" "'$tok'") | ConvertFrom-Json
+Remove-Item $tok
+Check 'windows: the restart-into read answers the exe and the trimmed token as json' ($got.exe -eq 'C:/x/atrium.new.exe' -and $got.token -eq 'abc123')
+
+$script:sent = $null
+function Invoke-WebRequest {
+  param($Uri, $Method, $Body, $ContentType, $TimeoutSec, [switch]$UseBasicParsing, $Headers)
+  $script:sent = $Headers
+  [pscustomobject]@{ StatusCode = 202; Content = ' restarting ' }
+}
+$a = Invoke-RestartInto 'sgg-zrok' 'C:/x/atrium-zrok.new.exe' 'tok' 'deploy abc' 'http://hub/v1/restart-into'
+$h = $script:sent
+Check 'a 202 is ok and says what the room said' ($a.Ok -and $a.Code -eq 202 -and $a.Out -eq 'restarting')
+Check 'the ask names the room and carries its token' ($h['X-Atrium-Room'] -eq 'sgg-zrok' -and $h['X-Atrium-Token'] -eq 'tok')
+function Invoke-WebRequest { throw 'connection refused' }
+$a = Invoke-RestartInto 'sgg' 'x' 'tok' 'why' 'http://hub/v1/restart-into'
+Check 'a hub that does not answer is not ok' (-not $a.Ok -and $a.Code -eq 0 -and $a.Out -match 'refused')
 if ($fail -gt 0) { Write-Host "$fail failed"; exit 1 }
 Write-Host 'all passed'
