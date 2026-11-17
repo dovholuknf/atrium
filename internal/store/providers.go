@@ -129,7 +129,7 @@ func ProviderPath(root, org, repo string) string {
 	root = slashed(root)
 	org = strings.Trim(strings.TrimSpace(org), "/")
 	repo = strings.Trim(strings.TrimSpace(repo), "/")
-	if root == "" || repo == "" {
+	if root == "" || repo == "" || strings.Contains(org, "..") || strings.Contains(repo, "..") {
 		return ""
 	}
 	if org == "" {

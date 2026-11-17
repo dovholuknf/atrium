@@ -28703,6 +28703,8 @@ async function composePasteDefaultSection(browser, base) {
     });
     for (const [id, open] of [["t-ctxbox-in", () => composeNoEntry({ step: "clear", n: 2, of: 3, label: "clearing the context" })], ["t-paste-in", () => { document.getElementById("t-ctxbox").hidden = true; openPasteBox(""); }]]) {
       await p.evaluate(open);
+      // A task refresh with no hold hides an empty context box, so give it text for the click.
+      await p.evaluate(id => { const t = document.getElementById(id); if (id === "t-ctxbox-in") t.value = "draft"; }, id);
       const ta = p.locator("#" + id);
       await p.evaluate(() => term.focus());
       await ta.click({ button: "right" });
