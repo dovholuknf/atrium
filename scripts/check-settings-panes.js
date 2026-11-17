@@ -68,8 +68,8 @@ console.log("the partition is sound.");
 
 // Help under a field is a ? after its label (house rule), so a new paragraph of it fails here. A hintline that holds
 // an id is a status line the code writes, and a field with no label has nowhere for the ? to go.
-// Markup out of a hint, angle brackets too, so what is left cannot hold a tag.
-const hintText = text => text.replace(/<[^>]*>/g, "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+// A hint with its angle brackets taken out, so what is left cannot hold a tag.
+const hintText = text => text.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 const helpParas = [];
 for (const id of ["settings", "roomcfg"]) {
   const at = html.indexOf(`<dialog id="${id}"`);
