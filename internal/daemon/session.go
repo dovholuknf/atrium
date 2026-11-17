@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"io"
@@ -210,7 +211,11 @@ func (d *Daemon) walkLinkLine(t *store.Task) string {
 	if t == nil || t.ID == "" || board == "" || strings.TrimSpace(d.opts.HumanAddr) == "-" {
 		return ""
 	}
-	return "When you finish changes someone should read or sign, print the walk link on its own line: " +
+	board = seenhost.Base(board)
+	return "Links for the human come from atrium with the host they reach the board on. When they ask for a rendering, mock, " +
+		"preview or example, or to see a file, hand a clickable http link, never file:///, a zrok share, a new ziti " +
+		"service or a new server: " + board + "/room/" + d.opts.Room + "/" + t.ID + "/files/<path of the html file in your card>\n" +
+		"When you finish changes someone should read or sign, print the walk link on its own line: " +
 		board + "/#card=" + t.ID + "&walk=<absolute path of the checkout, forward slashes, spaces as %20>"
 }
 

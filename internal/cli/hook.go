@@ -136,6 +136,8 @@ type hookInput struct {
 	// ToolResponse and Error are a finished tool's output, read only for a shell's command not found.
 	ToolResponse json.RawMessage `json:"tool_response"`
 	Error        string          `json:"error"`
+	// ToolInput names the file a Write or Edit changed. See touchedFile.
+	ToolInput json.RawMessage `json:"tool_input"`
 }
 
 // knownTools are the tools whose absence from a card's shell is the room's misconfiguration.
@@ -320,12 +322,14 @@ func newHookInstall() *cobra.Command {
 			if res.Backup != "" {
 				fmt.Fprintf(out, "the old settings are at %s\n", res.Backup)
 			}
-			for _, h := range rep.Hooks {
+			for _, h := range oneRowPerHook(rep.Hooks) {
 				state := "not wired"
 				if h.Stale {
 					state = "points elsewhere"
 				} else if h.Installed {
 					state = "wired"
+				} else if h.Optional {
+					state = "not wired (optional)"
 				}
 				fmt.Fprintf(out, "  %-18s %s\n", h.Hook, state)
 			}
@@ -361,6 +365,23 @@ func pingHooksChanged() {
 	resp.Body.Close()
 }
 
+// oneRowPerHook folds the rows that share a hook name, such as the two PreToolUse entries, into the first row that
+// is not wired, or the first row when all are.
+func oneRowPerHook(rows []claudeconf.HookStatus) []claudeconf.HookStatus {
+	var out []claudeconf.HookStatus
+	at := map[string]int{}
+	for _, h := range rows {
+		i, seen := at[h.Hook]
+		if !seen {
+			at[h.Hook] = len(out)
+			out = append(out, h)
+		} else if !out[i].Stale && (h.Stale || (out[i].Installed && !h.Installed)) {
+			out[i] = h
+		}
+	}
+	return out
+}
+
 // newHookStatus prints what is registered, for checking without opening the
 // board.
 func newHookStatus() *cobra.Command {
@@ -381,12 +402,14 @@ func newHookStatus() *cobra.Command {
 				fmt.Fprintf(out, "that file is not valid json, so nothing can be written: %s\n", rep.Unreadable)
 				return nil
 			}
-			for _, h := range rep.Hooks {
+			for _, h := range oneRowPerHook(rep.Hooks) {
 				switch {
 				case h.Stale:
 					fmt.Fprintf(out, "  %-18s points elsewhere: %s\n", h.Hook, h.Found)
 				case h.Installed:
 					fmt.Fprintf(out, "  %-18s wired\n", h.Hook)
+				case h.Optional:
+					fmt.Fprintf(out, "  %-18s not wired (optional)\n", h.Hook)
 				default:
 					fmt.Fprintf(out, "  %-18s not wired\n", h.Hook)
 				}
@@ -487,7 +510,7 @@ func reportActivity(hubURL, event, name string) string {
 	if _, src := hubAddressFrom(hubURL); src == hubSourceDaemon {
 		roomSource = "daemon.json"
 	}
-	body, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"agent":   agent,
 		"task_id": os.Getenv("ATRIUM_TASK_ID"),
 		"pid":     runnerPID(),
@@ -506,7 +529,13 @@ func reportActivity(hubURL, event, name string) string {
 		// put up on its own. See wantsAHuman.
 		"notification": notificationKind(in),
 		"missing_tool": missingTool(in),
-	})
+	}
+	if arg == "tool-end" {
+		if t := touchedFile(in); t.Path != "" {
+			fields["file"], fields["file_change"], fields["file_add"], fields["file_del"] = t.Path, t.Change, t.Added, t.Removed
+		}
+	}
+	body, err := json.Marshal(fields)
 	if err != nil {
 		return ""
 	}

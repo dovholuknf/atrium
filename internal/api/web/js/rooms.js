@@ -198,12 +198,109 @@ function paintRooms() {
   // be looking at. One line each, in the tooltip.
   const drift = roomsWithSetupIssues();
   el.classList.toggle("warn", drift.length > 0);
-  if (drift.length) {
-    el.dataset.tip += "\n\nset up inconsistently:\n" + drift.map(d =>
-      `${d.name}: ${d.issues.map(i => i.text).join("; ")}`).join("\n");
-  }
+  paintSetupPop(drift);
 }
 
+// The checklist is a popover on hover of the pill, laid out the same in every state: rooms alphabetized, each with its
+// problems grouped by kind and alphabetized inside the group, or on one line with a tick when it has none. A click in
+// it pins it open so its text can be selected, and a click outside or Esc closes it.
+const setupPicked = new Set();
+const setupKey = (room, id) => room + "\n" + id;
+function setupWhyNot(r, i) {
+  if (i.kind === "hooks") return "settings.json unreadable";
+  if (i.kind === "build") return "restart the room";
+  if (i.id === "git") return "install git there";
+  if (i.id === "usage") return "restart its claude";
+  return "fix it on the machine";
+}
+function setupChecklistHtml(drift) {
+  const by = new Map(drift.map(d => [d.name, d.issues]));
+  const rooms = hubRooms.filter(r => r.setup && r.setup.answering).sort((a, b) => a.name.localeCompare(b.name));
+  if (!rooms.length) return `<div class="it">no room has answered yet</div>`;
+  const live = new Set();
+  const html = rooms.map(r => {
+    const issues = (by.get(r.name) || []).slice().sort((a, b) => a.kind.localeCompare(b.kind) || a.text.localeCompare(b.text));
+    if (!issues.length) return `<div class="rm"><h5>${esc(r.name)}</h5><b>&#10003;</b><span class="ok">every check passes</span></div>`;
+    return `<div class="rm bad"><h5>${esc(r.name)}</h5><b>&#10007;</b><span>one or more problems</span></div>` + issues.map(i => {
+      const id = i.kind === "hooks" ? (r.setup.hooks_unreadable ? "" : "hooks") : i.fix ? i.id : "";
+      const key = setupKey(r.name, id);
+      if (id) live.add(key);
+      const tail = id
+        ? `<button class="ghost setupfix" data-room="${esc(r.name)}" data-id="${esc(id)}">Fix</button>`
+        : `<span class="why">${esc(setupWhyNot(r, i))}</span>`;
+      const pick = id
+        ? `<input type="checkbox" class="setuppick" data-room="${esc(r.name)}" data-id="${esc(id)}"${setupPicked.has(key) ? " checked" : ""}>`
+        : `<span class="setuppick"></span>`;
+      return `<div class="it bad">${pick}<span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}</span>${tail}</div>`;
+    }).join("");
+  }).join("");
+  for (const k of [...setupPicked]) if (!live.has(k)) setupPicked.delete(k);
+  return html + (setupPicked.size ? `<div class="setupall"><button class="setupfixall">Fix all now (${setupPicked.size})</button></div>` : "");
+}
+
+function paintSetupPop(drift) {
+  const el = document.getElementById("rooms");
+  let pop = document.getElementById("setuppop");
+  if (!pop) {
+    pop = document.createElement("div");
+    pop.id = "setuppop";
+    pop.hidden = true;
+    document.body.appendChild(pop);
+    let pinned = false, leave = 0;
+    const close = () => { pinned = false; pop.hidden = true; };
+    el.addEventListener("pointerenter", () => {
+      clearTimeout(leave);
+      const r = el.getBoundingClientRect();
+      pop.hidden = false;
+      pop.style.top = r.bottom + 2 + "px";
+      pop.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+    });
+    const away = () => { clearTimeout(leave); leave = setTimeout(() => { if (!pinned) pop.hidden = true; }, 250); };
+    el.addEventListener("pointerleave", away);
+    pop.addEventListener("pointerenter", () => clearTimeout(leave));
+    pop.addEventListener("pointerleave", away);
+    pop.addEventListener("pointerdown", () => { pinned = true; });
+    el.addEventListener("click", close);
+    document.addEventListener("pointerdown", e => { if (!pop.contains(e.target) && !el.contains(e.target)) close(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+    const fixOne = (room, id) => id === "hooks" ? fixRoomHooks(room) : fixRoomSetup(room, id);
+    pop.addEventListener("change", e => {
+      const c = e.target;
+      if (!c.classList || !c.classList.contains("setuppick")) return;
+      const key = setupKey(c.dataset.room, c.dataset.id);
+      if (c.checked) setupPicked.add(key); else setupPicked.delete(key);
+      paintSetupPop(roomsWithSetupIssues());
+    });
+    pop.addEventListener("click", e => {
+      const t = e.target.closest && e.target.closest("button");
+      if (!t) return;
+      if (t.classList.contains("setupfix")) busyWhile(t, () => fixOne(t.dataset.room, t.dataset.id), "fixing…");
+      else if (t.classList.contains("setupfixall")) busyWhile(t, async () => {
+        for (const k of [...setupPicked]) { const [room, id] = k.split("\n"); setupPicked.delete(k); await fixOne(room, id); }
+      }, "fixing…");
+    });
+  }
+  // Left alone when unchanged, so a repaint does not drop a selection.
+  const html = setupChecklistHtml(drift);
+  if (pop.innerHTML !== html) pop.innerHTML = html;
+}
+
+// fixRoomSetup is a checklist item's fix: `POST /v1/setup-check/fix` on that room, and the hub reads the room again.
+async function fixRoomSetup(name, id) {
+  try {
+    const res = await api("/v1/setup-check/fix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Atrium-Room": name },
+      body: JSON.stringify({ id }),
+    });
+    toast("fixed " + id + " on " + name, res.backup ? "the old settings were copied to " + res.backup : "the file was created");
+  } catch (e) {
+    toast("nothing was changed on " + name, e.message);
+  }
+  try { await plainFetch("/_hub/setup-check?room=" + encodeURIComponent(name), { method: "POST" }); } catch (e) {}
+  if (typeof loadHubRooms === "function") { hubRead = 0; await loadHubRooms(); }
+  if (typeof renderRooms === "function") renderRooms();
+}
 // roomSetup is the hub's last read of one attached room's setup, or null before it has read it.
 function roomSetup(name) {
   const r = hubRooms.find(x => x.name === name);

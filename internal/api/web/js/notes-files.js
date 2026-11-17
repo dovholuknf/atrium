@@ -1279,6 +1279,7 @@ async function loadHousekeeping() {
   // answer in a box that saves to another.
   pastePrefs = s;
   fillSkins(s);
+  fillUserStyles(s);
   syncInputLag(s);
   fillMinCols(s);
   fillContextLimits(s);
@@ -1397,6 +1398,14 @@ function fillSkins(s) {
   sel.innerHTML = names.map(n =>
     `<option value="${esc(n)}"${n === now ? " selected" : ""}>${esc(n)}</option>`).join("");
   if (!skinSaving) applySkin(now);
+}
+
+// Where this room reads the operator's own stylesheet. A room with no state folder has none to name.
+function fillUserStyles(s) {
+  const f = document.getElementById("s-userstyles-field");
+  if (!f) return;
+  document.getElementById("s-userstyles").textContent = s.user_css || "";
+  f.hidden = !s.user_css;
 }
 
 // A SAVE IN FLIGHT OWNS THE SKIN. A settings read answered before the save

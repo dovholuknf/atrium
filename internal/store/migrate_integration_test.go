@@ -103,6 +103,15 @@ func TestAllTablesExistAfterMigrate(t *testing.T) {
 	}
 }
 
+func TestBoardUsageIsDroppedAfterMigrate(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	var name string
+	if err := s.db.QueryRow(`SELECT name FROM sqlite_master WHERE name = 'board_usage'`).Scan(&name); err != sql.ErrNoRows {
+		t.Fatalf("board_usage still there: %q %v", name, err)
+	}
+}
+
 // decided_by has to survive a decision, or the log cannot say who answered.
 func TestDecisionRecordsWhoAnswered(t *testing.T) {
 	t.Parallel()

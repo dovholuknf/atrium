@@ -1,12 +1,12 @@
 // usage: usage: the tab, burn charts, context, turn limits, cache.
 //
-// Units: usageCacheReads, usageTurns, turnLimits, usagePolish, usageLimits, usageGroups, contextSize, ctxLine, ctxLimitLayers, contextCycle, cacheChip, clock, usageTab, usageWeekReset, boardUsage.
+// Units: usageCacheReads, usageTurns, turnLimits, usagePolish, usageLimits, usageGroups, contextSize, ctxLine, ctxLimitLayers, contextCycle, cacheChip, clock, usageTab, usageWeekReset.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
 const { slow, fakeWait, fakeTick, fakePause, frames, until, settleStyle, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
-const { boardUsageSeen, landCard, mock, T1, SKINS } = require("../lib/mock.js");
+const { landCard, mock, T1, SKINS } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { CTX_CARDS, CTX_USAGE, docImgDir } = require("../lib/helpers.js");
 const SCRIPTS = path.join(__dirname, "..");
@@ -14,109 +14,6 @@ const SCRIPTS = path.join(__dirname, "..");
 // The stream opening reloads the tab once; the onopen handler starts that read synchronously, so live and idle is settled.
 const usageSettled = p => p.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight,
   null, { timeout: slow(10000) });
-
-async function boardUsageSection(browser, base) {
-  const errors = [];
-  const imgs = docImgDir("docs", "changes", "img");
-  const stage = process.env.BOARDUSAGE_SHOT || "";
-  try {
-    fs.mkdirSync(imgs, { recursive: true });
-    boardUsageSeen.clear();
-    const ctx = await browser.newContext({ viewport: { width: 940, height: 700 } });
-    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
-    const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await settleStyle(p);
-    await p.click("#tabmore");
-    if (stage === "before") {
-      await p.screenshot({ path: path.join(imgs, "board-usage-menu-before.png"), clip: { x: 0, y: 0, width: 940, height: 400 } });
-      await ctx.close();
-      console.log("boardUsage before shot taken");
-      return;
-    }
-    await p.screenshot({ path: path.join(imgs, "board-usage-menu-after.png"), clip: { x: 0, y: 0, width: 940, height: 400 } });
-    await p.click("#tabmore");
-    // Two controls: the last tab in the bar twice and the ... button, which the run has already opened twice. The docs tab is never touched.
-    const vis = await p.evaluate(() => [...document.querySelectorAll("header nav .tab")]
-      .filter(t => t.getClientRects().length > 0 && !t.classList.contains("ovf")).map(t => t.dataset.view));
-    if (vis.length < 2) fail("boardUsage: fewer than two tabs show in the bar: " + vis);
-    const hot = vis[vis.length - 1];
-    await p.click('header nav .tab[data-view="' + hot + '"]');
-    await p.click('header nav .tab[data-view="' + hot + '"]');
-    // A name never carries a card: the same button in two card rows, and the same dialog button under two card titles, are one control.
-    await p.evaluate(() => {
-      const box = document.createElement("div"); box.id = "usage-probe";
-      box.innerHTML = '<ul><li class="trow" data-id="a1"><span>openziti/ziti-console #967</span><button>stash 3 files</button></li>' +
-        '<li class="trow" data-id="b2"><span>openziti/zrok #12</span><button>stash 12 files</button></li></ul>' +
-        '<a href="#probe-967">openziti/ziti-console 967</a>' +
-        '<dialog id="probedlg"><h2>close openziti/ziti-console #967?</h2><button>go</button></dialog>' +
-        '<dialog id="probedlg2"><h2>close openziti/zrok #12?</h2><button>go</button></dialog>';
-      box.style.cssText = "position:fixed;left:0;top:0;z-index:99999;background:#222;padding:8px";
-      document.body.append(box);
-      for (const d of box.querySelectorAll("dialog")) { d.show(); d.style.cssText = "position:static;display:block;margin:4px;inset:auto;transform:none"; }
-    });
-    for (const sel of ["#usage-probe li:nth-child(1) button", "#usage-probe li:nth-child(2) button", "#usage-probe a",
-      "#probedlg button", "#probedlg2 button"]) await p.click(sel);
-    await p.evaluate(() => window.boardUsageFlush());
-    const probe = [...boardUsageSeen].filter(([k]) => /stash|go$|ziti|zrok/.test(k));
-    const rowNames = probe.filter(([k]) => k.startsWith("trow:"));
-    if (rowNames.length !== 1 || rowNames[0][1] !== 2) fail("boardUsage: the same button in two card rows is not one control with 2 clicks: " + JSON.stringify(probe));
-    if (probe.some(([k]) => /ziti|zrok/.test(k))) fail("boardUsage: a control name carries a card or repo: " + JSON.stringify(probe));
-    if (probe.filter(([k]) => k.startsWith("dialog:")).length !== 2) fail("boardUsage: a dialog is not named by its id: " + JSON.stringify(probe));
-    await p.evaluate(() => document.getElementById("usage-probe").remove());
-    await p.click("#tabmore");
-    await p.evaluate(() => window.boardUsageFlush());
-    await p.click('#tabs-menu button[data-usage="menu:controls used"]');
-    await p.waitForSelector("#usagedlg[open] .usagedlg-row");
-    await p.waitForFunction(h => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].some(r =>
-      r.querySelector(".name").textContent === "view:" + h && r.querySelector(".n").textContent === "2"), hot, { timeout: slow(5000) }).catch(() => {});
-    const rows = await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].map(r => ({
-      name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
-    const at = (name) => rows.findIndex(r => r.name === name);
-    const used = at("view:" + hot), more = at("id:tabmore"), never = at("view:pulls");
-    if (used < 0 || rows[used].n !== "2" || (used > 2)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
-    if (more < 0 || rows[more].n !== "3") fail("boardUsage: the ... button is not listed with 3 clicks: " + JSON.stringify(rows.slice(0, 4)));
-    if (never < 0 || !rows[never].never || rows[never].n !== "never") fail("boardUsage: an untouched tab is not listed as never: " + JSON.stringify(rows.slice(-6)));
-    if (never < Math.max(used, more)) fail("boardUsage: a never control sits above a used one");
-    if (rows.some(r => r.never) && rows.findIndex(r => r.never) < rows.filter(r => !r.never).length) fail("boardUsage: the never rows are not all at the bottom");
-    // The snapshot: closing and opening again draws the rows in the same tick, before any read has come back.
-    const reread = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/usage/board", { timeout: slow(5000) }).catch(() => {});
-    const instant = await p.evaluate(() => {
-      document.getElementById("usagedlg").close();
-      window.openControlsUsed();
-      return document.querySelectorAll("#usagedlg-list .usagedlg-row").length;
-    });
-    if (instant < 5) fail("boardUsage: the view did not open from a snapshot: " + instant + " rows at once");
-    await reread;
-    await frames(p, 2);
-    // Sorting: count most first by default, then the name header sorts A to Z and flips, and the count header is back.
-    const names = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .name")].map(e => e.textContent));
-    const counts = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .n")].map(e => Number(e.textContent)));
-    const desc = (a) => a.every((v, i) => !i || a[i - 1] >= v);
-    if (!desc(await counts())) fail("boardUsage: the default is not most used first: " + JSON.stringify(await counts()));
-    await p.click("#usagedlg-h-name");
-    const az = await names();
-    if (az.join("|") !== [...az].sort().join("|")) fail("boardUsage: the name header does not sort A to Z: " + JSON.stringify(az));
-    await p.click("#usagedlg-h-name");
-    const za = await names();
-    if (za.join("|") !== [...az].reverse().join("|")) fail("boardUsage: a second click on the name header does not flip it: " + JSON.stringify(za));
-    await p.click("#usagedlg-h-n");
-    if (!desc(await counts())) fail("boardUsage: the count header is not most used first: " + JSON.stringify(await counts()));
-    await p.click("#usagedlg-h-n");
-    const asc = await counts();
-    if (!asc.every((v, i) => !i || asc[i - 1] <= v)) fail("boardUsage: a second click on the count header is not fewest first: " + JSON.stringify(asc));
-    if (await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].findIndex(r => r.classList.contains("never")) < document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never)").length)) fail("boardUsage: a sort put a never row above a used one");
-    await p.click("#usagedlg-h-n");
-    await p.evaluate(() => window.boardUsageFlush());
-    if ([...boardUsageSeen.keys()].some(k => /usagedlg/.test(k))) fail("boardUsage: the sort headers were counted as controls: " + [...boardUsageSeen.keys()].filter(k => /usagedlg/.test(k)));
-    await p.screenshot({ path: path.join(imgs, "board-usage-view.png"), clip: { x: 0, y: 0, width: 940, height: 700 } });
-    await ctx.close();
-    if (errors.length) fail("boardUsage: the page threw: " + errors.join(" | "));
-    if (!bad) console.log("boardUsage ok");
-  } catch (e) { fail("boardUsage: " + (e && e.message ? e.message : e)); }
-}
 
 // ── u-032: the cache chip and the cache line ───────────────────────────────────────────────────────────
 // The table of states as `kaModel` answers it at a fixed clock, then the same chips drawn on the stack, the
@@ -2339,9 +2236,8 @@ const units = [
   { name: "clock", run: ({ browser, base }) => clockSection(browser, base) },
   { name: "usageTab", run: ({ browser, base }) => usageTabSection(browser, base) },
   { name: "usageWeekReset", run: ({ browser, base }) => usageWeekResetSection(browser, base) },
-  { name: "boardUsage", run: ({ browser, base }) => boardUsageSection(browser, base) },
 ];
-const sections = { usageHistory: usageHistorySection, usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, cacheChip: cacheChipSection, clock: clockSection, usageTab: usageTabSection, usageWeekReset: usageWeekResetSection, boardUsage: boardUsageSection };
+const sections = { usageHistory: usageHistorySection, usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, cacheChip: cacheChipSection, clock: clockSection, usageTab: usageTabSection, usageWeekReset: usageWeekResetSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

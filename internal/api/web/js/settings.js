@@ -231,7 +231,7 @@ function paintGroupSegs() {
     // pressing it and getting five headings looks like sorting that did not
     // work. It cuts the cards into age buckets, which is what age means.
     ["recency", "by age",
-      "today, yesterday, this week, this month, and everything older, which is dormant"],
+      "1h, 4h, today, yesterday, this week, this month, and everything older, which is dormant"],
     ["off", "off", "one flat list, in the order the sort above put them"]
   ];
   const htmlFor = (mode, view) => opts.map(([v, label, title]) =>

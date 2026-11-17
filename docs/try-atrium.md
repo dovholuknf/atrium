@@ -1,11 +1,28 @@
 # Try atrium
 
+## One command
+
+Paste this into any coding agent that can run shell commands, such as claude, codex, gemini or opencode, or pass it
+as the agent's first argument:
+
+```text
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/try-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+```
+
+You need git and Go 1.26 or newer. The agent fetches this file, reviews it with you, then follows the
+prompt below. You get atrium built from source and running on your machine on loopback only, with the board at
+http://127.0.0.1:7778.
+
+Joining a hub someone else already runs, as a room? Use [`join-atrium.md`](join-atrium.md) instead.
+
+## The prompt
+
 You want to see atrium work and you would like your own coding agent to do the setup. Copy the block below, paste it
 into your agent (Claude Code, codex or any other that can run shell commands), and let it run. It builds atrium from
 source, starts it on loopback, wires Claude Code's hooks in after backing up `settings.json`, and checks each step
 before it reports back. It touches nothing else.
 
-What you need first: git, Go at the version `go.mod` names, and four free loopback ports. Claude Code is optional but
+What you need first: git, Go 1.26 or newer, and four free loopback ports. Claude Code is optional but
 it is the quickest way to see a card appear.
 
 The prompt is written to stay inside atrium's own rules. It builds into `build.claude/`, runs from `~/.atrium/bin`,
@@ -34,8 +51,8 @@ name docs/agents.md, which may not exist. If it is missing, say so and carry on.
 
 STEP 1: PREREQUISITES
 - git.
-- Go at the exact version go.mod names (1.26.x at the time of writing). Run `go version` and compare with the `go`
-  line in go.mod. If it is older, stop and tell me. Do not edit go.mod.
+- Go 1.26 or newer. If go.mod names a newer patch than yours, go downloads it by itself. Tell me if that fails. Do
+  not edit go.mod.
 - Claude Code installed and logged in (`claude --version`), if I want Claude sessions on the board.
 - Ports 7777, 7778, 7779 and 7781 free on 127.0.0.1. Check with `netstat -ano | findstr 777` on Windows or
   `lsof -iTCP -sTCP:LISTEN | grep 777` on macOS/Linux. If something holds one, tell me what it is. Do not kill it.
@@ -56,12 +73,13 @@ the binary's path, and every build rewrites build.claude/.
 - Windows:      New-Item -ItemType Directory -Force $HOME\.atrium\bin
                 Copy-Item build.claude\atrium.exe $HOME\.atrium\bin\
 Then run `~/.atrium/bin/atrium version` (or the .exe) and show me the output. It prints the version, commit, board
-hash, platform and Go version. A version of `dev` is normal for a build from source.
+hash, platform and Go version. A build from a clone prints a version like `0.0.4+<sha>`.
 
 STEP 5: START IT
   ~/.atrium/bin/atrium run
-Leave it running in its own terminal (or run it in the background and tell me how you did it). Wait until it says it
-is listening, then check:
+Leave it running in its own terminal (or run it in the background and tell me how you did it). The PATH of the
+terminal that runs `atrium run` becomes the room's PATH, and every agent atrium launches gets it, so `claude` (and any
+other agent I want to launch) must be on it. Wait until it says it is listening, then check:
 - http://127.0.0.1:7778 answers (curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7778).
 - `~/.atrium/bin/atrium --help` lists the subcommands.
 Use 127.0.0.1, not localhost. On some machines localhost costs a 2 second IPv6 timeout per request.
@@ -73,12 +91,18 @@ copy ~/.claude/settings.json aside (show me the backup path) so I can undo it. T
 `~/.atrium/bin/atrium hook install`, or tell me to use the board: the **rooms** tab, the claude row under runners,
 its **hooks** chip, then **wire it** on each row. Both write the same entries. `atrium hook status` lists which hooks
 are wired. The command also keeps its own copy of the old file beside it, named settings.json.atrium-<time>.bak,
-and prints the path. After it runs, show me the diff of settings.json against my backup.
+and prints the path when there was a settings.json to copy. On a machine with none it prints only
+`wrote <path>`. `hook status` then lists `Stop` as not wired. That is expected: Stop is optional and
+`hook install` leaves it out. After it runs, show me the diff of settings.json against my backup.
 From then on every new Claude Code session on this machine reports to the board, and every tool call it makes asks
 the gate. Sessions already running keep their old settings until restarted. If atrium is not running, the hooks fail
 open: Claude keeps working as if atrium were not there.
 Then tell me to go to the **perms** tab and press **import rules from claude**. That turns the allow and deny lists I
 already have into standing rules, so the gate does not ask me about things I already trust.
+Optional, and only if I say yes: set statusLine in ~/.claude/settings.json to a command entry whose command is the
+installed binary's path followed by ` statusline` (for example `~/.atrium/bin/atrium statusline`). It draws Claude
+Code's status line and posts the session's context and usage percents to the card. `atrium hook install` does not
+write it. If I already have a statusLine, show it to me and ask before replacing it. No bash script or jq is needed.
 
 STEP 7: PROVE IT WORKS
 - Start a new Claude Code session in some scratch directory (not the atrium repo) and ask it to list the files.
@@ -93,11 +117,13 @@ STEP 8: THINGS I MUST KNOW
 - Stop atrium with `atrium stop`. Never kill it with taskkill/kill: without the pty_host setting the room owns the
   agents' terminals, and killing it ends every running agent at once. `atrium stop` winds the room down and gives
   agents time to finish. The hub holds no work, so ctrl-c in its terminal is fine.
+- `atrium stop` and `atrium launch` take `--url`, and `atrium backlog` takes `--board-addr`, when atrium is not on
+  the default ports.
 - The board has no login. It binds loopback on purpose. Do not expose port 7778 to a network. If I want it from my
   phone or another machine, docs/fabric/overlays.md covers zrok and OpenZiti.
 - A second machine joins as a room: on this machine `atrium rooms add <name>` prints a one-time join string, good
   once and for an hour. On the other machine run `atrium room join <string>` the first time and `atrium room` after.
-  See docs/fabric/hub-and-rooms.md.
+  See docs/fabric/hub-and-rooms.md. docs/join-atrium.md is a prompt like this one for the other machine.
 - State lives in ~/.atrium (the room's database, atrium.db, is there). Deleting it resets everything.
 - Atrium does not start at logon unless I ask it to. `atrium run` installs no logon task, LaunchAgent or user unit.
   If I want one later, scripts/atrium-service.ps1 (Windows) and scripts/atrium-service.sh (macOS and Linux) take
@@ -126,6 +152,10 @@ Every command and name in it was read against the code, so it is safe to hand ov
 - Ports 7777, 7778, 7779 and 7781: `internal/cli/atrium_defaults.go`.
 - `atrium version`, `atrium stop`, `atrium launch`, `atrium rooms add`, `atrium room join`, `atrium hook install` and
   `atrium hook status` all exist. `atrium launch` defaults to the claude runner and takes `--cwd`.
+- `atrium statusline` is the status line (`internal/cli/statusline.go`). Provisioning sets `statusLine.command` to
+  `<atrium exe> statusline`, and `atrium hook install` leaves `statusLine` alone.
+- `atrium hook status` lists `Stop` as not wired after an install. Stop is the one optional hook
+  (`internal/base/claudeconf/hooks.go`), so `hook install` leaves it out.
 - `atrium hook install` has no undo. It keeps a `settings.json.atrium-<time>.bak` copy and that is the way back.
 - `atrium run` installs no logon task. The scripts in `scripts/` do, and each has an `uninstall`.
 - The board menu is **rooms** (the tab), the claude row under runners, its **hooks** chip, and **perms**, then

@@ -2065,6 +2065,13 @@ func (s *supervisor) claimCarry(taskID string) bool {
 	return true
 }
 
+// releaseCarry lets the card's next runner take the file a clean stop just wrote for it.
+func (s *supervisor) releaseCarry(taskID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.claimed, taskID)
+}
+
 func (s *supervisor) get(taskID string) *runner {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2661,6 +2668,11 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 	// and bounded by its own budget so it cannot extend a shutdown that is
 	// already bounded and narrated.
 	d.saveCarryover(live)
+	// A room that stays up (a pty host restart) reopens these cards under the same daemon, so the claim made
+	// when the old runner started would otherwise leave this file unread.
+	for _, r := range live {
+		d.sup.releaseCarry(r.taskID)
+	}
 	// WHICH TERMINALS WERE OPEN, so the next daemon opens them again. See
 	// `reopen.go`.
 	d.saveReopen(live)

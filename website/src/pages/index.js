@@ -9,6 +9,9 @@ import BoardMockup from '@site/src/components/BoardMockup';
 import {PermMockup, TerminalMockup} from '@site/src/components/Mockups';
 import styles from './index.module.css';
 
+const bootstrap = (file) =>
+  `Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/${file} . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.`;
+
 const questions = [
   ['Which one needs me?', 'A card that asked you something sorts above one that simply ran out of work.'],
   ['How long has it waited?', 'Every card carries its age, and the stack lists who has been blocked longest.'],
@@ -136,8 +139,21 @@ function Hero() {
             Atrium shows which agent needs you, puts their tool calls in front of you to answer, and lets you step
             into any of their terminals from a browser.
           </p>
+          <div className={styles.bootstrap}>
+            <p className={styles.bootstrapLabel}>
+              Paste into any coding agent. Needs git and Go 1.26 or newer.
+            </p>
+            <Tabs groupId="bootstrap">
+              <TabItem value="try" label="Try it now">
+                <CodeBlock language="text">{bootstrap('try-atrium.md')}</CodeBlock>
+              </TabItem>
+              <TabItem value="join" label="Join a room to a hub">
+                <CodeBlock language="text">{bootstrap('join-atrium.md')}</CodeBlock>
+              </TabItem>
+            </Tabs>
+          </div>
           <div className={styles.ctas}>
-            <Link className={`${styles.cta} ${styles.ctaPrimary}`} to="/docs/quick-start">
+            <Link className={`${styles.cta} ${styles.ctaPrimary}`} to="/docs/get-started">
               Get started
             </Link>
             <Link className={styles.cta} to="/docs/story">

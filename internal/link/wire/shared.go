@@ -72,6 +72,8 @@ type RoomSetup struct {
 	Commit  string   `json:"commit,omitempty"`
 	Go      string   `json:"go,omitempty"`
 	Runners []string `json:"runners,omitempty"`
+	// Checklist is the lines the room's own `GET /v1/setup-check` listed as failed. They become issues of kind `checklist`.
+	Checklist []SetupIssue `json:"checklist,omitempty"`
 	// Issues is what is wrong, named once here so the pill and the row cannot disagree.
 	Issues []SetupIssue `json:"issues"`
 
@@ -80,9 +82,12 @@ type RoomSetup struct {
 
 // SetupIssue is one thing wrong with a room, in a line a person can read.
 type SetupIssue struct {
-	// Kind is `hooks` or `build`. Only `hooks` has a fix on the board.
+	// Kind is `hooks`, `build` or `checklist`. Only `hooks` has a fix on the board.
 	Kind string `json:"kind"`
 	Text string `json:"text"`
+	// ID names a checklist item to the room, and Fix says atrium can fix it itself. Both are empty on the other kinds.
+	ID  string `json:"id,omitempty"`
+	Fix bool   `json:"fix,omitempty"`
 }
 
 // RelayRequest is what a room asks its hub to carry.

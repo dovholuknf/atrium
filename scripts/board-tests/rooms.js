@@ -1738,11 +1738,13 @@ async function roomsSetupSection(browser, base) {
     await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 2 &&
       !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
     const pill = () => p.evaluate(() => { const e = document.getElementById("rooms");
-      return { warn: e.classList.contains("warn"), tip: e.dataset.tip }; });
+      const pop = document.getElementById("setuppop");
+      return { warn: e.classList.contains("warn"), tip: [...pop.children].map(c => c.tagName === "H5" ? c.textContent
+        : "  " + (c.querySelector(".k") ? c.querySelector(".k").textContent + ": " : "") + (c.querySelector(".tx") ? c.querySelector(".tx").textContent : c.textContent)).join("\n") }; });
     let s = await pill();
     has("the pill is not warning", s.warn, s);
-    has("the tip does not name sgg's hooks", /sgg: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
-    has("the tip does not name alpha's build", /alpha: runs a different atrium build/.test(s.tip), s);
+    has("the tip does not name sgg's hooks", /sgg[^\n]*\n  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
+    has("the tip does not name alpha's build", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip), s);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "pill-after.png"), clip: { x: 900, y: 0, width: 500, height: 60 } });
@@ -1768,7 +1770,7 @@ async function roomsSetupSection(browser, base) {
       .catch(() => fail("roomsSetup: the fix button stayed after the fix"));
     has("the fix did not post for sgg", mock.setupFixed.length === 1 && mock.setupFixed[0] === "sgg", mock.setupFixed);
     s = await pill();
-    has("the tip still names sgg after the fix", !/sgg:/.test(s.tip), s);
+    has("the tip still names sgg's hooks after the fix", !/sgg\n  hooks:/.test(s.tip), s);
     has("the pill stopped warning while alpha still has a build issue", s.warn, s);
 
     // A room that does not answer is not a setup problem.
@@ -1776,7 +1778,7 @@ async function roomsSetupSection(browser, base) {
       { name: "sgg" }], null));
     await p.waitForTimeout(300);
     s = await pill();
-    has("a room that did not answer made the pill warn", !s.warn && !/alpha:/.test(s.tip), s);
+    has("a room that did not answer made the pill warn", !s.warn && !/alpha/.test(s.tip), s);
     await p.evaluate(() => renderRooms());
     await p.waitForFunction(() => /not answering/.test(document.getElementById("room-list").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("roomsSetup: the row did not say not answering"));

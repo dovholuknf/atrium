@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"log"
 	"net/http"
 	"os"
@@ -595,12 +596,14 @@ func roomHandler(d *daemon.Daemon, room *conn.Room) http.Handler {
 			}
 			return nil
 		}}
-	git, board := gh.Handler(), d.BoardHandler()
+	seenhost.LogFile(filepath.Join(cardroot.StateDir(), "human-host.log"))
+	git, board := gh.Handler(), seenhost.Handler(d.BoardHandler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/git/") {
 			git.ServeHTTP(w, r)
 			return
 		}
+		seenhost.NoteBase(r.Header.Get(seenhost.HeaderName))
 		board.ServeHTTP(w, r)
 	})
 }

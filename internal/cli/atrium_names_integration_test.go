@@ -112,7 +112,7 @@ func TestTheSettingsHookLinesRun(t *testing.T) {
 		"hook --event tool-start", "hook --event tool-end", "hook --event tool-failed",
 		"hook --event prompt", "hook --event notification", "hook --event subagent-start",
 		"hook --event subagent-end", "session --event start", "session --event end",
-		"session --event compact", "turn --event end",
+		"session --event compact", "turn --event end", "statusline",
 	}
 	t.Setenv("ATRIUM_PERM_GATE", "off")
 	t.Setenv("ATRIUM_HUB_URL", "http://127.0.0.1:1")
