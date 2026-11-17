@@ -23250,7 +23250,8 @@ async function quickPasteSection(browser, base) {
     if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
     if (m === "GET" && p === "/v1/tasks/t-q") { st.cardReads = (st.cardReads || 0) + 1;
       return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" }); }
-    st.calls.push(m + " " + p + " " + (req.postData() || ""));
+    // The attached card's own background reads are not calls the paste made.
+    if (!(m === "GET" && /^\/v1\/tasks\/t-q\//.test(p))) st.calls.push(m + " " + p + " " + (req.postData() || ""));
     if (p === "/v1/open") {
       const url = JSON.parse(req.postData() || "{}").url || "";
       (st.rooms = st.rooms || []).push(req.headers()["x-atrium-room"] || "");
