@@ -14,7 +14,8 @@ func ListenLoopback() (net.Listener, error) {
 	return listenOutside(Previews, func() (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") })
 }
 
-// listenOutside listens until a port outside r comes back, and fails closed after a bound.
+// listenOutside listens until a port outside r comes back, and fails closed after a bound. The bound clears the whole
+// block, because Windows hands out ports in sequence and a pick inside the block can be followed by the rest of it.
 func listenOutside(r Range, listen func() (net.Listener, error)) (net.Listener, error) {
 	var held []net.Listener
 	defer func() {
@@ -22,7 +23,8 @@ func listenOutside(r Range, listen func() (net.Listener, error)) (net.Listener, 
 			_ = l.Close()
 		}
 	}()
-	for i := 0; i < 64; i++ {
+	bound := r.Hi - r.Lo + 1 + 64
+	for i := 0; i < bound; i++ {
 		ln, err := listen()
 		if err != nil {
 			return nil, err
@@ -33,5 +35,5 @@ func listenOutside(r Range, listen func() (net.Listener, error)) (net.Listener, 
 		// Held, not closed, so the system cannot hand the same port straight back.
 		held = append(held, ln)
 	}
-	return nil, fmt.Errorf("the system picked 64 ports in a row inside %s", r)
+	return nil, fmt.Errorf("the system picked %d ports in a row inside %s", bound, r)
 }
