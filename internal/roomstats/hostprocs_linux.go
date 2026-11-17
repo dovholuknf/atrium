@@ -62,8 +62,10 @@ func parseProcPIDStat(text string, boot time.Time) (HostProc, bool) {
 	if len(f) < 22 {
 		return HostProc{}, false
 	}
-	num := func(i int) uint64 { n, _ := strconv.ParseUint(f[i], 10, 64); return n }
-	p := HostProc{Name: text[open+1 : end], PPID: int(num(1)),
+	// 62 bits and 31 bits: the bounds keep the conversions to int64 and int below from wrapping.
+	num := func(i int) uint64 { n, _ := strconv.ParseUint(f[i], 10, 62); return n }
+	ppid, _ := strconv.ParseUint(f[1], 10, 31)
+	p := HostProc{Name: text[open+1 : end], PPID: int(ppid),
 		CPU: time.Duration(num(11)+num(12)) * time.Second / clkTck, RSS: num(21) * uint64(os.Getpagesize())}
 	if !boot.IsZero() {
 		p.Started = boot.Add(time.Duration(num(19)) * time.Second / clkTck)
