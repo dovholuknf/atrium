@@ -791,6 +791,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if err != nil {
 		return fmt.Errorf("board listener: %w", err)
 	}
+	// A browser tries localhost as ::1 first, and on Windows a refused ::1 costs about 2s per new connection.
+	if v6 := loopbackV6(boardLn.Addr().String()); v6 != nil {
+		go func() { _ = srv.Serve(v6) }()
+	}
 
 	// REACHING THE BOARD FROM ELSEWHERE, when asked. Loopback above
 	// stays exactly as it was: this adds a SECOND listener over an overlay
@@ -1025,20 +1029,32 @@ func advertiseFor(bind, override string) (string, error) {
 // explicit non-loopback host is the operator asking for the one thing this
 // refuses, so it is refused with the reason and the alternative.
 func loopbackBoard(addr string) (string, error) {
+	return loopbackListen("--addr", "the board", addr,
+		"to reach the board from elsewhere use an overlay (--board-transport zrok); to let a "+
+			"room dial in from elsewhere bind --link wide instead")
+}
+
+// loopbackAgent is loopbackBoard for the room's agent listener, which carries
+// the hooks, the permission chain and the card's git remote, with no login.
+func loopbackAgent(flag, addr string) (string, error) {
+	return loopbackListen(flag, "the agent listener", addr,
+		"hooks and agents on this machine reach it on loopback, and nothing off this machine needs it")
+}
+
+func loopbackListen(flag, what, addr, elsewhere string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", fmt.Errorf("--addr %q is not a host:port for the board: %w", addr, err)
+		return "", fmt.Errorf("%s %q is not a host:port for %s: %w", flag, addr, what, err)
 	}
 	if host == "" {
 		host = "127.0.0.1"
 	}
 	if !isLoopbackHost(host) {
 		return "", fmt.Errorf(
-			"--addr %q would put the board on a non-loopback address, and the board "+
+			"%s %q would put %s on a non-loopback address, and %s "+
 				"has no login, so anything that can reach it can read every command and "+
-				"answer permission requests. keep --addr on loopback (127.0.0.1). to reach "+
-				"the board from elsewhere use an overlay (--board-transport zrok); to let a "+
-				"room dial in from elsewhere bind --link wide instead", addr)
+				"answer permission requests. keep %s on loopback (127.0.0.1). %s",
+			flag, addr, what, what, flag, elsewhere)
 	}
 	return net.JoinHostPort(host, port), nil
 }

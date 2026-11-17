@@ -147,6 +147,10 @@ function isMinion(t) {
 let minionShownFn = null;
 function setMinionShown(fn) { minionShownFn = typeof fn === "function" ? fn : null; }
 function minionShown() { return !!(minionShownFn && minionShownFn()); }
+// Files a done report left uncommitted. Only while the card is done, so a card that works again drops it.
+function cardLeftover(t) { return t && t.status === "done" ? Number(t.report_dirty) || 0 : 0; }
+// A launched card's leftovers are its launcher's to handle, so the human is not asked.
+function cardLeftoverIsHumans(t) { return cardLeftover(t) > 0 && !(t.spawned_by_id || t.spawned_by); }
 // A card HAS SOMETHING FOR THE HUMAN: waiting on them, an open question, a permission, or stuck. Not one whose room is silent.
 function cardNeedsYou(t) {
   if (!t || t.offline) return false;

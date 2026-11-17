@@ -3,9 +3,12 @@
 package cli
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
@@ -140,5 +143,38 @@ func TestTheWideBindRefusalNamesTheFlag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--link-advertise") {
 		t.Errorf("refusal %q does not name --link-advertise", err.Error())
+	}
+}
+
+// The agent listener carries the hooks, the permission chain and the card's git
+// remote with no login, so a wide bind is refused like the board's.
+func TestTheAgentListenerRefusesANonLoopbackAddr(t *testing.T) {
+	for _, addr := range []string{"0.0.0.0:7777", "192.168.1.10:7777", "[::]:7777"} {
+		if got, err := loopbackAgent("--agent", addr); err == nil {
+			t.Errorf("loopbackAgent(%q) = %q, want a refusal", addr, got)
+		}
+		err := runRoom(transport.Keys{Dir: t.TempDir()}, "", "127.0.0.1:0", addr, 0, true, "", roomLayout{})
+		if err == nil || !strings.Contains(err.Error(), "--agent") || !strings.Contains(err.Error(), "non-loopback") {
+			t.Errorf("runRoom with --agent %q = %v, want the loopback refusal", addr, err)
+		}
+		err = runDaemon(context.Background(), daemon.Options{AgentAddr: addr, HumanAddr: "127.0.0.1:0",
+			DBPath: t.TempDir(), LocationFile: filepath.Join(t.TempDir(), "location.json")})
+		if err == nil || !strings.Contains(err.Error(), "--addr") || !strings.Contains(err.Error(), "non-loopback") {
+			t.Errorf("runDaemon with --addr %q = %v, want the loopback refusal", addr, err)
+		}
+	}
+}
+
+func TestTheAgentListenerKeepsLoopback(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{":7777", "127.0.0.1:7777"},
+		{"127.0.0.1:7777", "127.0.0.1:7777"},
+		{"[::1]:7777", "[::1]:7777"},
+		{"localhost:7777", "localhost:7777"},
+	} {
+		got, err := loopbackAgent("--agent", c.in)
+		if err != nil || got != c.want {
+			t.Errorf("loopbackAgent(%q) = %q, %v, want %q", c.in, got, err, c.want)
+		}
 	}
 }

@@ -183,7 +183,8 @@
     font-size: var(--fs-base); padding: 4px 10px;
     box-shadow: 0 6px 18px rgba(var(--shadow-rgb),.6);
   }
-  .cc-btn:hover { border-color: var(--blue); }
+  /* Keeps its gradient: the board's `button:hover` swaps in a fading background, a frame of no background at all. */
+  .cc-btn:hover { border-color: var(--blue); background: linear-gradient(180deg, var(--card-0), var(--card-1)); }
   .toast.leaving { animation: toastout .2s ease-in forwards; }
   /* Answered while it was up: it stays to be read, and says it needs nothing. */
   .toast.answered { border-left-color: var(--stroke); opacity: .75; }
@@ -607,7 +608,7 @@
   #browse .dirlist:empty { display: none; }
   #browse .dirlegend { margin-top: 12px; }
   /* A tick box reads at the size of what is typed in the fields beside it, not the page's. */
-  .dlg-body .check { font-size: var(--fs-md); }
+  .dlg-body .check, .dlg-body label:where(:has(> input[type=checkbox])) { font-size: var(--fs-md); }
   .field { margin-bottom: 22px; }
   label.eyebrow {
     display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .14em;
@@ -805,6 +806,8 @@
   }
   /* What a number is counted in, said beside the box at the size of a hint. */
   dialog .picker > .unit { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; }
+  /* A box switched off by the setting above it fades the way a disabled button does. */
+  dialog .picker input:disabled { opacity: .38; cursor: not-allowed; }
 
   /* A pasted link while it opens, drawn as the card it is becoming (js/link-opening.js). It floats in the lower left,
      across from the toasts, so the card list under it never moves. */

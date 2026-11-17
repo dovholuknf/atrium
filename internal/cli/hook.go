@@ -138,6 +138,7 @@ type hookInput struct {
 	Error        string          `json:"error"`
 	// ToolInput names the file a Write or Edit changed. See touchedFile.
 	ToolInput json.RawMessage `json:"tool_input"`
+	Prompt    string          `json:"prompt"`
 }
 
 // knownTools are the tools whose absence from a card's shell is the room's misconfiguration.
@@ -153,6 +154,21 @@ func missingTool(in hookInput) string {
 		if strings.Contains(out, " "+t+": command not found") || strings.Contains(out, "The term '"+t+"' is not recognized") {
 			return t
 		}
+	}
+	return ""
+}
+
+// skillName is the skill a Skill tool call or a typed slash command starts, or "".
+func skillName(arg string, in hookInput) string {
+	if arg == "tool-start" && in.ToolName == "Skill" {
+		var ti struct {
+			Skill string `json:"skill"`
+		}
+		_ = json.Unmarshal(in.ToolInput, &ti)
+		return ti.Skill
+	}
+	if p := strings.Fields(in.Prompt); arg == "prompt" && len(p) > 0 && strings.HasPrefix(p[0], "/") {
+		return p[0][1:]
 	}
 	return ""
 }
@@ -529,6 +545,7 @@ func reportActivity(hubURL, event, name string) string {
 		// put up on its own. See wantsAHuman.
 		"notification": notificationKind(in),
 		"missing_tool": missingTool(in),
+		"skill":        skillName(arg, in),
 	}
 	if arg == "tool-end" {
 		if t := touchedFile(in); t.Path != "" {

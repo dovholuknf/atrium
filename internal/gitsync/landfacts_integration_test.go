@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // A BRANCH FAST-FORWARDED ONTO claude/main IS LANDED AT ITS OWN TIP, and it is pushed only when the forge's main holds it.
@@ -241,6 +244,16 @@ func TestLandFactsReadEveryItemAtOneTipFromOneLog(t *testing.T) {
 	}
 	tip := git(t, x.work, "rev-parse", "cm")
 	run := x.h.runner()
+	// The push can leave git of its own running on the hub, and this count is of the log alone.
+	last, still := run.Spawned.Load()-1, 0
+	testwait.Eventually(t, 10*time.Second, "the push's own git work to end", func() bool {
+		if n := run.Spawned.Load(); n != last {
+			last, still = n, 0
+		} else {
+			still++
+		}
+		return still >= 5
+	})
 
 	before := run.Spawned.Load()
 	for _, id := range ids {

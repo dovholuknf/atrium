@@ -703,6 +703,11 @@ func checkReach(ctx context.Context, r *Run) Result {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// THE HUB'S SET IS NOT TRUSTED TO BE CLEAN. A room named -oProxyCommand=... would be an ssh option.
+			if err := sshcfg.ValidRoom(p.Room); err != nil {
+				ans[i] = answer{"skipped a room that is not a name: " + err.Error(), false}
+				return
+			}
 			out, err := sshTest(ctx, r, p.Room)
 			if err == nil && strings.Contains(out, "atrium-ok") {
 				ans[i] = answer{p.Room + ": reached", true}

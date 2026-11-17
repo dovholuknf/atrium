@@ -1652,6 +1652,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.hubRoutes().Items(w, r, sub)
 		return
 	}
+	if sub == "room-events" {
+		p.serveRoomEvents(w, r)
+		return
+	}
 	if sub == "shepherds" || strings.HasPrefix(sub, "shepherds/") {
 		p.serveShepherds(w, r, sub)
 		return

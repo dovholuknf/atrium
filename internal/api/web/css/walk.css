@@ -62,6 +62,17 @@
   .walk-head #walk-note { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .walk-head .walk-close { margin-left: var(--sp-4); }
   #t-walk { flex: none; white-space: nowrap; }
+  #t-walk-pr { flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--teal); text-decoration: none; }
+  #t-walk-pr:hover, #walk-ghlink:hover { text-decoration: underline; }
+  #walk-ghlink { flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--teal); text-decoration: none; }
+  #t-walk-pr[hidden], #walk-ghlink[hidden] { display: none; }
+  .wk-ask {
+    all: unset; cursor: pointer; flex: none; margin-left: var(--sp-3); padding: 0 var(--sp-2); border-radius: var(--r-pill);
+    font: var(--fs-xxs) var(--sans); color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4); white-space: nowrap;
+  }
+  .wk-ask:hover { background: var(--teal-bg); color: var(--head); }
+  .wk-fbar .wk-ask { margin-left: 0; }
+  .wk-file .wk-l.hk .wk-tx { display: flex; align-items: center; }
   .walk-nav kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); margin-left: 4px; }
   .walk-head strong { color: var(--head); font-size: var(--fs-md); white-space: nowrap; }
   .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
@@ -149,6 +160,7 @@
     background: var(--bg-2); border-radius: var(--r-sm); font: var(--fs-sm)/1.45 var(--mono);
     margin-bottom: var(--vs-3); overflow-x: auto; padding: var(--vs-1) 0;
   }
+  .wk-code { display: grid; grid-template-columns: minmax(100%, max-content); align-content: start; }
   .wk-l { display: flex; gap: var(--sp-3); padding: 0 var(--sp-3); white-space: pre; }
   .wk-l.add { background: var(--teal-bg); }
   .wk-l.del { background: rgba(var(--danger-rgb),.14); }
@@ -158,6 +170,41 @@
   .wk-l.at { outline: 1px solid var(--teal); outline-offset: -1px; }
   .wk-ln { color: var(--dimmest); min-width: 4ch; text-align: right; }
   .wk-mk { color: var(--teal); min-width: 2ch; }
+  /* A file of the patch, drawn as GitHub's Files changed draws it: a bar, two gutters, rows tinted edge to edge, long
+     lines wrapped so nothing scrolls sideways. */
+  .wk-file { border: 1px solid var(--stroke-dim); border-radius: var(--r-md); overflow: hidden; margin-bottom: var(--vs-3); }
+  .wk-fbar {
+    display: flex; align-items: center; gap: var(--sp-3); padding: var(--vs-1) var(--sp-3); background: var(--lift);
+    border-bottom: 1px solid var(--stroke-dim); font: var(--fs-sm)/1.4 var(--mono); position: sticky; top: 0; z-index: 1;
+  }
+  .wk-fold { all: unset; cursor: pointer; color: var(--dim); width: 1.4em; text-align: center; }
+  .wk-fold:hover { color: var(--head); }
+  .wk-fpath { flex: 1 1 auto; min-width: 0; color: var(--head); overflow-wrap: anywhere; }
+  .wk-was { color: var(--dim); }
+  .wk-fstat { display: inline-flex; align-items: center; gap: var(--sp-2); flex: none; font-size: var(--fs-xs); }
+  .wk-fstat .a { color: var(--teal); font-weight: 600; }
+  .wk-fstat .d { color: var(--danger); font-weight: 600; }
+  .wk-sq { display: inline-flex; gap: 1px; }
+  .wk-sq i { width: 8px; height: 8px; background: var(--dimmest); }
+  .wk-sq i.a { background: var(--teal); }
+  .wk-sq i.d { background: var(--danger); }
+  .wk-file .wk-code { display: block; margin: 0; border-radius: 0; padding: 0; overflow: visible; }
+  .wk-file .wk-l { gap: 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; }
+  .wk-file .wk-lo, .wk-file .wk-ln {
+    flex: none; box-sizing: border-box; width: 5ch; padding: 0 var(--sp-2); text-align: right; user-select: none;
+    background: rgba(var(--shadow-rgb),.12);
+  }
+  .wk-file .wk-l.add .wk-ln, .wk-file .wk-l.add .wk-lo { background: rgba(var(--teal-rgb),.22); }
+  .wk-file .wk-l.del .wk-ln, .wk-file .wk-l.del .wk-lo { background: rgba(var(--danger-rgb),.24); }
+  .wk-file .wk-mk { flex: none; width: 2ch; text-align: center; user-select: none; }
+  .wk-file .wk-tx { flex: 1 1 auto; min-width: 0; padding-right: var(--sp-3); }
+  .wk-file .wk-l.hk { color: var(--dim); background: var(--lift); padding: 2px 0; }
+  .walk.wk-b .wk-file .wk-code { margin: 0; }
+  .wk-file .wk-l.hk .wk-tx { padding-left: var(--sp-3); }
+  .wk-w { color: inherit; border-radius: 2px; background: rgba(var(--teal-rgb),.35); }
+  .wk-l.del .wk-w { background: rgba(var(--danger-rgb),.4); }
+  /* The comments under a line stay clear of the gutters. */
+  .wk-file .cmt { margin-left: 10ch; white-space: normal; }
   /* The phone's handle for the terminal sheet. Only phone.css shows it. */
   .walk-sheet { display: none; }
   .wk-more {
@@ -257,7 +304,8 @@
   .walk .grow { flex: 1 1 auto; }
 
   /* walk.html: the same drawer with the window to itself. */
-  .wv-page { font: var(--fs-base)/1.45 var(--sans); }
+  .wv-page { font: var(--fs-base)/1.45 var(--sans); height: 100vh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .walk-body { overflow: hidden; }
   .walk.solo {
     position: relative; inset: auto; flex: 1 1 auto; width: auto; min-width: 0; max-width: none; z-index: 1;
     border-left: none; box-shadow: none; background: transparent;

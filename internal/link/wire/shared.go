@@ -147,6 +147,18 @@ type RelayLaunchSpec struct {
 	Superlean  bool              `json:"superlean,omitempty"`
 	Lifetime   string            `json:"lifetime,omitempty"`
 	Item       bool              `json:"item,omitempty"`
+	// Absent from an older room, which is the old launch: cwd only, lean by default.
+	Repo      string   `json:"repo,omitempty"`
+	Branch    string   `json:"branch,omitempty"`
+	Base      string   `json:"base,omitempty"`
+	Home      bool     `json:"home,omitempty"`
+	Resident  bool     `json:"resident,omitempty"`
+	Scratch   bool     `json:"scratch,omitempty"`
+	Lean      *bool    `json:"lean,omitempty"`
+	MCP       []string `json:"mcp,omitempty"`
+	Theme     string   `json:"theme,omitempty"`
+	Chat      bool     `json:"chat,omitempty"`
+	ItemOwner string   `json:"item_owner,omitempty"`
 }
 
 type ErrStatus int
@@ -194,6 +206,8 @@ type RelayAnswer struct {
 	Brief  string `json:"brief,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Carried is a hub that read every RelayLaunchSpec field. An older hub leaves it out and drops the newer ones.
+	Carried bool `json:"carried,omitempty"`
 	// Data is the hub endpoint's own JSON answer, for `hub`.
 	Data json.RawMessage `json:"data,omitempty"`
 }

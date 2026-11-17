@@ -174,15 +174,16 @@ function paintRooms() {
   const here = room ? (hubRooms.some(r => r.name === room) ? 1 : 0) : live;
 
   const label = document.getElementById("rooms-t");
+  let hint;
   if (room) {
     label.textContent = room;
-    el.dataset.tip = here
+    hint = here
       ? `scoped to ${room}. this is that machine's atrium.`
       : `scoped to ${room}, which is not attached right now.`;
   } else {
     label.textContent = `${here}/${known} room${known === 1 ? "" : "s"}`;
     label.dataset.n = `${here}/${known}`;
-    el.dataset.tip = "you are on an atrium hub, looking at every room at once. " +
+    hint = "you are on an atrium hub, looking at every room at once. " +
       "click to focus on one.";
   }
   // `down` belonged to the folded-in stream state and coloured the whole chip as
@@ -198,7 +199,9 @@ function paintRooms() {
   // be looking at. One line each, in the tooltip.
   const drift = roomsWithSetupIssues();
   el.classList.toggle("warn", drift.length > 0);
-  paintSetupPop(drift);
+  // One popup on hover: the hint rides in the checklist rather than in a tooltip beside it.
+  delete el.dataset.tip;
+  paintSetupPop(drift, hint);
 }
 
 // The checklist is a popover on hover of the pill, laid out the same in every state: rooms alphabetized, each with its
@@ -210,35 +213,35 @@ function setupWhyNot(r, i) {
   if (i.kind === "hooks") return "settings.json unreadable";
   if (i.kind === "build") return "restart the room";
   if (i.id === "git") return "install git there";
-  if (i.id === "usage") return "restart its claude";
+  if (i.id === "usage") return "";
   return "fix it on the machine";
 }
-function setupChecklistHtml(drift) {
+function setupChecklistHtml(drift, hint) {
   const by = new Map(drift.map(d => [d.name, d.issues]));
   const rooms = hubRooms.filter(r => r.setup && r.setup.answering).sort((a, b) => a.name.localeCompare(b.name));
-  if (!rooms.length) return `<div class="it">no room has answered yet</div>`;
+  const head = hint ? `<div class="hint">${esc(hint)}</div>` : "";
+  if (!rooms.length) return head + `<div class="rm"><span class="none">no room has answered yet</span></div>`;
   const live = new Set();
   const html = rooms.map(r => {
     const issues = (by.get(r.name) || []).slice().sort((a, b) => a.kind.localeCompare(b.kind) || a.text.localeCompare(b.text));
-    if (!issues.length) return `<div class="rm"><h5>${esc(r.name)}</h5><b>&#10003;</b><span class="ok">every check passes</span></div>`;
-    return `<div class="rm bad"><h5>${esc(r.name)}</h5><b>&#10007;</b><span>one or more problems</span></div>` + issues.map(i => {
+    if (!issues.length) return `<div class="rm"><h5>${esc(r.name)}</h5><span class="ok">&#10003;</span></div>`;
+    return `<div class="rm bad"><h5>${esc(r.name)}</h5></div>` + issues.map(i => {
       const id = i.kind === "hooks" ? (r.setup.hooks_unreadable ? "" : "hooks") : i.fix ? i.id : "";
       const key = setupKey(r.name, id);
       if (id) live.add(key);
       const tail = id
-        ? `<button class="ghost setupfix" data-room="${esc(r.name)}" data-id="${esc(id)}">Fix</button>`
-        : `<span class="why">${esc(setupWhyNot(r, i))}</span>`;
-      const pick = id
         ? `<input type="checkbox" class="setuppick" data-room="${esc(r.name)}" data-id="${esc(id)}"${setupPicked.has(key) ? " checked" : ""}>`
-        : `<span class="setuppick"></span>`;
-      return `<div class="it bad">${pick}<span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}</span>${tail}</div>`;
+        : "<span></span>";
+      const why = id ? "" : setupWhyNot(r, i);
+      return `<div class="it"><span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}${why ? `<span class="why">${esc(why)}</span>` : ""}</span>${tail}</div>`;
     }).join("");
   }).join("");
   for (const k of [...setupPicked]) if (!live.has(k)) setupPicked.delete(k);
-  return html + (setupPicked.size ? `<div class="setupall"><button class="setupfixall">Fix all now (${setupPicked.size})</button></div>` : "");
+  const cols = live.size ? `<div class="cols"><span>fix</span></div>` : "";
+  return head + cols + html + (setupPicked.size ? `<div class="setupall"><button class="ghost setupfixall">Fix all now (${setupPicked.size})</button></div>` : "");
 }
 
-function paintSetupPop(drift) {
+function paintSetupPop(drift, hint) {
   const el = document.getElementById("rooms");
   let pop = document.getElementById("setuppop");
   if (!pop) {
@@ -269,7 +272,7 @@ function paintSetupPop(drift) {
       if (!c.classList || !c.classList.contains("setuppick")) return;
       const key = setupKey(c.dataset.room, c.dataset.id);
       if (c.checked) setupPicked.add(key); else setupPicked.delete(key);
-      paintSetupPop(roomsWithSetupIssues());
+      paintSetupPop(roomsWithSetupIssues(), pop.dataset.hint);
     });
     pop.addEventListener("click", e => {
       const t = e.target.closest && e.target.closest("button");
@@ -281,7 +284,8 @@ function paintSetupPop(drift) {
     });
   }
   // Left alone when unchanged, so a repaint does not drop a selection.
-  const html = setupChecklistHtml(drift);
+  pop.dataset.hint = hint || "";
+  const html = setupChecklistHtml(drift, hint);
   if (pop.innerHTML !== html) pop.innerHTML = html;
 }
 

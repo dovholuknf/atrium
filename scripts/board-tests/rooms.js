@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo, roomsMenuScroll, roomsThemes.
+// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo, roomsMenuScroll, roomsThemes.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1739,7 +1739,7 @@ async function roomsSetupSection(browser, base) {
       !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
     const pill = () => p.evaluate(() => { const e = document.getElementById("rooms");
       const pop = document.getElementById("setuppop");
-      return { warn: e.classList.contains("warn"), tip: [...pop.children].map(c => c.tagName === "H5" ? c.textContent
+      return { warn: e.classList.contains("warn"), tip: [...pop.children].map(c => c.querySelector("h5") ? c.querySelector("h5").textContent
         : "  " + (c.querySelector(".k") ? c.querySelector(".k").textContent + ": " : "") + (c.querySelector(".tx") ? c.querySelector(".tx").textContent : c.textContent)).join("\n") }; });
     let s = await pill();
     has("the pill is not warning", s.warn, s);
@@ -2232,7 +2232,50 @@ async function roomsThemesSection(browser, base) {
   }
 }
 
+// THE RECONNECTING PILL CLEARS. A stream the hub refuses with a 4xx is closed for good by the browser, so the board has to
+// open it again itself, and the pill must be hidden once the stream is back.
+async function reconnectPillSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const pp = await ctx.newPage();
+  const errors = [];
+  pp.on("pageerror", e => errors.push(String(e)));
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.sseRetry = 200;
+  const pill = () => pp.evaluate(() => { const c = document.getElementById("conn"); return !c.hidden && c.classList.contains("down"); });
+  try {
+    await pp.clock.install();
+    await pp.goto(base, { waitUntil: "domcontentloaded" });
+    await fakeWait(pp, () => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, 15000);
+    await fakePause(pp);
+    if (await pill()) fail("the reconnecting pill showed while the stream was up.");
+
+    mock.sseRefuse = true;
+    mock.sseRefused = 0;
+    openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
+    await fakeWait(pp, () => !document.getElementById("conn").hidden &&
+      document.getElementById("conn").classList.contains("down"), null, 15000)
+      .catch(() => fail("a dropped stream did not show the reconnecting pill."));
+
+    let navs = 0;
+    pp.on("load", () => navs++);
+    await untilTrue(() => mock.sseRefused > 0, 15000, "the browser never retried the refused stream");
+    mock.sseRefuse = false;
+    await fakeWait(pp, () => document.getElementById("conn").classList.contains("live") &&
+      document.getElementById("conn").hidden, null, 30000)
+      .catch(() => fail("the reconnecting pill stayed after the stream was restored."));
+    if (navs) fail("the board reloaded to get its stream back, " + navs + " times.");
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    mock.sseRefuse = false;
+    await ctx.close();
+    mock.hubMode = wasHub;
+  }
+}
+
 const units = [
+  { name: "reconnectPill", run: ({ browser, base }) => reconnectPillSection(browser, base) },
   { name: "restartGate", run: ({ browser, base }) => restartGateSection(browser, base) },
   { name: "restartStays", run: ({ browser, base }) => restartStaysSection(browser, base) },
   { name: "atriumDown", run: ({ browser, base }) => atriumDownSection(browser, base) },
@@ -2255,7 +2298,7 @@ const units = [
   { name: "roomsMenuScroll", run: ({ browser, base }) => roomsMenuScrollSection(browser, base) },
   { name: "roomsThemes", run: ({ browser, base }) => roomsThemesSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
+const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

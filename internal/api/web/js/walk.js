@@ -36,7 +36,7 @@ const dock = {
 };
 
 // A card is a tenant's when its probe says so. Called from `openTerm` for every attach.
-// Cards whose probe failed (a 404 for a card this room does not hold). Asked once, not on every attach.
+// Cards whose probe failed (a 404 for a card this room does not hold). Asked again on its own event, not on every attach.
 const walkProbeFailed = new Set();
 const WALK_LIST_MIN = 320;
 let walkHome = null;
@@ -129,7 +129,9 @@ function dockKick(id) {
 // A card the probe said no to is asked again on its own events: a working card commits after it was attached.
 const WALK_REPROBE_MS = 5000;
 function walkReprobe(id) {
-  if (dock.timer || !id || typeof termTask === "undefined" || !termTask || termTask.id !== id || walkProbeFailed.has(id)) return;
+  if (dock.timer || !id || typeof termTask === "undefined" || !termTask || termTask.id !== id) return;
+  // Its own event says a room holds it: the 404 came from a hub whose room was away.
+  walkProbeFailed.delete(id);
   dock.timer = setTimeout(() => {
     dock.timer = 0;
     if (!dock.tenant && termTask && termTask.id === id && !document.hidden) walkProbe(termTask);
@@ -204,6 +206,13 @@ function dockPaint() {
   if (!t) return;
   const label = document.getElementById("t-walk-label");
   if (label) label.textContent = t.label(dock);
+  const prRow = walkPrOf(dock.taskId);
+  for (const id of ["t-walk-pr", "walk-ghlink"]) {
+    const a = document.getElementById(id);
+    if (!a) continue;
+    a.hidden = !(prRow && prRow.url);
+    if (!a.hidden) { a.href = prRow.url; a.textContent = "View it on " + walkForgeName(prRow.url); }
+  }
   const btn = document.getElementById("t-walk");
   if (btn && !dock.open) btn.hidden = walkNothing(dock);
   if (!dock.open || !drawer) return;
@@ -449,13 +458,13 @@ function walkPrItem(f) {
 // The branch's patch as one entry per file, deleted and binary files included, which walkParseDiff skips.
 function walkSplitDiff(text) {
   const out = [];
-  let f = null, n = 0;
+  let f = null, n = 0, o = 0;
   for (const l of String(text || "").split("\n")) {
     const g = /^diff --git a\/(.+?) b\/(.+)$/.exec(l);
     if (g) { f = { path: g[2], from: g[1], status: "modified", add: 0, del: 0, lines: [], inHunk: false }; out.push(f); continue; }
     if (!f) continue;
-    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l);
-    if (h) { n = Number(h[1]); f.inHunk = true; f.lines.push({ t: "@", n: null, text: l }); continue; }
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l);
+    if (h) { o = Number(h[1]); n = Number(h[2]); f.inHunk = true; f.lines.push({ t: "@", n: null, text: l }); continue; }
     if (!f.inHunk) {
       if (l.startsWith("new file")) f.status = "added";
       else if (l.startsWith("deleted file")) f.status = "deleted";
@@ -463,14 +472,63 @@ function walkSplitDiff(text) {
       else if (l.startsWith("Binary files") || l.startsWith("GIT binary patch")) f.status = "binary";
       continue;
     }
-    if (l.startsWith("+")) { f.add++; f.lines.push({ t: "+", n: n++, text: l.slice(1) }); }
-    else if (l.startsWith("-")) { f.del++; f.lines.push({ t: "-", n: null, text: l.slice(1) }); }
-    else if (l.startsWith(" ")) f.lines.push({ t: " ", n: n++, text: l.slice(1) });
+    if (l.startsWith("+")) { f.add++; f.lines.push({ t: "+", n: n++, o: null, text: l.slice(1) }); }
+    else if (l.startsWith("-")) { f.del++; f.lines.push({ t: "-", n: null, o: o++, text: l.slice(1) }); }
+    else if (l.startsWith(" ")) f.lines.push({ t: " ", n: n++, o: o++, text: l.slice(1) });
   }
   return out;
 }
 
+// A pair of lines changed in place: the middle that differs, as [from, to) in each, for the darker tint.
+function walkWordSpan(a, b) {
+  let s = 0;
+  while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let ea = a.length, eb = b.length;
+  while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+  return { a: [s, ea], b: [s, eb] };
+}
+
+// The words of a run of `-` lines followed by an equal run of `+` lines, keyed by line index. Only 1:1 runs are paired.
+function walkWords(lines) {
+  const out = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].t !== "-" || (i && lines[i - 1].t === "-")) continue;
+    let d = i; while (d < lines.length && lines[d].t === "-") d++;
+    let a = d; while (a < lines.length && lines[a].t === "+") a++;
+    if (a - d !== d - i) continue;
+    for (let k = 0; k < d - i; k++) {
+      const w = walkWordSpan(lines[i + k].text, lines[d + k].text);
+      if (w.a[0] === 0 && w.a[1] === lines[i + k].text.length && w.b[1] === lines[d + k].text.length) continue;
+      out.set(i + k, w.a); out.set(d + k, w.b);
+    }
+  }
+  return out;
+}
+
+function walkFileText(text, span) {
+  if (!span || span[0] >= span[1]) return esc(text) || "&nbsp;";
+  return esc(text.slice(0, span[0])) + `<mark class="wk-w">${esc(text.slice(span[0], span[1]))}</mark>` + esc(text.slice(span[1]));
+}
+
+// The forge a pull request URL is on, named from its host: the local hub is the board's own origin.
+function walkForgeName(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return "the forge"; }
+  const h = u.hostname.toLowerCase();
+  if (h === location.hostname || h === "localhost" || h === "127.0.0.1" || h === "[::1]") return "the local hub";
+  if (h === "github.com" || h.endsWith(".github.com")) return "GitHub";
+  if (h.includes("gitlab")) return "GitLab";
+  if (h.includes("bitbucket")) return "Bitbucket";
+  if (h.includes("gitea") || h.includes("codeberg")) return "Gitea";
+  return h;
+}
+
+// A 40-character commit id is not a name for a human to read.
+function walkShort(ref) { return /^[0-9a-f]{40,64}$/.test(ref || "") ? ref.slice(0, 7) : ref; }
+
 const walkFileLines = 2000;
+// A file with more lines than this opens collapsed, so one big file cannot bury the rest.
+const walkBigFile = 800;
 
 // A change is a run of added or removed lines, as the file's line index of its first one.
 function walkChanges(items) {
@@ -504,6 +562,7 @@ function walkChange(dir) {
   if (i < 0) i = dir > 0 ? -1 : list.length;
   const c = list[Math.max(0, Math.min(list.length - 1, i + dir))];
   walkTenant.at = { key: c.key, li: c.li };
+  walkTenant.folded.delete(c.key);
   if (dock.cur !== c.key) dockSelect(c.key); else dockPaint();
   const el = document.querySelector("#walk-item .wk-l.at");
   if (el) el.scrollIntoView({ block: "center" });
@@ -608,13 +667,16 @@ function walkDirOpen(dir) {
 function walkLinkOf(url) {
   let u;
   try { u = new URL(url); } catch (e) { return null; }
-  if (!sameBoardOrigin(u)) return null;
   const q = new URLSearchParams(u.hash.slice(1));
-  return q.get("card") && q.get("walk") ? { id: q.get("card"), dir: q.get("walk") } : null;
+  if (!q.get("card") || !q.get("walk")) return null;
+  // Another board's host (a room's link shown on the hub) is taken only for the card whose terminal is open here.
+  const shown = typeof termTask !== "undefined" && termTask && sameCard(termTask.id, q.get("card"));
+  if (!sameBoardOrigin(u) && !(shown && /^https?:$/.test(u.protocol))) return null;
+  return { id: q.get("card"), dir: q.get("walk") };
 }
 async function walkLinkOpen(id, dir) {
-  if (!termTask || termTask.id !== id) await landOnAlert(id, "", "");
-  if (termTask && termTask.id === id) walkDirOpen(dir);
+  if (!termTask || !sameCard(termTask.id, id)) await landOnAlert(id, "", "");
+  if (termTask && sameCard(termTask.id, id)) walkDirOpen(dir);
 }
 
 // The hub branch under a right click in the card's terminal, or "".
@@ -641,6 +703,8 @@ const walkTenant = {
   ctx: { key: "", above: 3, below: 3 },
   head: new Map(),     // diff path -> { lines } once `src/<path>` is read, null while it is not there
   evOpen: new Set(),   // keys whose Evidence is unfolded
+  folded: new Set(),   // keys of files whose diff is collapsed
+  allLines: new Set(), // keys of files shown past walkFileLines
   drafts: new Map(),   // key -> a reply not sent yet, so a repaint or a step away keeps it
   prId: "",            // the pulls row this card walks, "" for a bare findings folder
   hub: null,           // { repo, branch } of a hub branch walked with no card, in walk.html
@@ -776,12 +840,13 @@ const walkTenant = {
 
   header(d) {
     const first = d.items[0];
-    if (!first && d.error) return { title: this.branch && this.branch.branch ? `${this.branch.branch} vs ${this.branch.base}` : "nothing to walk", note: "", more: "" };
+    if (!first && d.error) return { title: this.branch && this.branch.branch ? `${this.branch.branch} vs ${walkShort(this.branch.base)}` : "nothing to walk", note: "", more: "" };
     let title = "findings";
     if (first && first.kind === "file") {
       const b = this.branch || {};
       const row = walkPrOf(d.taskId);
-      return { title: `${b.branch || "branch"} vs ${b.base || "base"}`, note: b.truncated ? "patch cut short" : "", more: "",
+      const what = b.mode === "unstaged" ? "uncommitted changes" : b.mode === "staged" ? "staged changes" : "vs " + (walkShort(b.base) || "base");
+      return { title: `${b.branch || "branch"} ${b.mode === "unstaged" || b.mode === "staged" ? "· " : ""}${what}`, note: b.truncated ? "patch cut short" : "", more: "",
         url: row && row.url || "" };
     }
     if (first) {
@@ -806,7 +871,8 @@ const walkTenant = {
     const n = d.items.length;
     const row = walkPrOf(d.taskId);
     if (row) return "walk PR #" + row.number;
-    if ((n && d.items[0].kind === "file") || (!n && d.error)) return "walk";
+    if (n && d.items[0].kind === "file") return "walk " + n + (n === 1 ? " changed file" : " changed files");
+    if (!n && d.error) return "walk";
     return "walk " + n + (n === 1 ? " finding" : " findings");
   },
 
@@ -876,13 +942,25 @@ const walkTenant = {
     const f = it.file;
     const at = this.at && this.at.key === it.key ? this.at.li : -1;
     const hook = typeof walkPrAfterLine === "function";
-    const rows = f.lines.slice(0, walkFileLines).map((l, li) => `<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : l.t === "@" ? " hk" : ""}${li === at ? " at" : ""}" data-li="${li}"><span class="wk-ln"${l.n !== null && l.t !== "-" ? ` data-ln="${l.n}" data-tip="comment on line ${l.n}"` : ""}>${
-      l.n === null ? "" : l.n}</span><span class="wk-mk">${l.t === "@" ? "" : l.t === " " ? "" : l.t}</span><span class="wk-tx">${esc(l.text) || "&nbsp;"}</span></div>${
+    const cap = this.allLines.has(it.key) ? f.lines.length : walkFileLines;
+    const shown = f.lines.slice(0, cap);
+    const words = walkWords(shown);
+    const askBtn = (li, what) => hook ? `<button type="button" class="wk-ask" data-wp="ask" data-li="${li}" data-tip="ask the agent about this ${what}">ask the agent</button>` : "";
+    const big = f.lines.length > walkBigFile && !this.allLines.has(it.key);
+    const folded = big || this.folded.has(it.key);
+    const rows = folded ? "" : shown.map((l, li) => `<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : l.t === "@" ? " hk" : ""}${li === at ? " at" : ""}" data-li="${li}"><span class="wk-lo">${
+      l.o === null || l.o === undefined ? "" : l.o}</span><span class="wk-ln"${l.n !== null && l.t !== "-" ? ` data-ln="${l.n}" data-tip="comment on line ${l.n}"` : ""}>${
+      l.n === null ? "" : l.n}</span><span class="wk-mk">${l.t === "@" ? "" : l.t === " " ? "" : l.t}</span><span class="wk-tx">${l.t === "@" ? esc(l.text) + askBtn(li, "hunk") : walkFileText(l.text, words.get(li))}</span></div>${
       hook && l.n !== null && l.t !== "-" ? walkPrAfterLine(f.path, l.n) : ""}`).join("");
-    const cut = f.lines.length > walkFileLines ? `<div class="wk-warn">${f.lines.length - walkFileLines} more lines, not shown</div>` : "";
+    const cut = big ? `<button type="button" class="wk-more" data-all="1">⋯ a large file, ${f.lines.length} lines. Show all of them</button>`
+      : f.lines.length > cap ? `<button type="button" class="wk-more" data-all="1">⋯ ${f.lines.length - cap} more lines, show them</button>` : "";
     const none = f.lines.length ? "" : `<div class="wk-warn">${f.status === "binary" ? "a binary file, no lines to show" : "no line changes (a rename or a mode change)"}</div>`;
-    return `<div class="wk-fhead"><span class="wk-num">${esc(it.num)}</span><span class="wk-sev s-nit">${esc(it.sevText)}</span><span class="wk-where">${
-      esc(f.path)}${f.from !== f.path ? " (was " + esc(f.from) + ")" : ""} · +${f.add} -${f.del}</span></div>${none}<div class="wk-code">${rows}</div>${cut}`;
+    const blocks = 5, filled = f.add + f.del ? Math.max(1, Math.round(blocks * f.add / (f.add + f.del))) : 0;
+    const bar = Array.from({ length: f.add + f.del ? blocks : 0 }, (_, i) => `<i class="${i < filled ? "a" : "d"}"></i>`).join("");
+    return `<div class="wk-file"><div class="wk-fbar"><button type="button" class="wk-fold" data-fold="1" aria-expanded="${!folded}" data-tip="${folded ? "show" : "hide"} this file's diff">${
+      folded ? "▸" : "▾"}</button><span class="wk-num">${esc(it.num)}</span><span class="wk-fpath">${
+      esc(f.path)}${f.from !== f.path ? " <span class=\"wk-was\">(was " + esc(f.from) + ")</span>" : ""}</span><span class="wk-fstat"><b class="a">+${f.add}</b><b class="d">-${f.del}</b><span class="wk-sq">${bar}</span></span>${askBtn(Math.max(0, f.lines.findIndex(l => l.t !== "@")), "file")}</div>${
+      none}${folded ? "" : `<div class="wk-code">${rows}</div>`}</div>${big || !folded ? cut : ""}`;
   },
 
   // The talk with the review card about this finding: the `Thread:` lines, oldest first, and a box to say more.
@@ -1274,10 +1352,13 @@ function walkTakeTheirs(it) {
   dockPaint();
 }
 
-// The review panel the walker launched: cards whose launcher is the walker and whose runner is still up.
+// The review panel the walker launched: cards whose launcher is the walker and whose runner is still up, plus one
+// while the live walker has started the panel and launched nothing yet (the daemon's `activity.panel`).
 function walkPanelLive(walkerId) {
   if (typeof lastTasks === "undefined" || !walkerId) return 0;
-  return lastTasks.filter(t => cardLive(t) && (l => !!l && l.id === walkerId)(launcherOf(t, lastTasks))).length;
+  const w = lastTasks.find(t => t.id === walkerId);
+  return lastTasks.filter(t => cardLive(t) && (l => !!l && l.id === walkerId)(launcherOf(t, lastTasks))).length +
+    (cardLive(w) && w.activity && w.activity.panel ? 1 : 0);
 }
 
 // When the panel's merged.md has landed and was not applied, ask once per version of it what to do with it.
@@ -1514,7 +1595,7 @@ function walkGripDown(e) {
   files.addEventListener("keydown", walkKeydown);
   const onClick = e => {
     // Found before the menu shuts: walk.html repaints by innerHTML, which takes the clicked node out of the page.
-    const el = e.target.closest("[data-act],[data-i],[data-more],[data-ev]");
+    const el = e.target.closest("[data-act],[data-i],[data-more],[data-ev],[data-fold],[data-all]");
     const inDrawer = el && (drawer.contains(el) || files.contains(el));
     if (dock.menu && !e.target.closest('.wk-menu,[data-act="m"]')) { dock.menu = false; dockPaint(); }
     if (!inDrawer) return;
@@ -1527,6 +1608,15 @@ function walkGripDown(e) {
       const c = walkTenant.ctx;
       if (c.key !== dock.cur) { c.key = dock.cur; c.above = 3; c.below = 3; }
       c[el.dataset.more] += 5;
+      dockPaint();
+      return;
+    }
+    if (el.dataset.all) { walkTenant.allLines.add(dock.cur); dockPaint(); return; }
+    if (el.dataset.fold) {
+      const cur = dockCurrent();
+      if (cur && cur.file && cur.file.lines.length > walkBigFile && !walkTenant.allLines.has(dock.cur)) walkTenant.allLines.add(dock.cur);
+      else if (walkTenant.folded.has(dock.cur)) walkTenant.folded.delete(dock.cur);
+      else walkTenant.folded.add(dock.cur);
       dockPaint();
       return;
     }

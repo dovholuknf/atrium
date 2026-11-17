@@ -440,6 +440,18 @@ async function launchLinkSection(browser, base) {
     await p.evaluate(() => window.__consumer({}));
     lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1) fail("launchLink: a foreign or empty launch landed " + JSON.stringify(lands));
+    // A room's walk link clicked in that card's terminal on the hub board opens the walk here, not a tab on the room.
+    const walked = await p.evaluate(() => {
+      const got = { walks: [], tabs: [] };
+      window.walkDirOpen = d => got.walks.push(d);
+      window.openLinkReused = u => got.tabs.push(u);
+      termTask = { id: "sgg~c1" };
+      openTermURL({ preventDefault() {} }, "http://127.0.0.1:1/#card=c1&walk=/w/x");
+      openTermURL({ preventDefault() {} }, "http://127.0.0.1:1/#card=c2&walk=/w/y");
+      termTask = null;
+      return got;
+    });
+    if (walked.walks.join() !== "/w/x" || walked.tabs.join() !== "http://127.0.0.1:1/#card=c2&walk=/w/y") fail("launchLink: walk links " + JSON.stringify(walked));
     const man = await p.evaluate(() => document.querySelector('link[rel="manifest"]') && document.querySelector('link[rel="manifest"]').getAttribute("href"));
     if (man !== "/manifest.webmanifest") fail("launchLink: the board links manifest " + man);
     // no launchQueue: boots clean and registers nothing
@@ -857,10 +869,16 @@ async function launchGroupPlusSection(browser, base) {
     if (process.env.GROUP_PLUS_SHOTS) await p.locator("dialog#na").screenshot({ path: process.env.GROUP_PLUS_SHOTS + "/dialog.png" });
     await p.click("#na-x");
     if (!(await p.locator('#term-list .tnest[data-group="active"]').count())) fail(tag + "pressing the + folded the group");
-    await p.evaluate(() => setGrouping({ mode: "recency" }));
-    await p.waitForFunction(() => [...document.querySelectorAll("#term-list .tgroup .tgname")].some(n => RECENCY_ORDER.includes(n.textContent.trim())), null, { timeout: slow(5000) })
-      .catch(() => fail(tag + "no age bucket heading drawn"));
-    if (await p.locator("#term-list .tgroup .tgadd").count()) fail(tag + "an age bucket heading has a +");
+    const pluses = await p.locator("#term-list .tgroup .tgadd").evaluateAll(els => els.map(e => e.dataset.gnew));
+    if (JSON.stringify(pluses) !== '["active"]') fail(tag + "custom mode put a + on " + JSON.stringify(pluses));
+    for (const mode of ["recency", "repo", "room", "status", "runner", "prefix", "tag"]) {
+      await p.evaluate(m => setGrouping({ mode: m }), mode);
+      await p.waitForFunction(() => {
+        const g = grouper(), drawn = new Set([...document.querySelectorAll("#term-list .tgroup .tgname")].map(n => n.textContent.trim()));
+        return cardList().filter(t => !t.pinned).every(t => (g.of(t) || [""]).every(n => drawn.has(String(n || "uncategorized"))));
+      }, null, { timeout: slow(5000) }).catch(() => fail(tag + mode + " drew no headings"));
+      if (await p.locator("#term-list .tgroup .tgadd").count()) fail(tag + "a " + mode + " heading has a +");
+    }
     if (errors.length) fail(tag + "page errors " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;

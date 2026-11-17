@@ -71,8 +71,8 @@ func newRun() *cobra.Command {
 		"serve the atrium alone, and never look for or start a room")
 	c.Flags().StringVar(&l.dir, "dir", "", "where this machine's room keeps its certificate")
 	c.Flags().StringVar(&l.db, "db", "", "the room's database")
-	c.Flags().StringVar(&l.human, "http", defaultRoomHTTP(), "the room's own board, for when the atrium is down")
-	c.Flags().StringVar(&l.agent, "agent", defaultRoomAgent(), "where the room's agents report")
+	c.Flags().StringVar(&l.human, "http", defaultRoomHTTP(), "the room's own board, for when the atrium is down (a non-loopback address starts with a warning)")
+	c.Flags().StringVar(&l.agent, "agent", defaultRoomAgent(), "where the room's agents report, loopback only (a non-loopback address is refused)")
 	isolatedFlag(c, &isolated)
 	acceptUpgradeFlag(c)
 	return c

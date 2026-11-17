@@ -326,3 +326,63 @@ func TestAWakeSayToAPausedCardResumesItAndDelivers(t *testing.T) {
 		t.Fatalf("undelivered %d, want 0", n)
 	}
 }
+
+// A parked card the operator then paused is both, and a wake say must resume it rather than answer and start nothing.
+func TestAWakeSayToAParkedThenPausedCardResumesItAndDelivers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	for _, door := range []string{"tell", "message"} {
+		t.Run(door, func(t *testing.T) {
+			d := testDaemon(t)
+			d.hk.keptTick, d.hk.keptSettle = 20*time.Millisecond, 100*time.Millisecond
+			target := cardFor(t, d, "putdown")
+			peerCard(t, d, "alice")
+			t.Cleanup(func() { d.pending.stopAll() })
+			if err := d.st.SetResumeID(target.ID, "conv-1"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := d.st.Park(target.ID, store.StatusNeedsInput, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.st.SetStatus(target.ID, store.StatusPaused); err != nil {
+				t.Fatal(err)
+			}
+			d.sup.remove(target.ID)
+			var f *fakePTY
+			launched := 0
+			d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
+				if cur, _ := d.st.Get(target.ID); cur.Status == store.StatusPaused {
+					return nil, ontoRefusal(cur, false)
+				}
+				launched++
+				_, f = typedRunner(t, d, target.ID)
+				return d.st.Get(target.ID)
+			}
+
+			raw, _ := json.Marshal(map[string]any{"from": "alice", "to": "putdown", "text": "WAKEONE", "wake": true})
+			w := httptest.NewRecorder()
+			if door == "tell" {
+				d.handleTell(w, httptest.NewRequest(http.MethodPost, "/tell", strings.NewReader(string(raw))))
+			} else {
+				r := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+target.ID+"/message", strings.NewReader(string(raw)))
+				r.SetPathValue("id", target.ID)
+				d.handleMessage(w, r)
+			}
+			if w.Code != http.StatusOK || launched != 1 {
+				t.Fatalf("wake say answered %d, resumed %d times: %s", w.Code, launched, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), "resumed") {
+				t.Fatalf("the answer does not say the card was resumed: %s", w.Body.String())
+			}
+			if cur, _ := d.st.Get(target.ID); cur.Status == store.StatusPaused || cur.ParkedAt != nil {
+				t.Fatalf("after the wake: status %s, parked %v", cur.Status, cur.ParkedAt)
+			}
+			d.WakeSawSession(target.ID, "conv-1")
+			testwait.Eventually(t, 5*time.Second, "the wake text delivered", func() bool {
+				n, _ := d.st.UndeliveredCount(target.ID)
+				return strings.Contains(f.written(), "WAKEONE") && n == 0
+			})
+		})
+	}
+}

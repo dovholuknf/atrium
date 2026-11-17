@@ -874,6 +874,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if woke {
+		out["resumed"] = true
+		out["warning"] = wokeNote
+	}
 	if holding {
 		// Queued, never typed, whatever the hooks report about reach.
 		out["delivered"] = "queued"

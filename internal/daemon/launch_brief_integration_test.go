@@ -3,14 +3,13 @@
 package daemon
 
 import (
+	"encoding/json"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -55,6 +54,24 @@ func TestLaunchWritesBriefFile(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "hello from the orchestrator") {
 		t.Fatalf("brief content missing: %q", raw)
+	}
+}
+
+func TestANonClaudeRunnersBriefCarriesItsCardsWalkLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+	dir := t.TempDir()
+	_, _ = d.Launch(shared.LaunchRequest{Harness: briefHarness(t, d), Cwd: dir, Brief: "the task"})
+	raw, _ := os.ReadFile(filepath.Join(dir, briefFileName))
+	all, err := d.st.List()
+	if err != nil || len(all) != 1 {
+		t.Fatalf("cards %v %v", all, err)
+	}
+	if id := all[0].ID; !strings.Contains(string(raw), "/#card="+id+"&walk=") {
+		t.Fatalf("card %q, brief %q", id, raw)
 	}
 }
 
@@ -136,16 +153,13 @@ func TestABriefThatAlreadyHasTheLineIsNotDoubled(t *testing.T) {
 	}
 }
 
-// promptSeenBy launches `req` on a runner that writes the first prompt it was
-// given to a file, and returns what it wrote ("" if it was never started).
+// promptSeenBy reads the prompted event Launch writes before it returns: a loaded box may not have run the child yet.
 func promptSeenBy(t *testing.T, d *Daemon, req shared.LaunchRequest) string {
 	t.Helper()
-	// forward slashes: sh on Windows reads a backslash in the redirect as an escape
-	out := filepath.ToSlash(filepath.Join(t.TempDir(), "prompt.txt"))
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "promptcatch", Label: "prompt catch", Enabled: true, Cmd: "sh", LaunchMode: store.LaunchPTY,
-		PromptArgs: []string{"-c", `printf %s "$0" > ` + out + `; sleep 5`, "{prompt}"},
-		ResumeArgs: []string{"-c", `printf %s "resumed:$0 $1" > ` + out + `; sleep 5`, "{resume}", "{prompt}"},
+		PromptArgs: []string{"-c", "sleep 5", "{prompt}"},
+		ResumeArgs: []string{"-c", "sleep 5", "{resume}", "{prompt}"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -155,13 +169,17 @@ func promptSeenBy(t *testing.T, d *Daemon, req shared.LaunchRequest) string {
 		t.Skipf("could not spawn a test runner here: %v", err)
 	}
 	t.Cleanup(func() { _ = d.StopRunner(task.ID) })
-	var got string
-	testwait.PollEvery(50*time.Millisecond, 5*time.Second, func() bool {
-		raw, err := os.ReadFile(out)
-		got = string(raw)
-		return err == nil && got != ""
-	})
-	return got
+	events, err := d.st.Events(task.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		var p struct{ Text, Via string }
+		if e.Kind == store.EventPrompted && json.Unmarshal(e.Payload, &p) == nil && p.Via == "launch" {
+			return p.Text
+		}
+	}
+	return ""
 }
 
 func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
@@ -177,6 +195,23 @@ func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
 	again := promptSeenBy(t, d, shared.LaunchRequest{Prompt: withGitURLLine("already")})
 	if strings.Count(again, "atrium_git_url") != 1 {
 		t.Fatalf("doubled: %q", again)
+	}
+}
+
+func TestANonClaudeLaunchWithAPromptAndNoBriefCarriesTheWalkLinkOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	d := testDaemon(t)
+	d.opts.HumanAddr = "127.0.0.1:7781"
+	got := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "just do it"})
+	all, err := d.st.List()
+	if err != nil || len(all) != 1 {
+		t.Fatalf("cards %v %v", all, err)
+	}
+	if n := strings.Count(got, "/#card="+all[0].ID+"&walk="); n != 1 || !strings.HasPrefix(got, "just do it") {
+		t.Fatalf("walk link %d times in %q", n, got)
 	}
 }
 

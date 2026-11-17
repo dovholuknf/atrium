@@ -256,6 +256,8 @@ mock.page502 = false;
 // The reconnect delay the event stream asks for, in ms. 0 says nothing and leaves the browser's own 3s, which is what
 // the daemon does. A section that drops the stream on purpose sets it so the reconnect is not waited out.
 mock.sseRetry = 0;
+mock.sseRefuse = false;
+mock.sseRefused = 0;
 mock.gateCalls = { input: 0, pause: 0, resume: 0 };
 mock.ALPHA = { name: "alpha", host: "alpha-host" };
 mock.SGG = { name: "sgg", host: "sgg-host" };
@@ -837,6 +839,7 @@ const server = http.createServer((req, res) => {
   // opens `/v1/events/hub`, and the room-picker test writes a `rooms` event onto
   // that one to make a room attach while the dropdown is open.
   if (url === "/v1/events" || url === "/v1/events/hub" || url.startsWith("/v1/events/room/")) {
+    if (mock.sseRefuse) { mock.sseRefused++; res.writeHead(401, { "Content-Type": "application/json" }); res.end("{}"); return; }
     // An event stream that stays open and says nothing. The board polls for its
     // data, so an idle stream is enough to keep it out of the reconnect state.
     res.writeHead(200, {

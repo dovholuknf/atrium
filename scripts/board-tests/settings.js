@@ -1,6 +1,6 @@
 // settings: settings, themes and skins, providers, preferences.
 //
-// Units: skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant.
+// Units: helpTip, helpRoomPane, helpGearBoard, skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/settings.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1362,7 +1362,92 @@ async function prefsEverywhereSection(browser, base) {
   if (!bad) console.log("prefsEverywhere ok");
 }
 
+// Help under a field is a ? after its label, never a paragraph. The tip shows on hover and on keyboard focus, and
+// Escape takes it away without closing the dialog it is in.
+async function helpTipSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof showSettingsPane === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("board"); });
+    const tip = () => p.evaluate(() => { const t = document.getElementById("tip"); return t.classList.contains("on") ? t.textContent : ""; });
+    const want = await p.evaluate(() => (document.querySelector("#s-mincols-field .help") || { dataset: {} }).dataset.tip || "");
+    if (!/never goes narrower/.test(want)) { fail("helpTip: the columns field has no ? holding its help: " + want); return; }
+    await p.focus("#s-mincols");
+    await p.keyboard.press("Shift+Tab");
+    const focused = await p.evaluate(() => document.activeElement.matches("#s-mincols-field .help"));
+    if (!focused) fail("helpTip: Shift+Tab from the columns box did not reach its ?");
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) }).catch(() => {});
+    if ((await tip()) !== want) fail("helpTip: keyboard focus on the ? did not show its help: " + (await tip()));
+    await p.keyboard.press("Escape");
+    if (await tip()) fail("helpTip: Escape left the tip up");
+    if (!(await p.evaluate(() => document.getElementById("settings").open))) fail("helpTip: Escape on a tip closed the dialog too");
+    await p.hover("#s-landk-field .help");
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000) }).catch(() => {});
+    if (!/LAND THE PLANE/.test(await tip())) fail("helpTip: hovering the ? did not show its help: " + (await tip()));
+    await p.keyboard.press("Escape");
+    if (await tip()) fail("helpTip: Escape left the hover tip up");
+  } finally {
+    await ctx.close();
+  }
+}
+
+// What a pane shows as a paragraph of help under a labelled field: nothing. A hintline holding an id is a status line.
+const inlineHelp = scope => [...document.querySelectorAll(scope + " .field")]
+  .filter(f => f.querySelector("label, .eyebrow"))
+  .flatMap(f => [...f.querySelectorAll(".hintline")])
+  .filter(h => !h.id && !h.querySelector("[id]") && h.textContent.trim())
+  .map(h => h.textContent.trim().slice(0, 60));
+
+async function helpRoomPaneSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openRoomCog === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => openRoomCog(""));
+    await p.waitForFunction(() => document.getElementById("roomcfg").open, null, { timeout: slow(5000) });
+    const got = await p.evaluate(`(${inlineHelp})("#roomcfg")`);
+    if (got.length) fail("helpRoomPane: help still written under fields: " + JSON.stringify(got));
+    const helps = await p.evaluate(() => document.querySelectorAll("#roomcfg .field .help[tabindex='0'][data-tip]").length);
+    if (helps < 15) fail("helpRoomPane: only " + helps + " ? icons in the room pane");
+    const sizes = await p.evaluate(() => {
+      const box = document.getElementById("s-openext-anywhere").closest("label");
+      const probe = document.createElement("label");
+      probe.className = "check";
+      document.querySelector("#roomcfg .dlg-body").appendChild(probe);
+      const out = { box: getComputedStyle(box).fontSize, check: getComputedStyle(probe).fontSize };
+      probe.remove();
+      return out;
+    });
+    if (sizes.box !== sizes.check) fail("helpRoomPane: the open externally tick box reads at " + sizes.box + ", its neighbours at " + sizes.check);
+  } finally {
+    await ctx.close();
+  }
+}
+
+async function helpGearBoardSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof showSettingsPane === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("board"); });
+    const got = await p.evaluate(`(${inlineHelp})("#settings")`);
+    if (got.length) fail("helpGearBoard: help still written under fields: " + JSON.stringify(got));
+    const tips = await p.evaluate(() => ["s-skin", "s-cardsize", "s-mincols", "s-ctxlimits"]
+      .map(id => !!document.querySelector(`label[for="${id}"] .help[data-tip]`)));
+    if (tips.includes(false)) fail("helpGearBoard: a board field has no ? after its label: " + JSON.stringify(tips));
+  } finally {
+    await ctx.close();
+  }
+}
+
 const units = [
+  { name: "helpTip", run: ({ browser, base }) => helpTipSection(browser, base) },
+  { name: "helpRoomPane", run: ({ browser, base }) => helpRoomPaneSection(browser, base) },
+  { name: "helpGearBoard", run: ({ browser, base }) => helpGearBoardSection(browser, base) },
   { name: "skinScope", run: ({ browser, base }) => skinScopeSection(browser, base) },
   { name: "skinHeal", run: ({ browser, base }) => skinHealSection(browser, base) },
   { name: "settingsOnce", run: ({ browser, base }) => settingsOnceSection(browser, base) },
@@ -1378,7 +1463,7 @@ const units = [
   { name: "themePickerShots", run: ({ browser, base }) => themePickerShotsSection(browser, base) },
   { name: "dropdownsInstant", run: ({ browser, base }) => dropdownsInstantSection(browser, base) },
 ];
-const sections = { skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection };
+const sections = { helpTip: helpTipSection, helpRoomPane: helpRoomPaneSection, helpGearBoard: helpGearBoardSection, skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

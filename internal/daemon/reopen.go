@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -169,6 +170,11 @@ func (d *Daemon) reopenLostRuns() {
 	if err != nil {
 		log.Printf("[atrium] could not read the unfiled runs: %v", err)
 		return
+	}
+	// A start stamped at or after boot is this daemon's own, live or exiting, and its exit files itself.
+	if !d.bootAt.IsZero() {
+		boot := d.bootAt.Truncate(time.Millisecond)
+		runs = slices.DeleteFunc(runs, func(r store.PtyRun) bool { return !r.Started.Before(boot) })
 	}
 	var wanted []*store.Task
 	seen := map[string]bool{}

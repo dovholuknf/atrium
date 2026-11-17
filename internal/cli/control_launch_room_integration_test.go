@@ -102,6 +102,30 @@ func TestStdioLaunchOnAnotherRoomGoesToThePeersRouteAndTouchesNoDisk(t *testing.
 	}
 }
 
+// Every launch field reaches the room's peers route, so a launch on another room can make its home there.
+func TestStdioLaunchOnAnotherRoomCarriesEveryLaunchField(t *testing.T) {
+	b := &launchBoardFake{answer: farLaunch()}
+	launchAgainst(t, b, "m1mini")
+	off := false
+	_, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Repo: "github.com/o/r", Branch: "claude/x",
+		Base: "claude/main", Room: "claude-sg4", Resident: true, Scratch: true, Lean: &off, MCP: []string{"m"},
+		Theme: "dusk", Chat: true, Isolated: true, ItemOwner: "human"})
+	if err != nil || len(b.across) != 1 {
+		t.Fatalf("launch: %v, across %d", err, len(b.across))
+	}
+	got := b.across[0]
+	if got["repo"] != "github.com/o/r" || got["branch"] != "claude/x" || got["base"] != "claude/main" ||
+		got["resident"] != true || got["scratch"] != true || got["lean"] != false || got["theme"] != "dusk" ||
+		got["chat"] != true || got["item"] != true || got["item_owner"] != "human" || len(got["mcp"].([]any)) != 1 {
+		t.Fatalf("the room was sent %+v", got)
+	}
+	b.across = nil
+	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Home: true, Room: "claude-sg4"}); err != nil ||
+		len(b.across) != 1 || b.across[0]["home"] != true {
+		t.Fatalf("home launch: %v, %+v", err, b.across)
+	}
+}
+
 // The dropped-options sentence the hub found comes back ahead of the note.
 func TestStdioLaunchOnAnotherRoomCarriesTheHubsWarning(t *testing.T) {
 	a := farLaunch()

@@ -486,7 +486,7 @@ addEventListener("popstate", async (e) => {
 });
 
 function switchView(name) {
-  if (EMERGING_VIEWS.includes(name) && !emergingOn()) name = "board";
+  if (EMERGING_VIEWS.includes(name) && !emergingOn()) name = "terms";
   // A popped-out window is one terminal and nothing else, forever. It has no
   // tabs to click, so every way it could become a board is indirect and none
   // of them are obvious from the call site: a tag chip calls `filterByTag`,
@@ -915,7 +915,7 @@ function cardHTML(t, wearAs) {
         data-tip="${esc("this session reported done at " + (t.report_sha || "") +
           ", and that commit is not in its worktree. it may have landed somewhere else.")}"
         >sha unverified</span>` : ""}
-      ${t.report_dirty ? `<span class="chip warn"
+      ${cardLeftover(t) ? `<span class="chip${cardLeftoverIsHumans(t) ? " warn" : ""}"
         data-tip="${esc("this session reported done with changes in its worktree not committed or not tracked. " +
           "only what it committed will land.")}"
         >done, ${t.report_dirty} file${t.report_dirty === 1 ? "" : "s"} not committed</span>` : ""}

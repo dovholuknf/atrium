@@ -140,6 +140,29 @@ func TestAKilledCardStaysDown(t *testing.T) {
 	}
 }
 
+func TestAKillStopsARunnerWhoseCardHasNoPid(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	d := testDaemon(t)
+	task := shellCard(t, d)
+	if err := d.st.SetResumeID(task.ID, "old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.st.Register(store.Observed{WireName: task.WireName, Worktree: task.Worktree,
+		Runner: "shelltest", Resume: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.st.Get(task.ID); got.PID != 0 {
+		t.Fatalf("the card still has pid %d, so the test proves nothing", got.PID)
+	}
+	if err := d.Kill(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitGone(t, d, task.ID)
+}
+
 // /exit TYPED IN THE CARD'S OWN TERMINAL keeps it down, and the same ending
 // during a wind-down does not.
 func TestATypedExitStaysDownAndAWindDownDoesNot(t *testing.T) {

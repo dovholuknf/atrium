@@ -5,12 +5,14 @@ package api
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -77,6 +79,88 @@ func TestCloseDeletesAMergedHubBranchAndAsksAboutAnUnmergedOne(t *testing.T) {
 	}
 	if !hubRowFor(t, oh.srv.st, card, "claude/wip").Live() || hubRowFor(t, oh.srv.st, card, "claude/done").Live() {
 		t.Fatal("close did not free the merged row and keep the unmerged one")
+	}
+}
+
+func TestCloseTakesAHubBranchCherryPickedIntoMainAsMerged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git repositories")
+	}
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+	run := func(args ...string) { git(t, dir, args...) }
+	run("init", "-q", "-b", "claude/main")
+	run("commit", "-q", "--allow-empty", "-m", "base")
+	run("checkout", "-q", "-b", "claude/picked")
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "f.txt")
+	run("commit", "-q", "-m", "work")
+	run("checkout", "-q", "claude/main")
+	run("commit", "-q", "--allow-empty", "-m", "other")
+	run("cherry-pick", "claude/picked")
+	if _, err := gitIn(ctx, dir, gitexec.IsAncestor{Commit: "claude/picked", Of: "claude/main"}); err == nil {
+		t.Fatal("the branch is an ancestor, so the test proves nothing")
+	}
+	if !hubBranchMerged(ctx, dir, "claude/picked") {
+		t.Fatal("a branch whose commit is in claude/main by cherry-pick was not taken as merged")
+	}
+}
+
+func TestCloseDeletesTheHubBranchFromARepositoryWhenTheCardFolderIsNot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, wt, _ := openForClose(t)
+	for _, b := range []string{"claude/main", "claude/done"} {
+		git(t, wt, "branch", b, "HEAD")
+
+	}
+	if _, err := oh.srv.st.AddResource(card, store.ResHubBranch, "claude/done", "github/o/r"); err != nil {
+		t.Fatal(err)
+	}
+	if err := oh.srv.st.SetWorktree(card, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	var from string
+	oh.srv.HubDelete = func(ctx context.Context, _, dir, _, _ string) error {
+		if _, err := gitIn(ctx, dir, gitexec.RevParseGitDirs{GitDir: true}); err != nil {
+			return errors.New("the hub did not delete it: fatal: not a git repository")
+		}
+		from = dir
+		return nil
+	}
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true})
+	if code != 200 || !out.Closed {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if from == "" || hubRowFor(t, oh.srv.st, card, "claude/done").Live() {
+		t.Fatalf("the hub branch was not deleted: %v", out.Warn)
+	}
+}
+
+func TestAHubBranchSquashedOntoTheForgesMainIsMergedWithNoClaudeMain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	_, _, wt, _ := openForClose(t)
+	ctx := context.Background()
+	commit := func(ref, msg string) string {
+		return "commit " + ref + "\ncommitter t <t@t> 1 +0000\ndata " + strconv.Itoa(len(msg)) + "\n" + msg +
+			"\nfrom HEAD\nM 100644 inline sq.txt\ndata 3\nsq\n\n"
+	}
+	fi := exec.CommandContext(ctx, "git", "fast-import", "--quiet")
+	fi.Dir = filepath.FromSlash(wt)
+	fi.Stdin = strings.NewReader(commit("refs/heads/claude/sq", "work") + commit("refs/remotes/origin/main", "squash"))
+	if out, err := fi.CombinedOutput(); err != nil {
+		t.Fatalf("git fast-import: %v\n%s", err, out)
+	}
+	if !hubBranchMerged(ctx, wt, "claude/sq") {
+		t.Fatal("a branch whose patch is on the forge's main was not read as merged")
 	}
 }
 

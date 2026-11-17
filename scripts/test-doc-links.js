@@ -18,9 +18,10 @@ const run = new Function("window", "document", "fetch", "URL", "Blob", fs.readFi
 run(win, doc, async u => { fetched.push(u); return { ok: true, arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.length) }; },
   { createObjectURL: b => { blobs.push(b); return "blob:x"; }, revokeObjectURL() {} }, Blob);
 
-const html = win.mMd.render("![before](/d/before-lab-png)\n\n![v](/d/a-b@2)", { id: "", worktree: "", noFiles: true });
+const html = win.mMd.render("![before](/d/before-lab-png)\n\n![v](/d/a-b@2)\n\n![raw](/_hub/docs/held-tile-desktop/raw)", { id: "", worktree: "", noFiles: true });
 if (!/class="md-img"[^>]*data-path="\/d\/before-lab-png"/.test(html)) fail("a published image ref was not an image node: " + html);
 if (!/data-path="\/d\/a-b@2"/.test(html)) fail("a versioned image ref was not an image node: " + html);
+if (!/class="md-img"[^>]*data-path="\/d\/held-tile-desktop"/.test(html)) fail("a /_hub/docs raw image ref was not an image node: " + html);
 if (/not loaded/.test(html)) fail("a published image ref was shown as not loaded: " + html);
 
 (async () => {

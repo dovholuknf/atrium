@@ -23,6 +23,7 @@ func init() {
 		"phrase":                 checkPhrase,
 		"go-build":               checkGoBuild,
 		"git-alias-config":       checkGitAliasConfig,
+		"git-program-config":     checkGitProgramConfig,
 		"git-global-option":      checkGitGlobalOption,
 		"git-alias":              checkGitAlias,
 		"git-unknown-subcommand": checkGitUnknown,

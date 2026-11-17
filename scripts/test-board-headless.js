@@ -7438,7 +7438,7 @@ async function headerFoldSection(browser, base) {
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
-      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await p.waitForSelector(".tab.on", { timeout: slow(15000) });
       await p.evaluate(() => {
         window.paintWorking = () => {};
         window.paintToastLogBadge = () => {};
@@ -7448,7 +7448,7 @@ async function headerFoldSection(browser, base) {
         const rt = show("rooms-t", "3/5 rooms"); rt.dataset.n = "3/5";
         document.getElementById("rooms").hidden = false;
         document.querySelector("#toastlog-open .count").textContent = "7";
-        const views = ["audit", "files"].concat(emergingOn() ? ["items", "pulls", "hubrepos", "backlog"] : []);
+        const views = ["files"].concat(emergingOn() ? ["audit", "items", "pulls", "hubrepos", "backlog"] : []);
         for (const v of views) document.querySelector('.tab[data-view="' + v + '"]').hidden = false;
         const cp = document.getElementById("c-perm"); cp.textContent = "3"; cp.classList.remove("zero");
       });
@@ -7510,7 +7510,7 @@ async function emergingSwitchSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForSelector(".tab.on", { timeout: slow(15000) });
     const gated = ["items", "pulls", "hubrepos", "backlog"];
     const state = () => p.evaluate((g) => {
       hubIsHub = true;
@@ -7532,7 +7532,7 @@ async function emergingSwitchSection(browser, base) {
     await p.evaluate(() => { document.getElementById("settings").close(); switchView("backlog"); });
     await p.evaluate(() => emergingSet(false));
     st = await state();
-    if (st.shown.length || st.on !== "board" || st.mark || st.stored !== "0") fail("emergingSwitch: off did not hide the tabs and fall back to the board: " + JSON.stringify(st));
+    if (st.shown.length || st.on !== "terms" || st.mark || st.stored !== "0") fail("emergingSwitch: off did not hide the tabs and fall back to terminals: " + JSON.stringify(st));
     await p.evaluate(() => { localStorage.setItem("atrium.emerging", "1"); emergingApply(); });
     const mark = await p.evaluate(() => getComputedStyle(document.querySelector('.tab[data-view="items"]'), "::after").content);
     if (mark !== "none") fail("emergingSwitch: the items tab wears a marker: " + mark);
@@ -9160,9 +9160,9 @@ async function termFindSpeakerSection(browser, base) {
 }
 
 // ── clean copy: a selection of a reply is copied as written ───────────────
-// A quoted block drawn with an indent, a bar and hard wraps is selected. A plain copy is the render. A "copy clean"
-// button pops up beside the selection, and clicking it copies the reply's own substring, markdown kept. No toast either
-// way. The button goes on clear, scroll and Escape, and never shows for a selection no reply holds or a failed endpoint.
+// With clean copy by default off. A quoted block drawn with an indent, a bar and hard wraps is selected. A plain copy is
+// the render. A "copy clean" button pops up beside the selection, and clicking it copies the reply's own substring,
+// markdown kept. No toast either way. The button goes on clear, scroll and Escape. The default is cleanCopyDefault's.
 // Also: an image paste no longer toasts where it landed.
 async function cleanCopySection(browser, base) {
   const was = mock.tasksMode;
@@ -9187,6 +9187,7 @@ async function cleanCopySection(browser, base) {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       writeText: t => { window.__clip.push(t); return Promise.resolve(); },
       readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+    localStorage.setItem("atrium.cleanCopy", "0");
   });
   const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\n"
     + "```go\nfunc main() {}\n```\n\nThanks.";
@@ -9303,15 +9304,30 @@ async function cleanCopySection(browser, base) {
     const reClip = await p.evaluate(() => window.__clip.slice());
     if (reClip[reClip.length - 1] !== want) fail("cleanCopy: after a reattach the button copied " + JSON.stringify(reClip) + ", not " + JSON.stringify(want));
 
-    // 2. Gone when the selection clears, on scroll and on Escape.
+    // 2. Gone on a click elsewhere, a wheel and Escape.
     await select(shown, [2, 3]);
-    await p.evaluate(() => term.clearSelection());
+    await p.mouse.click(sbox.x + sc.w * 30, sbox.y + sc.h * 0.5);
     await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
-    if (await btn()) fail("cleanCopy: the button stayed after the selection cleared");
+    if (await btn()) fail("cleanCopy: the button stayed after a click on the terminal");
     await select(shown, [2, 3]);
-    await p.evaluate(() => { for (let i = 0; i < 60; i++) term.write("\r\nfiller " + i); term.scrollLines(-5); });
+    await p.mouse.move(sbox.x + sc.w * 30, sbox.y + sc.h * 0.5);
+    await p.mouse.wheel(0, -100);
     await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
-    if (await btn()) fail("cleanCopy: the button stayed after a scroll");
+    if (await btn()) fail("cleanCopy: the button stayed after a wheel");
+
+    // 2a. Hovered and left while the runner writes output that scrolls and redraws through the alternate screen: it
+    // stays, and the hover keeps its own background instead of the board's button hover, which painted none at first.
+    const h = await select(shown, [2, 3]);
+    await p.mouse.move(h.btn.x + h.btn.width / 2, h.btn.y + h.btn.height / 2);
+    const hoverBg = await p.evaluate(() => getComputedStyle(document.getElementById("cc-btn")).backgroundImage);
+    if (!/gradient/.test(hoverBg)) fail("cleanCopy: the hovered button has no background of its own: " + hoverBg);
+    await p.mouse.move(sbox.x + sc.w * 30, sbox.y + sc.h * 0.5, { steps: 4 });
+    await p.evaluate(() => new Promise(r => term.write("\r\nmore output".repeat(40) + "\x1b[?1049hframe\x1b[?1049l", r)));
+    if (!await btn()) fail("cleanCopy: the button went when the pointer left it while the runner wrote");
+
+    // 2b. A selection of nothing but blanks gets no button.
+    const blank = await select("  \r\n      \r\n", [0, 1]);
+    if (blank.btn) fail("cleanCopy: a button for a selection of only whitespace: " + JSON.stringify(blank.sel));
     await select(shown, [2, 3]);
     await p.keyboard.press("Escape");
     await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
@@ -9427,6 +9443,188 @@ async function cleanCopySection(browser, base) {
   mock.tasksMode = was;
 }
 
+// ── clean copy by default: under the limit the default copy is clean and the button copies as shown ──
+async function cleanCopyDefaultSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__clip = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: t => { window.__clip.push(t); return Promise.resolve(); },
+      write: items => Promise.resolve(items[0].getType("text/plain")).then(b => b.text()).then(t => { window.__clip.push(t); }),
+      readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+  });
+  const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\nThanks.";
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "cleanCopyDefault", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await frames(p, 3);
+    const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
+    const want = "> Please review the plan and tell me what is missing from it.";
+    // Selects the quote, does what ctrl-c does, and reads the copy, the button's label, and what a click on it copies.
+    const copy = async () => {
+      await p.evaluate(([out]) => {
+        window.__clip = [];
+        resetTerm(term);
+        termSock.onmessage({ data: out });
+      }, [shown]);
+      await termWrite(p, "");
+      const sel = await p.evaluate(async () => { term.selectLines(2, 3); copySelection(); await offerCleanCopy(); return termSelectionText(term); });
+      await p.waitForFunction(() => window.__clip.length === 1, null, { timeout: slow(5000) }).catch(() => {});
+      const r = await p.evaluate(() => ({ clip: window.__clip.slice(), label: (document.getElementById("cc-btn") || {}).textContent }));
+      if (r.label) {
+        await p.click("#cc-btn");
+        await p.waitForFunction(() => window.__clip.length === 2, null, { timeout: slow(5000) }).catch(() => {});
+      }
+      return Object.assign(r, { sel, clicked: await p.evaluate(() => window.__clip[1]) });
+    };
+
+    // 1. Under the limit: ctrl-c copies the reply's markdown, and the button copies the render.
+    const a = await copy();
+    if (!/▎/.test(a.sel)) fail("cleanCopyDefault: the selection holds no bar, so this proves nothing: " + JSON.stringify(a.sel));
+    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopyDefault: under the limit ctrl-c copied " + JSON.stringify(a.clip) + ", not " + JSON.stringify(want));
+    if (a.label !== "copy as shown") fail("cleanCopyDefault: under the limit the button reads " + JSON.stringify(a.label));
+    if (a.clicked !== a.sel) fail("cleanCopyDefault: copy as shown copied " + JSON.stringify(a.clicked) + ", not the render " + JSON.stringify(a.sel));
+
+    // 2. At the limit, and over it: ctrl-c copies the render, and the button copies clean.
+    for (const over of [0, 1]) {
+      await p.evaluate(n => setCleanCopyLimit(n), a.sel.length - over);
+      const b = await copy();
+      const tag = over ? "over" : "at";
+      if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail(`cleanCopyDefault: ${tag} the limit ctrl-c copied ` + JSON.stringify(b.clip));
+      if (b.label !== "copy clean") fail(`cleanCopyDefault: ${tag} the limit the button reads ` + JSON.stringify(b.label));
+      if (b.clicked !== want) fail(`cleanCopyDefault: ${tag} the limit copy clean copied ` + JSON.stringify(b.clicked));
+    }
+
+    // 3. The toggle off: as shown under the default limit, and the button offers clean.
+    await p.evaluate(() => { setCleanCopyLimit(""); setCleanCopy(false); });
+    const c = await copy();
+    if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopyDefault: with the toggle off ctrl-c copied " + JSON.stringify(c.clip));
+    if (c.label !== "copy clean" || c.clicked !== want) fail("cleanCopyDefault: with the toggle off the button was " + JSON.stringify([c.label, c.clicked]));
+    await p.evaluate(() => setCleanCopy(true));
+
+    // 4. The gear: defaults, the limit greyed while off, and both kept over a reload.
+    await p.evaluate(() => { term.clearSelection(); hideCleanCopy(); document.getElementById("gear").click(); showSettingsPane("copying"); });
+    const gear = () => p.evaluate(() => ({ on: document.getElementById("s-cleancopy").checked,
+      limit: document.getElementById("s-cleanlimit").value, off: document.getElementById("s-cleanlimit").disabled }));
+    const g0 = await gear();
+    if (!g0.on || g0.limit !== "16000" || g0.off) fail("cleanCopyDefault: the gear opened on " + JSON.stringify(g0) + ", not on and 16000");
+    await p.fill("#s-cleanlimit", "5000");
+    await p.press("#s-cleanlimit", "Tab");
+    await p.click("#s-cleancopy");
+    const g1 = await gear();
+    if (g1.on || !g1.off) fail("cleanCopyDefault: the limit stayed live with the toggle off: " + JSON.stringify(g1));
+    const q = await ctx.newPage();
+    q.on("pageerror", e => errors.push(String(e)));
+    await q.goto(base, { waitUntil: "domcontentloaded" });
+    await q.waitForFunction(() => typeof paintSettings === "function" && typeof cleanCopyOn === "boolean", null, { timeout: slow(15000) });
+    const kept = await q.evaluate(() => ({ on: cleanCopyOn, limit: cleanCopyLimit() }));
+    if (kept.on || kept.limit !== 5000) fail("cleanCopyDefault: a reload kept " + JSON.stringify(kept) + ", not off and 5000");
+    await q.evaluate(() => { document.getElementById("gear").click(); showSettingsPane("copying"); });
+    const g2 = await q.evaluate(() => ({ on: document.getElementById("s-cleancopy").checked,
+      limit: document.getElementById("s-cleanlimit").value, off: document.getElementById("s-cleanlimit").disabled }));
+    if (g2.on || g2.limit !== "5000" || !g2.off) fail("cleanCopyDefault: after a reload the gear shows " + JSON.stringify(g2));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("cleanCopyDefault: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
+// ── clean copy under Safari's rule: a clipboard write starts inside the keypress, though the lookup takes 750ms ──
+// The stub refuses a write called after the key handler returns, as Safari does, and holds a ClipboardItem's promise.
+// ctrl-c is a real keypress. Without ClipboardItem the copy is the render at once, never nothing.
+async function cleanCopyGestureSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__clip = [];
+    window.__refused = 0;
+    let inGesture = false;
+    window.addEventListener("keydown", () => { inGesture = true; setTimeout(() => { inGesture = false; }, 0); }, true);
+    const no = () => { window.__refused++; return Promise.reject(new DOMException("not in a gesture", "NotAllowedError")); };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: t => { if (!inGesture) return no(); window.__clip.push(t); return Promise.resolve(); },
+      write: items => {
+        if (!inGesture) return no();
+        return Promise.resolve(items[0].getType("text/plain")).then(b => b.text()).then(t => { window.__clip.push(t); });
+      },
+      readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+  });
+  const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\nThanks.";
+  await ctx.route("**/v1/tasks/*/replies*", async route => {
+    await new Promise(r => setTimeout(r, 750)); // wait: a slow lookup is what this checks
+    await route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "cleanCopyGesture", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await frames(p, 3);
+    const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
+    const want = "> Please review the plan and tell me what is missing from it.";
+    const copy = async () => {
+      await p.evaluate(out => { window.__clip = []; window.__refused = 0; ccLook = null; resetTerm(term); termSock.onmessage({ data: out }); }, shown);
+      await termWrite(p, "");
+      const sel = await p.evaluate(() => { term.selectLines(2, 3); term.focus(); return termSelectionText(term); });
+      await p.keyboard.press("Control+c");
+      await p.waitForFunction(() => window.__clip.length || window.__refused, null, { timeout: slow(5000) }).catch(() => {});
+      return Object.assign(await p.evaluate(() => ({ clip: window.__clip.slice(), refused: window.__refused })), { sel });
+    };
+
+    const a = await copy();
+    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopyGesture: ctrl-c with a 750ms lookup copied " + JSON.stringify(a) + ", not " + JSON.stringify(want));
+
+    await p.evaluate(() => { window.__CI = window.ClipboardItem; delete window.ClipboardItem; });
+    const b = await copy();
+    if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail("cleanCopyGesture: with no ClipboardItem ctrl-c copied " + JSON.stringify(b) + ", not the render");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("cleanCopyGesture: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
 // ── clean copy: the button sits in the terminal of the card in hand, not the first one opened ──
 async function cleanCopyTwoSection(browser, base) {
   const was = mock.tasksMode;
@@ -9464,8 +9662,10 @@ async function cleanCopyTwoSection(browser, base) {
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
     await p.evaluate(([out]) => {
       termSock.onmessage({ data: out });
-      term.selectLines(2, 3);
-      window.__offer = offerCleanCopy();
+      return new Promise(r => term.write("", r)).then(() => {
+        term.selectLines(2, 3);
+        window.__offer = offerCleanCopy();
+      });
     }, [shown]);
     await p.waitForSelector("#cc-btn", { timeout: slow(5000) });
     const r = await p.evaluate(() => {
@@ -11216,7 +11416,10 @@ async function peekKidsSection(browser, base) {
         keyRows: d.querySelectorAll(".peek-row").length,
         oneSum: one.querySelector("[data-sum]").dataset.sum, oneRows: one.querySelectorAll(".peek-kidrow").length,
         needText: q.textContent.replace(/\s+/g, " "), needLabels: [...q.querySelectorAll(".peek-sec.need b")].map(b => b.textContent),
-        none: peekKidsHtml(null)
+        none: peekKidsHtml(null),
+        leftHuman: peekRows({ id: "l1", status: "done", report_dirty: 1 }).includes("not committed"),
+        leftLaunched: peekRows({ id: "l2", status: "done", report_dirty: 1, spawned_by: "orch@sg3" }).includes("NEEDS") || peekRows({ id: "l2", status: "done", report_dirty: 1, spawned_by: "orch@sg3" }).includes("not committed"),
+        leftResumed: peekRows({ id: "l3", status: "running", report_dirty: 1 }).includes("not committed")
       };
       d.querySelector(".peek-dh").click();
       r.openAfterClick = d.classList.contains("open");
@@ -11234,6 +11437,9 @@ async function peekKidsSection(browser, base) {
     if (!got.openAfterClick) fail("peekKids: a click did not open the children drawer.");
     if (/open questions/i.test(got.needText) || got.needLabels.includes("open questions")) fail("peekKids: the questions still carry an 'open questions' label: " + got.needText);
     if (!/which way\?/.test(got.needText)) fail("peekKids: the question is not under NEEDS YOU: " + got.needText);
+    if (!got.leftHuman) fail("peekKids: a done card with no launcher and an uncommitted file is not under NEEDS YOU.");
+    if (got.leftLaunched) fail("peekKids: a launched card's uncommitted file is under NEEDS YOU.");
+    if (got.leftResumed) fail("peekKids: a card that works again still shows its uncommitted file.");
     if (errors.length) fail("peekKids: page errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
@@ -13046,6 +13252,62 @@ async function walkLateSection(browser, base) {
   }
   if (errors.length) fail("walkLate: the page threw: " + errors.join(" | "));
   console.log("walkLate: ok");
+}
+
+// A CARD THE HUB ANSWERED 404 FOR WHILE ITS ROOM WAS AWAY GETS THE BUTTON ON ITS OWN NEXT EVENT: secfix-v0.5.2 on
+// claude-sg4, working with commits and edits and no walk.
+async function walkRoomBackSection(browser, base) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkback-"));
+  const id = "land-wback";
+  fs.mkdirSync(path.join(tmp, id, "findings"), { recursive: true });
+  mock.walkDirs[id] = path.join(tmp, id);
+  const patch = "diff --git a/one.txt b/one.txt\nnew file mode 100644\nindex 0000000..5626abf\n--- /dev/null\n+++ b/one.txt\n@@ -0,0 +1 @@\n+one\n";
+  const later = { code: 200, body: { branch: "claude/secfix-v0.5.2", base: "origin/HEAD", diff: patch, modes: { unstaged: 1, staged: 0, branch: 2 } } };
+  later.then = later;
+  mock.walkBranch[id] = { code: 404, body: { error: "no room holds that card" }, then: later };
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/back" })];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(p, { unit: "walkRoomBack", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await p.waitForFunction(x => walkProbeFailed.has(x), id, { timeout: slow(5000) })
+      .catch(() => fail("walkRoomBack: the 404 was not taken as a card no room holds"));
+    if (!await p.$eval("#t-walk", e => e.hidden)) fail("walkRoomBack: the button showed after a 404");
+    await p.evaluate(x => onTaskEvent({ data: JSON.stringify({ id: x }) }), id);
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(15000) })
+      .catch(() => fail("walkRoomBack: the card's own event did not bring the walk button back after a 404"));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    delete mock.walkDirs[id]; delete mock.walkBranch[id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkRoomBack: the page threw: " + errors.join(" | "));
+  console.log("walkRoomBack: ok");
 }
 
 // A HUB BRANCH IS WALKED WITH NO CARD: a right click on a branch name in a terminal on the hub board offers it beside
@@ -15485,7 +15747,7 @@ async function notifyCommandSection(browser, base) {
       on: document.getElementById("s-hn-enabled").checked,
       cmd: document.getElementById("s-hn-command").value,
       status: document.getElementById("s-hn-status").textContent,
-      help: document.getElementById("s-hn-row").textContent
+      help: (r => r.textContent + [...r.querySelectorAll("[data-tip]")].map(e => e.dataset.tip).join(" "))(document.getElementById("s-hn-row"))
     }));
     if (!shown.on) fail("notifyCommand: the enabled box was not checked");
     if (shown.cmd !== "ntfy\npublish\nmy topic") fail("notifyCommand: the argv is not one per line: " + JSON.stringify(shown.cmd));
@@ -25453,7 +25715,7 @@ async function gearHostsSection(browser, base) {
       items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
       why: document.getElementById("s-hh-list").textContent,
       env: document.getElementById("s-hh-env").textContent,
-      help: document.getElementById("s-hh-row").textContent
+      help: (r => r.textContent + [...r.querySelectorAll("[data-tip]")].map(e => e.dataset.tip).join(" "))(document.getElementById("s-hh-row"))
     }));
     if (a.items.join("|") !== "*.shares.zrok.io|*.duckdns.org") fail(tag + "the list was " + JSON.stringify(a.items));
     if (!/dynamic DNS/.test(a.why)) fail(tag + "an ignored entry shows no reason: " + a.why);
@@ -25696,6 +25958,7 @@ async function mHiddenSection(browser) {
     mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent", "atrium:subagent"] }),
     mCard("done-1", { display_title: "finished", status: "done", room: "sg4-control" }),
     mCard("far-1", { alias: "far", display_title: "far", status: "running", room: "other" }),
+    mCard("res-1", { display_title: "launched", status: "running", room: "sg4-control", tags: ["origin:agent", "atrium:resident"] }),
   ];
   await st.open();
   try {
@@ -25715,7 +25978,7 @@ async function mHiddenSection(browser) {
       if ((await names(p)).join() !== "far") fail(tag + "a scoped page lists " + (await names(p)).join());
       if (!(await vis(p, "#m-room-chip")) || !/room: other/.test(await p.textContent("#m-room-chip"))) fail(tag + "the scope is not said on the page");
       await p.tap("#m-room-all");
-      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(8000) })
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 5, null, { timeout: slow(8000) })
         .catch(async () => fail(tag + "all rooms did not list every card: " + (await names(p)).join()));
       if (await vis(p, "#m-room-chip")) fail(tag + "the room chip stayed after all rooms");
       if (await p.evaluate(() => localStorage.getItem("atrium.room"))) fail(tag + "all rooms did not clear the stored room");
@@ -25730,10 +25993,10 @@ async function mHiddenSection(browser) {
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       const n = await names(p);
       if (n.indexOf("orchestrator") < 0) fail(tag + "hide subagents hid a running card that has an alias: " + n.join());
-      if (n.indexOf("helper") >= 0 || n.indexOf("finished") >= 0) fail(tag + "the filters did not hide what they name: " + n.join());
-      if (!/^2 hidden by filters/.test(await p.textContent("#m-hidden"))) fail(tag + "the hidden line says " + await p.textContent("#m-hidden"));
+      if (n.indexOf("helper") >= 0 || n.indexOf("launched") >= 0 || n.indexOf("finished") >= 0) fail(tag + "the filters did not hide what they name: " + n.join());
+      if (!/^3 hidden by filters/.test(await p.textContent("#m-hidden"))) fail(tag + "the hidden line says " + await p.textContent("#m-hidden"));
       await p.tap("#m-hidden");
-      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(5000) })
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 5, null, { timeout: slow(5000) })
         .catch(async () => fail(tag + "the tap did not show the hidden rows: " + (await names(p)).join()));
       await p.tap("#m-hidden");
       await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 2, null, { timeout: slow(5000) })
@@ -28404,6 +28667,68 @@ async function newContextSseSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// composePasteDefault: the new context box and the paste box over an attached terminal keep right click and ctrl-shift-v,
+// which paste into the box once, and a ctrl-shift-v the browser did not paste reads the clipboard into it.
+async function composePasteDefaultSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "composePasteDefault", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base }).catch(() => {});
+    await p.evaluate(() => {
+      window.pasteIntoTerm = () => { window.__toTerm = (window.__toTerm || 0) + 1; };
+      window.__menus = [];
+      window.addEventListener("contextmenu", e => window.__menus.push(e.target.id));
+      return navigator.clipboard.writeText("pasted words");
+    });
+    for (const [id, open] of [["t-ctxbox-in", () => composeNoEntry({ step: "clear", n: 2, of: 3, label: "clearing the context" })], ["t-paste-in", () => { document.getElementById("t-ctxbox").hidden = true; openPasteBox(""); }]]) {
+      await p.evaluate(open);
+      // A task refresh with no hold hides an empty context box, so give it text for the click.
+      await p.evaluate(id => { const t = document.getElementById(id); if (id === "t-ctxbox-in") t.value = "draft"; }, id);
+      const ta = p.locator("#" + id);
+      await p.evaluate(() => term.focus());
+      await ta.click({ button: "right" });
+      const menu = await p.evaluate(id => ({ focus: document.activeElement.id, reached: window.__menus.includes(id) }), id);
+      if (menu.focus !== id || menu.reached) fail("composePasteDefault: right click in " + id + " did not stay with the box: " + JSON.stringify(menu));
+      await ta.fill("");
+      await p.keyboard.press("Control+Shift+V");
+      await p.evaluate(() => new Promise(done => setTimeout(() => done(), 0))); // wait: a fallback read would land after this tick
+      const native = await ta.inputValue();
+      if (native !== "pasted words") fail("composePasteDefault: ctrl-shift-v in " + id + " did not paste once: " + JSON.stringify(native));
+      await ta.fill("");
+      await p.evaluate(id => document.getElementById(id).dispatchEvent(new KeyboardEvent("keydown", { key: "V", code: "KeyV", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })), id);
+      try {
+        await p.waitForFunction(id => document.getElementById(id).value === "pasted words", id, { timeout: slow(3000) });
+      } catch (e) { fail("composePasteDefault: a ctrl-shift-v the browser did not paste left " + id + " empty"); }
+    }
+    if (await p.evaluate(() => window.__toTerm)) fail("composePasteDefault: a paste in a box went to the terminal");
+    if (errors.length) fail("composePasteDefault: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+}
+
 // composerStaysPut: the new context panel belongs to its card. The x closes it and queues what was typed, switching to
 // another terminal hides it and switching back shows it, and a refusal of a report xterm made by itself never opens it.
 async function composerStaysPutSection(browser, base) {
@@ -28565,12 +28890,12 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, peekLeftover: peekLeftoverSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkRoomBack: walkRoomBackSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -29029,7 +29354,7 @@ async function main() {
       const f = id => document.getElementById(id);
       return {
         pane: !!pane, shown: !!pane && !pane.hidden,
-        labels: pane ? [...pane.querySelectorAll(".eyebrow")].map(l => l.textContent.trim()) : [],
+        labels: pane ? [...pane.querySelectorAll(".eyebrow")].map(l => l.firstChild.textContent.trim()) : [],
         sortOn: [...f("gear-term-sort").querySelectorAll("button.on")].map(b => b.textContent.trim()),
         hide: !!f("gear-term-hide"),
         groupPills: f("term-group").querySelectorAll("button").length
@@ -30385,6 +30710,7 @@ async function main() {
     await unit("restartGate", bu("restartGate"));
     await unit("restartStays", bu("restartStays"));
     await unit("atriumDown", bu("atriumDown"));
+    await unit("reconnectPill", bu("reconnectPill"));
     await unit("toastStays", () => toastStaysSection(browser, base));
     // ── a toast lives its whole life whatever happens around it ────────────
     await unit("toastLives", () => toastLivesSection(browser, base));
@@ -30423,6 +30749,7 @@ async function main() {
     await unit("walkContext", () => walkContextSection(browser, base));
     await unit("walkBranch", () => walkBranchSection(browser, base));
     await unit("walkLate", () => walkLateSection(browser, base));
+    await unit("walkRoomBack", () => walkRoomBackSection(browser, base));
     await unit("walkSwitch", () => walkSwitchSection(browser, base));
     await unit("walkHubBranch", () => walkHubBranchSection(browser, base));
     await unit("walkView", () => walkViewSection(browser, base));
@@ -30507,6 +30834,8 @@ async function main() {
     await unit("copySelect", () => copySelectSection(browser, base));
     await unit("termFindSpeaker", () => termFindSpeakerSection(browser, base));
     await unit("cleanCopy", () => cleanCopySection(browser, base));
+    await unit("cleanCopyDefault", () => cleanCopyDefaultSection(browser, base));
+    await unit("cleanCopyGesture", () => cleanCopyGestureSection(browser, base));
     await unit("cleanCopyTwo", () => cleanCopyTwoSection(browser, base));
     await unit("chatTab", bu("chatTab"));
     await unit("chatBridge", bu("chatBridge"));
@@ -30679,6 +31008,8 @@ async function main() {
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("backForward", () => backForwardSection(browser, base));
     await unit("bootClean", bu("bootClean"));
+    await unit("pinHold", bu("pinHold"));
+    await unit("linkRoomPick", bu("linkRoomPick"));
     await unit("backlogAbsent", bu("backlogAbsent"));
     await unit("backlogRows", bu("backlogRows"));
     await unit("backlogSort", bu("backlogSort"));
@@ -30721,10 +31052,14 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("cardLabelAlias", () => cardLabelAliasSection(browser, base));
     await unit("newContextSse", () => newContextSseSection(browser, base));
     await unit("composerStaysPut", () => composerStaysPutSection(browser, base));
+    await unit("composePasteDefault", () => composePasteDefaultSection(browser, base));
     await unit("kidCounts", bu("kidCounts"));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", bu("dropdownsInstant"));
+    await unit("helpTip", bu("helpTip"));
+    await unit("helpRoomPane", bu("helpRoomPane"));
+    await unit("helpGearBoard", bu("helpGearBoard"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
     await unit("launchGroupPlus", bu("launchGroupPlus"));

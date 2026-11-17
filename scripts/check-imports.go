@@ -86,7 +86,7 @@ var table = []row{
 	{2, "internal/guard", []string{"internal/base/gitexec"}},
 	{2, "internal/deployready", []string{"internal/base/gitexec"}},
 	{2, "internal/gitsync", []string{
-		"internal/base/claudeconf", "internal/base/gitexec", "internal/base/nowindow", "internal/base/safepath", "internal/base/testguard",
+		"internal/base/cardproc", "internal/base/claudeconf", "internal/base/gitexec", "internal/base/nowindow", "internal/base/safepath", "internal/base/testguard",
 		"internal/base/testwait",
 	}},
 	{2, "internal/daemon/screen", []string{"internal/store"}},
@@ -180,7 +180,7 @@ var table = []row{
 	{6, "internal/cli", []string{
 		"internal/base/seenhost", "internal/statusline",
 		"docs/runtime/contract", "internal/base/dblock", "internal/base/testwait", "internal/worktrees",
-		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardroot", "internal/base/claudeconf",
+		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/daemon", "internal/daemon/screen", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync",
 		"internal/guard", "internal/hubstore", "internal/link", "internal/link/conn", "internal/link/transport", "internal/link/wire",
 		"internal/base/nowindow", "internal/ptyhost", "internal/base/remoteaccess", "internal/base/requirements", "internal/base/resources", "internal/roomspec",

@@ -31,7 +31,14 @@ func (d *Service) HandleHubAsk(w http.ResponseWriter, r *http.Request) {
 		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
-	code, data, msg := d.HubCallFrom(r.Context(), strings.TrimSpace(in.From), in.Method, in.Path, in.Body)
+	from := strings.TrimSpace(in.From)
+	if status, out, ok := d.askLogged(r.Context(), from, in.Method, in.Path, in.Body); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(out)
+		return
+	}
+	code, data, msg := d.HubCallFrom(r.Context(), from, in.Method, in.Path, in.Body)
 	if code != http.StatusOK {
 		WriteJSONCode(w, code, ErrBody(msg))
 		return

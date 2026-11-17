@@ -190,11 +190,12 @@ func (d *Daemon) sayGate(t *store.Task) string {
 	if d.FrozenForMove(t.ID) {
 		return sayOK
 	}
-	if small.IsParked(t) {
-		return sayParked
-	}
+	// Paused before parked: a parked card the operator then paused is put down, and only wakePaused can launch it.
 	if t.Status == store.StatusPaused && d.sup.get(t.ID) == nil {
 		return sayPaused
+	}
+	if small.IsParked(t) {
+		return sayParked
 	}
 	if d.sessionGone(t) {
 		return sayGone

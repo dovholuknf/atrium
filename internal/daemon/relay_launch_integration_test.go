@@ -195,3 +195,37 @@ func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
 		t.Fatalf("other error = %d %+v", code, out)
 	}
 }
+
+// Repo, home, scratch and the other launch fields reach the hub, a launch naming repo or home needs no cwd, and a hub
+// that did not say it carried them is named in the answer's warning.
+func TestARoomLaunchCarriesRepoHomeScratchAndTheRest(t *testing.T) {
+	t.Parallel()
+	d, f := roomDaemon(t)
+	b := launchBody("claude-sg4")
+	delete(b, "cwd")
+	b["repo"], b["branch"], b["base"], b["home"], b["resident"], b["scratch"] = "github.com/o/r", "claude/x", "claude/main", false, true, true
+	b["lean"], b["mcp"], b["theme"], b["chat"], b["item"], b["item_owner"] = false, []string{"m"}, "dusk", true, true, "human"
+	f.launch = func(l hublink.RelayLaunch) (hublink.RelayResult, error) {
+		return hublink.RelayResult{OK: true, Card: "claude-sg4~kid", Carried: true}, nil
+	}
+	if code, out := roomLaunch(t, d, b); code != http.StatusOK || out["warning"] != "" {
+		t.Fatalf("answer = %d %+v", code, out)
+	}
+	l := f.launched()[0]
+	if l.Cwd != "" || l.Repo != "github.com/o/r" || l.Branch != "claude/x" || l.Base != "claude/main" || !l.Resident ||
+		!l.Scratch || l.Lean == nil || *l.Lean || len(l.MCP) != 1 || l.Theme != "dusk" || !l.Chat || !l.Item ||
+		l.ItemOwner != "human" {
+		t.Fatalf("the hub got %+v", l)
+	}
+	f.launch = nil
+	home := launchBody("claude-sg4")
+	delete(home, "cwd")
+	home["home"] = true
+	code, out := roomLaunch(t, d, home)
+	if code != http.StatusOK || !f.launched()[1].Home {
+		t.Fatalf("home = %d %+v", code, out)
+	}
+	if w, _ := out["warning"].(string); !strings.Contains(w, "home") || !strings.Contains(w, "older") {
+		t.Fatalf("an old hub's answer warns %q", w)
+	}
+}

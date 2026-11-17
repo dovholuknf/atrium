@@ -1211,8 +1211,9 @@ async function linkRoomFor(got) {
   const scoped = typeof roomNow === "function" ? roomNow() : "";
   if (!hubIsHub || scoped || rooms.length < 2) return "";
   const holders = await roomsHolding(linkRepoOf(got));
-  if (holders.length) return holders[0];
   const last = lastLaunchRoom();
+  if (holders.includes(last)) return last;
+  if (holders.length) return holders[0];
   return rooms.some(r => r.name === last) ? last : "";
 }
 

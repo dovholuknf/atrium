@@ -27,6 +27,10 @@ func keptNote(t *store.Task, why string) string {
 		"and stays there until it is read.", t.WireName, why)
 }
 
+// wokeNote is what the sender of a say that resumed its card is told, rather than plain queued.
+const wokeNote = "resumed: it had no session, so this say started its conversation again. the words are delivered " +
+	"as one turn once that session is ready."
+
 // resumable reports whether a card with no session has a conversation to resume.
 func resumable(t *store.Task) bool {
 	return t != nil && t.ResumeID != "" && t.Runner != "" && t.Worktree != ""
@@ -187,6 +191,11 @@ func (d *Daemon) wakePaused(taskID, via string) error {
 	}
 	d.startedAt.Store(taskID, time.Now())
 	d.queueHandoffWake(taskID)
+	if small.IsParked(t) {
+		if _, err := d.st.Unpark(taskID, via); err != nil {
+			return err
+		}
+	}
 	d.injectKept(taskID)
 	log.Printf("[atrium] %s was paused and is resumed (%s)", t.DisplayTitle(), via)
 	d.publishCard(taskID)

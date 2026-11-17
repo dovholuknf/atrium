@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/spf13/cobra"
 )
@@ -261,7 +262,11 @@ func copyForPreview(from, to string) (bool, error) {
 // so that two ports can be reserved at once. Taking one and releasing it
 // before taking the second is how both end up being the same number.
 func freePort(want int) (int, func(), error) {
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", want))
+	listen := func() (net.Listener, error) { return net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", want)) }
+	if want == 0 {
+		listen = cardproc.ListenLoopback
+	}
+	ln, err := listen()
 	if err != nil {
 		if want != 0 {
 			return 0, nil, fmt.Errorf("port %d is not free: %w", want, err)

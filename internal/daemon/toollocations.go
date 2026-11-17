@@ -52,8 +52,9 @@ func ToolLocations() map[string]string {
 // toolsLine is the brief line naming the room's tool locations less the refused ones, "" when none are found.
 func toolsLine(path string, refused ...string) string {
 	var parts []string
+	locs := toolLocations(path)
 	for _, n := range toolNames {
-		if p, ok := toolLocations(path)[n]; ok && !slices.Contains(refused, n) {
+		if p, ok := locs[n]; ok && !slices.Contains(refused, n) {
 			parts = append(parts, n+"="+p)
 		}
 	}
@@ -67,7 +68,7 @@ func toolsLine(path string, refused ...string) string {
 			line += ", " + k + "=" + env[k]
 		}
 	}
-	return line + ". A missing tool is yours to install: add it to the room's tools.json, never move to another room for it, never report it as a blocker."
+	return line + ". A missing tool is yours to install: put it in a folder on the room's PATH, such as one named above, never move to another room for it, never report it as a blocker."
 }
 
 // withToolsLine appends toolsLine to a brief or prompt, once.

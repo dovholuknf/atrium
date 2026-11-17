@@ -104,7 +104,7 @@
     s = esc(s);
     // An image: a file of the card is a thumbnail, a remote one is a link and is not loaded, anything else is its alt text.
     s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, url) => {
-      const u = unesc(url);
+      const u = unesc(url).replace(/^\/_hub\/docs\/([a-z0-9-]{1,60})\/raw(?:\?v=([1-9][0-9]*))?$/, (x, slug, v) => "/d/" + slug + (v ? "@" + v : ""));
       if (inside(u, ctx) && IMG.test(u)) return stash(fileNode(u, ctx, unesc(alt), true));
       if (DOC.test(u)) return stash('<button type="button" class="md-img" data-card="" data-path="' + esc(u) + '" aria-label="' + esc(unesc(alt) || "image") +
         '"><span class="md-img-note">' + esc(unesc(alt) || "image") + "</span></button>");

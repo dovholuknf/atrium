@@ -277,6 +277,40 @@ prefLive("atrium.copyOnSelect", () => {
   paintCopyMode();
 });
 
+// Clean copy by default is on unless switched off, and per browser like copy on select.
+const CLEAN_LIMIT_DEFAULT = 16000;
+let cleanCopyOn = localStorage.getItem("atrium.cleanCopy") !== "0";
+
+function cleanCopyLimit() {
+  const n = Math.round(Number(localStorage.getItem("atrium.cleanCopyLimit")));
+  return n > 0 ? n : CLEAN_LIMIT_DEFAULT;
+}
+
+function cleanByDefault(text) { return cleanCopyOn && text.length < cleanCopyLimit(); }
+
+function setCleanCopy(on) {
+  cleanCopyOn = !!on;
+  localStorage.setItem("atrium.cleanCopy", cleanCopyOn ? "1" : "0");
+  paintCleanCopy();
+}
+
+function setCleanCopyLimit(v) {
+  const n = Math.round(Number(v));
+  if (n > 0) localStorage.setItem("atrium.cleanCopyLimit", String(n));
+  else localStorage.removeItem("atrium.cleanCopyLimit");
+  paintCleanCopy();
+}
+
+function paintCleanCopy() {
+  const box = document.getElementById("s-cleancopy"), limit = document.getElementById("s-cleanlimit");
+  if (box) box.checked = cleanCopyOn;
+  if (limit) { limit.value = String(cleanCopyLimit()); limit.disabled = !cleanCopyOn; }
+}
+prefLive("atrium.cleanCopy*", () => {
+  cleanCopyOn = localStorage.getItem("atrium.cleanCopy") !== "0";
+  paintCleanCopy();
+});
+
 // Focus on hover is an opt-in browser preference, like copy on select and
 // text scale, so each screen can use its own setting.
 let hoverFocus = localStorage.getItem("atrium.hoverFocus") === "1";
@@ -1183,8 +1217,9 @@ function openTerm(task) {
   // view. All of it is a no-op on a desktop. See `termPhone`.
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
-  term.onScroll(() => { tallFollow(); hideCleanCopy(); });
-  term.onSelectionChange(() => { if (ccBtn && term && !term.hasSelection()) hideCleanCopy(); });
+  term.onScroll(() => { tallFollow(); });
+  const made = term;
+  made.onSelectionChange(() => { if (ccLook && ccLook.mine === made) ccLook = null; });
   // Erase-display 2 keeps the page first. 3 only clears the scrollback, which
   // is the history this is here to keep, so it is swallowed without touching
   // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the
@@ -1472,12 +1507,18 @@ function resetTerm(t) {
 //
 // CLEAN COPY. What a terminal selection holds is Claude Code's render of a reply: an indent, a `│`/`▎` bar on a quote,
 // hard line breaks where the TUI wrapped. The raw text is in the transcript, so `cleanCopy` looks for the selection in
-// the card's recent replies and, on a match, the "copy clean" button copies the source substring. No match, a slow or
-// failed endpoint: the button copies the selection de-rendered locally. This plain copy is `termSelectionText`.
+// the card's recent replies and, on a match, a clean copy is the source substring. No match, a slow or failed endpoint:
+// the selection de-rendered locally. The copy as shown is `termSelectionText`. `cleanByDefault` picks which this gives.
 function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
-  navigator.clipboard.writeText(termSelectionText(term))
-    .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
+  const text = termSelectionText(term);
+  const refused = () => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); };
+  if (!text.trim() || !cleanByDefault(text)) { navigator.clipboard.writeText(text).catch(refused); return; }
+  // Safari refuses a write that starts after the keypress, so the write starts now and the lookup fills it.
+  if (typeof ClipboardItem !== "function" || !navigator.clipboard.write) { navigator.clipboard.writeText(text).catch(refused); return; }
+  const look = ccLookup(term, text);
+  navigator.clipboard.write([new ClipboardItem({ "text/plain": look.clean.then(t => new Blob([t], { type: "text/plain" })) })])
+    .catch(() => navigator.clipboard.writeText(look.best)).catch(refused);
 }
 
 // xterm joins a soft-wrapped row to the next with no newline and keeps its real spaces, so a block a TUI paints by padding
@@ -1503,16 +1544,27 @@ function termSelectionText(t) {
   return out.map(s => s.replace(/ /g, " ").trimEnd()).join(/^Win/.test(navigator.platform) ? "\r\n" : "\n");
 }
 
-// THE COPY CLEAN BUTTON. A plain copy is the terminal's text as shown, and says nothing. A small button pops up beside
-// every settled selection at once, and clicking it copies the best text ready by then: the reply's raw markdown when
-// `cleanCopy` matched the selection in the background, else the selection de-rendered locally by `ccDerender`. The click
-// never waits on the lookup. It goes when the selection clears, on scroll, on Escape, and when the terminal closes.
-// Never a toast, either way.
-let ccBtn = null, ccSeq = 0;
+// THE COPY BUTTON. A small button pops up beside every settled selection at once and copies the other one of the two:
+// "copy as shown" when the default copy is clean, else "copy clean", which copies the best text ready by then: the
+// reply's raw markdown when `cleanCopy` matched the selection in the background, else the selection de-rendered locally
+// by `ccDerender`. The click never waits on the lookup. It goes on a click elsewhere, a wheel, Escape, and when the
+// terminal closes. Never a toast, either way.
+let ccBtn = null;
 
 function hideCleanCopy() {
-  ccSeq++;
   if (ccBtn) { ccBtn.remove(); ccBtn = null; }
+}
+
+// One lookup per selection, shared by the default copy and the button, and dropped when the selection changes.
+let ccLook = null;
+
+function ccLookup(mine, text) {
+  if (ccLook && ccLook.mine === mine && ccLook.text === text) return ccLook;
+  const look = { mine, text, best: ccDerender(text) };
+  look.clean = cleanCopy(text, termTask && termTask.id, selectionEdges(mine))
+    .then(raw => { if (raw != null) look.best = raw; return look.best; });
+  ccLook = look;
+  return look;
 }
 
 const CC_GUTTER = /^\s*[│▎┃║▏▍●⎿]+ ?/;
@@ -1559,16 +1611,16 @@ function ccDerender(sel) {
 async function offerCleanCopy() {
   hideCleanCopy();
   if (!term || !term.hasSelection() || !termTask) return;
-  const mine = term, seq = ccSeq;
+  const mine = term;
   const text = termSelectionText(mine);
-  const edges = selectionEdges(mine);
-  let best = ccDerender(text);
-  showCleanCopyButton(mine, () => best);
-  const raw = await cleanCopy(text, termTask.id, edges);
-  if (raw != null && seq === ccSeq) best = raw;
+  if (!text.trim()) return;
+  const look = ccLookup(mine, text);
+  if (cleanByDefault(text)) showCleanCopyButton(mine, () => text, true);
+  else showCleanCopyButton(mine, () => look.best);
+  await look.clean;
 }
 
-function showCleanCopyButton(mine, textNow) {
+function showCleanCopyButton(mine, textNow, asShown) {
   const pos = mine.getSelectionPosition();
   const screen = mine.element && mine.element.querySelector(".xterm-screen");
   const dims = mine._core && mine._core._renderService && mine._core._renderService.dimensions;
@@ -1578,9 +1630,10 @@ function showCleanCopyButton(mine, textNow) {
   btn.type = "button";
   btn.id = "cc-btn";
   btn.className = "cc-btn";
-  btn.textContent = "copy clean";
-  btn.dataset.tip = "copy without the terminal's gutters and line breaks, as the reply's own markdown when it is one";
-  btn.setAttribute("aria-label", "copy clean");
+  btn.textContent = asShown ? "copy as shown" : "copy clean";
+  btn.dataset.tip = asShown ? "copy exactly what the terminal shows: its gutters, indent and line breaks"
+    : "copy without the terminal's gutters and line breaks, as the reply's own markdown when it is one";
+  btn.setAttribute("aria-label", btn.textContent);
   // The press must not clear the selection or take the terminal's focus before the click lands.
   btn.addEventListener("mousedown", e => e.preventDefault());
   btn.addEventListener("click", () => {
@@ -1602,6 +1655,9 @@ function showCleanCopyButton(mine, textNow) {
 }
 
 window.addEventListener("keydown", e => { if (e.key === "Escape") hideCleanCopy(); }, true);
+// Not on output that scrolls or a redraw that drops the selection: a runner mid-turn did both under the pointer.
+window.addEventListener("pointerdown", e => { if (ccBtn && !ccBtn.contains(e.target)) hideCleanCopy(); }, true);
+window.addEventListener("wheel", () => { if (ccBtn) hideCleanCopy(); }, { capture: true, passive: true });
 
 // Whether the selection covers its first and last rendered rows from their text to their edge. Only then may a match
 // that starts or ends inside a source line take that line's markers (`> `, `- `, `## `, a closing `**`) with it.
@@ -2012,6 +2068,7 @@ function wirePasteBox() {
   const ta = document.getElementById("t-paste-in");
   if (!box || !ta || box.dataset.wired) return;
   box.dataset.wired = "1";
+  boxOwnsPaste(ta);
 
   ta.addEventListener("paste", e => {
     const dt = e.clipboardData;

@@ -1,0 +1,1920 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>walk, github-style diff (mock)</title>
+<style>/* tokens.css */
+  /* The palette, the type and space ladders, the radii and the shadows, plus the page reset that uses them.
+     Loads first because every other file in css/ reads these custom properties, and a property read before it
+     is defined resolves to nothing. */
+  :root {
+    /* Half the palette is spelled as channels because CSS cannot take a hex and add alpha to it, and most of
+       these colours are used at full strength in one place and as a tint in another. A tint written as its own
+       `rgba(...)` is a second copy a skin cannot reach, so the skin repaints the solids and every tinted
+       surface stays at the old hue.
+
+       So the triple defines the colour and the solid derives from it. A skin overrides one value and both
+       forms follow. A colour with no tinted use stays a plain hex. */
+    --sink-rgb: 4,11,20;          /* the recess behind inputs, lists and code */
+    --bg1-rgb: 7,19,34;
+    --shell0-rgb: 13,33,53;
+    --shell1-rgb: 8,22,37;
+    --chip-rgb: 23,58,87;
+    --stroke-rgb: 44,95,132;
+    --stroke-dim-rgb: 37,80,111;
+    --teal-rgb: 0,227,176;
+    --warn-rgb: 255,198,77;
+    /* THE ONE ORANGE: a live runner waiting on the operator, whoever launched it, and nothing else. A warning stays
+       --warn. Held 25 degrees of hue from --warn and --teal in every skin (docs/changes/unified-card.md). */
+    --wait-rgb: 255,122,26;
+    --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255;
+    /* What a shadow is made of, which on a dark board is darker than anything the shadow falls on. */
+    --shadow-rgb: 2,6,9;
+
+    --bg-2: rgb(var(--sink-rgb));
+    --bg-1: rgb(var(--bg1-rgb));
+    --shell-0: rgb(var(--shell0-rgb));
+    --shell-1: rgb(var(--shell1-rgb));
+    --chip: rgb(var(--chip-rgb));
+    --stroke: rgb(var(--stroke-rgb));
+    --stroke-dim: rgb(var(--stroke-dim-rgb));
+    --teal: rgb(var(--teal-rgb));
+    --warn: rgb(var(--warn-rgb));
+    --wait: rgb(var(--wait-rgb));
+    --wait-bg: rgba(var(--wait-rgb),.13);
+    --wait-stroke: rgba(var(--wait-rgb),.35);
+    --danger: rgb(var(--danger-rgb));
+    /* Text on a solid danger fill: the page's darkest colour on a dark skin, white on a light one (set in its block). */
+    --on-danger: var(--bg-0);
+    /* The blue-tinted accent a folder rule wears, so a scope reads differently from a command pattern. It has
+       a name because it carries a meaning, and confusing the two is how a rule ends up wider than anyone
+       agreed to. */
+    --path: rgb(var(--path-rgb));
+
+    --bg-0: #0B1B2E;
+    --blue: #28C2FF;
+    --card-0: #12293F; --card-1: #0A1A2B;
+    --grid: #1B3B5A;
+    --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4;
+    --dim: #5E819C; --dimmest: #456C88;
+    /* The usage tab's by-card bars and cumulative line: the label colour at about 70%, so every skin reaches it
+       through --label and none has to set it. Deliberately not a kind colour. */
+    --usage-bar: color-mix(in srgb, var(--label) 70%, transparent);
+    --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    /* Where a button goes when the pointer is over it. Named so a skin can move it. */
+    --btn-hover: #1D4666;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+    /* One tone for text on a danger surface. Spelling near-identical pinks out per rule gives each one a
+       chance to miss the skin. */
+    --danger-text: #FFC3C9;
+
+    /* Warn and accent at the tints they are used at, so changing --warn moves every surface derived from it. */
+    --warn-bg: rgba(var(--warn-rgb),.13);
+    --warn-bg-soft: rgba(var(--warn-rgb),.05);
+    --warn-stroke: rgba(var(--warn-rgb),.3);
+    --teal-bg: rgba(var(--teal-rgb),.10);
+
+    /* Two families and one size ladder. Every size on the page comes from here multiplied by --uiscale, so
+       making the interface bigger moves all of it. Scaling one region leaves the rest at fixed pixels, which
+       reads as inconsistent rather than as small. */
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "JetBrains Mono", Consolas, monospace;
+    --uiscale: 1;
+    --fs-xxs: calc(10.5px * var(--uiscale));
+    --fs-xs:  calc(11.5px * var(--uiscale));
+    --fs-sm:  calc(12.5px * var(--uiscale));
+    --fs-base: calc(13.5px * var(--uiscale));
+    --fs-md:  calc(14.5px * var(--uiscale));
+    --fs-lg:  calc(16px * var(--uiscale));
+    --fs-xl:  calc(18px * var(--uiscale));
+    --fs-2xl: calc(20px * var(--uiscale));
+    --fs-3xl: calc(23px * var(--uiscale));
+
+    /* Space between things, scaling with the text. Padding is not on this ladder: a chip's 1px 8px and a
+       dialog's 20px 22px are tuned to their own content, and bucketing them would move hit areas and break
+       alignment for nothing.
+
+       Spacing carries a second multiplier that the type ladder does not use. --uiscale moves text and space
+       together, which answers "I cannot read this" and not "I want more rows on screen". Shrinking the type to
+       fit more work in view makes the work harder to read, so the names stay legible and the room between them
+       goes instead.
+
+       --density is vertical only. Applied to both axes, `tightest` jammed a toolbar's controls into each other
+       and clipped the labels at the left of a bar while barely moving row heights, because most of a row's
+       height was hardcoded padding that was not on any ladder. So `--sp-*` is horizontal and scales with the
+       text, and `--vs-*` is vertical and is the one --density moves. */
+    --density: 1;
+    --sp-1: calc(4px * var(--uiscale));
+    --sp-2: calc(6px * var(--uiscale));
+    --sp-3: calc(9px * var(--uiscale));
+    --sp-4: calc(13px * var(--uiscale));
+    --sp-5: calc(17px * var(--uiscale));
+    --sp-6: calc(24px * var(--uiscale));
+
+    --vs-1: calc(4px * var(--uiscale) * var(--density));
+    --vs-2: calc(6px * var(--uiscale) * var(--density));
+    --vs-3: calc(9px * var(--uiscale) * var(--density));
+    --vs-4: calc(13px * var(--uiscale) * var(--density));
+    --vs-5: calc(17px * var(--uiscale) * var(--density));
+    --vs-6: calc(24px * var(--uiscale) * var(--density));
+
+    /* A row's own padding, which is most of the height of a list. There are three because a board card, a
+       stack row and a one-line history entry hold different amounts of content. */
+    --row-y: calc(15px * var(--uiscale) * var(--density));
+    --row-y-sm: calc(8px * var(--uiscale) * var(--density));
+    --row-y-xs: calc(5px * var(--uiscale) * var(--density));
+    --row-x: calc(20px * var(--uiscale));
+
+    /* Corners do not scale. A 12px radius on a panel reads the same whatever size the text inside it is. */
+    --r-xs: 3px; --r-sm: 6px; --r-md: 9px; --r-lg: 12px; --r-pill: 999px;
+    /* How strongly a project group tints itself. The hue comes from the group's own name, so only the strength
+       is a decision, and it is made here. Turn these up to make the blocks louder, down to make them a hint. */
+    --group-fill: .22; --group-edge: .37; --card-tint: .07;
+    --shadow-card: 0 10px 22px rgba(var(--shadow-rgb),.45);
+    --shadow-lift: 0 16px 30px rgba(var(--shadow-rgb),.62);
+    --shadow-pop: 0 14px 34px rgba(var(--shadow-rgb),.75);
+    --shadow-dialog: 0 30px 70px rgba(var(--shadow-rgb),.8);
+
+  }
+  * { box-sizing: border-box; }
+  /* An author rule with a display value outranks the browser's built-in [hidden] rule, so .board's
+     display:grid kept the board visible on every tab. This has to win. */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  /* Hold text at the size the layout asked for, on a phone as much as on a
+     desktop. A mobile browser's default is `text-size-adjust: auto`, which
+     inflates text it decides is too small to read: on the board it left the
+     chrome alone but hit the terminal hard. xterm measures its cell from the
+     computed font size of `.xterm`, and auto pushed a 14px terminal to ~20px,
+     so the runner's output drew about half again too big while everything
+     around it stayed put. The whole board is sized in explicit units for the
+     width it is on, so there is nothing here for the heuristic to help. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* The page fills the window and never scrolls as a whole. The views that need to scroll do it inside
+     themselves.
+
+     A flex column rather than 100dvh minus a measured header. The header changes height after it is measured,
+     because fonts settle, a badge appears and the nav wraps, and being two pixels over is a page scrollbar on
+     every screen. */
+  body {
+    margin: 0; color: var(--body);
+    height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    font: var(--fs-xl)/1.5 Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 60px 60px; opacity: .32;
+    mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 40%, transparent 100%);
+  }
+  .accent-text {
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+
+
+</style>
+<style>/* themes.css */
+  /* The terminal theme editor, and every board skin.
+
+     Load order is tokens, chrome, cards, sharing, notify, files, rows, terminal, dialogs, phone, themes. This
+     file loads last: each `:root[data-skin=...]` block overrides the `:root` palette in `css/tokens.css`, and
+     at the same specificity it only wins by coming later. The `:root` defaults live in `css/tokens.css` and the
+     skin blocks live here, so anything checking that the two agree has to read both files. */
+
+  /* ── the terminal theme editor ─────────────────────────
+     The terminal's colours. The skins below are the board around it, and the
+     header on that block explains the difference.
+
+     Every colour is two controls on one line: the operating system's colour
+     picker, and the hex beside it. The picker is how you nudge a green that is
+     slightly too dark, and it is the only one of the two that shows you the
+     colour. The hex is how you paste a value you already have, which is what
+     somebody bringing a scheme they have used for years is doing. */
+  .thgrid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--vs-2) var(--sp-3);
+  }
+  .thslot { display: flex; align-items: center; gap: var(--sp-2); }
+  .thslot label {
+    flex: 1; font-size: var(--fs-xs); color: var(--label);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* A native colour input draws its own swatch with its own padding and border,
+     which at this size is mostly border. Stripped back to the swatch. */
+  .thslot input[type="color"] {
+    width: 30px; height: 26px; padding: 0; flex: none;
+    border: 1px solid var(--stroke-dim); border-radius: 4px; background: none; cursor: pointer;
+  }
+  .thslot input[type="text"] {
+    width: 82px; flex: none; font-family: var(--mono); font-size: var(--fs-xs);
+    text-transform: lowercase;
+  }
+  /* A colour that is not a colour yet. The daemon would refuse it on save, and
+     saying so at the box is the difference between a fix and a hunt. */
+  .thslot input[type="text"].bad { border-color: var(--danger); color: var(--danger-text); }
+
+  /* What a theme looks like without a session attached. The terminal bar's
+     picker previews against real output and is better whenever there is real
+     output, but a theme brought in at nine in the morning has nothing running
+     yet. So this is the ansi block and a line of ordinary terminal text,
+     painted from the boxes above as they change. */
+  .thsample {
+    font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+    padding: var(--sp-3) var(--sp-4); border-radius: 8px;
+    border: 1px solid var(--stroke-dim); overflow-x: auto; white-space: pre;
+  }
+  .thsample ::selection, .thsample::selection { background: var(--sel-bg); color: var(--sel-fg); }
+  .thsample .sw { display: inline-block; width: 1.6em; text-align: center; }
+  /* The shared preview: a card row over a terminal sample. The card is the board's own and does nothing when pressed. */
+  .tshow { display: flex; flex-direction: column; gap: var(--vs-2); min-width: 0; }
+  .tshow[hidden] { display: none; }
+  .tshow-card { pointer-events: none; }
+  .tshow-card .card { margin-bottom: 0; }
+  .tshow-term { font-size: var(--fs-sm); line-height: 1.5; min-height: 17em; }
+
+  /* ── skins ─────────────────────────────────────────────
+     The board's own colours, not the terminal's. There are two theme systems
+     in this page and confusing them is the trap. A terminal theme is sixteen
+     ANSI colours plus a foreground, a background and a cursor, handed to
+     `term.options.theme`, and there are fifty two of them. It belongs to one
+     terminal, and two terminals side by side may reasonably differ. A skin is
+     the chrome around them, and it cannot differ, because there is one board.
+
+     Each block below moves the palette and nothing else. The type ladder, the
+     space ladder, the radii and the shadow geometry are layout, and `--uiscale`
+     and `--density` already answer the size question for the operator.
+
+     The skin goes on `:root`, not on `body`. The palette derives its solids
+     from its triples: `--teal` is declared as `rgb(var(--teal-rgb))`, and a
+     custom property resolves against the element it is declared on, so `--teal`
+     on `:root` reads `:root`'s own triple and nothing lower down can change it.
+     Overriding the triples on `body` left every derived colour at the default
+     while every plain hex changed: the right background with blue borders, blue
+     pills and a teal accent. Moving the skin and the derivations apart brings
+     that back, and it looks like a skin that is nearly right.
+
+     Every skin declares the same set. One missing falls through to the default
+     and leaves a single wrong-coloured element nobody notices for a month, so
+     `scripts/check-skins.sh` counts them rather than trusting the eye.
+
+     All ten here are dark. `--lift` and `--hairline` are white at low alpha and
+     every shadow is near-black, so light needs a second set of those rather
+     than a different palette, and the terminal underneath is dark whatever the
+     board does. */
+
+  /* Neutral near-black and ice cyan. The one that gets out of the way. */
+  :root[data-skin="graphite"] {
+    --sink-rgb: 6,8,11; --bg1-rgb: 12,15,19;
+    --shell0-rgb: 22,26,32; --shell1-rgb: 14,18,23;
+    --chip-rgb: 34,40,49; --stroke-rgb: 60,69,82; --stroke-dim-rgb: 44,52,63;
+    --teal-rgb: 110,231,249; --warn-rgb: 245,185,59; --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255; --shadow-rgb: 0,0,0;
+    --bg-0: #101318; --blue: #7C9CFF; --card-0: #1A1E25; --card-1: #111419; --grid: #262C35;
+    --head: #F5F7FA; --body: #B6BFCB; --label: #949FAD; --dim: #6B7583; --dimmest: #515A67;
+    --chip-accent: #0F2E31; --chip-accent-stroke: #1C5257; --chip-accent-text: #93E0EA;
+    --btn-hover: #2C3540; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Warm charcoal and copper. Reads like a workshop rather than a console. */
+  :root[data-skin="oxide"] {
+    --sink-rgb: 14,10,8; --bg1-rgb: 22,16,13;
+    --shell0-rgb: 33,25,20; --shell1-rgb: 24,18,14;
+    --chip-rgb: 54,39,30; --stroke-rgb: 96,66,48; --stroke-dim-rgb: 71,50,37;
+    --teal-rgb: 255,150,74; --warn-rgb: 245,196,80; --danger-rgb: 255,107,107;
+    --path-rgb: 214,167,255; --shadow-rgb: 10,4,2;
+    --bg-0: #191210; --blue: #E8A87C; --card-0: #241B16; --card-1: #16100C; --grid: #3A2A20;
+    --head: #FBF4EF; --body: #CDB6A4; --label: #AC9583; --dim: #806B5C; --dimmest: #635144;
+    --chip-accent: #3A2411; --chip-accent-stroke: #6B4120; --chip-accent-text: #F2C39A;
+    --btn-hover: #4A3325; --danger-text: #FFC9C3;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Forest black and lime. The only skin where the accent is louder than the
+     warning. */
+  :root[data-skin="moss"] {
+    --sink-rgb: 5,12,8; --bg1-rgb: 8,18,13;
+    --shell0-rgb: 14,30,21; --shell1-rgb: 9,21,15;
+    --chip-rgb: 24,50,34; --stroke-rgb: 46,92,62; --stroke-dim-rgb: 35,70,47;
+    --teal-rgb: 163,230,53; --warn-rgb: 250,204,21; --danger-rgb: 248,113,113;
+    --path-rgb: 147,197,253; --shadow-rgb: 2,8,4;
+    --bg-0: #0A1710; --blue: #5EEAD4; --card-0: #10241A; --card-1: #081410; --grid: #1C3A28;
+    --head: #F2FBF4; --body: #A7C9B2; --label: #86AC94; --dim: #63866F; --dimmest: #4B6955;
+    --chip-accent: #17330F; --chip-accent-stroke: #2E5C1C; --chip-accent-text: #C7EE8F;
+    --btn-hover: #2A5238; --danger-text: #FFC9C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Aubergine and orchid. Danger goes pink here so it still separates from
+     the accent, which is the one thing a purple skin can get wrong. */
+  :root[data-skin="plum"] {
+    --sink-rgb: 12,6,16; --bg1-rgb: 19,10,26;
+    --shell0-rgb: 30,17,41; --shell1-rgb: 21,12,29;
+    --chip-rgb: 50,30,66; --stroke-rgb: 92,58,120; --stroke-dim-rgb: 68,43,89;
+    --teal-rgb: 217,138,255; --warn-rgb: 250,204,21; --danger-rgb: 255,107,143;
+    --path-rgb: 147,180,255; --shadow-rgb: 6,2,10;
+    --bg-0: #150C1C; --blue: #7DD3FC; --card-0: #201430; --card-1: #120A18; --grid: #33204A;
+    --head: #F9F2FF; --body: #C0AFD0; --label: #A18FB3; --dim: #7A6890; --dimmest: #5D4E70;
+    --chip-accent: #2E1240; --chip-accent-stroke: #572270; --chip-accent-text: #E0B4F5;
+    --btn-hover: #45276B; --danger-text: #FFC3D2;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Brown-black and gold. The warmest, and the one that survives a bright
+     room best. */
+  :root[data-skin="ember"] {
+    --sink-rgb: 13,9,6; --bg1-rgb: 20,14,9;
+    --shell0-rgb: 31,22,14; --shell1-rgb: 22,16,10;
+    --chip-rgb: 52,37,22; --stroke-rgb: 99,71,38; --stroke-dim-rgb: 73,53,29;
+    --teal-rgb: 255,183,77; --warn-rgb: 255,214,102; --danger-rgb: 255,107,107;
+    --path-rgb: 200,170,255; --shadow-rgb: 8,4,1;
+    --bg-0: #17100A; --blue: #FFCC80; --card-0: #221810; --card-1: #140E09; --grid: #3A2A18;
+    --head: #FFF7EC; --body: #D0BBA1; --label: #B09B80; --dim: #85705A; --dimmest: #665443;
+    --chip-accent: #3A2708; --chip-accent-stroke: #6B4712; --chip-accent-text: #F5CE8A;
+    --btn-hover: #4C3418; --danger-text: #FFC9C3;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Cold slate and ice blue, at the highest contrast of the ten. The one to
+     reach for on a laptop outdoors. */
+  :root[data-skin="glacier"] {
+    --sink-rgb: 8,13,18; --bg1-rgb: 13,20,27;
+    --shell0-rgb: 21,32,43; --shell1-rgb: 15,23,31;
+    --chip-rgb: 33,49,66; --stroke-rgb: 62,92,122; --stroke-dim-rgb: 46,69,92;
+    --teal-rgb: 125,211,252; --warn-rgb: 253,224,71; --danger-rgb: 251,113,133;
+    --path-rgb: 165,180,252; --shadow-rgb: 1,5,9;
+    --bg-0: #0E1620; --blue: #A5B4FC; --card-0: #16222E; --card-1: #0C131A; --grid: #1F3345;
+    --head: #F8FBFF; --body: #B9C9D8; --label: #98AABC; --dim: #718799; --dimmest: #566A7B;
+    --chip-accent: #0C2B3A; --chip-accent-stroke: #185066; --chip-accent-text: #A5DFF5;
+    --btn-hover: #2A4560; --danger-text: #FFC3CC;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* True black, one white accent, one red. For an OLED panel, and for the
+     days when colour is noise. */
+  :root[data-skin="noir"] {
+    --sink-rgb: 0,0,0; --bg1-rgb: 8,8,8;
+    --shell0-rgb: 18,18,18; --shell1-rgb: 11,11,11;
+    --chip-rgb: 32,32,32; --stroke-rgb: 68,68,68; --stroke-dim-rgb: 48,48,48;
+    --teal-rgb: 240,240,240; --warn-rgb: 245,197,66; --danger-rgb: 255,84,84;
+    --path-rgb: 160,160,160; --shadow-rgb: 0,0,0;
+    --bg-0: #0A0A0A; --blue: #C8C8C8; --card-0: #161616; --card-1: #0C0C0C; --grid: #242424;
+    --head: #FFFFFF; --body: #B8B8B8; --label: #989898; --dim: #6E6E6E; --dimmest: #545454;
+    --chip-accent: #1C1C1C; --chip-accent-stroke: #3C3C3C; --chip-accent-text: #E8E8E8;
+    --btn-hover: #333333; --danger-text: #FFC0C0;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Indigo, magenta and cyan. The loud one, and the only one where the two
+     accents are a pair rather than a lead and a follow. */
+  :root[data-skin="vapor"] {
+    --sink-rgb: 8,6,20; --bg1-rgb: 13,10,31;
+    --shell0-rgb: 22,17,48; --shell1-rgb: 15,12,34;
+    --chip-rgb: 38,30,74; --stroke-rgb: 76,60,146; --stroke-dim-rgb: 56,45,108;
+    --teal-rgb: 244,114,255; --warn-rgb: 250,204,21; --danger-rgb: 255,90,120;
+    --path-rgb: 103,232,249; --shadow-rgb: 3,1,9;
+    --bg-0: #0F0B24; --blue: #67E8F9; --card-0: #191338; --card-1: #0C0919; --grid: #2A2158;
+    --head: #F7F2FF; --body: #B6ABDA; --label: #9589C0; --dim: #6F639C; --dimmest: #564C7C;
+    --chip-accent: #33104A; --chip-accent-stroke: #5E1F80; --chip-accent-text: #F0AFFB;
+    --btn-hover: #3C2E78; --danger-text: #FFC3CF;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* Warm taupe and terracotta. Paper-coloured text on earth, which is the
+     least screen-like the board gets while staying dark. */
+  :root[data-skin="sandstone"] {
+    --sink-rgb: 15,12,10; --bg1-rgb: 24,20,16;
+    --shell0-rgb: 36,30,25; --shell1-rgb: 26,22,17;
+    --chip-rgb: 58,49,40; --stroke-rgb: 105,88,71; --stroke-dim-rgb: 78,66,53;
+    --teal-rgb: 232,124,77; --warn-rgb: 240,196,102; --danger-rgb: 232,90,90;
+    --path-rgb: 174,176,255; --shadow-rgb: 10,7,5;
+    --bg-0: #1A1512; --blue: #E8B98C; --card-0: #262019; --card-1: #16120E; --grid: #3E342A;
+    --head: #FBF6F0; --body: #CBBBA9; --label: #AB9B89; --dim: #7F7161; --dimmest: #625649;
+    --chip-accent: #3D2415; --chip-accent-stroke: #703F22; --chip-accent-text: #F0B78E;
+    --btn-hover: #4E3A29; --danger-text: #FFC9C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* The default, taken further down. Same family, less light, for a dark room
+     and a long night. */
+  :root[data-skin="abyss"] {
+    --sink-rgb: 2,7,10; --bg1-rgb: 4,12,17;
+    --shell0-rgb: 8,22,30; --shell1-rgb: 5,15,21;
+    --chip-rgb: 15,40,52; --stroke-rgb: 30,80,100; --stroke-dim-rgb: 22,60,76;
+    --teal-rgb: 45,212,191; --warn-rgb: 250,204,21; --danger-rgb: 248,113,113;
+    --path-rgb: 125,211,252; --shadow-rgb: 0,3,5;
+    --bg-0: #041018; --blue: #38BDF8; --card-0: #0A1E29; --card-1: #030D13; --grid: #113040;
+    --head: #EFFAFF; --body: #93B4C4; --label: #7597A8; --dim: #567585; --dimmest: #405A68;
+    --chip-accent: #073730; --chip-accent-stroke: #0E6155; --chip-accent-text: #7FE3D3;
+    --btn-hover: #17495C; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+
+  /* ── the light ones ────────────────────────────────────
+     These work because `--lift`, `--lift-strong` and `--hairline` are part of a
+     skin. They are white at low alpha on a dark skin, which is how a hovered
+     row lifts off its background, and invisible on a light one. So light skins
+     use black at low alpha, and a hover reads as a press rather than a glow.
+
+     `--shadow-rgb` follows the same rule: near-black under a dark board, and
+     the tinted grey of the paper under a light one, so a shadow is not a hole.
+
+     The recess is inverted here, which is what most often looks wrong if a
+     colour is edited by eye. `--sink-rgb` is darker than the page on either
+     kind, so an input still reads as a hole. It is the cards that flip: they go
+     lighter than the page rather than darker. */
+
+  /* Warm white and ink. The one that reads like a printed page. */
+  :root[data-skin="paper"] {
+    --sink-rgb: 238,234,226; --bg1-rgb: 247,244,238;
+    --shell0-rgb: 252,250,246; --shell1-rgb: 243,240,233;
+    --chip-rgb: 226,221,211; --stroke-rgb: 176,168,154; --stroke-dim-rgb: 209,202,190;
+    --teal-rgb: 0,140,112; --wait-rgb: 192,78,0; --warn-rgb: 176,110,0; --danger-rgb: 190,45,45;
+    --on-danger: #fff;
+    --path-rgb: 82,82,190; --shadow-rgb: 120,110,90;
+    --bg-0: #FBF9F4; --blue: #2A6FB0; --card-0: #FFFFFF; --card-1: #F7F4EE; --grid: #E4DFD4;
+    --head: #1C1A16; --body: #4A463E; --label: #6A6459; --dim: #8A8377; --dimmest: #A9A294;
+    --chip-accent: #D7EFE6; --chip-accent-stroke: #8FCBB8; --chip-accent-text: #0B5B47;
+    --btn-hover: #E8E3D8; --danger-text: #8A1F1F;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Cool white and a strong blue. The brightest of the set. */
+  :root[data-skin="daylight"] {
+    --sink-rgb: 233,237,242; --bg1-rgb: 244,247,250;
+    --shell0-rgb: 251,252,254; --shell1-rgb: 240,243,247;
+    --chip-rgb: 219,226,235; --stroke-rgb: 160,174,190; --stroke-dim-rgb: 202,211,222;
+    --teal-rgb: 0,132,150; --wait-rgb: 192,78,0; --warn-rgb: 168,116,0; --danger-rgb: 198,40,60;
+    --on-danger: #fff;
+    --path-rgb: 70,90,200; --shadow-rgb: 90,105,125;
+    --bg-0: #F8FAFC; --blue: #1D63C4; --card-0: #FFFFFF; --card-1: #F3F6FA; --grid: #DDE4EC;
+    --head: #101823; --body: #3D4956; --label: #5C6875; --dim: #7C8794; --dimmest: #9BA5B1;
+    --chip-accent: #D3ECF2; --chip-accent-stroke: #85C2D2; --chip-accent-text: #0A4C58;
+    --btn-hover: #E1E8F0; --danger-text: #8C1526;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Cream and brown. Warmest, lowest contrast, easiest at night with the
+     lights on. */
+  :root[data-skin="linen"] {
+    --sink-rgb: 236,229,216; --bg1-rgb: 245,239,228;
+    --shell0-rgb: 251,247,239; --shell1-rgb: 242,236,224;
+    --chip-rgb: 227,217,199; --stroke-rgb: 178,163,138; --stroke-dim-rgb: 210,199,178;
+    --teal-rgb: 150,92,30; --wait-rgb: 192,78,0; --warn-rgb: 168,120,20; --danger-rgb: 176,58,48;
+    --on-danger: #fff;
+    --path-rgb: 108,92,180; --shadow-rgb: 130,112,84;
+    --bg-0: #FAF5EB; --blue: #8A6A34; --card-0: #FFFDF8; --card-1: #F5EFE3; --grid: #E6DDC9;
+    --head: #241E14; --body: #52483A; --label: #6F6454; --dim: #8E8271; --dimmest: #ADA391;
+    --chip-accent: #EFE0C8; --chip-accent-stroke: #C9AC79; --chip-accent-text: #5E4415;
+    --btn-hover: #EBE2D0; --danger-text: #7C2019;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* Pale blue-grey and indigo. Light without being white. */
+  :root[data-skin="frost"] {
+    --sink-rgb: 226,232,240; --bg1-rgb: 238,243,249;
+    --shell0-rgb: 247,250,253; --shell1-rgb: 235,240,247;
+    --chip-rgb: 214,223,235; --stroke-rgb: 152,168,190; --stroke-dim-rgb: 196,208,224;
+    --teal-rgb: 30,110,168; --wait-rgb: 192,78,0; --warn-rgb: 160,112,10; --danger-rgb: 192,52,72;
+    --on-danger: #fff;
+    --path-rgb: 88,80,200; --shadow-rgb: 82,98,120;
+    --bg-0: #EEF3F9; --blue: #4657C8; --card-0: #FBFDFF; --card-1: #E9EFF7; --grid: #D6DFEC;
+    --head: #16202E; --body: #3F4B5C; --label: #5D6A7C; --dim: #7C8798; --dimmest: #9AA4B4;
+    --chip-accent: #D8E3F5; --chip-accent-stroke: #8FA6D4; --chip-accent-text: #1E3468;
+    --btn-hover: #DCE5F1; --danger-text: #86192E;
+    --lift: rgba(0,0,0,.05); --lift-strong: rgba(0,0,0,.09); --hairline: rgba(0,0,0,.05);
+  }
+
+  /* ── the lighter darks ─────────────────────────────────
+     Not light, and not as deep as the first ten. For a room with a window in
+     it, where true black reads as a hole and full contrast is tiring. */
+
+  /* Mid blue-grey. Graphite with the lights on. */
+  :root[data-skin="slate"] {
+    --sink-rgb: 26,32,40; --bg1-rgb: 34,41,51;
+    --shell0-rgb: 46,55,68; --shell1-rgb: 37,45,56;
+    --chip-rgb: 58,69,85; --stroke-rgb: 96,111,132; --stroke-dim-rgb: 74,87,105;
+    --teal-rgb: 94,214,205; --warn-rgb: 240,190,80; --danger-rgb: 246,120,120;
+    --path-rgb: 160,178,250; --shadow-rgb: 12,16,22;
+    --bg-0: #2A323E; --blue: #7FB2F0; --card-0: #333C4A; --card-1: #262E39; --grid: #43505F;
+    --head: #F4F7FB; --body: #C2CBD7; --label: #A3AEBD; --dim: #8391A2; --dimmest: #6B7889;
+    --chip-accent: #1D4A45; --chip-accent-stroke: #2F7A70; --chip-accent-text: #A5E8DF;
+    --btn-hover: #465365; --danger-text: #FFD3D7;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Muted purple-grey. Plum without the saturation. */
+  :root[data-skin="dusk"] {
+    --sink-rgb: 32,27,40; --bg1-rgb: 41,35,51;
+    --shell0-rgb: 54,46,67; --shell1-rgb: 44,37,55;
+    --chip-rgb: 66,57,82; --stroke-rgb: 110,96,134; --stroke-dim-rgb: 85,74,105;
+    --teal-rgb: 200,160,246; --warn-rgb: 240,196,96; --danger-rgb: 246,124,150;
+    --path-rgb: 150,178,250; --shadow-rgb: 16,12,22;
+    --bg-0: #322A3E; --blue: #9BC0F2; --card-0: #3B3349; --card-1: #2C2637; --grid: #4E4460;
+    --head: #F7F3FC; --body: #CBC0D8; --label: #ADA0BD; --dim: #8E82A0; --dimmest: #756A86;
+    --chip-accent: #3A2450; --chip-accent-stroke: #5F3E80; --chip-accent-text: #DEC2F4;
+    --btn-hover: #4F4363; --danger-text: #FFD5DE;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Mid green-grey and sage. Moss with the volume down. */
+  :root[data-skin="fern"] {
+    --sink-rgb: 25,34,29; --bg1-rgb: 33,44,37;
+    --shell0-rgb: 44,58,49; --shell1-rgb: 36,48,40;
+    --chip-rgb: 55,72,60; --stroke-rgb: 96,124,104; --stroke-dim-rgb: 73,95,79;
+    --teal-rgb: 150,206,120; --warn-rgb: 236,196,90; --danger-rgb: 240,126,120;
+    --path-rgb: 146,182,236; --shadow-rgb: 10,16,12;
+    --bg-0: #29352C; --blue: #86C7B4; --card-0: #323F35; --card-1: #242E27; --grid: #405142;
+    --head: #F3F8F3; --body: #BFCEC1; --label: #A0B3A3; --dim: #829685; --dimmest: #6B7D6E;
+    --chip-accent: #24401C; --chip-accent-stroke: #3E6B31; --chip-accent-text: #BFE3A6;
+    --btn-hover: #435743; --danger-text: #FFD5D2;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Warm mid grey. Sandstone lifted out of the dark. */
+  :root[data-skin="clay"] {
+    --sink-rgb: 38,32,28; --bg1-rgb: 48,41,36;
+    --shell0-rgb: 62,53,46; --shell1-rgb: 51,44,38;
+    --chip-rgb: 76,66,57; --stroke-rgb: 124,108,92; --stroke-dim-rgb: 96,84,72;
+    --teal-rgb: 236,150,104; --warn-rgb: 240,198,110; --danger-rgb: 238,120,112;
+    --path-rgb: 168,172,240; --shadow-rgb: 20,15,12;
+    --bg-0: #3A322C; --blue: #E3B48C; --card-0: #453B33; --card-1: #332C26; --grid: #574A40;
+    --head: #FAF5F0; --body: #D2C5B9; --label: #B4A597; --dim: #948779; --dimmest: #7B6F63;
+    --chip-accent: #4A2E1B; --chip-accent-stroke: #7A4F2E; --chip-accent-text: #F0C3A0;
+    --btn-hover: #5A4C41; --danger-text: #FFD4D0;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Brighter blue. The default family, lifted and louder. */
+  :root[data-skin="cobalt"] {
+    --sink-rgb: 18,30,48; --bg1-rgb: 24,40,62;
+    --shell0-rgb: 33,54,82; --shell1-rgb: 27,44,68;
+    --chip-rgb: 41,67,102; --stroke-rgb: 72,116,172; --stroke-dim-rgb: 55,90,136;
+    --teal-rgb: 80,224,208; --warn-rgb: 252,200,80; --danger-rgb: 250,116,124;
+    --path-rgb: 150,180,255; --shadow-rgb: 6,12,22;
+    --bg-0: #16263D; --blue: #56A8FF; --card-0: #1E3252; --card-1: #142339; --grid: #2C4468;
+    --head: #F3F8FF; --body: #B9CCE2; --label: #97AEC9; --dim: #7791AE; --dimmest: #617A94;
+    --chip-accent: #12463F; --chip-accent-stroke: #1E7568; --chip-accent-text: #92E9DC;
+    --btn-hover: #2E4C74; --danger-text: #FFD2D5;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* Airy teal-grey and mint. The lightest of the darks. */
+  :root[data-skin="mint"] {
+    --sink-rgb: 24,36,36; --bg1-rgb: 32,47,47;
+    --shell0-rgb: 43,62,62; --shell1-rgb: 35,51,51;
+    --chip-rgb: 53,76,76; --stroke-rgb: 92,128,128; --stroke-dim-rgb: 70,99,99;
+    --teal-rgb: 110,226,196; --warn-rgb: 240,198,92; --danger-rgb: 242,124,124;
+    --path-rgb: 148,180,240; --shadow-rgb: 8,16,16;
+    --bg-0: #283A3A; --blue: #6FC5D6; --card-0: #314646; --card-1: #223232; --grid: #3F5A5A;
+    --head: #F2FAF8; --body: #BDD0CC; --label: #9DB4B0; --dim: #7F9793; --dimmest: #697E7A;
+    --chip-accent: #16413A; --chip-accent-stroke: #276B5E; --chip-accent-text: #A3E7D6;
+    --btn-hover: #3F5C5C; --danger-text: #FFD3D3;
+    --lift: rgba(255,255,255,.06); --lift-strong: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.05);
+  }
+
+  /* ── website ───────────────────────────────────────────
+     The docs site and landing page, worn by the board. The site's dark palette
+     IS harbour (website/src/css/custom.css says so and copies it), so the block
+     below is harbour's palette value for value. What the site adds is three
+     effects, and this is the one skin that carries more than a palette:
+
+     - the primary button is filled with the teal-to-blue accent gradient and
+       sits on a coloured glow, as the landing page's call to action does,
+     - the header is frosted: flatter, more see-through, and saturated behind the
+       blur, as the site's top bar is,
+     - a soft teal and blue glow sits behind the top of the board, which is the
+       landing page's hero glow spread across the backdrop.
+
+     Every rule is scoped to this skin's selector, so no other skin moves by a
+     pixel, and the headless test holds harbour to that. None of it is layout:
+     no size, space or radius changes. The type and spacing the site uses are
+     left alone on purpose.
+
+     Each rule is written across several lines rather than on one. check-skins.sh
+     reads anything starting `:root[data-skin=` as a skin block until the next
+     line that is a closing brace, and a one-line rule would swallow what follows
+     it. */
+  :root[data-skin="website"] {
+    --sink-rgb: 4,11,20; --bg1-rgb: 7,19,34;
+    --shell0-rgb: 13,33,53; --shell1-rgb: 8,22,37;
+    --chip-rgb: 23,58,87; --stroke-rgb: 44,95,132; --stroke-dim-rgb: 37,80,111;
+    --teal-rgb: 0,227,176; --warn-rgb: 255,198,77; --danger-rgb: 255,107,107;
+    --path-rgb: 157,180,255; --shadow-rgb: 2,6,9;
+    --bg-0: #0B1B2E; --blue: #28C2FF; --card-0: #12293F; --card-1: #0A1A2B; --grid: #1B3B5A;
+    --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4; --dim: #5E819C; --dimmest: #456C88;
+    --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
+    --btn-hover: #1D4666; --danger-text: #FFC3C9;
+    --lift: rgba(255,255,255,.05); --lift-strong: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.04);
+  }
+  /* The glow is drawn in the body's own background, under the grid, the way the
+     site's hero glow sits under its grid. The blue is spelled out because the
+     palette has no triple for it. */
+  :root[data-skin="website"] body {
+    background:
+      radial-gradient(ellipse 55% 50% at 30% 12%, rgba(var(--teal-rgb),.16), transparent 70%) fixed,
+      radial-gradient(ellipse 50% 45% at 75% 8%, rgba(40,194,255,.16), transparent 70%) fixed,
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
+  }
+  :root[data-skin="website"] header:not(.rh) {
+    background: rgb(var(--bg1-rgb));
+    border-bottom-color: var(--grid);
+  }
+  /* The walk drawer's header takes the same frost as the board's. */
+  :root[data-skin="website"] .walk-head {
+    background: rgba(var(--bg1-rgb),.78);
+    backdrop-filter: saturate(160%) blur(12px);
+    border-bottom-color: var(--grid);
+  }
+  /* Dark ink on the gradient, the site's own `#04121D`, because the accent is
+     too bright for the board's light text to read on. */
+  :root[data-skin="website"] button.go {
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    border-color: transparent; color: #04121D;
+    box-shadow: 0 10px 30px rgba(var(--teal-rgb),.22);
+  }
+  :root[data-skin="website"] button.go:hover {
+    color: #04121D; border-color: transparent;
+    box-shadow: 0 14px 36px rgba(40,194,255,.3);
+  }
+  /* The rules above outrank the board's disabled rule, so a disabled primary
+     button has to be put back to looking like it cannot do anything. */
+  :root[data-skin="website"] button.go:disabled,
+  :root[data-skin="website"] button.go:disabled:hover {
+    background: var(--chip); border-color: var(--stroke-dim); color: var(--body);
+    box-shadow: none;
+  }
+  :root[data-skin="website"] .na-split > button.newagent:hover {
+    background: linear-gradient(90deg, var(--teal), var(--blue)); color: #04121D;
+    filter: brightness(1.12);
+  }
+
+</style>
+<style>/* chrome.css */
+  /* The frame around every view: the header and its tabs, the halt banner, the guest-only page, the `main`
+     element, and the scrollbar styling for the whole board.
+
+     Loads after tokens.css and before everything that draws inside main. The scrollbar block near the bottom
+     is universal, so anything loaded later that wants its own bar has to say so and will win on specificity. */
+  /* ── header ─────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    /* Opaque on purpose. A blurred translucent header is re-blurred every frame anything moves behind it, and
+       the sound button's pulse used to keep that going at 60 fps. Every skin sets --bg1-rgb, so this reads the
+       same on all of them. */
+    background: rgb(var(--bg1-rgb));
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  /* One line, always. A button that breaks across two lines reads as broken, and the header is the row people
+     navigate by. The tabs give up their width first because they can scroll, and the actions on the right keep
+     theirs.
+
+     The padding answers to --density as well as --uiscale. The header is on screen in every view, so its
+     height is paid on every tab. */
+  .bar {
+    display: flex; align-items: center; gap: var(--sp-5);
+    padding: calc(11px * var(--uiscale) * var(--density)) var(--row-x);
+    flex-wrap: nowrap; min-width: 0;
+  }
+  .bar > * { flex: none; }
+  /* The tabs give up their width first, as the note above says. `.bar > *` sets
+     every child to `flex: none`, which is what keeps the action buttons their
+     size, but it also caught the nav and pinned it at its full content width, so
+     between 900px and a wide desktop the header ran off the right edge and every
+     view scrolled sideways with it. This wins on specificity and lets the nav
+     shrink and scroll again, which is what its own `overflow-x: auto` is for. */
+  .bar > nav { flex: 0 1 auto; min-width: 0; }
+  .wordmark {
+    font-size: var(--fs-3xl); font-weight: 700; letter-spacing: .34em; margin: 0;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .rule { height: 2px; background: linear-gradient(90deg, var(--teal), var(--blue) 40%, transparent); }
+  nav {
+    display: flex; gap: var(--sp-1); min-width: 0; flex: 0 1 auto;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  nav::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: calc(6px * var(--uiscale) * var(--density)) calc(13px * var(--uiscale));
+    border-radius: var(--r-md); cursor: pointer; color: var(--label);
+    border: 1px solid transparent; font-size: var(--fs-2xl); font-weight: 500;
+    transition: color .15s, background .15s, border-color .15s; user-select: none;
+    white-space: nowrap; flex: none;
+  }
+  .tab:hover { color: var(--head); }
+  .tab.on {
+    color: var(--head); background: var(--chip); border-color: var(--stroke);
+  }
+  .tab .count {
+    display: inline-block; margin-left: 8px; padding: 1px 9px; border-radius: var(--r-pill);
+    font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(var(--warn-rgb),.15); color: var(--warn);
+  }
+  .tab .count:empty, .tab .count.zero { display: none; }
+  /* Use the danger colour and pulse for permission requests waiting on a human. */
+  .tab .count#c-perm {
+    background: rgba(var(--danger-rgb),.24); color: var(--danger-text);
+    box-shadow: 0 0 0 1px var(--danger);
+    animation: pulse 1.9s ease-in-out 3;
+  }
+  .grow { flex: 1; }
+  .conn {
+    font: 500 var(--fs-xl)/1 var(--mono); color: var(--dim); display: flex; align-items: center; gap: var(--sp-3);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
+  .conn.live .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+  /* Down, the chip is a pill in the room chip's shape, in smaller type than the live chip: the header is
+     already full at a laptop's width, and `reconnecting` is a long word. The dot breathes, because something
+     is happening. */
+  .conn.down {
+    font-size: var(--fs-sm); color: var(--danger-text); white-space: nowrap;
+    padding: 6px 12px; border-radius: var(--r-pill);
+    border: 1px solid rgba(var(--danger-rgb),.55); background: rgba(var(--danger-rgb),.12);
+  }
+  .conn.down .dot {
+    width: 8px; height: 8px; box-shadow: 0 0 0 0 rgba(var(--danger-rgb),.6);
+    animation: conn-breathe 1.6s ease-out 5;
+  }
+  @keyframes conn-breathe {
+    0% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb),.6); }
+    100% { box-shadow: 0 0 0 7px rgba(var(--danger-rgb),0); }
+  }
+
+  /* ── changing rooms ─────────────────────────────────────
+     A reload shows the view the markup says (the stack) and then the script puts you back on the one you were
+     reading, so a switch made from the terminals meant watching somebody else's screen draw on the way past.
+     `html.switching` is set by an inline script in the head, before the first paint, so the board underneath is
+     never seen mid-change. Removed once the board is on the right view. */
+  #switching { display: none; }
+  html.switching #switching {
+    display: flex; position: fixed; inset: 0; z-index: 500;
+    align-items: center; justify-content: center;
+    background: var(--bg-1);
+  }
+  /* The board is not merely covered, it is not drawn. A cover over a live board still lets a terminal attach,
+     a poll land and a pane repaint underneath, which is work thrown away and, on a slow machine, a cover that
+     arrives after the flash it was meant to hide. */
+  html.switching body > header,
+  html.switching body > main { visibility: hidden; }
+  /* The card itself is the wait family's. See `.waitcard` in css/dialogs.css. */
+  #switching .s-what b { color: var(--teal); font-weight: 600; }
+
+  /* ── which room ─────────────────────────────────────────
+     Only ever drawn on a hub, which is an atrium that serves this board and holds nothing. It reads as a
+     counter and behaves as a selector: `2/2 rooms` is every machine at once, a name is one machine and the
+     whole board is that machine's atrium.
+
+     Sits beside the connection dot and is styled like it, because they answer neighbouring questions: one says
+     whether the board is live, the other says what it is live to. */
+  .rooms {
+    font: 500 var(--fs-xl)/1 var(--mono); color: var(--dim); cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 5px 11px; border-radius: var(--r-pill);
+    border: 1px solid var(--stroke-dim); background: var(--chip);
+  }
+  .rooms:hover { color: var(--head); border-color: var(--stroke); }
+  .rooms-all { font: 500 var(--fs-xl)/1 var(--mono); padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer; }
+  .rooms-all[hidden] { display: none; }
+  .rooms .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
+  /* Scoped to one room, which is a mode worth seeing from across the desk. */
+  .rooms.scoped { color: var(--teal); border-color: var(--teal); }
+  /* Nothing attached. The hub is up and has nothing to show, which is a normal state every time a room
+     restarts and must not look like the board being broken. */
+  .rooms.cold .dot { background: var(--warn); box-shadow: none; }
+  /* The board lost the hub. This chip is the only connection indicator on a hub, so it has to be able to say
+     so: a green counter beside a red `reconnecting` was two controls contradicting each other. */
+  /* Attached rooms set up differently (missing hooks, another build). The tooltip names each. */
+  .rooms.warn { color: var(--warn); border-color: var(--warn); }
+  .rooms.warn .dot { width: auto; height: auto; background: none; box-shadow: none; border-radius: 0; }
+  .rooms.warn .dot::before { content: "\26A0\FE0E"; font-size: var(--fs-xl); line-height: 1; }
+  #setuppop {
+    position: fixed; z-index: 400; width: max-content; max-width: calc(100vw - 16px); max-height: 80vh; overflow: auto;
+    padding: 10px 14px; user-select: text; white-space: nowrap; font-size: calc(var(--fs-sm) * 1.2);
+    background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke); border-radius: var(--r-md);
+    box-shadow: var(--shadow-pop);
+  }
+  #setuppop[hidden] { display: none; }
+  /* One grid for the whole popover so the room names are one column and every mark lines up under the last. */
+  #setuppop { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 10px; align-items: baseline; }
+  #setuppop[hidden] { display: none; }
+  #setuppop h5 { margin: 0; font: 600 1em/1.5 var(--mono); color: var(--head); text-align: left; }
+  #setuppop .rm { display: contents; }
+  #setuppop .rm b { font-weight: 400; }
+  #setuppop .rm.bad b, #setuppop .rm.bad span { color: var(--warn); }
+  #setuppop .ok { color: var(--body); }
+  #setuppop .it { grid-column: 2 / 4; display: flex; gap: 8px; align-items: baseline; font: 400 1em/1.5 var(--sans); color: var(--body); }
+  #setuppop .it.bad { color: var(--warn); }
+  #setuppop .it .tx { flex: 1; }
+  #setuppop .it .setuppick { flex: none; width: 1em; margin: 0; }
+  #setuppop .it .why { flex: none; margin-left: 16px; color: var(--dim); font-style: italic; }
+  #setuppop .setupall { grid-column: 1 / -1; margin-top: 10px; }
+  #setuppop .it .k { flex: none; font-family: var(--mono); opacity: .8; }
+  #setuppop .setupfix { margin-left: 16px; padding: 1px 8px; }  .setupline { display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px; }
+  .setupline .chip.warn { color: var(--warn); border-color: var(--warn); }
+  .rooms.down { color: var(--danger-text); border-color: var(--danger); }
+  .rooms.down .dot { background: var(--danger); box-shadow: none; }
+  /* Fixed and body-level, positioned by script from the chip. See the note on the element itself: the header
+     is a stacking context, so a menu inside it cannot be lifted above the page. */
+  .rooms-menu {
+    position: fixed; z-index: 90; min-width: 19rem;
+    /* A panel of room tiles rather than a list of names, so it is sized like one, and never wider than the
+       window. It scrolls inside itself: openRooms sets its height from the chip down. */
+    width: min(36rem, calc(100vw - 16px)); overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2);
+    border: 1px solid var(--stroke); border-radius: var(--r-md);
+    /* --shell-0 and not --bg-1, which is the page. A popover wants the panel colour, and it is the same one
+       #cardmenu uses so the two look like the same kind of thing. An undefined token here resolves to
+       transparent, which reads as a z-index fault: the border and the text draw, and the page shows through. */
+    background: var(--shell-0); border: 1px solid var(--stroke);
+    box-shadow: 0 14px 40px rgba(var(--shadow-rgb),.55);
+  }
+  /* `display: flex` above beats the browser's own `[hidden] { display: none }`, because an author rule wins
+     over the user agent one whatever the specificity. Without this the menu is never closed. */
+  .rooms-menu[hidden] { display: none; }
+  /* One line per room: a state dot, the name, and the meta pushed to the right.
+     The dot carries the state the way the header chip does, so live and offline
+     read at a glance from the same colours. */
+  .rooms-menu button {
+    display: flex; flex-direction: row; align-items: center; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4); border: 0; border-radius: var(--r-sm);
+    background: none; color: var(--body); text-align: left; cursor: pointer;
+    transition: background .12s;
+  }
+  .rooms-menu button:hover { background: var(--chip); }
+  .rooms-menu button.on { color: var(--teal); background: var(--teal-bg); }
+  .rooms-menu button strong { font: 600 var(--fs-lg)/1.3 var(--mono); }
+  /* Live is teal and lit, the same green the pill uses. Offline is a flat amber,
+     also the pill's, so the two states are one language across the header. */
+  .rooms-menu button .dot { width: 8px; height: 8px; flex: none; background: var(--warn); box-shadow: none; }
+  .rooms-menu button .dot.live { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .rooms-menu button .dot.ghost { background: transparent; box-shadow: none; }
+  /* A disconnected room. Dimmed so the live ones read first, but still a button:
+     the board shows what an offline room last said, so it stays selectable. */
+  .rooms-menu button.cold strong { color: var(--dim); }
+  .rooms-menu button .meta {
+    margin-left: auto; padding-left: var(--sp-4);
+    font: 500 var(--fs-sm)/1 var(--mono); color: var(--dim); white-space: nowrap;
+  }
+  .rooms-menu .none { padding: var(--sp-4); font-size: var(--fs-sm); color: var(--dim); line-height: 1.5; }
+  /* The reject affordance on a not-attached row. Dim until the row is hovered,
+     so it is out of the way of the ordinary click and there to reach for when
+     wanted. It carries its own hover so the target it hits is obvious, and it
+     turns danger-coloured because forgetting a room is the destructive one. */
+  .rooms-menu button .roomx {
+    flex: none; margin-left: var(--sp-2); width: 1.25rem; height: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono);
+    color: var(--dim); opacity: 0; transition: opacity .12s, background .12s, color .12s;
+  }
+  .rooms-menu button:hover .roomx { opacity: .7; }
+  .rooms-menu button .roomx:hover { opacity: 1; color: var(--danger); background: var(--chip); }
+  /* The per-room settings cog on a live row. Sits at the right edge after the host meta, and unlike the reject
+     `x` it stays visible rather than waiting on hover: it is the quick way into one room's own settings, not a
+     rare destructive action. Dim at rest so the room name reads first, and it lifts on hover like a control. */
+  .rooms-menu button .roomcog {
+    flex: none; margin-left: var(--sp-2); width: 1.25rem; height: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono);
+    color: var(--dim); opacity: .55; transition: opacity .12s, background .12s, color .12s;
+  }
+  .rooms-menu button:hover .roomcog { opacity: .85; }
+  .rooms-menu button .roomcog:hover { opacity: 1; color: var(--teal); background: var(--chip); }
+
+  /* ── the room tiles, from js/rooms-dash.js ──────────────────────────────────────────────────────────────
+     One tile per room, three bands side by side, stacked at phone width. Every colour is a skin variable, so a
+     light skin gets light tiles without a rule of its own. */
+  .rtile {
+    display: flex; flex-direction: column; gap: var(--sp-2);
+    padding: var(--sp-3); border-radius: var(--r-md); cursor: pointer; text-align: left;
+    border: 1px solid var(--stroke-dim); background: var(--card-1); color: var(--body);
+    transition: border-color .15s, background .15s;
+  }
+  .rtile:hover { border-color: var(--stroke); background: var(--card-0); }
+  .rtile:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .rtile.on { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal-bg); }
+  .rtile.all { background: var(--shell-1); }
+  .rtile .rt-head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  .rtile .rt-head > * { flex: none; }
+  .rtile .rt-head strong { font: 600 var(--fs-lg)/1.2 var(--mono); color: var(--head); }
+  .rtile.on .rt-head strong { color: var(--teal); }
+  /* The meta gives way first, with an ellipsis, so the badges and the cog stay on the one line. */
+  .rtile .rt-head > .rt-meta {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 500 var(--fs-sm)/1.2 var(--mono); color: var(--dim);
+  }
+  .rtile .rt-head .grow { display: none; }
+  .rtile .rt-head .chip { font-size: var(--fs-xs); }
+  .rtile .dot { width: 8px; height: 8px; flex: none; border-radius: 50%; }
+  .rtile .dot.live { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .rtile .dot.ghost { background: transparent; border: 1px solid var(--dim); }
+  .rtile .roomcog {
+    flex: none; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono); color: var(--dim); opacity: .6;
+    transition: opacity .12s, background .12s, color .12s;
+  }
+  .rtile:hover .roomcog { opacity: .9; }
+  .rtile .roomcog:hover { opacity: 1; color: var(--teal); background: var(--chip); }
+
+  .rt-bands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  .rd-band {
+    display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm);
+    background: var(--bg-2); border: 1px solid var(--hairline);
+    font: 500 var(--fs-sm)/1.35 var(--mono); color: var(--body); text-align: left;
+  }
+  .rd-h { font: 600 var(--fs-xxs)/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--label); }
+  .rd-sub { font: 500 var(--fs-xxs)/1.4 var(--mono); color: var(--dim); margin-top: 3px; }
+  .rd-row { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+  .rd-row b { font-weight: 600; color: var(--head); font-variant-numeric: tabular-nums; }
+  .rd-row b.rd-big { font-size: var(--fs-md); }
+  .rd-dim { color: var(--dim); }
+  .rd-dim span { color: var(--label); }
+  .rd-dash { color: var(--dimmest); }
+  .rd-warn, .rd-warn b { color: var(--warn); }
+  .rd-rate { flex-wrap: nowrap; align-items: center; }
+  .rd-rate > span { flex: none; }
+
+  /* Needs you is the one number that asks for a person, so it wears the waiting colour and is a control. */
+  .rd-need b { color: var(--dim); }
+  .rd-need.on { color: var(--warn); cursor: pointer; border-radius: var(--r-xs); padding: 0 3px; margin: 0 -3px; }
+  .rd-need.on b { color: var(--warn); }
+  .rd-need.on:hover { background: var(--warn-bg); }
+  .rd-kinds { gap: var(--sp-2); color: var(--label); font-size: var(--fs-xs); }
+  .rd-kinds i { font-style: normal; color: var(--dimmest); }
+  .rd-kinds .off { color: var(--dimmest); text-decoration: line-through; }
+
+  /* Sparklines: a polyline and a faint fill under it, stretched to the band, the stroke kept at one width. */
+  .rd-spark { flex: 1 1 auto; min-width: 0; height: 1.25rem; display: block; overflow: visible; }
+  .rd-spark.none { height: 1px; background: var(--hairline); align-self: center; }
+  .rd-spark polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .rd-spark .area { stroke: none; opacity: .14; }
+  .rd-spark.tok polyline { stroke: var(--teal); }
+  .rd-spark.tok .area { fill: var(--teal); }
+  .rd-spark.cpu polyline { stroke: var(--blue); }
+  .rd-spark.cpu .area { fill: var(--blue); }
+  /* u-034: memory's own colour, through a variable a skin can set. A one-point run is a dot, so the cap is round. */
+  .rd-spark.mem polyline { stroke: var(--spark-mem, #b48cff); }
+  .rd-spark.mem .area { fill: var(--spark-mem, #b48cff); }
+  .rd-spark.lag polyline { stroke: var(--warn); }
+  .rd-spark.lag .area { fill: var(--warn); }
+  .rd-rate.hot .rd-spark.lag polyline { stroke: var(--danger); }
+  .rd-rate.hot .rd-spark.lag .area { fill: var(--danger); }
+  .rd-spark polyline { stroke-linecap: round; }
+  .rd-note { color: var(--dim); font-size: var(--fs-xs); }
+  .rd-stale { opacity: .55; }
+  .rd-stale .rd-note:last-child { color: var(--warn); }
+  .rd-rate.hot .rd-spark.cpu polyline { stroke: var(--danger); }
+  .rd-rate.hot .rd-spark.cpu .area { fill: var(--danger); }
+  .rd-rate.hot b { color: var(--danger-text); }
+
+  /* The limit bars. What a card last said, labelled so, coloured by how close it is to the line. */
+  .rd-limits { display: flex; flex-direction: column; gap: 2px; }
+  .rd-lim { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); }
+  .rd-lim .k { flex: none; width: 2.6em; color: var(--label); }
+  .rd-lim .v { flex: none; min-width: 2.6em; text-align: right; color: var(--head); font-variant-numeric: tabular-nums; }
+  .rd-bar { flex: 1; height: 5px; border-radius: var(--r-pill); background: var(--chip); overflow: hidden; }
+  .rd-bar i { display: block; height: 100%; border-radius: inherit; background: var(--teal); transition: width .4s ease; }
+  .rd-lim.warm .rd-bar i { background: var(--warn); }
+  .rd-lim.hot .rd-bar i { background: var(--danger); }
+  .rd-lim.hot .v { color: var(--danger-text); }
+
+  /* A number that changed fades in over its old value, which fades out on top of it. */
+  .rd-fade { position: relative; animation: rd-in .7s ease-out; }
+  .rd-fade::after {
+    content: attr(data-was); position: absolute; left: 0; top: 0; white-space: nowrap;
+    pointer-events: none; animation: rd-out .7s ease-out forwards;
+  }
+  @keyframes rd-in { from { opacity: .15; } to { opacity: 1; } }
+  @keyframes rd-out { from { opacity: .8; } to { opacity: 0; visibility: hidden; } }
+
+  /* A slow pulse on a tile with somebody waiting or a CPU past 90%. Slow enough to be seen from across the
+     desk and never read as an alarm. */
+  .rtile.hot { animation: rd-pulse 2.8s ease-in-out 3; }
+  @keyframes rd-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--warn-rgb), 0); border-color: var(--stroke-dim); }
+    50% { box-shadow: 0 0 0 3px rgba(var(--warn-rgb), .18); border-color: var(--warn-stroke); }
+  }
+  .rtile.hot.on { animation-name: rd-pulse-on; }
+  @keyframes rd-pulse-on {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--warn-rgb), 0); }
+    50% { box-shadow: 0 0 0 3px rgba(var(--warn-rgb), .18); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rtile.hot { animation: none; border-color: var(--warn-stroke); }
+    .rd-fade, .rd-fade::after { animation: none; }
+    .rd-fade::after { content: none; }
+    .rd-bar i { transition: none; }
+  }
+
+  /* The disconnected rooms, below the tiles and dimmed, one line each with their `x`. */
+  .rtile-offs { display: flex; flex-direction: column; border-top: 1px solid var(--hairline); padding-top: var(--sp-2); }
+  .rooms-menu button.rtile-off { opacity: .8; }
+
+  /* Phone: one tile per row, the bands stacked, the sparklines kept. */
+  @media (max-width: 640px) {
+    .rt-bands { grid-template-columns: minmax(0, 1fr); }
+    .rd-band { flex-direction: column; }
+    .rtile .rt-head { flex-wrap: wrap; }
+  }
+
+  /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.
+     A runner, a fixture, a source, a recogniser and an action all belong to one machine, so looking at several
+     machines means several lists rather than one long one with a repeated label near the right edge. The
+     heading is the boundary and the boundary is the point. */
+  .roomgroup {
+    margin: var(--vs-4) 0 var(--sp-3);
+    font: 600 var(--fs-md)/1 var(--mono); color: var(--teal);
+    letter-spacing: .08em; text-transform: lowercase;
+  }
+  /* The first one sits under the pane's own lead text, which has already paid for the space. */
+  .roomgroup:first-child { margin-top: 0; }
+
+  #halted {
+    display: none; padding: 13px 26px; gap: var(--sp-4); align-items: baseline;
+    background: linear-gradient(90deg, rgba(var(--danger-rgb),.18), rgba(var(--danger-rgb),.04));
+    border-bottom: 1px solid var(--danger); color: var(--danger-text); font-size: var(--fs-md);
+  }
+  #halted strong { color: var(--danger); letter-spacing: .1em; text-transform: uppercase; font-size: var(--fs-sm); }
+  #halted code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--danger-text); }
+
+  /* The whole page, for a share opened without its fragment. `body.guestonly` takes the board away rather than
+     leaving it empty behind this, because an empty board reads as a second copy of your own. */
+  #guestonly {
+    max-width: 46rem; margin: 12vh auto 0; padding: 0 var(--sp-5);
+    color: var(--body); font-size: var(--fs-md); line-height: 1.6;
+  }
+  #guestonly strong {
+    display: block; color: var(--teal); letter-spacing: .1em; text-transform: uppercase;
+    font-size: var(--fs-sm); margin-bottom: var(--sp-3);
+  }
+  #guestonly p { margin: 0 0 var(--sp-4); }
+  #guestonly .guest-how { color: var(--dim); font-size: var(--fs-sm); }
+  #guestonly code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--head); }
+  body.guestonly header,
+  body.guestonly main,
+  body.guestonly #halted { display: none !important; }
+
+  /* Full width, with no cap. A cap left a third of a wide screen empty while a diff scrolled inside a box.
+
+     main never scrolls. The view inside it does. A scrollbar on main is drawn inside main's padding, over the
+     right edge of whatever is showing, which put it on top of the terminal.
+
+     min-height:0 is what lets main shrink at all. A flex item defaults to its content's height, which pushes
+     the page taller than the window.
+
+     It is a flex column as well as a flex item. The board asked for 100% of main and then sat below the group
+     bar and inside main's padding, so the total was taller by the bar plus the padding. A percentage height
+     cannot see its siblings and flex can. */
+  main {
+    position: relative; z-index: 1; padding: 20px 26px;
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  /* The views that fill what is left. Everything else in main keeps its own height. */
+  main > .board,
+  main > #stack,
+  main > #perms,
+  main > #runners,
+  main > #audit,
+  main > #chatter,
+  main > #history,
+  main > #usage,
+  main > #terms { flex: 1 1 auto; min-height: 0; }
+  /* The ones that can be taller than the window scroll themselves. The board scrolls per lane and the terminal
+     never scrolls, so neither is here. */
+  main > #perms,
+  main > #runners { overflow-y: auto; overflow-x: hidden; }
+  /* The stack scrolls its list rather than itself, so the filter pills, sort pills and search box stay on
+     screen once there are enough cards to scroll. Inside the scroll box they left the top of the screen
+     exactly when the list got long enough to need them, and the scrollbar ran up past them as well. */
+  main > #stack {
+    display: flex; flex-direction: column; overflow: hidden; gap: 0;
+  }
+  #stack > .filters { flex: 0 0 auto; }
+  #stack > #stack-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* The backlog the same way: its view bar and the header row stay put and the list scrolls, with the reports under it scrolling on their own. */
+  main > #backlog { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #backlog > :not(#backlog-items):not(#backlog-reports) { flex: 0 0 auto; }
+  #backlog > #newitem-open { align-self: flex-start; }
+  #backlog > #backlog-items { flex: 1 1 60%; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  #backlog > #backlog-reports { flex: 0 1 30%; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* The audit and history panes the same way: the heading and the filters stay put and the list scrolls
+     under them. A view left out of both lists above is as tall as its rows, and main clips the rest. A new
+     top-level view goes in one of them. */
+  main > #audit,
+  main > #chatter,
+  main > #history,
+  main > #usage { display: flex; flex-direction: column; overflow: hidden; }
+  #audit > *,
+  #chatter > *,
+  #history > *,
+  #usage > * { flex: 0 0 auto; }
+  #usage > #uc-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; }
+  #audit > #audit-list,
+  #chatter > #chatter-list,
+  #history > #history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* ── scrollbars ─────────────────────────────────────── */
+  /* Every scrollbar on the board, in one universal rule, with one carve-out.
+
+     The page has twenty-odd boxes that can scroll: the stack, the perms list, the runners page, each board
+     lane, the file lists, the session switcher, every dialog body, the overlay log, every wide code block, and
+     the nav on a narrow window. Styling them by name styles the five somebody noticed, and the sixteenth
+     arrives as the operating system's grey strip. A new scrolling box inherits this without anybody coming
+     back here.
+
+     The carve-out is `#t-screen *`, the whole terminal subtree, and not `.xterm-viewport`. Read this before
+     narrowing it, because there are two reasons and fixing one still leaves the other:
+
+       1. The fit addon works out how many columns fit by measuring its viewport's scrollbar. Anything that
+          changes that width makes xterm draw rows wider than the box, and the text runs under the bar.
+       2. xterm renders five elements: `.xterm`, `.xterm-viewport`, `.xterm-screen`, the canvases, and
+          `textarea.xterm-helper-textarea`, a 20x20 box parked at the cursor. Excluding the viewport by name
+          left the other four inside the universal rule, and one of them grew a second scrollbar down the right
+          of the terminal beside xterm's own.
+
+     So nothing under `#t-screen` gets a scrollbar from this board. xterm owns its own geometry, and the only
+     thing set on it is at `.xterm-viewport` in terminal.css.
+
+     `scrollbar-color` only paints and cannot move anything, so it is set on `html` and inherits everywhere
+     including the terminal, which is what the terminal wants.
+
+     Firefox reads the two `scrollbar-*` properties and ignores the pseudo elements. Chromium is the other way
+     round. Both are set, and neither is a fallback for the other.
+
+     `:where()` rather than a bare `:not()` is load-bearing. A universal rule has to lose every argument, and
+     three places hide their bar with `scrollbar-width: none`. A plain `*:not(.xterm-viewport)` carries the
+     specificity of the class inside it and outranks all of them. `:where()` scores zero. */
+  html { scrollbar-color: var(--stroke-dim) transparent; }
+  *:where(:not(#t-screen, #t-screen *)) { scrollbar-width: thin; }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar { width: 10px; height: 10px; }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-track { background: transparent; }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-thumb {
+    background: var(--stroke-dim); border-radius: var(--r-pill);
+    /* Inset by a transparent border, so the thumb reads as a slim pill in a gutter rather than as a block
+       filling the channel. */
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-thumb:hover {
+    background-color: var(--stroke);
+  }
+  /* Where both bars meet on a box that scrolls two ways. Left alone it is a light square belonging to no
+     theme. */
+  *:where(:not(#t-screen, #t-screen *))::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Room for the bar on the boxes whose content reaches their right edge. A scrollbar is drawn inside the
+     padding box, so without this a row's border sits under it. The space is not claimed back with a negative
+     margin, because main clips and a box wider than main loses the strip the bar is in along with the last of
+     the content. */
+  #stack-list,
+  #audit-list,
+  #chatter-list,
+  #history-list,
+  main > #perms,
+  main > #runners,
+  .board .col > .cards { padding-right: 12px; }
+  /* A few pixels above the runners page so the sticky nav's selected pill is not
+     flush with the scroll box's top edge, which clipped its top border. */
+  main > #runners { padding-top: 4px; }
+  /* A hidden view must not claim its share of the column. */
+  main > [hidden] { display: none !important; }
+  main > #terms { display: flex; flex-direction: column; }
+
+
+</style>
+<style>/* walk.css */
+/* The walk drawer (js/walk.js, docs/rnd/review-tab-design.md). Colours come from the existing tokens only, so every skin
+   wears it with no edit. The four severity properties derive from the channel triples, so a skin that moves
+   --warn-rgb moves every MED chip with it. */
+  :root {
+    --sev-high: rgb(var(--danger-rgb));
+    --sev-med: rgb(var(--warn-rgb));
+    --sev-low: rgb(var(--path-rgb));
+    --sev-nit: var(--dim);
+  }
+
+  /* The drawer never takes width from the terminal: a narrower pane is a pty resize, and the runner redraws its whole
+     screen for one. It lies over the terminal's right edge, or over the card list's column (`.in-list`, `walkPlace`).
+     The z-index stays under the held line and the paste box. */
+  .term-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; position: relative; }
+  .term-body > #t-screen { flex: 1 1 0; }
+
+  .walk {
+    position: absolute; top: 0; right: 0; bottom: 0; z-index: 4; width: min(58%, 760px); min-width: 320px;
+    max-width: 100%; box-sizing: border-box;
+    display: flex; flex-direction: column; min-height: 0;
+    container-type: inline-size;
+    background: rgb(var(--shell0-rgb)); color: var(--body);
+    border-left: 1px solid var(--stroke-dim); outline: none;
+    box-shadow: -12px 0 28px rgba(var(--shadow-rgb),.35);
+  }
+  .walk[hidden] { display: none; }
+  .walk.in-list {
+    right: auto; bottom: auto; min-width: 0; max-width: none; z-index: 41;
+    border-left: none; border-radius: var(--r-md); box-shadow: none;
+  }
+  .walk.in-list .walk-grip { display: none; }
+  .walk.wk-b {
+    left: 0; right: 0; bottom: 32%; width: auto; min-width: 0; max-width: none;
+    border-left: none; border-bottom: 1px solid var(--stroke-dim); box-shadow: none;
+  }
+  .walk.wk-b .walk-grip { display: none; }
+  .walk-files {
+    position: absolute; z-index: 41; display: flex; flex-direction: column; min-height: 0; box-sizing: border-box;
+    background: rgb(var(--shell0-rgb)); border-radius: var(--r-md); outline: none;
+  }
+  .walk-files[hidden] { display: none; }
+  .walk-files .walk-rail { flex: 1 1 auto; width: auto; max-width: none; border: 0; background: transparent; padding: 0; }
+  .walk-head {
+    display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto;
+    padding: var(--vs-2) var(--sp-4); border-bottom: 1px solid var(--stroke-dim);
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.92), rgba(var(--shell1-rgb),.92));
+  }
+  .walk-head a.wk-pr { color: inherit; text-decoration: none; min-width: 0; }
+  .walk-head a.wk-pr[href]:hover strong { text-decoration: underline; }
+  .walk button:hover, .walk button:active, .walk-files button:hover { transform: none; }
+  .walk-nav { display: flex; flex: 0 0 auto; align-items: center; gap: 28px; padding: 4px var(--sp-4); border-bottom: 1px solid var(--stroke-dim); font-size: var(--fs-xs); }
+  .walk-nav[hidden] { display: none; }
+  .walk-nav .navgrp { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--stroke-dim); border-radius: var(--r-md); background: rgba(var(--sink-rgb),.3); }
+  .walk-nav .by { min-width: 9.5em; text-align: center; color: var(--head); white-space: nowrap; }
+  .walk-nav { flex-wrap: wrap; row-gap: 2px; }
+  .walk-nav button { white-space: nowrap; padding: 2px 8px; font-size: var(--fs-xs); }
+  .walk-nav .by { min-width: 8em; }
+  .walk-head button { flex: none; }
+  .walk-head { min-width: 0; flex-wrap: wrap; row-gap: var(--vs-1); }
+  .walk-head a.wk-pr { flex: 0 1 auto; overflow: hidden; }
+  .walk-head a.wk-pr strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+  .walk-head #walk-note { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .walk-head .walk-close { margin-left: var(--sp-4); }
+  #t-walk { flex: none; white-space: nowrap; }
+  #t-walk-pr { flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--teal); text-decoration: none; }
+  #t-walk-pr:hover, #walk-ghlink:hover { text-decoration: underline; }
+  #walk-ghlink { flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--teal); text-decoration: none; }
+  #t-walk-pr[hidden], #walk-ghlink[hidden] { display: none; }
+  .wk-ask {
+    all: unset; cursor: pointer; flex: none; margin-left: var(--sp-3); padding: 0 var(--sp-2); border-radius: var(--r-pill);
+    font: var(--fs-xxs) var(--sans); color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4); white-space: nowrap;
+  }
+  .wk-ask:hover { background: var(--teal-bg); color: var(--head); }
+  .wk-fbar .wk-ask { margin-left: 0; }
+  .wk-file .wk-l.hk .wk-tx { display: flex; align-items: center; }
+  .walk-nav kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); margin-left: 4px; }
+  .walk-head strong { color: var(--head); font-size: var(--fs-md); white-space: nowrap; }
+  .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
+  .wk-mode { display: inline-flex; flex: none; border: 1px solid var(--stroke); border-radius: var(--r-sm); overflow: hidden; }
+  .wk-mode[hidden] { display: none; }
+  .walk-head .wk-mode button {
+    border: 0; border-radius: 0; margin: 0; background: transparent; color: var(--dim); padding: 3px 9px;
+    font-size: var(--fs-sm); line-height: 1.3; cursor: pointer;
+  }
+  .walk-head .wk-mode button + button { border-left: 1px solid var(--stroke); }
+  .walk-head .wk-mode button.on { background: var(--lift); color: var(--head); }
+  .wk-mode .n { opacity: .7; margin-left: 3px; }
+  .walk-body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .walk-grip {
+    all: unset; position: absolute; top: 0; left: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
+  }
+  .walk-grip:hover, .walk-grip:focus-visible { background: rgba(var(--teal-rgb),.25); }
+
+  /* The rail. */
+  /* `display: block` undoes chrome.css's bare `nav` rule, which lays the rows side by side. */
+  .walk-rail {
+    display: block; flex: 0 0 auto; width: 15em; max-width: 45%; overflow-y: auto; padding: var(--vs-1) 0;
+    border-right: 1px solid var(--stroke-dim); background: rgba(var(--sink-rgb),.35);
+  }
+  .wk-row {
+    all: unset; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+    padding: var(--row-y-sm) var(--sp-3); cursor: pointer; font: var(--fs-sm)/1.2 var(--mono); color: var(--body);
+    white-space: nowrap;
+  }
+  .wk-row:hover { background: var(--lift); }
+  .wk-row.cur { background: var(--lift-strong); box-shadow: inset 2px 0 0 var(--teal); color: var(--head); }
+  .wk-row.brk { border-top: 1px solid var(--stroke-dim); }
+  .wk-row.dismissed, .wk-row.posted { opacity: .7; }
+  .wk-g { width: 1.2em; text-align: center; color: var(--teal); }
+  .wk-row.dismissed .wk-g { color: var(--dim); }
+  .wk-row.accepted .wk-g { color: var(--blue); }
+  .wk-row.deferred .wk-g { color: var(--warn); }
+  .wk-n { color: var(--dim); }
+  .wk-p { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .wk-lk { color: var(--danger); margin-left: auto; }
+  .wk-new {
+    margin-left: auto; font-size: var(--fs-xxs); padding: 0 var(--sp-2); border-radius: var(--r-pill);
+    background: var(--teal-bg); color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4);
+  }
+  .wk-lk + .wk-new { margin-left: var(--sp-2); }
+  .wk-grp {
+    margin-left: auto; font-size: var(--fs-xxs); padding: 0 var(--sp-2); border-radius: var(--r-pill);
+    color: var(--dim); border: 1px solid var(--dim);
+  }
+  .walk-head .walk-pending {
+    flex: 0 0 auto; font-size: var(--fs-xs); white-space: nowrap;
+    padding: 0 var(--sp-2); border-radius: var(--r-pill); color: var(--teal);
+    border: 1px solid rgba(var(--teal-rgb),.4); background: var(--teal-bg);
+  }
+
+  .wk-sev {
+    display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xxs);
+    font-weight: 600; color: var(--sevc, var(--dim)); border: 1px solid var(--sevc, var(--dim));
+    background: color-mix(in srgb, var(--sevc, var(--dim)) 14%, transparent);
+  }
+  .wk-sev.s-high { --sevc: var(--sev-high); }
+  .wk-sev.s-med { --sevc: var(--sev-med); }
+  .wk-sev.s-low { --sevc: var(--sev-low); }
+  .wk-sev.s-nit { --sevc: var(--sev-nit); }
+  /* A leak is an outline in the danger colour, never a fill, so it sits beside a severity chip without
+     shouting over it. */
+  .wk-leakchip {
+    display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xxs);
+    font-weight: 600; color: var(--danger); border: 1px solid var(--danger); background: transparent;
+  }
+
+  /* The finding. */
+  .walk-item { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--vs-3) var(--sp-4); }
+  .wk-fhead { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--vs-2); }
+  .wk-num { color: var(--head); font: 600 var(--fs-md) var(--mono); }
+  .wk-where { color: var(--label); font: var(--fs-sm) var(--mono); }
+  .wk-state { font-size: var(--fs-xs); color: var(--teal); }
+  .wk-state.dismissed { color: var(--dim); }
+  .wk-state.accepted { color: var(--blue); }
+  .wk-state.deferred { color: var(--warn); }
+  .wk-warns { margin-bottom: var(--vs-2); }
+  .wk-warn { color: var(--warn); font-size: var(--fs-xs); }
+
+  .wk-code {
+    background: var(--bg-2); border-radius: var(--r-sm); font: var(--fs-sm)/1.45 var(--mono);
+    margin-bottom: var(--vs-3); overflow-x: auto; padding: var(--vs-1) 0;
+  }
+  .wk-code { display: grid; grid-template-columns: minmax(100%, max-content); align-content: start; }
+  .wk-l { display: flex; gap: var(--sp-3); padding: 0 var(--sp-3); white-space: pre; }
+  .wk-l.add { background: var(--teal-bg); }
+  .wk-l.del { background: rgba(var(--danger-rgb),.14); }
+  .wk-l.del .wk-mk { color: var(--danger); }
+  .wk-l.hk { color: var(--dim); background: var(--lift); }
+  .walk-item .empty.err { color: var(--warn); }
+  .wk-l.at { outline: 1px solid var(--teal); outline-offset: -1px; }
+  .wk-ln { color: var(--dimmest); min-width: 4ch; text-align: right; }
+  .wk-mk { color: var(--teal); min-width: 2ch; }
+  /* A file of the patch, drawn as GitHub's Files changed draws it: a bar, two gutters, rows tinted edge to edge, long
+     lines wrapped so nothing scrolls sideways. */
+  .wk-file { border: 1px solid var(--stroke-dim); border-radius: var(--r-md); overflow: hidden; margin-bottom: var(--vs-3); }
+  .wk-fbar {
+    display: flex; align-items: center; gap: var(--sp-3); padding: var(--vs-1) var(--sp-3); background: var(--lift);
+    border-bottom: 1px solid var(--stroke-dim); font: var(--fs-sm)/1.4 var(--mono); position: sticky; top: 0; z-index: 1;
+  }
+  .wk-fold { all: unset; cursor: pointer; color: var(--dim); width: 1.4em; text-align: center; }
+  .wk-fold:hover { color: var(--head); }
+  .wk-fpath { flex: 1 1 auto; min-width: 0; color: var(--head); overflow-wrap: anywhere; }
+  .wk-was { color: var(--dim); }
+  .wk-fstat { display: inline-flex; align-items: center; gap: var(--sp-2); flex: none; font-size: var(--fs-xs); }
+  .wk-fstat .a { color: var(--teal); font-weight: 600; }
+  .wk-fstat .d { color: var(--danger); font-weight: 600; }
+  .wk-sq { display: inline-flex; gap: 1px; }
+  .wk-sq i { width: 8px; height: 8px; background: var(--dimmest); }
+  .wk-sq i.a { background: var(--teal); }
+  .wk-sq i.d { background: var(--danger); }
+  .wk-file .wk-code { display: block; margin: 0; border-radius: 0; padding: 0; overflow: visible; }
+  .wk-file .wk-l { gap: 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; }
+  .wk-file .wk-lo, .wk-file .wk-ln {
+    flex: none; box-sizing: border-box; width: 5ch; padding: 0 var(--sp-2); text-align: right; user-select: none;
+    background: rgba(var(--shadow-rgb),.12);
+  }
+  .wk-file .wk-l.add .wk-ln, .wk-file .wk-l.add .wk-lo { background: rgba(var(--teal-rgb),.22); }
+  .wk-file .wk-l.del .wk-ln, .wk-file .wk-l.del .wk-lo { background: rgba(var(--danger-rgb),.24); }
+  .wk-file .wk-mk { flex: none; width: 2ch; text-align: center; user-select: none; }
+  .wk-file .wk-tx { flex: 1 1 auto; min-width: 0; padding-right: var(--sp-3); }
+  .wk-file .wk-l.hk { color: var(--dim); background: var(--lift); padding: 2px 0; }
+  .walk.wk-b .wk-file .wk-code { margin: 0; }
+  .wk-file .wk-l.hk .wk-tx { padding-left: var(--sp-3); }
+  .wk-w { color: inherit; border-radius: 2px; background: rgba(var(--teal-rgb),.35); }
+  .wk-l.del .wk-w { background: rgba(var(--danger-rgb),.4); }
+  /* The comments under a line stay clear of the gutters. */
+  .wk-file .cmt { margin-left: 10ch; white-space: normal; }
+  /* The phone's handle for the terminal sheet. Only phone.css shows it. */
+  .walk-sheet { display: none; }
+  .wk-more {
+    all: unset; display: block; width: 100%; box-sizing: border-box; cursor: pointer; text-align: center;
+    color: var(--dim); font-size: var(--fs-xs); padding: 2px 0;
+  }
+  .wk-more:hover { color: var(--head); }
+
+  .wk-comment {
+    background: var(--card-0); color: var(--head); border-radius: var(--r-sm); padding: var(--vs-2) var(--sp-3);
+    font: var(--fs-sm)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: var(--vs-2);
+  }
+  .wk-cl.lab { color: var(--head); font-weight: 600; }
+  .wk-comment code { background: rgba(var(--teal-rgb),.12); border-radius: var(--r-xs); padding: 0 2px; }
+  .wk-cl.flash { animation: wkflash 2s ease-out; background: var(--teal-bg); }
+  @keyframes wkflash { from { background: rgba(var(--teal-rgb),.35); } to { background: transparent; } }
+
+  .wk-ev { color: var(--label); font-size: var(--fs-xs); margin-bottom: var(--vs-3); }
+  .wk-evh { all: unset; cursor: pointer; }
+  .wk-evh span { color: var(--dim); margin-left: var(--sp-2); }
+  .wk-ev pre { font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--vs-1) 0 0; }
+
+  .wk-actions {
+    display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; position: relative;
+    margin: var(--vs-3) 0 var(--vs-5);
+  }
+  .wk-btn {
+    display: inline-flex; align-items: center; gap: var(--sp-2); cursor: pointer; text-decoration: none;
+    padding: var(--vs-1) var(--sp-4); border-radius: var(--r-sm); border: 1px solid var(--stroke-dim);
+    color: var(--head); font: var(--fs-sm)/1.6 var(--sans); background: var(--lift);
+  }
+  .wk-btn:hover { background: var(--lift-strong); }
+  .wk-btn kbd, .wk-menu kbd { font: var(--fs-xxs) var(--mono); color: var(--dim); }
+  .wk-btn.accept { border-color: rgba(var(--teal-rgb),.55); background: var(--teal-bg); }
+  .wk-btn.dismiss { color: var(--body); }
+  .wk-btn.defer { border-color: var(--warn-stroke); background: var(--warn-bg); }
+  .wk-btn.go { background: var(--teal); color: var(--bg-0); border-color: var(--teal); font-weight: 600; }
+  .wk-menu {
+    position: absolute; right: 0; top: calc(100% + 4px); min-width: 15em; z-index: 5;
+    background: var(--shell-1); border: 1px solid var(--stroke); border-radius: var(--r-md);
+    box-shadow: var(--shadow-pop); padding: var(--vs-1) 0;
+  }
+  .wk-menu button {
+    all: unset; box-sizing: border-box; display: flex; width: 100%; gap: var(--sp-3); cursor: pointer;
+    padding: var(--vs-2) var(--sp-4); color: var(--body); font: var(--fs-sm) var(--sans);
+  }
+  .wk-menu button:hover, .wk-menu button:focus-visible { background: var(--lift-strong); color: var(--head); }
+  .wk-menu button:disabled { opacity: .45; cursor: default; }
+  .wk-menu button kbd { margin-left: auto; }
+  .wk-menu hr { border: 0; border-top: 1px solid var(--stroke-dim); margin: var(--vs-1) 0; }
+
+  /* The rail's title and the thread count. The drawer is too narrow for the title, the tab of its own shows it. */
+  .wk-rt { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+  .wk-t { display: none; }
+  .wk-fn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .wk-fc { margin-left: auto; color: var(--dim); font-size: var(--fs-xxs); }
+  .wk-tc {
+    font: var(--fs-xxs) var(--mono); color: var(--path); border: 1px solid rgba(var(--path-rgb),.45);
+    border-radius: var(--r-pill); padding: 0 var(--sp-2); white-space: nowrap;
+  }
+  .wk-tc.wait { background: rgba(var(--path-rgb),.16); }
+
+  /* The thread with the review card, under the finding. */
+  .wk-thread h3 {
+    display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; margin: 0 0 var(--vs-3);
+    font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--label);
+  }
+  .wk-thread h3 span { text-transform: none; letter-spacing: 0; color: var(--dim); font-weight: 400; }
+  .wk-turn { display: flex; gap: var(--sp-3); margin-bottom: var(--vs-3); }
+  .wk-av {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font: 600 var(--fs-xxs) var(--mono); color: var(--bg-0); background: var(--teal);
+  }
+  .wk-turn.rv .wk-av { background: var(--path); }
+  .wk-bub {
+    flex: 1; min-width: 0; border-radius: var(--r-md); padding: var(--vs-2) var(--sp-4);
+    border: 1px solid var(--stroke-dim); background: var(--lift);
+  }
+  .wk-turn.rv .wk-bub { background: rgba(var(--path-rgb),.07); border-color: rgba(var(--path-rgb),.25); }
+  .wk-who { font-size: var(--fs-xs); color: var(--label); margin-bottom: 2px; }
+  .wk-who b { color: var(--head); font-weight: 600; }
+  .wk-said { color: var(--body); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wk-said code { font: var(--fs-xs) var(--mono); background: rgba(var(--teal-rgb),.12); border-radius: var(--r-xs); padding: 0 3px; }
+  .wk-wait { font-size: var(--fs-xs); color: var(--dim); margin: 0 0 var(--vs-3) 38px; }
+  .wk-reply { border: 1px solid var(--stroke); border-radius: var(--r-md); background: var(--bg-2); margin-top: var(--vs-2); }
+  .wk-reply textarea {
+    all: unset; box-sizing: border-box; display: block; width: 100%; min-height: 4.2em; padding: var(--vs-3) var(--sp-4);
+    color: var(--head); font: var(--fs-sm)/1.5 var(--sans); white-space: pre-wrap;
+  }
+  .wk-reply textarea::placeholder { color: var(--dimmest); }
+  .wk-rfoot {
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    padding: var(--vs-2) var(--sp-3) var(--vs-2) var(--sp-4);
+    border-top: 1px solid var(--stroke-dim); font-size: var(--fs-xs); color: var(--dim);
+  }
+  .wk-rfoot .tag { font-family: var(--mono); color: var(--label); }
+  .walk .grow { flex: 1 1 auto; }
+
+  /* walk.html: the same drawer with the window to itself. */
+  .wv-page { font: var(--fs-base)/1.45 var(--sans); height: 100vh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .walk-body { overflow: hidden; }
+  .walk.solo {
+    position: relative; inset: auto; flex: 1 1 auto; width: auto; min-width: 0; max-width: none; z-index: 1;
+    border-left: none; box-shadow: none; background: transparent;
+  }
+  .walk.solo .walk-head { padding: var(--vs-3) var(--sp-5); flex-wrap: wrap; background: var(--shell-0); }
+  .walk.solo .walk-head strong { font-size: var(--fs-lg); }
+  .wv-card { font: var(--fs-sm) var(--mono); color: var(--label); }
+  .walk.solo .walk-rail { width: 19em; max-width: 40%; }
+  .walk.solo .wk-row { white-space: normal; align-items: flex-start; padding: var(--vs-3) var(--sp-4); }
+  .walk.solo .wk-t {
+    display: block; font: var(--fs-sm)/1.3 var(--sans); color: var(--body);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .walk.solo .wk-row.cur .wk-t { color: var(--head); }
+  .walk.solo .wk-p { font-size: var(--fs-xs); color: var(--dim); white-space: nowrap; }
+  .walk.solo .walk-item { padding: var(--vs-4) var(--sp-6) var(--vs-6); }
+  .walk.solo .walk-item > * { max-width: 920px; }
+  .wv-toasts { position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 9; display: grid; gap: var(--sp-2); }
+  .wv-toast {
+    display: grid; gap: 2px; max-width: 26rem; padding: var(--vs-2) var(--sp-4); border-radius: var(--r-md);
+    background: var(--shell-1); border: 1px solid var(--stroke); box-shadow: var(--shadow-pop); font-size: var(--fs-sm);
+  }
+  .wv-toast b { color: var(--head); }
+
+  /* A phone: the rail is a row of chips over the finding, and the three decisions sit at the bottom of the screen. */
+  @media (max-width: 700px) {
+    .walk.solo .walk-head { padding: var(--vs-2) var(--sp-3); gap: var(--sp-2); }
+    .walk.solo .walk-head .walk-bar, .walk.solo .walk-head .by { display: none; }
+    .walk.solo .walk-body { flex-direction: column; }
+    .walk.solo .walk-rail {
+      display: flex; gap: var(--sp-2); width: auto; max-width: none; overflow-x: auto; flex: 0 0 auto;
+      padding: var(--vs-2) var(--sp-3); border-right: none; border-bottom: 1px solid var(--stroke-dim);
+    }
+    .walk.solo .wk-row {
+      width: auto; flex: 0 0 auto; align-items: center; white-space: nowrap; padding: var(--vs-1) var(--sp-3);
+      border: 1px solid var(--stroke-dim); border-radius: var(--r-pill);
+    }
+    .walk.solo .wk-row.cur { border-color: var(--teal); background: var(--teal-bg); box-shadow: none; }
+    .walk.solo .wk-row.brk { border-top: 1px solid var(--stroke-dim); }
+    .walk.solo .wk-rt, .walk.solo .wk-lk, .walk.solo .wk-new { display: none; }
+    .walk.solo .wk-g { width: auto; }
+    .walk.solo .walk-item { padding: var(--vs-3) var(--sp-3) calc(var(--vs-6) * 3); }
+    .walk.solo .wk-code { font-size: var(--fs-xs); }
+    .walk.solo .wk-actions {
+      position: fixed; left: 0; right: 0; bottom: 0; margin: 0; z-index: 3; flex-wrap: nowrap; max-width: none;
+      padding: var(--vs-2) var(--sp-3); background: var(--shell-0); border-top: 1px solid var(--stroke-dim);
+    }
+    .walk.solo .wk-actions .grow { display: none; }
+    .walk.solo .wk-actions .wk-btn { flex: 1; justify-content: center; padding: var(--vs-3) 0; }
+    .walk.solo .wk-actions .wk-btn kbd { display: none; }
+    .walk.solo .wk-actions .wk-btn.more { flex: 0 0 auto; padding: var(--vs-3) var(--sp-4); }
+    .walk.solo .wk-menu { top: auto; bottom: calc(100% + 4px); right: var(--sp-3); }
+  }
+  .wk-edit {
+    width: 100%; box-sizing: border-box; min-height: 14em; background: var(--bg-2); color: var(--head);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: var(--sp-3);
+    font: var(--fs-sm)/1.5 var(--mono); margin-bottom: var(--vs-2); resize: vertical;
+  }
+  .wk-cmp { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-bottom: var(--vs-2); }
+  .wk-cmp pre {
+    background: var(--bg-2); color: var(--head); border-radius: var(--r-sm); padding: var(--sp-3); margin: 0;
+    font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .wk-cmph { color: var(--label); font-size: var(--fs-xs); margin-bottom: var(--vs-1); }
+
+  /* Too narrow for three columns: the rail folds to numbers and chips. */
+  @container (max-width: 560px) {
+    .walk-rail { width: 9em; }
+    .wk-p { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wk-cl.flash { animation: none; }
+    .walk-bar i, .wk-mini i { transition: none; }
+  }
+
+  /* Layout B: comment bubbles under a line, the scope chips, and the bar along the bottom. */
+  .walk-item .wk-l .wk-ln[data-ln] { cursor: pointer; }
+  .walk-item .wk-l .wk-ln[data-ln]:hover { color: var(--teal); text-decoration: underline; }
+  .walk.wk-b .walk-item { padding: 0; }
+  .walk.wk-b .wk-fhead { padding: var(--vs-2) var(--sp-4); margin: 0; }
+  .walk.wk-b .wk-code { margin: 0 var(--sp-4) var(--vs-3); }
+  .wk-tc { color: var(--teal); font-size: var(--fs-xxs); border: 1px solid rgba(var(--teal-rgb),.4); border-radius: var(--r-pill); padding: 0 var(--sp-2); }
+  .wk-fn { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .wk-fc { margin-left: auto; color: var(--dim); font-size: var(--fs-xs); }
+  .cmt {
+    resize: both; overflow: auto; min-width: 300px; min-height: 90px; max-width: 90%; box-sizing: border-box;
+    display: flex; flex-direction: column; margin: 6px 0 8px 5.2ch; padding: 8px 12px; white-space: normal;
+    border: 1px solid var(--stroke-dim); border-left: 3px solid var(--teal); border-radius: var(--r-md);
+    background: rgb(var(--shell0-rgb)); font: var(--fs-base)/1.45 system-ui, sans-serif; color: var(--body);
+  }
+  .wk-wait { display: flex; align-items: center; gap: var(--sp-2); margin: 4px 0; color: var(--dim); font: var(--fs-xs) var(--mono); }
+  .wk-wait .spin { width: 12px; height: 12px; border: 2px solid rgba(var(--teal-rgb),.3); border-top-color: var(--teal); border-radius: 50%; animation: wkspin .8s linear infinite; }
+  @keyframes wkspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .wk-wait .spin { animation-duration: 3s; } }
+  .cmt.sel { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .cmt.you { --cb: var(--blue); }
+  .cmt .chead { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 4px; font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .cmt .chead b { color: var(--head); }
+  .cmt .st { color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4); border-radius: var(--r-pill); padding: 0 var(--sp-2); font-size: var(--fs-xxs); }
+  .cmt .wk-turn { margin: 4px 0; }
+  .cmt textarea, .askrow textarea { color: var(--head); background: rgba(var(--sink-rgb),.4); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); padding: 6px 10px; }
+  .cmt textarea { width: 100%; box-sizing: border-box; min-height: 2.6em; flex: 1 1 auto; resize: none; font: var(--fs-base)/1.4 system-ui, sans-serif; }
+  .cmt .wk-said { font-size: var(--fs-base); }
+  .cmt .row2 { display: flex; align-items: center; gap: var(--sp-2); margin-top: 6px; flex-wrap: wrap; }
+  .cmt .row2 .grow { flex: 1; }
+  .cmt code.gh { display: block; margin-top: 6px; padding: 4px 8px; font: var(--fs-xxs)/1.4 var(--mono); color: var(--dim); background: rgba(var(--sink-rgb),.5); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-all; }
+  .cmt .rv-foot { padding: 6px 8px; margin: 6px 0; border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); background: rgba(var(--sink-rgb),.45); font: var(--fs-xxs)/1.45 var(--mono); white-space: pre-wrap; }
+  .walk .help, .walk-bottom .help {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border-radius: 50%;
+    border: 1px solid var(--dim); color: var(--dim); font: var(--fs-xxs) var(--mono); cursor: help; flex: none;
+  }
+  .walk .help:hover, .walk .help:focus-visible, .walk-bottom .help:hover, .walk-bottom .help:focus-visible { color: var(--head); border-color: var(--head); }
+
+  .walk-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; flex-direction: column; min-height: 0; pointer-events: none; }
+  .walk-bottom[hidden] { display: none; }
+  .walk-bottom > * { pointer-events: auto; }
+  .walk-bottom.wb-thread, .walk-bottom.wb-term { height: 32%; }
+  .walk-bottom.wb-term { background: none; }
+  .walk-bottom.wb-bar1, .walk-bottom.wb-thread { background: rgb(var(--shell0-rgb)); }
+  .wb-bar { display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto; padding: 4px 14px; font: var(--fs-sm) var(--mono); color: var(--dim);
+    background: rgb(var(--shell0-rgb)); border-top: 1px solid var(--stroke-dim); }
+  .wb-bar.open { border-bottom: 1px solid var(--stroke-dim); }
+  .wb-toggle { all: unset; cursor: pointer; color: var(--dim); }
+  .wb-toggle b { color: var(--head); }
+  .wb-toggle:hover b { text-decoration: underline; }
+  .wb-last { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wb-bar .by { white-space: nowrap; }
+  .wb-bar .wb-sw { margin-left: auto; display: inline-flex; }
+  .wb-sw button { padding: 2px 8px; font-size: var(--fs-xs); }
+  .wb-sw button[aria-pressed="true"] { border-color: var(--teal); color: var(--head); }
+  .wb-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .chatlog { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 12px; }
+  .chatlog .wk-turn { margin: 4px 0; }
+  .chatlog .sctx { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--stroke-dim); font: var(--fs-xxs)/1.4 var(--mono); color: var(--dim); }
+  .chatin { flex: 0 0 auto; padding: 6px 12px 8px; border-top: 1px solid var(--stroke-dim); }
+  .askrow { display: flex; gap: 8px; align-items: center; }
+  .askrow textarea { flex: 1; font: inherit; color: var(--head); resize: none; padding: 6px 10px; border: 1px solid var(--stroke-dim); border-radius: var(--r-md); background: rgba(var(--sink-rgb),.4); }
+  .scopechips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; font: var(--fs-xxs) var(--mono); color: var(--dim); }
+  .scopechips .sc { padding: 1px 8px; border-radius: var(--r-pill); font: var(--fs-xxs) var(--mono); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scopechips .sc i { font-style: normal; margin-right: 4px; }
+  .scopechips .sc b { color: var(--teal); }
+  .scopechips .sc.onc { background: rgba(var(--teal-rgb),.22); border: 1px solid var(--teal); color: var(--head); }
+  .scopechips .sc.offc { background: transparent; border: 1px dashed var(--stroke); color: var(--dim); opacity: .6; text-decoration: line-through; }
+  .scopechips .sc.offc b { color: var(--dim); }
+  .walk-bottom button:hover, .walk-bottom button:active { transform: none; }
+
+  .walk-share-pop {
+    position: absolute; z-index: 9; top: 44px; right: 10px; width: 520px; max-width: 90%; padding: 12px 14px;
+    border: 1px solid var(--stroke); border-radius: var(--r-md); background: rgb(var(--shell0-rgb));
+    box-shadow: 0 8px 28px rgba(var(--shadow-rgb),.4); font: var(--fs-sm)/1.45 system-ui, sans-serif; color: var(--body);
+  }
+  .walk-share-pop[hidden] { display: none; }
+  .walk-share-pop p { margin: 6px 0; }
+  .walk-share-pop code { font: var(--fs-xxs) var(--mono); }
+  .walk-share-pop .row2 { display: flex; gap: var(--sp-2); align-items: center; margin: 6px 0; }
+  .walk-share-pop textarea { width: 100%; box-sizing: border-box; resize: vertical; font: var(--fs-xxs) var(--mono); }
+  .walk-share-pop button:hover { transform: none; }
+  .pulls-pop-walk { margin-right: auto; cursor: pointer; color: var(--dim); font-size: var(--fs-xs); text-decoration: underline; }
+
+</style>
+<style>
+  body { margin: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-0); color: var(--body);
+    font: var(--fs-base)/1.45 var(--sans); }
+  #stage { flex: 1 1 auto; min-height: 0; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+  #stage .walk { position: relative; width: auto; flex: 1; max-width: none; box-shadow: none; min-height: 0; }
+  #cardbar { flex: none; display: flex; gap: 12px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--stroke-dim); }
+  #mockbar { flex: none; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 12px; border-top: 2px solid var(--teal);
+    background: var(--shell-0); font: var(--fs-sm) var(--mono); }
+  #mockbar b { color: var(--teal); }
+  #mockbar button.on { border-color: var(--teal); color: var(--head); }
+  .icon { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 26px; height: 26px; color: var(--dim); }
+  .icon:hover { color: var(--head); }
+</style>
+</head>
+<body>
+<div id="cardbar"><span style="color:var(--head)" id="cardname">ziti-sdk-c-1245</span>
+  <button type="button" id="t-walk"><span id="t-walk-label"></span></button>
+  <a id="t-walk-pr" target="_blank" rel="noopener"></a></div>
+<div id="stage">
+<aside class="walk" id="walk-drawer">
+  <div class="walk-head"><strong id="walk-title"></strong>
+    <a id="walk-ghlink" target="_blank" rel="noopener"></a>
+    <span class="wk-mode" id="walk-mode" hidden>
+      <button type="button" data-mode="unstaged">unstaged <span class="n"></span></button>
+      <button type="button" data-mode="staged">staged <span class="n"></span></button>
+      <button type="button" data-mode="branch">branch <span class="n"></span></button></span>
+    <span class="by" id="count"></span><span class="grow"></span>
+    <button type="button">share walk</button>
+    <button type="button" class="icon" aria-label="pop out" data-tip="open the walk in a tab of its own"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3.5"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></button>
+    <button type="button" class="go">back to terminal</button></div>
+  <div class="walk-nav" id="walk-nav">
+    <span class="navgrp"><button type="button">&#8249; previous <kbd>p</kbd></button><span class="by">change 1 of 4</span><button type="button">next <kbd>n</kbd> &#8250;</button></span>
+    <span class="navgrp"><button type="button">&#8249; previous <kbd>[</kbd></button><span class="by" id="cmtat"></span><button type="button">next <kbd>]</kbd> &#8250;</button></span></div>
+  <div class="walk-body"><nav id="rail" class="walk-rail"></nav><section id="item" class="walk-item"></section></div>
+  <div id="bottom" class="walk-bottom" style="position:relative"></div>
+</aside>
+</div>
+<div id="mockbar"><b>MOCK</b> view:
+  <button data-v="pr">GitHub PR (every file)</button><button data-v="local">local uncommitted diff</button><button data-v="long">long lines</button>
+  <button data-v="folded">collapsed file</button><button data-v="comments">comment + thread</button><button data-v="empty">rename / binary</button>
+  forge: <select id="forge"><option value="https://github.com/openziti/ziti-sdk-c/pull/1245">GitHub</option>
+    <option value="https://gitlab.com/g/p/-/merge_requests/12">GitLab</option>
+    <option value="https://bitbucket.org/w/r/pull-requests/7">Bitbucket</option>
+    <option value="http://127.0.0.1:7950/_hub/pr/3">local hub</option>
+    <option value="https://code.example.com/o/r/pulls/9">other</option></select>
+  skin: <select id="skin"></select></div>
+<script>
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// Copied from js/walk.js: walkWordSpan, walkWords, walkFileText, walkForgeName, and the markup of filePane.
+function walkWordSpan(a, b) {
+  let s = 0;
+  while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let ea = a.length, eb = b.length;
+  while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+  return { a: [s, ea], b: [s, eb] };
+}
+function walkWords(lines) {
+  const out = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].t !== "-" || (i && lines[i - 1].t === "-")) continue;
+    let d = i; while (d < lines.length && lines[d].t === "-") d++;
+    let a = d; while (a < lines.length && lines[a].t === "+") a++;
+    if (a - d !== d - i) continue;
+    for (let k = 0; k < d - i; k++) {
+      const w = walkWordSpan(lines[i + k].text, lines[d + k].text);
+      if (w.a[0] === 0 && w.a[1] === lines[i + k].text.length && w.b[1] === lines[d + k].text.length) continue;
+      out.set(i + k, w.a); out.set(d + k, w.b);
+    }
+  }
+  return out;
+}
+function walkFileText(text, span) {
+  if (!span || span[0] >= span[1]) return esc(text) || "&nbsp;";
+  return esc(text.slice(0, span[0])) + `<mark class="wk-w">${esc(text.slice(span[0], span[1]))}</mark>` + esc(text.slice(span[1]));
+}
+function walkForgeName(url) {
+  const h = new URL(url).hostname.toLowerCase();
+  if (h === location.hostname || h === "localhost" || h === "127.0.0.1") return "the local hub";
+  if (h === "github.com") return "GitHub";
+  if (h.includes("gitlab")) return "GitLab";
+  if (h.includes("bitbucket")) return "Bitbucket";
+  return h;
+}
+function parse(text) {
+  const out = []; let f = null, n = 0, o = 0;
+  for (const l of text.split("\n")) {
+    const g = /^diff --git a\/(.+?) b\/(.+)$/.exec(l);
+    if (g) { f = { path: g[2], from: g[1], status: "modified", add: 0, del: 0, lines: [], inHunk: false }; out.push(f); continue; }
+    if (!f) continue;
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l);
+    if (h) { o = +h[1]; n = +h[2]; f.inHunk = true; f.lines.push({ t: "@", n: null, text: l }); continue; }
+    if (!f.inHunk) { if (l.startsWith("Binary")) f.status = "binary"; continue; }
+    if (l.startsWith("+")) { f.add++; f.lines.push({ t: "+", n: n++, o: null, text: l.slice(1) }); }
+    else if (l.startsWith("-")) { f.del++; f.lines.push({ t: "-", n: null, o: o++, text: l.slice(1) }); }
+    else if (l.startsWith(" ")) f.lines.push({ t: " ", n: n++, o: o++, text: l.slice(1) });
+  }
+  return out;
+}
+const LONG = "const veryLongLine = buildTheRequestWithEveryHeaderTheServerWantsAndThenSomeMore(sessionToken, apiSessionId, controllerAddress, identityName, enrollmentJwt, trustStorePath, \"https://controller.example.invalid:1280/edge/client/v1/authenticate?method=cert\");";
+const AUTH = `diff --git a/library/src/auth.c b/library/src/auth.c
+--- a/library/src/auth.c
++++ b/library/src/auth.c
+@@ -40,9 +40,12 @@ static int auth_begin(ziti_context ztx) {
+   if (ztx == NULL) {
+     return ZITI_INVALID_STATE;
+   }
+-  char *token = strdup(ztx->token);
+-  ZITI_LOG(DEBUG, "token is %s", token);
++  char *token = ztx->token ? strdup(ztx->token) : NULL;
++  if (token == NULL) {
++    return ZITI_INVALID_STATE;
++  }
+   int rc = auth_send(ztx, token);
+-  free(token);
++  free(token);
++  ${LONG}
+   return rc;
+ }
+@@ -120,4 +123,5 @@ void auth_done(ziti_context ztx) {
+   uv_close((uv_handle_t *) &ztx->timer, NULL);
++  ztx->token = NULL;
+ }
+`;
+const UTIL = `diff --git a/library/src/util.c b/library/src/util.c
+--- a/library/src/util.c
++++ b/library/src/util.c
+@@ -7,6 +7,6 @@ size_t bounded_copy(char *dst, const char *src, size_t cap) {
+   size_t n = strlen(src);
+-  if (n > cap) n = cap;
++  if (n >= cap) n = cap - 1;
+   memcpy(dst, src, n);
+   dst[n] = 0;
+   return n;
+`;
+const SPECIAL = `diff --git a/old/name.c b/library/src/renamed.c
+rename from old/name.c
+rename to library/src/renamed.c
+diff --git a/img/logo.png b/img/logo.png
+Binary files a/img/logo.png and b/img/logo.png differ
+`;
+// Fourteen files, every one listed: GitHub's count, not a page of it.
+const extra = Array.from({ length: 10 }, (_, i) => `diff --git a/library/test/t${i}.c b/library/test/t${i}.c
+--- a/library/test/t${i}.c
++++ b/library/test/t${i}.c
+@@ -1,3 +1,4 @@
+ #include "t.h"
++#include "auth.h"
+ static void t${i}(void) {
+ }
+`).join("");
+const BIG = `diff --git a/library/data/big.txt b/library/data/big.txt
+--- a/library/data/big.txt
++++ b/library/data/big.txt
+@@ -0,0 +1,2100 @@
+` + Array.from({ length: 2100 }, (_, i) => "+row " + i).join("\n") + "\n";
+const LOCAL = `diff --git a/docs/preview.md b/docs/preview.md
+--- a/docs/preview.md
++++ b/docs/preview.md
+@@ -3,4 +3,5 @@
+ # Preview
+-Run it once to see the page.
++Run it once, then open the page.
++Commit and push when it looks right.
+ End.
+diff --git a/cmd/docprev/main.go b/cmd/docprev/main.go
+--- a/cmd/docprev/main.go
++++ b/cmd/docprev/main.go
+@@ -10,3 +10,4 @@ func main() {
+ 	flag.Parse()
+-	serve(*addr)
++	log.Printf("listening on %s", *addr)
++	serve(*addr)
+ }
+diff --git a/cmd/docprev/render.go b/cmd/docprev/render.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/docprev/render.go
+@@ -0,0 +1,4 @@
++package main
++
++func render(md string) string {
++	return md
+`;
+const V = {
+  pr: { files: parse(AUTH + UTIL + SPECIAL + extra + BIG), title: "library-hardening vs 40e1c9a", pr: true },
+  local: { files: parse(LOCAL), title: "docprev · uncommitted changes", pr: false, modes: [3, 0, 0] },
+};
+let view = "pr", files = [], cur = 0, folded = new Set(), all = new Set(), comments = false, thread = false, bottomOpen = false, scoped = "file";
+
+function filePane(f, key) {
+  const big = f.lines.length > 800 && !all.has(key), cap = all.has(key) ? f.lines.length : 2000;
+  const shown = f.lines.slice(0, cap), words = walkWords(shown), isFolded = big || folded.has(key);
+  const askBtn = (li, what) => `<button type="button" class="wk-ask" data-ask="${li}" data-tip="ask the agent about this ${what}">ask the agent</button>`;
+  const rows = isFolded ? "" : shown.map((l, li) => `<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : l.t === "@" ? " hk" : ""}" data-li="${li}"><span class="wk-lo">${
+    l.o == null ? "" : l.o}</span><span class="wk-ln"${l.n !== null && l.t !== "-" ? ` data-ln="${l.n}"` : ""}>${
+    l.n === null ? "" : l.n}</span><span class="wk-mk">${l.t === "@" || l.t === " " ? "" : l.t}</span><span class="wk-tx">${l.t === "@" ? esc(l.text) + askBtn(li, "hunk") : walkFileText(l.text, words.get(li))}</span></div>${
+    comments && l.n === 43 && f.path.endsWith("auth.c") ? `<div class="cmt you"><div class="chead"><b>you</b> auth.c:43</div><div class="wk-turn op"><div class="wk-av">you</div><div class="wk-bub"><div class="wk-said">Why not return before the strdup?</div></div></div><div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">The token is read first so the log line below can name it. I can move the check up.</div></div></div></div>` : ""}`).join("");
+  const cut = big ? `<button type="button" class="wk-more" data-all="1">⋯ a large file, ${f.lines.length} lines. Show all of them</button>` : f.lines.length > cap ? `<button type="button" class="wk-more" data-all="1">⋯ ${f.lines.length - cap} more lines, show them</button>` : "";
+  const none = f.lines.length ? "" : `<div class="wk-warn">${f.status === "binary" ? "a binary file, no lines to show" : "no line changes (a rename or a mode change)"}</div>`;
+  const blocks = 5, filled = f.add + f.del ? Math.max(1, Math.round(blocks * f.add / (f.add + f.del))) : 0;
+  const bar = Array.from({ length: f.add + f.del ? blocks : 0 }, (_, i) => `<i class="${i < filled ? "a" : "d"}"></i>`).join("");
+  return `<div class="wk-file"><div class="wk-fbar"><button type="button" class="wk-fold" data-fold="1">${isFolded ? "▸" : "▾"}</button><span class="wk-num">${key + 1}</span><span class="wk-fpath">${
+    esc(f.path)}${f.from !== f.path ? ` <span class="wk-was">(was ${esc(f.from)})</span>` : ""}</span><span class="wk-fstat"><b class="a">+${f.add}</b><b class="d">-${f.del}</b><span class="wk-sq">${bar}</span></span>${askBtn(Math.max(0, f.lines.findIndex(l => l.t !== "@")), "file")}</div>${
+    none}${isFolded ? "" : `<div class="wk-code">${rows}</div>`}</div>${big || !isFolded ? cut : ""}`;
+}
+function bottomHtml() {
+  const chips = [["file", files[cur].path + ":43"], ["hunk", "@@ -40,9 +40,12 @@"]].map(([k, v]) => `<span class="sc ${scoped === "whole" ? "offc" : "onc"}"><i>${scoped === "whole" ? "○" : "●"}</i>${k} <b>${esc(v)}</b></span>`).join("");
+  const head = `<div class="wb-bar${bottomOpen ? " open" : ""}"><button type="button" class="wb-toggle" data-toggle="1"><b>${bottomOpen ? "chat with the agent about the whole walk" : "Ask the agent about the whole PR"}</b></button><span class="wb-last"></span><span class="wb-sw"><button aria-pressed="true">thread</button><button aria-pressed="false">terminal</button></span></div>`;
+  if (!bottomOpen) return head;
+  return head + `<div class="wb-body"><div class="chatlog"><div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">Ask me anything about the whole change here. The walk's scope goes in front of what you type, and the answer lands here.</div></div></div>${
+    thread ? `<div class="wk-turn op"><div class="wk-av">you</div><div class="wk-bub"><div class="wk-said">Is the null check on the token enough?</div><div class="sctx">${scoped === "whole" ? "whole PR" : "file auth.c:43  hunk @@ -40,9 +40,12 @@"}</div></div></div><div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">Yes for the crash, but auth_send still gets a NULL token on the retry path.</div></div></div>` : ""}</div>
+    <div class="chatin"><div class="scopechips">scope: ${chips}</div><div class="askrow"><textarea rows="1" placeholder="Ask the agent about the whole walk"></textarea><button type="button" class="wk-btn go" data-send="1">Send &#9166;</button></div></div></div>`;
+}
+function paint() {
+  const v = V[view] || V.pr, f = files[cur];
+  document.getElementById("rail").innerHTML = files.map((x, i) => `<button type="button" class="wk-row${i === cur ? " cur" : ""}" data-i="${i}"><span class="wk-n">${i + 1}</span><span class="wk-fn">${esc(x.path.split("/").pop())}</span><span class="wk-fc">+${x.add} -${x.del}</span></button>`).join("");
+  document.getElementById("item").innerHTML = filePane(f, cur);
+  document.getElementById("count").textContent = files.length + " files";
+  document.getElementById("walk-title").textContent = v.title;
+  const lab = v.pr ? "walk PR #1245" : "walk " + files.length + " changed files";
+  document.getElementById("t-walk-label").textContent = lab;
+  const url = document.getElementById("forge").value;
+  for (const id of ["t-walk-pr", "walk-ghlink"]) {
+    const a = document.getElementById(id); a.hidden = !v.pr; a.href = /^https?:\/\//i.test(url) ? url : "#"; a.textContent = "View it on " + walkForgeName(url);
+  }
+  const mode = document.getElementById("walk-mode"); mode.hidden = v.pr;
+  if (!v.pr) mode.querySelectorAll("button").forEach((b, i) => { b.classList.toggle("on", i === 0); b.querySelector(".n").textContent = v.modes[i]; });
+  document.getElementById("cmtat").textContent = comments ? "comment 1 of 1" : "comment -";
+  const b = document.getElementById("bottom"); b.className = "walk-bottom " + (bottomOpen ? "wb-thread" : "wb-bar1"); b.style.height = bottomOpen ? "32%" : "auto"; b.innerHTML = bottomHtml();
+}
+function load(name) {
+  view = name === "local" ? "local" : "pr";
+  files = (V[view].files).map(f => Object.assign({}, f, { lines: f.lines.slice() }));
+  cur = 0; folded = new Set(); all = new Set(); comments = false; thread = false; bottomOpen = false; scoped = "file";
+  if (name === "long") cur = 0;
+  if (name === "folded") folded.add(0);
+  if (name === "comments") { comments = true; thread = true; bottomOpen = true; }
+  if (name === "empty") cur = 2;
+  document.querySelectorAll("#mockbar [data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === name));
+  paint();
+}
+document.addEventListener("click", e => {
+  const t = e.target;
+  const r = t.closest("[data-i]"); if (r) { cur = +r.dataset.i; paint(); return; }
+  if (t.closest("[data-fold]")) { if (files[cur].lines.length > 800 && !all.has(cur)) { all.add(cur); paint(); return; } folded.has(cur) ? folded.delete(cur) : folded.add(cur); paint(); return; }
+  if (t.closest("[data-all]")) { all.add(cur); paint(); return; }
+  if (t.closest("[data-ask]")) { scoped = "file"; bottomOpen = true; paint(); document.querySelector("#bottom textarea").focus(); return; }
+  if (t.closest("[data-toggle]")) { bottomOpen = !bottomOpen; paint(); return; }
+  if (t.closest("[data-send]")) { thread = true; paint(); return; }
+  const v = t.closest("[data-v]"); if (v) load(v.dataset.v);
+});
+const sel = document.getElementById("skin");
+const skinNames = [...new Set([...document.querySelectorAll("style")].flatMap(s => [...s.textContent.matchAll(/data-skin="([a-z0-9-]+)"/g)].map(x => x[1])))];
+sel.innerHTML = ["linen", ...skinNames.filter(n => n !== "linen")].map(n => `<option>${n}</option>`).join("");
+document.documentElement.dataset.skin = "linen";
+sel.onchange = () => { document.documentElement.dataset.skin = sel.value; };
+document.getElementById("forge").onchange = paint;
+load("pr");
+</script>
+</body>
+</html>

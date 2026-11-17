@@ -27,7 +27,9 @@ const pulls = {
 let pullsNavN = 0;
 
 const pullsLive = r => r.state === "ready" || r.state === "failed";
-const pullsWaiting = r => !r.archived_at && pullsLive(r);
+const pullsWaiting = r => !r.archived_at && pullsLive(r) && !pullPanelRunning(r);
+// A ready row whose walker still has a review panel card running is not ready yet: the panel adds findings.
+const pullPanelRunning = r => !!r.walker_task && r.state === "ready" && typeof walkPanelLive === "function" && walkPanelLive(r.walker_task) > 0;
 
 function pullsSort() {
   pulls.rows.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : a.id < b.id ? 1 : -1));
@@ -129,9 +131,10 @@ async function pullsReadRecent() {
 // that changed, so a poll that changes nothing here does not rewrite the list under the pointer.
 function pullsTasksMoved() {
   if (!pulls.loaded) return;
-  const sig = pulls.rows.filter(r => r.walker_task).map(r => r.id + ":" + pullQuestion(r)).join("|");
+  const sig = pulls.rows.filter(r => r.walker_task).map(r => r.id + ":" + pullQuestion(r) + ":" + pullPanelRunning(r)).join("|");
   if (sig === pulls.cardSig) return;
   pulls.cardSig = sig;
+  pullsRecount();
   pullsPaint();
 }
 
@@ -210,7 +213,7 @@ function pullGroup(r) {
   if (pullClosed(r)) return "closed";
   if (pullQuestion(r)) return "needs";
   if (r.state === "failed" || r.state === "aborted") return "failed";
-  if (r.state === "ready" && !pullReviewed(r)) return "ready";
+  if (r.state === "ready" && !pullReviewed(r) && !pullPanelRunning(r)) return "ready";
   return "progress";
 }
 

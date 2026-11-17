@@ -42,6 +42,9 @@ var (
 	previewURL  = regexp.MustCompile(`(?i)url\(\s*["']?/`)
 )
 
+// previewRoom is what a room name may be, so none reaches a redirect with a slash or a scheme in it.
+var previewRoom = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
 // previewOf reads `/<room>/preview/<port...>`: the room, and what follows `preview`, which is "" or starts with a
 // slash.
 func previewOf(p string) (room, after string, ok bool) {
@@ -49,7 +52,7 @@ func previewOf(p string) (room, after string, ok bool) {
 		return "", "", false
 	}
 	room, tail, found := strings.Cut(p[1:], "/")
-	if !found || room == "" || strings.HasPrefix(room, "_") {
+	if !found || room == "" || strings.HasPrefix(room, "_") || !previewRoom.MatchString(room) {
 		return "", "", false
 	}
 	if tail != "preview" && !strings.HasPrefix(tail, "preview/") {
@@ -118,7 +121,11 @@ func previewAnswer(res *http.Response, prefix string, port int) error {
 	h.Del("Clear-Site-Data")
 	h.Add("Content-Security-Policy", previewSandbox)
 	if loc := h.Get("Location"); loc != "" {
-		h.Set("Location", previewLocation(loc, prefix, port))
+		if loc = previewLocation(loc, prefix, port); loc == "" {
+			h.Del("Location")
+		} else {
+			h.Set("Location", loc)
+		}
 	}
 	if res.StatusCode == http.StatusSwitchingProtocols || h.Get("Content-Encoding") != "" {
 		return nil
@@ -175,24 +182,31 @@ func previewRoot(b []byte, re *regexp.Regexp, prefix string) []byte {
 	return append(out, b[last:]...)
 }
 
-// previewLocation is a redirect the preview gave, moved under the prefix. Another site's address is left alone.
+// previewLocation is a redirect the preview gave, moved under the prefix. Any other site's address,
+// and a `//host` or `/\host` a browser reads as one, is dropped as "".
 func previewLocation(loc, prefix string, port int) string {
 	u, err := url.Parse(loc)
-	if err != nil {
-		return loc
+	if err != nil || loc == "" || loc[0] == '\\' || len(loc) > 1 && loc[0] == '/' && (loc[1] == '/' || loc[1] == '\\') {
+		return ""
 	}
 	if u.Scheme == "" && u.Host == "" {
-		if !strings.HasPrefix(loc, "/") || strings.HasPrefix(loc, prefix+"/") || loc == prefix {
+		if loc[0] == '?' || loc[0] == '#' {
 			return loc
+		}
+		if loc[0] != '/' {
+			return "./" + loc
+		}
+		if strings.HasPrefix(loc, prefix+"/") || loc == prefix {
+			return prefix + loc[len(prefix):]
 		}
 		return prefix + loc
 	}
 	host, p, err := net.SplitHostPort(u.Host)
 	if err != nil || p != strconv.Itoa(port) {
-		return loc
+		return ""
 	}
 	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return loc
+		return ""
 	}
 	return prefix + "/" + strings.TrimPrefix(u.RequestURI(), "/")
 }

@@ -1281,8 +1281,25 @@ async function pullsMorePendingSection(browser, base) {
       if (await p.locator("#ask-actions button").first().isVisible()) fail("pullsMorePending: asked what to do before the panel was done");
     }
     await shot(p, "pending");
+    const ready = () => p.evaluate(() => { pullsTasksMoved(); return pullsNavN + ":" + pullGroup(pulls.rows[0]); });
+    if (!process.env.MOREBEFORE && await ready() !== "0:progress") fail("pullsMorePending: the row is ready while its panel card runs: " + await ready());
     await p.evaluate(() => { lastTasks.find(t => t.id === "land-pm2").status = "done"; dockResync(); });
+    if (await ready() !== "1:ready") fail("pullsMorePending: the row is not ready once its panel is done: " + await ready());
     if (process.env.MOREBEFORE) { await shot(p, "ask"); return; }
+    const declared = await p.evaluate(() => {
+      const w = lastTasks.find(t => t.id === "land-pm1"), was = { activity: w.activity, status: w.status };
+      const at = () => { pullsTasksMoved(); return pullsNavN + ":" + pullGroup(pulls.rows[0]); };
+      lastTasks.find(t => t.id === "land-pm2").status = "done";
+      const none = at();
+      w.activity = { what: "thinking", panel: true };
+      const out = [at()];
+      w.status = "dead";
+      out.push(at());
+      Object.assign(w, was);
+      pullsTasksMoved();
+      return [none].concat(out).join(" ");
+    });
+    if (declared !== "1:ready 0:progress 1:ready") fail("pullsMorePending: a declared panel with no card yet, then its walker gone, read " + declared);
     await p.locator("#ask-actions button", { hasText: "keep both" }).waitFor({ timeout: slow(5000) })
       .catch(() => fail("pullsMorePending: the finished panel was not asked about"));
     if (await more()) fail("pullsMorePending: still says more pending with no live panel card");

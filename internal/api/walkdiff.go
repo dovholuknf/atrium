@@ -29,8 +29,8 @@ var walkBases = []string{"origin/HEAD", "origin/main", "origin/master", "hub/cla
 // walked hundreds of files it never touched.
 var walkClaudeMains = []string{"hub/claude/main", "claude/main"}
 
-// walkModes are what the walk's switch compares: the working tree against the index, the index against HEAD, and
-// HEAD plus edits against the merge base with the branch's base.
+// walkModes are what the walk's switch compares: the working tree and new files against the index, the index against
+// HEAD, and HEAD plus edits to tracked files against the merge base with the branch's base.
 var walkModes = []string{"unstaged", "staged", "branch"}
 
 type walkDiffOut struct {
@@ -75,8 +75,12 @@ func (s *Server) walkDiff(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if _, err := gitIn(ctx, dir, gitexec.RevParseShowToplevel{}); err != nil {
-		writeErr(w, http.StatusConflict, errors.New(filepath.ToSlash(dir)+" is not a git checkout"))
-		return
+		if inner := walkOnlyRepo(dir); inner != "" && r.URL.Query().Get("dir") == "" {
+			dir = inner
+		} else {
+			writeErr(w, http.StatusConflict, errors.New(filepath.ToSlash(dir)+" is not a git checkout"))
+			return
+		}
 	}
 	out, status, err := walkModeDiff(ctx, dir, mode)
 	if err != nil {
@@ -84,6 +88,28 @@ func (s *Server) walkDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// walkOnlyRepo is the one git checkout directly inside dir, "" when there are none or several.
+func walkOnlyRepo(dir string) string {
+	ents, err := os.ReadDir(filepath.FromSlash(dir))
+	if err != nil {
+		return ""
+	}
+	found := ""
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(filepath.FromSlash(dir), e.Name(), ".git")); err != nil {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = dir + "/" + e.Name()
+	}
+	return found
 }
 
 // walkModeDiff is the patch for mode, with how many files each mode holds.
@@ -107,7 +133,7 @@ func walkModeDiff(ctx context.Context, dir, mode string) (walkDiffOut, int, erro
 	if onBase {
 		modes["branch"] = 0
 	} else if berr == nil {
-		modes["branch"] = walkNames(ctx, dir, gitexec.Diff{Revs: []string{out.MergeBase}, NameOnly: true, Z: true}) + untracked
+		modes["branch"] = walkNames(ctx, dir, gitexec.Diff{Revs: []string{out.MergeBase}, NameOnly: true, Z: true})
 	}
 	out.Mode, out.Modes = mode, modes
 	var patch []byte
@@ -127,9 +153,6 @@ func walkModeDiff(ctx context.Context, dir, mode string) (walkDiffOut, int, erro
 		}
 		patch, err = gitOut(ctx, dir, nil, gitexec.Diff{Revs: []string{out.MergeBase}, NoExtDiff: true, NoTextconv: true,
 			NoColor: true, FindRenames: true})
-		if err == nil {
-			patch = append(patch, walkUntracked(ctx, dir, maxWalkDiffBytes-len(patch))...)
-		}
 	case "unstaged":
 		patch, err = gitOut(ctx, dir, nil, gitexec.Diff{NoExtDiff: true, NoTextconv: true, NoColor: true, FindRenames: true})
 		if err == nil {

@@ -51,6 +51,7 @@ type Calls struct {
 	RelayKeep           func() time.Duration
 	PeerAllow           func(from string) bool
 	HumanAddr           func() string
+	RoomName            func() string
 }
 
 // Config is what the root hands the service.

@@ -178,6 +178,11 @@ if ! node "$here/scripts/check-morph.js" "$whole"; then
   fail=1
 fi
 
+if ! node "$here/scripts/check-artifacts-skins.js"; then
+  echo "the artifacts pane is not legible in every skin. see above." >&2
+  fail=1
+fi
+
 # And the reconciler RUN, against a few hundred lines of DOM implemented in the
 # test. What it asserts is not that the board draws: it is that a row nobody
 # changed comes out the same object, never written to, because that object is

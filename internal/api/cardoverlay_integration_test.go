@@ -241,3 +241,19 @@ func TestARealOverlayComesUpAndGoesWithTheCard(t *testing.T) {
 		t.Errorf("the folder outlived the close: %v", err)
 	}
 }
+
+// A SERVICE STARTING WITH - is refused, so it never reaches ziti as a flag.
+func TestAProxyServiceThatIsAFlagIsRefused(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
+	card := cardIn(t, oh.srv.st, t.TempDir())
+	fakeOverlay(t, oh, card.ID, "o1")
+	oh.srv.hk.zitiBin = func() (string, error) { return "ziti-is-never-run", nil }
+	for _, svc := range []string{"-x", " --verbose"} {
+		rec := post(t, oh.h, "/v1/tasks/"+card.ID+"/overlay", map[string]any{"action": "tunnel", "identity": "alice",
+			"mode": "proxy", "services": []string{svc}})
+		if rec.Code != 400 || !strings.Contains(rec.Body.String(), "not a service name") {
+			t.Errorf("%q: %d %s", svc, rec.Code, rec.Body.String())
+		}
+	}
+}

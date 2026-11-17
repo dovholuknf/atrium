@@ -201,7 +201,7 @@ func TestWalkDiffModesOpenOnTheNearestChange(t *testing.T) {
 	write("base.txt", "base\nedited\n")
 	write("new.txt", "new\n")
 	code, out, body := walkDiffGet(t, s, task.ID)
-	if code != http.StatusOK || out.Mode != "unstaged" || out.Modes["unstaged"] != 2 || out.Modes["staged"] != 1 || out.Modes["branch"] != 4 {
+	if code != http.StatusOK || out.Mode != "unstaged" || out.Modes["unstaged"] != 2 || out.Modes["staged"] != 1 || out.Modes["branch"] != 3 {
 		t.Fatalf("unstaged and staged: %d %s", code, body)
 	}
 	for _, f := range []string{"b/base.txt", "+edited", "b/new.txt"} {
@@ -242,6 +242,23 @@ func TestWalkDiffOfAFolderNotInGitRefuses(t *testing.T) {
 
 	code, _, body := walkDiffGet(t, s, task.ID)
 	if code != http.StatusConflict || !strings.Contains(body, "is not a git checkout") {
+		t.Errorf("%d %s", code, body)
+	}
+}
+
+// A CARD WHOSE FOLDER IS NOT GIT BUT HOLDS ONE REPOSITORY walks that repository: docprev showed no walk.
+func TestWalkDiffOfAFolderHoldingOneRepositoryWalksIt(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	inner := filepath.Join(work, "docprev")
+	if err := os.Mkdir(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	walkRepo(t, inner, "feature")("new.txt", "new\n")
+	task := cardIn(t, st, work)
+
+	code, out, body := walkDiffGet(t, s, task.ID)
+	if code != http.StatusOK || out.Branch != "feature" || !strings.Contains(out.Diff, "b/new.txt") {
 		t.Errorf("%d %s", code, body)
 	}
 }
@@ -330,5 +347,28 @@ func TestWalkDiffOnClaudeMainItselfHasNoBranchFiles(t *testing.T) {
 	if code, out, body := walkDiffQuery(t, s, task.ID, "?mode=branch"); code != http.StatusOK || out.Diff != "" ||
 		!strings.Contains(out.Why, "nothing to walk") {
 		t.Errorf("asked for branch: %d %s", code, body)
+	}
+}
+
+// A MOCK COPY OF THE BOARD IS NOT THE BRANCH: copy-clean-fixes counted "walk branch: 1844 files" for a small fix.
+func TestWalkDiffBranchLeavesOutAnUntrackedMock(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	write := walkRepo(t, work, "claude/main")
+	git(t, work, "switch", "-q", "-c", "claude/copy-clean-fixes")
+	write("fix.txt", "fix\n")
+	git(t, work, "add", ".")
+	git(t, work, "commit", "-q", "-m", "fix")
+	if err := os.MkdirAll(filepath.Join(work, "mock", "js"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write("mock/index.html", "<p>mock</p>\n")
+	write("mock/js/walk.js", "mock\n")
+	task := cardIn(t, st, work)
+
+	code, out, body := walkDiffQuery(t, s, task.ID, "?mode=branch")
+	if code != http.StatusOK || out.Modes["branch"] != 1 || out.Modes["unstaged"] != 2 ||
+		!strings.Contains(out.Diff, "b/fix.txt") || strings.Contains(out.Diff, "mock/") {
+		t.Errorf("%d %s", code, body)
 	}
 }

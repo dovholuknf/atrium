@@ -198,6 +198,68 @@ func checkGitAliasConfig(c *evalCtx, r *Rule) (bool, string) {
 	return false, ""
 }
 
+// configValueOpts are git config's options that take the next word as their value.
+var configValueOpts = toSet(strings.Fields(`-f --file --blob --type --default --comment --value`))
+
+// checkGitProgramConfig lets only a read through when a key names a program, is unknown, or is written unseen.
+func checkGitProgramConfig(c *evalCtx, r *Rule) (bool, string) {
+	for _, g := range c.Gits() {
+		if g.sub != "config" {
+			continue
+		}
+		var pos []Word
+		named := ""
+		for i := 0; i < len(g.args); i++ {
+			a := g.args[i]
+			l := strings.ToLower(a.Lit)
+			for _, re := range r.patterns {
+				if named == "" && !a.Dyn && re.MatchString(l) {
+					named = a.Lit
+				}
+			}
+			switch {
+			case a.Dyn || !strings.HasPrefix(l, "-"):
+				pos = append(pos, a)
+			case configValueOpts[l]:
+				i++
+			}
+		}
+		reads, blind := false, ""
+		for _, a := range g.args {
+			switch l := strings.ToLower(a.Lit); l {
+			case "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "--list", "-l":
+				reads = true
+			case "--edit", "-e", "--rename-section":
+				blind = l
+			}
+		}
+		key := 0
+		if len(pos) > 0 && !pos[0].Dyn {
+			switch strings.ToLower(pos[0].Lit) {
+			case "get", "list":
+				reads = true
+			case "edit", "rename-section":
+				blind = pos[0].Lit
+			case "set", "unset", "remove-section":
+				key = 1
+			}
+		}
+		if reads {
+			continue
+		}
+		if named != "" {
+			return true, named
+		}
+		if blind != "" {
+			return true, blind
+		}
+		if key < len(pos) && pos[key].Dyn {
+			return true, "a key known only when it runs"
+		}
+	}
+	return false, ""
+}
+
 func checkGitGlobalOption(c *evalCtx, r *Rule) (bool, string) {
 	for _, g := range c.Gits() {
 		if g.bad != "" {

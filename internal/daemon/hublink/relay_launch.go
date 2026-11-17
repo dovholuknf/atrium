@@ -38,6 +38,13 @@ type RelayLaunch struct {
 	Superlean                              bool
 	Lifetime                               string
 	Item                                   bool
+	Repo, Branch, Base                     string
+	Home, Resident, Scratch                bool
+	Lean                                   *bool
+	MCP                                    []string
+	Theme                                  string
+	Chat                                   bool
+	ItemOwner                              string
 }
 
 // roomLaunchIn is the body of `POST /v1/peers/launch`: the launch the stdio atrium_launch
@@ -61,6 +68,17 @@ type RoomLaunchIn struct {
 	Superlean  bool              `json:"superlean"`
 	Lifetime   string            `json:"lifetime"`
 	Item       bool              `json:"item"`
+	Repo       string            `json:"repo"`
+	Branch     string            `json:"branch"`
+	Base       string            `json:"base"`
+	Home       bool              `json:"home"`
+	Resident   bool              `json:"resident"`
+	Scratch    bool              `json:"scratch"`
+	Lean       *bool             `json:"lean"`
+	MCP        []string          `json:"mcp"`
+	Theme      string            `json:"theme"`
+	Chat       bool              `json:"chat"`
+	ItemOwner  string            `json:"item_owner"`
 }
 
 // handleRoomLaunch is `POST /v1/peers/launch`: start a session on another room, through
@@ -77,7 +95,7 @@ func (d *Service) HandleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 		WriteJSONCode(w, http.StatusOK, map[string]any{"local": true})
 		return
 	}
-	if strings.TrimSpace(in.Cwd) == "" {
+	if strings.TrimSpace(in.Cwd) == "" && strings.TrimSpace(in.Repo) == "" && !in.Home {
 		WriteJSONCode(w, http.StatusBadRequest, ErrBody("say where to run it. atrium does not create the directory"))
 		return
 	}
@@ -98,14 +116,39 @@ func (d *Service) HandleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 		From: from, Room: other, Cwd: in.Cwd, Title: in.Title, Why: in.Why, Prompt: in.Prompt, Brief: in.Brief,
 		Runner: in.Runner, Tags: in.Tags, Model: in.Model, Effort: in.Effort, Args: in.Args, Env: in.Env,
 		LeanAgents: in.LeanAgents, LeanSkills: in.LeanSkills, Superlean: in.Superlean, Lifetime: in.Lifetime, Item: in.Item,
+		Repo: in.Repo, Branch: in.Branch, Base: in.Base, Home: in.Home, Resident: in.Resident, Scratch: in.Scratch,
+		Lean: in.Lean, MCP: in.MCP, Theme: in.Theme, Chat: in.Chat, ItemOwner: in.ItemOwner,
 	})
 	code, body := LaunchAnswer(other, res, err)
+	if dropped := droppedByOldHub(in, res); code < 400 && dropped != "" {
+		body["warning"] = "WARNING: the hub is older than carrying " + dropped + " to another room, so they were NOT " +
+			"applied. " + res.Warning
+	}
 	if code >= 400 {
 		log.Printf("[atrium] %s's launch on %s was not made (%d): %v", logLine(from), other, code, body["error"])
 	} else {
 		log.Printf("[atrium] %s launched %v on %s", logLine(from), body["card"], other)
 	}
 	WriteJSONCode(w, code, body)
+}
+
+// droppedByOldHub names the fields this launch set that a hub which did not answer Carried read past, "" when none.
+func droppedByOldHub(in RoomLaunchIn, res RelayResult) string {
+	if res.Carried {
+		return ""
+	}
+	var set []string
+	for _, f := range []struct {
+		name string
+		on   bool
+	}{{"repo", in.Repo != ""}, {"branch", in.Branch != ""}, {"base", in.Base != ""}, {"home", in.Home},
+		{"resident", in.Resident}, {"scratch", in.Scratch}, {"lean", in.Lean != nil}, {"mcp", len(in.MCP) > 0},
+		{"theme", in.Theme != ""}, {"chat", in.Chat}, {"item_owner", in.ItemOwner != ""}} {
+		if f.on {
+			set = append(set, f.name)
+		}
+	}
+	return strings.Join(set, ", ")
 }
 
 // launchAnswer turns the hub's answer into this room's. Every failure is a refusal now,

@@ -91,6 +91,13 @@ document.addEventListener("focusin", e => {
   showTip(a);
 });
 document.addEventListener("focusout", hideTip);
+// Escape takes the tip away and nothing else, so it does not also close the dialog the tip is in.
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !tipEl.classList.contains("on")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  hideTip();
+}, true);
 window.addEventListener("scroll", e => { if (!fromTerminal(e)) hideTip(); }, true);
 window.addEventListener("resize", hideTip);
 
