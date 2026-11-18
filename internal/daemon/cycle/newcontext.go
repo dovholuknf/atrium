@@ -237,8 +237,17 @@ func (d *Service) NewContextWakeFor(taskID, path string) string {
 	if len(parts) == 0 {
 		return text
 	}
-	return text + " these says were already sent and delivered before this context started, so do NOT resend them: " +
-		strings.Join(parts, "; ")
+	section := "\n\n## Says already sent, do not resend\n\nThese says were already sent and delivered before this context started, so do NOT resend them:\n\n- " +
+		strings.Join(parts, "\n- ") + "\n"
+	f2, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return text
+	}
+	defer f2.Close()
+	if _, err := f2.WriteString(section); err != nil {
+		return text
+	}
+	return text + " its last section lists says already sent, do NOT resend them."
 }
 
 // atriumBinary is the full path of this atrium, for the limit prompt. A variable for a test.

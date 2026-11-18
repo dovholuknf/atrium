@@ -483,6 +483,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Kill = d.Kill
 	d.ap.EndThrowaway = d.endThrowaway
 	d.ap.Closed = d.releaseSentBy
+	d.ap.CloseHome = d.closeEmptyHome
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
 	d.prr = pulls.NewPRRunner(st, d.ap.PublishPR, d.prConfig())

@@ -2361,12 +2361,22 @@ let termDragEl = null;
 // replaces the whole strip and an unguarded listener per render is the leak
 // the terminal's paste handler already taught this file about.
 function wireTermDrag(host) {
-  host.onmousemove = e => {
-    const over = !termAgeQuiet && termAgeOrder() && e.target.closest(".card.tab:not(.kid)");
-    termSortNote(over ? e : null, AGE_LOCK_WORDS);
+  host.onmousedown = e => {
+    const row = e.button === 0 && termAgeOrder() && e.target.closest(".card.tab:not(.kid)");
+    termAgePress = row ? { x: e.clientX, y: e.clientY } : null;
   };
-  host.onmouseleave = () => { termAgeQuiet = false; termSortNote(null); };
-  host.onmouseup = () => { termAgeQuiet = true; termSortNote(null); };
+  host.onmousemove = e => {
+    if (!termAgePress || !(e.buttons & 1)) { termAgeDragEnd(host); return; }
+    if (!termAgeHeld && Math.hypot(e.clientX - termAgePress.x, e.clientY - termAgePress.y) < 5) return;
+    termAgeHeld = true;
+    host.classList.add("agedrag");
+    termSortNote(e, AGE_LOCK_WORDS);
+  };
+  host.onmouseleave = host.onmouseup = () => termAgeDragEnd(host);
+  if (!termAgeEsc) {
+    termAgeEsc = e => { if (e.key === "Escape") termAgeDragEnd(document.getElementById("term-list")); };
+    document.addEventListener("keydown", termAgeEsc);
+  }
   host.querySelectorAll(".card.tab:not(.kid)").forEach(el => {
     el.ondragstart = e => {
       termDragID = el.dataset.id;
@@ -2546,7 +2556,12 @@ function termDropSlot(nest, name, e) {
 
 // Age order cuts the list into age buckets, so there is no hand order to drag a row into.
 const AGE_LOCK_WORDS = "order by age disables rearrange";
-let termAgeQuiet = false;
+let termAgePress = null, termAgeHeld = false, termAgeEsc = null;
+function termAgeDragEnd(host) {
+  termAgePress = null; termAgeHeld = false;
+  if (host) host.classList.remove("agedrag");
+  termSortNote(null);
+}
 function termAgeOrder() {
   const gp = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
   return !!(gp && gp.on && gp.mode === "recency");

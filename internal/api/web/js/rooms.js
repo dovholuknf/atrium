@@ -313,9 +313,17 @@ function roomSetup(name) {
 // "not answering", which is its own chip on its row and not a setup problem.
 function roomsWithSetupIssues() {
   const out = [];
+  const hubCommit = ((hubRooms.find(r => r.local && r.commit) || {}).commit) || "";
   for (const r of hubRooms) {
     const s = r.setup;
-    if (s && s.answering && Array.isArray(s.issues) && s.issues.length) out.push({ name: r.name, issues: s.issues });
+    if (!s || !s.answering) continue;
+    const issues = Array.isArray(s.issues) ? s.issues.slice() : [];
+    const c = r.commit || s.commit || "";
+    // The same prefix compare as atrium-deploy's Get-RoomSkew, so the pill and the deploy check agree.
+    if (c && hubCommit && !c.startsWith(hubCommit.slice(0, 7))) {
+      issues.push({ kind: "build", text: "runs commit " + c.slice(0, 8) + ", hub " + hubCommit.slice(0, 8) });
+    }
+    if (issues.length) out.push({ name: r.name, issues });
   }
   return out;
 }

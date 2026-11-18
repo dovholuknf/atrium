@@ -16,6 +16,8 @@
 //   NODE <script>       a node test script to run
 //   JSCHECK <file>      node --check
 //   SHCHECK <file>      bash -n
+//   PWSH <file>         a scripts/live/test-*.ps1 that names a changed scripts/live file, or is one
+//   PWSHSKIP <file> <why>  such a test that cannot run unattended, said as SKIPPED
 //
 // DECLARED FIRST. scripts/test-buckets.json says which bucket owns a file. A changed board file in a bucket's `sources`
 // selects that bucket: its units (the ones the inference below ranks first, then the rest cheapest first) and its node
@@ -46,6 +48,7 @@ const ROOT = path.join(__dirname, "..");
 const WEB = "internal/api/web/";
 const HARNESS = "scripts/test-board-headless.js";
 const BUCKET_DIR = "scripts/board-tests";
+const LIVE = "scripts/live/";
 const DEFAULT_WEIGHT_MS = 8000;
 const DEFAULT_BUDGET_MS = 150000;
 // A name used by more than this share of the units says nothing about which one a change touches.
@@ -178,7 +181,25 @@ function buildIndex(root) {
   for (const s of nodeScripts) scriptSrc[s] = read(s, root) || "";
   let bk = null;
   try { bk = buckets.load(root); } catch (e) { bk = null; }   // no bucket file (an older tree): the inference does it all
-  return { root, h, unitTok, df, nUnits, weights, nodeScripts, scriptSrc, declCache: {}, bk };
+  const liveDir = path.join(root, LIVE);
+  const liveSrc = {};
+  if (fs.existsSync(liveDir)) for (const f of fs.readdirSync(liveDir).filter(f => /^test-.*\.ps1$/.test(f))) liveSrc[LIVE + f] = read(LIVE + f, root) || "";
+  return { root, h, unitTok, df, nUnits, weights, nodeScripts, scriptSrc, declCache: {}, bk, liveSrc };
+}
+
+// the scripts/live tests that cover a changed scripts/live file: the test itself, or each test that names the file
+function liveTestsFor(ix, rel) {
+  const base = path.posix.basename(rel);
+  const named = new RegExp("[\\\\/\"'\\s]" + base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w.-])");
+  const out = [];
+  for (const [t, src] of Object.entries(ix.liveSrc)) {
+    const why = t === rel ? "the test itself changed" : named.test(src) ? "it loads " + base : null;
+    if (!why) continue;
+    // a test with a mandatory parameter needs inputs a person picks (test-save-revert.ps1 takes two real binaries)
+    const needs = /\[Parameter\([^)]*Mandatory/i.test(src) ? "it needs arguments, see its Usage line" : null;
+    out.push({ test: t, why, needs });
+  }
+  return out;
 }
 
 function declOf(ix, rel) {
@@ -335,7 +356,7 @@ function plan(files, opts) {
   const root = ix.root;
   const budget = opts.budget || DEFAULT_BUDGET_MS;
   const p = { go: new Map(), tags: [], gofiles: [], govet: [], gobuild: null, units: new Map(), node: new Map(),
-    jscheck: [], shcheck: [], warnings: [], skipped: [], dropped: [], buckets: new Map() };
+    jscheck: [], shcheck: [], pwsh: new Map(), pwshSkip: new Map(), warnings: [], skipped: [], dropped: [], buckets: new Map() };
   const addBucket = (b, rel) => { if (!p.buckets.has(b.name)) p.buckets.set(b.name, []); if (!p.buckets.get(b.name).includes(rel)) p.buckets.get(b.name).push(rel); };
   const lintNote = "a file the bucket lint covers changed";
   const addNode = (s, why) => { if (!p.node.has(s)) p.node.set(s, why); };
@@ -435,6 +456,14 @@ function plan(files, opts) {
     }
     if (/^scripts\/[^/]+\.(js|mjs)$/.test(rel) && fs.existsSync(path.join(root, rel))) { p.jscheck.push(rel); used = true; }
     if (/\.sh$/.test(rel) && fs.existsSync(path.join(root, rel))) { p.shcheck.push(rel); used = true; }
+    if (rel.startsWith(LIVE)) {
+      if (rel.endsWith(".md")) { p.skipped.push([rel, "notes, not code"]); continue; }
+      for (const t of liveTestsFor(ix, rel)) {
+        used = true;
+        if (t.needs) { if (!p.pwshSkip.has(t.test)) p.pwshSkip.set(t.test, t.needs); }
+        else if (!p.pwsh.has(t.test)) p.pwsh.set(t.test, t.why);
+      }
+    }
     if (!used) p.skipped.push([rel, "nothing here tests it"]);
   }
 
@@ -475,6 +504,8 @@ function describe(p) {
   for (const [s, why] of p.node) row("node", s, why);
   for (const f of p.jscheck) row("jscheck", f, "node --check");
   for (const f of p.shcheck) row("shcheck", f, "bash -n");
+  for (const [t, why] of p.pwsh) row("pwsh", t, why);
+  for (const [t, why] of p.pwshSkip) row("skip", t, "will NOT run: " + why);
   for (const [f, why] of p.skipped) row("skip", f, why);
   for (const wn of p.warnings) out.push("  WARNING " + wn);
   return out.join("\n");
@@ -492,6 +523,8 @@ function actions(p) {
   for (const s of p.node.keys()) out.push("NODE " + s);
   for (const f of p.jscheck) out.push("JSCHECK " + f);
   for (const f of p.shcheck) out.push("SHCHECK " + f);
+  for (const t of p.pwsh.keys()) out.push("PWSH " + t);
+  for (const [t, why] of p.pwshSkip) out.push("PWSHSKIP " + t + " " + why);
   return out;
 }
 

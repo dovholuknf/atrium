@@ -22,6 +22,7 @@ $RoomShutdown = 'http://fake/v1/shutdown'
 $RoomPreflightUrl = 'http://fake/v1/preflight'
 $WhatIf = $false; $Immediate = $true
 $posts = [System.Collections.Generic.List[string]]::new()
+function Get-RoomService { $null }
 function Find-Atrium($sub) { , @([pscustomobject]@{ ProcessId = 2147480000 }) }
 function Get-WrapWait { 0 }
 function Get-ShutdownStatus($err) { 409 }

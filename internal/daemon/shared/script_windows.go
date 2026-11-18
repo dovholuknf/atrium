@@ -130,4 +130,15 @@ func NewConsole(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_CONSOLE
+	// exec.Cmd hands a nil stream NUL, which the new console never replaces: a null handle it does.
+	none := os.NewFile(0, "none")
+	if cmd.Stdin == nil {
+		cmd.Stdin = none
+	}
+	if cmd.Stdout == nil {
+		cmd.Stdout = none
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = none
+	}
 }

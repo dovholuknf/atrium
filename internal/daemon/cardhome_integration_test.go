@@ -358,6 +358,36 @@ func TestAThrowawayHomeGoesWhenItsRunnerExits(t *testing.T) {
 	}
 }
 
+func TestCloseRemovesAnEmptyHomeAndKeepsOneWithAFile(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	task, row, dd := aHomeThrowaway(t, d)
+	if err := d.st.SetThrowaway(task.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dd.Work, "mine.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if why := d.closeEmptyHome(task.ID); !strings.Contains(why, "mine.txt") {
+		t.Fatalf("why %q", why)
+	}
+	if _, err := os.Stat(filepath.Join(dd.Work, "mine.txt")); err != nil {
+		t.Fatal("the file went")
+	}
+	if err := os.Remove(filepath.Join(dd.Work, "mine.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if why := d.closeEmptyHome(task.ID); why != "" {
+		t.Fatalf("kept: %q", why)
+	}
+	if _, err := os.Stat(dd.Dir); !os.IsNotExist(err) {
+		t.Fatal("the empty home is still there")
+	}
+	if got, _, _ := d.st.CardHomeByPath(row.Path); got.State != store.CardHomeRemoved {
+		t.Fatalf("row %+v", got)
+	}
+}
+
 func TestAPromotedThrowawayHomeIsKeptWhereItIs(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)

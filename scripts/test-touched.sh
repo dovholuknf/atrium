@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test what this branch touched, and nothing else. What a worker runs before handing back.
 #
-#   bash scripts/test-touched.sh                 diff against claude/main
+#   bash scripts/test-touched.sh                 diff against claude/main, or hub/claude/main when that is ahead
 #   bash scripts/test-touched.sh --base REF      diff against REF (its merge base with HEAD)
 #   bash scripts/test-touched.sh --plan          print the plan and stop
 #   bash scripts/test-touched.sh --budget MS     headless unit time to allow, from board-suite-weights.json (150000)
@@ -19,6 +19,8 @@
 #     and with no retry, and the later run skips it. The answer from the bad tests comes before the long run
 #   - gofmt -l over the changed .go files, failing and naming any it lists
 #   - the node scripts/test-*.js whose subject changed, a syntax check of changed scripts
+#   - the scripts/live/test-*.ps1 that name a changed scripts/live file, through pwsh on Windows only. Elsewhere, or
+#     for a test that needs arguments, each is said as SKIPPED
 #
 # THE WHOLE SUITE IS NOT THIS SCRIPT'S JOB. It runs after landing, by whoever lands, with FULL_SUITE=1. A red there is
 # a follow-up, not a reason to run it all before handing back.
@@ -30,11 +32,11 @@ set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$here"
 
-base="claude/main"; plan_only=0; budget=""
+base="claude/main"; base_given=0; plan_only=0; budget=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --base) [ $# -ge 2 ] || { echo "--base needs a ref" >&2; exit 2; }; base="$2"; shift 2 ;;
-    --base=*) base="${1#--base=}"; shift ;;
+    --base) [ $# -ge 2 ] || { echo "--base needs a ref" >&2; exit 2; }; base="$2"; base_given=1; shift 2 ;;
+    --base=*) base="${1#--base=}"; base_given=1; shift ;;
     --plan) plan_only=1; shift ;;
     --budget) [ $# -ge 2 ] || { echo "--budget needs milliseconds" >&2; exit 2; }; budget="$2"; shift 2 ;;
     -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -43,6 +45,11 @@ while [ $# -gt 0 ]; do
 done
 
 if ! command -v node >/dev/null 2>&1; then echo "test-touched: node is not on PATH, and the plan is made by node" >&2; exit 2; fi
+# workers fetch only the hub, so the local claude/main lags it: the default base is the hub's when that is ahead
+if [ "$base_given" = 0 ] && git rev-parse --verify --quiet "hub/claude/main^{commit}" >/dev/null &&
+  ! git merge-base --is-ancestor hub/claude/main claude/main 2>/dev/null; then
+  base="hub/claude/main"
+fi
 if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
   echo "test-touched: no ref $base here. pass --base REF (origin/main, say)" >&2; exit 2
 fi
@@ -79,7 +86,7 @@ step() {
   return 0
 }
 
-gopkgs=(); mode=unit; units=""; gofiles=(); govet=(); nodes=(); jschecks=(); shchecks=(); gobuild=0
+gopkgs=(); mode=unit; units=""; gofiles=(); govet=(); nodes=(); jschecks=(); shchecks=(); gobuild=0; pwshs=()
 while read -r kind rest; do
   case "$kind" in
     BUCKET) ;;   # which bucket owns what changed: said in the plan, nothing to run
@@ -92,6 +99,8 @@ while read -r kind rest; do
     NODE) nodes+=("$rest") ;;
     JSCHECK) jschecks+=("$rest") ;;
     SHCHECK) shchecks+=("$rest") ;;
+    PWSH) pwshs+=("$rest") ;;
+    PWSHSKIP) skipped+=("${rest%% *}: ${rest#* }, so it did NOT run") ;;
   esac
 done <<<"$actions"
 
@@ -146,6 +155,14 @@ for g in ${govet[@]+"${govet[@]}"}; do step "go vet $g" go vet "$g"; done
 # test.sh: unit mode keeps the 20ms budget, all mode adds -tags integration.
 [ ${#gopkgs[@]} -gt 0 ] && step "go test ($mode) ${gopkgs[*]}" bash scripts/test.sh "$mode" ${flaky_skip[@]+"${flaky_skip[@]}"} "${gopkgs[@]}"
 for n in ${nodes[@]+"${nodes[@]}"}; do step "node $n" node "$n"; done
+for t in ${pwshs[@]+"${pwshs[@]}"}; do
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v pwsh >/dev/null 2>&1; then step "pwsh $t" pwsh -NoProfile -File "$t"
+      else skipped+=("$t: pwsh is not on PATH, so it did NOT run"); fi ;;
+    *) skipped+=("$t: the scripts/live tests run on Windows only, so it did NOT run") ;;
+  esac
+done
 
 if [ -n "$units" ]; then
   n=$(echo "$units" | tr ',' '\n' | grep -c .)

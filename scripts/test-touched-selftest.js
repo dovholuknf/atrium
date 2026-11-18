@@ -10,7 +10,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { plan, buildIndex } = require("./test-touched-plan.js");
+const { plan, buildIndex, actions } = require("./test-touched-plan.js");
 
 const ROOT = path.join(__dirname, "..");
 const ix = buildIndex();
@@ -112,6 +112,21 @@ for (const f of ["scripts/test-touched.sh", "scripts/test-touched-plan.js", "scr
 check("the planner is not a test", !nodes(P(["internal/api/web/js/seen.js"])).includes("scripts/test-touched-plan.js"));
 p = P(["scripts/check-board.sh"]);
 check("a shell script: bash -n", p.shcheck.includes("scripts/check-board.sh"), p.shcheck);
+
+// scripts/live: the tests that load the changed file, a test that needs arguments said and not run
+const live = p => [...(p.pwsh || new Map()).keys()];
+p = P(["scripts/live/live-common.ps1"]);
+check("live-common.ps1: the tests that load it", ["test-live-hosts", "test-stop-room-409", "test-backup-rotation", "test-deploy-skew"]
+  .every(t => live(p).includes("scripts/live/" + t + ".ps1")), live(p));
+check("live-common.ps1: test-save-revert needs arguments, so it is said and not run",
+  !live(p).includes("scripts/live/test-save-revert.ps1") && !!p.pwshSkip && p.pwshSkip.has("scripts/live/test-save-revert.ps1"), [live(p), p.pwshSkip]);
+check("live-common.ps1: a PWSH action per test", live(p).length > 0 && actions(p).filter(a => a.startsWith("PWSH ")).length === live(p).length, actions(p));
+p = P(["scripts/live/deploy-batch.ps1"]);
+check("deploy-batch.ps1: the tests that run it", live(p).sort().join() === "scripts/live/test-deploy-batch-preflight.ps1,scripts/live/test-refuse-supervised.ps1", live(p));
+p = P(["scripts/live/test-stop-room-409.ps1"]);
+check("a live test: itself", live(p).join() === "scripts/live/test-stop-room-409.ps1", live(p));
+p = P(["scripts/live/README.md"]);
+check("live notes: nothing", !live(p).length && p.skipped.length === 1, [live(p), p.skipped]);
 
 // docs: nothing at all
 p = P(["docs/agents.md", "AGENTS.md"]);

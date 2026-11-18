@@ -4,6 +4,8 @@ package daemon
 
 import (
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -120,10 +122,22 @@ func TestTheContinuePromptListsTheSaysAlreadySent(t *testing.T) {
 
 	cycleToWake(t, d, worker, f)
 
-	got := f.written()
+	typed := f.written()
+	if strings.Contains(typed, "ANSWER-") || !strings.Contains(typed, "do NOT resend") {
+		t.Fatalf("the wake is not one short sentence naming the list: %q", typed)
+	}
+	files, _ := filepath.Glob(filepath.Join(d.st.ContextHandoffDir(), worker.ID+"-*.md"))
+	if len(files) != 1 {
+		t.Fatalf("handoff files %v", files)
+	}
+	b, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
 	for _, want := range []string{"ANSWER-ALPHA to the errand", "ANSWER-BETA with newlines", "do NOT resend", "to " + launcher.WireName} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("the continue prompt lacks %q: %q", want, got)
+			t.Fatalf("the handoff lacks %q: %q", want, got)
 		}
 	}
 	if strings.Contains(got, "STALE-ANSWER") {
