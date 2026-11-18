@@ -31,6 +31,13 @@ on:
       version:
         description: "tag to publish, which must already exist"
         required: true
+  # make-release calls this after it tags: a tag pushed with GITHUB_TOKEN does not fire the tag trigger.
+  workflow_call:
+    inputs:
+      version:
+        description: "tag to publish, which must already exist"
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -52,6 +59,7 @@ jobs:
           # exists and points at HEAD, and a shallow clone with no tags cannot
           # answer either question.
           fetch-depth: 0
+          ref: refs/tags/${{ env.ATRIUM_VERSION }}
 
       - uses: actions/setup-go@v7
         with:
