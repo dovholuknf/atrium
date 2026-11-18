@@ -48,15 +48,23 @@ func TestAllowedSwapExeUnderAFolderThisUserCannotList(t *testing.T) {
 	writeFile(t, ok, "x")
 	writeFile(t, filepath.Join(inst, "atrium-zrok.new.exe"), "x")
 	writeFile(t, filepath.Join(elsewhere, "atrium.new.exe"), "x")
+	wants := map[string]string{}
+	for _, p := range []string{ok, filepath.Join(inst, "atrium-zrok.new.exe")} {
+		w, err := filepath.EvalSymlinks(p) // long form, resolved before the folder is unlistable
+		if err != nil {
+			t.Fatal(err)
+		}
+		wants[p] = w
+	}
 	denyList(t, mid)
 	dirs := []string{home, inst}
 
-	for _, p := range []string{ok, filepath.Join(inst, "atrium-zrok.new.exe")} {
+	for p, want := range wants {
 		got, err := allowedSwapExe(p, dirs)
 		if err != nil {
 			t.Errorf("%s refused under an unlistable folder: %v", p, err)
-		} else if !strings.EqualFold(got, p) {
-			t.Errorf("%s resolved to %s", p, got)
+		} else if !strings.EqualFold(got, want) {
+			t.Errorf("%s resolved to %s, want %s", p, got, want)
 		}
 	}
 	if _, err := allowedSwapExe(filepath.Join(elsewhere, "atrium.new.exe"), dirs); err == nil {

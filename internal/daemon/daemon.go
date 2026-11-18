@@ -260,6 +260,8 @@ type Daemon struct {
 
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
+	// taskOwe keeps a task event's record-send-clear whole, so a flush never sends it a second time.
+	taskOwe sync.Mutex
 	// roomEvents is the one pass at a time that carries the room's held hub writes. See room_events.go.
 	roomEvents roomEventPush
 	// taskHandled is the task cards whose end is already being filed, by a capture or by a failure. See task_capture.go.
