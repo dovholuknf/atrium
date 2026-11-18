@@ -260,8 +260,6 @@ type Daemon struct {
 
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
-	// taskOwe keeps a task event's record-send-clear whole, so a flush never sends it a second time.
-	taskOwe sync.Mutex
 	// roomEvents is the one pass at a time that carries the room's held hub writes. See room_events.go.
 	roomEvents roomEventPush
 	// taskHandled is the task cards whose end is already being filed, by a capture or by a failure. See task_capture.go.
@@ -483,6 +481,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Kill = d.Kill
 	d.ap.EndThrowaway = d.endThrowaway
 	d.ap.Closed = d.releaseSentBy
+	d.ap.CloseHome = d.closeEmptyHome
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
 	d.prr = pulls.NewPRRunner(st, d.ap.PublishPR, d.prConfig())

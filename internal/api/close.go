@@ -792,6 +792,11 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			s.Closed(t)
 		}
 	}
+	if s.CloseHome != nil && !pv.keepAll {
+		if why := s.CloseHome(t.ID); why != "" {
+			warn("the card's home was kept: %s", why)
+		}
+	}
 	// A notified event with its own by, as a deploy hold's lift is: the event table takes a fixed set of kinds.
 	if err := s.st.AppendEvent(t.ID, store.EventNotified, map[string]any{"by": closedBy, "left": res.Left,
 		"stashes": res.Stashes, "warnings": res.Warnings, "log": res.Log}); err != nil {

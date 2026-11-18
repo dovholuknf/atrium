@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func cardText() []string {
@@ -97,5 +99,28 @@ func TestNpmShimRunsNodeWithNoCmd(t *testing.T) {
 	var got []string
 	if err := json.Unmarshal(out, &got); err != nil || strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Errorf("runner got %q, want %q verbatim", out, want)
+	}
+}
+
+func TestNewConsoleGivesTheRunnerItsConsole(t *testing.T) {
+	if out := os.Getenv("ATRIUM_NEWCONSOLE_OUT"); out != "" {
+		var mode uint32
+		state := "console"
+		if err := windows.GetConsoleMode(windows.Handle(os.Stdin.Fd()), &mode); err != nil {
+			state = err.Error()
+		}
+		_ = os.WriteFile(out, []byte(state), 0o644)
+		return
+	}
+	out := filepath.Join(t.TempDir(), "stdin.txt")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestNewConsoleGivesTheRunnerItsConsole$")
+	cmd.Env = append(os.Environ(), "ATRIUM_NEWCONSOLE_OUT="+out)
+	NewConsole(cmd)
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil || string(got) != "console" {
+		t.Errorf("runner stdin in its own console: %q %v", got, err)
 	}
 }

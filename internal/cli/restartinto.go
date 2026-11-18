@@ -156,23 +156,15 @@ func allowedSwapExe(raw string, dirs []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("exe %s: %w", p, err)
 	}
-	trusted := ""
 	for _, c := range []string{p, real} {
 		if !swapExeName.MatchString(filepath.Base(c)) {
 			return "", fmt.Errorf("exe %s is not an atrium*.new build", c)
 		}
-		t, ok := inSwapDir(filepath.Dir(c), dirs)
-		if !ok {
+		if !inSwapDir(filepath.Dir(c), dirs) {
 			return "", fmt.Errorf("exe %s is not in the home folder or the installed binary's folder", c)
 		}
-		trusted = t
 	}
-	// Stat a path built from the trusted folder and a local name, not the request string.
-	name := filepath.Base(real)
-	if !filepath.IsLocal(name) {
-		return "", fmt.Errorf("exe %s is not a plain file name", real)
-	}
-	st, err := os.Stat(filepath.Join(trusted, name))
+	st, err := os.Stat(real)
 	if err != nil {
 		return "", err
 	}
@@ -182,7 +174,7 @@ func allowedSwapExe(raw string, dirs []string) (string, error) {
 	return real, nil
 }
 
-func inSwapDir(dir string, dirs []string) (string, bool) {
+func inSwapDir(dir string, dirs []string) bool {
 	for _, d := range dirs {
 		cands := []string{filepath.Clean(d)}
 		if r, err := swapRealPath(d); err == nil {
@@ -190,11 +182,11 @@ func inSwapDir(dir string, dirs []string) (string, bool) {
 		}
 		for _, c := range cands {
 			if dir == c || (runtime.GOOS == "windows" && strings.EqualFold(dir, c)) {
-				return c, true
+				return true
 			}
 		}
 	}
-	return "", false
+	return false
 }
 
 func probeSwapExe(exe string) error {

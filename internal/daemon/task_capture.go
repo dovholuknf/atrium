@@ -273,8 +273,6 @@ func (d *Daemon) reapTaskFolder(row store.CardHome) {
 
 // owePost records a folder's new state with the event the hub is owed, then sends it and clears it on an answer.
 func (d *Daemon) owePost(row store.CardHome, state, reason string, body map[string]any) {
-	d.taskOwe.Lock()
-	defer d.taskOwe.Unlock()
 	raw, _ := json.Marshal(body)
 	if err := d.st.CardHomeSet(row.Path, state, reason, string(raw)); err != nil {
 		log.Printf("[atrium] could not record task folder %s: %v", row.Path, err)
@@ -289,8 +287,6 @@ func (d *Daemon) owePost(row store.CardHome, state, reason string, body map[stri
 
 // flushTaskOwed sends again what the hub has not acknowledged. Run when the room comes up and after each capture.
 func (d *Daemon) flushTaskOwed() {
-	d.taskOwe.Lock()
-	defer d.taskOwe.Unlock()
 	rows, err := d.st.CardHomesOwed()
 	if err != nil {
 		return

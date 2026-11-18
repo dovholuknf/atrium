@@ -1109,21 +1109,34 @@ async function groupDragSection(browser, base) {
     if (!tag.some(t => /custom grouping/.test(t.title))) {
       fail("a heading outside custom mode does not say where reordering lives: " + JSON.stringify(tag));
     }
-    // In age order a row cannot be rearranged: it says so at the pointer, and the cursor is not-allowed.
+    // In age order a row cannot be rearranged: a real drag says so at the pointer, a hover says nothing.
     const rowBox = async () => { const c = dp.locator("#term-list .card.tab:not(.kid)").first(); await c.scrollIntoViewIfNeeded(); return c.boundingBox(); };
     const noteShown = () => dp.evaluate(() => { const n = document.getElementById("tdragnote"); return !!n && !n.hidden && n.textContent; });
+    const rowCursor = () => dp.evaluate(() => { const c = document.querySelector("#term-list .card.tab:not(.kid)"); return { drag: c.draggable, cursor: getComputedStyle(c).cursor }; });
     let box = await rowBox();
     await dp.mouse.move(box.x + 20, box.y + box.height / 2);
     await dp.mouse.move(box.x + 30, box.y + box.height / 2);
-    await dp.waitForFunction(() => { const n = document.getElementById("tdragnote"); return n && !n.hidden; }, null, { timeout: slow(5000) })
-      .catch(() => fail("age order: no badge followed the pointer over a card"));
-    const ageRow = await dp.evaluate(() => { const c = document.querySelector("#term-list .card.tab:not(.kid)"); return { drag: c.draggable, cursor: getComputedStyle(c).cursor }; });
-    if (await noteShown() !== "order by age disables rearrange" || ageRow.drag || ageRow.cursor !== "not-allowed") {
-      fail("age order: wrong badge, drag or cursor: " + JSON.stringify({ note: await noteShown(), ageRow }));
-    }
+    const hover = { note: await noteShown(), row: await rowCursor() };
+    if (hover.note || hover.row.drag || hover.row.cursor === "not-allowed") fail("age order: a plain hover shows the badge or cursor: " + JSON.stringify(hover));
     await dp.mouse.down();
+    await dp.mouse.move(box.x + 32, box.y + box.height / 2);
+    if (await noteShown()) fail("age order: the badge showed before the drag threshold");
+    await dp.mouse.move(box.x + 60, box.y + box.height / 2);
+    await dp.waitForFunction(() => { const n = document.getElementById("tdragnote"); return n && !n.hidden; }, null, { timeout: slow(5000) })
+      .catch(() => fail("age order: no badge once a drag started"));
+    const held = { note: await noteShown(), row: await rowCursor() };
+    if (held.note !== "order by age disables rearrange" || held.row.drag || held.row.cursor !== "not-allowed") {
+      fail("age order: wrong badge, drag or cursor during a drag: " + JSON.stringify(held));
+    }
     await dp.mouse.up();
-    if (await noteShown()) fail("age order: the badge stayed after the mouse was released");
+    const after = { note: await noteShown(), row: await rowCursor() };
+    if (after.note || after.row.cursor === "not-allowed") fail("age order: the badge or cursor stayed after release: " + JSON.stringify(after));
+    await dp.mouse.down();
+    await dp.mouse.move(box.x + 70, box.y + box.height / 2);
+    await dp.mouse.move(box.x + 90, box.y + box.height / 2);
+    await dp.keyboard.press("Escape");
+    if (await noteShown()) fail("age order: the badge stayed after Escape");
+    await dp.mouse.up();
     await dp.mouse.move(2, 2);
     await dp.evaluate(() => { setGrouping({ mode: "project" }); });
     await dp.waitForFunction(() => { const c = document.querySelector("#term-list .card.tab:not(.kid)"); return c && c.draggable; }, null, { timeout: slow(5000) })
@@ -2412,6 +2425,34 @@ async function reselectSection(browser, base) {
   if (errors.length) fail("the reselect page threw: " + errors.join(" | "));
   mock.landList = []; mock.landPerms = [];
   mock.tasksMode = was;
+}
+
+// ── a walk link opened in a fresh page ─────────────────────────────────────
+// `<board>/#card=<card>&walk=<folder>` is what an agent hands over. A fresh tab must select the card and open the
+// walk, and the address must not be rewritten to a route on the way.
+async function walkLinkFreshSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => { localStorage.setItem("atrium.view", "terms"); localStorage.setItem("atrium.term", "land-live"); });
+  try {
+    for (const hash of ["#card=land-live&walk=%2Ftmp%2Fwalked", "#walk=%2Ftmp%2Fwalked&card=land-live"]) {
+      const p = await ctx.newPage();
+      await p.goto(base + "/" + hash, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof dock !== "undefined" && dock.open && walkTenant.dir === "/tmp/walked" &&
+        termTask && termTask.id === "land-live", null, { timeout: slow(15000) })
+        .catch(async () => fail("a fresh page at " + hash + " did not open the walk, the address is " +
+          (await p.evaluate(() => location.hash))));
+      await p.close();
+    }
+  } finally {
+    await ctx.close();
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
+  }
 }
 
 // ── a cleared screen goes into the scrollback ──────────────────────────────
@@ -13059,6 +13100,9 @@ async function walkBranchSection(browser, base) {
     mock.walkOpen.card = ids.ok;
     const other = { atrium: "walk", v: 1, pr: { url: "https://github.com/acme/widgets/pull/7", repo: "acme/widgets", num: "7" },
       comments: [{ id: "o1", file: "a.cs", line: 3, who: "you", text: "from another dev", turns: [{ who: "you", text: "why?" }] }], thread: [{ q: "is it safe", scope: "", at: 1 }] };
+    await p.waitForFunction(() => !walkPr.timer, null, { timeout: slow(5000) });
+    const quick = await p.evaluate(() => { walkPr.s.comments[0].turns = (walkPr.s.comments[0].turns || []).concat({ who: "you", text: "quick close", at: 1 }); walkPrSave(true); return walkPr.timer; });
+    if (quick) fail("walkBranch: a sent reply waited on the 400ms debounce, so closing the page lost it");
     await p.waitForFunction(() => !walkPr.timer, null, { timeout: slow(5000) });
     await p.evaluate(t => walkPrImportText(t), JSON.stringify(other));
     for (let i = 0; i < 100 && !mock.walkOpen.calls.length; i++) await p.waitForTimeout(50); // wait: polls a node-side mock the page cannot watch, 5s deadline
@@ -29014,7 +29058,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, walkLinkFresh: walkLinkFreshSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
@@ -30939,6 +30983,7 @@ async function main() {
     await unit("usageGroups", bu("usageGroups"));
     await unit("usageHistory", bu("usageHistory"));
     await unit("reselect", () => reselectSection(browser, base));
+    await unit("walkLinkFresh", () => walkLinkFreshSection(browser, base));
     // ── over a terminal the toasts hang from the top right ─────────────────
     await unit("toastsTop", () => toastsTopSection(browser, base));
     // ── say immediately, or when the turn is done ──────────────────────────

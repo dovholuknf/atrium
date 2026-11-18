@@ -278,6 +278,36 @@ func (d *Daemon) sweepHome(ctx context.Context, row store.CardHome, users func(s
 	return d.sweptOne(row.Path, row.Card, bytes, stashed), true
 }
 
+// closeEmptyHome removes the home of a card a close has just freed when nothing but folders is in it, and answers why it
+// kept one, "" when there was none or it went.
+func (d *Daemon) closeEmptyHome(cardID string) string {
+	row, ok := d.HomeOf(cardID)
+	if !ok {
+		return ""
+	}
+	dir := filepath.FromSlash(row.Path)
+	if _, err := d.HomeGuard(row); err != nil {
+		return err.Error()
+	}
+	var file string
+	_ = filepath.WalkDir(dir, func(p string, e fs.DirEntry, err error) error {
+		if err == nil && !e.IsDir() {
+			file = p
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if file != "" {
+		return "it holds " + filepath.ToSlash(file)
+	}
+	t, err := d.st.Get(cardID)
+	if err != nil {
+		return ""
+	}
+	_, kept, _ := d.ReclaimHome(t, row, false)
+	return kept
+}
+
 // filesNoGit says whether a home has a file under work/ and no .git anywhere.
 func filesNoGit(dd home.HomeDirs) bool {
 	files, git := false, false

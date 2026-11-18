@@ -69,6 +69,8 @@ type Server struct {
 	EndThrowaway func(taskID string)
 	// Closed is told when a close has moved a card to done, so what it still had held for others is released.
 	Closed func(t *store.Task)
+	// CloseHome removes the card's home folder when it holds no file, and answers why it kept one, "" otherwise.
+	CloseHome func(taskID string) string
 	// RunAction says a stored action's prompt to a card, and optionally asks
 	// the runner to leave afterwards. Owned by the daemon, which owns the
 	// terminals and the message queue.

@@ -95,8 +95,7 @@ function landFromSolo(taskFor, goTo, key) {
 // one at `/?land=<card>&view=<view>&key=<request>`, and this lands it once the
 // board is back where it was, then takes the query off the address so a reload
 // does not land again.
-function landFromURL() {
-  const wl = typeof walkLinkOf === "function" ? walkLinkOf(location.href) : null;
+function landFromURL(wl) {
   if (wl) {
     history.replaceState(history.state, "", "/" + location.search);
     walkLinkOpen(wl.id, wl.dir);

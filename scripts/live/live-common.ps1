@@ -17,7 +17,7 @@
 $AtriumBin    = 'C:\Users\claude\.atrium\bin\atrium.exe'
 $AtriumBinDir = Split-Path $AtriumBin
 $Repo         = 'D:\git\github\dovholuknf\atrium'
-$AtriumNew    = Join-Path $Repo 'build.claude\atrium.exe'
+$AtriumNew    = [IO.Path]::Combine($Repo, 'build.claude\atrium.exe')
 # Where the deploy looks for go when it is not on PATH. The one place to change it.
 $GoFallbackBin = 'V:\work\tools\go\current\bin'
 # A different build to deploy, for a -WhatIf rehearsal from another worktree.
@@ -33,7 +33,7 @@ $HubInventory = 'http://127.0.0.1:7778/_hub/inventory'
 # What the hub calls the room these scripts restart. A room COUNT says nothing about it: m1mini and sg4-wsl attach to
 # the same hub, so "rooms >= 1" passed on 2026-09-29 17:05 while this room was being refused.
 $RoomName     = 'claude-sg4'
-$RoomLogs     = Join-Path $AtriumRoot "$RoomName\logs"
+$RoomLogs     = [IO.Path]::Combine($AtriumRoot, "$RoomName\logs")
 $RoomShutdown = 'http://127.0.0.1:7781/v1/shutdown'
 $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
 # A request the room answers from its store. `/v1/health` and the hub's view of the room both answer while the store is
@@ -44,7 +44,7 @@ $RoomServes   = 'http://127.0.0.1:7781/v1/settings'
 # Find-Atrium never matches it and a deploy of claude-sg4 never stops it. start-atrium-control.ps1 starts it.
 $CtlBinDir    = 'C:\Users\claude\.atrium\ctl-bin'
 $CtlName      = 'sg4-control'
-$CtlLogs      = Join-Path $AtriumRoot "$CtlName\logs"
+$CtlLogs      = [IO.Path]::Combine($AtriumRoot, "$CtlName\logs")
 $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 $CtlServes    = 'http://127.0.0.1:7791/v1/settings'
@@ -95,7 +95,7 @@ $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:
   '--link-advertise', $LinkAdvertise, '--atrium-dir', $HubDir)
 # The hub serves the board from the main checkout, so a board change merged to claude/main is live on a browser
 # refresh with no build. clint 2026-10-07: "i'd like this hub to be switched over to allowing live edits".
-$HubArgs += @('--board', (Join-Path $Repo 'internal\api\web'))
+$HubArgs += @('--board', [IO.Path]::Combine($Repo, 'internal\api\web'))
 # One board view per worker worktree under D:\worktrees, at http://<worktree-folder>.localhost:7778/, so several UI changes
 # are live side by side. See docs/rnd/board-views-design.md.
 $HubArgs += @('--board-views', 'D:\worktrees')

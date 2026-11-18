@@ -97,6 +97,7 @@ startRooms().then(() => {
 // it, so the question is settled first.
 async function bootBoard() {
   if (await guestKnown) { showGuestPage(); return; }
+  const walkLink = walkLinkOf(location.href);
   routeBoot();
   if (!emergingOn() && EMERGING_VIEWS.includes(document.querySelector(".tab.on").dataset.view)) switchView("terms");
   connect();
@@ -125,7 +126,7 @@ async function bootBoard() {
     runRefresh();
     // A board opened by clicking a desktop notification lands where the click
     // meant, after the restore has put it back where it was.
-    restoreWhereYouWere(openedOn).finally(landFromURL);
+    restoreWhereYouWere(openedOn).finally(() => landFromURL(walkLink));
     // AND THE COVER COMES OFF, on the view you were reading rather than on the
     // one the markup starts with. Here rather than earlier because this line
     // above is what puts the board back where it was, and uncovering before it

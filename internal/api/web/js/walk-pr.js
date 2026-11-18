@@ -89,15 +89,17 @@ function walkPrPut(id, s) {
   return api(`/v1/tasks/${id}/walk`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
 }
 
-function walkPrSave() {
+function walkPrSave(now) {
   clearTimeout(walkPr.timer);
+  walkPr.timer = 0;
   const id = walkPr.taskId, s = walkPr.s;
   if (!id || !s) return;
-  walkPr.timer = setTimeout(() => {
+  const put = () => {
     walkPr.timer = 0;
     api(`/v1/tasks/${id}/walk`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) })
       .catch(e => toast("the walk was not saved", (e && e.message) || ""));
-  }, 400);
+  };
+  if (now) put(); else walkPr.timer = setTimeout(put, 400);
 }
 
 function walkPrComment(id) { return walkPr.s && walkPr.s.comments.find(c => c.id === id) || null; }

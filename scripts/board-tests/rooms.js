@@ -1728,6 +1728,9 @@ async function roomsSetupSection(browser, base) {
   const hooksIssue = { answering: true, hooks_missing: 3, hooks_stale: 1, issues: [{ kind: "hooks", text: "atrium claude hooks: 3 missing, 1 stale" }] };
   mock.ALPHA.setup = { answering: true, hooks_missing: 0, issues: [{ kind: "build", text: "runs a different atrium build than the hub (bbbbbbbb, hub aaaaaaaa)" }] };
   mock.SGG.setup = hooksIssue;
+  mock.ALPHA.local = true;
+  mock.ALPHA.commit = "aaaaaaa1111111";
+  mock.SGG.commit = "bbbbbbb2222222";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   const errors = [];
@@ -1743,8 +1746,10 @@ async function roomsSetupSection(browser, base) {
         : "  " + (c.querySelector(".k") ? c.querySelector(".k").textContent + ": " : "") + (c.querySelector(".tx") ? c.querySelector(".tx").textContent : c.textContent)).join("\n") }; });
     let s = await pill();
     has("the pill is not warning", s.warn, s);
-    has("the tip does not name sgg's hooks", /sgg[^\n]*\n  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
+    has("the tip does not name sgg's hooks", /sgg[^\n]*\n(  [^\n]*\n)*  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
     has("the tip does not name alpha's build", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip), s);
+    has("the tip does not name sgg's commit as stale", /sgg[^\n]*\n(  [^\n]*\n)*  build: runs commit bbbbbbb2, hub aaaaaaa1/.test(s.tip), s);
+    has("the hub's own room is called stale", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip) && !/runs commit aaaaaaa1/.test(s.tip), s);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "pill-after.png"), clip: { x: 900, y: 0, width: 500, height: 60 } });
@@ -1770,7 +1775,7 @@ async function roomsSetupSection(browser, base) {
       .catch(() => fail("roomsSetup: the fix button stayed after the fix"));
     has("the fix did not post for sgg", mock.setupFixed.length === 1 && mock.setupFixed[0] === "sgg", mock.setupFixed);
     s = await pill();
-    has("the tip still names sgg's hooks after the fix", !/sgg\n  hooks:/.test(s.tip), s);
+    has("the tip still names sgg's hooks after the fix", !/sgg\n(  [^\n]*\n)*  hooks:/.test(s.tip), s);
     has("the pill stopped warning while alpha still has a build issue", s.warn, s);
 
     // A room that does not answer is not a setup problem.
@@ -1786,6 +1791,9 @@ async function roomsSetupSection(browser, base) {
     await ctx.close();
     delete mock.ALPHA.setup;
     delete mock.SGG.setup;
+    delete mock.ALPHA.local;
+    delete mock.ALPHA.commit;
+    delete mock.SGG.commit;
     mock.hubMode = wasHub;
     mock.sggAttached = wasSgg;
   }
