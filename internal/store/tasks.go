@@ -20,7 +20,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias,
 	effort, launch_args, launch_env, alias_note, owed_at,
 	human_at, human_via, parked_at, moved_to, moved_from, launch_cmd, answer_drafts, lifetime, spawned_by_dir, launch_branch, report_dirty,
-	done_skipped, done_unverified, skipped_filed`
+	done_skipped, done_unverified, skipped_filed, origin`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -62,7 +62,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias,
 		&t.Effort, &launchArgs, &launchEnv, &t.AliasNote, &owedAt,
 		&humanAt, &t.HumanVia, &parkedAt, &t.MovedTo, &t.MovedFrom, &launchCmd, &t.AnswerDrafts, &t.Lifetime, &t.SpawnedByDir, &t.LaunchBranch, &t.ReportDirty,
-		&t.DoneSkipped, &t.DoneUnverified, &t.SkippedFiled); err != nil {
+		&t.DoneSkipped, &t.DoneUnverified, &t.SkippedFiled, &t.Origin); err != nil {
 		return nil, err
 	}
 	if launchCmd != "" {
@@ -350,6 +350,14 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 			return err
 		}
 	}
+	// A card moved to another checkout belongs to that checkout's repo. Read only on a move, off the hot path.
+	if obs.Worktree != t.Worktree {
+		origin := ReadGitInfo(obs.Worktree).Origin
+		if _, err := s.db.Exec(`UPDATE task SET origin = ? WHERE id = ?`, origin, t.ID); err != nil {
+			return err
+		}
+		t.Origin = origin
+	}
 	n := s.now()
 	_, err := s.db.Exec(`UPDATE task SET worktree = ?, repo = ?, runner = ?, hostname = ?,
 		pid = ?, wire_name = ?, last_activity_at = ? WHERE id = ?`,
@@ -430,7 +438,7 @@ func (s *Store) create(obs Observed) (*Task, error) {
 		return nil, err
 	}
 	t := &Task{
-		ID: newID(), Title: title, Repo: repo, Branch: git.Branch, Worktree: obs.Worktree,
+		ID: newID(), Title: title, Repo: repo, Branch: git.Branch, Worktree: obs.Worktree, Origin: git.Origin,
 		Runner: obs.Runner, Hostname: obs.Hostname, PID: obs.PID,
 		Status: StatusRunning, CreatedAt: n, LastActivityAt: n,
 		WireName: obs.WireName, Overrides: map[string]string{}, Rank: rank,
@@ -486,7 +494,7 @@ func (s *Store) insertTask(t *Task) error {
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -539,7 +547,8 @@ func (s *Store) insertTask(t *Task) error {
 		// And no done report, so nothing left uncommitted at one.
 		0,
 		// And nothing skipped, unverified or filed until a done says so.
-		"", "", "")
+		"", "", "",
+		t.Origin)
 	return err
 }
 

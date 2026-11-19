@@ -1,25 +1,26 @@
 # docs
 
-**If you are an agent, read `docs/agents.md` first.** It is the bring-up: what atrium is now, what runs where, how to
-build and test, the house rules, and which of the docs below to trust.
+**If you are an agent, read `AGENTS.md` at the repo root first.** It is the bring-up: what atrium is now, what runs
+where, how to build and test, the house rules, and which of the docs below to trust.
 
 The published manual is the site, `website/docs/`, at `https://dovholuknf.github.io/atrium/`. This folder is for the
 people and agents who work on atrium: how it is built, what was decided, and the designs behind it.
 
 ## Reading order
 
-A new human: `README.md`, then the site: what atrium is, install, quick start, rooms and the hub, how it works.
+A new human: `README.md`, then the site: get started, what atrium is, quick start, rooms and the hub, how it works.
 `FEATURES.md` for everything else it does.
 
-A new agent: `docs/agents.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-rooms.md`,
+A new agent: `AGENTS.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-rooms.md`,
 `docs/runtime/agent-messaging.md`, then the `AGENTS.md` of the package being changed.
 
 ## The map
 
 | Doc | For | What it answers |
 | --- | --- | --- |
-| `agents.md` | an agent starting work on atrium | the bring-up, and which docs to trust |
+| `../AGENTS.md` | an agent starting work on atrium | the bring-up, and which docs to trust |
 | `working-here.md` | an agent about to change, merge or land | the backlog and change notes, testing, branching and landing, the conventions |
+| `install.md` | a human who wants atrium running now | the one-line install, and a pointer to `website/docs/get-started.md`, the one first-run page |
 | `try-atrium.md` | a human who wants an agent to set atrium up | one prompt to paste into an agent that installs, wires and verifies atrium |
 | `join-atrium.md` | a human who wants an agent to join a machine to an existing hub | the same, for a room that joins a hub someone else runs |
 | `join-a-hub.md` | a human whose machine should join an existing hub | one prompt to paste into an agent that joins this machine as a room and verifies it |

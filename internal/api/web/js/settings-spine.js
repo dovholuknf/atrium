@@ -232,10 +232,10 @@ function paintSettings() {
              "listed and enabled there, and that <b>Do not disturb</b> or <b>Focus assist</b> is off. " +
              "note that real alerts only fire while this tab is in the background, though " +
              "<b>send a test</b> works either way.",
-    denied: "this browser has notifications blocked for localhost and will not ask again. " +
+    denied: "this browser has notifications blocked for this address and will not ask again. " +
             "click the icon at the left of the address bar, or open " +
             "<code>chrome://settings/content/notifications</code>, and allow " +
-            "<code>localhost:7778</code>. then reload.",
+            `<code>${esc(location.host)}</code>. then reload.`,
     default: "click enable, then allow it in the browser prompt.",
     unsupported: "this browser has no notification support."
   }[perm] || "";
@@ -1384,7 +1384,13 @@ function repaintLists(signal, fromStore) {
     // Read on open and on its refresh button. See js/hubrepos.js.
     hubrepos: () => Promise.resolve(),
     // Live by its own `pr` events, like the audit pane. See js/pulls.js.
-    pulls: () => { pullsPaint(); return Promise.resolve(); }
+    pulls: () => { pullsPaint(); return Promise.resolve(); },
+    // Live by its own `usage` events. See js/usage-charts.js.
+    usage: () => Promise.resolve(),
+    // Read on open, and every 3s while a probe runs. See js/caps.js.
+    caps: () => Promise.resolve(),
+    // Read on open, on an `item` event and on its own timer. See js/items.js.
+    items: () => Promise.resolve()
   }[view];
   // A VIEW NOBODY WIRED UP MUST NOT STOP THE REPAINT. Every other list on the
   // page is behind this call, and one unknown tab name would silently freeze

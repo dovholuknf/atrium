@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -94,6 +95,51 @@ type Hub struct {
 	rooms  map[string]*RoomState
 	// failing is the last words of each failure already audited. See auditFailure.
 	failing map[string]string
+	// pushing is the pushes in flight from each room, and owed the rooms whose collect was skipped for one. See pushBegan.
+	pushing map[string]int
+	owed    map[string]bool
+}
+
+// pushBegan marks a push from a room as in flight, and the returned func marks it ended. A collect fetches from the
+// same room over the same link, and the two transfers halve each other, so a collect that finds a push in flight is
+// skipped and made up when the last push ends.
+func (h *Hub) pushBegan(room string) func() {
+	key := strings.ToLower(room)
+	h.mu.Lock()
+	if h.pushing == nil {
+		h.pushing, h.owed = map[string]int{}, map[string]bool{}
+	}
+	h.pushing[key]++
+	h.mu.Unlock()
+	return func() {
+		h.mu.Lock()
+		h.pushing[key]--
+		owe := h.pushing[key] == 0 && h.owed[key]
+		if h.pushing[key] == 0 {
+			delete(h.pushing, key)
+			delete(h.owed, key)
+		}
+		h.mu.Unlock()
+		if owe {
+			go func() {
+				log.Printf("[git] collect from %s runs now: the push that deferred it ended", room)
+				h.audit(room, "git-collect-deferred", "the push that deferred it ended")
+				_, _ = h.Collect(context.Background(), room)
+			}()
+		}
+	}
+}
+
+// pushInFlight says a push from the room is in flight, and owes the room a collect when it ends.
+func (h *Hub) pushInFlight(room string) bool {
+	key := strings.ToLower(room)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.pushing[key] == 0 {
+		return false
+	}
+	h.owed[key] = true
+	return true
 }
 
 // MirrorState is the last look at one repository's mirror.
@@ -612,6 +658,11 @@ func (h *Hub) Collect(ctx context.Context, room string) (CollectResult, error) {
 	res.Room = info.Name
 	if h.sameMachine(info) {
 		return res, errors.New(SameMachine)
+	}
+	if h.pushInFlight(info.Name) {
+		log.Printf("[git] collect from %s skipped: a push is in flight", info.Name)
+		h.audit(info.Name, "git-collect-skipped", "a push is in flight")
+		return res, nil
 	}
 	if !info.Git {
 		return res, errors.New("the room's build predates git sync, so it never said Git in its hello")

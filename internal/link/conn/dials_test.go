@@ -1,6 +1,7 @@
 package conn
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"net"
@@ -157,5 +158,29 @@ func TestGitDialsThatFailDropTheLinkSoTheNextAttachDialsAfresh(t *testing.T) {
 	}
 	if drops.Load() != 1 || d.resets.Load() != 1 {
 		t.Fatalf("drops = %d, resets = %d, want 1 and 1", drops.Load(), d.resets.Load())
+	}
+}
+
+func TestFailedDialsWhileAGitConnectionMovesBytesDoNotDropTheLink(t *testing.T) {
+	d := &failDialer{}
+	r, drops := newDialRoom(d, time.Hour)
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	push := movingConn{&buffered{Conn: a, br: bufio.NewReader(a)}, r, new(int64)}
+	go func() { _, _ = b.Read(make([]byte, 4)) }()
+	if _, err := push.Write([]byte("PACK")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < dataRedialAfter; i++ {
+		r.dataFailed(net.ErrClosed)
+	}
+	if drops.Load() != 0 || d.resets.Load() != 0 {
+		t.Fatalf("a push moving bytes was cut: drops = %d, resets = %d", drops.Load(), d.resets.Load())
+	}
+	r.gitMoved.Store(time.Now().Add(-gitBusyFor).UnixNano())
+	r.dataFailed(net.ErrClosed)
+	if drops.Load() != 1 || d.resets.Load() != 1 {
+		t.Fatalf("once the bytes stopped, drops = %d, resets = %d, want 1 and 1", drops.Load(), d.resets.Load())
 	}
 }

@@ -69,6 +69,8 @@ func opCases() []opCase {
 			}},
 		{"worktree add -B", WorktreeAdd{Path: "-w", NewBranch: "b", Reset: true, Commitish: "c"},
 			"worktree add -B b --end-of-options -w c", nil},
+		{"worktree add --orphan", WorktreeAdd{Path: "w", NewBranch: "claude/x", Orphan: true},
+			"worktree add --orphan -b claude/x --end-of-options w", nil},
 		{"worktree remove", WorktreeRemove{Path: "w", Force: 2}, "worktree remove --force --force --end-of-options w",
 			map[string]func(string) Op{"path": func(v string) Op { return WorktreeRemove{Path: "a\x00b"} }}},
 		{"worktree prune", WorktreePrune{}, "worktree prune", nil},

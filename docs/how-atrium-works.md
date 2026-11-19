@@ -205,5 +205,5 @@ rooms. `docs/story.md` tells it in order, and the designs are in `docs/archive/`
 | Hooks | `docs/runtime/hooks.md` |
 | Wiring a new runner | `docs/runtime/wiring-a-runner.md` |
 | Reaching atrium from another machine | `docs/fabric/overlays.md` |
-| Installing | `website/docs/install.md`, `docs/release/packaging.md` |
+| Installing | `website/docs/get-started.md`, `website/docs/install.md`, `docs/release/packaging.md` |
 | Why the daemon is shaped this way | `docs/archive/architecture-v2.md` |

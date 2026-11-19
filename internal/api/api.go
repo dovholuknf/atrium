@@ -329,7 +329,7 @@ type Server struct {
 	HomeOpen   func(id string) (any, error)
 	// GitPush is atrium_git_push: the room pushes one plain branch from the card's own directory to the hub through
 	// its hub forwarder, under the same rules as `git push hub <branch>`. See internal/daemon/hubremote.go.
-	GitPush func(taskID, branch string) (any, error)
+	GitPush func(ctx context.Context, taskID, branch string) (any, error)
 	// HoldCull keeps a worker: the merged-cull mark is dropped and nothing marks
 	// it again. A route of its own, and not a flag on cull, because a room that
 	// predates the hold would read `hold=true` as an ordinary cull and cull it.
@@ -719,6 +719,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/icon", s.getIcon)
 	mux.HandleFunc("POST /v1/tasks/{id}/icon", s.putIcon)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/icon", s.deleteIcon)
+	mux.HandleFunc("GET /v1/sessions/found", s.sessionsFound)
 	mux.HandleFunc("GET /v1/tasks/{id}/sessions", s.taskSessions)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/sessions/{session}", s.forgetSession)
 	// A conversation out to a file, whole or boiled down. See
@@ -750,6 +751,7 @@ func (s *Server) Handler() http.Handler {
 	// The launch dialog's repo list: this room's checkouts, and cloning one from the hub. See checkouts.go.
 	mux.HandleFunc("GET /v1/checkouts", s.listCheckouts)
 	mux.HandleFunc("POST /v1/checkouts/clone", s.cloneCheckout)
+	mux.HandleFunc("POST /v1/adopt", s.adopt)
 	mux.HandleFunc("GET /v1/branches/check", s.branchCheck)
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/atrium-review", s.getReview)
@@ -1048,7 +1050,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/usage/limits", s.roomLimits)
 	mux.HandleFunc("GET /v1/usage/items", s.roomUsageItems)
 	mux.HandleFunc("GET /v1/usage/turns", s.roomTurnCost)
-	mux.HandleFunc("GET /v1/usage/turn-limits", s.roomTurnLimits)
 	// What has been said and not yet arrived. A queued message waits for the
 	// session's next tool call or its Stop hook, which can be a while, and a
 	// board that does not show the queue makes that look like nothing
@@ -2969,7 +2970,7 @@ func (s *Server) gitPush(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("a push is {\"branch\": \"fix/x\"} and nothing else: %v", err))
 		return
 	}
-	res, err := s.GitPush(r.PathValue("id"), body.Branch)
+	res, err := s.GitPush(r.Context(), r.PathValue("id"), body.Branch)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return

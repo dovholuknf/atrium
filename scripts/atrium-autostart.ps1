@@ -73,8 +73,9 @@ param(
     # is the same daemon attached to the hub this machine already joined, which
     # is what scripts/provision-room.ps1 installs. For a room, -Addr is its
     # agent address and -Http its own board, and -LocationFile does not apply.
-    [ValidateSet('daemon', 'room')]
-    [string] $Verb = 'daemon',
+    # `run` is the default: the hub plus this machine's own room. `daemon` still works.
+    [ValidateSet('run', 'daemon', 'room')]
+    [string] $Verb = 'run',
 
     # Remove the task instead of creating it.
     [switch] $Remove
@@ -185,6 +186,11 @@ if ($Verb -eq 'room') {
     if ($Addr)         { $daemonArgs += " --agent `"$Addr`"" }
     if ($Http)         { $daemonArgs += " --http `"$Http`"" }
     if ($LocationFile) { Write-Warning "-LocationFile does not apply to a room and was left out." }
+} elseif ($Verb -eq 'run') {
+    $daemonArgs = "run --db `"$Db`""
+    if ($Addr)         { $daemonArgs += " --addr `"$Addr`"" }
+    if ($Http)         { $daemonArgs += " --http `"$Http`"" }
+    if ($LocationFile) { Write-Warning "-LocationFile does not apply to run and was left out." }
 } else {
     $daemonArgs = "daemon --db `"$Db`""
     if ($Addr)         { $daemonArgs += " --addr `"$Addr`"" }

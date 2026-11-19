@@ -68,7 +68,7 @@ func TestHubSkinSurvivesReopen(t *testing.T) {
 func TestHubCardColorsSeededOnceAndEmptyStaysEmpty(t *testing.T) {
 	s := open(t)
 	c, err := s.HubCardColors()
-	if err != nil || len(c.Repos) != 17 {
+	if err != nil || len(c.Repos) != 0 {
 		t.Fatalf("seed: %d entries, %v", len(c.Repos), err)
 	}
 	if err := s.SetHubCardColors(cardcolors.Colors{}); err != nil {

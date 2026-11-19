@@ -45,7 +45,7 @@ Type=simple
 # stop below still address it and not a wrapper.
 # scripts/atrium-service.sh does not use this form: it writes a plain ExecStart
 # and Environment=PATH= with the login shell's PATH as it is at install time.
-ExecStart=/bin/sh -c 'exec "$${SHELL:-/bin/sh}" -lc "exec /usr/bin/atrium daemon --db %h/.atrium/atrium.db"'
+ExecStart=/bin/sh -c 'exec "$${SHELL:-/bin/sh}" -lc "exec /usr/bin/atrium run --db %h/.atrium/atrium.db"'
 
 # Restarted, but not into a crash loop. A daemon that halts on a storage failure
 # does so on purpose and will halt again in three seconds, so the interval is
@@ -61,8 +61,10 @@ RestartSec=15s
 # them down tidily. `mixed` signals the main process and lets it do that.
 #
 # `atrium stop` is still the better way to stop it. This is what happens when
-# systemd stops it for you.
-KillMode=mixed
+# systemd stops it for you. `atrium run` starts the room as a detached process in this
+# cgroup and stopping the hub never touches it, so `process` leaves the room alone where
+# `mixed` would SIGKILL it once the hub exits.
+KillMode=process
 KillSignal=SIGTERM
 
 # Ten seconds for the supervised runners plus room for the listeners, matching

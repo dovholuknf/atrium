@@ -102,7 +102,7 @@ func newOpen() *cobra.Command {
 	c.Flags().StringVar(&o.room, "room", "", "the room to open it on, instead of the one the hub picks")
 	c.Flags().StringVar(&o.repo, "repo", "",
 		"for a link that names no repo: host/org/repo to open it in, or none for a scratch folder (default: the recogniser's)")
-	c.Flags().StringVar(&o.runner, "runner", "", "which configured runner starts the card (default: the review recipe's, or claude for --start)")
+	c.Flags().StringVar(&o.runner, "runner", "", "which configured runner starts the card (default: the review recipe's, or for --start claude when found on PATH, else the first runner found)")
 	c.Flags().BoolVar(&o.review, "review", false, "open your own pull request as a review card too")
 	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "",
@@ -308,12 +308,8 @@ func showURL(url string, o openOpts) error {
 	if !got.CwdExists {
 		return fmt.Errorf("not starting: %s", got.Problem)
 	}
-	runner := o.runner
-	if runner == "" {
-		runner = "claude"
-	}
 	return launchAgent(launchOpts{
-		boardURL: o.boardURL, harness: runner, cwd: got.Cwd,
+		boardURL: o.boardURL, harness: o.runner, cwd: got.Cwd,
 		title: got.Title, prompt: got.Prompt, tags: got.Tags,
 		source: got.Kind, itemURL: got.URL,
 		repo: got.Repo, org: got.Org, host: got.Host, branch: got.Branch,

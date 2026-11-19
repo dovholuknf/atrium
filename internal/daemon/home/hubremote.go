@@ -334,6 +334,16 @@ func (d *Service) RestoreHubGit() {
 // forwarder after every rewrite (gitsync.PushToHub), the room's git.push has to be `hub`, and a card that runs
 // outside code is refused. The push uses the room's own token for the card, so a runner kept through a restart can ask for it.
 func (d *Service) GitPush(taskID, branch string) (any, error) {
+	return d.GitPushCtx(context.Background(), taskID, branch)
+}
+
+// GitPushCtx is GitPush ended with its caller: a caller that stops waiting kills the git tree, so no push runs on
+// after the tool said it failed, and a card has one push at a time.
+func (d *Service) GitPushCtx(ctx context.Context, taskID, branch string) (any, error) {
+	if _, busy := d.Pushing.LoadOrStore(taskID, true); busy {
+		return nil, fmt.Errorf("a push for this card is already running. wait for it to answer, do not start another")
+	}
+	defer d.Pushing.Delete(taskID)
 	t, err := d.St.Get(taskID)
 	if err != nil || t == nil {
 		return nil, fmt.Errorf("no card %s on this room", taskID)
@@ -360,7 +370,7 @@ func (d *Service) GitPush(taskID, branch string) (any, error) {
 	if strings.TrimSpace(t.Worktree) == "" {
 		return nil, fmt.Errorf("that card has no directory to push from")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
+	ctx, cancel := context.WithTimeout(ctx, gitsync.CommandBound)
 	defer cancel()
 	dir := filepath.FromSlash(t.Worktree)
 	hubName := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.CloneRoots()...)
@@ -391,11 +401,7 @@ func (d *Service) GitPush(taskID, branch string) (any, error) {
 		d.RecordHubBranch(t.ID, strings.TrimSpace(branch), hubName)
 	}
 	if err != nil {
-		// git's own words, which carry the hub's `remote: atrium: ...` sentence.
-		if strings.TrimSpace(report) != "" {
-			return nil, fmt.Errorf("the push did not land:\n%s", report)
-		}
-		return nil, err
+		return nil, gitsync.PushFailure(report, err, ctx.Err())
 	}
 	if note != "" {
 		report = strings.TrimSpace(report + "\n" + note)

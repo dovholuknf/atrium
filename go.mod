@@ -59,7 +59,6 @@ require (
 	github.com/go-openapi/validate v1.0.1 // indirect
 	github.com/go-resty/resty/v2 v2.17.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -126,6 +125,7 @@ require (
 	github.com/dovholuknf/atrium/internal/hubstore v0.0.0
 	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
 	github.com/dovholuknf/atrium/internal/store v0.0.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/openziti/identity v1.0.144
 )
 

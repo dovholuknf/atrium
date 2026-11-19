@@ -30,11 +30,12 @@ function chatMark() {
     // A card nobody coloured reads as it does unattached, as the terminals' own row does when attached.
     row.classList.toggle("plain", on && !row.style.getPropertyValue("--tabc"));
   }
+  if (!chatId) for (const el of list.querySelectorAll(".carries")) el.classList.remove("carries");
   chatPaint();
   requestAnimationFrame(placeTabBridge);
   const t = chatCard(chatId);
   const title = document.getElementById("chat-title");
-  if (title) title.textContent = chatId ? (t ? (t.display_title || terminalLabel(t) || chatId) : chatId) : "pick a session";
+  if (title) title.textContent = chatId ? (t ? (t.display_title || terminalLabel(t) || chatId) : chatId) : "pick a card";
 }
 
 const CHAT_FRAMES_MAX = 4;

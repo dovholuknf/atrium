@@ -2410,7 +2410,7 @@ func TestTheOperatorDeletesABranchAndTheHubRefusesWhatIsNotHers(t *testing.T) {
 	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone", "claude/open:refs/heads/claude/open"))
 	x.must(x.push(operator, hubRepo, "fix/y:refs/heads/fix/y"))
 	open := func(repo, branch string) (bool, error) { return branch == "claude/open", nil }
-	for _, b := range []string{"main", "claude/main", "fix/y", "claude/open", "claude/none", "tags/v1", "claude/../x"} {
+	for _, b := range []string{"main", "claude/main", "claude/open", "claude/none", "tags/v1", "claude/../x"} {
 		if _, err := x.h.DeleteBranch(bg, hubRepo, b, open); !errors.Is(err, ErrRefused) {
 			t.Errorf("%s: %v", b, err)
 		}
@@ -2439,6 +2439,12 @@ func TestTheOperatorDeletesABranchAndTheHubRefusesWhatIsNotHers(t *testing.T) {
 	}
 	if _, _, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/claude/gone"); ok {
 		t.Error("the deleted branch still has an owner")
+	}
+	if _, err := x.h.DeleteBranch(bg, hubRepo, "fix/y", open); err != nil {
+		t.Fatal(err)
+	}
+	if x.refOn(hubRepo, "refs/heads/fix/y") != "" {
+		t.Error("fix/y is still there")
 	}
 	x.must(x.push(operator, hubRepo, ":refs/heads/claude/open"))
 	if x.refOn(hubRepo, "refs/heads/claude/open") != "" {

@@ -24,6 +24,7 @@ type fakeZiti struct {
 type zitiReg struct {
 	built, closed, dialed, relogins atomic.Int32
 	block                           bool
+	connectTimeout                  atomic.Int64
 }
 
 func (r *zitiReg) make() (zitiConn, error) {
@@ -31,8 +32,9 @@ func (r *zitiReg) make() (zitiConn, error) {
 	return &fakeZiti{reg: r, done: make(chan struct{})}, nil
 }
 
-func (f *fakeZiti) Dial(string) (edge.Conn, error) {
+func (f *fakeZiti) DialWithOptions(_ string, o *ziti.DialOptions) (edge.Conn, error) {
 	f.reg.dialed.Add(1)
+	f.reg.connectTimeout.Store(int64(o.ConnectTimeout))
 	if f.reg.block {
 		<-f.done
 	}
@@ -110,6 +112,14 @@ func TestZitiResetLogsInAgainWithoutBuilding(t *testing.T) {
 	testwait.Eventually(t, 2*time.Second, "a relogin", func() bool { return reg.relogins.Load() != 0 })
 	if reg.relogins.Load() != 1 || reg.built.Load() != 1 {
 		t.Fatalf("relogins %d, built %d, want 1 and 1", reg.relogins.Load(), reg.built.Load())
+	}
+}
+
+func TestZitiDialConnectTimeoutIsDialWait(t *testing.T) {
+	z, reg := newFakeZiti(false)
+	_, _ = z.Dial(context.Background())
+	if got, want := time.Duration(reg.connectTimeout.Load()), wire.DefaultTimings().DialWait; got != want {
+		t.Fatalf("ConnectTimeout %s, want %s", got, want)
 	}
 }
 

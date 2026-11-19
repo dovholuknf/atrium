@@ -182,6 +182,10 @@ type Offer struct {
 // must not hold a slot.
 const HandshakeWait = 10 * time.Second
 
+// SpareWait is how long a hub waits for the hello on a connection that proved a room certificate, so a room can dial one
+// ahead of a relay. See spare.go in internal/link/conn.
+const SpareWait = 60 * time.Second
+
 // MaxLine bounds a frame. Nothing here is large, and an unbounded ReadString on
 // a socket somebody else controls is a memory exhaustion waiting to be found.
 const MaxLine = 64 << 10
@@ -267,8 +271,13 @@ func SayHello(conn net.Conn, br *bufio.Reader, h Hello) (Welcome, error) {
 
 // HearHello is the hub's side.
 func HearHello(conn net.Conn, br *bufio.Reader) (Hello, error) {
+	return HearHelloWithin(conn, br, HandshakeWait)
+}
+
+// HearHelloWithin is HearHello waiting up to wait.
+func HearHelloWithin(conn net.Conn, br *bufio.Reader, wait time.Duration) (Hello, error) {
 	var h Hello
-	if err := conn.SetDeadline(time.Now().Add(HandshakeWait)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(wait)); err != nil {
 		return h, err
 	}
 	if err := ReadJSON(br, &h); err != nil {

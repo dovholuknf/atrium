@@ -988,9 +988,9 @@ async function cleanUpNow(id, t, asked) {
   if (!asked && (f || (!(pv.items || []).length && !(pv.asks || []).length))) {
     const ok = await askUser({
       plain: true,
-      title: `Stop ${title}?`,
-      body: stopBody(f, t),
-      buttons: [{ label: "cancel", value: null }, { label: "stop", value: true, style: "go" }]
+      title: `Terminate ${title}?`,
+      body: "Ends the session and the card. " + stopBody(f, t),
+      buttons: [{ label: "cancel", value: null }, { label: "terminate", value: true, style: "go" }]
     });
     if (!ok) return;
     const tick = document.getElementById("ask-adopt");

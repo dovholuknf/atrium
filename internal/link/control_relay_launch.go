@@ -47,9 +47,6 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 		return ans
 	}
 	harness := strings.TrimSpace(spec.Runner)
-	if harness == "" {
-		harness = "claude"
-	}
 	// THE LAUNCHER, as the hub's own launch names it: `me@myroom`, and its card as
 	// `myroom~id`, so the worker's reports and notices come back across to this card. The
 	// room comes from the connection, never from the request, so a room cannot launch as
@@ -115,7 +112,7 @@ func (c *controlMCP) auditLaunchAcross(target, from, by, harness string, out lau
 	if by == "" {
 		by = "unnamed"
 	}
-	what := "launch " + harness
+	what := strings.TrimSpace("launch " + harness)
 	if out.Card != "" {
 		what += " as " + out.Card
 	}

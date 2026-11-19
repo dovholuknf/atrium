@@ -37,6 +37,9 @@ func cloneRefusal(t *store.Task) error {
 		return errors.New("this card has no folder to copy")
 	}
 	if _, err := gitIn(t.Worktree, gitexec.RevParseVerify{Rev: "HEAD"}); err != nil {
+		if home.Unborn(t.Worktree) {
+			return errors.New("this repo has no commits yet, so it cannot be duplicated")
+		}
 		return fmt.Errorf("%s is not a git checkout with a commit: %v", filepath.ToSlash(t.Worktree), err)
 	}
 	return nil

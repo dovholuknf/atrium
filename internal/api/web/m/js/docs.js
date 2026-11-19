@@ -176,6 +176,7 @@
     cur = st;
     els.sheet.hidden = false;
     document.body.classList.add("docs-open");
+    boardFrame(true);
     els.scroll.scrollTop = 0;
     if (st.v === "list") renderList(st); else renderDoc(st);
   }
@@ -187,6 +188,19 @@
     els.sheet.hidden = true;
     els.body.textContent = "";
     document.body.classList.remove("docs-open");
+    boardFrame(false);
+  }
+  // On the board the sheet is a tab like the others: under the header, with the files tab lit while it is open.
+  let tabBefore = null;
+  function boardFrame(on) {
+    if (isPhone() || !els) return;
+    const head = document.querySelector("body > header");
+    els.sheet.style.top = on && head ? head.getBoundingClientRect().bottom + "px" : "";
+    const tabs = [...document.querySelectorAll("header .tab[data-view]")];
+    if (on && !tabBefore) tabBefore = tabs.find(t => t.classList.contains("on") && t.dataset.view !== "files") || null;
+    if (!on && !tabBefore) return;
+    tabs.forEach(t => t.classList.toggle("on", on ? t.dataset.view === "files" : t === tabBefore));
+    if (!on) tabBefore = null;
   }
   function close() {
     if (!els || els.sheet.hidden) return;
@@ -805,6 +819,11 @@
     if (btnM) btnM.addEventListener("click", () => openList());
     const tab = document.querySelector('.tab[data-view="files"]');
     if (tab) tab.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); openList(); }, true);
+    document.addEventListener("click", e => {
+      const t = e.target.closest && e.target.closest("header .tab[data-view]");
+      if (t && t.dataset.view !== "files" && els && !els.sheet.hidden) { tabBefore = null; close(); }
+    }, true);
+    window.addEventListener("resize", () => { if (els && !els.sheet.hidden) boardFrame(true); });
     const door = async () => {
       const f = window.mFiles ? await window.mFiles.ready() : false;
       const open = (avail === true && emergingOn()) || f;

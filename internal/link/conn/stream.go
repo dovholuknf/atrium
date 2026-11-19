@@ -690,7 +690,9 @@ func (r *Room) OpenStream(ctx context.Context, target, claim string) (net.Conn, 
 		return nil, ErrStreamNotAttached
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
+	done := r.controlDialing()
 	conn, err := r.Dial.Dial(dialCtx)
+	done()
 	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("the hub is not answering: %v", err)

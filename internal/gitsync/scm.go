@@ -82,7 +82,7 @@ func EffectiveSCMRoot(set string) string {
 
 // ErrNoSCMRoot is what a room with no git.scm_root, and no `~/git` to fall back to, answers.
 var ErrNoSCMRoot = errors.New("this room has no scm folder, so atrium has nowhere to clone to. " +
-	"Set git.scm_root on the room (for example `atrium settings set git.scm_root ~/git`), or make ~/git, and ask again")
+	"Set git.scm_root on the room (for example `atrium room set scm_root ~/git`), or make ~/git, and ask again")
 
 // ErrAsked is what a clone the operator made answers until the operator says yes: atrium asked
 // on the board and has changed nothing in the clone.

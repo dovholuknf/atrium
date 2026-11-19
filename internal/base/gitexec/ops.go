@@ -205,18 +205,23 @@ func (o RevParseGitDirs) build(b *builder) {
 }
 
 // WorktreeAdd is `git worktree add`: of Commitish, or on a new branch NewBranch (reset to Commitish when it exists
-// and Reset), not tracking when NoTrack.
+// and Reset), not tracking when NoTrack. Orphan makes NewBranch with no commit, for a repository that has none yet.
 type WorktreeAdd struct {
 	Path      string
 	Commitish string
 	NewBranch string
 	Reset     bool
 	NoTrack   bool
+	Orphan    bool
 }
 
 func (o WorktreeAdd) build(b *builder) {
 	b.sub("worktree", "add")
 	b.flag(o.NoTrack, "--no-track")
+	if o.Orphan && (o.NewBranch == "" || o.Commitish != "" || o.Reset) {
+		b.refuse("branch", "", "an orphan is a new branch and starts from nothing")
+	}
+	b.flag(o.Orphan, "--orphan")
 	if o.NewBranch != "" {
 		flag := "-b"
 		if o.Reset {

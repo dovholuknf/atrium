@@ -349,6 +349,7 @@ func TestNewWorkWithNoStartableRunnerNamesTheRoom(t *testing.T) {
 	}
 	for _, h := range hs {
 		h.Enabled = false
+		h.Cmd, h.BinPath = "atrium-absent-"+h.ID, ""
 		if _, err := nh.srv.st.SaveHarness(*h); err != nil {
 			t.Fatal(err)
 		}
@@ -374,7 +375,8 @@ func TestNewWorkWithNoStartableRunnerNamesTheRoom(t *testing.T) {
 	nh.launched = nil
 	nh.runner(t, "other", false)
 	code, out = nh.newWork(t, map[string]any{"name": "no.runner"})
-	if msg, _ := out["error"].(string); code != 400 || msg != "no runner is installed and turned on on m1mini" {
+	if msg, _ := out["error"].(string); code != 400 || msg != "no runner is installed and turned on on m1mini. here, other is on PATH but turned off: "+
+		"turn it on in the board's runner settings" {
 		t.Errorf("%d %v", code, out)
 	}
 	if len(nh.launched) != 0 {

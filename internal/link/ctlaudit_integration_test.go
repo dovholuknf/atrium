@@ -82,7 +82,7 @@ func TestAuditedToolsWriteOneLineEach(t *testing.T) {
 		name, kind, want string
 		call             func(c *controlMCP) error
 	}{
-		{"launch", "ctl-launch", "by orch@beta (claimed): launch claude as new1, ok", func(c *controlMCP) error {
+		{"launch", "ctl-launch", "by orch@beta (claimed): launch as new1, ok", func(c *controlMCP) error {
 			_, _, err := audited(c, "ctl-launch", describeLaunch, c.launchHandler)(ctx, ctlReq("orch", "beta"),
 				launchInput{Item: "f-test", Cwd: "/work/dir"})
 			return err
@@ -239,7 +239,7 @@ func TestAuditedCrossRoomLaunchWritesOnTheTarget(t *testing.T) {
 		t.Fatalf("launch: %v", err)
 	}
 	detail := onlyLine(t, lines, "gamma", "ctl-launch")
-	if !strings.HasPrefix(detail, "by orch@beta (claimed): launch claude") {
+	if !strings.HasPrefix(detail, "by orch@beta (claimed): launch as") {
 		t.Errorf("detail = %q, want the caller's room in the text", detail)
 	}
 }

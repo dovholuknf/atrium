@@ -15,3 +15,10 @@ func TestBoardAddressTakesABareHostPort(t *testing.T) {
 		}
 	}
 }
+
+func TestBoardAddressTakesABareHostPortFromTheEnv(t *testing.T) {
+	t.Setenv("ATRIUM_BOARD_URL", "127.0.0.1:17781")
+	if got := boardAddress(""); got != "http://127.0.0.1:17781" {
+		t.Fatalf("boardAddress from ATRIUM_BOARD_URL = %q", got)
+	}
+}

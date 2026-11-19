@@ -77,7 +77,8 @@ func newLaunch() *cobra.Command {
 			return launchAgent(o)
 		},
 	}
-	c.Flags().StringVar(&o.harness, "runner", "claude", "which configured runner to start")
+	c.Flags().StringVar(&o.harness, "runner", "",
+		"which configured runner to start (default: claude when the room finds it on PATH, else the first runner it finds)")
 	c.Flags().StringVar(&o.cwd, "cwd", "", "where to run it (default: the current directory)")
 	c.Flags().StringVar(&o.title, "title", "", "what to show on the card")
 	c.Flags().StringVar(&o.why, "why", "", "what this is for, read back later")
@@ -271,9 +272,6 @@ func launchBody(o launchOpts, cwd string) error {
 		if filed && !o.quiet {
 			fmt.Printf("filed backlog item %s\n", id)
 		}
-		if id == "" && !o.quiet {
-			fmt.Println(strings.TrimSpace(link.NoItemNote))
-		}
 		fields["tags"] = link.WithWorkTag(o.tags, id)
 	}
 	if s := strings.TrimSpace(o.step); s != "" {
@@ -334,9 +332,13 @@ func launchBody(o launchOpts, cwd string) error {
 		ID           string `json:"id"`
 		DisplayTitle string `json:"display_title"`
 		PID          int    `json:"pid"`
+		Runner       string `json:"runner"`
 	}
 	if err := json.Unmarshal(raw, &task); err != nil {
 		return fmt.Errorf("could not read the response: %w", err)
+	}
+	if harness == "" {
+		harness = task.Runner
 	}
 
 	if quiet {
@@ -351,6 +353,15 @@ func launchBody(o launchOpts, cwd string) error {
 		fmt.Printf("  pid   %d\n", task.PID)
 	}
 	fmt.Printf("  card  %s\n", task.ID)
-	fmt.Printf("  board %s\n", boardAddress(boardURL))
+	fmt.Printf("  board %s\n", hubBoardAddress(boardURL))
 	return nil
+}
+
+// hubBoardAddress is the board a person opens. Without an override that is the hub's, never the room's own board
+// the launch was posted to.
+func hubBoardAddress(override string) string {
+	if override == "" && strings.TrimSpace(os.Getenv("ATRIUM_BOARD_URL")) == "" {
+		return "http://" + recordedBoard(hubDir())
+	}
+	return boardAddress(override)
 }

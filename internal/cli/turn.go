@@ -255,7 +255,10 @@ func turnEnded(hubURL, event, name, runner string) string {
 		return keepGoing
 	}
 
-	addr := hubAddress(hubURL)
+	addr, src := hubAddressFrom(hubURL)
+	if src == hubSourceDefault {
+		return keepGoing
+	}
 	resp, err := postStop(addr, body, start)
 	if err != nil {
 		// A systemMessage alone never blocks, so the turn still ends.

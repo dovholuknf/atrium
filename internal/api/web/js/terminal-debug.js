@@ -651,7 +651,6 @@ async function decideFromTermNow(id, decision) {
 async function renderTerms() {
   await renderTermList();
   await renderTermPerm();
-  if (typeof renderTurnLimits === "function") await renderTurnLimits();
   if (typeof renderDiskWatch === "function") await renderDiskWatch();
   if (typeof renderHostWatch === "function") await renderHostWatch();
 }

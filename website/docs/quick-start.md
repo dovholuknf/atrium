@@ -1,19 +1,17 @@
 ---
 title: Quick start
-description: From an installed atrium to a card on the board, then to your first gated request.
+description: From your first card to your first gated request.
 ---
 
 # Quick start
 
-This page assumes atrium is [installed](./install.md) and running. If you started it by hand, it is `atrium run`,
-or `atrium run --no-room` with the room running as `localai`, [the setup atrium recommends](./accounts.md). In that
-setup, "your Claude Code settings" and "your own terminal" below mean `localai`'s.
+This page picks up where [Get started](./get-started.md) leaves off: atrium is running, Claude Code's hooks are
+wired, and a card is on the board. If you run the room as `localai`, [the setup atrium recommends](./accounts.md),
+"your Claude Code settings" and "your own terminal" below mean `localai`'s.
 
-The first three steps put sessions on the board. Steps 4 and 5 add the permission gate, which is optional.
+## 1. The board
 
-## 1. Open the board
-
-Open `http://localhost:7778`.
+Open `http://127.0.0.1:7778`.
 
 The board you are looking at is the hub's, on `:7778`. The agents and their hooks talk to the room, on `:7777`.
 They are separate on purpose. If the room's storage ever fails, it closes `:7777` and leaves it closed, while the
@@ -21,21 +19,13 @@ board stays up to tell you what broke. Hooks treat a closed port as "atrium is n
 and a gated tool call falls back to Claude Code's own permission prompt. If the hub is down, the room still serves
 its own board on `:7781`.
 
-## 2. Wire the reporting hooks
-
-Open the **rooms** tab and find the claude runner's row. Its **hooks** button says how many are missing. Press it,
-and atrium writes them into your Claude Code settings. It keeps the hooks you already have, and it keeps symlinks
-as symlinks. `atrium hook install` does the same from a shell.
-
-From then on, a claude session that **starts** on this machine gets a card the moment it begins, with a live badge
-that says what it is doing. Sessions already running keep their old settings until they restart.
-
-## 3. Start an agent
+## 2. Start an agent
 
 Two ways, and you can mix them. [Two ways to run it](./modes.md) explains the difference.
 
-- **In a terminal atrium owns.** Press **+ new agent** on the board, pick a directory and a runner, and launch. The
-  session opens in the **terminals** tab, where you can type into it from this or any other browser.
+- **In a terminal atrium owns.** Press **+ new agent** on the board, pick a directory and a runner, and launch, or
+  run `atrium launch` in the directory. The session opens in the **terminals** tab, where you can type into it from
+  this or any other browser.
 - **In your own terminal.** Start `claude` as you always do. It appears on the **stack** and the **board**.
 
 From a script:
@@ -47,11 +37,12 @@ atrium launch --cwd ~/src/api --title fix-login --tags "api,bug" \
 
 You should now see a card, and its badge change between **thinking** and the tools it runs.
 
-## 4. Add the permission gate (optional)
+## 3. Add the permission gate (optional)
 
-The gate is one more `PreToolUse` hook, and it is yours. The board does not write it, because it decides what runs
-on your machine. [Hooks](./hooks.md#the-permission-gate) has the contract, a starting script and the settings
-entry to register it.
+The gate is one more `PreToolUse` hook. `atrium hook install` and the board's install all write it with the others,
+because a room without it never puts a question on the board. To leave it out, install the hooks one at a time with
+`atrium hook install --event <name>` and skip `permission`, or remove its entry from `settings.json`. It only gates
+sessions you opt in below. [Hooks](./hooks.md#the-permission-gate) has the contract and the settings entry.
 
 Then choose which sessions to gate:
 
@@ -63,7 +54,7 @@ To see it work, start a new gated session and ask it to run a harmless command, 
 card moves to **needs permission**, and the request appears in the **perms** tab and as a notification. Press
 **block**, type "use the other directory", and watch the agent read your reason and change course.
 
-## 5. Import the rules you already trust
+## 4. Import the rules you already trust
 
 Open **perms** and press **import rules from claude**. Atrium previews what it would add before it adds anything.
 It turns `Bash(go build:*)` into a prefix rule and `//c/temp/**` into a real folder, and it lists anything it

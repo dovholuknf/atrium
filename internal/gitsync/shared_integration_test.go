@@ -1,3 +1,5 @@
+//go:build integration && git
+
 package gitsync
 
 import (

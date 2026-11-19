@@ -27,28 +27,6 @@ type Colors struct {
 	Repos   map[string]string `json:"repos"`
 }
 
-// seeded is the operator's own table, as full keys. Written once, the first time the
-// setting is read and has never been set, so a user who deletes an entry does not get it back.
-var seeded = map[string]string{
-	"github/openziti-test-kitchen/appetizer": "active-work",
-	"github/dovholuknf/atrium":               "active-light",
-	"github/openziti/desktop-edge-win":       "dracula",
-	"github/netfoundry/docusaurus-shared":    "matrix",
-	"github/dovholuknf/dotfiles":             "tangent",
-	"github/openziti/sdk-golang":             "terracotta",
-	"github/netfoundry/sterling":             "orange-coral",
-	"github/openziti/ziti":                   "teal-dusk",
-	"github/openziti/ziti-console":           "deep-amethyst",
-	"github/openziti/ziti-doc":               "imperial-purple",
-	"github/openziti/ziti-openwrt":           "ocean-deep",
-	"github/openziti/ziti-sdk-c":             "neon-grape",
-	"github/openziti/ziti-sdk-csharp":        "nord",
-	"github/openziti/ziti-sdk-py":            "deep-ocean",
-	"github/openziti/ziti-tunnel-sdk-c":      "gruvbox-dark",
-	"github/openziti-test-kitchen/ziti-tv":   "mauve-purple",
-	"github/openziti/zrok":                   "electric-purple",
-}
-
 var keyRe = regexp.MustCompile(`^[a-z0-9._-]+/[a-z0-9._-]+/[a-z0-9._-]+$`)
 
 // Valid refuses a key that is not lowercase `provider/org/repo` and sizes past the caps.
@@ -71,13 +49,9 @@ func Valid(c Colors) error {
 	return nil
 }
 
-// Seed is a fresh copy of the seed table.
+// Seed is the table a fresh store starts with: no repo has a colour.
 func Seed() Colors {
-	c := Colors{Repos: map[string]string{}}
-	for k, v := range seeded {
-		c.Repos[k] = v
-	}
-	return c
+	return Colors{Repos: map[string]string{}}
 }
 
 // Load decodes a stored value. A value that was never set (blank) answers the seed and true, so the

@@ -54,6 +54,12 @@ func TestResolveDefaults(t *testing.T) {
 	if _, err := envAt(home, "windows").Resolve("", ""); err != ErrNone {
 		t.Fatalf("windows with nothing set: %v, want ErrNone", err)
 	}
+	_, err = envAt(home, "windows").Resolve("", "")
+	for _, want := range []string{"atrium room set card_root", "D:/", "C:", "board"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the no-card-root refusal does not say %q: %v", want, err)
+		}
+	}
 	got, err = env.Resolve("", "")
 	if err != nil || got != filepath.Join(base, "home", "atrium", "cards") {
 		t.Fatalf("off windows: %q, %v", got, err)

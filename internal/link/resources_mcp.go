@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/base/resources"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
@@ -27,6 +28,9 @@ const resourcesToolDesc = "List the machines and environments you may use: build
 	"Answers `file`, the inventory clint keeps by hand in resources.md (one `## <name>` entry each, free prose), " +
 	"and `rooms`, the machines running atrium that the hub knows, with their OS and arch and whether they are " +
 	"online, and where each toolchain (go, node, python, git, gh) is on an online room. A room is itself an entry.\n\n" +
+	"Each room's `linux` is how it reaches Linux, from its own probes: the ssh hosts that answer and whether they " +
+	"have docker, whether wslc is there, and whether docker answers (DOCKER_HOST or local). Use these before you " +
+	"ask anyone for Linux or docker.\n\n" +
 	"READ-ONLY. No agent writes the file: if you find something that belongs in it, tell your director. It names " +
 	"hosts and commands and never holds a credential. Where an entry names a working directory rule, build there, " +
 	"so two cards do not collide."
@@ -43,6 +47,21 @@ type resourceRoom struct {
 	Seen    string `json:"last_seen,omitempty"`
 	// Tools is where each toolchain is on the room, from its hello. Online rooms only.
 	Tools map[string]string `json:"tools,omitempty"`
+	Linux *resourceLinux    `json:"linux,omitempty"`
+}
+
+// resourceLinux is how a room reaches Linux, read from its capability results: each `ssh:<host>` with its
+// `docker:<host>`, `wslc`, and `docker`, which follows DOCKER_HOST. A state is pass, or fail or unknown with the reason.
+type resourceLinux struct {
+	SSH    []resourceSSH `json:"ssh,omitempty"`
+	WSLC   string        `json:"wslc,omitempty"`
+	Docker string        `json:"docker,omitempty"`
+}
+
+type resourceSSH struct {
+	Host   string `json:"host"`
+	State  string `json:"state"`
+	Docker string `json:"docker,omitempty"`
 }
 
 type resourcesOutput struct {
@@ -94,7 +113,85 @@ func (p *Proxy) roomsForResources() []resourceRoom {
 			Tools: a.Tools})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if st := p.capResults(); st != nil {
+		if rows, err := st.CapabilityLatest(); err == nil {
+			linux := linuxFromCaps(rows)
+			for i := range out {
+				out[i].Linux = linux[wire.KeyOf(out[i].Name)]
+			}
+		}
+	}
 	return out
+}
+
+func (p *Proxy) capResults() CapResults {
+	p.cap.mu.Lock()
+	defer p.cap.mu.Unlock()
+	return p.cap.store
+}
+
+func capState(r hubstore.CapabilityRow) string {
+	if r.State == "pass" || r.Reason == "" {
+		return r.State
+	}
+	return r.State + ": " + r.Reason
+}
+
+// linuxFromCaps is each room's Linux reach by room key, and no entry for a room with none of those results.
+func linuxFromCaps(rows []hubstore.CapabilityRow) map[string]*resourceLinux {
+	out := map[string]*resourceLinux{}
+	docker := map[string]map[string]string{}
+	at := func(room string) *resourceLinux {
+		k := wire.KeyOf(room)
+		if out[k] == nil {
+			out[k] = &resourceLinux{}
+		}
+		return out[k]
+	}
+	for _, r := range rows {
+		switch {
+		case r.Cap == "wslc":
+			at(r.Room).WSLC = capState(r)
+		case r.Cap == "docker":
+			at(r.Room).Docker = capState(r)
+		case strings.HasPrefix(r.Cap, "ssh:"):
+			l := at(r.Room)
+			l.SSH = append(l.SSH, resourceSSH{Host: strings.TrimPrefix(r.Cap, "ssh:"), State: capState(r)})
+		case strings.HasPrefix(r.Cap, "docker:"):
+			k := wire.KeyOf(r.Room)
+			if docker[k] == nil {
+				docker[k] = map[string]string{}
+			}
+			docker[k][strings.TrimPrefix(r.Cap, "docker:")] = capState(r)
+		}
+	}
+	for k, l := range out {
+		for i := range l.SSH {
+			l.SSH[i].Docker = docker[k][l.SSH[i].Host]
+		}
+		sort.Slice(l.SSH, func(i, j int) bool { return l.SSH[i].Host < l.SSH[j].Host })
+	}
+	return out
+}
+
+func writeLinux(b *strings.Builder, l *resourceLinux) {
+	if l == nil {
+		return
+	}
+	b.WriteString("  - linux:\n")
+	for _, s := range l.SSH {
+		d := s.Docker
+		if d == "" {
+			d = "not probed (declare docker:" + s.Host + ")"
+		}
+		fmt.Fprintf(b, "    - ssh %s: %s. docker: %s\n", s.Host, s.State, d)
+	}
+	if l.WSLC != "" {
+		fmt.Fprintf(b, "    - wslc: %s\n", l.WSLC)
+	}
+	if l.Docker != "" {
+		fmt.Fprintf(b, "    - docker (DOCKER_HOST or local): %s\n", l.Docker)
+	}
 }
 
 func (c *controlMCP) resourcesHandler(ctx context.Context, req *mcp.CallToolRequest, in resourcesInput) (
@@ -147,6 +244,7 @@ func (c *controlMCP) resourcesHandler(ctx context.Context, req *mcp.CallToolRequ
 		for _, n := range names {
 			fmt.Fprintf(&b, "  - %s: %s\n", n, r.Tools[n])
 		}
+		writeLinux(&b, r.Linux)
 	}
 	out.Text = b.String()
 	return nil, out, nil

@@ -964,7 +964,15 @@ async function setTaskRepo(id, current) {
 function termPathOf(t) {
   const p = terminalParts(t);
   const label = terminalLabel(t) || t.display_title || "";
-  return { segs: p.where.split("/").filter(Boolean), leaf: p.leaf || label };
+  return { segs: termPlaceOf(t), leaf: p.leaf || label };
+}
+
+// THE HEADING IS THE CHECKOUT'S GIT REMOTE AND NOTHING ELSE. Every checkout, worktree and card home of one repo shares
+// it, and a folder name never stands in for one, so a card with no remote stays ungrouped.
+function termPlaceOf(t) {
+  const o = originParts(t && t.origin);
+  if (!o) return [];
+  return [o.host, ...o.org.split("/"), o.repo].filter(Boolean);
 }
 
 // THE NAME SOMEBODY GAVE THIS CARD, WHEN THE PATH DOES NOT ALREADY SAY IT.
@@ -1998,6 +2006,7 @@ async function renderTermList() {
   // you were watching a terminal is announced whenever you next look at the
   // board, or not at all.
   lastTasks = all; tasksLoaded = true;
+  if (typeof frCardsMoved === "function") frCardsMoved();
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
   if (typeof cacheRefresh === "function") cacheRefresh(all);
@@ -2140,7 +2149,7 @@ async function renderTermList() {
       termEndedHTML(ended) +
       `</div><div class="tlcorner">${termListButtons()}</div></div>`
     : `<div class="panel"><div class="empty">
-         no terminals. start one from the board, or attach to a running session.
+         no terminals yet. launch a card, or attach to a running session.
        </div></div>`);
 
   // After the cards exist, since it is placed against one of them. A frame

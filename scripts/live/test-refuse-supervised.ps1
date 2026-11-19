@@ -96,7 +96,9 @@ foreach ($s in 'atrium-deploy.ps1', 'stop-atrium.ps1') {
   $r = Run $s @('-Control') '[]'
   Check "$s -Control alone refuses" ($r.Code -eq 1 -and $r.Out -match 'IKnowItKillsMyShell')
 }
+$env:ATRIUM_LIVE_FAKE_CONTROL = '0'
 $r = Run 'start-atrium.ps1' @() '[]'
+Remove-Item Env:ATRIUM_LIVE_FAKE_CONTROL
 Check 'start-atrium starts sg4-control by default' ($r.Out -match 'START-CONTROL.*WHATIF: start sg4-control')
 $r = Run 'start-atrium.ps1' @('-NoControl') '[]'
 Check 'start-atrium -NoControl skips sg4-control' ($r.Out -notmatch 'START-CONTROL')

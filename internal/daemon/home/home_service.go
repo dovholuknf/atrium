@@ -26,6 +26,8 @@ type Service struct {
 	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
 	ForgeMu   sync.Mutex
 	ForgeOpen map[string]ForgeAlert
+	// Pushing is the cards with a GitPushCtx running.
+	Pushing sync.Map
 }
 
 // Calls is every call out of the card homes into another feature.

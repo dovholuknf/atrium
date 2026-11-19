@@ -186,9 +186,6 @@ func (s *Store) QueueDispatch(d Dispatch) (*Dispatch, error) {
 	if d.Room == "" {
 		return nil, errors.New("say which room this is for")
 	}
-	if d.Harness == "" {
-		return nil, errors.New("say which runner to start there")
-	}
 	if len(d.Prompt) > MaxDispatchPrompt {
 		return nil, fmt.Errorf("that instruction is %d characters and the limit is %d",
 			len(d.Prompt), MaxDispatchPrompt)

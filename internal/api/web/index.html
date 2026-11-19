@@ -78,7 +78,6 @@
 <link rel="stylesheet" href="/css/hubpush.css">
 <link rel="stylesheet" href="/css/topnav.css">
 <link rel="stylesheet" href="/css/hubhosts.css">
-<link rel="stylesheet" href="/css/hubtransports.css">
 <link rel="stylesheet" href="/css/chat.css">
 <link rel="stylesheet" href="/css/review.css">
 <link rel="stylesheet" href="/css/growl.css">
@@ -88,6 +87,7 @@
 <link rel="stylesheet" href="/m/files.css">
 <link rel="stylesheet" href="/css/homes.css">
 <link rel="stylesheet" href="/css/newagent.css">
+<link rel="stylesheet" href="/css/firstrun.css">
 <link rel="stylesheet" href="/user.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
@@ -315,7 +315,7 @@
   <div id="perms" hidden>
     <div class="col-head" style="margin:0 0 10px">
       <span>waiting on you</span>
-      <span class="help" tabindex="0" data-tip="Agents blocked right now. Each one is frozen until you answer.
+      <span class="help" tabindex="0" data-tip="Agents blocked right now. Each one is frozen until you answer. This is the permission gate: atrium holds a tool call until you approve or deny it here, and the asking button in the header changes the default.
 
 approve once — let this one through
 always — approve, and stop asking about the scope shown
@@ -410,8 +410,6 @@ Exports honor whatever filter is applied.">?</span>
     <!-- The filter drawer's line, across the session list and the terminal pane both. Its panel is an overlay, so the
          terminal is never reflowed. See js/filter-drawer.js. -->
     <div id="fd-terms"></div>
-    <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
-    <div class="term-limits" id="term-limits" hidden></div>
     <!-- A drive of this room is low on space. See js/disk-watch.js. -->
     <div class="term-disk" id="term-disk" role="status" hidden></div>
     <!-- A process on this host has run away. See js/host-watch.js. -->
@@ -1019,14 +1017,14 @@ Read-only. It says what happened, it does not change anything. Filter by room to
     <div class="chat-layout" id="chat-layout">
       <section class="chat-pane" id="chat-pane">
         <div class="chat-bar">
-          <strong id="chat-title">pick a session</strong>
+          <strong id="chat-title">pick a card</strong>
           <span class="grow"></span>
           <button type="button" id="chat-review" hidden onclick="reviewToggle()"
             data-tip="read this card's review">review</button>
           <button type="button" id="chat-to-term" disabled onclick="chatToTerminal()"
             data-tip="switch to this card's terminal">terminal</button>
         </div>
-        <div class="chat-frame" id="chat-frame-host"><p class="chat-empty" id="chat-empty">Pick a session on the left to read and answer its conversation.</p></div>
+        <div class="chat-frame" id="chat-frame-host"><p class="chat-empty" id="chat-empty">Pick a card on the left to read and answer its conversation.</p></div>
         <div id="chat-review-pane" hidden>
           <div class="rv-meta" id="review-meta"></div>
           <div class="rv-body"><div id="review-rail"></div><div id="review-main"></div></div>
@@ -1145,7 +1143,7 @@ Atrium holds an argv and an interval. It never holds a credential: gh already ha
 
 A source runs as whoever started the daemon, with the daemon's environment. That makes it exactly as trusted as a runner, which is to say completely.
 
-Three failures in a row switches one off, with the reason still on the row. scripts/sources has working examples.">?</span>
+Three failures in a row switches one off, with the reason still on the row.">?</span>
     </div>
     <p class="pane-lead">Commands on a timer. Whatever they print becomes cards in the inbox, for you to
       look at rather than for atrium to act on.</p>
@@ -1777,16 +1775,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="s-hh-msg"></span>
     </div>
 
-    <!-- The hub's ziti transports: the board, the room link and the CI hook. Hidden until the hub answers. See
-         js/hubtransports.js. -->
-    <div class="field" id="s-ht-row" hidden>
-      <span class="eyebrow">hub ziti transports
-        <span class="help" tabindex="0" data-tip="Turning one off closes its listener at once. The room link is refused while a room reaches the hub only over it. A flag given at start only seeds a value: the first change here replaces it.">?</span></span>
-      <div id="s-ht-list"></div>
-      <span class="hintline" id="s-ht-ro" hidden>Set on the hub's machine.</span>
-      <span class="hintline" id="s-ht-msg"></span>
-    </div>
-
     <!-- `notifications`, not `alerts`. Everything under it is a notification:
          the desktop one the operating system draws, the toast, the sound. An
          alert is what the board calls its own red banner, and two names for
@@ -1870,7 +1858,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span>send phone alerts when something needs you</span>
       </label>
       <label class="hp-contact">contact the push service can reach
-        <input type="text" id="s-hp-contact" spellcheck="false" placeholder="https://github.com/dovholuknf/atrium">
+        <input type="text" id="s-hp-contact" spellcheck="false" placeholder="https://github.com/you/yourproject">
       </label>
       <div class="picker">
         <button onclick="saveHubPushContact()">save contact</button>
@@ -2002,10 +1990,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="eyebrow">group</span>
       <div class="seg trayseg groupseg" id="term-group"></div>
     </div>
-    <div class="field">
-      <span class="eyebrow">cache
-        <span class="help" tabindex="0" data-tip="The keep-alive default is in the next section.">?</span></span>
-    </div>
 
     <!-- The cache keep-alive. The default for NEW Claude cards, never applied to
          a card that is already open: each card has its own switch in its menu.
@@ -2054,7 +2038,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body">
     <div class="field dlg-sec" id="rc-facts-field">
       <table class="kv" id="rc-facts"></table>
-      <div class="picker"><button id="rc-mark" onclick="busyWhile(this, markFromCog)" hidden></button></div>
+      <div class="picker"><button id="rc-mark" onclick="busyWhile(this, markFromCog)" hidden></button><span class="help" tabindex="0" id="rc-mark-help" data-tip="Starts no new cards on this room and lets running work finish. It is the step before removing the room with atrium rooms. Press again to take the mark off.">?</span></div>
       <span class="hintline" id="rc-state"></span>
     </div>
 
@@ -2336,7 +2320,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       Click the claude.com link it prints. Closing a window ends its shell.</p>
     <section class="dlg-sec">
       <div class="dlg-sec-h">which rooms
-        <span class="help" tabindex="0" data-tip="The line is the room's login command setting. Empty means ssh -t &lt;room&gt; claude auth login. An edit here is kept for that room when you open the shells.">?</span></div>
+        <span class="help" tabindex="0" data-tip="The line is the room's login command setting. Empty means claude auth login for the room on this machine, and ssh -t &lt;host&gt; claude auth login for any other, where you replace &lt;host&gt; with the machine the room runs on. An edit here is kept for that room when you open the shells.">?</span></div>
       <div id="ll-rows"></div>
     </section>
     <section class="dlg-sec">
@@ -2451,7 +2435,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <label class="eyebrow" for="s-args">arguments
           <span class="help" tabindex="0" data-tip="One per line, never split by atrium. A path with a space in it is one line and stays one argument.">?</span></label>
         <textarea id="s-args" rows="3" spellcheck="false"
-          placeholder="-NoProfile&#10;-File&#10;D:/git/github/you/atrium/scripts/sources/github-assigned.ps1"></textarea>
+          placeholder="-NoProfile&#10;-File&#10;~/src/scripts/github-assigned.ps1"></textarea>
       </div>
     </section>
     <section class="dlg-sec">
@@ -2520,7 +2504,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="field span">
         <label class="eyebrow" for="r-cwd">working directory
           <span class="help" tabindex="0" data-tip="A template. ATRIUM NEVER CREATES IT: where it is not there, the dialog says so and you make it with whatever makes worktrees here.">?</span></label>
-        <input type="text" id="r-cwd" spellcheck="false" placeholder="d:/worktrees/{org}/{repo}/pr-{num}">
+        <input type="text" id="r-cwd" spellcheck="false" placeholder="~/src/worktrees/{org}/{repo}/pr-{num}">
       </div>
       <div class="field">
         <label class="eyebrow" for="r-title">title</label>
@@ -2635,7 +2619,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <label class="eyebrow" for="pv-root">root folder
           <span class="help" tabindex="0" data-tip="The directory your orgs live under, so a repository is root/org/repo. One sitting straight under the root with no org above it works too. A root that is not there yet saves fine, because a drive can be unplugged, and atrium never creates it: a typo would become a directory and then look like an empty provider.">?</span></label>
         <div class="picker">
-          <input type="text" id="pv-root" spellcheck="false" placeholder="d:/git/github">
+          <input type="text" id="pv-root" spellcheck="false" placeholder="~/src/github">
           <button onclick="browseInto('pv-root')">browse</button>
         </div>
       </div>
@@ -2660,7 +2644,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <label class="eyebrow" for="pv-worktree-root">worktree folder
           <span class="help" tabindex="0" data-tip="Worktrees land at folder/org/repo/branch. The check button asks whether it is empty enough to turn the toggle off, without saving anything.">?</span></label>
         <div class="picker">
-          <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="d:/worktrees/github">
+          <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="~/src/worktrees/github">
           <button onclick="browseInto('pv-worktree-root')">browse</button>
           <button onclick="busyWhile(this, checkWorktreeRoot)">check</button>
         </div>
@@ -2714,7 +2698,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field span">
       <label class="eyebrow" for="f-cwd">working directory</label>
       <div class="picker">
-        <input type="text" id="f-cwd" spellcheck="false" placeholder="D:/git/github/you/repo">
+        <input type="text" id="f-cwd" spellcheck="false" placeholder="~/src/myproject">
         <button onclick="browseInto('f-cwd')">browse</button>
       </div>
     </div>
@@ -2827,7 +2811,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="field">
         <label class="eyebrow" for="h-id">id
           <span class="help" tabindex="0" data-tip="short and lowercase. cannot be changed later.">?</span></label>
-        <input type="text" id="h-id" spellcheck="false" placeholder="codex">
+        <input type="text" id="h-id" spellcheck="false" placeholder="claude-code">
       </div>
       <div class="field">
         <label class="eyebrow" for="h-label">label</label>
@@ -2835,7 +2819,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <div class="field">
         <label class="eyebrow" for="h-cmd">command</label>
-        <input type="text" id="h-cmd" spellcheck="false" placeholder="codex">
+        <input type="text" id="h-cmd" spellcheck="false" placeholder="claude">
       </div>
       <div class="field">
         <label class="eyebrow" for="h-package">npm package
@@ -2853,7 +2837,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <label class="eyebrow" for="h-args">arguments, one per line
           <span class="help" tabindex="0" data-tip="one per line, not one line. an argument with a space in it stays whole this way.">?</span></label>
         <textarea id="h-args" rows="3" spellcheck="false"
-          placeholder="--dangerously-skip-permissions&#10;--model&#10;sonnet"></textarea>
+          placeholder="--model&#10;sonnet"></textarea>
       </div>
       <div class="field">
         <label class="eyebrow" for="h-resume">resume arguments, one per line
@@ -3198,13 +3182,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body">
     <div class="two">
       <div class="field notw">
-        <label class="eyebrow" for="na-repo">repo <span class="help" tabindex="0" data-tip="owner/repo, or a GitHub link: a repo, an issue, a pull request or a branch. it fills in the name and branch">?</span></label>
+        <label class="eyebrow" for="na-repo"><span id="na-kind-lbl">repo</span> <span class="help" tabindex="0" data-tip="owner/repo, or a GitHub link: a repo, an issue, a pull request or a branch. it fills in the name and branch. Or switch to folder to start the agent in a folder that already exists on this machine, as it is: no worktree, no branch.">?</span><span class="kindseg" id="na-kind"><button type="button" data-v="repo" class="on">repo</button><button type="button" data-v="folder">folder</button></span></label>
         <div class="cb">
           <input type="text" id="na-repo" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false"
             placeholder="none">
           <button class="clr" id="na-repo-clr" hidden aria-label="clear">&times;</button>
           <div class="cb-list" id="na-repo-list" hidden></div>
         </div>
+        <input type="text" id="na-cwd" spellcheck="false" autocomplete="off" placeholder="~/src/myproject" hidden>
         <div class="resolved" id="na-resolved"></div>
       </div>
       <div class="field notw">
@@ -3717,7 +3702,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/walk-pr.js"></script>
-<script src="/js/turn-limits.js"></script>
 <script src="/js/disk-watch.js"></script>
 <script src="/js/host-watch.js"></script>
 <script src="/js/terminal-debug.js"></script>
@@ -3734,6 +3718,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/providers.js"></script>
 <script src="/js/launchrepo.js"></script>
 <script src="/js/newagent.js"></script>
+<script src="/js/firstrun.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>

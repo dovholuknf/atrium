@@ -200,7 +200,10 @@ func reportSession(hubURL, event, name, runner string) sessionReport {
 		left = min(left, time.Second)
 	}
 	client := hookClient(left)
-	addr := hubAddress(hubURL)
+	addr, src := hubAddressFrom(hubURL)
+	if src == hubSourceDefault {
+		return out
+	}
 	resp, err := client.Post(addr+"/session", "application/json", bytes.NewReader(body))
 	if err != nil {
 		out.event, out.warn = event, unreachable("session --event "+event, addr, err)

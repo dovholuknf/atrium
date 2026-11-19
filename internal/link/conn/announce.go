@@ -330,6 +330,7 @@ func (a *announcer) read(ctx context.Context) ([]CardState, string, error) {
 // post dials the hub and hands over one announcement.
 func (a *announcer) post(ctx context.Context, cards []CardState) error {
 	dialCtx, cancel := context.WithTimeout(ctx, a.r.T.DialWait)
+	defer a.r.controlDialing()()
 	conn, err := a.r.Dial.Dial(dialCtx)
 	cancel()
 	if err != nil {

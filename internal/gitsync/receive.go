@@ -474,6 +474,9 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		http.Error(w, "this hub keeps no push log, so it takes no pushes", http.StatusServiceUnavailable)
 		return
 	}
+	if c.Room != "" {
+		defer rc.h.pushBegan(c.Room)()
+	}
 	f, size, err := spool(r, rc.h.pushLimit())
 	if err != nil {
 		rc.badBody(w, err)

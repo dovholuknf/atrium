@@ -39,13 +39,13 @@ func (s *Store) BackfillGitInfo() (int, error) {
 		// keep a name that version chose and this one would not. Deterministic
 		// from the directory, so doing it every startup costs two file reads
 		// per card and changes nothing when nothing changed.
-		if t.Repo == git.Repo && t.Branch == git.Branch && t.Title == title {
+		if t.Repo == git.Repo && t.Branch == git.Branch && t.Title == title && t.Origin == git.Origin {
 			continue
 		}
 		err := s.guard(func() error {
 			_, err := s.db.Exec(
-				`UPDATE task SET repo = ?, branch = ?, title = ? WHERE id = ?`,
-				git.Repo, git.Branch, title, t.ID)
+				`UPDATE task SET repo = ?, branch = ?, title = ?, origin = ? WHERE id = ?`,
+				git.Repo, git.Branch, title, git.Origin, t.ID)
 			return err
 		})
 		if err != nil {

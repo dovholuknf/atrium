@@ -93,7 +93,7 @@ func TestStdioLaunchOnAnotherRoomGoesToThePeersRouteAndTouchesNoDisk(t *testing.
 	}
 	got := b.across[0]
 	if got["room"] != "claude-sg4" || got["from"] != "sa1" || got["cwd"] != "/srv/not/on/this/machine" ||
-		got["brief"] != "the brief" || got["prompt"] != "go" || got["runner"] != "claude" ||
+		got["brief"] != "the brief" || got["prompt"] != "go" || got["runner"] != "" ||
 		got["env"].(map[string]any)["A"] != "b" {
 		t.Fatalf("the room was sent %+v", got)
 	}

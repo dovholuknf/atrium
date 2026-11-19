@@ -9,7 +9,7 @@ Paste this into any coding agent that can run shell commands, such as claude, co
 as the agent's first argument:
 
 ```text
-Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/join-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/join-atrium.md and read what it returns. Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
 ```
 
 You need git, Go 1.26 or newer, and a join string from whoever runs the hub. They make it with
@@ -117,4 +117,5 @@ RULES FOR YOU WHILE DOING THIS
   `--detach`: `internal/cli/roomrun.go`.
 - The room's ports 7777 and 7781: `internal/cli/atrium_defaults.go`.
 - `atrium rooms add`, `ls`, `token`, `mark` and `rm`: `docs/fabric/hub-and-rooms.md`.
-- `atrium hook install --runner claude|codex`: `internal/cli/hook.go`.
+- `atrium hook install --runner claude|codex`: `internal/cli/hook.go`. `atrium hook uninstall`, and `atrium run`
+  wiring claude's hooks on first start unless `--no-hooks`: `internal/cli/hook_uninstall.go`.

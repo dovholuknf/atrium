@@ -1,6 +1,6 @@
 # Proves the live start helpers leave no job object over what they start: a caller already in a job starts through the
 # task scheduler, then WMI, one outside any job uses breakaway, each refusal falls back loudly, and a result still in a
-# job is said plainly. Fakes every start, so nothing real is launched.
+# job is said plainly. Fakes every start. The one real process is a cmd.exe running a launch script in a temp folder.
 # Usage: pwsh -NoProfile -File scripts/live/test-start-jobless.ps1
 $ErrorActionPreference = 'Stop'
 $fail = 0
@@ -94,18 +94,44 @@ try {
     $script:inJob = @{ [int]$PID = $SelfInJob; 200 = $WmiPidInJob; 300 = $BreakawayPidInJob }
   }
 
+  function Get-Launch([string]$Tag) { Get-ChildItem -LiteralPath $Base -Filter "launch-$Tag-*.cmd" | Select-Object -First 1 -ExpandProperty FullName }
+
   Reset $true $false $false $true
   $script:taskFails = $false
   $p = Start-Jobless '"x.exe" room > out 2> err' 'control'
-  Check 'from a job it starts through the task scheduler and nothing else' ($p -eq 0 -and $calls.Count -eq 1 -and $calls[0] -like 'task control *launch-control.cmd')
+  Check 'from a job it starts through the task scheduler and nothing else' ($p -eq 0 -and $calls.Count -eq 1 -and $calls[0] -like 'task control *launch-control-*.cmd')
   Check 'the task start is said with the task name' (($said -join "`n") -match 'started through the task scheduler as task atrium-live-control, outside this shell''s job')
-  Check 'the task runs the launch script with the command last' ((Get-Content (Join-Path $Base 'launch-control.cmd'))[-1] -eq '"x.exe" room > out 2> err')
+  Check 'the task runs the launch script with the command last' ((Get-Content (Get-Launch 'control'))[-1] -eq '"x.exe" room > out 2> err')
+  $script:taskFails = $true
+
+  # f-038: the previous start's cmd.exe still runs its launch script when the next start writes one.
+  Get-ChildItem -LiteralPath $Base -Filter 'launch-*.cmd' | Remove-Item -Force
+  $old = Join-Path $Base 'launch-control.cmd'
+  $ready = Join-Path $Base 'ready'; $stop = Join-Path $Base 'stop'; $hit = Join-Path $Base 'hit.txt'
+  New-LaunchScript $old "pwsh -NoProfile -c `"New-Item '$ready' | Out-Null; while (-not (Test-Path '$stop')) { [Threading.Thread]::Sleep(50) }`""
+  Set-Content (Join-Path $Base 'launch-preview-board.cmd') 'rem another tag'
+  $prev = Start-Process cmd.exe -ArgumentList '/c', "`"$old`"" -PassThru -WindowStyle Hidden
+  $deadline = (Get-Date).AddSeconds(30)
+  while (-not (Test-Path $ready) -and (Get-Date) -lt $deadline) { [Threading.Thread]::Sleep(50) }
+  Reset $true $false $false $true
+  $script:taskFails = $false
+  $null = Start-Jobless "echo relaunched > `"$hit`"" 'control'
+  $first = Get-Launch 'control'
+  New-Item $stop | Out-Null
+  $exited = $prev.WaitForExit(30000)
+  Check 'the previous start''s cmd ran its room' (Test-Path $ready)
+  Check 'the previous start''s cmd ends with its room and runs nothing the next start wrote' ($exited -and -not (Test-Path $hit))
+  Check 'a start writes a launch script of its own name and removes the old one for its tag' ($first -and -not (Test-Path $old))
+  Check 'another tag''s launch script is kept' (Test-Path (Join-Path $Base 'launch-preview-board.cmd'))
+  Reset $true $false $false $true
+  $null = Start-Jobless '"x.exe" room > out 2> err' 'control'
+  Check 'the next start leaves one launch script for its tag' (@(Get-ChildItem -LiteralPath $Base -Filter 'launch-control*.cmd').Count -eq 1 -and -not (Test-Path $first))
   $script:taskFails = $true
 
   Reset $true $false $false $true
   $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
   Check 'a task refusal falls back to WMI, said as a WARNING' (($said -join "`n") -match 'WARNING: could not start room through the task scheduler \(Access is denied\)\. trying WMI')
-  Check 'from a job with no task it starts through WMI and returns that pid' ($p -eq 200 -and $calls.Count -eq 2 -and $calls[0] -like 'task room *' -and $calls[1] -like 'wmi cmd.exe /c *launch-room.cmd*')
+  Check 'from a job with no task it starts through WMI and returns that pid' ($p -eq 200 -and $calls.Count -eq 2 -and $calls[0] -like 'task room *' -and $calls[1] -like 'wmi cmd.exe /c *launch-room-*.cmd*')
   Check 'it says the result is in no job' (($said -join "`n") -match 'in no job object')
   Check 'with no record it says so and names room-toolchain.ps1' (($said -join "`n") -match 'no PATH record at .*path\.txt.*room-toolchain\.ps1')
 
@@ -121,7 +147,7 @@ try {
     $env:Path = "C:\Windows;C:\tools\jq"
     Reset $true $false $false $false
     $null = Start-Jobless '"x.exe" room > out 2> err' 'room'
-    $launch = Get-Content (Join-Path $Base 'launch-room.cmd') -Raw
+    $launch = Get-Content (Get-Launch 'room') -Raw
     $login = @(Get-LoginPath | Where-Object { @('C:\tools\go\bin', 'C:\tools\jq') -notcontains $_ } | ForEach-Object { $_ -replace '%', '%%' })
     $want = (@('C:\tools\go\bin', 'C:\tools\jq') + $login) -join ';'
     Check 'a WMI start carries the room''s record, then Machine and User PATH from the registry' ($launch -match [regex]::Escape("set `"PATH=$want;%PATH%`""))

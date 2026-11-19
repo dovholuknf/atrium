@@ -137,7 +137,7 @@ The main ones. `atrium --help` lists the rest.
 
 | Command | Purpose |
 | --- | --- |
-| `atrium run` | The hub. Serves the board, and starts this machine's room when none is running. |
+| `atrium run` | The hub. Serves the board, and starts this machine's room when none is running. Wires claude's hooks when its settings have none of atrium's, unless `--no-hooks`. |
 | `atrium room` | A room: the agents on this machine, attached to the hub it joined. `atrium room join <string>` joins one. |
 | `atrium rooms` | The hub's side of rooms: add one and print its join string, mint a fresh token, the git mirror. |
 | `atrium daemon` | The older single process: board, JSON API, SSE stream and agent listener, no hub. |
@@ -146,6 +146,7 @@ The main ones. `atrium --help` lists the rest.
 | `atrium stop` | Wind a daemon down. NOT the same as killing it: see "Resilience". |
 | `atrium join` / `leave` | Put the current session on the board, or take it off, without restarting it. |
 | `atrium hook --event <e>` | One activity event, posted and forgotten. Registered in `settings.json` by the board. |
+| `atrium hook install` / `uninstall` / `status` | Write atrium's hooks into a runner's settings, take exactly those out again (and an `atrium statusline` status line), or list what is wired. Install and uninstall keep a `.bak` first. |
 | `atrium session --event <e>` | A session opening or closing. Finds the runner's pid without WMI. |
 | `atrium turn --event end` | Claude Code's Stop hook. The only way to reach a session sitting idle. Optional, and never installed by "install all": it is the one hook whose answer changes what a session does. |
 | `atrium finish [recap]` | An agent saying its work is over, and what it did. A command rather than a tool, because a command is the channel every runner already has. |

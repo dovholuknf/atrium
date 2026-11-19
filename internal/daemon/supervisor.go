@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"github.com/aymanbagabas/go-pty"
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -2244,6 +2244,12 @@ func declareATerminal(env []string) []string {
 	return out
 }
 
+// notOnPath says how to pick up a runner installed somewhere only a new room process would look.
+func notOnPath(cmdName string, err error) error {
+	return fmt.Errorf("%s is not on PATH: %w. if it was installed after the room started, restart the room: "+
+		"`atrium stop`, then `atrium run`", cmdName, err)
+}
+
 // spawnPTY starts a runner under a pseudo terminal and returns its pid.
 func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env []string) (int, error) {
 	return d.spawnPTYResume(taskID, cmdName, args, cwd, env, false, nil)
@@ -2270,9 +2276,9 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	// command relative to Dir, so a bare `claude` or `cmd.exe` would be looked
 	// for inside the repo being worked in and reported as missing.
 	cmdName, args = d.hk.agentSpawn(cmdName, args)
-	resolved, err := exec.LookPath(cmdName)
+	resolved, err := userenv.LookPath(cmdName)
 	if err != nil {
-		return nil, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
+		return nil, notOnPath(cmdName, err)
 	}
 	if resolved, args, err = viaShellIfScript(resolved, args); err != nil {
 		return nil, err

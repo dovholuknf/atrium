@@ -68,8 +68,8 @@ func newDispatchTo() *cobra.Command {
 			return dispatchTo(o)
 		},
 	}
-	c.Flags().StringVar(&o.harness, "runner", "claude",
-		"which runner to start THERE, named as that machine names it")
+	c.Flags().StringVar(&o.harness, "runner", "",
+		"which runner to start THERE, named as that machine names it. empty is that room's default")
 	c.Flags().StringVar(&o.dir, "dir", "",
 		"a directory on that machine. only a room started with --workspace will take one")
 	c.Flags().StringVar(&o.title, "title", "", "what to show on the card that machine makes")

@@ -15,7 +15,7 @@ function placeTip(anchor, text) {
   // scrollbar no matter how long the text is.
   tipEl.style.maxWidth = Math.min(420, window.innerWidth - pad * 2) + "px";
   // Below by default, above when there is no room below, never off any edge (js/popfit.js).
-  popFit(tipEl, anchor, { pad, gap: 9, slide: true });
+  popFit(tipEl, anchor, { pad, gap: 9, slide: true, prefer: anchor.hasAttribute("data-tip-above") ? "above" : undefined });
 }
 
 function hideTip() { tipEl.classList.remove("on"); tipSoon(null); tipAt = null; }

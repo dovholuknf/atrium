@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -112,6 +113,9 @@ type Proxy struct {
 	// See control_mcp.go.
 	control http.Handler
 
+	// stopHub ends this hub's own process. Nil until SetStop, and a hub without one refuses `/v1/shutdown`.
+	stopHub func()
+
 	// audit is the operational audit log. Nil until SetAuditLog wires it, and a
 	// hub without one answers /_hub/audit empty. See audit.go.
 	audit AuditLog
@@ -127,6 +131,9 @@ type Proxy struct {
 
 	// transports is the hub's ziti binds, switchable from the gear. See hubtransports.go.
 	transports *HubTransports
+
+	// firstRun answers the board's first-run panel. Nil on a hub that cannot start a room. See firstrun.go.
+	firstRun FirstRun
 
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
@@ -593,6 +600,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// anybody who could reach the hub. The rule the daemon already states for
 	// shares applies here word for word: once something else can reach it,
 	// loopback stops meaning "this machine".
+	if r.URL.Path == "/v1/shutdown" && r.Method == http.MethodPost && p.stopHub != nil && edge.LocalOperator(r) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"hub":true}`)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		go p.stopHub()
+		return
+	}
 	if r.URL.Path == "/v1/shutdown" || r.URL.Path == "/v1/restart-wrap" || r.URL.Path == "/v1/restart-pty-host" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -1076,6 +1092,16 @@ func (p *Proxy) rewriteHealth(res *http.Response) error {
 		body["room_build"] = was
 	}
 	body["build"] = p.buildFor(res.Request.Context())
+	// One room attached scopes health to it, and `atrium wait` reads the link from these, which a room never sends.
+	if _, ok := body["rooms"]; !ok {
+		rooms := p.hub.Rooms()
+		names := make([]string, 0, len(rooms))
+		for _, a := range rooms {
+			names = append(names, a.Name)
+		}
+		sort.Strings(names)
+		body["rooms"], body["room_names"] = len(rooms), names
+	}
 	out, err := json.Marshal(body)
 	if err != nil {
 		res.Body = io.NopCloser(bytes.NewReader(raw))
@@ -1511,6 +1537,9 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 // tools reach the hub's API over loopback derived from it, so they inherit the
 // proxy's scoping and offline-room behaviour rather than reimplementing it.
 // Optional: a hub that never calls this answers /_hub/mcp with 404.
+// SetStop lets a loopback `POST /v1/shutdown` end this hub. The rooms behind it are never stopped through it.
+func (p *Proxy) SetStop(stop func()) { p.stopHub = stop }
+
 func (p *Proxy) SetControl(boardAddr string) {
 	c := newControl(loopbackBase(boardAddr), p.hub, p.RecordAudit)
 	// Read at each launch rather than copied, so a PUT to /_hub/launch-caps
@@ -1687,6 +1716,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "sshkeys" {
 		p.hubRoutes().SSHKeysBoard(w, r)
+		return
+	}
+	if sub == "firstrun" || strings.HasPrefix(sub, "firstrun/") {
+		p.serveFirstRun(w, r, sub)
 		return
 	}
 	switch sub {

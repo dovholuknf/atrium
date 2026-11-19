@@ -25,7 +25,7 @@ func newWait() *cobra.Command {
 			"room named by --rooms is linked and answering. Prints each as it comes up. Exits non-zero, naming " +
 			"what never did, when --timeout runs out.",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: speaksForItself(func(cmd *cobra.Command, _ []string) error {
 			var want []string
 			for _, r := range strings.Split(rooms, ",") {
 				if r = strings.TrimSpace(r); r != "" {
@@ -33,7 +33,7 @@ func newWait() *cobra.Command {
 				}
 			}
 			return waitReady(cmd.OutOrStdout(), boardAddress(boardURL), want, timeout, every)
-		},
+		}),
 	}
 	c.Flags().StringVar(&boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")

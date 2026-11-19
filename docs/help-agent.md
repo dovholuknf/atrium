@@ -49,7 +49,7 @@ Start at `docs/README.md`, then by question.
 | The question | Read |
 | --- | --- |
 | What is atrium, what runs where | `docs/how-atrium-works.md`, `docs/agents.md`, the "What runs" table in `AGENTS.md` |
-| Installing or first run | `docs/try-atrium.md`, `website/docs/install.md`, `website/docs/quick-start.md` |
+| Installing or first run | `website/docs/get-started.md`, then `docs/try-atrium.md` for the agent prompt |
 | The hub, rooms, joining a machine | `docs/fabric/hub-and-rooms.md`, `website/docs/rooms.md` |
 | Cards, columns, what a badge means | `website/docs/cards.md`, `docs/runtime/activity-design.md` |
 | Permissions, rules, auto mode | `website/docs/permissions.md`, `docs/runtime/auto-mode.md` |

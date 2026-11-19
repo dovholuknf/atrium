@@ -7,7 +7,7 @@ import (
 
 func TestDefaultListParses(t *testing.T) {
 	l := Default()
-	if len(l.Caps) < 20 || l.Version < 1 {
+	if len(l.Caps) < 10 || l.Version < 1 {
 		t.Fatalf("default list is %d caps at version %d", len(l.Caps), l.Version)
 	}
 }
@@ -62,5 +62,31 @@ func TestWithHubLaysOverAndNeverLoosens(t *testing.T) {
 	}
 	if _, err := WithHub(base, []byte("caps: [{id: c, kind: reach, probe: [z], needs: [nope]}]")); err == nil {
 		t.Fatal("a hub entry with an unresolved need was taken")
+	}
+}
+
+func TestDefaultNamesNoHostOrSetup(t *testing.T) {
+	for _, c := range Default().Caps {
+		if c.Kind != "toolchain" || c.Dir != "" || !c.Optional {
+			t.Errorf("%s is not a generic optional tool probe: %+v", c.ID, c)
+		}
+	}
+}
+
+func TestOverrideAddsProbesAndTightens(t *testing.T) {
+	f := t.TempDir() + "/c.yaml"
+	y := "caps: [{id: gcc, kind: toolchain, probe: [gcc, --version]}, {id: ssh, kind: toolchain, probe: [ssh, -V]}, {id: ssh:box, kind: reach, probe: [ssh, box, \"true\"], needs: [ssh]}]"
+	os.WriteFile(f, []byte(y), 0o600)
+	l, err := Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gcc, box bool
+	for _, c := range l.Caps {
+		gcc = gcc || (c.ID == "gcc" && !c.Optional)
+		box = box || c.ID == "ssh:box"
+	}
+	if !gcc || !box {
+		t.Fatal("the override did not tighten gcc and add ssh:box")
 	}
 }

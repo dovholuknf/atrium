@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 func TestWaitReadyPrintsEachAsItComesUp(t *testing.T) {
@@ -48,5 +50,28 @@ func TestWaitReadyNamesWhatNeverCameUp(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "never came up: room b, room c") {
 		t.Fatalf("output %q does not name b and c", out.String())
+	}
+}
+
+func TestWaitFailsQuietlyAndNonZero(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"rooms":1,"room_names":["a"]}`))
+	}))
+	defer srv.Close()
+
+	var out bytes.Buffer
+	root := &cobra.Command{Use: "atrium"}
+	root.AddCommand(newWait())
+	root.SetOut(&out)
+	root.SetErr(&out)
+	args := []string{"wait", "--url", srv.URL, "--rooms", "c", "--timeout", "50ms", "--every", "10ms"}
+	if code := runRoot(root, args); code == 0 {
+		t.Fatalf("exit code 0 on a wait that never came up")
+	}
+	if strings.Contains(out.String(), "Usage:") || strings.Contains(out.String(), "already reported") {
+		t.Fatalf("failure printed usage or the sentinel: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "never came up: room c") {
+		t.Fatalf("output %q does not name room c", out.String())
 	}
 }

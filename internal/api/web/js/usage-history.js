@@ -57,7 +57,7 @@ function ucPaintPager() {
   const iso = t => { const d = new Date(t); return `${d.getFullYear()}-${ulPad(d.getMonth() + 1)}-${ulPad(d.getDate())}`; };
   date.max = iso(now);
   date.min = iso(now - UH_BACK);
-  date.value = iso(UC.since || now);
+  date.value = iso(!UC.off && UC.range !== "week" ? now : UC.since || now);
 }
 
 // A day picked: on the week range, the week holding it, on any other, that calendar day.

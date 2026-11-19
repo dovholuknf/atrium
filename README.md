@@ -2,23 +2,38 @@
 
 _The single open hall every agent passes through._
 
-> **If you are an agent, read [`docs/agents.md`](docs/agents.md) first.** It says what atrium is today, what runs
+> **If you are an agent, read [`AGENTS.md`](AGENTS.md) first.** It says what atrium is today, what runs
 > where, how to build and test, and which docs to trust.
 
 ## Get started
 
-Paste one of these into any coding agent. You need git and Go 1.26 or newer.
+Install the latest release and start it with one line. It checks the download against the release checksums, puts
+atrium in `~/.atrium/bin` and prints the board URL, `http://127.0.0.1:7778`.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/dovholuknf/atrium/main/install.ps1 | iex
+```
+
+Then wire Claude Code in with `atrium hook install`, and run `atrium launch` in a repository to put it on the board.
+[`website/docs/get-started.md`](website/docs/get-started.md) is the whole first run: building from source as the
+fallback, what to do after it works, and a second machine.
+
+Or paste one of these into any coding agent. They need git and Go 1.26 or newer.
 
 **Try it now**: [`docs/try-atrium.md`](docs/try-atrium.md)
 
 ```text
-Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/try-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/try-atrium.md and read what it returns. Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
 ```
 
 **Join a room to a hub**: get a join string from the hub's operator. [`docs/join-atrium.md`](docs/join-atrium.md)
 
 ```text
-Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/join-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/join-atrium.md and read what it returns. Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
 ```
 
 <p align="center">
@@ -58,52 +73,6 @@ That is the shape of the problem, and three things follow from taking the metaph
 
 The hall is literal now. `atrium run` is the hub that serves the board. Each machine, or each account, runs a room
 that holds its agents and dials the hub. One board shows every room.
-
-## Quick start
-
-You need Go at the version `go.mod` names.
-
-```bash
-git clone https://github.com/dovholuknf/atrium && cd atrium
-go build -o build.claude/ ./cmd/atrium
-mkdir -p ~/.atrium/bin && cp build.claude/atrium ~/.atrium/bin/   # atrium.exe on Windows
-~/.atrium/bin/atrium run
-```
-
-Open <http://127.0.0.1:7778>. `atrium run` serves the board and, the first time, makes this machine's room and starts
-it in the background. Stopping `atrium run` never stops the room or its agents.
-
-Run it from the installed copy, not from `build.claude/`. Hooks, the logon task and the self-restart all name the
-binary's path, and a path under `build.claude/` is rewritten by every build.
-
-Then wire your agents in. On the board, **runners** then **hooks** writes the missing hook entries into Claude Code's
-`settings.json` (or run `atrium hook install`). From then on every Claude Code session on this machine reports to the
-board, and every tool call it makes asks the gate. **perms** then **import rules from claude** turns the allow and
-deny lists you already have into standing rules, so the gate starts out knowing what you trust.
-
-To start an agent under atrium instead, use the board's launch dialog or `atrium launch`.
-
-Want someone else's agent to do all of this for you? [`docs/try-atrium.md`](docs/try-atrium.md) is a prompt to hand
-to your agent: it installs, wires and verifies atrium end to end.
-
-### Another machine
-
-On the hub's machine, name the room and get its join string:
-
-```bash
-atrium rooms add laptop          # prints atr1_..., good once and for an hour
-```
-
-On the other machine, with atrium installed the same way:
-
-```bash
-atrium room join atr1_...        # the first time
-atrium room                      # every time after
-```
-
-The room dials the hub over mutual TLS, so the hub's link port (7779) has to be reachable from it, or the two use a
-zrok share or OpenZiti instead. Its cards appear on the same board. `docs/fabric/hub-and-rooms.md` has the details,
-and [`docs/join-atrium.md`](docs/join-atrium.md) is a prompt that has an agent do it.
 
 ## What it gives you
 
@@ -236,10 +205,11 @@ This is a personal tool. The parts that are missing are missing on purpose.
 
 ## Documentation
 
+- `website/docs/get-started.md`: install, start, wire the hooks and launch your first card.
 - The manual: `website/docs/`, published at <https://dovholuknf.github.io/atrium/>.
 - `docs/how-atrium-works.md`: the whole system on one page.
 - `docs/fabric/hub-and-rooms.md`: the hub, rooms, joining and ports.
-- `docs/agents.md`: the bring-up for an agent working on atrium.
+- `AGENTS.md`: the bring-up for an agent working on atrium.
 - `docs/README.md`: the map of everything else in `docs/`.
 - `FEATURES.md`: every capability, one entry each.
 - `docs/room-accounts.md`: why a room should not run as an administrator or as you, and how to set up an account.

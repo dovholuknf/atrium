@@ -163,6 +163,11 @@ type LaunchRequest struct {
 	// false`, claude only, never an interview. Recorded as the tag atrium:superlean beside atrium:lean. See
 	// docs/runtime/superlean-design.md.
 	Superlean *bool `json:"superlean,omitempty"`
+	// LeanDefaulted and SuperleanDefaulted say the hub filled that field in for claude because the caller named no
+	// runner, so a room that picks another runner drops it instead of refusing. A field the caller asked for is never
+	// marked.
+	LeanDefaulted      bool `json:"lean_defaulted,omitempty"`
+	SuperleanDefaulted bool `json:"superlean_defaulted,omitempty"`
 	// Chat starts a superlean claude session with no tools at all and only atrium_need from atrium-control, and a
 	// tool is added by atrium_need. Implies superlean. Recorded as the tag atrium:chat. See chat.go.
 	Chat bool `json:"chat,omitempty"`

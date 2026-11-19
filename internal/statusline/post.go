@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/addrfile"
 )
 
 // The post goes out at most once every 12 seconds per session, from a detached copy of atrium with a one second cap.
@@ -96,7 +98,12 @@ func postTelemetry(home, key string, p *payload, now time.Time, spawn func(url s
 	}
 	hub := os.Getenv("ATRIUM_HUB_URL")
 	if hub == "" {
-		hub = "http://127.0.0.1:7777"
+		// Another user's room may own the default port, so no address file means no post.
+		loc, ok := addrfile.ReadLocation()
+		if !ok || strings.TrimSpace(loc.Agent) == "" {
+			return
+		}
+		hub = strings.TrimRight(loc.Agent, "/")
 	}
 	spawn(hub+"/telemetry", body)
 }

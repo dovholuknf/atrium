@@ -52,10 +52,10 @@ func startOutsideJob(exe string, args []string, log string) (*os.Process, error)
 	return p, nil
 }
 
-// A process still being set up answers OpenProcess with access denied, so only that is retried, and only briefly.
+// A process still being set up answers OpenProcess with access denied, so only that is retried, for up to 5s on a loaded runner.
 func holdProcess(pid int) (*os.Process, error) {
 	var err error
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 200; i++ {
 		var p *os.Process
 		if p, err = os.FindProcess(pid); err == nil {
 			return p, nil

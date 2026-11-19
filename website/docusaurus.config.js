@@ -71,6 +71,7 @@ const config = {
             title: 'Start',
             items: [
               {label: 'What atrium is', to: '/docs/intro'},
+              {label: 'Get started', to: '/docs/get-started'},
               {label: 'Install', to: '/docs/install'},
               {label: 'Quick start', to: '/docs/quick-start'},
             ],

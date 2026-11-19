@@ -64,7 +64,12 @@ func joinCmd() *cobra.Command {
 			"After the first time, `atrium room` runs with what was saved and needs no\n" +
 			"arguments at all.",
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: speaksForItself(func(cmd *cobra.Command, args []string) error {
+			if !noRun {
+				if err := joinPortsFree(cmd.ErrOrStderr(), args[0]+joinFlagsSet(cmd), human, agent); err != nil {
+					return err
+				}
+			}
 			var j transport.Join
 			if zitijoin.IsJoinURL(args[0]) {
 				zj, err := zitijoin.ParseJoinURL(args[0])
@@ -189,7 +194,7 @@ func joinCmd() *cobra.Command {
 			fmt.Println("  starting the room. `" + atriumCmd("room") + "` is all it takes from now on.")
 			fmt.Println()
 			return runRoom(keys, db, human, agent, 0, isolated, "", roomLayout{})
-		},
+		}),
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
@@ -405,8 +410,13 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	// hooks of an atrium already running as the same user, which on this
 	// machine is the difference between a demo and a broken afternoon. See
 	// `LocationPath` in internal/daemon and `roomLocationEnv` below.
+	if !isolated && os.Getenv("ATRIUM_LOCATION") == "" && liveRoomHoldsLocation(daemon.ReadLocation, pidAlive) {
+		log.Printf("[atrium] another atrium is already listening and every hook is aimed at it: running as " +
+			"--isolated, with a private address file, so this room and its runners stay apart from it.")
+		isolated = true
+	}
 	location, shared := roomLocationEnv(isolated, keys.Dir)
-	if os.Getenv("ATRIUM_LOCATION") == "" {
+	if isolated || os.Getenv("ATRIUM_LOCATION") == "" {
 		if err := os.Setenv("ATRIUM_LOCATION", location); err != nil {
 			return err
 		}
@@ -422,12 +432,17 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 
 	warnWideBoard(human)
 
+	ownLocation := ""
+	if isolated {
+		ownLocation = location
+	}
 	d, err := daemon.New(daemon.Options{
-		HumanAddr: human,
-		AgentAddr: agent,
-		DBPath:    db,
-		RoomDir:   keys.Dir,
-		Service:   serviceRestart != nil,
+		LocationFile: ownLocation,
+		HumanAddr:    human,
+		AgentAddr:    agent,
+		DBPath:       db,
+		RoomDir:      keys.Dir,
+		Service:      serviceRestart != nil,
 		// THE HUB-DECIDED NAME, the same one the link attaches under below, so
 		// every session this room launches carries ATRIUM_ROOM and its HTTP
 		// control MCP registration can name this room to the hub.
@@ -697,6 +712,13 @@ func hostname() string {
 		return ""
 	}
 	return h
+}
+
+// liveRoomHoldsLocation says another live process already recorded itself where hooks look, so this room must not
+// share that file, its lastdb.json, or its hooks.
+func liveRoomHoldsLocation(read func() (daemon.Location, bool), alive func(int) bool) bool {
+	loc, ok := read()
+	return ok && loc.PID != 0 && loc.PID != os.Getpid() && alive(loc.PID)
 }
 
 // roomLocationEnv decides the two values that keep a room's hooks pointed at

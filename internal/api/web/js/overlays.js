@@ -69,7 +69,7 @@ async function exportConfig() {
     a.download = name;
     a.click();
     URL.revokeObjectURL(a.href);
-    said.textContent = "saved as " + name + ". no credentials are in it.";
+    said.textContent = "downloaded as " + name + " to this browser's downloads folder. no credentials are in it.";
     said.className = "hintline ok";
   } catch (e) {
     said.textContent = e.message;

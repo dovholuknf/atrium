@@ -51,6 +51,7 @@ const (
 	// mergeGrace is how long a run the merge room does not know of is waited on, mergeSilent how long past the test
 	// bound a room that does not answer is.
 	mergeGrace  = 2 * time.Minute
+	mergeDeaf   = 10 * time.Minute
 	MergeSilent = gitsync.MergeTestBound + 10*time.Minute
 	// mergeReportBody fits the largest output a room sends, escaped, and the envelope.
 	mergeReportBody = 2 << 20
@@ -64,6 +65,7 @@ type mergeQueue struct {
 	mu      sync.Mutex
 	held    map[string]string
 	stalls  map[string]mergeStall
+	silent  map[int64]time.Time
 	// now is the clock the watch ages a run by, time.Now when nil.
 	Now func() time.Time
 	// author is who a land is by, operatorAuthor when nil.
@@ -109,6 +111,26 @@ func (q *mergeQueue) age(at string) time.Duration {
 		return 0
 	}
 	return q.clock().Sub(t)
+}
+
+// deaf is how long the room has not answered about run n, counted from the first watch that got no answer. A room
+// that restarted lost the run with it, so waiting out the whole test bound for one only blocks the queue.
+func (q *mergeQueue) deaf(n int64) time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.silent == nil {
+		q.silent = map[int64]time.Time{}
+	}
+	if _, ok := q.silent[n]; !ok {
+		q.silent[n] = q.clock()
+	}
+	return q.clock().Sub(q.silent[n])
+}
+
+func (q *mergeQueue) heard(n int64) {
+	q.mu.Lock()
+	delete(q.silent, n)
+	q.mu.Unlock()
 }
 
 func (q *mergeQueue) clock() time.Time {
@@ -510,7 +532,7 @@ func (p *Service) mergeCancel(w http.ResponseWriter, r *http.Request, st *hubsto
 	switch {
 	case m.State == hubstore.MergeConflict:
 		step.From, step.To, step.Reason = hubstore.MergeConflict, hubstore.MergeRefused, cutReason(m.Reason+", given up by "+who)
-	case m.State == hubstore.MergeTesting && strings.TrimSpace(in.By) == "":
+	case m.State == hubstore.MergeTesting:
 		step.From = hubstore.MergeTesting
 	}
 	out, err := p.MergeEnd(r.Context(), st, step)
@@ -729,8 +751,11 @@ func (p *Service) MergeWatch(ctx context.Context) {
 			}
 		case (err == nil || errors.As(err, &ra) && ra.Code == http.StatusNotFound) && age > mergeGrace:
 			why = "the merge room " + m.Room + " has no run of it"
-		case err != nil && age > MergeSilent:
+		case err != nil && (age > MergeSilent || p.Merges.deaf(m.N) > mergeDeaf):
 			why = fmt.Sprintf("the merge room %s did not answer for the run: %v", m.Room, err)
+		}
+		if err == nil || why != "" {
+			p.Merges.heard(m.N)
 		}
 		if why != "" {
 			log.Printf("[hub] merge %d: %s, queued again", m.N, why)

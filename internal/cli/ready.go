@@ -45,7 +45,7 @@ func newReady() *cobra.Command {
 	c.Flags().StringVar(&name, "name", "",
 		"what this session calls itself (default: $ATRIUM_AGENT_NAME, or the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "",
-		"atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+		"atrium agent address (default: $ATRIUM_HUB_URL or the recorded address)")
 	return c
 }
 
@@ -122,7 +122,11 @@ func postReady(hubURL, name string, handoff *string) (readyAnswer, error) {
 		return answer, err
 	}
 
-	url := hubAddress(hubURL) + "/ready"
+	addr, err := typedHubAddress(hubURL, "--url")
+	if err != nil {
+		return answer, err
+	}
+	url := addr + "/ready"
 	client := &http.Client{Timeout: finishTimeout}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {

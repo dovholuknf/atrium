@@ -1,6 +1,7 @@
 const NA_HOW_KEY = "atrium.newagent.how";
 const NA_GROUPS_KEY = "atrium.newagent.groups";
 const NA_RECENT_GROUPS_KEY = "atrium.newagent.recentgroups";
+const NA_START_KEY = "atrium.newagent.start";
 const NA_EFFORTS = ["", "low", "medium", "high", "max"];
 const NA_SETUPS = [["full", "full setup"], ["lean", "lean"], ["superlean", "superlean"]];
 
@@ -15,6 +16,13 @@ function naRead(key, dflt) {
 function naWrite(key, v) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
 }
+// `atrium run` opens the board on a first start at #start=<the folder it ran in>, the default until the first launch.
+(function naTakeStart() {
+  const m = /^#start=(.+)$/.exec(location.hash);
+  if (!m) return;
+  try { naWrite(NA_START_KEY, decodeURIComponent(m[1])); } catch (e) {}
+  history.replaceState(history.state, "", location.pathname + location.search);
+})();
 function naSlug(s, n) {
   const full = String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (full.length <= n) return full;
@@ -23,8 +31,9 @@ function naSlug(s, n) {
 }
 const naFirstLine = s => (String(s || "").split("\n")[0] || "").trim();
 const naClip = (s, n) => s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+const naIsPath = t => /^[a-z]:[\\/]|^\//i.test(t);
 function naShort(ref) {
-  if (/^[a-z]:[\\/]|^\//i.test(ref)) return ref.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+  if (naIsPath(ref)) return ref.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   return ref.replace(/^github(\.com)?\//i, "");
 }
 
@@ -40,7 +49,7 @@ function naRoomName() {
 }
 function naHarness() {
   const all = launchableHarnesses(naS.how.room || "");
-  return all.find(h => h.id === naS.how.harness) || all[0] || null;
+  return all.find(h => h.id === naS.how.harness) || defaultHarness(all);
 }
 const naCanModel = h => !!(h && ((h.model_args || []).length || (h.model_env || "").trim()));
 const naCanEffort = h => !!(h && ((h.effort_args || []).length || (h.effort_env || "").trim()));
@@ -52,7 +61,7 @@ function naDefaultHow() {
   const last = typeof lastLaunchRoom === "function" ? lastLaunchRoom() : "";
   const room = rooms.includes(saved.room) ? saved.room : rooms.includes(last) ? last : rooms[0] || "";
   const usable = launchableHarnesses(room);
-  const h = usable.find(x => x.id === saved.harness) || usable[0];
+  const h = usable.find(x => x.id === saved.harness) || defaultHarness(usable);
   return { room, harness: h ? h.id : "", model: saved.model || "", effort: saved.effort || "", setup: saved.setup || "full" };
 }
 function naSameAsDefault() {
@@ -63,6 +72,7 @@ function naSameAsDefault() {
 function naParse(text) {
   const t = String(text || "").trim();
   if (!t) return null;
+  if (naIsPath(t)) return { ref: t.replace(/\\/g, "/").replace(/(.)\/+$/, "$1"), link: null };
   let m = t.match(/^([\w.-]+)\/([\w.-]+)#(\d+)$/);
   if (m) return { ref: "github.com/" + m[1] + "/" + m[2], link: { kind: "issue", num: +m[3], url: "https://github.com/" + m[1] + "/" + m[2] + "/issues/" + m[3] } };
   if (/^[\w.-]+\/[\w.-]+$/.test(t) && !/^github(\.com)?\//i.test(t)) return { ref: "github.com/" + t, link: null };
@@ -76,8 +86,10 @@ function naParse(text) {
 }
 
 const naOpens = () => !!(naS.link && naS.link.num);
+const naFolder = () => (naS.kind === "folder" && !naS.tw ? naEl("na-cwd").value.trim() : "");
 function naAutoTitle() {
   const what = naClip(naFirstLine(naS.what), 64);
+  if (naFolder()) return what || naShort(naFolder());
   if (!naS.ref) return what;
   const r = naS.link, short = naShort(naS.ref);
   if (r && r.num) return r.title || (short + "#" + r.num + (what ? " " + what : ""));
@@ -122,7 +134,7 @@ function naListItems() {
     (r.name + " " + r.tip).toLowerCase().includes(q));
   const here = match.filter(r => r.here), hub = match.filter(r => !r.here);
   const items = [];
-  if (p && !rows.some(r => launchRepoKey(r.ref) === launchRepoKey(p.ref))) items.push({ ref: p.ref, name: naShort(p.ref), meta: "fetch it" });
+  if (p && !rows.some(r => launchRepoKey(r.ref) === launchRepoKey(p.ref))) items.push({ ref: p.ref, name: naShort(p.ref), meta: naIsPath(p.ref) ? "this path" : "fetch it" });
   if (here.length) items.push({ sec: q ? "repos" : "recent" }, ...here.map(r => ({ ref: r.ref, name: r.name, meta: "" })));
   if (hub.length) items.push({ sec: "on the hub, not here" }, ...hub.map(r => ({ ref: r.ref, name: r.name, meta: "clone" })));
   if (!items.length) items.push({ empty: rows.length ? "no matches. paste a full repo link works" : "no repos yet" });
@@ -349,7 +361,7 @@ function naPaintHow() {
     naS.how[sg.dataset.k] = b.dataset.v;
     if (sg.dataset.k === "room") {
       const u = launchableHarnesses(b.dataset.v);
-      if (!u.some(x => x.id === naS.how.harness)) naS.how.harness = u[0] ? u[0].id : "";
+      if (!u.some(x => x.id === naS.how.harness)) naS.how.harness = (defaultHarness(u) || {}).id || "";
       naS.check = null;
       naLoadRepos();
     }
@@ -366,7 +378,7 @@ function naPaintHow() {
 function naPaintPreview(title, br) {
   const h = naHarness(), how = naS.how, r = naS.link, el = naEl("na-preview");
   const short = naS.ref ? naShort(naS.ref) : "";
-  const where = !short ? "its own folder under the card root" : r && r.num ? short + "#" + r.num + ", on the branch the room names" : short + ":" + br;
+  const where = naFolder() ? naFolder() : !short ? "its own folder under the card root" : r && r.num ? short + "#" + r.num + ", on the branch the room names" : short + ":" + br;
   const pinTip = naS.pinned ? "pinned when it starts. click to unpin" : "keep it at the top and in terminals when it starts";
   const model = h && naCanModel(h) && how.model ? naModelLabel(how.model) : "";
   const effort = h && naCanEffort(h) && how.effort ? how.effort + " effort" : "";
@@ -380,7 +392,8 @@ function naPaintPreview(title, br) {
     `<span class="pin ${naS.pinned ? "on" : ""}" id="na-pin" role="button" tabindex="0" aria-label="${pinTip}" data-tip="${pinTip}">${naS.pinned ? "&#9733;" : "&#9734;"}</span>` +
     runnerMark(h ? hookTargetFor(h) || h.label || h.id : "") +
     `<span class="tstack"><span class="tname${title.trim() ? "" : " ph"}">${esc(title.trim() || "what the card is called")}</span>` +
-    `<span class="tpath">${esc(where)}</span></span></div>` +
+    // .tpath is rtl to cut at the front, which moves a leading slash to the end without the marks.
+    `<span class="tpath">&lrm;${esc(where)}&lrm;</span></span></div>` +
     `<div class="chips">${chips}</div></div></div></div>`;
   const pin = naEl("na-pin");
   pin.onclick = () => { naS.pinned = !naS.pinned; naRender(); };
@@ -405,7 +418,7 @@ function naRender() {
   } else if (naS.ref && !naRows()) {
     res.innerHTML = "";
   } else if (naS.ref && !row) {
-    res.innerHTML = `<span class="kind clone">fetch</span><span class="txt">not on the hub yet: fetched from ${esc(naS.ref.split("/")[0])} first</span>`;
+    res.innerHTML = naIsPath(naS.ref) ? "" : `<span class="kind clone">fetch</span><span class="txt">not on the hub yet: fetched from ${esc(naS.ref.split("/")[0])} first</span>`;
   } else if (naS.ref && !row.here) {
     res.innerHTML = `<span class="kind clone">clone</span><span class="txt">on the hub, not on ${room}: cloned first</span>`;
   } else {
@@ -419,7 +432,13 @@ function naRender() {
   naQueueCheck();
   const br = naBranch();
   if (document.activeElement !== naEl("na-branch")) naEl("na-branch").value = br;
-  naEl("na-brline").style.visibility = naS.ref && !naOpens() ? "" : "hidden";
+  naEl("na-brline").style.visibility = naS.ref && !naOpens() && !naFolder() ? "" : "hidden";
+  const fold = naS.kind === "folder";
+  naEl("na-repo").closest(".cb").hidden = fold;
+  naEl("na-cwd").hidden = !fold;
+  naEl("na-cwd").placeholder = naCwdHint();
+  naEl("na-kind-lbl").textContent = fold ? "folder" : "repo";
+  naEl("na-kind").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === (fold ? "folder" : "repo")));
   naEl("na-brline").classList.toggle("moved", br !== naWantedBranch());
   naPaintConflicts();
   naEl("na-need").hidden = !!t.trim();
@@ -435,6 +454,13 @@ function naRender() {
   naEl("na-go").firstElementChild.textContent = naS.tw ? "start throwaway" : "launch";
   naEl("na-go").disabled = !naHarness();
   naPaintList();
+}
+// A folder as the room's machine writes one. A room that does not say its OS is guessed from this browser.
+function naCwdHint() {
+  const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms) || [];
+  const r = rooms.find(x => x.name === naRoomName());
+  const os = (r && r.os) || (/Win/.test(navigator.platform || "") ? "windows" : /Mac/.test(navigator.platform || "") ? "darwin" : "linux");
+  return os === "windows" ? "d:/git/myproject" : os === "darwin" ? "/Users/you/git/myproject" : "/home/you/git/myproject";
 }
 function naSay(text, warn) {
   const n = naEl("na-note");
@@ -453,19 +479,21 @@ async function openNewAgent(tw, prefill, clone) {
   naS = {
     tw: !!tw, ref: "", link: null, what: "", title: "", titleTouched: false, branch: "", branchTouched: false,
     groups: naRead(NA_GROUPS_KEY, []), how: naDefaultHow(), howOpen: false, savedFlash: false,
-    listOpen: false, listIdx: 0, brChoice: "new", check: null, pinned: false, clone: null
+    kind: "repo", listOpen: false, listIdx: 0, brChoice: "new", check: null, pinned: false, clone: null
   };
   if (clone) Object.assign(naS, clone.state, { clone: clone.src });
   naEl("na-what").value = clone ? "copy of " + clone.src.title : "";
   naEl("na-repo").value = clone ? naShort(naS.ref) : "";
   naEl("na-title").classList.remove("missing");
+  naEl("na-cwd").value = "";
   naEl("na-groups").dataset.open = "";
   naSay("");
   naGrowWhat();
   naEl("na").showModal();
   naRender();
   naLoadRepos();
-  const p = prefill ? naParse(prefill) : null;
+  const start = clone || tw ? "" : naRead(NA_START_KEY, "");
+  const p = prefill || start ? naParse(prefill || start) : null;
   if (p) naSetRepo(p.ref, p.link);
   if (clone) naEl("na-title").focus();
   else if (p || tw) naEl("na-what").focus();
@@ -536,6 +564,13 @@ naEl("na-title").addEventListener("input", () => { naS.title = naEl("na-title").
 naEl("na-branch").addEventListener("input", () => { naS.branch = naEl("na-branch").value; naS.branchTouched = true; naRender(); });
 naEl("na-reset").onclick = () => { naS.titleTouched = naS.branchTouched = false; naRender(); };
 naEl("na-change").onclick = () => { naS.howOpen = !naS.howOpen; naRender(); };
+naEl("na-kind").querySelectorAll("button").forEach(b => b.onclick = () => {
+  naS.kind = b.dataset.v;
+  naS.listOpen = false;
+  naRender();
+  naEl(naS.kind === "folder" ? "na-cwd" : "na-repo").focus();
+});
+naEl("na-cwd").addEventListener("input", naRender);
 naEl("na-x").onclick = () => naEl("na").close();
 naEl("na").addEventListener("close", () => { naEl("na-preview").innerHTML = ""; });
 naEl("na-full").onclick = () => { naS.tw = false; naRender(); naEl("na-repo").focus(); };
@@ -630,13 +665,16 @@ async function naLaunch(tw) {
         const what = naFirstLine(body.prompt);
         task = await api("/v1/launch", { method: "POST", headers,
           body: JSON.stringify(Object.assign(body, { throwaway: true, cwd: "", title: naClip(what, 70) || "throwaway" })) });
+      } else if (naFolder()) {
+        task = await api("/v1/launch", { method: "POST", headers,
+          body: JSON.stringify(Object.assign(body, { cwd: naFolder(), title, tags: naS.groups.slice() })) });
       } else if (naOpens()) {
         const out = await api("/v1/open", { method: "POST", headers, body: JSON.stringify({
           url: naS.link.url, title, prompt: body.prompt, harness: h.id, model: body.model || "", effort: body.effort || "", pick: !!room }) });
         if (out.card && naS.groups.length) await naTag(out.card, naS.groups);
         task = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
       } else {
-        if (naS.ref && !naRowOf(naS.ref) && typeof hubIsHub !== "undefined" && hubIsHub && !/^[a-z]:[\\/]|^\//i.test(naS.ref)) {
+        if (naS.ref && !naRowOf(naS.ref) && typeof hubIsHub !== "undefined" && hubIsHub && !naIsPath(naS.ref)) {
           naSay("the hub is fetching " + naShort(naS.ref) + "…");
           await api("/_hub/git/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://" + naS.ref }) });
           naSay("");
@@ -662,6 +700,7 @@ async function naLaunch(tw) {
       naWrite(NA_RECENT_GROUPS_KEY, [...new Set([...naS.groups, ...naRead(NA_RECENT_GROUPS_KEY, [])])].slice(0, 12));
       naNameGroups(naS.groups);
     }
+    if (!tw) { try { localStorage.removeItem(NA_START_KEY); } catch (e) {} }
     naEl("na").close();
     if (typeof rememberLaunchRoom === "function") rememberLaunchRoom(room, task && task.id);
     if (!task) { switchView("board"); return; }

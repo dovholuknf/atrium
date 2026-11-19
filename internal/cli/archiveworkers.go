@@ -25,9 +25,8 @@ func newArchiveWorkers() *cobra.Command {
 			"pinned and not a fixture. Never a director, the orchestrator, or a card an agent did not " +
 			"launch. Archives only: the cards keep their history, and no worktree or branch is removed.\n\n" +
 			"--dry-run lists what would go and changes nothing.",
-		Args:          cobra.NoArgs,
-		SilenceUsage:  true,
-		SilenceErrors: false,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runArchiveWorkers(cmd.OutOrStdout(), boardURL, dryRun)
 		},

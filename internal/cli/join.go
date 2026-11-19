@@ -39,7 +39,7 @@ func newJoin() *cobra.Command {
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&title, "title", "", "what to show on the card")
 	c.Flags().StringVar(&why, "why", "", "what this session is for, read back later")
-	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or the recorded address)")
 	return c
 }
 
@@ -55,7 +55,7 @@ func newLeave() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
-	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or the recorded address)")
 	return c
 }
 
@@ -116,6 +116,7 @@ func hubAddress(override string) string {
 }
 
 const hubSourceDaemon = "a running daemon"
+const hubSourceDefault = "the default, since no daemon has recorded one"
 
 // hubAddressFrom also says where the answer came from, for a caller reporting
 // itself to a human. Only the activity hook reads the second value.
@@ -129,7 +130,25 @@ func hubAddressFrom(override string) (addr, source string) {
 	if v := recordedAgentAddr(); v != "" {
 		return v, hubSourceDaemon
 	}
-	return "http://127.0.0.1:7777", "the default, since no daemon has recorded one"
+	return "http://127.0.0.1:7777", hubSourceDefault
+}
+
+// typedHubAddress is hubAddress for a command typed by hand. With nothing recorded it refuses, since on a shared
+// machine the default port may be another user's room.
+func typedHubAddress(override, flag string) (string, error) {
+	addr, src := hubAddressFrom(override)
+	if src == hubSourceDefault {
+		return "", errNoHubAddress(flag)
+	}
+	return addr, nil
+}
+
+func errNoHubAddress(flag string) error {
+	where := "this machine's address file"
+	if p, err := daemon.LocationPath(); err == nil {
+		where = filepath.ToSlash(p)
+	}
+	return fmt.Errorf("no atrium address is recorded at %s. start a room here or pass %s <hub address>", where, flag)
 }
 
 // recordedAgentAddr reads the address the running daemon wrote down. Any
@@ -167,7 +186,11 @@ func sessionEvent(hubURL, event, name, title, why string) error {
 		return err
 	}
 
-	url := hubAddress(hubURL) + "/session"
+	addr, err := typedHubAddress(hubURL, "--url")
+	if err != nil {
+		return err
+	}
+	url := addr + "/session"
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {

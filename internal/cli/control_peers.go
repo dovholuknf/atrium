@@ -672,8 +672,8 @@ type LaunchInput struct {
 	// directory forever, including ones nobody meant to brief, and writing one
 	// on somebody's behalf is a decision with no expiry.
 	Brief string `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory and read before it starts, so it survives compaction and can be re-read"`
-	// Runner names a configured harness. Empty means claude.
-	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
+	// Runner names a configured harness. Empty means the room's default.
+	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default is claude when the room has it, else the first runner it finds"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"a pile or topic shared by many cards, like pr, zendesk or a repo name such as ziti-sdk-c. not an item id (pass item), not a ticket number, not a role"`
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
@@ -785,9 +785,6 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		return nil, out, fmt.Errorf("pass cwd for a directory you made, or repo for one atrium makes, not both")
 	}
 	harness := strings.TrimSpace(in.Runner)
-	if harness == "" {
-		harness = "claude"
-	}
 	// A LAUNCH SHOULD NAME AN ITEM but need not, resolved before a briefing is written or anything is posted. The attachment is the tag
 	// `atrium:item:<id>`, which the room and the hub both read, so the cross-room road needs no new field.
 	workID, filedNote, err := resolveLaunchItem(ctx, in.Item, in.Tags)

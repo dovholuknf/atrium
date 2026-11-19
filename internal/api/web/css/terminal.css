@@ -443,7 +443,8 @@
      pane stops looking like a live session. */
   .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }
   .term-pane.dead .term-bar strong { color: var(--dim); }
-  .term-bar button { padding: 3px 9px; font-size: var(--fs-sm); line-height: 1.3; }
+  /* nowrap: a squeezed bar broke `ctrl-c` after its hyphen onto two lines. */
+  .term-bar button { padding: 3px 9px; font-size: var(--fs-sm); line-height: 1.3; white-space: nowrap; }
   /* A glyph does not want the padding a word does. The rule above is tuned for `ctrl-c` and `exit` and is
      roughly twice as wide as it should be around a single character, so the folder and the cog sat in buttons
      with more air than content. Squared off here: tighter side padding, sized from the glyph.
@@ -836,11 +837,6 @@
     padding: 12px 14px; border-bottom: 1px solid var(--warn);
     background: linear-gradient(90deg, rgba(var(--warn-rgb),.16), rgba(var(--warn-rgb),.04));
   }
-  /* A turn cause over its daily limit: one compact line each, above the terminals. */
-  .term-limits { flex: 0 0 auto; border-bottom: 1px solid var(--warn); background: rgba(var(--warn-rgb),.08); }
-  .tl-limit { display: flex; align-items: center; gap: var(--sp-4); padding: 3px 12px; font-size: var(--fs-sm); }
-  .tl-limit-text { flex: 1; min-width: 0; color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tl-limit-dismiss { flex: 0 0 auto; padding: 0 8px; min-height: 0; line-height: 1.5; font-size: var(--fs-sm); }
   /* A drive of the room under its warning level, or its critical one. */
   .term-disk { flex: 0 0 auto; }
   .term-disk[hidden] { display: none; }

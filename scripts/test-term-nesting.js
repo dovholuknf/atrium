@@ -90,7 +90,7 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // They are lifted because `termRow` calls them, and a name it cannot resolve is
 // a ReferenceError in the middle of the markup this parses. `termSuffix` is a
 // `let` between two of them and comes along with the one above it.
-const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
+const names = ["shortLabel", "termPathOf", "termPlaceOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
   "termRoomChip", "termRowChips", "termCold", "termHeldLine", "termLeftoverChip", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
   "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
@@ -98,8 +98,10 @@ const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which
 // is a confusing way to be told the file was reordered.
-const lifted = [liftFn("bareId"), liftFn("roomOf"),liftFn("roomHue"), ...names.map(lift)].join("\n");
-const src = (lifted.includes("const TERM_FOLDED =") ? "" : foldKey + "\n") + lifted;
+const lifted = [liftFn("bareId"), liftFn("roomOf"),liftFn("roomHue"), liftFn("forgeHostLabel"), liftFn("originParts"), ...names.map(lift)].join("\n");
+const forgeAt = page.indexOf("const FORGE_HOST_LABELS =");
+const forgeLabels = page.slice(forgeAt, page.indexOf("\n", forgeAt));
+const src = (lifted.includes("const TERM_FOLDED =") ? "" : foldKey + "\n") + forgeLabels + "\n" + lifted;
 
 // The globals the strip reaches for. Everything here is either a browser thing
 // or a function from another part of the board, and none of it is what is
@@ -269,7 +271,9 @@ const sessions = (labels) => labels.map((spec, i) => {
   const branch = bar < 0
     ? (label.lastIndexOf(":") > 0 ? label.slice(label.lastIndexOf(":") + 1) : "")
     : spec.slice(bar + 1);
-  return { id: "t" + i, label, branch, supervised: true };
+  // The heading is read from the git remote, so a label with a place gets the remote that spells it.
+  const where = branch && label.endsWith(":" + branch) ? label.slice(0, label.length - branch.length - 1) : "";
+  return { id: "t" + i, label, branch, origin: where ? "https://" + where + ".git" : "", supervised: true };
 });
 
 // What the invariant says the strip must look like, worked out from the labels

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"io"
 	"net/http"
 	"os"
@@ -72,8 +73,8 @@ type repoFacts struct {
 // readRepoFacts finds the repository a directory is in by walking up to its .git and reading the files. ok is false
 // for a directory that is gone or is in no repository.
 func readRepoFacts(dir string) (f repoFacts, ok bool) {
-	dir = filepath.Clean(filepath.FromSlash(strings.TrimSpace(dir)))
-	if dir == "" || dir == "." {
+	dir, err := safepath.LocalDir(dir)
+	if err != nil {
 		return f, false
 	}
 	for i := 0; i < 24; i++ {
@@ -223,7 +224,7 @@ func (s *Server) cardDirs() []dirUse {
 			uses = append(uses, dirUse{t.Worktree, t.LastActivityAt})
 		}
 	}
-	return uses
+	return append(uses, adoptedUses(s.adoptedDirs())...)
 }
 
 // checkoutList answers from memory when it can. A stale answer is returned and refreshed behind the request.

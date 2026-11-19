@@ -23,6 +23,9 @@ func TestLeanLaunchIsOnForLeanAgentsOnAnyRunner(t *testing.T) {
 	if leanLaunch(launchInput{}, "codex") || !leanLaunch(launchInput{}, "claude") {
 		t.Fatal("the default is unchanged")
 	}
+	if !leanLaunch(launchInput{}, "") || !superleanLaunch(launchInput{Isolated: true}, "") {
+		t.Fatal("an empty runner is the room's pick, and lean is what the hub defaults it to for claude")
+	}
 }
 
 func TestLeanSkillsDroppedIsNamedSeparately(t *testing.T) {

@@ -8,7 +8,7 @@ const ACCESS_KINDS = {
   address: { mark: "addr", label: "my own address" }
 };
 
-const accessUI = { state: { auth: {}, entries: [], waiting: [] }, adding: "", form: {}, msg: "" };
+const accessUI = { state: { auth: {}, entries: [], waiting: [] }, transports: [], readOnly: false, editing: "", adding: "", form: {}, msg: "" };
 
 const accessApi = {
   async call(method, path, body) {
@@ -64,7 +64,7 @@ const AC_SVG = {
 
 function accessIcon(kind, mode) {
   const logo = kind === "ziti" ? zitiLogo() : kind === "zrok" ? zrokLogo() : AC_SVG.addr;
-  const badge = kind === "zrok" ? `<i class="ac-badge">${mode === "public" ? AC_SVG.globe : AC_SVG.lock}</i>` : "";
+  const badge = kind === "zrok" && mode ? `<i class="ac-badge">${mode === "public" ? AC_SVG.globe : AC_SVG.lock}</i>` : "";
   return `<span class="ac-ico" data-kind="${kind}">${logo}${badge}</span>`;
 }
 
@@ -73,12 +73,16 @@ function accessMenu() {
     ["zrok", "private", "zrok private", "Closed, only accounts you grant"],
     ["zrok", "public", "zrok public", "A reserved URL behind your sign-in"],
     ["address", "", "My own address", "Your interface, hostname or proxy"]];
+  const off = accessUI.readOnly ? [] : accessUI.transports.filter(t => t.switchable && !t.on);
   return `<div class="ac-menu"><button class="go" aria-haspopup="menu" aria-expanded="${!!accessUI.menu}"
-      onclick="accessToggleMenu()">Access Atrium <b>+</b></button>${accessUI.menu ? `<div class="ac-drop" role="menu">${
+      onclick="accessToggleMenu()">Access Atrium <b>+</b></button><span class="hintline" id="ac-msg">${acEsc(accessUI.msg)}</span>${accessUI.menu ? `<div class="ac-drop" role="menu">${
     items.map(([k, m, t, s]) => `<button role="menuitem" data-tip="${acEsc(s)}" onclick="accessStartAdd('${k}','${m}')">` +
-      `${accessIcon(k, m)}<span>${t}</span></button>`).join("")
+      `${accessIcon(k, m)}<span class="ac-opt">${t}<small>${acEsc(s)}</small></span></button>`).join("")
+  }${off.map(t => `<button role="menuitem" data-tip="Bind it on the hub now" onclick="accessTurnOn('${acEsc(t.name)}')">` +
+      `${accessIcon(t.name.includes("zrok") ? "zrok" : "ziti", "")}<span class="ac-opt">${acEsc(t.label || t.name)}<small>Off now, bind it on the hub</small></span></button>`).join("")
   }</div>` : ""}</div>`;
 }
+function accessTurnOn(name) { accessUI.menu = false; accessUI.adding = ""; accessUI.form = {}; paintAccess(); putHubTransport({ name, on: true }); }
 function accessPick(name, v) { accessUI.form[name] = v; paintAccess(); }
 
 function accessExposes(kind, f) {
@@ -165,6 +169,36 @@ function accessEntry(e) {
     <span class="ac-actions">${extra}<button onclick="accessRevoke('${acEsc(e.id)}')">revoke</button></span></div>`;
 }
 
+// A hub transport (the board, the room link or the CI hook over ziti, or a zrok share) in the same list as the
+// entries. One that is off is not configured, so it waits in the Access Atrium menu instead.
+function accessTransport(t) {
+  const live = t.state === "bound";
+  const kind = t.name.includes("zrok") ? "zrok" : "ziti";
+  const bare = !!t.no_service;
+  const desc = [t.service && "service " + t.service, t.identity, t.detail].filter(Boolean).map(acEsc).join(" · ");
+  const can = !accessUI.readOnly && t.switchable;
+  const open = accessUI.editing === t.name;
+  const state = t.state === "failing" && t.last_error ? "failing: " + t.last_error : t.state;
+  const edit = open ? `<div class="ac-grid ac-edit">
+      <label for="ac-f-svc">service</label><input id="ac-f-svc" value="${acEsc(t.service)}" placeholder="${acEsc(t.default_service || "service")}" spellcheck="false">
+      <label for="ac-f-idn">identity</label><input id="ac-f-idn" value="${acEsc(t.identity)}" placeholder="${acEsc(t.identity_used || "identity file")}" spellcheck="false">
+      <span></span><span class="ac-foot"><button onclick="accessEditTransport('')">cancel</button>
+      <button class="go" onclick="accessApplyTransport('${acEsc(t.name)}')">apply</button></span></div>` : "";
+  return `<div class="ac-row ${live ? "live" : ""}" data-transport="${acEsc(t.name)}">
+    ${accessIcon(kind, "")}
+    <span class="grow"><span class="ac-name">${acEsc(t.label || t.name)}</span>
+      <span class="ac-sub ac-desc" data-tip="${desc}">${desc || "hub transport"}</span>
+      ${t.locked ? `<span class="ac-sub">${acEsc(t.locked)}</span>` : ""}
+      ${!t.locked && (t.seeded || []).length ? `<span class="ac-sub">set by flag: ${acEsc(t.seeded.join(", "))}. the first change here replaces it.</span>` : ""}</span>
+    <span class="ac-chip ${live ? "on" : t.state === "failing" ? "warn" : ""}" data-tip="${acEsc(state)}">${acEsc(state)}</span>
+    <span class="ac-actions">${can && !bare ? `<button onclick="accessEditTransport('${acEsc(t.name)}')">edit</button>` : ""}
+      ${can ? `<button onclick="putHubTransport({name:'${acEsc(t.name)}',on:false})">turn off</button>` : ""}</span>${edit}</div>`;
+}
+function accessEditTransport(name) { accessUI.editing = name; paintAccess(); }
+function accessApplyTransport(name) {
+  putHubTransport({ name, on: true, service: accessField("svc"), identity: accessField("idn") });
+}
+
 // A labelled row of the form grid. The hint rides in a hover ? beside the label, never as grey text under a control.
 function accessRow(id, label, control, tip) {
   return `<label for="ac-f-${id}">${label}${tip ? ` <span class="help" tabindex="0" data-actip="${acEsc(tip)}">?</span>` : ""}</label>${control}`;
@@ -242,7 +276,8 @@ function paintAccess() {
   if (!accessUI.fresh) host.querySelectorAll("[id^=ac-f-]").forEach(el => { typed[el.id] = el.type === "checkbox" ? el.checked : el.value; });
   accessUI.fresh = false;
   const s = accessUI.state;
-  const list = (s.entries || []).map(accessEntry).join("") ||
+  const on = accessUI.transports.filter(t => t.on || t.state !== "off");
+  const list = on.map(accessTransport).join("") + (s.entries || []).map(accessEntry).join("") ||
     `<div class="ac-empty">Nothing yet. Atrium works with no overlay at all, on this machine.</div>`;
   const wait = (s.waiting || []).length ? `<h4 class="ac-sec">Rooms waiting for approval</h4>` +
     s.waiting.map(r => `<div class="ac-row"><span class="grow"><span class="ac-name">${acEsc(r.name)}</span>
@@ -251,7 +286,7 @@ function paintAccess() {
   host.innerHTML = accessMenu() + accessForm() +
     `<h4 class="ac-sec">Configured access modes</h4>${list}
      ${wait}
-     <span class="hintline" id="ac-msg">${acEsc(accessUI.msg)}</span>`;
+     ${accessUI.readOnly ? `<span class="hintline">The hub's own transports are set on the hub's machine.</span>` : ""}`;
   for (const id in typed) {
     const el = document.getElementById(id);
     if (el) { if (el.type === "checkbox") el.checked = typed[id]; else el.value = typed[id]; }

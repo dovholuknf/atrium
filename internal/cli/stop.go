@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,6 +59,9 @@ func newStop() *cobra.Command {
 // and then the shared one, so this also answers for a caller running as
 // somebody other than the daemon.
 func boardAddress(override string) string {
+	if override == "" {
+		override = strings.TrimSpace(os.Getenv("ATRIUM_BOARD_URL"))
+	}
 	if override != "" {
 		// A bare host:port is what people type, and Go's URL parser reads the
 		// host as a scheme and refuses it.
@@ -65,9 +69,6 @@ func boardAddress(override string) string {
 			override = "http://" + override
 		}
 		return strings.TrimRight(override, "/")
-	}
-	if v := os.Getenv("ATRIUM_BOARD_URL"); v != "" {
-		return strings.TrimRight(v, "/")
 	}
 	if loc, ok := daemon.ReadLocation(); ok && strings.TrimSpace(loc.Board) != "" {
 		return strings.TrimRight(loc.Board, "/")
@@ -117,6 +118,13 @@ func stopDaemon(boardURL, token string, now, runners bool) error {
 		return fmt.Errorf("the daemon refused: %s", msg)
 	}
 
+	var said struct{ Hub bool }
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&said)
+	if said.Hub {
+		fmt.Println("the hub is stopping. rooms and their agents keep running, and reconnect when it comes back. " +
+			"atrium stop --url <a room's own board> stops that room.")
+		return nil
+	}
 	if now {
 		fmt.Println("the daemon is winding down now. supervised runners get ten seconds to finish.")
 		return nil

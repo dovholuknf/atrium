@@ -54,6 +54,48 @@ func CheckPushBranch(b string) string {
 	return ""
 }
 
+const bigPushAdvice = "Nothing landed on the hub, and no git is still running for this push. Do not split the commit and do not " +
+	"push again as it is: a push this big fails the same way. Keep large binaries, build output and tools out of git " +
+	"(.gitignore, then `git rm -r --cached <path>`), amend the commit and push once."
+
+// PushAdvice says what a failed push means to the card that made it, or "" when git's own words say it. A push over
+// the hub's cap (500 MB by default, so one request cannot fill the hub's disk) is refused with a 413, and one that is
+// not done in CommandBound, or whose caller stopped waiting, is killed. Both leave nothing on the hub.
+func PushAdvice(report string, err error, ctxErr error) string {
+	switch {
+	case errors.Is(ctxErr, context.Canceled):
+		return "The caller stopped waiting, so the push was stopped and nothing landed on the hub. " + bigPushAdvice
+	case errors.Is(ctxErr, context.DeadlineExceeded), strings.Contains(fmt.Sprint(err), "did not finish in"):
+		return "The push did not finish in " + CommandBound.String() + " and was killed. " + bigPushAdvice
+	}
+	low := strings.ToLower(report)
+	if strings.Contains(low, "413") || strings.Contains(low, "too large") {
+		return fmt.Sprintf("The push is over the hub's limit of %d MB. ", defaultMaxPush>>20) + bigPushAdvice
+	}
+	return ""
+}
+
+// PushFailure is the answer to a failed push. A push that was killed for time leads with the advice, because git's
+// raw line (a send-pack protocol error) is a side effect of the kill and would read as the cause.
+func PushFailure(report string, err error, ctxErr error) error {
+	advice := PushAdvice(report, err, ctxErr)
+	killed := errors.Is(ctxErr, context.DeadlineExceeded) || strings.Contains(fmt.Sprint(err), "did not finish in")
+	switch {
+	case killed && advice != "":
+		return fmt.Errorf("the push did not land: %s", advice)
+	case advice != "":
+		advice = "\n" + advice
+	}
+	// git's own words, which carry the hub's `remote: atrium: ...` sentence.
+	if strings.TrimSpace(report) != "" {
+		return fmt.Errorf("the push did not land:\n%s%s", report, advice)
+	}
+	if advice != "" {
+		return fmt.Errorf("the push did not land: %v%s", err, advice)
+	}
+	return err
+}
+
 // HubPushRemote is the remote a push goes through: `hub` when its push URL, AFTER every url.*.insteadOf and
 // pushInsteadOf rewrite (which is what `git remote get-url --push` prints, not the raw remote.<name>.url), is the
 // forwarder's, else `atrium-hub` under the same test. A clone whose own `hub` points elsewhere is therefore pushed

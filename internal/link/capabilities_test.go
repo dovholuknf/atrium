@@ -1,9 +1,13 @@
 package link
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -64,5 +68,35 @@ func TestLaunchNeedsPlacesOnlyOnARoomThatPasses(t *testing.T) {
 	}
 	if _, err := roomForNeeds(v, []string{"ssh:x", "gone"}, "", false, now); err == nil || !strings.Contains(err.Error(), "gone has no result") {
 		t.Fatalf("a need nobody ran placed a launch: %v", err)
+	}
+}
+
+func TestCapabilitiesListPassesItsOutputSchema(t *testing.T) {
+	ctx := context.Background()
+	s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+	AddRoomCapabilityTool(s, func(_ context.Context, _, _ string, out any) error {
+		v := out.(*CapabilityView)
+		v.Caps = []json.RawMessage{json.RawMessage(`{"id":"ssh:x","kind":"reach"}`), json.RawMessage(`{"id":"go","kind":"toolchain"}`)}
+		return nil
+	})
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := s.Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "atrium_capabilities", Arguments: map[string]any{"action": "list", "kind": "reach"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("list failed: %+v", res.Content[0])
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(b), `"caps":[{"id":"ssh:x","kind":"reach"}]`) {
+		t.Fatalf("%s", b)
 	}
 }

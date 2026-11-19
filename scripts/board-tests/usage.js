@@ -1,6 +1,6 @@
 // usage: usage: the tab, burn charts, context, turn limits, cache.
 //
-// Units: usageCacheReads, usageTurns, turnLimits, usagePolish, usageLimits, usageGroups, contextSize, ctxLine, ctxLimitLayers, contextCycle, cacheChip, clock, usageTab, usageWeekReset.
+// Units: usageCacheReads, usageTurns, usagePolish, usageLimits, usageGroups, contextSize, ctxLine, ctxLimitLayers, contextCycle, cacheChip, clock, usageTab, usageWeekReset, usageNever.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -1295,68 +1295,6 @@ async function usageTurnsSection(browser, base) {
   if (errors.length) fail("usageTurns: the page threw: " + errors.join(" | "));
 }
 
-// A turn cause over its daily limit shows on the Terminals tab as one compact, dismissable line, and nothing shows when
-// it is under. /v1/usage/turn-limits is mocked over and under. TURNLIMIT_SHOT=<dir> writes limit-over.png and
-// limit-under.png of the tab.
-async function turnLimitsSection(browser, base) {
-  const errors = [];
-  const day = new Date().toISOString().slice(0, 10);
-  const over = { day, off: false, findings: [
-    { kind: "notice", turns: 130, tokens: 4100000, limit_turns: 100, limit_tokens: 5000000, over: "turns", item: "r-some-open-item" },
-    { kind: "say", turns: 12, tokens: 7200000, limit_turns: 100, limit_tokens: 5000000, over: "tokens" },
-    { kind: "<img src=x onerror=window.__xss=1>", turns: 101, tokens: 1, limit_turns: 100, limit_tokens: 0, over: "turns" }] };
-  const under = { day, off: false, findings: [] };
-  let answer = over, asked = 0;
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
-  const sp = await ctx.newPage();
-  sp.on("pageerror", e => errors.push(String(e)));
-  await ctx.route(/\/v1\/usage\/turn-limits/, route => { asked++; route.fulfill({ json: answer }); });
-  const lines = () => sp.evaluate(() => {
-    const h = document.getElementById("term-limits");
-    return { hidden: h.hidden, rows: [...h.querySelectorAll(".tl-limit")].map(r => r.querySelector(".tl-limit-text").textContent),
-      imgs: h.querySelectorAll("img").length, xss: window.__xss || 0 };
-  });
-  const again = async () => { await sp.evaluate(() => { turnLimits.at = 0; return renderTurnLimits(); }); };
-  const shot = async name => {
-    if (!process.env.TURNLIMIT_SHOT) return;
-    await settleStyle(sp);
-    await sp.screenshot({ path: process.env.TURNLIMIT_SHOT + "/" + name });
-  };
-  try {
-    await sp.goto(base, { waitUntil: "domcontentloaded" });
-    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
-    await sp.evaluate(() => { localStorage.removeItem("atrium.turnlimits.dismissed"); switchView("terms"); });
-    await sp.waitForFunction(() => !document.getElementById("term-limits").hidden, null, { timeout: slow(10000) });
-    let t = await lines();
-    if (t.rows.length !== 3) fail("turnLimits: want one line per firing cause, got " + JSON.stringify(t.rows));
-    if (!/^notice: 130 turns, .* tokens today, limit 100 turns\. to remove it: r-some-open-item$/.test(t.rows[0])) fail("turnLimits: the notice line reads " + t.rows[0]);
-    if (!/^say: 12 turns, .* tokens today, limit .* tokens\. no item removes it\. to raise the limit set turn_cause_limits/.test(t.rows[1])) fail("turnLimits: the say line reads " + t.rows[1]);
-    if (t.imgs || t.xss) fail("turnLimits: a kind from the server was drawn as markup");
-    if (!t.rows[2].startsWith("<img src=x")) fail("turnLimits: a kind was not shown as text: " + t.rows[2]);
-    await shot("limit-over.png");
-    // dismiss one for the day, and it stays gone when the tab asks again
-    await sp.click("#term-limits .tl-limit:first-child .tl-limit-dismiss");
-    t = await lines();
-    if (t.rows.length !== 2 || /^notice/.test(t.rows[0])) fail("turnLimits: dismiss did not remove its line: " + JSON.stringify(t.rows));
-    await again();
-    t = await lines();
-    if (t.rows.length !== 2) fail("turnLimits: a dismissed line came back on the next read: " + JSON.stringify(t.rows));
-    // a dismissal is for the day it was made
-    await sp.evaluate(() => localStorage.setItem("atrium.turnlimits.dismissed", JSON.stringify({ day: "2000-01-01", kinds: ["say"] })));
-    await again();
-    t = await lines();
-    if (t.rows.length !== 3) fail("turnLimits: yesterday's dismissal still hides a line: " + JSON.stringify(t.rows));
-    // under the limit: nothing shows
-    answer = under;
-    await again();
-    t = await lines();
-    if (!t.hidden || t.rows.length) fail("turnLimits: a cause under its limit shows a line: " + JSON.stringify(t));
-    await shot("limit-under.png");
-    if (!asked) fail("turnLimits: the tab never asked");
-  } finally { await ctx.close(); }
-  if (errors.length) fail("turnLimits: the page threw: " + errors.join(" | "));
-}
-
 // The usage tab and its cache reads toggle. Off by default: four counted kinds
 // stacked, the cache reads named on one line under the split, five kinds still on
 // the hover. On is the tab as it always was. The choice is the daemon's.
@@ -1688,6 +1626,7 @@ async function usageWeekResetSection(browser, base) {
     if (since !== "2026-10-04T22:00:00.000Z") fail("usageWeekReset: this week asked since " + since);
 
     // the setting: the form reads it, saves it, a bad zone is refused in the form, and a settings event moves it
+    await sp.evaluate(() => { ulAdd({ at: Date.now(), room: "", card: "uc-a", kind: "weekly", pct: 5, reset: 0 }); ucPaint(); });
     await sp.click("#uc-reset");
     const f = await sp.evaluate(() => ({ shown: !document.getElementById("uc-reset-form").hidden, day: document.getElementById("uc-reset-day").value,
       time: document.getElementById("uc-reset-time").value, tz: document.getElementById("uc-reset-tz").value, label: document.getElementById("uc-reset-label").textContent }));
@@ -2220,11 +2159,42 @@ async function usageHistorySection(browser, base) {
   if (errors.length) fail("usageHistory: the page threw: " + errors.join(" | "));
 }
 
+// A ROOM NO CARD HAS REPORTED FROM says so. No limits bar of dashes, no weekly reset to set, and opening the tab logs no
+// missing renderer, nor does a repaint on capabilities or items. The first reading draws the tab as usual.
+async function usageNeverSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [], logs = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  sp.on("console", m => { if (/no renderer/.test(m.text())) logs.push(m.text()); });
+  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [] } }));
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => document.querySelector('header .tab[data-view="usage"]').click());
+    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
+    await usageSettled(sp);
+    const read = () => sp.evaluate(() => {
+      const body = document.getElementById("uc-body");
+      return { never: !!body.querySelector(".ucnever"), text: body.textContent, limits: !!document.getElementById("ul-limits"),
+        reset: !document.getElementById("uc-reset").parentElement.hidden };
+    });
+    await sp.evaluate(() => { UL.readings.length = 0; UL.last.clear(); ucPaint(); });
+    const a = await read();
+    if (!a.never || a.limits || a.reset || /resets|–|--/.test(a.text)) fail("usageNever: an empty room does not say so plainly: " + JSON.stringify(a));
+    await sp.evaluate(() => { ulAdd({ at: Date.now(), room: "", card: "uc-a", kind: "weekly", pct: 5, reset: 0 }); ulRefresh(); });
+    const b = await read();
+    if (b.never || !b.reset) fail("usageNever: a reading does not draw the tab: " + JSON.stringify(b));
+    await sp.evaluate(async () => { for (const v of ["caps", "items"]) { switchView(v); await repaintLists(); } switchView("usage"); });
+    if (logs.length) fail("usageNever: " + logs.join(" | "));
+    if (errors.length) fail("usageNever: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 const units = [
   { name: "usageHistory", run: ({ browser, base }) => usageHistorySection(browser, base) },
   { name: "usageCacheReads", run: ({ browser, base }) => usageCacheReadsSection(browser, base) },
   { name: "usageTurns", run: ({ browser, base }) => usageTurnsSection(browser, base) },
-  { name: "turnLimits", run: ({ browser, base }) => turnLimitsSection(browser, base) },
   { name: "usagePolish", run: ({ browser, base }) => usagePolishSection(browser, base) },
   { name: "usageLimits", run: ({ browser, base }) => usageLimitsSection(browser, base) },
   { name: "usageGroups", run: ({ browser, base }) => usageGroupsSection(browser, base) },
@@ -2236,8 +2206,9 @@ const units = [
   { name: "clock", run: ({ browser, base }) => clockSection(browser, base) },
   { name: "usageTab", run: ({ browser, base }) => usageTabSection(browser, base) },
   { name: "usageWeekReset", run: ({ browser, base }) => usageWeekResetSection(browser, base) },
+  { name: "usageNever", run: ({ browser, base }) => usageNeverSection(browser, base) },
 ];
-const sections = { usageHistory: usageHistorySection, usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, cacheChip: cacheChipSection, clock: clockSection, usageTab: usageTabSection, usageWeekReset: usageWeekResetSection };
+const sections = { usageHistory: usageHistorySection, usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, cacheChip: cacheChipSection, clock: clockSection, usageTab: usageTabSection, usageWeekReset: usageWeekResetSection, usageNever: usageNeverSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

@@ -135,7 +135,8 @@ Every command and name in it was read against the code, so it is safe to hand ov
   on the hub's machine. `--link` and `--link-advertise` are on `atrium run`, `rooms add` and `rooms token`.
   `rooms add` refuses a wide `--link` with no `--link-advertise`.
 - `atrium room --detach` logs to `room.log` beside `--dir` and returns once the room answers.
-- `atrium hook install --runner claude|codex` keeps a backup and has no undo: `internal/cli/hook.go`.
+- `atrium hook install --runner claude|codex` keeps a backup, and `atrium hook uninstall` takes the atrium entries out
+  again: `internal/cli/hook.go`, `internal/cli/hook_uninstall.go`.
 - `atrium stop` reads the recorded board address and winds the room down: `internal/cli/stop.go`.
 - The board menu is the **rooms** tab. The board cannot mint a join string.
 - Not checked against a running hub: the hub was offline, so the prompt has not been walked end to end.

@@ -10,7 +10,7 @@ import {PermMockup, TerminalMockup} from '@site/src/components/Mockups';
 import styles from './index.module.css';
 
 const bootstrap = (file) =>
-  `Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/${file} . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.`;
+  `Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/${file} and read what it returns. Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.`;
 
 const questions = [
   ['Which one needs me?', 'A card that asked you something sorts above one that simply ran out of work.'],

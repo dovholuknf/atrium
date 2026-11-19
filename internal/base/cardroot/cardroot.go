@@ -17,7 +17,14 @@ const Setting = "card_root"
 
 // ErrNone is the answer on Windows with neither the setting nor WORKTREE_ROOT: there is no place to put a home, and
 // the home folder is C:, which is the one place agent work must not go.
-var ErrNone = errors.New("this room has no place for card homes. set card_root in its settings, or set WORKTREE_ROOT")
+var ErrNone = errors.New("this room has no place for card homes. " + WindowsWhy + ". " + SetHow)
+
+// WindowsWhy is the one clause for why Windows has no default card root.
+const WindowsWhy = "Windows has no default card root because the home folder is on C: and agent work stays off the system drive"
+
+// SetHow names the command and the board setting that set card_root, with a path on a non-system drive.
+const SetHow = "set card_root to a folder of its own on another drive, for example `atrium room set card_root D:/atrium/cards` " +
+	"(run it with the room stopped) or in the board's room settings"
 
 // Env is what the functions ask the machine: the home folder and the OS name.
 type Env struct {

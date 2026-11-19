@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -200,7 +201,7 @@ func (f *hubStoreFlags) bind(c *cobra.Command, prefix string) {
 // and the change is already durable, which is the case the header above insists
 // must work. A short timeout so a wedged hub cannot hold a command open.
 func (f *hubStoreFlags) nudge() {
-	addr := orDefault(f.board, defaultBoardAddr())
+	addr := orDefault(f.board, recordedBoard(f.keys().Dir))
 	client := &http.Client{Timeout: 750 * time.Millisecond}
 	resp, err := client.Post("http://"+addr+"/_hub/nudge", "application/json", nil)
 	if err != nil {
@@ -293,6 +294,7 @@ func roomAddCmd(prefix string) *cobra.Command {
 					return err
 				}
 			}
+			recordedLink(cmd, f.keys().Dir, &port, &advertise)
 			line, err := joinStringFor(f.keys(), store, r, port, advertise, transport, service)
 			if err != nil {
 				return err
@@ -309,6 +311,10 @@ func roomAddCmd(prefix string) *cobra.Command {
 			fmt.Fprintln(out, "  Good once, for an hour, and for that name only. This is the only")
 			fmt.Fprintln(out, "  time it is shown.")
 			fmt.Fprintln(out)
+			if w := loopbackJoinWarning(r.Transport, port, advertise); w != "" {
+				fmt.Fprintln(out, w)
+				fmt.Fprintln(out)
+			}
 			return nil
 		},
 	}
@@ -322,6 +328,30 @@ func roomAddCmd(prefix string) *cobra.Command {
 	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
 	c.Flags().StringVar(&specFile, "spec", "", "a room.yaml to keep for this room (- for standard input)")
 	return c
+}
+
+// loopbackJoinWarning is the warning for a direct join string that dials a loopback address, which only a room on this
+// machine can reach. "" when the address is reachable from elsewhere.
+func loopbackJoinWarning(transport, port, advertise string) string {
+	if transport != hubstore.TransportDirect {
+		return ""
+	}
+	adv, err := advertiseFor(port, advertise)
+	if err != nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(adv)
+	if err != nil {
+		return ""
+	}
+	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return ""
+	}
+	_, linkPort, _ := net.SplitHostPort(adv)
+	return "  WARNING: this join string dials " + adv + ", which only a room on this machine can reach.\n" +
+		"  For another machine, restart the hub with\n\n" +
+		"      " + atriumCmd("run") + " --link 0.0.0.0:" + linkPort + " --link-advertise <this-host>:" + linkPort + "\n\n" +
+		"  and add the room again."
 }
 
 // roomTokenCmd replaces a room's join string with a fresh one.
@@ -347,6 +377,7 @@ func roomTokenCmd(prefix string) *cobra.Command {
 			if err != nil {
 				return knownRooms(store, args[0], err)
 			}
+			recordedLink(cmd, f.keys().Dir, &port, &advertise)
 			line, err := joinStringFor(f.keys(), store, r, port, advertise, r.Transport, service)
 			if err != nil {
 				return err
@@ -600,7 +631,8 @@ func roomRemoveCmd(prefix string) *cobra.Command {
 					"stop it there first. forcing is for a machine that is never "+
 					"coming back", r.Name, r.LastSeen.Local().Format("15:04:05"))
 			}
-			if !force {
+			// A room that never connected holds nothing and has nothing to confirm.
+			if !force && r.EverConnected() {
 				if !r.Marked() {
 					return fmt.Errorf("%s is not marked for deletion. "+
 						"`%s %s` first, clear its cards, and let it "+

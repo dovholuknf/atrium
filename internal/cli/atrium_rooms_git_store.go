@@ -122,10 +122,10 @@ func gitDeleteCmd(prefix string) *cobra.Command {
 	var f hubStoreFlags
 	c := &cobra.Command{
 		Use:   "delete <repo> <branch>",
-		Short: "Delete a claude/* branch on the hub, as the operator, for a branch whose card is closed",
-		Long: "A card deletes only a branch it pushed, so a branch from a closed card has no other way out. This\n" +
-			"deletes it as the operator, from the machine the hub runs on. Only a claude/* branch is deleted, never\n" +
-			"claude/main or main, and a branch with an open merge request is refused. A repository busy with another\n" +
+		Short: "Delete any hub branch but main and claude/main, as the operator",
+		Long: "A card deletes only a claude/* branch it pushed, so a closed card's branch or any other has no other\n" +
+			"way out. This deletes it as the operator, from the machine the hub runs on. Any branch is deleted but\n" +
+			"claude/main and main, and a branch with an open merge request is refused. A repository busy with another\n" +
 			"job is refused after a wait, and never hangs.\n\n" +
 			"<repo> is <owner>/<repo> or <host>/<owner>/<repo>, and <branch> is the name without refs/heads/.",
 		Args: cobra.ExactArgs(2),

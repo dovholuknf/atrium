@@ -35,8 +35,8 @@ func TestAllViewServesSeededHubCardColorsAndADeletedEntryStaysDeleted(t *testing
 	defer done()
 	front.Config.Handler.(*Proxy).SetInventory(&remembering{})
 
-	if n := len(hubColors(t, getJSON(t, front.URL+"/v1/settings"))); n != 17 {
-		t.Fatalf("seeded %d entries, wanted 17", n)
+	if n := len(hubColors(t, getJSON(t, front.URL+"/v1/settings"))); n != 0 {
+		t.Fatalf("seeded %d entries, wanted none", n)
 	}
 	code, out := postSettings(t, front.URL, `{"card_colors":{"default":"","repos":{"github/openziti/ziti":"nord"}}}`)
 	if code != 200 {
@@ -57,7 +57,7 @@ func TestCardColorsSaveRefusesABadKey(t *testing.T) {
 	if code, _ := postSettings(t, front.URL, `{"card_colors":{"default":"","repos":{"Ziti":"nord"}}}`); code != 400 {
 		t.Fatalf("a bad key answered %d, wanted 400", code)
 	}
-	if n := len(hubColors(t, getJSON(t, front.URL+"/v1/settings"))); n != 17 {
+	if n := len(hubColors(t, getJSON(t, front.URL+"/v1/settings"))); n != 0 {
 		t.Fatalf("a refused save changed the table to %d entries", n)
 	}
 }

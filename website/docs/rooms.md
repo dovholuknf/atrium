@@ -30,14 +30,13 @@ on this page applies to it.
 
 ## Start the hub and this machine's room {#start-a-hub}
 
-[Build atrium from source](./install.md#build-it), copy it somewhere it can stay, and run it on the machine you
-will open the board from:
+[Install atrium](./get-started.md) and run it on the machine you will open the board from:
 
 ```bash
 atrium run
 ```
 
-It prints where the board is, `http://localhost:7778` by default, and where rooms dial in, `127.0.0.1:7779`. When
+It prints where the board is, `http://127.0.0.1:7778` by default, and where rooms dial in, `127.0.0.1:7779`. When
 this machine has no room answering, it starts `atrium room` in the background. The first time, it also makes the
 room: it names it after the machine and enrols it over its own link, so one machine needs no join string.
 
@@ -66,7 +65,7 @@ certificate. From then on every link is mutual TLS, and **the name in the room's
 identity**. A room the hub has no record of cannot attach. After the first time, `atrium room` starts it from what
 was saved.
 
-Then open `http://localhost:7778`.
+Then open `http://127.0.0.1:7778`.
 
 ## Three ways to join
 

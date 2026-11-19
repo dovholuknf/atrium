@@ -91,7 +91,7 @@ func newAsk() *cobra.Command {
 	c.Flags().StringVar(&name, "name", "",
 		"what this session calls itself (default: $ATRIUM_AGENT_NAME, or the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "",
-		"atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
+		"atrium agent address (default: $ATRIUM_HUB_URL or the recorded address)")
 	return c
 }
 
@@ -132,7 +132,11 @@ func reportStuck(out io.Writer, hubURL, name, ask, peer string, blocked bool) er
 		return err
 	}
 
-	url := hubAddress(hubURL) + "/help"
+	addr, err := typedHubAddress(hubURL, "--url")
+	if err != nil {
+		return err
+	}
+	url := addr + "/help"
 	resp, err := (&http.Client{Timeout: finishTimeout}).
 		Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {

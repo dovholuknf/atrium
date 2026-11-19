@@ -46,12 +46,13 @@ db="${ATRIUM_DB:-$HOME/.atrium/atrium.db}"
 extra_args="${ATRIUM_SERVICE_ARGS:-}"
 
 # ATRIUM_SERVICE_VERB=room runs `atrium room`, the daemon attached to the hub
-# this machine already joined, instead of `atrium daemon`. That is what
+# this machine already joined, instead of `atrium run`. `daemon` runs the old
+# standalone daemon, which a hub on the same port refuses. That is what
 # scripts/provision-room.ps1 installs. Anything else is refused.
-verb_run="${ATRIUM_SERVICE_VERB:-daemon}"
+verb_run="${ATRIUM_SERVICE_VERB:-run}"
 case "$verb_run" in
-    daemon|room) ;;
-    *) echo "ATRIUM_SERVICE_VERB must be daemon or room, not $verb_run" >&2
+    run|daemon|room) ;;
+    *) echo "ATRIUM_SERVICE_VERB must be run, daemon or room, not $verb_run" >&2
        exit 2 ;;
 esac
 
@@ -120,8 +121,8 @@ linux_install() {
     # user directory, with ExecStart pointed at the binary we actually found.
     #
     # A room always gets its own unit in the user directory, because the vendor
-    # unit runs `daemon` and a user unit of the same name overrides it.
-    if [ "$verb_run" = daemon ] && { [ -f /usr/lib/systemd/user/$UNIT ] || [ -f /lib/systemd/user/$UNIT ]; }; then
+    # unit runs `run` and a user unit of the same name overrides it.
+    if [ "$verb_run" = run ] && { [ -f /usr/lib/systemd/user/$UNIT ] || [ -f /lib/systemd/user/$UNIT ]; }; then
         say "using the packaged unit in /usr/lib/systemd/user."
     else
         # %h is systemd's own expansion for the user's home, so the written
@@ -214,7 +215,7 @@ macos_install() {
     # There is no macOS equivalent of systemd's %h.
     sed -e "s#@SHELL@#${SHELL:-/bin/zsh}#g" \
         -e "s#@EXE@#$exe#g" \
-        -e "s#\" daemon --db#\" $verb_run --db#" \
+        -e "s#\" run --db#\" $verb_run --db#" \
         -e "s#@DB@#$db#g" \
         -e "s#@LOGDIR@#$macos_logdir#g" \
         -e "s#@HOME@#$HOME#g" \

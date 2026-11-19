@@ -32,6 +32,16 @@ case "$mode" in
 esac
 shift
 
+# An integration file without the tag on its first line compiles into the unit run and fails its budget.
+untagged=$(git ls-files '*_integration_test.go' | while read -r f; do
+  head -n 1 "$f" | tr -d '\r' | grep -Eq '^//go:build (.*[ (&|])?integration([ )&|].*)?$' || echo "$f"
+done)
+if [ -n "$untagged" ]; then
+  echo "these integration test files do not start with //go:build integration:" >&2
+  echo "$untagged" >&2
+  exit 1
+fi
+
 # No package named means every package.
 pkgs=()
 for a in "$@"; do
