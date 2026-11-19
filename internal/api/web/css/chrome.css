@@ -179,7 +179,7 @@
   }
   #setuppop .k { font: 500 var(--fs-xxs)/1.5 var(--mono); color: var(--warn); }
   #setuppop .tx { color: var(--body); }
-  #setuppop .why { margin-left: var(--sp-3); font-size: var(--fs-xs); color: var(--dim); }
+  #setuppop .why { justify-self: end; margin: 0; border-top: 0; font-size: var(--fs-xs); color: var(--dim); }
   #setuppop button {
     font: 500 var(--fs-xs)/1.4 var(--sans); padding: 1px var(--sp-3); margin: 1px 0; border-radius: var(--r-sm);
     background: transparent; border: 1px solid var(--stroke-dim); color: var(--label); transition: none;
@@ -562,3 +562,11 @@
   main > [hidden] { display: none !important; }
   main > #terms { display: flex; flex-direction: column; }
 
+
+  /* Safe mode's banner (js/boot.js). Fixed and small, so it moves nothing. */
+  #safe-banner {
+    position: fixed; z-index: 30; left: 50%; bottom: 8px; transform: translateX(-50%);
+    padding: 4px 12px; border-radius: var(--r-md); font-size: var(--fs-xs);
+    background: rgb(var(--shell1-rgb)); color: var(--head); border: 1px solid rgb(var(--warn-rgb));
+  }
+  #safe-banner a { color: var(--blue); }

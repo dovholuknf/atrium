@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchNewAgent, launchGroupPlus, launchNewAgentGroups, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
+// Units: launchNewAgent, launchGroupPlus, launchNewAgentGroups, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog, launchNewAgentPath.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -634,7 +634,7 @@ async function launchNewAgentSection(browser, base) {
       fail("launchNewAgent: Enter in the group filter did not make and pick the group " + JSON.stringify(await p.locator("#na-groups .gp-field .chip").allTextContents()));
     await p.keyboard.press("Escape");
     await p.fill("#na-what", "the per-identity allowlist");
-    const pv = () => p.evaluate(() => ({ name: document.querySelector("#na-preview .tname").textContent, where: document.querySelector("#na-preview .tpath").textContent,
+    const pv = () => p.evaluate(() => ({ name: document.querySelector("#na-preview .tname").textContent, where: document.querySelector("#na-preview .tpath").textContent.replace(/\u200e/g, ""),
       star: document.getElementById("na-pin").textContent, mark: !!document.querySelector("#na-preview .rmark svg"),
       chips: [...document.querySelectorAll("#na-preview .chips .chip")].map(c => c.textContent) }));
     let v = await pv();
@@ -887,6 +887,40 @@ async function launchGroupPlusSection(browser, base) {
   if (!bad) console.log("launchGroupPlus ok");
 }
 
+// A FRESH ROOM AND A REPO TYPED AS ITS PATH. With no repos yet, a full local path is offered as itself and picked,
+// nothing says it is fetched, the preview keeps the path's leading slash, and the folder placeholder is the room's OS.
+async function launchNewAgentPathSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/v1\/checkouts(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checkouts: [] }) }));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openNewAgent === "function" && typeof launchableHarnesses === "function");
+    await p.evaluate(() => { localStorage.removeItem("atrium.newagent.how"); openNewAgent(false); });
+    await p.fill("#na-repo", "/Users/me/git/emptyrepo/");
+    await p.waitForSelector("#na-repo-list .cb-opt", { timeout: slow(3000) }).catch(() => {});
+    const list = await p.evaluate(() => document.getElementById("na-repo-list").textContent);
+    if (/no repos yet/.test(list) || !/emptyrepo/.test(list) || !/this path/.test(list)) fail("launchNewAgentPath: a typed path is not offered: " + list);
+    await p.press("#na-repo", "Enter");
+    await p.fill("#na-title", "first card");
+    const v = await p.evaluate(() => ({ ref: naS.ref, res: document.getElementById("na-resolved").textContent }));
+    if (v.ref !== "/Users/me/git/emptyrepo" || /fetched from/.test(v.res)) fail("launchNewAgentPath: the path resolved as " + JSON.stringify(v));
+    await p.click('#na-kind button[data-v="folder"]');
+    await p.fill("#na-cwd", "/Users/me/git/emptyrepo");
+    const where = await p.evaluate(() => document.querySelector("#na-preview .tpath").textContent);
+    if (!/^\u200e\/Users\/me\/git\/emptyrepo/.test(where) || !/\u200e$/.test(where)) fail("launchNewAgentPath: the preview path can lose its leading slash: " + JSON.stringify(where));
+    const hint = os => p.evaluate(os => { hubRooms = [{ name: naRoomName(), os }]; naRender(); return document.getElementById("na-cwd").placeholder; }, os);
+    const got = { darwin: await hint("darwin"), linux: await hint("linux"), windows: await hint("windows") };
+    if (got.darwin !== "/Users/you/git/myproject" || got.linux !== "/home/you/git/myproject" || got.windows !== "d:/git/myproject")
+      fail("launchNewAgentPath: the folder placeholder does not follow the room's OS: " + JSON.stringify(got));
+    if (errors.length) fail("launchNewAgentPath: page errors " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 const units = [
   { name: "launchNewAgent", run: ({ browser, base }) => launchNewAgentSection(browser, base) },
   { name: "launchGroupPlus", run: ({ browser, base }) => launchGroupPlusSection(browser, base) },
@@ -897,8 +931,9 @@ const units = [
   { name: "launchSetup", run: ({ browser, base }) => launchSetupSection(browser, base) },
   { name: "launchPresets", run: ({ browser, base }) => launchPresetsSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
+  { name: "launchNewAgentPath", run: ({ browser, base }) => launchNewAgentPathSection(browser, base) },
 ];
-const sections = { launchNewAgent: launchNewAgentSection, launchGroupPlus: launchGroupPlusSection, launchNewAgentGroups: launchNewAgentGroupsSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
+const sections = { launchNewAgent: launchNewAgentSection, launchGroupPlus: launchGroupPlusSection, launchNewAgentGroups: launchNewAgentGroupsSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection, launchNewAgentPath: launchNewAgentPathSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

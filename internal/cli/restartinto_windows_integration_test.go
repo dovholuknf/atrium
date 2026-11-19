@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,9 @@ func TestAllowedSwapExeUnderAFolderThisUserCannotList(t *testing.T) {
 	wants := map[string]string{}
 	for _, p := range []string{ok, filepath.Join(inst, "atrium-zrok.new.exe")} {
 		w, err := filepath.EvalSymlinks(p) // long form, resolved before the folder is unlistable
+		if errors.Is(err, os.ErrPermission) {
+			w, err = p, nil // an ancestor this user cannot list: t.TempDir is already the long form
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

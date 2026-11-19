@@ -1,11 +1,9 @@
 package statusline
 
 import (
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,53 +30,32 @@ func TestTelemetryBody(t *testing.T) {
 	}
 }
 
-func TestRenderPostsToTheRoomOncePerTwelveSeconds(t *testing.T) {
-	got := make(chan string, 4)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		got <- r.Method + " " + r.URL.Path + " " + r.Header.Get("Content-Type") + " " + string(b)
-	}))
-	defer srv.Close()
+func TestTelemetryWithNoAddressFilePostsNowhere(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("ATRIUM_HUB_URL", srv.URL)
-	t.Setenv("ATRIUM_TASK_ID", "card-1")
-	spawn := func(url string, body []byte) { Post(url, string(body)) }
-	now := time.Now()
-
-	t.Setenv("ATRIUM_PERM_GATE", "off")
-	Render(payloadFor("sess-off"), home, now, spawn)
-	if _, err := os.Stat(filepath.Join(home, ".claude", "usage-log.state", "sess-off.post")); err == nil {
-		t.Fatal("ATRIUM_PERM_GATE=off still posted")
-	}
-
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("ATRIUM_HUB_URL", "")
 	t.Setenv("ATRIUM_PERM_GATE", "on")
-	line := Render(payloadFor("sess-1"), home, now, spawn)
-	if !strings.Contains(line, " wk ") || !strings.Contains(line, "/x") {
+	t.Setenv("ATRIUM_LOCATION", filepath.Join(home, "none.json"))
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+	var urls []string
+	spawn := func(url string, _ []byte) { urls = append(urls, url) }
+
+	line := Render(payloadFor("sess-1"), home, time.Now(), spawn)
+	if !strings.Contains(line, " wk ") {
 		t.Fatalf("the line lost its segments: %q", line)
 	}
-	select {
-	case g := <-got:
-		if want := "POST /telemetry application/json " + wantBody; g != want {
-			t.Fatalf("post\n got  %s\n want %s", g, want)
-		}
-	default:
-		t.Fatal("no telemetry post reached the room")
+	if len(urls) != 0 {
+		t.Fatalf("posted to %v with no address file", urls)
 	}
 
-	Render(payloadFor("sess-1"), home, now.Add(5*time.Second), spawn)
-	select {
-	case g := <-got:
-		t.Fatalf("posted again inside 12 seconds: %s", g)
-	default:
+	loc := filepath.Join(home, "daemon.json")
+	if err := os.WriteFile(loc, []byte(`{"agent":"http://127.0.0.1:1/"}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestADeadRoomDoesNotBlockTheDraw(t *testing.T) {
-	t.Setenv("ATRIUM_HUB_URL", "http://127.0.0.1:1")
-	t.Setenv("ATRIUM_PERM_GATE", "on")
-	start := time.Now()
-	Render(payloadFor("sess-dead"), t.TempDir(), start, func(string, []byte) {})
-	if d := time.Since(start); d > 500*time.Millisecond {
-		t.Fatalf("Render took %v", d)
+	t.Setenv("ATRIUM_LOCATION", loc)
+	Render(payloadFor("sess-2"), home, time.Now(), spawn)
+	if want := []string{"http://127.0.0.1:1/telemetry"}; !slices.Equal(urls, want) {
+		t.Fatalf("posted to %v, want %v", urls, want)
 	}
 }

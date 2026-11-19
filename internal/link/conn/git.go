@@ -86,7 +86,91 @@ func (r *Room) DialGit(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("the hub is not answering: %w", err)
 	}
 	r.dataWorked()
-	return &buffered{Conn: conn, br: br}, nil
+	return movingConn{&buffered{Conn: conn, br: br}, r, new(int64)}, nil
+}
+
+// gitBusyFor is how recently a git connection must have carried bytes for the link to count as alive.
+const gitBusyFor = 15 * time.Second
+
+// gitBusy says a git connection carried bytes within gitBusyFor. A push that fills an overlay's channel makes new
+// dials time out behind it, and dropping the link for those failures killed the push itself: every push from sgg over
+// ziti past about 20 MB died that way. Bytes moving is proof the link is up, so the redial waits until they stop.
+func (r *Room) gitBusy() bool {
+	t := r.gitMoved.Load()
+	return t != 0 && time.Since(time.Unix(0, t)) < gitBusyFor
+}
+
+// movingConn is a git connection that stamps its room each time it carries bytes.
+type movingConn struct {
+	*buffered
+	r *Room
+	// sent counts what this connection wrote, so a push and not a fetch request starts a spare. Written by one goroutine.
+	sent *int64
+}
+
+func (c movingConn) Read(p []byte) (int, error) {
+	n, err := c.buffered.Read(p)
+	c.moved(n)
+	return n, err
+}
+
+func (c movingConn) Write(p []byte) (int, error) {
+	total := 0
+	for len(p) > 0 {
+		chunk := p
+		if len(chunk) > gitWriteChunk {
+			chunk = chunk[:gitWriteChunk]
+		}
+		c.r.pace.starts()
+		c.r.yieldToControl()
+		c.r.paceWrite(len(chunk))
+		n, err := c.buffered.Write(chunk)
+		c.r.pace.wrote(time.Now())
+		c.moved(n)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		p = p[len(chunk):]
+	}
+	if *c.sent += int64(total); *c.sent >= spareFrom {
+		c.r.keepSpare()
+	}
+	return total, nil
+}
+
+// A push that fills the overlay's channel starves every other dial to the hub (link calls, says, hooks) behind it.
+// Control dials say when they are waiting, and git writes hold back between chunks until none is, so a fast link
+// loses nothing and a saturated one lets the dial through. A chunk waits at most gitYieldMax, so a push still ends.
+const (
+	gitWriteChunk = 32 << 10
+	gitYieldPoll  = 5 * time.Millisecond
+	gitYieldMax   = 5 * time.Second
+)
+
+// controlDialing marks a non-git dial to the hub as waiting. The caller runs the returned func when the dial returns.
+func (r *Room) controlDialing() func() {
+	r.ctlDialing.Add(1)
+	return func() { r.ctlDialing.Add(-1) }
+}
+
+func (r *Room) yieldToControl() {
+	if r.pace.paced() {
+		return
+	}
+	sleep := r.yieldSleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	for waited := time.Duration(0); r.ctlDialing.Load() > 0 && waited < gitYieldMax; waited += gitYieldPoll {
+		sleep(gitYieldPoll)
+	}
+}
+
+func (c movingConn) moved(n int) {
+	if n > 0 {
+		c.r.gitMoved.Store(time.Now().UnixNano())
+	}
 }
 
 // GitTransport is an http.RoundTripper whose every connection is a DialGit. For the

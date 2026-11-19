@@ -182,7 +182,11 @@ var peerBuckets = []struct{ want, heading string }{
 }
 
 func listPeers(out io.Writer, hubURL, name string, fleet bool, since string) error {
-	url := hubAddress(hubURL) + "/peers?me=" + neturl.QueryEscape(whoAmI(name))
+	addr, err := typedHubAddress(hubURL, "--url")
+	if err != nil {
+		return err
+	}
+	url := addr + "/peers?me=" + neturl.QueryEscape(whoAmI(name))
 	if fleet {
 		url += "&fleet=1"
 	}
@@ -383,7 +387,11 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when, kind s
 	if err != nil {
 		return nil, err
 	}
-	url := hubAddress(hubURL) + route
+	addr, err := typedHubAddress(hubURL, "--url")
+	if err != nil {
+		return nil, err
+	}
+	url := addr + route
 	client := &http.Client{Timeout: peerTimeout}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {

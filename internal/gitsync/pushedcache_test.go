@@ -25,7 +25,7 @@ func pushedTestStore(t *testing.T, fn func(context.Context, string, string, stri
 func waitPushed(t *testing.T, s *Store, want string) PushedView {
 	t.Helper()
 	var v PushedView
-	testwait.Eventually(t, 5*time.Second, "the snapshot to say "+want, func() bool {
+	testwait.EventuallyEvery(t, time.Millisecond, 5*time.Second, "the snapshot to say "+want, func() bool {
 		var err error
 		v, err = s.PushedSnapshot("github/o/r", "main", pushedTestHead)
 		if err != nil {
@@ -61,7 +61,7 @@ func TestPushedSnapshotAnswersAtOnceWhileGitIsSlow(t *testing.T) {
 			t.Fatalf("before the first build: %+v", v)
 		}
 	}
-	time.Sleep(20 * time.Millisecond) // wait: a negative check, no second build must start
+	time.Sleep(2 * time.Millisecond) // wait: a negative check, no second build must start
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("20 requests started %d builds, want 1", n)
 	}

@@ -39,6 +39,8 @@ function Save-Revert { Rec 'save-revert'; 'rev' }
 function Stop-Room { Rec 'stop-room'; `$true }
 function Stop-Hub { Rec 'stop-hub' }
 function Install-Atrium { Rec 'install'; `$false }
+function Wait-Hub { [pscustomobject]@{ ok = `$true } }
+function Send-CardSay { Rec 'say-card'; `$true }
 function Invoke-RestMethod { param(`$Uri, `$Method, `$Body, `$Headers, `$TimeoutSec, `$ContentType)
   if (`$Method -eq 'Post') { Rec "post `$Uri `$Body" }
   Get-Content '$tmp\preflight.json' -Raw | ConvertFrom-Json

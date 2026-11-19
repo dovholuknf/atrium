@@ -237,13 +237,13 @@ func TestAQueueForOneRoomIsBounded(t *testing.T) {
 	}
 }
 
-func TestAnItemHasToSayWhereItIsGoingAndWhatToStart(t *testing.T) {
+func TestAnItemHasToSayWhereItIsGoing(t *testing.T) {
 	s := open(t)
 	if _, err := s.QueueDispatch(Dispatch{Harness: "claude"}); err == nil {
 		t.Fatal("an item with no room was queued, and nothing would ever collect it")
 	}
-	if _, err := s.QueueDispatch(Dispatch{Room: "cdaws"}); err == nil {
-		t.Fatal("an item with no runner was queued, and the room could only refuse it")
+	if d, err := s.QueueDispatch(Dispatch{Room: "cdaws"}); err != nil || d.Harness != "" {
+		t.Fatalf("an item with no runner is the room's default to pick, got %+v %v", d, err)
 	}
 	long := strings.Repeat("x", MaxDispatchPrompt+1)
 	if _, err := s.QueueDispatch(Dispatch{Room: "cdaws", Harness: "claude", Prompt: long}); err == nil {

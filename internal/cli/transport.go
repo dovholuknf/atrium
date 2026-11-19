@@ -635,6 +635,15 @@ func onSeed(service, identity string) link.TransportSeed {
 	return link.TransportSeed{On: &on, Service: service, Identity: identity}
 }
 
+// listenAtStart says whether the hub binds side i at start. A zrok --transport does not name is never bound, since
+// binding one reserves a share on the account.
+func listenAtStart(transport, kind string, i int) bool {
+	if kind == "ziti" && i > 0 {
+		return false
+	}
+	return kind != "zrok" || roomZrokSeed(transport).On != nil
+}
+
 // roomZrokSeed is what --transport says of the room link's zrok: on when it names zrok.
 func roomZrokSeed(transport string) link.TransportSeed {
 	order, _ := linktransport.ParseOrder(transport)

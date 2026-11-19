@@ -5,10 +5,12 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
+	"os/exec"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/daemon/pulls"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -48,6 +50,7 @@ type runnerHooks struct {
 	agentSpawn  func(exe string, args []string) (string, []string)
 	agentFork   func(exe string, args []string) (string, []string)
 	terminal    []string
+	newConsole  func(cmd *exec.Cmd)
 }
 
 type idleHooks struct {
@@ -111,6 +114,7 @@ func defaultHooks() hooks {
 			agentSpawn:  agentSpawn,
 			agentFork:   cycle.AgentFork,
 			terminal:    TerminalTemplate,
+			newConsole:  shared.NewConsole,
 		},
 		idleHooks: idleHooks{idleLeave: idleLeave, idleGoneWait: idleGoneWait},
 		windDownHooks: windDownHooks{

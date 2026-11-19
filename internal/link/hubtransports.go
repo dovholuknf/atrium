@@ -174,6 +174,9 @@ func (t *HubTransports) Add(it TransportItem, seed TransportSeed) {
 	h.service = t.stored(it.Name, "service")
 	h.identity = t.stored(it.Name, "identity")
 	if seed.On != nil {
+		if *seed.On && !h.on && t.Store != nil && t.stored(it.Name, "on") == "" {
+			_ = t.Store.SetHubSetting(settingKey(it.Name, "on"), "on")
+		}
 		h.on, h.seeded["on"] = *seed.On, true
 	}
 	if s := strings.TrimSpace(seed.Service); s != "" {

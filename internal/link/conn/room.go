@@ -123,6 +123,19 @@ type Room struct {
 	owed      int
 	dataFails int
 	dropLink  func()
+	// gitMoved is when a git connection last carried bytes, in unix nanoseconds. See gitBusy.
+	gitMoved atomic.Int64
+	// ctlDialing counts non-git dials to the hub in flight. Git writes yield while it is above zero.
+	ctlDialing atomic.Int32
+	yieldSleep func(time.Duration)
+	// spare is a connection dialled ahead for a relay while a push runs, under mu. See spare.go.
+	spare      net.Conn
+	spareAt    time.Time
+	spareTaken chan struct{}
+	spareReady chan struct{}
+	spareRun   atomic.Bool
+	// pace is the git write pace, from beat echoes. See pace.go.
+	pace pacer
 	// taking makes sure one offer is acted on once, however many times the hub
 	// repeats it across reconnects.
 	taking taker
@@ -259,6 +272,7 @@ func (r *Room) attach(ctx context.Context) error {
 	var conn net.Conn
 	var err error
 	cl, climbs := r.Dial.(climber)
+	done := r.controlDialing()
 	if climbs {
 		// MORE THAN ONE TRANSPORT. Walked from the best down, each bounded by
 		// DialWait, and every later connection follows the one that answered.
@@ -268,6 +282,7 @@ func (r *Room) attach(ctx context.Context) error {
 		conn, err = r.Dial.Dial(dialCtx)
 		cancel()
 	}
+	done()
 	if err != nil {
 		return err
 	}
@@ -385,6 +400,8 @@ func (r *Room) attach(ctx context.Context) error {
 				case <-ctx.Done():
 				}
 			}
+		case n.Beat > 0:
+			r.pace.sample(time.Since(time.UnixMilli(n.Beat)), time.Now())
 		case n.Offer != nil:
 			// A hub saying what it is running. Considered, which usually means
 			// ignored. See `consider` in upgrade.go.
@@ -508,10 +525,17 @@ func (r *Room) probe(ctx context.Context, cl climber, move func()) {
 func (r *Room) beat(ctx context.Context, conn net.Conn) {
 	t := time.NewTicker(r.T.Beat)
 	defer t.Stop()
+	fast := time.NewTicker(paceBeat)
+	defer fast.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-fast.C:
+			if r.gitBusy() && r.say(conn, note{Beat: time.Now().UnixMilli()}) != nil {
+				_ = conn.Close()
+				return
+			}
 		case <-t.C:
 			n := note{Beat: time.Now().UnixMilli()}
 			if r.IdleCPU != nil {
@@ -577,7 +601,7 @@ func (r *Room) dataFailed(err error) {
 	r.mu.Lock()
 	r.dataErr = err.Error()
 	r.dataFails++
-	redial := r.dataFails >= dataRedialAfter
+	redial := r.dataFails >= dataRedialAfter && !r.gitBusy()
 	say := time.Since(r.dataSaid) >= dataSayEvery
 	if say {
 		r.dataSaid = time.Now()

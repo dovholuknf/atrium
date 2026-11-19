@@ -16,8 +16,14 @@ func cardColorsOf(t *testing.T, srv *Server) map[string]any {
 func TestCardColorsSeededOnceAndEmptyStaysEmpty(t *testing.T) {
 	t.Parallel()
 	srv, _, _ := fileServer(t)
-	if n := len(cardColorsOf(t, srv)["repos"].(map[string]any)); n != 17 {
-		t.Fatalf("seeded %d entries", n)
+	if n := len(cardColorsOf(t, srv)["repos"].(map[string]any)); n != 0 {
+		t.Fatalf("a fresh store came with %d entries", n)
+	}
+	if rec := settingsPost(t, srv, `{"card_colors":{"default":"","repos":{"github/a/b":"nord"}}}`); rec.Code != 200 {
+		t.Fatalf("save answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if n := len(cardColorsOf(t, srv)["repos"].(map[string]any)); n != 1 {
+		t.Fatalf("an added row came back with %d entries", n)
 	}
 	if rec := settingsPost(t, srv, `{"card_colors":{"default":"","repos":{}}}`); rec.Code != 200 {
 		t.Fatalf("save answered %d: %s", rec.Code, rec.Body.String())

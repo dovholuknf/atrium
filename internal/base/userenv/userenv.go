@@ -6,6 +6,7 @@ package userenv
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -64,4 +65,31 @@ func mergePath(fresh, old string) string {
 		keep = append(keep, p)
 	}
 	return strings.Join(keep, string(os.PathListSeparator))
+}
+
+// LookPath is exec.LookPath, then the user's current PATH and the folder installers put tools in, so a tool installed
+// after this process started is still found.
+func LookPath(name string) (string, error) {
+	home, _ := os.UserHomeDir()
+	return lookPath(name, freshPath, home)
+}
+
+func lookPath(name string, fresh func() string, home string) (string, error) {
+	p, err := exec.LookPath(name)
+	if err == nil || strings.ContainsAny(name, `/\`) {
+		return p, err
+	}
+	dirs := filepath.SplitList(fresh())
+	if home != "" {
+		dirs = append(dirs, filepath.Join(home, ".local", "bin"))
+	}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		if q, e := exec.LookPath(filepath.Join(dir, name)); e == nil {
+			return q, nil
+		}
+	}
+	return "", err
 }

@@ -86,6 +86,8 @@
   .term-arts .filelist .frow:hover .facts, .term-arts .filelist .frow.cur .facts, .term-arts .filelist .frow:focus-within .facts { opacity: 1; }
   .term-arts .filelist .facts .ab { height: 22px; min-width: 22px; padding: 0 4px; }
   .term-arts .filelist .facts .ab svg { width: 13px; height: 13px; }
+  .term-arts .fstate { align-items: flex-start; text-align: left; }
+  .term-arts { background-color: rgb(var(--shell1-rgb)); }
   .term-arts .fstate .big { font-size: var(--fs-md); color: var(--head); }
   .term-arts.empty .artkinds, .term-arts.empty .ffilter, .term-arts.empty #t-arts-group { visibility: hidden; }
   .abulk { display: inline-flex; gap: 4px; align-items: center; }

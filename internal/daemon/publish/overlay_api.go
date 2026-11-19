@@ -328,7 +328,7 @@ func (d *Service) ReadyToShare(k OverlayKind) error {
 			}
 			return fmt.Errorf("this machine has no zrok environment yet, so a share has " +
 				"nothing to attach to. enable it from the gear with an account token, " +
-				"or run `zrok enable` yourself")
+				"or run `atrium zrok enable` yourself")
 		}
 	case OverlayZiti:
 		cfg := d.ZitiConfig()

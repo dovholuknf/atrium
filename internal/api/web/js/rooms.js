@@ -133,6 +133,7 @@ function pickRoom(name) {
 function paintRooms() {
   const el = document.getElementById("rooms");
   const conn = document.getElementById("conn");
+  if (typeof frPaint === "function") frPaint();
   if (!el) return;
   // Shown on the stored scope alone, so it survives a room that is gone and a hub read that failed.
   const back = document.getElementById("rooms-all");
@@ -218,7 +219,9 @@ function setupChecklistHtml(drift, hint) {
   const by = new Map(drift.map(d => [d.name, d.issues]));
   const rooms = hubRooms.filter(r => r.setup && r.setup.answering).sort((a, b) => a.name.localeCompare(b.name));
   const head = hint ? `<div class="hint">${esc(hint)}</div>` : "";
-  if (!rooms.length) return head + `<div class="rm"><span class="none">no room has answered yet</span></div>`;
+  const gone = hubInventory.filter(r => r.transport !== "local" && (r.attached || r.first_seen) &&
+    !hubRooms.some(h => h.name === r.name)).sort((a, b) => a.name.localeCompare(b.name));
+  if (!rooms.length && !gone.length) return head + `<div class="rm"><span class="none">no room has answered yet</span></div>`;
   const live = new Set();
   const html = rooms.map(r => {
     const issues = (by.get(r.name) || []).slice().sort((a, b) => a.kind.localeCompare(b.kind) || a.text.localeCompare(b.text));
@@ -229,14 +232,15 @@ function setupChecklistHtml(drift, hint) {
       if (id) live.add(key);
       const tail = id
         ? `<input type="checkbox" class="setuppick" data-room="${esc(r.name)}" data-id="${esc(id)}"${setupPicked.has(key) ? " checked" : ""}>`
-        : "<span></span>";
-      const why = id ? "" : setupWhyNot(r, i);
-      return `<div class="it"><span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}${why ? `<span class="why">${esc(why)}</span>` : ""}</span>${tail}</div>`;
+        : `<span class="why">${esc(setupWhyNot(r, i))}</span>`;
+      return `<div class="it"><span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}</span>${tail}</div>`;
     }).join("");
   }).join("");
   for (const k of [...setupPicked]) if (!live.has(k)) setupPicked.delete(k);
   const cols = live.size ? `<div class="cols"><span>fix</span></div>` : "";
-  return head + cols + html + (setupPicked.size ? `<div class="setupall"><button class="ghost setupfixall">Fix all now (${setupPicked.size})</button></div>` : "");
+  const off = gone.map(r => `<div class="rm bad"><h5>${esc(r.name)}</h5></div>` +
+    `<div class="it"><span class="k">attached</span><span class="tx">not attached, last seen ${esc(shortTime(r.last_seen))}</span><span></span></div>`).join("");
+  return head + cols + html + off + (setupPicked.size ? `<div class="setupall"><button class="ghost setupfixall">Fix all now (${setupPicked.size})</button></div>` : "");
 }
 
 function paintSetupPop(drift, hint) {
@@ -839,7 +843,7 @@ function roomLine(r) {
   if (!r.first_seen) {
     return r.waiting
       ? `Waiting to connect — run the join string on that machine.`
-      : `Never connected. <code>atrium2 hub room token ${esc(r.name)}</code> for a new one.`;
+      : `Never connected. <code>atrium rooms token ${esc(r.name)}</code> for a new one.`;
   }
   const cards = r.cards ? `${r.cards} card${r.cards === 1 ? "" : "s"} last seen. ` : "";
   return cards + `Offline until it's back.`;
@@ -981,7 +985,7 @@ function paintRoomFacts(r) {
     ? `<b>Marked for deletion.</b> No new work starts here; what's running finishes.
        Take the mark off to use it again. `
     : ``) +
-    `Add, re-key or remove a room from a terminal on the hub: <code>atrium2 hub room</code>.
+    `Add, re-key or remove a room from a terminal on the hub: <code>atrium rooms</code>.
      The board can't do it, since anyone who can open this page could reach it.`;
 
   const mark = document.getElementById("rc-mark");
@@ -991,6 +995,7 @@ function paintRoomFacts(r) {
     // is not a thing this button could do. The switch above is what turns that
     // room off, and it is the honest control for it.
     mark.hidden = r.transport === "local";
+    document.getElementById("rc-mark-help").hidden = mark.hidden;
     mark.textContent = marked ? "take the mark off" : "mark for deletion";
     mark.className = marked ? "go" : "no";
   }

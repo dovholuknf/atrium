@@ -116,6 +116,7 @@ func TestNewConsoleGivesTheRunnerItsConsole(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestNewConsoleGivesTheRunnerItsConsole$")
 	cmd.Env = append(os.Environ(), "ATRIUM_NEWCONSOLE_OUT="+out)
 	NewConsole(cmd)
+	cmd.SysProcAttr.HideWindow = true
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}

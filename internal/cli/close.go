@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Closing a card: the operator's word that the work on a link is over, which frees what the card's inventory lists.
@@ -36,6 +38,15 @@ type closeOpts struct {
 	keep, stash, deleteIt []string
 	cwd, work             string
 	noWait                bool
+	confirm               func(string) bool // nil asks on the terminal
+}
+
+// ask is the confirm hook, or the terminal prompt when none is set.
+func (o closeOpts) ask(prompt string) bool {
+	if o.confirm != nil {
+		return o.confirm(prompt)
+	}
+	return closeConfirm(prompt)
 }
 
 func newClose() *cobra.Command {
@@ -163,6 +174,29 @@ func defaultCloseAnswer(canStash bool) string {
 	return "keep"
 }
 
+// closeConfirm is the default for closeOpts.confirm: it asks on a terminal and says no anywhere else, so a script still only gets the preview.
+func closeConfirm(prompt string) bool {
+	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
+		return false
+	}
+	fmt.Print(prompt)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes"
+}
+
+// closeRerun is the command line that was typed, with --yes, ready to paste.
+func closeRerun(args []string) string {
+	out := []string{"atrium"}
+	for _, a := range args {
+		if strings.ContainsAny(a, " \t") {
+			a = `"` + a + `"`
+		}
+		out = append(out, a)
+	}
+	return strings.Join(append(out, "--yes"), " ")
+}
+
 func samePath(a, b string) bool {
 	norm := func(p string) string { return strings.TrimRight(strings.ReplaceAll(p, `\`, "/"), "/") }
 	return strings.EqualFold(norm(a), norm(b))
@@ -182,11 +216,12 @@ func closeCardCmd(card string, o closeOpts) error {
 		printClosePreview(pv)
 		fmt.Println()
 		if len(pv.Asks) > 0 {
-			fmt.Println("nothing was changed. run again with --yes. a worktree above with no --keep or --delete is stashed to the hub (kept when this room cannot stash)")
-		} else {
-			fmt.Println("nothing was changed. run again with --yes to close it")
+			fmt.Println("a worktree above with no --keep or --delete is stashed to the hub (kept when this room cannot stash)")
 		}
-		return nil
+		if !o.ask("close " + card + " now? [y/N] ") {
+			fmt.Println("that was the preview, and nothing was changed. to close it, run:\n  " + closeRerun(os.Args[1:]))
+			return nil
+		}
 	}
 	answers, missing, err := closeAnswers(pv.Asks, o.keep, o.stash, o.deleteIt)
 	if err != nil {
@@ -248,8 +283,9 @@ func closeByCwdCmd(o closeOpts) error {
 		}
 		cwd = abs
 	}
-	if !o.yes {
-		fmt.Printf("would close every card whose folder is %s. nothing was changed. run again with --yes\n", cwd)
+	if !o.yes && !o.ask("close every card whose folder is "+cwd+"? [y/N] ") {
+		fmt.Printf("would close every card whose folder is %s. nothing was changed. to close them, run:\n  %s\n",
+			cwd, closeRerun(os.Args[1:]))
 		return nil
 	}
 	var res struct {

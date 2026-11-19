@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -26,6 +27,7 @@ func TestCloseStopsAWindowModeResidentAndRemovesItsWorktree(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	d.hk.terminal = ownConsole
+	d.hk.newConsole = nowindow.Hide
 	repo := homeRepo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
 	cullGit(t, repo, "worktree", "add", "-q", "-b", "claude/win", wt)

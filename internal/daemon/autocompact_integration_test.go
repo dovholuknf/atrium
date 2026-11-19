@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -201,13 +202,21 @@ func TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy(t *testing.T) {
 	if d.autocompactArgsFor(h) != nil {
 		t.Fatal("a claude without --autocompact was given it")
 	}
-	probes := 0
-	d.acProbe.help = func(string) (string, error) { probes++; return "Options:\n  --model", nil }
+	// Counted per exe and under the probe lock: the daemon's own start-up probe may be asking other runners meanwhile.
+	var probes atomic.Int32
+	d.acProbe.mu.Lock()
+	d.acProbe.help = func(exe string) (string, error) {
+		if exe == h.BinPath {
+			probes.Add(1)
+		}
+		return "Options:\n  --model", nil
+	}
 	d.acProbe.seen = map[string]bool{}
+	d.acProbe.mu.Unlock()
 	d.autocompactArgsFor(h)
 	d.autocompactArgsFor(h)
-	if probes != 1 {
-		t.Fatalf("probed %d times, want once and cached", probes)
+	if n := probes.Load(); n != 1 {
+		t.Fatalf("probed %d times, want once and cached", n)
 	}
 	if _, err := d.st.SaveHarness(store.Harness{ID: "claude", Label: "c", Enabled: true, Cmd: "claude",
 		BinPath: h.BinPath, LaunchMode: store.LaunchPTY, AutocompactArgs: h.AutocompactArgs}); err != nil {

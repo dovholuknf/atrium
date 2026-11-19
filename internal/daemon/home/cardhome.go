@@ -291,6 +291,10 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string, env [
 		_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, Commitish: branch})
 		return branch, "", WrapGit("add the worktree", err)
 	}
+	if fromDefault && Unborn(clone) {
+		_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, NewBranch: branch, Orphan: true})
+		return branch, "", WrapGit("add the worktree", err)
+	}
 	if fromDefault {
 		if base, err = freshHubBase(clone, base, env); err != nil {
 			return "", "", err
@@ -417,6 +421,16 @@ func WrapGit(what string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("could not %s: %v", what, err)
+}
+
+// Unborn says a clone has no commit yet, as a fresh `git init` has none: there is no base to branch from.
+func Unborn(clone string) bool {
+	_, err := shared.GitIn(clone, gitexec.RevParseVerify{Rev: "HEAD^{commit}", Quiet: true})
+	if err == nil {
+		return false
+	}
+	out, err := shared.GitIn(clone, gitexec.ForEachRef{Count: 1})
+	return err == nil && strings.TrimSpace(out) == ""
 }
 
 // defaultBase is where a new branch starts: the clone's claude/main, else its default branch.

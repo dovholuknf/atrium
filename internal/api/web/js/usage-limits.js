@@ -290,7 +290,11 @@ function ulBand(ax, W, H, now) {
 // A live reading: only the section and the band are redrawn, and only when they changed.
 function ulRefresh() {
   const box = document.getElementById("ul-limits");
-  if (!box) { ulPaintBand(); return; }
+  if (!box) {
+    if (document.querySelector("#uc-body .ucnever")) { ucPaint(); return; }
+    ulPaintBand();
+    return;
+  }
   const before = UL.html;
   const html = ulSection();
   if (html === before) return;

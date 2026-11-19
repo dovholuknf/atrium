@@ -29,7 +29,7 @@ type row struct {
 var table = []row{
 	{0, "cmd/ptyhost-spike", nil},
 	{0, "internal/zitijoin", nil},
-	{0, "internal/statusline", nil},
+	{0, "internal/base/addrfile", nil},
 	{0, "docs/runtime/contract", nil},
 	{0, "internal/base/address", nil},
 	{0, "internal/base/cardcolors", nil},
@@ -70,6 +70,7 @@ var table = []row{
 	{0, "internal/link/wire", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
+	{1, "internal/statusline", []string{"internal/base/addrfile"}},
 	{1, "internal/capability", []string{"internal/base/nowindow"}},
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
 	{1, "internal/base/claudeconf", []string{"internal/base/mcprule", "internal/base/rolebin"}},
@@ -81,7 +82,7 @@ var table = []row{
 	{1, "internal/sshwizard", []string{
 		"internal/base/nowindow", "internal/base/remoteaccess", "internal/base/sshcfg", "internal/base/sshkey",
 	}},
-	{1, "internal/store", []string{"internal/base/dblock", "internal/base/mcprule", "internal/base/rules"}},
+	{1, "internal/store", []string{"internal/base/dblock", "internal/base/mcprule", "internal/base/rules", "internal/base/safepath"}},
 	{1, "tools/codeid", []string{"internal/base/codeid"}},
 	{2, "internal/cardreview", []string{"internal/base/gitexec", "internal/base/safepath", "internal/store"}},
 	{2, "internal/guard", []string{"internal/base/gitexec"}},
@@ -156,7 +157,7 @@ var table = []row{
 		"internal/link/transport",
 	}},
 	{5, "internal/daemon/roomconf", []string{
-		"internal/api", "internal/base/rules", "internal/daemon/publish", "internal/small", "internal/store",
+		"internal/api", "internal/base/addrfile", "internal/base/rules", "internal/daemon/publish", "internal/small", "internal/store",
 	}},
 	{5, "internal/daemon/hublink", []string{
 		"internal/base/address", "internal/daemon/publish", "internal/daemon/shared", "internal/roomstats", "internal/small", "internal/store",
@@ -182,7 +183,7 @@ var table = []row{
 	}},
 	{6, "internal/cli", []string{
 		"internal/capability",
-		"internal/base/seenhost", "internal/statusline",
+		"internal/base/addrfile", "internal/base/seenhost", "internal/statusline",
 		"docs/runtime/contract", "internal/base/dblock", "internal/base/testwait", "internal/worktrees",
 		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/daemon", "internal/daemon/screen", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync",

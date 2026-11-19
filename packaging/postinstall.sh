@@ -57,7 +57,7 @@ fi
 
 if ! command -v systemctl >/dev/null 2>&1; then
     say "no systemctl on this machine, so there is nothing to enable."
-    say "run it yourself:  atrium daemon --db \$HOME/.atrium/atrium.db"
+    say "run it yourself:  atrium run --db \$HOME/.atrium/atrium.db"
     exit 0
 fi
 
@@ -168,11 +168,12 @@ if [ "$enabled" = "no" ]; then
     say "enabled atrium for $target_user at their next login."
     say "there was no running user manager to start it in right now."
     say "to start it without waiting:  systemctl --user start atrium"
+    say "next: open the board at http://127.0.0.1:7778, then run  atrium hook install"
     exit 0
 fi
 
 say "atrium is enabled and running for $target_user."
 say "  systemctl --user status atrium"
 say "  journalctl --user -u atrium -f"
-say "  the board:  http://localhost:7778"
+say "next: open the board at http://127.0.0.1:7778, then run  atrium hook install"
 exit 0

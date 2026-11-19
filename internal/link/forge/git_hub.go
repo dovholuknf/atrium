@@ -101,14 +101,14 @@ func (p *Service) ServeGit(w http.ResponseWriter, r *http.Request, sub string) {
 		}
 		q := r.URL.Query()
 		lim, _ := strconv.Atoi(q.Get("limit"))
-		repo := ""
-		if q.Get("repo") != "" {
-			ref, err := gitsync.ParseName(q.Get("repo"))
-			if err != nil {
-				fail(http.StatusBadRequest, "repo is host/owner/repo, like github/o/r")
-				return
-			}
-			repo = ref.Name()
+		repo, local, err := branchesRepo(q.Get("repo"))
+		if err != nil {
+			fail(http.StatusBadRequest, "repo is host/owner/repo, like github/o/r")
+			return
+		}
+		if local {
+			_ = json.NewEncoder(w).Encode(gitsync.BranchesView{Counts: map[string]int{}, Branches: []gitsync.BranchStatus{}})
+			return
 		}
 		for _, st := range q["status"] {
 			switch st {
@@ -277,8 +277,8 @@ func (p *Service) serveGitRelease(w http.ResponseWriter, r *http.Request, g *git
 	}
 }
 
-// serveGitDelete answers POST /_hub/git/delete {"repo": ..., "branch": ...} with {"note": ...}: the operator deletes a
-// claude/* branch, for a branch whose card is closed.
+// serveGitDelete answers POST /_hub/git/delete {"repo": ..., "branch": ...} with {"note": ...}: the operator deletes any
+// branch but main and claude/main.
 func (p *Service) serveGitDelete(w http.ResponseWriter, r *http.Request, g *gitsync.Hub, fail func(int, string)) {
 	if r.Method != http.MethodPost {
 		fail(http.StatusMethodNotAllowed, "that has to be a POST")
@@ -383,4 +383,19 @@ func (p *Service) serveGitSettings(w http.ResponseWriter, r *http.Request, fail 
 		}
 	}
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// A bare folder name is a local repo with no forge name, like a fresh `git init`: no branches, not a refusal.
+func branchesRepo(q string) (repo string, local bool, err error) {
+	if q == "" {
+		return "", false, nil
+	}
+	ref, err := gitsync.ParseName(q)
+	if err == nil {
+		return ref.Name(), false, nil
+	}
+	if !strings.ContainsAny(q, `/\: `) && !strings.Contains(q, "..") {
+		return "", true, nil
+	}
+	return "", false, err
 }

@@ -178,7 +178,7 @@ function Start-Atrium([string[]]$argv, [string]$name) {
 $realProfile, $realHome = $env:USERPROFILE, $env:HOME
 New-Item -ItemType Directory -Force "$Data/hub-home" | Out-Null
 $env:USERPROFILE = $env:HOME = (Resolve-Path "$Data/hub-home").Path
-$hub = Start-Atrium @('run', '--no-room', '--addr', $Board, '--link', $Link, '--atrium-dir', "$Data/hub") 'hub'
+$hub = Start-Atrium @('run', '--no-room', '--no-open', '--addr', $Board, '--link', $Link, '--atrium-dir', "$Data/hub") 'hub'
 $env:USERPROFILE, $env:HOME = $realProfile, $realHome
 @{ hub = $hub.Id; room = 0; exe_dir = (Split-Path $Exe) } | ConvertTo-Json | Set-Content "$Data/pids.json"
 Wait-Until { (Invoke-WebRequest "http://$Board/_hub/health" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } 30 'the hub'

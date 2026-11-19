@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
@@ -20,9 +21,11 @@ var roomSettingKeys = map[string]string{
 	"scm_root":            gitsync.SettingSCMRoot,
 	"reviews_root":        store.SettingReviewsRoot,
 	"context_handoff_dir": store.SettingContextHandoffDir,
+	"card_root":           cardroot.Setting,
+	"card_root_required":  store.SettingCardRootRequired,
 }
 
-const roomSettingNames = "git_root, scm_root, reviews_root, context_handoff_dir"
+const roomSettingNames = "git_root, scm_root, reviews_root, context_handoff_dir, card_root, card_root_required"
 
 // roomSettingCmds returns `room set` and `room get`. They work on a STOPPED room's database
 // and refuse a running one, which holds the store. Run them before the first start or after
@@ -117,6 +120,16 @@ func storeRoomSetting(db, name, value string) (string, error) {
 			return "", fmt.Errorf("reviews_root must be an absolute path, got %q", value)
 		}
 		value = filepath.Clean(value)
+	}
+	if key == cardroot.Setting && value != "" {
+		v, err := cardroot.Check(value, cardroot.StateDir(), "")
+		if err != nil {
+			return "", err
+		}
+		value = filepath.ToSlash(v)
+	}
+	if key == store.SettingCardRootRequired && value != "on" && value != "off" {
+		return "", fmt.Errorf("card_root_required is on or off, got %q", value)
 	}
 	if err := store.SetSettingOfFile(db, key, value); err != nil {
 		return "", roomSettingErr(db, err)

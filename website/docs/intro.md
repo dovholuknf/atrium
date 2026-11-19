@@ -67,6 +67,6 @@ waits in a queue. Atrium never types into a line somebody is writing.
 
 ## Where to go next
 
-- New here? Read [Install](./install.md), then the [Quick start](./quick-start.md).
+- New here? Read [Get started](./get-started.md), then the [Quick start](./quick-start.md).
 - Want to keep your own terminal? Read [Two ways to run it](./modes.md).
 - Curious why it looks the way it does? Read [Why atrium exists](./story.md).

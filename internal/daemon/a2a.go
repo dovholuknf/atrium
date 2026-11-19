@@ -175,6 +175,10 @@ var stopHookCommand = func() string {
 		}
 	}
 	if program == "" {
+		// No hook installed yet, the first-run case: the daemon's own binary, as the lean hooks use.
+		program = claudeconf.HookExe("")
+	}
+	if program == "" {
 		return ""
 	}
 	return program + " turn --event end"

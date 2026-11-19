@@ -198,6 +198,10 @@ func (s *Server) taskSessions(w http.ResponseWriter, r *http.Request) {
 // conversation. Before that there is only what was said first, which is worse
 // but is better than a uuid.
 func titleOf(path, id string) string {
+	path, err := safepath.LocalDir(path)
+	if err != nil {
+		return id
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return id

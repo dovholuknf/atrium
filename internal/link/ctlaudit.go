@@ -77,11 +77,7 @@ func describeLaunch(req *mcp.CallToolRequest, in launchInput, out launchOutput) 
 	if r := strings.TrimSpace(in.Room); r != "" {
 		room = r
 	}
-	harness := strings.TrimSpace(in.Runner)
-	if harness == "" {
-		harness = "claude"
-	}
-	what := "launch " + harness
+	what := strings.TrimSpace("launch " + strings.TrimSpace(in.Runner))
 	if out.Card != "" {
 		what += " as " + out.Card
 	}

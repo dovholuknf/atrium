@@ -23,7 +23,8 @@
 // discover it.
 //
 // And when the browser takes it anyway, atrium says so. See `swWatchForTheft`.
-const SWITCH_KEY_DEFAULT = "ctrl+shift+KeyK";
+// On a mac cmd never reaches a terminal, so cmd-k is free there and ctrl-shift-k is not needed.
+const SWITCH_KEY_DEFAULT = /Mac|iPhone|iPad/.test(navigator.platform || "") ? "meta+KeyK" : "ctrl+shift+KeyK";
 const SWITCH_KEY_STORE = "atrium.switchkey";
 const SWITCH_RECENT_STORE = "atrium.switch.recent";
 // How many of the last few to offer before anything is typed. Enough that the
@@ -76,7 +77,7 @@ function comboOf(e) {
 const COMBO_NAMES = {
   Slash: "/", Backquote: "`", Semicolon: ";", Comma: ",", Period: ".",
   BracketLeft: "[", BracketRight: "]", Quote: "'", Backslash: "\\",
-  Space: "space", Enter: "enter", Escape: "esc"
+  Space: "space", Enter: "enter", Escape: "esc", meta: "cmd"
 };
 function comboName(c) {
   return String(c || "").split("+").map(p =>

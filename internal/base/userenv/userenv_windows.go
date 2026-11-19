@@ -43,3 +43,5 @@ func current() map[string]string {
 	}
 	return out
 }
+
+func freshPath() string { return current()["PATH"] }

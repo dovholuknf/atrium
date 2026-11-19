@@ -29,6 +29,37 @@ function forgeHostLabel(h) {
   return FORGE_HOST_LABELS[s.toLowerCase()] || s;
 }
 
+// A git remote URL as {host, org, repo}, or null. A hub remote `.../git/hub/<host>/<owner>/<repo>` names the forge after
+// `git/hub`, because a card home has only that remote. A local path is a repo with no host or owner.
+function originParts(url) {
+  const s = String(url == null ? "" : url).trim().replace(/\\/g, "/");
+  if (!s) return null;
+  let host = "";
+  let path = s;
+  const scheme = s.match(/^([a-z][a-z0-9+.-]*):\/\/(?:[^@/]*@)?([^/:]*)(?::\d+)?(\/.*)?$/i);
+  // A one-letter host before the colon is a Windows drive, not a remote.
+  const scp = !scheme && s.match(/^(?:[^@/]+@)?([^/:]{2,}):(.*)$/);
+  if (scheme && scheme[1].toLowerCase() !== "file") {
+    host = scheme[2];
+    path = scheme[3] || "";
+  } else if (scheme) {
+    path = scheme[3] || "";
+  } else if (scp) {
+    host = scp[1];
+    path = scp[2];
+  }
+  let segs = path.replace(/\/+$/, "").replace(/\.git$/i, "").split("/").filter(Boolean);
+  const hub = segs.findIndex((x, i) => x === "git" && segs[i + 1] === "hub");
+  if (host && hub >= 0 && segs.length >= hub + 5) {
+    host = segs[hub + 2];
+    segs = segs.slice(hub + 3);
+  }
+  if (!segs.length) return null;
+  const repo = segs[segs.length - 1];
+  if (!host) return { host: "", org: "", repo };
+  return { host: forgeHostLabel(host).toLowerCase(), org: segs.slice(0, -1).join("/"), repo };
+}
+
 const DEFAULT_GROUP_ORDER = `// Sort two group names. Return <0, 0, or >0.
 // Alphabetical, with anything ungrouped last.
 if (!a) return 1;

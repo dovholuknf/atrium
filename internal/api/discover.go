@@ -2,11 +2,11 @@ package api
 
 import (
 	"net/http"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -18,7 +18,7 @@ import (
 // look configured and fail on first use, and a runner you already have
 // installed still had to be typed in from memory.
 //
-// Both answers come from PATH. `exec.LookPath` is the same lookup the daemon
+// Both answers come from PATH. `userenv.LookPath` is the same lookup the daemon
 // does when it starts a runner, so what discovery reports is what launching
 // will find.
 
@@ -106,7 +106,7 @@ func LookPath(cmd string) string {
 	if strings.TrimSpace(cmd) == "" {
 		return ""
 	}
-	p, err := exec.LookPath(cmd)
+	p, err := userenv.LookPath(cmd)
 	if err != nil {
 		return ""
 	}
@@ -124,6 +124,51 @@ func RunnerFound(h *store.Harness) string {
 		return LookPath(p)
 	}
 	return LookPath(h.Cmd)
+}
+
+// DefaultRunner is the runner to start when none was named: claude when it is on and found, so a setup that had it
+// keeps it, else the first one on and found in the room's order. looked is every enabled runner's id, for the refusal
+// when id is "".
+func DefaultRunner(hs []*store.Harness, found func(*store.Harness) string) (id string, looked []string) {
+	for _, h := range hs {
+		if h.Enabled && h.ID == "claude" && found(h) != "" {
+			return h.ID, nil
+		}
+	}
+	for _, h := range hs {
+		if !h.Enabled {
+			continue
+		}
+		if found(h) != "" {
+			return h.ID, nil
+		}
+		looked = append(looked, h.ID)
+	}
+	return "", looked
+}
+
+// RunnersOff are the runners found on PATH but turned off, which a fresh room's codex is.
+func RunnersOff(hs []*store.Harness, found func(*store.Harness) string) []string {
+	var off []string
+	for _, h := range hs {
+		if !h.Enabled && found(h) != "" {
+			off = append(off, h.ID)
+		}
+	}
+	return off
+}
+
+// NoRunnerFound is the refusal when DefaultRunner found none on the room called where.
+func NoRunnerFound(looked []string, where string, off ...string) string {
+	msg := "no runner is installed and turned on on " + where
+	if len(looked) > 0 {
+		msg = "no runner was named and none of " + strings.Join(looked, ", ") + " was found on PATH on " + where +
+			". install one or name another"
+	}
+	if len(off) > 0 {
+		msg += ". " + strings.Join(off, ", ") + " is on PATH but turned off: turn it on in the board's runner settings"
+	}
+	return msg
 }
 
 // listHarnesses returns the configured runners, each saying whether its command

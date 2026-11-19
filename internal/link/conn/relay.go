@@ -96,16 +96,8 @@ func (r *Room) Relay(ctx context.Context, req wire.RelayRequest) (RelayAnswer, e
 	if !up {
 		return ans, fmt.Errorf("%w: this room is not attached to it", ErrRelayDown)
 	}
-	dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
-	conn, err := r.Dial.Dial(dialCtx)
-	cancel()
-	if err != nil {
-		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
-	}
-	defer conn.Close()
-
-	br := bufio.NewReader(conn)
-	w, err := sayHello(conn, br, hello{Kind: relayKind, Room: r.Name, Session: session})
+	defer r.controlDialing()()
+	conn, br, w, err := r.relayConn(ctx, session)
 	if err != nil {
 		// THE ONE REFUSAL THAT IS NOT WORTH WAITING OUT. An older hub names the
 		// kinds it knows, and relay is not one of them. A hub that names relay
@@ -115,6 +107,7 @@ func (r *Room) Relay(ctx context.Context, req wire.RelayRequest) (RelayAnswer, e
 		}
 		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
 	}
+	defer conn.Close()
 	if err := conn.SetDeadline(time.Now().Add(relayWait)); err != nil {
 		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
 	}

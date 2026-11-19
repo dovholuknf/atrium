@@ -22,7 +22,7 @@ Add it to a session's MCP configuration as an HTTP server:
   "mcpServers": {
     "atrium-control": {
       "type": "http",
-      "url": "http://localhost:7778/_hub/mcp",
+      "url": "http://127.0.0.1:7778/_hub/mcp",
       "headers": {
         "X-Atrium-Agent": "${ATRIUM_AGENT_NAME}",
         "X-Atrium-Room": "${ATRIUM_ROOM}"

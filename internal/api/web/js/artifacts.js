@@ -368,7 +368,7 @@ async function artLoad() {
   if (arts.id !== id) { arts.picked.clear(); arts.viewing = null; arts.cur = 0; arts.id = id; }
   const had = arts.list.map(a => a.kind + a.path + a.href + a.at).join("|");
   arts.list = artItems(Array.isArray(rows) ? rows : [], termTask.worktree || "");
-  if (arts.list.map(a => a.kind + a.path + a.href + a.at).join("|") === had && arts.open) return;
+  if (arts.list.length && arts.list.map(a => a.kind + a.path + a.href + a.at).join("|") === had && arts.open) return;
   arts.picked = new Set([...arts.picked].filter(a => arts.list.some(b => b.kind === a.kind && b.path === a.path)).map(a => arts.list.find(b => b.kind === a.kind && b.path === a.path)));
   if (arts.viewing) arts.viewing = arts.list.find(b => b.kind === arts.viewing.kind && b.path === arts.viewing.path) || null;
   artPaint();

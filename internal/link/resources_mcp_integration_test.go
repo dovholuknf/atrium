@@ -45,7 +45,9 @@ func TestWorkerReadsTheInventoryAndRooms(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	h.c.resourcesDir = func() string { return dir }
 	h.c.rooms = func() []resourceRoom {
-		return []resourceRoom{{Name: "sg3", Online: true, Tools: map[string]string{"go": "V:/tools/go/bin/go.exe"}}, {Name: "cdz"}}
+		return []resourceRoom{{Name: "sg3", Online: true, Tools: map[string]string{"go": "V:/tools/go/bin/go.exe"},
+			Linux: &resourceLinux{SSH: []resourceSSH{{Host: "agentwsl", State: "pass", Docker: "pass"}},
+				WSLC: "pass"}}, {Name: "cdz"}}
 	}
 
 	out := callResources(t, h, "worker1")
@@ -57,6 +59,9 @@ func TestWorkerReadsTheInventoryAndRooms(t *testing.T) {
 	}
 	if !strings.Contains(out.Text, "  - go: V:/tools/go/bin/go.exe") {
 		t.Fatalf("tool location not listed: %q", out.Text)
+	}
+	if !strings.Contains(out.Text, "    - ssh agentwsl: pass. docker: pass\n") || !strings.Contains(out.Text, "    - wslc: pass\n") {
+		t.Fatalf("linux reach not listed: %q", out.Text)
 	}
 }
 

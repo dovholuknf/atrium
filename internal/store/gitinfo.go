@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Which repository a directory belongs to, and which branch is checked out.
@@ -50,6 +52,9 @@ type GitInfo struct {
 	// and needs both: `main:atrium`. That is the rule the gwt ledger has used
 	// all along, and matching it is the whole point of reading any of this.
 	Linked bool
+	// Origin is the URL of the remote the checkout came from: `origin`, else `hub` (a card home cloned from the
+	// hub has only that), else the first remote. Empty with no remote.
+	Origin string
 }
 
 // gitWalkLimit bounds how far up the tree to look for a repository.
@@ -79,7 +84,7 @@ func ReadGitInfo(dir string) GitInfo {
 			var out GitInfo
 			if fi.IsDir() {
 				// An ordinary checkout. The repository is this directory.
-				out = GitInfo{Repo: filepath.Base(dir), Branch: headBranch(dotgit)}
+				out = GitInfo{Repo: filepath.Base(dir), Branch: headBranch(dotgit), Origin: remoteURL(dotgit)}
 			} else {
 				// A linked worktree. `.git` is a file naming the real git
 				// directory, which lives inside the main repository, so the
@@ -135,7 +140,7 @@ func worktreeInfo(dotgitFile string) GitInfo {
 		gitdir = filepath.Join(filepath.Dir(dotgitFile), gitdir)
 	}
 
-	out := GitInfo{Branch: headBranch(gitdir), Linked: true}
+	out := GitInfo{Branch: headBranch(gitdir), Linked: true, Origin: remoteURL(commonDir(gitdir))}
 
 	// .../<repo>/.git/worktrees/<name> -> <repo>. Walked by name rather than
 	// by counting segments, since a git directory can be somewhere else
@@ -153,6 +158,69 @@ func worktreeInfo(dotgitFile string) GitInfo {
 		dir = parent
 	}
 	return out
+}
+
+// commonDir is where a linked worktree's shared config lives, named by the `commondir` file in its git directory.
+func commonDir(gitdir string) string {
+	file, err := safepath.LocalDir(filepath.Join(gitdir, "commondir"))
+	if err != nil {
+		return gitdir
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return gitdir
+	}
+	common := filepath.FromSlash(strings.TrimSpace(string(raw)))
+	if common == "" {
+		return gitdir
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(gitdir, common)
+	}
+	return filepath.Clean(common)
+}
+
+// remoteURL reads the remote a checkout came from out of a git directory's config: `origin`, else `hub`, else the
+// first remote with a url.
+func remoteURL(gitdir string) string {
+	file, err := safepath.LocalDir(filepath.Join(gitdir, "config"))
+	if err != nil {
+		return ""
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return ""
+	}
+	urls := map[string]string{}
+	first, remote := "", ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			remote = ""
+			head := strings.TrimSpace(strings.Trim(line, "[]"))
+			if kind, name, ok := strings.Cut(head, " "); ok && strings.EqualFold(kind, "remote") {
+				remote = strings.Trim(strings.TrimSpace(name), `"`)
+			}
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if remote == "" || !ok || !strings.EqualFold(strings.TrimSpace(key), "url") {
+			continue
+		}
+		if _, seen := urls[remote]; seen {
+			continue
+		}
+		urls[remote] = strings.Trim(strings.TrimSpace(val), `"`)
+		if first == "" {
+			first = remote
+		}
+	}
+	for _, name := range []string{"origin", "hub", first} {
+		if u := urls[name]; u != "" {
+			return u
+		}
+	}
+	return ""
 }
 
 // headBranch reads the branch out of a git directory's HEAD.

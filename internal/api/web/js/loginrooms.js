@@ -1,6 +1,9 @@
 const LOGIN_HOST_KEY = "atrium.loginhost";
 
-function loginLineDefault(room) { return `ssh -t ${room} claude auth login`; }
+function loginLineDefault(room) {
+  const r = hubRooms.find(x => x.name === room);
+  return r && r.transport === "local" ? "claude auth login" : "ssh -t <host> claude auth login";
+}
 
 function loginRoomHdr(room) { return { "X-Atrium-Room": room }; }
 

@@ -6,14 +6,15 @@ Paste this into any coding agent that can run shell commands, such as claude, co
 as the agent's first argument:
 
 ```text
-Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/try-atrium.md . Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
+Run: curl -fsSL https://raw.githubusercontent.com/dovholuknf/atrium/main/docs/try-atrium.md and read what it returns. Then review it for security problems. Prompt me with questions and then if i like it, do exactly what the prompt block in that file says, in order. Verify each step, and report plainly what worked and what did not.
 ```
 
 You need git and Go 1.26 or newer. The agent fetches this file, reviews it with you, then follows the
 prompt below. You get atrium built from source and running on your machine on loopback only, with the board at
 http://127.0.0.1:7778.
 
-Joining a hub someone else already runs, as a room? Use [`join-atrium.md`](join-atrium.md) instead.
+Joining a hub someone else already runs, as a room? Use [`join-atrium.md`](join-atrium.md) instead. To install and
+start atrium yourself, without an agent, follow [`website/docs/get-started.md`](../website/docs/get-started.md).
 
 ## The prompt
 
@@ -46,8 +47,7 @@ Stopping `atrium run` never stops the room or its agents.
 
 STEP 0: READ FIRST
 After cloning (step 2), read README.md, AGENTS.md and docs/how-atrium-works.md in the repo before doing anything
-else. If anything in those files disagrees with this prompt, the repo wins. Tell me where they disagreed. (Some files
-name docs/agents.md, which may not exist. If it is missing, say so and carry on.)
+else. If anything in those files disagrees with this prompt, the repo wins. Tell me where they disagreed.
 
 STEP 1: PREREQUISITES
 - git.
@@ -76,10 +76,15 @@ Then run `~/.atrium/bin/atrium version` (or the .exe) and show me the output. It
 hash, platform and Go version. A build from a clone prints a version like `0.0.4+<sha>`.
 
 STEP 5: START IT
+Before you start it, copy ~/.claude/settings.json aside and show me the backup path. When that file has none of
+atrium's hooks, `atrium run` wires them on its first start, keeps its own settings.json.atrium-<time>.bak, and says so
+in one line. `--no-hooks` skips that.
   ~/.atrium/bin/atrium run
 Leave it running in its own terminal (or run it in the background and tell me how you did it). The PATH of the
 terminal that runs `atrium run` becomes the room's PATH, and every agent atrium launches gets it, so `claude` (and any
-other agent I want to launch) must be on it. Wait until it says it is listening, then check:
+other agent I want to launch) must be on it. A runner installed after the room started needs a room restart:
+`atrium stop`, then `atrium room --detach` from a terminal that finds it. Wait until it says it is listening, then
+check:
 - http://127.0.0.1:7778 answers (curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7778).
 - `~/.atrium/bin/atrium --help` lists the subcommands.
 Use 127.0.0.1, not localhost. On some machines localhost costs a 2 second IPv6 timeout per request.
@@ -93,7 +98,8 @@ its **hooks** chip, then **wire it** on each row. Both write the same entries. `
 are wired. The command also keeps its own copy of the old file beside it, named settings.json.atrium-<time>.bak,
 and prints the path when there was a settings.json to copy. On a machine with none it prints only
 `wrote <path>`. `hook status` then lists `Stop` as not wired. That is expected: Stop is optional and
-`hook install` leaves it out. After it runs, show me the diff of settings.json against my backup.
+`hook install` leaves it out. When step 5 already wired them it says nothing was written. After it runs, show me the
+diff of settings.json against my backup. `atrium hook uninstall` takes atrium's entries out again.
 From then on every new Claude Code session on this machine reports to the board, and every tool call it makes asks
 the gate. Sessions already running keep their old settings until restarted. If atrium is not running, the hooks fail
 open: Claude keeps working as if atrium were not there.
@@ -128,9 +134,9 @@ STEP 8: THINGS I MUST KNOW
 - Atrium does not start at logon unless I ask it to. `atrium run` installs no logon task, LaunchAgent or user unit.
   If I want one later, scripts/atrium-service.ps1 (Windows) and scripts/atrium-service.sh (macOS and Linux) take
   install, uninstall, start, stop, restart and status. Do not run them now.
-- To undo step 6: there is no `atrium hook uninstall`. Copy the backup of settings.json from step 6 back over
-  ~/.claude/settings.json (this also drops anything else I changed in that file since), or delete the hook entries
-  whose command names the atrium binary by hand. To remove the rest: `atrium stop`, then delete ~/.atrium/bin, and
+- To undo step 6: `atrium hook uninstall` takes atrium's entries out and leaves the rest of settings.json alone.
+  Copying the backup from step 6 back over ~/.claude/settings.json also works, and drops anything else I changed in
+  that file since. To remove the rest: `atrium stop`, then delete ~/.atrium/bin, and
   ~/.atrium if I want my state gone too.
 
 STEP 9: REPORT
@@ -156,9 +162,8 @@ Every command and name in it was read against the code, so it is safe to hand ov
   `<atrium exe> statusline`, and `atrium hook install` leaves `statusLine` alone.
 - `atrium hook status` lists `Stop` as not wired after an install. Stop is the one optional hook
   (`internal/base/claudeconf/hooks.go`), so `hook install` leaves it out.
-- `atrium hook install` has no undo. It keeps a `settings.json.atrium-<time>.bak` copy and that is the way back.
+- `atrium hook uninstall` takes atrium's entries out. `atrium hook install` keeps a `settings.json.atrium-<time>.bak`
+  copy as well.
 - `atrium run` installs no logon task. The scripts in `scripts/` do, and each has an `uninstall`.
 - The board menu is **rooms** (the tab), the claude row under runners, its **hooks** chip, and **perms**, then
   **import rules from claude**. The launch button is **+ new agent**.
-- `docs/agents.md` is named by `README.md` and `AGENTS.md` but is not in the tree, so the prompt reads `AGENTS.md` and
-  `docs/how-atrium-works.md` instead.

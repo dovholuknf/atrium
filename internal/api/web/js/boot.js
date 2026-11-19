@@ -18,7 +18,13 @@
 bootSkin();
 
 // Safe mode is the server leaving user.css out. The attribute is for the board's own rules, which user.css cannot reach.
-if (new URLSearchParams(location.search).has("safe")) document.documentElement.setAttribute("data-safe", "");
+if (new URLSearchParams(location.search).has("safe")) {
+  document.documentElement.setAttribute("data-safe", "");
+  const bar = document.createElement("div");
+  bar.id = "safe-banner";
+  bar.innerHTML = `safe mode is on: your custom styles (user.css) are not loaded. <a href="/">leave safe mode</a>`;
+  document.body.appendChild(bar);
+}
 
 // The mark in the tab strip, in every window for the same reason as the skin.
 // A popped-out terminal is its own document and its own tab, and a board
@@ -197,4 +203,10 @@ function showGuestPage() {
   const word = document.getElementById("guest-word");
   if (word) word.textContent = guestWord;
   if (box) box.hidden = false;
+}
+
+// Placeholders ship as the mac/linux example; a Windows browser gets the drive form.
+if (/^Win/.test(navigator.platform || "")) {
+  document.querySelectorAll('[placeholder^="~/src"]').forEach(el =>
+    el.placeholder = el.placeholder.replace("~/src", "C:/src"));
 }

@@ -98,6 +98,7 @@ database. This package is where they meet:
 | `wait.go` | `atrium wait`: block until the board, the room link and named rooms answer |
 | `launch.go` / `dispatch.go` / `open.go` / `close.go` | starting work here, queueing it for a room, opening a link, closing a card |
 | `stop.go` / `preview.go` / `tenant.go` | stopping without killing, a throwaway board, naming an atrium |
+| `uninstall.go` | `atrium uninstall`: stop, unhook, remove named services, `--purge` keeps dirty worktrees |
 | `ancestry*.go` | finding the runner a hook is under |
 | `ptyhost.go` | `atrium ptyhost`. See `internal/ptyhost` |
 | `replay.go` / `termattach*.go` | rendering a captured stream, and a card's terminal in this terminal |

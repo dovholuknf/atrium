@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -285,7 +286,7 @@ func newHook() *cobra.Command {
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
 	// Activity finds the card by name, while permission registration also needs the harness identity.
 	c.Flags().StringVar(&runner, "runner", "", "which harness is reporting (default: $ATRIUM_RUNNER, then claude)")
-	c.AddCommand(newHookInstall(), newHookStatus())
+	c.AddCommand(newHookInstall(), newHookUninstall(), newHookStatus())
 	return c
 }
 
@@ -295,7 +296,8 @@ func newHook() *cobra.Command {
 // board re-reads settings.json on every poll and would find this anyway. The
 // ping afterwards only removes the wait.
 func newHookInstall() *cobra.Command {
-	var event, runner string
+	var event, runner, project string
+	var reportOnly bool
 	c := &cobra.Command{
 		Use:   "install",
 		Short: "Register atrium's hooks for a runner.",
@@ -319,6 +321,25 @@ func newHookInstall() *cobra.Command {
 			target := claudeconf.TargetFor(runner)
 			if target.ID != runner {
 				return fmt.Errorf("unknown hook runner %q", runner)
+			}
+			target, err := projectTarget(target, project)
+			if err != nil {
+				return err
+			}
+			if reportOnly {
+				path, lines, err := claudeconf.PreviewInstallTarget(target, exe, only)
+				if err != nil {
+					return err
+				}
+				out := cmd.OutOrStdout()
+				fmt.Fprintf(out, "report only. nothing was written. file: %s\n", path)
+				for _, l := range lines {
+					fmt.Fprintln(out, l)
+				}
+				if len(lines) == 0 {
+					fmt.Fprintln(out, "already says this. install would write nothing.")
+				}
+				return nil
 			}
 			rep, res, err := claudeconf.InstallOnlyTarget(target, exe, only)
 			if err != nil {
@@ -362,8 +383,38 @@ func newHookInstall() *cobra.Command {
 	}
 	c.Flags().StringVar(&runner, "runner", "claude", "hook target: claude or codex")
 	c.Flags().StringVar(&event, "event", "",
-		"just this one: tool-start, tool-end, prompt, subagent-start or subagent-end")
+		"just this one: "+installableEvents())
+	c.Flags().BoolVar(&reportOnly, "report-only", false, "print what install would change and write nothing")
+	c.Flags().StringVar(&project, "project", "", "write into <dir>/.claude/settings.local.json instead of the user-wide settings")
 	return c
+}
+
+// projectTarget points claude's target at a project's settings.local.json, or returns t when dir is empty.
+func projectTarget(t claudeconf.Target, dir string) (claudeconf.Target, error) {
+	if strings.TrimSpace(dir) == "" {
+		return t, nil
+	}
+	if t.ID != claudeconf.Claude.ID {
+		return t, fmt.Errorf("--project is for claude, which keeps settings.local.json in a project")
+	}
+	path := filepath.Join(dir, ".claude", "settings.local.json")
+	t.Path = func() (string, error) { return path, nil }
+	return t, nil
+}
+
+// installableEvents lists every --event value install accepts, from the same lists install reads.
+func installableEvents() string {
+	var names []string
+	seen := map[string]bool{}
+	for _, t := range []claudeconf.Target{claudeconf.Claude, claudeconf.Codex} {
+		for _, w := range t.Wanted {
+			if !seen[w.Event] {
+				seen[w.Event] = true
+				names = append(names, w.Event)
+			}
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // pingHooksChanged nudges a running board to re-read settings.json.
@@ -373,8 +424,12 @@ func newHookInstall() *cobra.Command {
 // not a problem: the file is already written, and a board that starts later
 // reads it at that point.
 func pingHooksChanged() {
+	addr, src := hubAddressFrom("")
+	if src == hubSourceDefault {
+		return
+	}
 	client := hookClient(hookTimeout)
-	resp, err := client.Post(hubAddress("")+"/hooks-changed", "application/json", nil)
+	resp, err := client.Post(addr+"/hooks-changed", "application/json", nil)
 	if err != nil {
 		return
 	}
@@ -523,7 +578,12 @@ func reportActivity(hubURL, event, name string) string {
 	}
 
 	roomSource := ""
-	if _, src := hubAddressFrom(hubURL); src == hubSourceDaemon {
+	_, src := hubAddressFrom(hubURL)
+	// Another user's room may own the default port, so a hook with no address posts nowhere.
+	if src == hubSourceDefault {
+		return ""
+	}
+	if src == hubSourceDaemon {
 		roomSource = "daemon.json"
 	}
 	fields := map[string]any{

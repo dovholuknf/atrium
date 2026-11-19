@@ -97,7 +97,10 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 	}
 
 	agent, nameSource := agentNameSource("")
-	base := hubAddress(hubURL)
+	base, src := hubAddressFrom(hubURL)
+	if src == hubSourceDefault {
+		return nil
+	}
 
 	hookEvent := "PreToolUse"
 	if native {
@@ -245,12 +248,20 @@ func postPermission(base string, body []byte, budget time.Time) (permissionAnswe
 	if budget.Before(deadline) {
 		deadline = budget
 	}
+	// A room that answered once is not unreachable: a last try cut short by the budget keeps that answer, so it is not warned about.
+	var answered error
 	for {
 		ans, err := postPermissionOnce(permClient(time.Until(deadline)), base, body)
 		if err == nil || errors.Is(err, errUngated) {
 			return ans, err
 		}
+		if errors.Is(err, errAnswered) {
+			answered = err
+		}
 		if !time.Now().Add(every).Before(deadline) {
+			if answered != nil {
+				err = answered
+			}
 			return permissionAnswer{}, err
 		}
 		time.Sleep(every)

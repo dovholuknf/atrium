@@ -165,7 +165,7 @@ const SHELVED1 = Object.assign({}, SUBLIVE, {
 // not activity order, so a view that sorts on the wrong key is caught. The
 // shape of the screenshot: named cards whose dim second line is the path.
 const untaggedCard = (id, title, worktree, idle) => Object.assign({}, T1, {
-  id, display_title: title, worktree, repo: worktree.split("/").pop(), branch: "b",
+  id, display_title: title, worktree, repo: worktree.split("/").pop(), branch: "b", origin: "https://" + worktree.slice(3) + ".git",
   idle_seconds: idle, supervised: true,
   // last_activity_at is the stamp the sort goes by, so it says the same as idle_seconds
   last_activity_at: new Date(Date.now() - idle * 1000).toISOString()

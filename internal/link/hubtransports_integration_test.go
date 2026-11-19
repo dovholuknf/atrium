@@ -345,3 +345,18 @@ func TestTheZrokRoomLinkSwitchesWithNoIdentityAndTouchesNoZitiContext(t *testing
 		t.Fatalf("a ziti context was closed for a zrok share: %v", x.closed)
 	}
 }
+
+func TestAFlagThatTurnsOnAnUnstoredTransportKeepsItOnForTheNextStartWithNone(t *testing.T) {
+	st := &fakeSettings{m: map[string]string{}}
+	on := true
+	tr := &HubTransports{Store: st}
+	tr.Add(TransportItem{Name: TransportRoomZrok, Kind: "zrok", NoIdentity: true, Handler: http.NotFoundHandler()}, TransportSeed{On: &on})
+	if st.m["hub_transport.room-zrok.on"] != "on" {
+		t.Fatalf("the seeded on was not stored: %v", st.m)
+	}
+	next := &HubTransports{Store: st}
+	next.Add(TransportItem{Name: TransportRoomZrok, Kind: "zrok", NoIdentity: true, Handler: http.NotFoundHandler()}, TransportSeed{})
+	if v := next.View(); len(v) != 1 || v[0].State == "off" {
+		t.Fatalf("a restart with no flag turned it off: %+v", v)
+	}
+}

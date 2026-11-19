@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,7 +22,12 @@ func TestNewDatabaseIsAnnouncedLoudly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	_, logs, cancel, _ := startDaemon(t)
+	_, logs, cancel, _ := startDaemonWith(t, func(o *Options) {
+		last := filepath.Join(filepath.Dir(o.LocationFile), "lastdb.json")
+		if err := os.WriteFile(last, []byte(`{"db":"/elsewhere/atrium.db"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
 	defer cancel()
 
 	out := logs.String()
@@ -30,6 +36,23 @@ func TestNewDatabaseIsAnnouncedLoudly(t *testing.T) {
 	}
 	if !strings.Contains(out, "WORKTREE_ROOT") {
 		t.Errorf("the warning does not name the usual cause:\n%s", out)
+	}
+}
+
+// With no daemon ever run here, a new database is the expected first start and is said calmly.
+func TestAFirstStartIsNotAWarning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	_, logs, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	out := logs.String()
+	if strings.Contains(out, "THIS IS A NEW DATABASE") {
+		t.Fatalf("a first start was warned about as the wrong path:\n%s", out)
+	}
+	if !strings.Contains(out, "first run here") {
+		t.Fatalf("a first start did not say it made a database:\n%s", out)
 	}
 }
 

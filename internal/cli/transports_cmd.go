@@ -217,7 +217,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 		Use:   "zrok --token <share token>",
 		Short: "Give this room the private zrok share to reach its hub with",
 		Long: "The token is the one the hub printed when it started over zrok, and is what a zrok join string\n" +
-			"carries. This machine needs `zrok enable` run as well. The token is kept in transports.json.",
+			"carries. This machine needs `atrium zrok enable` run as well. The token is kept in transports.json.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			keys := keysOf()

@@ -141,7 +141,7 @@ async function hubReposSection(browser, base) {
     mode = "empty";
     await p.evaluate(() => { hubRepos.loaded = false; });
     await p.click("#hubrepos-refresh");
-    await p.waitForFunction(() => /atrium git setup/.test(document.getElementById("hubrepos-list").textContent), null, { timeout: slow(10000) });
+    await p.waitForFunction(() => /atrium rooms git repos add/.test(document.getElementById("hubrepos-list").textContent), null, { timeout: slow(10000) });
     mode = "fail";
     await p.click("#hubrepos-refresh");
     await p.waitForFunction(() => /not answering/.test(document.getElementById("hubrepos-list").textContent), null, { timeout: slow(10000) });
@@ -273,10 +273,10 @@ async function hubReposEmptyCheck(browser, base, view, tag) {
     const http = await p.evaluate(() => document.querySelector("#hubrepos-list .hr-go").dataset.copy);
     if (!http.includes(await p.evaluate(() => location.origin) + "/git/hub/github/dovholuknf/atrium.git")) fail(tag + " empty: http is not what the action copies: " + http);
     if (!/^HTTP/i.test((await p.evaluate(() => document.activeElement.textContent)).trim()) && (await p.evaluate(() => document.activeElement.dataset.mode)) !== "http") fail(tag + " empty: focus was dropped by the toggle");
-    // No repos at all: the same hero, pointed at `atrium git setup`.
+    // No repos at all: the same hero, pointed at `atrium rooms git repos add`.
     await p.evaluate(() => { hubRepos.repos = []; hubReposPaint(); });
     const none = await p.evaluate(() => { const g = document.querySelector("#hubrepos-list .hr-go"); return { copy: g && g.dataset.copy, text: document.getElementById("hubrepos-list").textContent }; });
-    if (none.copy !== "atrium git setup" || !/atrium git setup/.test(none.text)) fail(tag + " no repos: " + JSON.stringify(none));
+    if (none.copy !== "atrium rooms git repos add <name> <checkout>" || !/atrium rooms git repos add <name> <checkout>/.test(none.text)) fail(tag + " no repos: " + JSON.stringify(none));
     if (errors.length) fail(tag + " empty: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   const ph = await hubReposFixturePage(browser, base, { w: 390, h: 844, view, empty: true });
@@ -470,7 +470,8 @@ async function hubReposBranchesSection(browser, base) {
       if (r.foot !== "show landed 10landed by: patch-id 4, subject 2, changelog 2, ancestry 2") fail(tag + ": the fold line is wrong " + r.foot);
       if (r.img || r.x || !r.names[0].startsWith("claude/wip-<img")) fail(tag + ": a branch name became markup " + JSON.stringify(r.names));
       if (r.count !== "15" || !r.computed || !r.sort) fail(tag + ": the head is wrong " + JSON.stringify({ count: r.count, computed: r.computed, sort: r.sort }));
-      if (r.buttons.some(b => /^(land|keep|delete|push|open diff|read)$/i.test(b))) fail(tag + ": the view offers an action " + r.buttons.join());
+      if (r.buttons.some(b => /^(land|keep|push|open diff|read)$/i.test(b))) fail(tag + ": the view offers an action " + r.buttons.join());
+      if (r.buttons.filter(b => b === "delete").length !== 5) fail(tag + ": every row does not offer delete " + r.buttons.join());
       // Unfold landed: the how chip appears on each, and the button says how to fold it again.
       await p.click('.hr-bfoot [data-act="brchip"]');
       r = await read();
@@ -522,6 +523,7 @@ async function hubReposBranchesSection(browser, base) {
           .catch(() => fail(tag + ": the " + status + " answer is not explained"));
         await p.evaluate(() => { hubRepos.mem = ""; });
       }
+      await hubReposBranchDelete(p, tag);
       if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
     } finally { await ctx.close(); }
     const dir = process.env.HR_SHOTS;
@@ -544,6 +546,44 @@ async function hubReposBranchesSection(browser, base) {
     }
   } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposBranches ok");
+}
+
+// The operator's delete on a Branches row: armed in the row, keep posts nothing, a refusal is the hub's sentence in red
+// on the row, a delete drops the row and says the hub's note, and main and claude/main have no delete.
+async function hubReposBranchDelete(p, tag) {
+  const at = new Date().toISOString(), repo = "github/acme/thing";
+  let list = ["fix/y", "claude/main", "claude/held"].map(name => ({ repo, name, status: "orphaned", kind: "code", uncarried: 1, commits: 1, last_commit: at }));
+  const posts = [];
+  let answer = { status: 400, body: { error: "claude/held has an open merge request. cancel it or let it end first" } };
+  await p.unroute(/\/_hub\/git\/branches$/);
+  await p.route(/\/_hub\/git\/branches$/, rt => rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ computed: at, counts: {}, branches: list }) }));
+  await p.route(/\/_hub\/git\/delete$/, rt => {
+    posts.push(JSON.parse(rt.request().postData() || "{}"));
+    rt.fulfill({ status: answer.status, contentType: "application/json", body: JSON.stringify(answer.body) });
+  });
+  await p.evaluate(() => { Object.assign(hubRepos.br, { loaded: false, data: null, del: {}, said: "" }); hubRepos.mem = ""; });
+  await p.click('#hubrepos-views [data-hrview="branches"]');
+  await p.waitForFunction(() => document.querySelectorAll(".hr-brrow").length === 3, null, { timeout: slow(8000) });
+  const dels = await p.evaluate(() => [...document.querySelectorAll(".hr-bdel")].map(b => b.dataset.mode).join());
+  if (dels !== "fix/y,claude/held") fail(tag + ": delete is offered on the wrong rows " + dels);
+  const row = n => '.hr-brrow:has(.hr-bdel[data-mode="' + n + '"]), .hr-brrow:has(.hr-byes[data-mode="' + n + '"])';
+  await p.click('.hr-bdel[data-mode="claude/held"]');
+  const armed = await p.evaluate(() => ({ sure: !!document.querySelector(".hr-bsure"), focus: document.activeElement.className }));
+  if (!armed.sure || armed.focus !== "hr-byes") fail(tag + ": delete did not arm in the row " + JSON.stringify(armed));
+  await p.click('.hr-bno[data-mode="claude/held"]');
+  if (posts.length || await p.locator(".hr-bsure").count()) fail(tag + ": keep posted or stayed armed");
+  await p.click('.hr-bdel[data-mode="claude/held"]');
+  await p.click('.hr-byes[data-mode="claude/held"]');
+  await p.waitForFunction(() => document.querySelector(".hr-brrow .hr-bsaid.bad"), null, { timeout: slow(8000) });
+  const bad = await p.locator(row("claude/held") + " .hr-bsaid.bad").textContent();
+  if (!/open merge request/.test(bad) || posts.length !== 1 || posts[0].repo !== repo || posts[0].branch !== "claude/held") fail(tag + ": the refusal is wrong " + JSON.stringify({ bad, posts }));
+  answer = { status: 200, body: { note: "fix/y was at 3f9a1c2 and is deleted" } };
+  list = list.filter(b => b.name !== "fix/y");
+  await p.click('.hr-bdel[data-mode="fix/y"]');
+  await p.click('.hr-byes[data-mode="fix/y"]');
+  await p.waitForFunction(() => document.querySelectorAll(".hr-brrow").length === 2 && /is deleted/.test((document.querySelector("p.hr-bsaid") || {}).textContent || ""), null, { timeout: slow(8000) })
+    .catch(() => fail(tag + ": a delete did not drop the row and say the note"));
+  if (posts.length !== 2 || posts[1].branch !== "fix/y") fail(tag + ": the delete posted the wrong branch " + JSON.stringify(posts));
 }
 
 async function hubReposFeedSection(browser, base) {

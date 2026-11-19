@@ -427,9 +427,8 @@ func (h *Hub) ReleaseBranch(ctx context.Context, repo, branch string) (string, e
 	return trimHead(full) + " was owned by " + who + " and is released. the next card to push a fast-forward owns it", nil
 }
 
-// DeleteBranch deletes a claude/* branch of a store repository at the operator's word, for a branch whose card is
-// closed and so cannot delete it. It refuses main, claude/main, anything not claude/*, and a branch openMerge says a
-// request is open on. The locks are waited for as a push waits, so a busy repository is refused and never hangs.
+// DeleteBranch deletes any branch of a store repository at the operator's word, such as one whose card is closed and
+// so cannot delete it. It refuses main, claude/main, and a branch openMerge says a request is open on. The locks are waited for as a push waits, so a busy repository is refused and never hangs.
 func (h *Hub) DeleteBranch(ctx context.Context, repo, branch string, openMerge func(repo, branch string) (bool, error)) (string, error) {
 	ref, err := ParseName(repo)
 	if err != nil {
@@ -437,8 +436,8 @@ func (h *Hub) DeleteBranch(ctx context.Context, repo, branch string, openMerge f
 	}
 	branch = strings.TrimPrefix(branch, headsPrefix)
 	full := headsPrefix + branch
-	if why := CheckPushBranch(branch); why != "" || checkRefName(full) != "" || isMainRef(full) || !strings.HasPrefix(branch, "claude/") {
-		return "", refuse("only a claude/* branch other than claude/main is deleted here")
+	if why := CheckPushBranch(branch); why != "" || checkRefName(full) != "" || isMainRef(full) {
+		return "", refuse("main and claude/main are never deleted here")
 	}
 	s := h.Store()
 	dir, err := s.bareFor(ref.Name())

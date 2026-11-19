@@ -397,6 +397,10 @@ func TestHealthCarriesTheHubsBuildNotTheRooms(t *testing.T) {
 	if body["ok"] != true {
 		t.Errorf("the rest of the payload did not survive: %v", body)
 	}
+	// `atrium wait` reads the room link from these, and one attached room answers health itself.
+	if body["rooms"] != float64(1) || fmt.Sprint(body["room_names"]) != "[testroom]" {
+		t.Errorf("one attached room read as rooms=%v names=%v", body["rooms"], body["room_names"])
+	}
 }
 
 // A hub must not be able to stop a room. The room's loopback check would pass
@@ -419,6 +423,45 @@ func TestTheHubRefusesToStopARoom(t *testing.T) {
 	}
 	if reached {
 		t.Fatal("the request reached the room, which means a hub can kill it")
+	}
+}
+
+// `atrium stop` at the hub's own board stops the hub from this machine, and still never the room behind it.
+func TestALoopbackStopEndsTheHubNotTheRoom(t *testing.T) {
+	reached := false
+	stopped := make(chan struct{})
+	front, _, done := pairWith(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	}), func(p *Proxy) { p.SetStop(func() { close(stopped) }) })
+	defer done()
+
+	res, err := http.Post(front.URL+"/v1/shutdown", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"hub":true`) {
+		t.Fatalf("got %d %s, want the hub to say it is stopping", res.StatusCode, body)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the hub answered but never stopped")
+	}
+	if reached {
+		t.Fatal("the stop reached the room")
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/shutdown", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("a proxied stop got %d, want 403", res.StatusCode)
 	}
 }
 

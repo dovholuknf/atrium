@@ -786,6 +786,23 @@ func (d *Daemon) launchLocked(req shared.LaunchRequest) (*store.Task, error) {
 }
 
 func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*store.Task, error) {
+	if strings.TrimSpace(req.Harness) == "" {
+		hs, _ := d.st.Harnesses()
+		id, looked := api.DefaultRunner(hs, d.hk.runnerFound)
+		if id == "" {
+			return nil, errors.New(api.NoRunnerFound(looked, d.opts.Room, api.RunnersOff(hs, d.hk.runnerFound)...))
+		}
+		req.Harness = id
+		if id != "claude" {
+			// only what the hub defaulted on for claude is dropped, a field the caller asked for is still refused below
+			if req.LeanDefaulted {
+				req.Lean = nil
+			}
+			if req.SuperleanDefaulted {
+				req.Superlean = nil
+			}
+		}
+	}
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
 		return nil, fmt.Errorf("unknown harness %q", req.Harness)
@@ -914,7 +931,9 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		d.st.CardRootRequiredOn() {
 		if root, err := d.CardRoot(); err == nil && !insideRoot(root, cwd) {
 			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or cardHome: true) so the "+
-				"room makes the folder, or pass scratch: true if this is throwaway work", filepath.ToSlash(cwd), filepath.ToSlash(root))
+				"room makes the folder, or pass scratch: true if this is throwaway work. to stop this check for the room, run "+
+				"`atrium room set card_root_required off` with the room stopped, or untick it in the board's room settings",
+				filepath.ToSlash(cwd), filepath.ToSlash(root))
 		}
 	}
 	launchBranch := ""
@@ -1465,7 +1484,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		cmd.Dir = cwd
 		cmd.Env = env
 		if argv[0] == cmdName {
-			shared.NewConsole(cmd)
+			d.hk.newConsole(cmd)
 		}
 		if err := cmd.Start(); err != nil {
 			d.launchFailed(task.ID, err.Error())

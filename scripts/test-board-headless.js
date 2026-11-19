@@ -15536,11 +15536,11 @@ async function termMenuSection(browser, base) {
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
       .catch(() => fail("termMenu: a clean up that frees nothing did not say so."));
     const fw = await dialogUp().first().textContent();
-    if (!/Stop land tm-run\?/.test(fw) || !(await p.evaluate(() => document.querySelector("#ask .dlg-eyebrow").hidden)) || !/Its files stay\./.test(fw) || !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(fw)) {
+    if (!/Terminate land tm-run\?/.test(fw) || !(await p.evaluate(() => document.querySelector("#ask .dlg-eyebrow").hidden)) || !/Its files stay\./.test(fw) || !/Also delete worktree \/g\/gwt-wt and branch feat\/x/.test(fw)) {
       fail("termMenu: the foreign worktree wording is " + JSON.stringify(fw));
     }
     const fb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
-    if (fb !== "cancel,stop") fail("termMenu: the foreign worktree buttons are " + fb);
+    if (fb !== "cancel,terminate") fail("termMenu: the foreign worktree buttons are " + fb);
     if (process.env.CLOSE_SHOT) await p.locator("dialog#ask").screenshot({ path: process.env.CLOSE_SHOT + "/board-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
     await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
@@ -15548,7 +15548,7 @@ async function termMenuSection(browser, base) {
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
-    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
+    await p.locator("dialog[open] button", { hasText: /^terminate$/ }).click();
     await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
     await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^terminated /.test(b.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (closes.length !== 1 || closes[0].confirm !== true || closes[0].adopt !== false) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
@@ -15560,7 +15560,7 @@ async function termMenuSection(browser, base) {
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
-    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
+    await p.locator("dialog[open] button", { hasText: /^terminate$/ }).click();
     await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^could not terminate /.test(b.textContent)),
       null, { timeout: slow(5000) }).catch(() => fail("termMenu: a session that did not stop was not toasted as could not terminate."));
     closeReply = { closed: true, items: [] };
@@ -15571,7 +15571,7 @@ async function termMenuSection(browser, base) {
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("#ask-adopt").check();
-    await p.locator("dialog[open] button", { hasText: /^stop$/ }).click();
+    await p.locator("dialog[open] button", { hasText: /^terminate$/ }).click();
     await p.waitForFunction(() => /feat\/x has work found nowhere else/.test((document.getElementById("ask-title") || {}).textContent || ""),
       null, { timeout: slow(5000) }).catch(() => fail("termMenu: the tick on a folder with work did not ask."));
     const wb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
@@ -23975,9 +23975,9 @@ async function hostLabelGroupSection(browser, base) {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof termTree === "function", null, { timeout: slow(15000) });
     const got = await p.evaluate(() => {
-      const a = { id: "h1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
-      const b = { id: "h2", worktree: "D:/git/worktrees/github.com/openziti/ziti-sdk-c/y", repo: "ziti-sdk-c", branch: "y" };
-      const c = { id: "h3", worktree: "D:/git/git.example.com/o/r/z", repo: "r", branch: "z" };
+      const a = { id: "h1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x", origin: "https://github.com/openziti/ziti-sdk-c.git" };
+      const b = { id: "h2", worktree: "D:/git/worktrees/github.com/openziti/ziti-sdk-c/y", repo: "ziti-sdk-c", branch: "y", origin: "git@github.com:openziti/ziti-sdk-c.git" };
+      const c = { id: "h3", worktree: "D:/git/git.example.com/o/r/z", repo: "r", branch: "z", origin: "https://git.example.com/o/r" };
       const tree = termTree([a, b, c]);
       return { la: terminalLabel(a), lb: terminalLabel(b), lc: terminalLabel(c),
         heads: [...tree.kids.keys()].sort().join(","), pa: cardProjectOf(a), pb: cardProjectOf(b),
@@ -24006,8 +24006,8 @@ async function termCondenseSection(browser, base) {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForTimeout(600);
     const got = await p.evaluate(() => {
-      const a = { id: "c1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
-      const b = { id: "c2", worktree: "D:/worktrees/github/openziti/ziti-tunnel-sdk-c/y", repo: "ziti-tunnel-sdk-c", branch: "y" };
+      const a = { id: "c1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x", origin: "https://github.com/openziti/ziti-sdk-c.git" };
+      const b = { id: "c2", worktree: "D:/worktrees/github/openziti/ziti-tunnel-sdk-c/y", repo: "ziti-tunnel-sdk-c", branch: "y", origin: "https://github.com/openziti/ziti-tunnel-sdk-c.git" };
       const draw = (list, folded) => {
         const host = document.createElement("div");
         host.innerHTML = termNodeHTML(termTree(list), 0, "", new Set(folded));
@@ -24559,6 +24559,19 @@ async function boardFilesSection(browser, base) {
       if (on) {
         await p.evaluate(() => document.querySelector('.tab[data-view="files"]').click());
         await p.waitForSelector("#m-docs .d-file", { timeout: slow(5000) });
+        const bar = await p.evaluate(() => {
+          const t = document.querySelector('header .tab[data-view="board"]').getBoundingClientRect();
+          const hit = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+          return { reach: !!hit && !!hit.closest("header"), on: [...document.querySelectorAll("header .tab.on")].map(x => x.dataset.view),
+            under: document.getElementById("m-docs").getBoundingClientRect().top >= document.querySelector("body > header").getBoundingClientRect().bottom - 1 };
+        });
+        if (!bar.reach || !bar.under || bar.on.join() !== "files") fail(tag + "files hides the top bar or does not light its tab: " + JSON.stringify(bar));
+        await p.click('header .tab[data-view="board"]');
+        await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) }).catch(() => {});
+        const away = await p.evaluate(() => ({ hidden: document.getElementById("m-docs").hidden, on: [...document.querySelectorAll("header .tab.on")].map(x => x.dataset.view), board: !document.getElementById("board").hidden }));
+        if (!away.hidden || away.on.join() !== "board" || !away.board) fail(tag + "another tab does not leave files: " + JSON.stringify(away));
+        await p.evaluate(() => document.querySelector('.tab[data-view="files"]').click());
+        await p.waitForSelector("#m-docs .d-file", { timeout: slow(5000) });
         const rows = await p.evaluate(() => [...document.querySelectorAll("#m-docs .d-file")].map(r => ({ soon: r.classList.contains("soon"), href: r.querySelector("a.f-dl").getAttribute("href"), text: r.textContent, room: (r.querySelector(".d-room") || {}).textContent })));
         if (rows.length !== 2) fail(tag + "expected two rows, got " + rows.length);
         else {
@@ -24627,7 +24640,7 @@ async function boardDocsSection(browser, base) {
       if (on) {
         await p.evaluate(() => document.querySelector('.tab[data-view="files"]').click());
         await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
-        if (await p.evaluate(() => document.querySelector(".tab.on").dataset.view) === "files") fail(tag + "the tab took over a board view instead of opening the panel");
+        if (await p.evaluate(() => document.querySelector(".tab.on").dataset.view) !== "files") fail(tag + "the files tab is not lit while its panel is open");
         await p.click("#m-docs .d-row:not(.d-file) .d-main");
         await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(5000) });
         if (!/hello/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the document is not drawn");
@@ -25084,6 +25097,85 @@ async function selectedFitsSection(browser, base) {
     if (errors.length) fail("selectedFits: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("selectedFits ok");
+}
+
+// A LONE NEW CARD'S ROW STAYS IN ITS COLUMN. A fresh hub: one card, starting, in a card home of an empty repo,
+// attached. The row and its heading end inside the box the rows scroll in, and it reads by the card's name, not its path.
+async function selectedFitsLoneSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderTermList === "function" && typeof placeTabBridge === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const cards = [{ id: "first", status: "running", supervised: true, starting: true, pinned: false, title: "first card",
+        display_title: "first card", tags: [], created_at: "2026-11-18T10:00:00Z", repo: "work", branch: "main",
+        worktree: "/Users/claude/atrium/cards/m1mini-try-hub-xan8i1/work" }];
+      boardCards = async () => cards;
+      lastTasks = cards;
+      term = term || { options: {}, dispose() {} };
+      termTask = cards[0];
+      switchView("terms");
+    });
+    for (const w of [200, 260, 420]) {
+      const g = await p.evaluate(async w => {
+        termListW = w; applyTermList();
+        await renderTermList();
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => { placeTabBridge(); r(); })));
+        const box = document.querySelector("#term-list .termscroll");
+        const row = document.querySelector("#term-list .card.on");
+        const kids = row ? [...row.querySelectorAll("*")].map(e => Math.round(e.getBoundingClientRect().right)) : [];
+        return { col: Math.round(box.getBoundingClientRect().left + box.clientLeft + box.clientWidth),
+          row: row ? Math.round(row.getBoundingClientRect().right) : -1, inner: kids.length ? Math.max(...kids) : 0,
+          scroll: box.scrollWidth - box.clientWidth, name: row ? row.querySelector(".tname").textContent : "",
+          label: terminalLabel(termTask), heads: [...document.querySelectorAll("#term-list .tgroup")].map(h => Math.round(h.getBoundingClientRect().right)) };
+      }, w);
+      if (g.row < 0 || g.row > g.col || g.inner > g.col || g.scroll > 0 || g.heads.some(r => r > g.col)) fail("selectedFitsLone: at " + w + "px the attached row runs past its column: " + JSON.stringify(g));
+      if (g.name.trim() !== "first card" || /cards\//.test(g.label)) fail("selectedFitsLone: the row reads by its path: " + JSON.stringify(g));
+      if (process.env.SELECTED_FITS_SHOTS) await p.screenshot({ path: path.join(process.env.SELECTED_FITS_SHOTS, "selected-lone-" + w + ".png") });
+    }
+    if (errors.length) fail("selectedFitsLone: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("selectedFitsLone ok");
+}
+
+// THE TERMINAL BAR'S WORDED BUTTONS STAY ON ONE LINE. WebKit broke `ctrl-c` after its hyphen on a 1440px Safari, so it
+// runs in WebKit as well when it is installed, at 1440 and narrower, with the list at its widest to squeeze the bar.
+async function termBarNowrapSection(browser, base) {
+  const engines = [["chromium", browser]];
+  let wk = null;
+  try {
+    const { webkit } = require("@playwright/test");
+    if (fs.existsSync(webkit.executablePath())) { wk = await webkit.launch(); engines.push(["webkit", wk]); }
+    else console.log("termBarNowrap: webkit is not installed, chromium only");
+  } catch (e) { console.log("termBarNowrap: webkit did not start, chromium only: " + e.message); }
+  try {
+    for (const [name, b] of engines) {
+      for (const vw of [1440, 1200, 1000]) {
+        const ctx = await b.newContext({ viewport: { width: vw, height: 900 } });
+        try {
+          const p = await ctx.newPage();
+          const errors = [];
+          p.on("pageerror", e => errors.push(String(e)));
+          await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+          await p.waitForFunction(() => typeof renderTermList === "function" && typeof applyTermList === "function", null, { timeout: slow(15000) });
+          const g = await p.evaluate(async () => {
+            switchView("terms");
+            termListW = 10000; applyTermList();
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            return [...document.querySelectorAll("#term-pane .term-bar button")].filter(x => x.offsetParent && /\w/.test(x.textContent))
+              .map(x => { const rg = document.createRange(); rg.selectNodeContents(x); return { text: x.textContent.trim(), lines: new Set([...rg.getClientRects()].map(r => Math.round(r.top))).size }; });
+          });
+          const wrapped = g.filter(x => x.lines > 1);
+          if (!g.some(x => x.text === "ctrl-c")) fail("termBarNowrap: no ctrl-c button in " + name + " at " + vw + "px: " + JSON.stringify(g));
+          if (wrapped.length) fail("termBarNowrap: " + name + " at " + vw + "px wraps " + JSON.stringify(wrapped));
+          if (errors.length) fail("termBarNowrap: page errors: " + errors.join(" | "));
+        } finally { await ctx.close(); }
+      }
+    }
+  } finally { if (wk) await wk.close(); }
 }
 
 // A CHILD ROW STAYS IN ITS COLUMN. A parent with a child, drawn pinned and again in a group, the child attached and
@@ -29098,7 +29190,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedFitsLone: selectedFitsLoneSection, termBarNowrap: termBarNowrapSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, artifacts: artifactsSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, keptFileLink: keptFileLinkSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -29530,8 +29622,8 @@ async function main() {
         groupPills: f("term-group").querySelectorAll("button").length
       };
     });
-    if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|group|cache" || gearSec.hide) {
-      fail("the gear has no terminal list section with sort, group and cache, and no hide: " + JSON.stringify(gearSec));
+    if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|group" || gearSec.hide) {
+      fail("the gear has no terminal list section with sort and group, and no hide: " + JSON.stringify(gearSec));
     }
     if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 5) {
       fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
@@ -30930,7 +31022,6 @@ async function main() {
     await unit("linkBoard", () => linkBoardSection(browser, base));
     await unit("usageCacheReads", bu("usageCacheReads"));
     await unit("usageTurns", bu("usageTurns"));
-  await unit("turnLimits", bu("turnLimits"));
     await unit("roomsDash", bu("roomsDash"));
     await unit("transportChips", bu("transportChips"));
     await unit("pathBadges", bu("pathBadges"));
@@ -31086,6 +31177,7 @@ async function main() {
     await unit("mComposeImages", () => mComposeImagesSection(browser));
     await unit("usageTab", bu("usageTab"));
     await unit("usageWeekReset", bu("usageWeekReset"));
+    await unit("usageNever", bu("usageNever"));
     // ── the paste spinner stops on the room's word ──
     await unit("pasteStart", () => pasteStartSection(browser, base));
     await unit("pasteDone", () => pasteDoneSection(browser, base));
@@ -31234,6 +31326,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("helpGearBoard", bu("helpGearBoard"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
+    await unit("launchNewAgentPath", bu("launchNewAgentPath"));
     await unit("launchGroupPlus", bu("launchGroupPlus"));
     await unit("launchNewAgentGroups", bu("launchNewAgentGroups"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
@@ -31279,6 +31372,8 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("selectedFits", () => selectedFitsSection(browser, base));
+    await unit("selectedFitsLone", () => selectedFitsLoneSection(browser, base));
+    await unit("termBarNowrap", () => termBarNowrapSection(browser, base));
     await unit("childFits", () => childFitsSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));

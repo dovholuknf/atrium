@@ -457,8 +457,8 @@ function renderRunnerSetup() {
   const s = h.setup;
   document.getElementById("runner-setup-title").textContent = `${h.label} setup`;
   const bin = s.installed
-    ? `<span class="by found" data-tip="${esc(s.exe)}">installed${s.version ? " " + esc(s.version) : ""}</span>
-       <code class="grow ell" data-tip="${esc(s.exe)}">${esc(s.exe)}</code>`
+    ? `<span class="by found" data-tip="${esc(s.exe)}" data-tip-above>installed${s.version ? " " + esc(s.version) : ""}</span>
+       <code class="grow ell" data-tip="${esc(s.exe)}" data-tip-above>${esc(s.exe)}</code>`
     : `<span class="by missing">not installed</span><span class="grow"></span>`;
   setHTML(host, `<div class="panel"><div class="row line">${bin}</div>` +
     (s.checks || []).map(c => setupCheckRow(c, h)).join("") + `</div>`);
@@ -1435,6 +1435,12 @@ function launchableHarnesses(room) {
     h.enabled && h.found && (!room || (h.room || "") === room));
 }
 
+// defaultHarness is the runner preselected when none was chosen: claude when it is usable, so a setup that had it keeps
+// it, else the first usable one. The room's DefaultRunner makes the same choice.
+function defaultHarness(usable) {
+  return usable.find(h => h.id === "claude") || usable[0] || null;
+}
+
 // refreshLaunchRunners fills the runner picker from the selected room and keeps
 // the current choice when it survives the change. Answers the selected runner
 // row, or null when the room has none to offer, which it draws as a dead end
@@ -1467,7 +1473,7 @@ function refreshLaunchRunners(preferId) {
   if (go) go.disabled = false;
   if (note) { note.hidden = true; note.innerHTML = ""; }
 
-  const want = usable.find(h => h.id === preferId) || usable[0];
+  const want = usable.find(h => h.id === preferId) || defaultHarness(usable);
   picker.innerHTML = usable.map(x =>
     `<option value="${esc(x.id)}"${x.id === want.id ? " selected" : ""}>${esc(x.label)}</option>`).join("");
   launchTarget.harness = want.id;

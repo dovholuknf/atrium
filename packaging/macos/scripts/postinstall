@@ -105,7 +105,7 @@ launchctl asuser "$uid" launchctl bootout "gui/$uid/$LABEL" 2>/dev/null || true
 if launchctl asuser "$uid" launchctl bootstrap "gui/$uid" "$plist" 2>/dev/null; then
     launchctl asuser "$uid" launchctl enable "gui/$uid/$LABEL" 2>/dev/null || true
     say "loaded and running for $user."
-    say "  the board:  http://localhost:7778"
+    say "  next: open the board at http://127.0.0.1:7778, then run  atrium hook install"
     say "  log:        $logdir/atrium.log"
 else
     # The file is written and correct, so it will load at the next login even

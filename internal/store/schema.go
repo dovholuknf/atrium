@@ -2604,6 +2604,14 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// THE REMOTE A CARD'S CHECKOUT CAME FROM, which the board groups by project. Filled at startup by
+		// BackfillGitInfo.
+		name: "0124_task_origin",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN origin TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

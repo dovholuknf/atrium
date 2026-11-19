@@ -318,6 +318,9 @@ async function chatTabSection(browser, base) {
     await p.click('.tab[data-view="chat"]');
     await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
     if (await p.evaluate(() => !document.getElementById("terms").hidden)) fail(tag + "the terminals view is still showing");
+    const idle = await p.evaluate(() => ({ marked: document.querySelectorAll("#term-list .on, #term-list .carries").length,
+      title: document.getElementById("chat-title").textContent, empty: document.getElementById("chat-empty").textContent }));
+    if (idle.marked || idle.title !== "pick a card" || /session/.test(idle.empty)) fail(tag + "nothing picked, and the pane says " + JSON.stringify(idle));
     // a row selects, it does not attach
     await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
     await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });

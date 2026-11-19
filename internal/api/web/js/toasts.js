@@ -177,6 +177,15 @@ function placeToasts() {
   const host = document.getElementById("toasts");
   const pane = document.getElementById("term-pane");
   if (!host) return;
+  // A question's buttons are at the bottom, where the stack sits, so it hangs from just under the question while one is open.
+  const asking = modalStack.find(d => d.id === "ask" && d.open);
+  if (asking) {
+    const under = Math.round(asking.getBoundingClientRect().bottom + 12);
+    host.classList.add("top");
+    host.style.setProperty("--toast-top", (under < innerHeight - 160 ? under : 14) + "px");
+    host.style.setProperty("--toast-right", "14px");
+    return;
+  }
   // A resize can land between two script loads, before solo.js and board.js have defined these. Boot places them again.
   if (typeof termOnly !== "function" || typeof isViewing !== "function") return;
   const onTerm = !!pane && (termOnly() || isViewing("terms"));

@@ -17,11 +17,8 @@ func TestValid(t *testing.T) {
 	}
 }
 
-func TestSeededValid(t *testing.T) {
-	if len(seeded) != 17 {
-		t.Fatalf("seed has %d entries", len(seeded))
-	}
-	if err := Valid(Colors{Repos: seeded}); err != nil {
-		t.Fatal(err)
+func TestSeedIsEmpty(t *testing.T) {
+	if s := Seed(); len(s.Repos) != 0 || s.Repos == nil {
+		t.Fatalf("seed is %v", s)
 	}
 }

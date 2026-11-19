@@ -1558,7 +1558,7 @@ func leanLaunch(in launchInput, harness string) bool {
 	}
 	// lean_agents keeps agents on a lean launch, so it is lean whatever the runner.
 	// A runner with no lean mode refuses it.
-	return harness == "claude" || len(in.LeanAgents) > 0 || len(in.LeanSkills) > 0 || in.Superlean != nil && *in.Superlean
+	return harness == "claude" || harness == "" || len(in.LeanAgents) > 0 || len(in.LeanSkills) > 0 || in.Superlean != nil && *in.Superlean
 }
 
 // superleanLaunch is whether an atrium_launch starts superlean. A per-item worker (isolated) is superlean unless it is a
@@ -1567,7 +1567,7 @@ func superleanLaunch(in launchInput, harness string) bool {
 	if in.Superlean != nil {
 		return *in.Superlean
 	}
-	return in.Isolated && harness == "claude" && !isReview(in.Kind) && !isInterview(in.Kind) && (in.Lean == nil || *in.Lean)
+	return in.Isolated && (harness == "claude" || harness == "") && !isReview(in.Kind) && !isInterview(in.Kind) && (in.Lean == nil || *in.Lean)
 }
 
 // superleanRefusal is the sentence for `superlean` beside `lean: false`, said before anything is posted.
@@ -1692,9 +1692,6 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		return nil, out, &ctl.RefusedError{Msg: "pass cwd for a directory you made, or repo for one atrium makes, not both"}
 	}
 	harness := strings.TrimSpace(in.Runner)
-	if harness == "" {
-		harness = "claude"
-	}
 	room := ctl.RoomOf(req)
 	callerRoom := room
 	if len(in.Needs) > 0 {
@@ -1901,6 +1898,14 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	if superlean {
 		reqBody["superlean"] = true
+	}
+	if harness == "" {
+		if in.Lean == nil {
+			reqBody["lean_defaulted"] = true
+		}
+		if superlean && in.Superlean == nil {
+			reqBody["superlean_defaulted"] = true
+		}
 	}
 	if spawnedByID != "" {
 		reqBody["spawned_by_id"] = spawnedByID

@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,12 +57,30 @@ func TestAnUnreadableGitPushValueReadsAsNone(t *testing.T) {
 	}
 }
 
+func TestTheGitPushRouteEndsTheGitWhenTheCallerLeaves(t *testing.T) {
+	t.Parallel()
+	srv, st, dir := fileServer(t)
+	id := cardIn(t, st, dir).ID
+	var seen error
+	srv.GitPush = func(ctx context.Context, _, _ string) (any, error) {
+		seen = ctx.Err()
+		return nil, ctx.Err()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+id+"/git-push", strings.NewReader(`{"branch":"fix/x"}`)).WithContext(ctx)
+	srv.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	if seen == nil {
+		t.Fatal("the push did not get the request's context, so it would outlive its caller")
+	}
+}
+
 func TestTheGitPushRouteTakesABranchAndNothingElse(t *testing.T) {
 	t.Parallel()
 	srv, st, dir := fileServer(t)
 	id := cardIn(t, st, dir).ID
 	var got [2]string
-	srv.GitPush = func(id, branch string) (any, error) {
+	srv.GitPush = func(_ context.Context, id, branch string) (any, error) {
 		got = [2]string{id, branch}
 		return map[string]string{"ok": "1"}, nil
 	}

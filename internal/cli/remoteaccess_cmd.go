@@ -247,8 +247,12 @@ func remoteWho() string {
 
 // openStreams asks the running room how many streams it has open. Not asking is fine: a stopped room has none.
 func openStreams() (int, bool) {
+	addr, src := hubAddressFrom("")
+	if src == hubSourceDefault {
+		return 0, false
+	}
 	cl := &http.Client{Timeout: time.Second}
-	resp, err := cl.Get(hubAddress("") + "/stream/status")
+	resp, err := cl.Get(addr + "/stream/status")
 	if err != nil {
 		return 0, false
 	}

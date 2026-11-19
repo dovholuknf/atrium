@@ -79,7 +79,9 @@ func (r *Room) dialDeadline(s *dialSlot) {
 func (r *Room) dataDial(ctx context.Context, session string, s *dialSlot) {
 	t := time.AfterFunc(r.T.DataDeadline, func() { r.dialDeadline(s) })
 	dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
+	done := r.controlDialing()
 	conn, err := r.Dial.Dial(dialCtx)
+	done()
 	cancel()
 	t.Stop()
 	r.mu.Lock()

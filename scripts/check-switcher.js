@@ -62,10 +62,12 @@ if (hookAt < 0) {
 // default here: ctrl-k is readline's kill-line, and this board's whole content
 // is terminals. Taking it means quietly breaking a keystroke every shell on
 // the machine has. It stays available to anybody who binds it on purpose.
-const def = /const SWITCH_KEY_DEFAULT = "([^"]+)"/.exec(html);
-if (!def) {
+// The default may be one string or a platform ternary; every string it can yield is checked.
+const def = /const SWITCH_KEY_DEFAULT = ([^;\n]+);/.exec(html);
+const defKeys = def ? [...def[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
+if (!def || !defKeys.length) {
   fail("there is no SWITCH_KEY_DEFAULT. The binding is a setting with a default, not a constant.");
-} else if (def[1] === "ctrl+KeyK") {
+} else if (defKeys.includes("ctrl+KeyK")) {
   fail("ctrl-k is the default binding. It is readline's kill-line, so this takes a keystroke " +
     "away from every session on the board. Leave it as something to opt into.");
 }

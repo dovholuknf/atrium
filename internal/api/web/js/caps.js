@@ -4,7 +4,7 @@
 // running. A failure on a capability marked optional, or not expected on that room, is shown neutral ("n/a") and counts
 // as green for its group, so a group of only pass and n/a starts collapsed to one summary row. Any other group starts open.
 
-const caps = { data: null, loading: false, open: {}, kind: "", result: "", find: "", picked: null, timer: 0 };
+const caps = { data: null, loading: false, open: {}, kind: "", result: "", find: "", picked: null, timer: 0, rerunNote: "" };
 
 function capsStates(c, room, r, running) {
   if (running) return "run";
@@ -42,6 +42,16 @@ function capsGroupGreen(rows) {
 
 function capsGroupIsOpen(kind, rows) {
   return kind in caps.open ? caps.open[kind] : !capsGroupGreen(rows);
+}
+
+// What to do about a red cell: the capability's own fix when the list gives one, else one by its kind.
+function capsFix(cap, room) {
+  if (cap && cap.fix) return cap.fix + ", then press Re-run.";
+  const id = cap ? cap.id : "it", on = room ? " on " + room : "";
+  const k = cap && cap.kind;
+  if (k === "toolchain") return "Install " + id + on + " and put it on the PATH the room starts with, then press Re-run.";
+  if (k === "reach") return "Check that " + (room || "the room") + " can reach " + id.replace(/^\w+:/, "") + " (network, ssh or ziti config), then press Re-run.";
+  return "Fix what the probe's reason names" + on + ", then press Re-run.";
 }
 
 function capsPill(state, stale) {
@@ -97,7 +107,8 @@ function capsPaint() {
     for (const x of grp) {
       h += '<tr><td class="cap-name">' + capsEsc(x.cap.id) + "</td>";
       for (const c of x.cells) {
-        h += '<td class="cap-cell' + (c.room.online ? "" : " offline") + '" data-room="' + capsEsc(c.room.name) + '" data-cap="' + capsEsc(x.cap.id) + '">' +
+        h += '<td class="cap-cell' + (c.room.online ? "" : " offline") + '" data-room="' + capsEsc(c.room.name) + '" data-cap="' + capsEsc(x.cap.id) + '"' +
+          (c.state === "fail" ? ' data-tip="' + capsEsc(capsFix(x.cap, c.room.name)) + '"' : "") + ">" +
           capsPill(c.state, !c.room.online) + (c.row && c.row.version ? '<span class="cap-ver">' + capsEsc(c.row.version) + "</span>" : "") +
           '<span class="cap-when">' + (c.state === "run" ? "probing now" : c.row ? capsAgo(c.row.at) : "never") + "</span></td>";
       }
@@ -120,7 +131,9 @@ function capsDetail() {
   el.innerHTML = "<h3>" + capsEsc(p.cap) + " on " + capsEsc(p.room) + "</h3><dl>" +
     "<dt>result</dt><dd>" + capsEsc(hit ? hit.state + (hit.version ? " " + hit.version : "") : "unknown") + "</dd>" +
     '<dt>reason <span class="cap-q" data-tip="The short reason the probe stored, cut to 200 characters and scrubbed of anything token shaped.">?</span></dt><dd>' +
-    capsEsc(hit ? hit.reason : "never run") + "</dd><dt>checked</dt><dd>" + capsAgo(hit && hit.at) + "</dd></dl>";
+    capsEsc(hit ? hit.reason : "never run") + "</dd><dt>checked</dt><dd>" + capsAgo(hit && hit.at) + "</dd>" +
+    (hit && hit.state === "fail" ? '<dt>to fix</dt><dd class="cap-fix">' +
+      capsEsc(capsFix((caps.data.caps || []).find(c => c.id === p.cap), p.room)) + "</dd>" : "") + "</dl>";
 }
 
 async function loadCaps() {
@@ -129,7 +142,7 @@ async function loadCaps() {
   try {
     const res = await fetch("/_hub/capabilities");
     if (res.ok) caps.data = await res.json();
-    document.getElementById("caps-note").textContent = res.ok ? "" : "The hub is not answering for capabilities.";
+    document.getElementById("caps-note").textContent = res.ok ? caps.rerunNote : "The hub is not answering for capabilities.";
   } catch (e) {
     document.getElementById("caps-note").textContent = "The hub is not answering for capabilities.";
   }
@@ -138,8 +151,24 @@ async function loadCaps() {
 }
 
 async function capsRerun(room) {
-  try { await fetch("/_hub/capabilities?room=" + encodeURIComponent(room), { method: "POST" }); } catch (e) { /* the next read shows it */ }
+  caps.rerunNote = "";
+  try {
+    const res = await fetch("/_hub/capabilities?room=" + encodeURIComponent(room), { method: "POST" });
+    if (!res.ok) caps.rerunNote = capsRerunFailed(res.status, await res.json().catch(() => ({})));
+  } catch (e) {
+    caps.rerunNote = "The re-run was not sent: the hub is not answering.";
+  }
   loadCaps();
+}
+
+function capsRerunFailed(status, body) {
+  const why = Object.entries(body.unreached || {}).map(([name, msg]) => {
+    let m = msg;
+    try { m = JSON.parse(msg).error || msg; } catch (e) { /* the room answered plain text */ }
+    return name + ": " + m;
+  });
+  if (status === 409) return "Not re-run: " + Object.keys(body.unreached || {}).join(", ") + " is already probing. Results land as each probe finishes.";
+  return "Not re-run. " + (why.length ? why.join(". ") : body.error || "The hub answered " + status + ".");
 }
 
 function paintCapsTab() {

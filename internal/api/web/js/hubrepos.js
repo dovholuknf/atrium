@@ -25,7 +25,7 @@
 
 const hubRepos = { repos: [], loaded: false, note: "", inflight: false, mem: "", sel: null, filter: "", mode: {}, open: {},
   // The branches view's own state, this window's and nobody else's. See BRANCHES below.
-  br: { data: null, loaded: false, inflight: false, note: "", repo: "", kind: "", show: { orphaned: true, "room-only": true, open: true, landed: false } } };
+  br: { data: null, loaded: false, inflight: false, note: "", repo: "", kind: "", show: { orphaned: true, "room-only": true, open: true, landed: false }, del: {}, said: "" } };
 
 const HR_VIEW_KEY = "atrium.reposView";
 const HR_VIEWS = ["shelf", "ledger", "feed", "requests", "branches"];
@@ -244,9 +244,9 @@ function hubReposHero(r) {
   if (!r) {
     return '<section class="hr-hero"><div class="hr-halo">' + HR_SVG.art + "</div>" +
       "<h2>Point a room at your <em>hub</em>.</h2>" +
-      '<p class="hr-lead">No repos on the hub yet. Run <code>atrium git setup</code> in a room and its repo appears here the moment it is pushed.</p>' +
-      '<div class="hr-herorow"><button type="button" class="hr-copy hr-go" data-copy="atrium git setup" data-id="setup" aria-label="copy atrium git setup">' +
-      HR_SVG.copy + '<span class="hr-copylabel">Copy atrium git setup</span></button></div></section>';
+      '<p class="hr-lead">No repos on the hub yet. On the hub, run <code>atrium rooms git repos add &lt;name&gt; &lt;checkout&gt;</code> and the repo appears here the moment it is pushed.</p>' +
+      '<div class="hr-herorow"><button type="button" class="hr-copy hr-go" data-copy="atrium rooms git repos add &lt;name&gt; &lt;checkout&gt;" data-id="setup" aria-label="copy the add repo command">' +
+      HR_SVG.copy + '<span class="hr-copylabel">Copy the command</span></button></div></section>';
   }
   const full = hubReposFull(r), url = hubReposUrl(r, hubReposMode(r));
   const cmd = "git remote add hub " + url + "\ngit push hub <branch>";
@@ -455,7 +455,8 @@ function hubReposFeed(repos) {
 // ---- BRANCHES ------------------------------------------------------------------------------------------------------
 //
 // docs/fabric/branch-status-design.md section 9, phase 2. Which branches of the hub are landed on claude/main, by what they
-// change and not by ancestry, and which are not: the list where work gets lost. READ-ONLY, no button acts on a branch.
+// change and not by ancestry, and which are not: the list where work gets lost. The one action is the operator's delete,
+// armed in the row and posted to /_hub/git/delete, which refuses main, claude/main and a board off the hub's machine.
 // Only what phase 1 computes has rows, so `open` and `room-only` have no chip until the hub counts one.
 //
 // ONE READ, EVERY REPOSITORY. GET /_hub/git/branches with no repo answers every repo the hub holds, and the repo choice
@@ -510,11 +511,45 @@ function hubReposBrRow(b, multi) {
   return '<tr class="hr-brrow st-' + esc(b.status) + '"><td class="hr-brname"><span class="hr-name" data-tip="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
     (multi ? '<span class="hr-who">' + esc(b.repo) + "</span>" : "") +
     (typeof walkHubPage === "function" ? '<a class="hr-bwalk" target="_blank" rel="noopener" data-tip="walk this branch against main" href="' +
-      esc(walkHubPage(b.repo, b.name)) + '">walk</a>' : "") + "</td>" +
+      esc(walkHubPage(b.repo, b.name)) + '">walk</a>' : "") + hubReposBrDel(b) + "</td>" +
     '<td><span class="hr-bstatus st-' + esc(b.status) + '"><i></i>' + esc(b.status) + "</span>" + evidence + "</td>" +
     '<td class="hr-brahead" data-tip="commits main does not carry, of all the branch\'s commits">' + (b.status === "landed" ? "–" : b.uncarried + "/" + b.commits) + "</td>" +
     "<td>" + hubReposAge(b.last_commit, "hr-when") + "</td>" +
     '<td class="hr-who">' + (w ? esc((w.room + (w.card ? " " + w.card : "")).trim()) + (w.title ? " · " + esc(w.title) : "") : "none") + "</td></tr>";
+}
+
+function hubReposBrDel(b) {
+  if (b.name === "main" || b.name === "claude/main") return "";
+  const s = hubRepos.br.del[b.repo + " " + b.name] || {}, at = ' data-repo="' + esc(b.repo) + '" data-mode="' + esc(b.name) + '"';
+  if (s.armed) return '<div class="hr-bsure" role="group" aria-label="delete ' + esc(b.name) + '"><span>' +
+    (s.busy ? "deleting <b>" + esc(b.name) + "</b>…" : "delete <b>" + esc(b.name) + "</b> from the hub? Its commits stay only where a room still has them.") + "</span>" +
+    '<button type="button" class="hr-byes" data-act="brdelyes"' + at + (s.busy ? " disabled" : "") + ">delete</button>" +
+    '<button type="button" class="hr-bno" data-act="brdelno"' + at + (s.busy ? " disabled" : "") + ">keep</button></div>";
+  return '<button type="button" class="hr-bdel" data-act="brdel"' + at + ' aria-label="delete ' + esc(b.name) + ' from the hub">delete</button>' +
+    (s.note ? '<span class="hr-bsaid bad" role="status">' + esc(s.note) + "</span>" : "");
+}
+
+async function hubReposBrDelete(repo, name) {
+  const br = hubRepos.br, key = repo + " " + name;
+  br.del[key] = { armed: true, busy: true };
+  hubReposPaint();
+  let note = "", ok = false;
+  try {
+    const res = await fetch("/_hub/git/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo, branch: name }) });
+    const body = await res.json().catch(() => ({}));
+    ok = res.ok;
+    note = (ok ? body.note : body.error) || (ok ? name + " is deleted" : "the hub refused that (" + res.status + ")");
+  } catch (e) { note = "could not reach the hub"; }
+  if (ok) {
+    delete br.del[key];
+    br.said = note;
+    if (br.data && br.data.branches) br.data.branches = br.data.branches.filter(b => !(b.repo === repo && b.name === name));
+    hubReposPaint();
+    loadHubBranches();
+    return;
+  }
+  br.del[key] = { note };
+  hubReposPaint();
 }
 
 function hubReposBranches() {
@@ -539,7 +574,8 @@ function hubReposBranches() {
     '<option value="">every repository (' + repos.length + ")</option>" + repos.map(r => '<option value="' + esc(r) + '"' + (r === repo ? " selected" : "") + ">" + esc(r) + "</option>").join("") + "</select></label>" +
     '<span class="hr-bchips" role="group" aria-label="show statuses">' + chips + "</span>" +
     '<span class="hr-bkinds" role="group" aria-label="kind of orphan"><span class="hr-bl">orphan kind</span>' + kinds + "</span>" +
-    '<span class="hr-bcomp">computed ' + hubReposAge(d.computed, "hr-when") + (d.building ? " · measuring again" : "") + "</span></div>";
+    '<span class="hr-bcomp">computed ' + hubReposAge(d.computed, "hr-when") + (d.building ? " · measuring again" : "") + "</span></div>" +
+    (br.said ? '<p class="hr-bsaid" role="status">' + esc(br.said) + "</p>" : "");
   const table = rows.length
     ? '<table class="hr-brtable"><thead><tr><th>branch</th><th>status</th><th>ahead</th><th>last commit</th><th>pushed by</th></tr></thead><tbody>' + rows.map(b => hubReposBrRow(b, !repo)).join("") + "</tbody></table>"
     : '<p class="hr-quiet">' + (mine.length ? "Nothing is shown with these chips on." : "No branches on this repository.") + "</p>";
@@ -643,12 +679,17 @@ function hubReposAct(el) {
   const act = el.dataset.act, repo = el.dataset.repo;
   if (act === "brchip") hubRepos.br.show[el.dataset.mode] = !hubRepos.br.show[el.dataset.mode];
   else if (act === "brkind") hubRepos.br.kind = el.dataset.mode;
+  else if (act === "brdel") { hubRepos.br.del[repo + " " + el.dataset.mode] = { armed: true }; hubRepos.br.said = ""; }
+  else if (act === "brdelno") delete hubRepos.br.del[repo + " " + el.dataset.mode];
+  else if (act === "brdelyes") return void hubReposBrDelete(repo, el.dataset.mode);
   else if (act === "mode") hubRepos.mode[repo] = el.dataset.mode;
   else if (act === "more") hubRepos.open[repo] = !hubRepos.open[repo];
   else if (act === "sel") hubRepos.sel = repo;
   else if (act === "filter") hubRepos.filter = repo;
   else return;
   hubReposPaint();
+  const yes = act === "brdel" && document.querySelector("#hubrepos-list .hr-byes");
+  if (yes) yes.focus({ preventScroll: true });
 }
 
 // Arrow keys move through the switcher, which is one tab stop like any radio group.

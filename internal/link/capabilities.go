@@ -238,7 +238,7 @@ func (p *Proxy) runCapabilities(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"error":"that room is not attached, so it cannot run its probes"}`))
 		return
 	}
-	asked, unreached := []string{}, map[string]string{}
+	asked, unreached, busy := []string{}, map[string]string{}, 0
 	for _, a := range targets {
 		ctx, cancel := context.WithTimeout(r.Context(), capBound)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+hostFor(a.Name)+"/v1/capabilities/run", bytes.NewReader(body))
@@ -253,6 +253,9 @@ func (p *Proxy) runCapabilities(w http.ResponseWriter, r *http.Request) {
 			if res.StatusCode == http.StatusAccepted {
 				asked = append(asked, a.Name)
 			} else {
+				if res.StatusCode == http.StatusConflict {
+					busy++
+				}
 				unreached[a.Name] = strings.TrimSpace(string(msg))
 			}
 		}
@@ -260,7 +263,12 @@ func (p *Proxy) runCapabilities(w http.ResponseWriter, r *http.Request) {
 		go p.readCaps(context.Background(), a)
 	}
 	code := http.StatusAccepted
-	if len(asked) == 0 {
+	switch {
+	case len(asked) > 0:
+	case busy == len(targets):
+		// A room still on its first sweep refuses a second run. It was reached, so this is no gateway failure.
+		code = http.StatusConflict
+	default:
 		code = http.StatusBadGateway
 	}
 	w.WriteHeader(code)

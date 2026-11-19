@@ -49,6 +49,7 @@ type atriumFlags struct {
 	identity  string
 	files     string
 	open      bool
+	noOpen    bool
 	// views are the roots board views are served from. See link/views.go.
 	views []string
 
@@ -67,6 +68,9 @@ type atriumFlags struct {
 	// only offer what it is running, which is no use to a room on another
 	// kind of machine. See `atrium_builds.go`.
 	buildDir string
+
+	// firstRun is the room launch the board's first-run panel starts this machine's room with. Nil for a hub that cannot.
+	firstRun *roomLaunch
 }
 
 // bind declares the flags. `prefix` goes on the four a room also has, `dir`,
@@ -266,7 +270,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	var sideStates []conn.ListenerState
 	var zrokFirst *hubSide
 	for i, s := range set.sides {
-		if s.kind == "ziti" && i > 0 {
+		if !listenAtStart(transport, s.kind, i) {
 			continue
 		}
 		// A zrok first is bound in the hub transports' loop, so a controller that cannot be asked does not stop the hub.
@@ -634,6 +638,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	proxy.SetStop(stop)
 
 	notifier.Start(ctx)
 	proxy.SetNotify(notifier)
@@ -663,6 +668,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		},
 	}, boardZitiSeed(boardTransport, boardService))
 	proxy.SetTransports(ht)
+	if f.firstRun != nil {
+		proxy.SetFirstRun(firstRunHub{store: store, side: side, l: *f.firstRun})
+	}
 	ht.Start(ctx)
 	// THE ACCESS SCREEN'S ENTRIES, each starting the listeners it stands for through the transports above.
 	access := newHubAccess(store, guard, keys.Dir)
@@ -792,6 +800,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if err != nil {
 		return fmt.Errorf("board listener: %w", err)
 	}
+	if err := writeHubAddrs(keys.Dir, hubAddrs{Board: boardLn.Addr().String(), Link: port, Advertise: advertise}); err != nil {
+		log.Printf("[hub] could not record this hub's addresses, so commands here assume the default ports: %v", err)
+	}
 	// A browser tries localhost as ::1 first, and on Windows a refused ::1 costs about 2s per new connection.
 	if v6 := loopbackV6(boardLn.Addr().String()); v6 != nil {
 		go func() { _ = srv.Serve(v6) }()
@@ -845,6 +856,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 
 	greet(store, side, board, id, up != nil)
+	firstStart(store.Fresh(), f.noOpen, up != nil, board)
 	if up != nil {
 		// Off the serving path: making a room enrols over the link, and the
 		// board should answer while that happens.
@@ -903,6 +915,10 @@ func greet(store *hubstore.Store, side *hubSide, boardAddr, id string, withRoom 
 	fmt.Println("  the board is at   http://127.0.0.1" + portOf(boardAddr))
 	fmt.Println("  rooms dial in on  " + side.says)
 	fmt.Println("  board build       " + id)
+	host, _ := os.Hostname()
+	for _, l := range bannerHints(boardAddr, runsAsAdmin(), os.Getenv, host) {
+		fmt.Println("  " + l)
+	}
 	fmt.Println()
 
 	rooms, err := store.Rooms()
@@ -934,6 +950,22 @@ func greet(store *hubstore.Store, side *hubSide, boardAddr, id string, withRoom 
 	fmt.Println("  `" + atriumCmd("rooms ls") + "` says more. `" + atriumCmd("rooms add") +
 		" <name>` adds one.")
 	fmt.Println()
+}
+
+// bannerHints are the start-up banner's lines for an administrator and for a start over ssh, none when neither.
+func bannerHints(boardAddr string, admin bool, getenv func(string) string, host string) []string {
+	var out []string
+	if admin {
+		out = append(out, "agents run as you, an administrator")
+	}
+	if strings.TrimSpace(getenv("SSH_CONNECTION")) != "" {
+		if host == "" {
+			host = "<host>"
+		}
+		port := strings.TrimPrefix(portOf(boardAddr), ":")
+		out = append(out, "forward the board: ssh -L "+port+":127.0.0.1:"+port+" "+host)
+	}
+	return out
 }
 
 // sinceHeard is a room's line on that list, in the terms somebody reads it in.

@@ -773,27 +773,86 @@ function dropThemePreview() {
 // Set as a variable on the pane rather than as a style on one element, so the
 // screen, the bar and the pane's own rounded corner all agree without three
 // places knowing the color.
-// A LIGHT THEME GETS A CONTRAST FLOOR. Claude Code draws diff context and dim
-// text in greys tuned for a dark background, which on a cream one are close to
-// invisible. xterm's `minimumContrastRatio` pushes any foreground too near its
-// background to a readable one. Dark themes keep 1 (off), so their palettes are
-// drawn exactly as authored. Every place that sets a terminal theme calls
-// `paintPaneBg` with it, so this is the one place that has to know.
-function bgIsLight(bg) {
-  const m = /^#([0-9a-f]{6})$/i.exec(bg || "");
-  if (!m) return false;
-  const c = [0, 2, 4].map(i => {
-    const v = parseInt(m[1].substr(i, 2), 16) / 255;
-    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.4;
+// CLAUDE CODE PAINTS ITS PROMPT BAND AND ITS DIM TEXT WITH COLOURS THAT NO PALETTE REACHES: a truecolor grey
+// 55,55,55 band, and SGR 2 faint, which xterm applies after its contrast floor. On a card colour they are a slab pasted
+// on and low-contrast grey. So the output is rewritten on the way in, and both move the OTHER way from the card: the
+// band toward the text colour, the faint text to a solid that clears the floor.
+const TERM_INK_BAND = "48;2;55;55;55";
+
+// The text colour the floor leaves, a band that reads under it and a faint text that clears the floor, as "r;g;b".
+function termInk(th) {
+  const bg = hexRGB(th && th.background), fg0 = hexRGB(th && th.foreground);
+  if (!bg || !fg0) return null;
+  const fg = legible(fg0, bg);
+  const ok = CARD_TEXT_FLOOR + 0.1;
+  let band = null;
+  for (let w = 0.14; w >= 0.05 && !band; w -= 0.01) {
+    const x = mixRGB(fg, bg, w);
+    if (contrastRGB(fg, x) >= ok) band = x;
+  }
+  if (!band) band = mixRGB(fg.r + fg.g + fg.b > bg.r + bg.g + bg.b ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 }, bg, 0.2);
+  let faint = fg;
+  for (let w = 0.3; w <= 1; w += 0.05) {
+    const x = mixRGB(fg, bg, w);
+    if (contrastRGB(x, bg) >= ok) { faint = x; break; }
+  }
+  return { band: rgbList(band).replace(/,/g, ";"), faint: rgbList(faint).replace(/,/g, ";") };
 }
 
+// `s` with the band and the faint rewritten. `st.on` is whether a faint run is open, so the 22 that closes it also
+// restores the foreground and a 22 that only ends bold is left alone.
+function termInkText(s, st) {
+  return s.replace(/\x1b\[([0-9;]*)m/g, (m, p) => {
+    if (p === "2") { st.on = true; return "\x1b[38;2;" + st.faint + "m"; }
+    if (p === "22" && st.on) { st.on = false; return "\x1b[22;39m"; }
+    if (p === "" || p === "0" || p === "39") st.on = false;
+    const q = p.replace(/(^|;)48;2;55;55;55(?=;|$)/, "$148;2;" + st.band);
+    return q === p ? m : "\x1b[" + q + "m";
+  });
+}
+
+// An escape sequence cut by the end of a frame is held in `st.tail` and finished by the next, so a band split across two
+// frames is still rewritten.
+function termInkMap(d, st) {
+  if (!st.band) return d;
+  let s = d;
+  if (typeof d !== "string") {
+    s = "";
+    for (let i = 0; i < d.length; i += 8192) s += String.fromCharCode.apply(null, d.subarray(i, i + 8192));
+  }
+  const had = st.tail;
+  s = had + s;
+  const cut = /\x1b(?:\[[0-9;]*)?$/.exec(s);
+  st.tail = cut ? cut[0] : "";
+  if (cut) s = s.slice(0, cut.index);
+  const out = termInkText(s, st);
+  if (typeof d === "string") return out;
+  if (out === s && !had && !st.tail) return d;
+  const b = new Uint8Array(out.length);
+  for (let i = 0; i < out.length; i++) b[i] = out.charCodeAt(i);
+  return b;
+}
+
+// Installed once per terminal, so every write site is covered: the live socket, a kept terminal and the replay.
+function termInkSet(t, theme) {
+  if (typeof t.write !== "function") return;
+  if (!t._atriumInk) {
+    const raw = t.write.bind(t), st = { band: "", faint: "", on: false, tail: "" };
+    t._atriumInk = st;
+    t.write = (d, cb) => raw(termInkMap(d, st), cb);
+  }
+  const ink = termInk(theme);
+  t._atriumInk.band = ink ? ink.band : "";
+  t._atriumInk.faint = ink ? ink.faint : "";
+}
+
+// EVERY THEME GETS THE CONTRAST FLOOR. Claude Code draws diff context and dim text in greys tuned for one background, and
+// xterm's `minimumContrastRatio` pushes any foreground too near its background to a readable one.
 function paintPaneBg(theme) {
   const pane = document.getElementById("term-pane");
   if (!pane) return;
   const bg = (theme && theme.background) || "";
-  if (term) term.options.minimumContrastRatio = bgIsLight(bg) ? 4.5 : 1;
+  if (term) { term.options.minimumContrastRatio = CARD_TEXT_FLOOR; termInkSet(term, theme); }
   // A THEME GOES ON AND COMES OFF AS ONE THING.
   //
   // `--term-fg` and `--term-line` were left behind here while `--term-bg` and

@@ -166,6 +166,16 @@ dialog#na:focus { outline: none; }
 #na .twbtn:hover { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
 #na .howline .twbtn { font-size: var(--fs-sm); padding: 6px 12px; }
 #na kbd { font: var(--fs-xxs) var(--mono); opacity: .7; margin-left: 8px; }
+#na .eyebrow .kindseg { float: right; letter-spacing: 0; text-transform: none; }
+#na .two > .field > label.eyebrow { display: flex; align-items: center; height: 14px; }
+#na .two > .field > label.eyebrow > :is(.kindseg, .reset) { margin-left: auto; }
+#na .kindseg button { font: 500 var(--fs-xs)/1.3 var(--sans); padding: 1px 9px; margin-left: -1px; border-radius: 0;
+  background: transparent; border: 1px solid var(--stroke-dim); color: var(--label); }
+#na .kindseg button:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); margin-left: 0; }
+#na .kindseg button:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+#na .kindseg button.on { background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text); }
+#na.tw-mode .kindseg { display: none; }
+#na .cb[hidden], #na input#na-cwd[hidden] { display: none; }
 #na .na-note { font-size: var(--fs-sm); color: var(--dim); }
 #na .na-note.warn { color: var(--warn); }
 #na .dlg-foot { padding: 12px 22px; gap: var(--sp-3); }

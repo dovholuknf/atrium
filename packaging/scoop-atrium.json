@@ -26,7 +26,7 @@
   "version": "0.0.0",
   "description": "Organizes coding agents. A daemon with durable state, a permission gate, a web board, and a pseudo terminal per runner you can attach to from a browser.",
   "homepage": "https://github.com/dovholuknf/atrium",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "architecture": {
     "64bit": {
       "url": "https://github.com/dovholuknf/atrium/releases/download/v0.0.0/atrium_v0.0.0_windows_amd64.zip",
@@ -36,14 +36,12 @@
   },
   "bin": "atrium.exe",
   "notes": [
-    "Nothing starts on its own. `atrium daemon` runs it, and scripts\\atrium-autostart.ps1",
-    "in the repository registers it as a logon task.",
-    "",
-    "A logon task rather than a Windows service, deliberately: a service runs in session 0",
-    "and cannot open a pseudo terminal you can attach to, which is most of what atrium is for.",
+    "Nothing starts on its own. `atrium run` starts the hub and this machine's room.",
+    "`atrium --help` lists the rest. Then open the board at http://127.0.0.1:7778 and run",
+    "`atrium hook install`.",
     "",
     "Hooks: `atrium hook install` writes them into your Claude Code settings, naming the",
-    "binary the RUNNING daemon reports. Start the daemon first, then install the hooks."
+    "binary the RUNNING room reports. Start atrium first, then install the hooks."
   ],
   "checkver": {
     "github": "https://github.com/dovholuknf/atrium"

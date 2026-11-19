@@ -421,12 +421,12 @@ async function openRoomJoin() {
     tellUser("add a room",
       "<p>The hub names its rooms, so adding one is where the name is chosen. " +
       "On the machine running the hub:</p>" +
-      "<pre>atrium2 hub room add &lt;name&gt;</pre>" +
+      "<pre>atrium rooms add &lt;name&gt;</pre>" +
       "<p>That prints one line. On the machine your agents are on, paste it:</p>" +
-      "<pre>atrium2 join atr1_...</pre>" +
+      "<pre>atrium room join atr1_...</pre>" +
       "<p>The string is good once, for an hour, and for that name only. It is shown " +
       "once, because the hub keeps a hash of it rather than the string. " +
-      "<code>atrium2 hub room token &lt;name&gt;</code> mints another and retires the " +
+      "<code>atrium rooms token &lt;name&gt;</code> mints another and retires the " +
       "old one.</p>" +
       "<p>The room dials the hub, so nothing needs opening on either side, and the hub " +
       "can be restarted without touching the sessions running there.</p>");
@@ -795,8 +795,8 @@ async function renderSources() {
 
   if (!allSources.length) {
     setHTML(host, `<div class="panel"><div class="empty">
-      nothing is looking for work. a source is a command that prints intake items,
-      and scripts/sources has working examples.
+      nothing is looking for work. a source is a command that prints intake items.
+      add one with add a source above.
     </div></div>`);
     return;
   }

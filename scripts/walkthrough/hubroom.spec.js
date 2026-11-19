@@ -72,7 +72,7 @@ test.beforeAll(async () => {
   fs.rmSync(TREE, { recursive: true, force: true })
   fs.mkdirSync(TREE, { recursive: true })
 
-  hub = start(["run", "--no-room", "--addr", BOARD, "--link", LINK, "--atrium-dir", `${TREE}/hub`],
+  hub = start(["run", "--no-room", "--no-open", "--addr", BOARD, "--link", LINK, "--atrium-dir", `${TREE}/hub`],
     `${TREE}/hub.log`)
   await until(async () => (await get(`http://${BOARD}/_hub/health`)).code === 200)
 
@@ -161,7 +161,7 @@ test("the board can be restarted without the agents noticing", async ({ page }) 
   await beat(page, 3)
 
   // ── bring it back ──
-  hub = start(["run", "--no-room", "--addr", BOARD, "--link", LINK, "--atrium-dir", `${TREE}/hub`],
+  hub = start(["run", "--no-room", "--no-open", "--addr", BOARD, "--link", LINK, "--atrium-dir", `${TREE}/hub`],
     `${TREE}/hub2.log`)
   await until(async () => {
     const r = await get(`http://${BOARD}/_hub/rooms`)

@@ -624,6 +624,17 @@ func TestOnlyAnAgentLaunchedClaudeGetsTheStopHook(t *testing.T) {
 	}
 }
 
+// A fresh install has no hook in settings.json, and an agent launch still gets the Stop hook.
+func TestStopHookCommandFallsBackToTheDaemonBinaryOnAFreshInstall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("ATRIUM_HOOK_EXE", "C:/bin/atrium.exe")
+	if got := stopHookCommand(); got != "C:/bin/atrium.exe turn --event end" {
+		t.Fatalf("stopHookCommand = %q", got)
+	}
+}
+
 // The board's own dialog records the human as the launcher. An agent launch
 // that lost its sender stays unnamed.
 func TestTheBoardDialogIsTheHuman(t *testing.T) {

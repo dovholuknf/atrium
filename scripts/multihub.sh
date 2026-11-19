@@ -36,7 +36,7 @@ wait_for() { for _ in $(seq 1 150); do eval "$1" >/dev/null 2>&1 && return 0; sl
 start_hub() {
   local i=$1 d="$root/hub$1" p; p=$(hubport "$1")
   mkdir -p "$d"
-  nohup "$A" run --no-room --addr "127.0.0.1:$p" --link "127.0.0.1:$((p + 1))" --atrium-dir "$d" --atrium-db "$d/hub.db" \
+  nohup "$A" run --no-room --no-open --addr "127.0.0.1:$p" --link "127.0.0.1:$((p + 1))" --atrium-dir "$d" --atrium-db "$d/hub.db" \
     >"$d/hub.log" 2>&1 &
   echo $! >"$d/pid"
   wait_for "curl -sf http://127.0.0.1:$p/_hub/rooms" || { echo "hub $i did not start, see $d/hub.log" >&2; return 1; }

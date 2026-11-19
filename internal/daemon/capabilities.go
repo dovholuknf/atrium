@@ -36,7 +36,9 @@ func (d *Daemon) capabilities() *capability.Auditor {
 				l = hl
 			}
 		}
-		capAud = capability.NewAuditor(l, filepath.Join(dir, "capability-scratch"), filepath.Join(dir, "capability-results.json"))
+		// Results are the room's own: a second room on the machine must not show the first one's.
+		own := d.hostStateDir()
+		capAud = capability.NewAuditor(l, filepath.Join(own, "capability-scratch"), filepath.Join(own, "capability-results.json"))
 		capAud.Repos = filepath.ToSlash(filepath.Dir(filepath.Dir(dir)))
 	})
 	return capAud

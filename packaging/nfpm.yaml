@@ -51,7 +51,7 @@ description: |
   pseudo terminal per supervised runner that a browser can attach to.
 vendor: dovholuknf
 homepage: https://github.com/dovholuknf/atrium
-license: MIT
+license: Apache-2.0
 
 contents:
   # Staged here by scripts/package-linux.sh. See the note above about why this

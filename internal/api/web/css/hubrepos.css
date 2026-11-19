@@ -282,7 +282,7 @@
     .hr-repo:hover, .hr-it:hover, .hr-ev:hover, #hubrepos .hr-chipbtn:hover { transform: none; }
   }
 
-  /* BRANCHES: which branches landed on main and which did not. Read-only, so nothing here is a call to act. The status colours
+  /* BRANCHES: which branches landed on main and which did not. The operator's delete is the one action, quiet until armed. The status colours
      are existing tokens: danger for what is at risk, warn for the one copy, teal for owned, dim for landed. */
   .hr-bhead { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin: 0 0 var(--vs-3); }
   .hr-brepo, .hr-bl, .hr-bcomp { font-size: var(--fs-xs); color: var(--label); }
@@ -303,6 +303,15 @@
   .hr-brname .hr-who { display: block; }
   .hr-brname .hr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hr-brname .hr-bwalk { margin-left: 8px; font-size: var(--fs-xs); color: var(--chip-accent-text); }
+  #hubrepos .hr-bdel { margin-left: 8px; padding: 0; background: transparent; border: 0; font: inherit; font-size: var(--fs-xs); color: var(--dim); transform: none; }
+  #hubrepos .hr-bdel:hover, #hubrepos .hr-bdel:focus-visible { color: var(--danger-text); background: transparent; border: 0; text-decoration: underline; transform: none; }
+  .hr-bsure { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: var(--fs-xs); color: var(--body); }
+  #hubrepos .hr-bsure button { padding: 3px 10px; font: 650 var(--fs-xs)/1.2 var(--sans); border-radius: var(--r-pill); transform: none; }
+  #hubrepos .hr-bsure .hr-byes { color: var(--danger-text); background: rgba(var(--danger-rgb), .16); border: 1px solid rgba(var(--danger-rgb), .45); }
+  #hubrepos .hr-bsure .hr-bno { color: var(--label); background: transparent; border: 1px solid var(--stroke-dim); }
+  #hubrepos .hr-bsure button:disabled { opacity: .55; cursor: progress; }
+  .hr-bsaid { display: block; margin: 6px 0 0; font-size: var(--fs-xs); color: var(--label); overflow-wrap: anywhere; }
+  .hr-bsaid.bad { color: var(--danger-text); }
   .hr-bstatus { display: inline-flex; align-items: center; gap: 6px; font: 700 var(--fs-xs)/1 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--c); }
   .hr-bstatus i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
   .hr-bkind, .hr-bhow { margin-left: 8px; font: 650 var(--fs-xs)/1 var(--mono); padding: 2px 7px; border-radius: 6px; color: var(--label); background: var(--lift); }

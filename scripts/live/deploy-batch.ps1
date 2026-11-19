@@ -17,7 +17,12 @@
 # the hold and is correctly not woken.
 # -KillRunners lets a room whose pty host would die with it be stopped anyway, ending every runner and any typed text.
 # Without it that refusal stops the deploy. -RoomOnly leaves the hub running: only the room stops and starts, the hub keeps its process and the image it loaded.
-param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate, [switch]$RoomOnly, [switch]$KillRunners)
+#
+# The hub is started through the task scheduler, outside any job, and waited on for minutes: a hub merging or repacking
+# answers late. The script never ends with the hub stopped. Its result is written to deploy-result.txt beside the log,
+# and said to -ReportTo <card>@<room> (default the card that ran it), retried until the hub is back to route it.
+param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate, [switch]$RoomOnly, [switch]$KillRunners,
+  [string]$ReportTo)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'BATCH'
@@ -26,6 +31,24 @@ $LiveTag = 'BATCH'
 Assert-NotSupervised -Targets 'claude-sg4'
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'deploy-batch.log'
+if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
+  $ReportTo = if ($env:ATRIUM_ROOM) { "$env:ATRIUM_TASK_ID@$env:ATRIUM_ROOM" } else { $env:ATRIUM_TASK_ID }
+}
+
+# Finish ends the script with the hub up and the result written. A hub left stopped is started again first.
+function Finish([int]$Code, [string]$Text) {
+  if (-not $WhatIf -and -not $RoomOnly -and -not (Wait-Hub 3)) {
+    Say 'the hub is not answering at the end of the deploy, starting it'
+    Start-Hub -ViaTask
+    if (-not (Confirm-HubUp)) { $Text = "$Text. HUB IS NOT HEALTHY: run start-atrium.ps1" }
+  }
+  Say $Text
+  if (-not $WhatIf) {
+    Set-Content (Join-Path $Base 'deploy-result.txt') "$(Get-Date -Format o) exit $Code $Text"
+    if ($ReportTo) { $null = Send-CardSay $ReportTo "deploy-batch: $Text" }
+  }
+  exit $Code
+}
 
 if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit 1 }
 if (-not (Test-NewBuildStamped)) { exit 1 }
@@ -81,17 +104,26 @@ if (-not (Stop-Room)) {
 if ($RoomOnly) { Say 'room only: the hub is left running' } else { Stop-Hub }
 
 # 3. Swap the binary: stage, then two renames. Hooks in flight keep the image they loaded.
-if (-not (Install-Atrium)) { exit 1 }
+if (-not (Install-Atrium)) { Finish 1 'FATAL: the new binary was not installed. the hub is started on what was there' }
 
-# 4. Start the hub with its exact args, then wait for health.
+# 4. Start the hub with its exact args, then wait for health. A hub that never answers is replaced by the outgoing
+#    binary, and the room is still started, so nothing is left stopped.
+$hubFailed = $false
 if ($RoomOnly) {
   if (-not $WhatIf -and -not (Wait-Hub 5)) { Say 'FATAL: room only, but the hub is not answering'; exit 1 }
 } else {
   Backup 'hub.err' $Base 5
-  Start-Hub
+  Start-Hub -ViaTask
   if (-not $WhatIf) {
-    $h = Wait-Hub 25
-    if ($h) { Say "hub up build $($h.build)" } else { Say 'FATAL: hub did not come healthy'; exit 1 }
+    $h = Confirm-HubUp
+    if ($h) { Say "hub up build $($h.build)" } else {
+      Say "FATAL: hub did not come healthy. reverting to $revert"
+      Stop-Hub
+      $null = Install-Atrium $revert
+      Start-Hub -ViaTask
+      $null = Confirm-HubUp
+      $hubFailed = $true
+    }
   }
 }
 
@@ -129,20 +161,19 @@ if (-not $WhatIf) {
     # A frozen room does not answer the shutdown post either. Stop-Room forces after its 45s.
     if (-not (Stop-Room)) { Say 'FATAL: the room refused to stop (its pty host would die with it), so the revert is not installed over a room that is still running. nothing was changed. pass -KillRunners to end its runners'; exit 1 }
     if (-not $RoomOnly) { Stop-Hub }
-    if (-not (Install-Atrium $revert)) { Say 'FATAL: revert install failed. nothing is running'; exit 1 }
-    if (-not $RoomOnly) { Start-Hub; $null = Wait-Hub 25 }
+    if (-not (Install-Atrium $revert)) { Say 'FATAL: revert install failed' }
+    if (-not $RoomOnly) { Start-Hub -ViaTask; $null = Confirm-HubUp }
     $revertStart = Get-Date
     $null = Start-Room
     $back = [bool](Wait-RoomAttached $revertStart)
-    Say "reverted. room serves ${RoomServes}: $(Test-RoomServes), $RoomName attached and held: $back"
-    exit 1
+    Finish 1 "reverted. room serves ${RoomServes}: $(Test-RoomServes), $RoomName attached and held: $back"
   }
+  if ($hubFailed) { Finish 1 'BATCH DEPLOY FAILED: the new hub never came healthy. the previous binary is running on hub and room' }
   # SERVING BUT NOT ATTACHED IS A FAILURE, NOT A REVERT. The room works for its own agents and its own board at
   # $RoomServes, and a revert would restart every card a second time for what may be the hub refusing it. Said loudly,
   # with its own exit code, so nobody reads the board going quiet as a finished deploy.
   if (-not $attached) {
-    Say "BATCH DEPLOY FAILED: $RoomName serves locally but is not on the hub. nothing reverted"
-    exit 2
+    Finish 2 "BATCH DEPLOY FAILED: $RoomName serves locally but is not on the hub. nothing reverted"
   }
 }
-Say 'batch deploy done.'
+Finish 0 'batch deploy done.'

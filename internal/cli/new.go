@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -66,9 +67,16 @@ func newNew() *cobra.Command {
 			if repo == "" {
 				got, err := repoOfCheckout()
 				if err != nil {
-					return err
+					local, lerr := localCheckout()
+					if lerr != nil {
+						return err
+					}
+					return startNewLocal(local, strings.TrimSpace(args[0]), o)
 				}
 				repo = got
+			}
+			if filepath.IsAbs(filepath.FromSlash(repo)) {
+				return startNewLocal(filepath.ToSlash(repo), strings.TrimSpace(args[0]), o)
 			}
 			return startNew(repo, strings.TrimSpace(args[0]), o)
 		},
@@ -82,6 +90,22 @@ func newNew() *cobra.Command {
 	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "", "atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
 	return c
+}
+
+// localCheckout is the top of the checkout this directory is in, for a repo with no origin to name it.
+func localCheckout() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", fmt.Errorf("this directory is not in a git checkout")
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// startNewLocal is `new` for a repo that is a folder on the room's machine and has no forge: the launch route makes
+// the worktree from the clone, off --from or the clone's claude/main, else its current HEAD.
+func startNewLocal(path, name string, o newOpts) error {
+	return launchBody(launchOpts{boardURL: o.boardURL, repo: path, branch: name, base: strings.TrimSpace(o.from),
+		prompt: o.prompt, harness: strings.TrimSpace(o.runner), title: name}, "")
 }
 
 // repoOfCheckout is host/org/repo of the current directory's origin remote.

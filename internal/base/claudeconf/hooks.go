@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -393,41 +394,9 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 		return nil, none, readErr
 	}
 
-	wanted := map[string]bool{}
-	for _, e := range events {
-		wanted[e] = true
-	}
-	matched, changed := 0, 0
-	for _, w := range t.Wanted {
-		if len(wanted) > 0 && !wanted[w.Event] {
-			continue
-		}
-		// An empty list means "everything atrium normally wants", and an
-		// optional hook is by definition not that. It is written only when
-		// named, so nobody installs a Stop hook by pressing install all.
-		if len(wanted) == 0 && w.Optional {
-			continue
-		}
-		// Both gates registered ask the human twice for every call. The script
-		// goes, and atrium's is then corrected like any other row. With only the
-		// script there, upsert rewrites it in place, keeping its timeout.
-		if twoGates(t, w, registeredCommands(doc)) {
-			if err := dropDotfilesGate(doc, w.Hook); err != nil {
-				return nil, none, err
-			}
-			changed++
-		}
-		matched++
-		did, err := upsert(t, doc, w.Hook, exe, w.Event, w.Timeout)
-		if err != nil {
-			return nil, none, err
-		}
-		if did {
-			changed++
-		}
-	}
-	if matched == 0 {
-		return nil, none, fmt.Errorf("no hook matches %v", events)
+	changed, err := applyInstall(t, doc, exe, events)
+	if err != nil {
+		return nil, none, err
 	}
 	// Nothing to do is a success with no side effects. Writing anyway would
 	// leave a backup of a file that never changed, and running install a few
@@ -472,6 +441,102 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 
 	rep, err := InspectTarget(t, exe)
 	return rep, res, err
+}
+
+// applyInstall edits doc in memory the way an install would and counts the edits.
+func applyInstall(t Target, doc map[string]json.RawMessage, exe string, events []string) (int, error) {
+	wanted := map[string]bool{}
+	for _, e := range events {
+		wanted[e] = true
+	}
+	matched, changed := 0, 0
+	for _, w := range t.Wanted {
+		if len(wanted) > 0 && !wanted[w.Event] {
+			continue
+		}
+		// An empty list means "everything atrium normally wants", and an
+		// optional hook is by definition not that. It is written only when
+		// named, so nobody installs a Stop hook by pressing install all.
+		if len(wanted) == 0 && w.Optional {
+			continue
+		}
+		// Both gates registered ask the human twice for every call. The script
+		// goes, and atrium's is then corrected like any other row. With only the
+		// script there, upsert rewrites it in place, keeping its timeout.
+		if twoGates(t, w, registeredCommands(doc)) {
+			if err := dropDotfilesGate(doc, w.Hook); err != nil {
+				return 0, err
+			}
+			changed++
+		}
+		matched++
+		did, err := upsert(t, doc, w.Hook, exe, w.Event, w.Timeout)
+		if err != nil {
+			return 0, err
+		}
+		if did {
+			changed++
+		}
+	}
+	if matched == 0 {
+		return 0, fmt.Errorf("no hook matches %v", events)
+	}
+	return changed, nil
+}
+
+// PreviewInstallTarget says what InstallOnlyTarget would change in the runner's file, one line per command added
+// ("+ Hook: command") or taken out ("- Hook: command"), and writes nothing.
+func PreviewInstallTarget(t Target, exe string, events []string) (path string, lines []string, err error) {
+	if why := unwritable(t, exe); why != "" {
+		return "", nil, fmt.Errorf("%s", why)
+	}
+	p, err := t.Path()
+	if err != nil {
+		return "", nil, err
+	}
+	path = filepath.ToSlash(p)
+	doc := map[string]json.RawMessage{}
+	raw, err := os.ReadFile(p)
+	if err == nil {
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return path, nil, fmt.Errorf("%s is not valid json, so nothing would be changed: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return path, nil, err
+	}
+	before := registeredCommands(doc)
+	changed, err := applyInstall(t, doc, exe, events)
+	if err != nil {
+		return path, nil, err
+	}
+	after := registeredCommands(doc)
+	hooks := map[string]bool{}
+	for h := range before {
+		hooks[h] = true
+	}
+	for h := range after {
+		hooks[h] = true
+	}
+	for _, w := range t.Wanted {
+		if !hooks[w.Hook] {
+			continue
+		}
+		delete(hooks, w.Hook)
+		for _, c := range before[w.Hook] {
+			if !slices.Contains(after[w.Hook], c) {
+				lines = append(lines, "- "+w.Hook+": "+c)
+			}
+		}
+		for _, c := range after[w.Hook] {
+			if !slices.Contains(before[w.Hook], c) {
+				lines = append(lines, "+ "+w.Hook+": "+c)
+			}
+		}
+	}
+	if changed > 0 && len(lines) == 0 {
+		lines = append(lines, "~ an existing entry's timeout or shell would be corrected in place")
+	}
+	return path, lines, nil
 }
 
 // upsert puts atrium's command under one hook name, replacing a stale one and

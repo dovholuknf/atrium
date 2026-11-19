@@ -422,7 +422,12 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		tune(&d.hk)
 	}
 	if st.Fresh() {
-		if home, err := os.UserHomeDir(); err != nil {
+		home, err := os.UserHomeDir()
+		if opts.LocationFile != "" {
+			// A room with its own address file is a second one: its mcp.json sits beside its database, never the first room's.
+			home, err = filepath.Dir(opts.DBPath), nil
+		}
+		if err != nil {
 			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
 		} else if err := wireControlMCP(st, home, d.hk.AtriumBinary()); err != nil {
 			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
@@ -570,7 +575,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.HomeRemove = d.RemoveHome
 	d.ap.HomeOpen = d.OpenHome
 	d.ap.WorktreesAudit = d.handleWorktreesAudit
-	d.ap.GitPush = d.GitPush
+	d.ap.GitPush = d.GitPushCtx
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
 	d.ap.MergeProof = func(dir, ref, into string) (any, error) { return d.MergeProof(dir, ref, into) }
 	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
@@ -1240,6 +1245,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Before the address file is overwritten, since the previous one is what
 	// says which database the last daemon used.
+	_, ranBefore := d.previousDB()
 	d.warnIfDifferentDatabase()
 
 	// Written once both listeners are bound, so the file never advertises an
@@ -1256,7 +1262,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// moves their status. See unexpectedexit.go.
 	d.noteCrashMidTurn()
 
-	if d.st.Fresh() {
+	if d.st.Fresh() && !ranBefore {
+		log.Printf("[atrium] first run here: made a new database at %s. The board starts empty.", d.opts.DBPath)
+	} else if d.st.Fresh() {
 		log.Printf("[atrium] ---------------------------------------------------------------")
 		log.Printf("[atrium] THIS IS A NEW DATABASE. There was no file at that path, so one")
 		log.Printf("[atrium] was created. The board will be empty and you will have no rules.")

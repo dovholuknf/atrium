@@ -46,6 +46,7 @@ type Cap struct {
 	Optional    bool     `yaml:"optional,omitempty" json:"optional,omitempty"`
 	NotExpected []string `yaml:"not_expected,omitempty" json:"not_expected,omitempty"`
 	Every       string   `yaml:"every,omitempty" json:"every,omitempty"`
+	Fix         string   `yaml:"fix,omitempty" json:"fix,omitempty"`
 }
 
 // List is the declared list.

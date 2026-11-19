@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -322,9 +323,12 @@ func (h *Hub) ServeVia(ctx context.Context, ln net.Listener, via string) error {
 // take handles one freshly accepted connection, whichever kind it is.
 func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 	br := bufio.NewReader(conn)
-	hi, err := hearHello(conn, br)
+	hi, err := wire.HearHelloWithin(conn, br, helloWait(conn))
 	if err != nil {
-		log.Printf("[hub] refused a connection: %v", err)
+		// A bare EOF is a dial that hung up before a hello: a port check, every 30s on a quiet hub.
+		if !errors.Is(err, io.EOF) {
+			log.Printf("[hub] refused a connection: %v", err)
+		}
 		conn.Close()
 		return
 	}

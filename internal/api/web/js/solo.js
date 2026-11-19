@@ -100,7 +100,8 @@ function terminalLabel(task) {
   }
 
   let where = "";
-  if (at >= 0) {
+  // A card home's repo can read as its own `work` folder, which would anchor on `cards/<slug>/work` and hide the card's name.
+  if (at >= 0 && !isCardHomePath(path)) {
     where = segs.slice(Math.max(0, at - 2), at + 1).join("/");
   } else if (task.host && task.org && repo) {
     where = [task.host, task.org, repo].join("/");

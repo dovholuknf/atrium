@@ -301,6 +301,8 @@ function Get-ControlService {
 
 # Find-Control finds the sg4-control room by its own binary directory and the `room` subcommand.
 function Find-Control {
+  # ATRIUM_LIVE_FAKE_CONTROL=0 means none is running, for tests on a host where the real one is.
+  if ($env:ATRIUM_LIVE_FAKE_CONTROL -eq '0') { return }
   Get-CimInstance Win32_Process |
     Where-Object {
       $_.ExecutablePath -and
@@ -441,6 +443,22 @@ $StaySeconds = 10
 # (sg3, 2026-10-15), so this accepts minutes and a verdict of failed means this budget ran out. The one place it is named.
 $ReattachBudget = 600
 $ReattachSayEvery = 15
+
+# How long a deploy waits for a restarted hub to answer, per try. A hub merging branches or repacking answers late.
+$HubBudget = 180
+$HubTries = 3
+
+# Confirm-HubUp answers the hub's health, waiting $Budget seconds per try. A hub process that is running is waited on
+# again, never restarted: only a hub that is not running is started, through the task scheduler. $null when every try ran out.
+function Confirm-HubUp([int]$Budget = $HubBudget, [int]$Tries = $HubTries) {
+  for ($i = 1; $i -le $Tries; $i++) {
+    $h = Wait-Hub $Budget
+    if ($h) { return $h }
+    if (Find-Atrium run | Select-Object -First 1) { Say "hub is running but not healthy after ${Budget}s (try $i of $Tries), waiting again" }
+    elseif ($i -lt $Tries) { Say "hub is not running (try $i of $Tries), starting it again"; Start-Hub -ViaTask }
+  }
+  return $null
+}
 
 # How long a swap waits for the old room to let go of its store (atrium.db) after `atrium stop`. The port check passes
 # while the process still holds the file, and the new room then exits "store held by another process" (sgg).
@@ -898,8 +916,8 @@ function Get-LoginPath {
 # Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
 # when the result is still in one. Returns the pid of the cmd that runs it, 0 for a task. Throws only when no route
 # could start it.
-function Start-Jobless([string]$Command, [string]$Tag) {
-  $route = Get-StartRoute (Test-ProcessInJob $PID)
+function Start-Jobless([string]$Command, [string]$Tag, [switch]$ViaTask) {
+  $route = if ($ViaTask) { 'task' } else { Get-StartRoute (Test-ProcessInJob $PID) }
   $record = Get-PathRecord
   if ($record) {
     Say "$Tag gets the room's PATH record first: $($record -join ';')"
@@ -908,7 +926,12 @@ function Start-Jobless([string]$Command, [string]$Tag) {
     Say "no PATH record at $(Join-Path $ToolchainDir 'path.txt'), so $Tag gets no go or jq it did not inherit. room-toolchain.ps1 writes one"
   }
   $procId = $null
-  $launch = Join-Path $Base "launch-$Tag.cmd"
+  # A new name per start, the old ones gone: cmd.exe rereads a running batch file at its byte offset, so a rewrite in
+  # place had the previous start's cmd run the new command line once its room stopped, from the binary not yet swapped.
+  Get-ChildItem -LiteralPath $Base -Filter "launch-$Tag*.cmd" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match "^launch-$([regex]::Escape($Tag))(-\d{17})?\.cmd$" } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+  $launch = Join-Path $Base "launch-$Tag-$(Get-Date -Format yyyyMMddHHmmssfff).cmd"
   if ($route -ne 'breakaway') {
     $login = @(Get-LoginPath | Where-Object { $record -notcontains $_ })
     New-LaunchScript $launch $Command (@($record) + $login)
@@ -949,7 +972,7 @@ function Start-Jobless([string]$Command, [string]$Tag) {
 # brought the hub up without it (2026-09-30 19:09, the share broke). Unset in both environments means unset for the
 # hub too. The value used is logged here and in hub.err. @runtime's r-new-hosts-setting, a stored setting, replaces
 # this.
-function Start-Hub {
+function Start-Hub([switch]$ViaTask) {
   $line = "`"$AtriumBin`" $($HubArgs -join ' ') >> $Base\hub.out 2>> $Base\hub.err"
   $h = Get-LiveHosts
   $said = Get-LiveHostsSaid $h
@@ -958,7 +981,7 @@ function Start-Hub {
     Clear-SessionEnv
     Set-LiveHosts $h
     Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} ({1}) =====" -f (Get-Date -Format o), $said)
-    $null = Start-Jobless $line 'hub'
+    $null = Start-Jobless $line 'hub' -ViaTask:$ViaTask
   }
 }
 

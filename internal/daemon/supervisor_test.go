@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -130,3 +131,12 @@ type stuckPty struct {
 }
 
 func (stuckPty) Write(p []byte) (int, error) { return 0, nil }
+
+func TestNotOnPathNamesTheRestart(t *testing.T) {
+	t.Parallel()
+	got := notOnPath("claude", errors.New("executable file not found")).Error()
+	if !strings.HasPrefix(got, "claude is not on PATH: executable file not found") ||
+		!strings.Contains(got, "`atrium stop`, then `atrium run`") {
+		t.Fatalf("got %q", got)
+	}
+}

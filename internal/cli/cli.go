@@ -93,7 +93,7 @@ func runRoot(root *cobra.Command, args []string) int {
 	}
 	// Still a failure, still exit 1. The command said why already.
 	if !errors.Is(err, errAlreadySaid) {
-		fmt.Fprintln(os.Stderr, root.Name()+":", err)
+		fmt.Fprintln(root.ErrOrStderr(), root.Name()+":", err)
 	}
 	return 1
 }
@@ -102,7 +102,7 @@ func runRoot(root *cobra.Command, args []string) int {
 const runnerHook = "atrium/runner-hook"
 
 // isRunnerHook reports whether cmd is one a runner runs as a hook. Its
-// children, `hook install` and `hook status`, are typed by people and keep
+// children, `hook install`, `hook uninstall` and `hook status`, are typed by people and keep
 // their failures.
 func isRunnerHook(cmd *cobra.Command) bool {
 	return cmd != nil && cmd.Annotations[runnerHook] == "true"
@@ -111,21 +111,32 @@ func isRunnerHook(cmd *cobra.Command) bool {
 func newRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "atrium",
-		Short: "Single pane of glass for many claude-code sessions.",
-		Long: "Atrium runs claude-code sessions in real terminals, keeps their state durable, and " +
+		Short: "Single pane of glass for many coding-agent sessions.",
+		Long: "Atrium runs coding-agent sessions (claude, codex and others) in real terminals, keeps their state durable, and " +
 			"shows every one of them on one board.",
+		// runRoot prints the one `atrium: ...` line, so cobra's `Error: ...` would say it twice.
+		SilenceErrors: true,
 	}
 	root.AddCommand(newDaemon(), newZrokCmd(),
 		newJoin(), newLeave(), newStop(), newRestartPtyHost(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
-		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), capabilitiesCmd(), mergeCmd(), newWorktree(), newUpdate(), newStatusline())
+		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), capabilitiesCmd(), mergeCmd(), newWorktree(), newUpdate(), newStatusline(), newAdopt(), newUninstall())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/archive/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")
 	backups.AddCommand(hubRestoreCmd("atrium-"))
 	root.AddCommand(newRun(), roomCmd(), newServiceCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd(), newAdapter())
+	// Set after flags and arguments parse, so a mistyped flag still shows usage and a refusal does not.
+	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) { cmd.SilenceUsage = true }
+	root.AddGroup(&cobra.Group{ID: "start", Title: "Start here:"}, &cobra.Group{ID: "more", Title: "More commands:"})
 	for _, c := range root.Commands() {
+		switch c.Name() {
+		case "run", "launch", "hook", "stop", "uninstall", "version":
+			c.GroupID = "start"
+		default:
+			c.GroupID = "more"
+		}
 		switch c.Name() {
 		case "run", "room":
 			quietUsage(c)

@@ -55,7 +55,7 @@
     <string>@SHELL@</string>
     <string>-l</string>
     <string>-c</string>
-    <string>exec "@EXE@" daemon --db "@DB@"</string>
+    <string>exec "@EXE@" run --db "@DB@"</string>
   </array>
 
   <key>RunAtLoad</key>

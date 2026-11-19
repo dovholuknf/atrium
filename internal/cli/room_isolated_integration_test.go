@@ -45,6 +45,34 @@ func TestIsolatedRoomWritesAPrivateAddressAndLeavesTheSharedOneAlone(t *testing.
 	}
 }
 
+// An isolated `atrium run` beside the machine's own: with only its hub's addresses given, its room takes a private
+// directory, database and ports, and probes its own address file rather than the machine's.
+func TestIsolatedRunStartsItsOwnRoomBesideTheMachinesRoom(t *testing.T) {
+	hub := t.TempDir()
+	machine := roomLaunch{human: defaultRoomHTTP(), agent: defaultRoomAgent()}
+	own := isolatedRoomLaunch(machine, atriumFlags{board: "127.0.0.1:7878", dir: hub}, false, false)
+
+	if own.dir == roomDir() || own.dir != filepath.ToSlash(filepath.Join(hub, "room")) {
+		t.Fatalf("isolated room keeps its keys in %q, wanted a directory under %q", own.dir, hub)
+	}
+	if own.db == defaultRoomDB() || own.db != own.dir+"/atrium.db" {
+		t.Fatalf("isolated room's database is %q, wanted one beside its keys", own.db)
+	}
+	if own.human != "127.0.0.1:7881" || own.agent != "127.0.0.1:7877" {
+		t.Fatalf("isolated room listens on %q and %q, wanted 7881 and 7877", own.human, own.agent)
+	}
+	given := isolatedRoomLaunch(roomLaunch{human: "127.0.0.1:9001", agent: "127.0.0.1:9002"},
+		atriumFlags{board: "127.0.0.1:7878", dir: hub}, true, true)
+	if given.human != "127.0.0.1:9001" || given.agent != "127.0.0.1:9002" {
+		t.Fatalf("flags given were overridden: %q %q", given.human, given.agent)
+	}
+	own.isolated = true
+	t.Setenv("ATRIUM_LOCATION", filepath.Join(t.TempDir(), "machine.json"))
+	if got, want := roomAddressFile(own), filepath.Join(own.dir, "daemon.json"); got != want {
+		t.Fatalf("isolated run probes %q, wanted its own %q", got, want)
+	}
+}
+
 // The default room is unchanged: it keeps using the fixed shared path so hooks
 // find it without being told its dir. Only --isolated moves the address.
 func TestTheDefaultRoomStillUsesTheFixedPath(t *testing.T) {

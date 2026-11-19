@@ -60,7 +60,7 @@ func TestARelayedLaunchLandsOnTheTargetWithTheLaunchersLineage(t *testing.T) {
 		t.Fatalf("lineage = %v / %v", got["spawned_by"], got["spawned_by_id"])
 	}
 	if got["brief"] != "the whole brief" || got["cwd"] != "/srv/atrium" || got["model"] != "opus" ||
-		got["lean"] != true || got["harness"] != "claude" {
+		got["lean"] != true || got["harness"] != "" {
 		t.Fatalf("sg4 was sent %+v", got)
 	}
 	if p, _ := got["prompt"].(string); !strings.HasPrefix(p, "do the review") || !strings.HasSuffix(p, reportLine) {
@@ -330,7 +330,7 @@ func TestARelayedLaunchIsAuditedOnTheTargetWithNoPayload(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if len(details) != 1 || rooms[0] != "sg4" || kinds[0] != "ctl-launch" ||
-		details[0] != "by sa1@m1mini (claimed): launch claude as sg4~kid, ok" {
+		details[0] != "by sa1@m1mini (claimed): launch as sg4~kid, ok" {
 		t.Fatalf("audit = %v %v %v", rooms, kinds, details)
 	}
 	if strings.Contains(details[0], "whole brief") || strings.Contains(details[0], "do the review") {

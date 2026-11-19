@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/zitictx"
+	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/sdk-golang/ziti/edge"
 )
 
@@ -68,7 +70,7 @@ type Ziti struct {
 
 // zitiConn is the part of a ziti context this package uses.
 type zitiConn interface {
-	Dial(service string) (edge.Conn, error)
+	DialWithOptions(service string, options *ziti.DialOptions) (edge.Conn, error)
 	Listen(service string) (edge.Listener, error)
 	Close()
 }
@@ -169,14 +171,14 @@ func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
 		z.gate.failed()
 		return nil, err
 	}
-	// The SDK's Dial takes no context, so it runs beside one.
+	// The SDK's Dial takes no context, so it runs beside one. Its own ConnectTimeout defaults to 5s, which fails a dial\n	// that queued behind a push, so it is DialWait.
 	type res struct {
 		c   net.Conn
 		err error
 	}
 	ch := make(chan res, 1)
 	go func() {
-		c, err := zc.Dial(z.Service)
+		c, err := zc.DialWithOptions(z.Service, &ziti.DialOptions{ConnectTimeout: wire.DefaultTimings().DialWait})
 		if err != nil {
 			ch <- res{nil, err}
 			return

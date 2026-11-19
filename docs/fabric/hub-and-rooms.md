@@ -61,6 +61,11 @@ first time, it also makes the room: it names it after the machine and enrols it 
 needs no join string. `atrium run --no-room` serves the hub alone, which is how `scripts/live` runs it, with the room
 started separately.
 
+The first start of a hub, one with a new store, prints the board and the folder it ran in, and opens the board in
+the default browser with that folder as the first launch's default. It never opens over ssh, on Linux with no
+`DISPLAY` or `WAYLAND_DISPLAY`, or with `--no-open`, which scripts pass. Later starts never open one. Services run
+`atrium room` or `atrium daemon`, which never open one.
+
 ## A room
 
 `atrium room` is the daemon (`internal/daemon`): the store, the terminals, the hooks, the permission chain. It runs for

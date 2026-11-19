@@ -386,7 +386,7 @@ async function allowFolderNow() {
     "Every request that touches anything under this folder stops asking, " +
     "whatever the command and however the path is quoted." +
     "<br><br>Name the narrowest folder that covers the work.",
-    "", "D:/git/github/dovholuknf/atrium");
+    "", "~/src/myproject");
   if (dir === null || !dir.trim()) return;
 
   const tools = await askUser({
@@ -501,8 +501,12 @@ async function runImportNow(body) {
   refresh();
 }
 
-function exportRules() {
-  window.location = "/v1/rules/export";
+async function exportRules() {
+  try {
+    const res = await api("/v1/rules/export");
+    if (!(res.rules || []).length) { toast("no rules to export", "there are no rules yet."); return; }
+    download("atrium-rules.json", JSON.stringify(res, null, 2), "application/json");
+  } catch (e) { toast("export failed", e.message); }
 }
 
 // Exports what is currently on screen, filters included, so a search then an

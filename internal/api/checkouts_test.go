@@ -125,3 +125,27 @@ func TestBranchCheckAsksTheRoomAndSaysWhenItCannot(t *testing.T) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestFolderReadersRefuseAPathThatIsNotAPlainAbsoluteFolder(t *testing.T) {
+	good := t.TempDir()
+	if err := os.Mkdir(filepath.Join(good, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readRepoFacts(good); !ok {
+		t.Fatalf("readRepoFacts(%q) refused a plain repository folder", good)
+	}
+	for _, bad := range []string{"repo", good + string(filepath.Separator) + ".." + string(filepath.Separator) + filepath.Base(good), good + "\x00", `\server\share\repo`} {
+		if _, ok := readRepoFacts(bad); ok {
+			t.Errorf("readRepoFacts(%q) read it, want a refusal", bad)
+		}
+		if got := newestSessionIn(bad, ""); got != nil {
+			t.Errorf("newestSessionIn(%q) listed %v, want nothing", bad, got)
+		}
+		if got := cwdOf(bad); got != "" {
+			t.Errorf("cwdOf(%q) = %q, want nothing", bad, got)
+		}
+		if got := titleOf(bad, "id1"); got != "id1" {
+			t.Errorf("titleOf(%q) = %q, want the id back", bad, got)
+		}
+	}
+}

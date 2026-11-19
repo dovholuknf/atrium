@@ -302,9 +302,19 @@ function ucPaint() {
       `<div class="ucmissing" data-room="${esc(n)}"><b>${esc(n || "this room")}</b> ${esc(UC.rooms[n].why)}. ` +
       `Its usage is not in these charts.</div>`;
   }
+  // A room no card has reported from has no limits and no week to reset, so it says that rather than dashes.
+  const never = !series.length && !UC.until && (typeof UL === "undefined" || !UL.readings.length);
+  const rs = document.getElementById("uc-reset");
+  if (rs) rs.parentElement.hidden = never;
+  if (never) {
+    UC.cor = null;
+    body.innerHTML = html + `<div class="empty ucnever">Nothing yet. Usage shows here once a card ends a turn.</div>`;
+    ucAfterPaint(body);
+    return;
+  }
   if (!series.length) {
     UC.cor = null;
-    html += `<div class="empty">${okRooms.length ? "No turn ended in this range." : "Nothing to draw."}</div>` + (UC.until ? "" : ulSection());
+    html += `<div class="empty">${okRooms.length ? "No turn ended in this range." : UC.sub === "reports" ? "Nothing to report." : "Nothing to draw."}</div>` + (UC.until ? "" : ulSection());
     body.innerHTML = html;
     ucAfterPaint(body);
     return;

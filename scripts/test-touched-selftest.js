@@ -122,7 +122,7 @@ check("live-common.ps1: test-save-revert needs arguments, so it is said and not 
   !live(p).includes("scripts/live/test-save-revert.ps1") && !!p.pwshSkip && p.pwshSkip.has("scripts/live/test-save-revert.ps1"), [live(p), p.pwshSkip]);
 check("live-common.ps1: a PWSH action per test", live(p).length > 0 && actions(p).filter(a => a.startsWith("PWSH ")).length === live(p).length, actions(p));
 p = P(["scripts/live/deploy-batch.ps1"]);
-check("deploy-batch.ps1: the tests that run it", live(p).sort().join() === "scripts/live/test-deploy-batch-preflight.ps1,scripts/live/test-refuse-supervised.ps1", live(p));
+check("deploy-batch.ps1: the tests that run it", live(p).sort().join() === "scripts/live/test-deploy-batch-preflight.ps1,scripts/live/test-deploy-hub-slow.ps1,scripts/live/test-refuse-supervised.ps1", live(p));
 p = P(["scripts/live/test-stop-room-409.ps1"]);
 check("a live test: itself", live(p).join() === "scripts/live/test-stop-room-409.ps1", live(p));
 p = P(["scripts/live/README.md"]);

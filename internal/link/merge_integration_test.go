@@ -457,7 +457,7 @@ func TestMergeQueueNeverLeavesARequestTesting(t *testing.T) {
 	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeTesting {
 		t.Fatalf("a run within its bound was given up: %+v", got)
 	}
-	x.p.forgeService().Merges.Now = func() time.Time { return time.Now().Add(forgepkg.MergeSilent + time.Minute) }
+	x.p.forgeService().Merges.Now = func() time.Time { return time.Now().Add(11 * time.Minute) }
 	x.p.forgeService().MergeWatch(context.Background())
 	got := must(x.st.MergeGet(m.N))
 	if got.State != hubstore.MergeQueued || got.Retries != 0 || !strings.Contains(got.Reason, "did not answer") {
@@ -472,11 +472,11 @@ func TestMergeQueueNeverLeavesARequestTesting(t *testing.T) {
 
 	m = x.testing(t, m.N)
 	cancel := "/_hub/merge/" + strconv.FormatInt(m.N, 10) + "/cancel"
-	if code, _ := x.send("POST", cancel, js(map[string]any{"by": "w1@sg4"})); code == 200 {
-		t.Fatal("a card cancelled a testing request")
+	if code, _ := x.send("POST", cancel, js(map[string]any{"by": "w9@sg4"})); code == 200 {
+		t.Fatal("a stranger cancelled a testing request")
 	}
-	if code, b := x.send("POST", cancel, "{}"); code != 200 || !strings.Contains(b, `"cancelled"`) {
-		t.Fatalf("the operator cancels a testing request: %d %s", code, b)
+	if code, b := x.send("POST", cancel, js(map[string]any{"by": "w1@sg4"})); code != 200 || !strings.Contains(b, `"cancelled"`) {
+		t.Fatalf("the requester cancels a testing request: %d %s", code, b)
 	}
 	if x.refOn(t, gitsync.MergeRef(m.N)) != "" {
 		t.Fatal("the cancelled candidate's ref is still there")

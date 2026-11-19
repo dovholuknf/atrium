@@ -10,8 +10,8 @@ function fail(msg) { console.error("FAIL: " + msg); bad++; }
 const src = fs.readFileSync(path.join(__dirname, "..", "internal", "api", "web", "js", "caps.js"), "utf8");
 const ctx = { document: { getElementById() { return null; }, querySelector() { return null; } }, console, setTimeout, clearTimeout };
 vm.createContext(ctx);
-vm.runInContext(src + "\nthis.api = { caps, capsStates, capsCells, capsGroupGreen, capsGroupIsOpen };", ctx);
-const { caps, capsStates, capsCells, capsGroupGreen, capsGroupIsOpen } = ctx.api;
+vm.runInContext(src + "\nthis.api = { caps, capsStates, capsCells, capsGroupGreen, capsGroupIsOpen, capsFix, capsRerunFailed };", ctx);
+const { caps, capsStates, capsCells, capsGroupGreen, capsGroupIsOpen, capsFix, capsRerunFailed } = ctx.api;
 
 const at = new Date().toISOString();
 const res = (room, cap, state) => ({ room, cap, state, at });
@@ -49,6 +49,15 @@ caps.open.toolchain = false;
 if (capsGroupIsOpen("toolchain", grp("toolchain"))) fail("a click did not collapse an open group");
 caps.open.reach = true;
 if (!capsGroupIsOpen("reach", grp("reach"))) fail("a click did not open a collapsed group");
+
+const busy = capsRerunFailed(409, { unreached: { m1try: "{\"error\":\"a capability run is already going\"}" } });
+if (!/m1try is already probing/.test(busy)) fail("a busy room was not named as already probing: " + busy);
+const down = capsRerunFailed(502, { unreached: { m1try: "{\"error\":\"boom\"}" } });
+if (down !== "Not re-run. m1try: boom") fail("a failed re-run did not show the room's reason: " + down);
+// A red cell says what to do: the capability's own fix, else one by its kind, naming the room.
+if (!/^Run gh auth login.*Re-run.$/.test(capsFix({ id: "gh-auth", kind: "access", fix: "Run gh auth login on the room's machine" }, "m1mini"))) fail("a fix from the list is not used");
+if (!/Install gcc on sg3/.test(capsFix({ id: "gcc", kind: "toolchain" }, "sg3"))) fail("a toolchain miss does not say to install it on its room");
+if (!/sg3 can reach cdwsl/.test(capsFix({ id: "ssh:cdwsl", kind: "reach" }, "sg3"))) fail("a reach miss does not name the host");
 
 if (bad) process.exit(1);
 console.log("caps groups: all green collapses, anything else opens, and a click wins.");

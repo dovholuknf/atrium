@@ -3,17 +3,23 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +45,7 @@ func newRun() *cobra.Command {
 		f        atriumFlags
 		noRoom   bool
 		isolated bool
+		noHooks  bool
 		l        roomLaunch
 	)
 	c := &cobra.Command{
@@ -54,13 +61,20 @@ func newRun() *cobra.Command {
 			"--agent are the room's, exactly as `atrium room` takes them.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if noRoom {
-				return serveAtrium(f, nil)
+			if isolated {
+				l = isolatedRoomLaunch(l, f, cmd.Flags().Changed("http"), cmd.Flags().Changed("agent"))
 			}
 			l.dir = orDefault(l.dir, roomDir())
 			l.db = orDefault(l.db, defaultRoomDB())
 			l.isolated = isolated
 			l.upgrades = acceptUpgrades
+			f.firstRun = &l
+			if noRoom {
+				return serveAtrium(f, nil)
+			}
+			if !isolated {
+				wireHooksOnFirstRun(cmd.OutOrStdout(), noHooks)
+			}
 			return serveAtrium(f, func(store *hubstore.Store, _ linktransport.Keys, side *hubSide) error {
 				return ensureRoom(store, side, side.kind, l)
 			})
@@ -69,13 +83,40 @@ func newRun() *cobra.Command {
 	f.bind(c, "atrium-")
 	c.Flags().BoolVar(&noRoom, "no-room", false,
 		"serve the atrium alone, and never look for or start a room")
+	c.Flags().BoolVar(&noHooks, "no-hooks", false,
+		"never wire claude's hooks, even when its settings have none of atrium's")
 	c.Flags().StringVar(&l.dir, "dir", "", "where this machine's room keeps its certificate")
 	c.Flags().StringVar(&l.db, "db", "", "the room's database")
 	c.Flags().StringVar(&l.human, "http", defaultRoomHTTP(), "the room's own board, for when the atrium is down (a non-loopback address starts with a warning)")
 	c.Flags().StringVar(&l.agent, "agent", defaultRoomAgent(), "where the room's agents report, loopback only (a non-loopback address is refused)")
+	c.Flags().BoolVar(&f.noOpen, "no-open", false, "never open the board in a browser, which only the first start does")
 	isolatedFlag(c, &isolated)
 	acceptUpgradeFlag(c)
 	return c
+}
+
+// isolatedRoomLaunch gives an isolated run's room its own directory, database and ports where none were given, so it
+// never opens the machine's room's keys or database or binds its ports. The ports follow the hub's board the way the
+// defaults do: the room's board is three above it and its agents one below.
+func isolatedRoomLaunch(l roomLaunch, f atriumFlags, humanSet, agentSet bool) roomLaunch {
+	base := orDefault(f.dir, hubDir())
+	l.dir = orDefault(l.dir, filepath.ToSlash(filepath.Join(base, "room")))
+	l.db = orDefault(l.db, filepath.ToSlash(filepath.Join(l.dir, "atrium.db")))
+	host, p, err := net.SplitHostPort(f.board)
+	if err != nil {
+		return l
+	}
+	port, err := strconv.Atoi(p)
+	if err != nil || port <= 1 || port > 65532 {
+		return l
+	}
+	if !humanSet {
+		l.human = net.JoinHostPort(host, strconv.Itoa(port+3))
+	}
+	if !agentSet {
+		l.agent = net.JoinHostPort(host, strconv.Itoa(port-1))
+	}
+	return l
 }
 
 // ensureRoom makes sure this machine has a room running, and changes nothing
@@ -93,6 +134,9 @@ func ensureRoom(store *hubstore.Store, side *hubSide, transport string, l roomLa
 				"and `atrium room join` do it by hand", err)
 		}
 	}
+	if note := noCardRootNote(runtime.GOOS, l.db); note != "" {
+		log.Printf("[hub] %s", note)
+	}
 	p, logPath, err := startRoom(l)
 	if err != nil {
 		return fmt.Errorf("could not start `atrium room`: %w", err)
@@ -101,12 +145,28 @@ func ensureRoom(store *hubstore.Store, side *hubSide, transport string, l roomLa
 	return p.Release()
 }
 
+// noCardRootNote is the one line for a room that will have no card root, "" when it has one or the database cannot say.
+func noCardRootNote(goos, db string) string {
+	set, err := store.SettingOfFileReadOnly(db, cardroot.Setting)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	env := cardroot.Env{GOOS: goos, HomeDir: os.UserHomeDir}
+	if _, err := env.Resolve(set, ""); !errors.Is(err, cardroot.ErrNone) {
+		return ""
+	}
+	return "this room has no card root, so a launch from a repo will be refused. " + cardroot.SetHow
+}
+
 // roomAddressFile is where the room this would start writes its address, which
 // is the same answer runRoom arrives at: a location already in the environment
-// wins, because the room inherits it.
+// wins, because the room inherits it, except under --isolated, which the room obeys over the env.
 func roomAddressFile(l roomLaunch) string {
 	if p := strings.TrimSpace(os.Getenv("ATRIUM_LOCATION")); p != "" {
-		return p
+		if !l.isolated {
+			return p
+		}
+		log.Printf("[hub] --isolated: ignoring ATRIUM_LOCATION=%s, this room keeps its address beside %s", p, l.dir)
 	}
 	loc, _ := roomLocationEnv(l.isolated, l.dir)
 	return loc
@@ -141,11 +201,15 @@ func roomAnswers(path string) (string, bool) {
 // DIRECT ONLY. Over ziti or zrok the network decides who may connect, and
 // this process cannot enrol an identity on a controller it does not run.
 func mintOwnRoom(store *hubstore.Store, side *hubSide, transport string, keys linktransport.Keys) error {
+	return mintRoomNamed(store, side, transport, keys, defaultRoomName())
+}
+
+// mintRoomNamed is mintOwnRoom for a name somebody typed.
+func mintRoomNamed(store *hubstore.Store, side *hubSide, transport string, keys linktransport.Keys, name string) error {
 	if t := strings.TrimSpace(transport); t != "" && t != hubstore.TransportDirect {
 		return fmt.Errorf("the room link is over %s, and only a direct link can make a room "+
 			"on its own", t)
 	}
-	name := defaultRoomName()
 	r, err := store.ByName(name)
 	if err != nil {
 		if r, err = store.Add(name, hubstore.TransportDirect); err != nil {

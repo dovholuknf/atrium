@@ -47,7 +47,7 @@ type CapabilityMatch struct {
 
 type capOutput struct {
 	Rooms   []CapabilityMatch `json:"rooms,omitempty"`
-	Caps    []json.RawMessage `json:"caps,omitempty"`
+	Caps    []any             `json:"caps,omitempty"`
 	Results []capCell         `json:"results,omitempty"`
 	Note    string            `json:"note,omitempty"`
 	Asked   []string          `json:"asked,omitempty"`

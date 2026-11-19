@@ -332,7 +332,9 @@ func (r *Room) fetchUpgrade(ctx context.Context, o Offer) error {
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
+	done := r.controlDialing()
 	conn, err := r.Dial.Dial(ctx)
+	done()
 	if err != nil {
 		return err
 	}

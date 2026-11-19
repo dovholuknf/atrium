@@ -1104,10 +1104,10 @@ async function transportToggleSection(browser, base) {
   }
 }
 
-// hubTransports: the gear lists the hub's ziti transports (the board, the room link, the CI hook) with a state, a
-// service and an identity each, and its zrok share with a state and a line of masked token and env. Turning one on or off PUTs {name, on, service, identity} to /_hub/transports, a flag
-// seed is named, a 409 refusal is shown as the hub said it, and a 403 makes the row read-only.
-// HT_SHOTS=dir writes the row before (no section) and after.
+// hubTransports: the accessing atrium pane lists the hub's transports that are on (ziti board, room link, CI hook, zrok
+// share) in its configured list, and offers the ones that are off in the Access Atrium menu. Turning one on or off PUTs
+// {name, on, service, identity} to /_hub/transports, a flag seed is named, a 409 refusal is shown as the hub said it, and
+// a 403 makes the rows read-only.
 async function hubTransportsSection(browser, base) {
   const tag = "hubTransports: ";
   const open = async (mode) => {
@@ -1152,20 +1152,25 @@ async function hubTransportsSection(browser, base) {
     await p.click("#gear");
     await p.evaluate(() => showSettingsPane("accessing atrium"));
   };
+  const row = n => '#access [data-transport="' + n + '"]';
   let h = await open("hub");
   try {
     const { p, st } = h;
     await showPane(p);
-    await p.waitForFunction(() => !document.getElementById("s-ht-row").hidden, null, { timeout: slow(10000) });
-    const a = await p.evaluate(() => [...document.querySelectorAll("#s-ht-list .ht-item")].map(r => ({
-      name: r.dataset.name, text: r.textContent.replace(/\s+/g, " "), btn: r.querySelector(".ht-switch").textContent })));
-    if (a.map(x => x.name).join("|") !== "board-ziti|room-ziti|ci-hook|room-zrok") fail(tag + "the rows were " + JSON.stringify(a));
-    if (!/set by flag: on/.test(a[0].text)) fail(tag + "a seeded value is not named: " + a[0].text);
-    if (!/failing: controller unreachable/.test(a[1].text)) fail(tag + "a failing transport shows no reason: " + a[1].text);
-    if (a[0].btn !== "turn on" || a[1].btn !== "turn off") fail(tag + "the switches read " + JSON.stringify(a.map(x => x.btn)));
-
-    if (!/set by flag: on/.test(a[3].text) || a[3].btn !== "turn on") fail(tag + "the zrok row reads " + a[3].text + " / " + a[3].btn);
-    if (!a[3].text.includes("share abcd..., env zEnv1 at https://api.zrok.io")) fail(tag + "the zrok row shows no share or env: " + a[3].text);
+    await p.waitForSelector(row("room-ziti"), { timeout: slow(10000) });
+    const a = await p.evaluate(() => [...document.querySelectorAll("#access [data-transport]")].map(r => ({
+      name: r.dataset.transport, text: r.textContent.replace(/\s+/g, " ") })));
+    if (a.map(x => x.name).join("|") !== "room-ziti") fail(tag + "only a transport that is on is configured, the rows were " + JSON.stringify(a));
+    if (!/failing: controller unreachable/.test(a[0].text)) fail(tag + "a failing transport shows no reason: " + a[0].text);
+    const menu = async () => {
+      await p.evaluate(() => { if (!accessUI.menu) accessToggleMenu(); });
+      return p.evaluate(() => [...document.querySelectorAll(".ac-drop .ac-opt")].map(o => o.textContent.replace(/\s+/g, " ")));
+    };
+    const m = await menu();
+    for (const want of ["Board over ziti", "CI hook", "Room link over zrok"]) {
+      if (!m.some(x => x.includes(want))) fail(tag + "the menu does not offer " + want + ": " + JSON.stringify(m));
+    }
+    if (m.some(x => x.includes("Room link over ziti"))) fail(tag + "the menu offers a transport that is already on: " + JSON.stringify(m));
     const metas = await p.evaluate(() => [
       { kind: "zrok", mode: "public", serves: "board" },
       { kind: "address", mode: "mtls", serves: "board", url: "127.0.0.1:7791" },
@@ -1174,36 +1179,25 @@ async function hubTransportsSection(browser, base) {
     const wantMetas = ["zrok public · serves board", "my own address mtls · serves board · 127.0.0.1:7791",
       "OpenZiti · serves both · id.json · https://c:1280"];
     if (JSON.stringify(metas) !== JSON.stringify(wantMetas)) fail(tag + "access meta lines had stray separators: " + JSON.stringify(metas));
-    const zrokBox = await p.evaluate(() => ({ inputs: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] input').length,
-      apply: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] .ht-apply').length }));
-    if (zrokBox.inputs || zrokBox.apply) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrokBox));
-    const zrokShot = async n => { if (process.env.HT_SHOTS) { fs.mkdirSync(process.env.HT_SHOTS, { recursive: true }); await p.locator('#s-ht-list [data-name="room-zrok"]').screenshot({ path: path.join(process.env.HT_SHOTS, n) }); } };
-    await zrokShot("zrok-row-before.png");
-    await p.click('#s-ht-list [data-name="room-zrok"] .ht-switch');
-    await p.waitForFunction(() => /turn off/.test(document.querySelector('#s-ht-list [data-name="room-zrok"] .ht-switch').textContent),
-      null, { timeout: slow(5000) }).catch(() => fail(tag + "turning zrok on did not show."));
-    await zrokShot("zrok-row-after.png");
+
+    await p.click('.ac-drop button:has-text("Room link over zrok")');
+    await p.waitForSelector(row("room-zrok"), { timeout: slow(5000) }).catch(() => fail(tag + "turning zrok on did not show."));
+    const zrok = await p.evaluate(sel => ({ text: document.querySelector(sel).textContent.replace(/\s+/g, " "),
+      inputs: document.querySelectorAll(sel + " input").length, edit: [...document.querySelectorAll(sel + " button")].filter(b => b.textContent === "edit").length }), row("room-zrok"));
+    if (!zrok.text.includes("share abcd..., env zEnv1 at https://api.zrok.io")) fail(tag + "the zrok row shows no share or env: " + zrok.text);
+    if (zrok.inputs || zrok.edit) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrok));
     const zp = st.puts.find(x => x.name === "room-zrok");
     if (!zp || zp.on !== true || "service" in zp || "identity" in zp) fail(tag + "the zrok PUT was " + JSON.stringify(zp));
     st.puts.length = 0;
 
-    const shots = process.env.HT_SHOTS || "";
-    if (shots) {
-      fs.mkdirSync(shots, { recursive: true });
-      await p.evaluate(() => { document.getElementById("s-ht-row").style.display = "none"; });
-      await p.locator("#settings").screenshot({ path: path.join(shots, "hub-transports-before.png") });
-      await p.evaluate(() => { document.getElementById("s-ht-row").style.display = ""; document.getElementById("s-ht-row").scrollIntoView(); });
-      await p.locator("#settings").screenshot({ path: path.join(shots, "hub-transports-after.png") });
-    }
-
-    await p.click('#s-ht-list [data-name="board-ziti"] .ht-switch');
-    await p.waitForFunction(() => /turn off/.test(document.querySelector('#s-ht-list [data-name="board-ziti"] .ht-switch').textContent),
-      null, { timeout: slow(5000) }).catch(() => fail(tag + "turning the board on did not show."));
-    if (!st.puts[0] || st.puts[0].name !== "board-ziti" || st.puts[0].on !== true || st.puts[0].service !== "atrium-board") {
-      fail(tag + "turn on PUT " + JSON.stringify(st.puts));
-    }
-    await p.click('#s-ht-list [data-name="room-ziti"] .ht-switch');
-    await p.waitForFunction(() => /reaches this hub only over ziti/.test(document.getElementById("s-ht-msg").textContent),
+    await menu();
+    await p.click('.ac-drop button:has-text("Board over ziti")');
+    await p.waitForSelector(row("board-ziti"), { timeout: slow(5000) }).catch(() => fail(tag + "turning the board on did not show."));
+    if (!st.puts[0] || st.puts[0].name !== "board-ziti" || st.puts[0].on !== true) fail(tag + "turn on PUT " + JSON.stringify(st.puts));
+    const seeded = await p.evaluate(sel => document.querySelector(sel).textContent, row("board-ziti"));
+    if (!/set by flag: on/.test(seeded)) fail(tag + "a seeded value is not named: " + seeded);
+    await p.click(row("room-ziti") + " .ac-actions button:has-text('turn off')");
+    await p.waitForFunction(() => /reaches this hub only over ziti/.test(document.getElementById("ac-msg").textContent),
       null, { timeout: slow(5000) }).catch(() => fail(tag + "the hub's refusal was not shown."));
     const gets = st.gets;
     await p.evaluate(() => document.getElementById("settings").close());
@@ -1217,13 +1211,12 @@ async function hubTransportsSection(browser, base) {
   try {
     const { p } = h;
     await showPane(p);
-    await p.waitForFunction(() => !document.getElementById("s-ht-row").hidden, null, { timeout: slow(10000) });
-    await p.click('#s-ht-list [data-name="board-ziti"] .ht-switch');
-    await p.waitForFunction(() => !document.getElementById("s-ht-ro").hidden, null, { timeout: slow(5000) })
-      .catch(() => fail(tag + "a 403 did not make the row read-only."));
-    const r = await p.evaluate(() => ({ switches: document.querySelectorAll("#s-ht-list .ht-switch").length,
-      said: document.getElementById("s-ht-ro").textContent }));
-    if (r.switches || !/hub's machine/.test(r.said)) fail(tag + "the read-only row is wrong: " + JSON.stringify(r));
+    await p.waitForSelector(row("room-ziti"), { timeout: slow(10000) });
+    await p.click(row("room-ziti") + " .ac-actions button:has-text('turn off')");
+    await p.waitForFunction(() => accessUI.readOnly && !document.querySelector("#access [data-transport] .ac-actions button"), null,
+      { timeout: slow(5000) }).catch(() => fail(tag + "a 403 did not make the row read-only."));
+    const said = await p.evaluate(() => document.getElementById("access").textContent);
+    if (!/hub's machine/.test(said)) fail(tag + "the read-only pane does not say where to set it: " + said);
   } finally { await h.ctx.close(); }
 
   h = await open("none");
@@ -1231,7 +1224,7 @@ async function hubTransportsSection(browser, base) {
     const { p } = h;
     await showPane(p);
     await p.waitForTimeout(600); // wait: settle for a render with no event to wait on
-    if (!(await p.evaluate(() => document.getElementById("s-ht-row").hidden))) fail(tag + "the row shows with no hub.");
+    if (await p.evaluate(() => document.querySelectorAll("#access [data-transport]").length)) fail(tag + "a transport shows with no hub.");
   } finally { await h.ctx.close(); }
 }
 
@@ -1787,6 +1780,51 @@ async function roomsSetupSection(browser, base) {
     await p.evaluate(() => renderRooms());
     await p.waitForFunction(() => /not answering/.test(document.getElementById("room-list").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("roomsSetup: the row did not say not answering"));
+
+    const said = await p.evaluate(async () => {
+      const out = {};
+      const wasRooms = hubRooms;
+      hubRooms = [{ name: "here", transport: "local" }, { name: "far", transport: "direct" }];
+      out.local = loginLineDefault("here");
+      out.far = loginLineDefault("far");
+      hubRooms = wasRooms;
+      Object.defineProperty(Notification, "permission", { get: () => "denied", configurable: true });
+      paintSettings();
+      out.hint = document.getElementById("s-notify-hint").textContent;
+      out.host = location.host;
+      await openRoomJoin();
+      const dlg = [...document.querySelectorAll("dialog[open]")].pop();
+      out.join = dlg ? dlg.textContent : "";
+      out.tip = document.querySelector("#loginrooms .help").dataset.tip;
+      out.tlist = await (await fetch("/js/terminal-list.js")).text();
+      out.chat = document.getElementById("chat-empty").textContent + document.getElementById("chat-title").textContent;
+      return out;
+    });
+    has("the local room's login line is not the plain command", said.local === "claude auth login", said.local);
+    has("another room's login line uses its name as an ssh host", !/ssh -t far /.test(said.far) && /^ssh -t /.test(said.far), said.far);
+    has("the login tip names the room as a host", !/ssh -t &lt;room&gt;|ssh -t <room>/.test(said.tip), said.tip);
+    has("the notification help does not name this board's real address", said.hint.includes(said.host) && !said.hint.includes("localhost:7778"), said.hint);
+    has("the add a room dialog names commands that do not exist", !/atrium2/.test(said.join) &&
+      /atrium rooms add <name>/.test(said.join) && /atrium room join atr1_/.test(said.join) &&
+      /atrium rooms token <name>/.test(said.join), said.join);
+    await p.evaluate(() => renderSources());
+    const src = await p.evaluate(() => document.getElementById("source-list").textContent);
+    has("the sources empty state points into the atrium repo", !/scripts\/sources/.test(src) && /add a source/.test(src), src);
+    const shown = [];
+    p.on("framenavigated", f => shown.push(f.url()));
+    for (const rules of [[], [{ tool: "Bash", pattern: "ls", decision: "allow" }]]) {
+      await p.route("**/v1/rules/export", r => r.fulfill({ contentType: "application/json", body: JSON.stringify({ rules }) }));
+      const dl = p.waitForEvent("download", { timeout: 1500 }).then(() => true, () => false);
+      await p.evaluate(() => exportRules());
+      const got = await dl;
+      const toastText = await p.evaluate(() => [...document.querySelectorAll(".toast")].map(t => t.textContent).join("|"));
+      if (rules.length) has("an export with rules downloaded nothing", got);
+      else has("an export with no rules downloaded, or said nothing", !got && /no rules to export/.test(toastText), toastText);
+      await p.unroute("**/v1/rules/export");
+    }
+    has("the export navigated the page away", shown.length === 0, shown);
+    has("the terminals empty state points at a board tab", !/start one from the board/.test(said.tlist));
+    has("the chat empty state says session", !/session/.test(said.chat), said.chat);
   } finally {
     await ctx.close();
     delete mock.ALPHA.setup;
@@ -2031,7 +2069,7 @@ async function hubGateSection(browser, base) {
     await p.evaluate(() => { for (const u of ["/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/permissions", "/v1/themes", "/v1/shares"]) api(u).catch(() => {}); });
     await fakeTick(p, 300);
     const first = bad503;
-    await p.evaluate(() => { for (const u of ["/v1/tasks", "/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/prs", "/v1/usage/turn-limits"]) api(u).catch(() => {}); });
+    await p.evaluate(() => { for (const u of ["/v1/tasks", "/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/prs"]) api(u).catch(() => {}); });
     await fakeTick(p, 2500);
     if (bad503 !== first) fail("hubGate: pollers kept asking a hub known to be down (" + first + " then " + bad503 + ")");
     if (first > 1) fail("hubGate: the first burst logged " + first + " failures, wanted 1");

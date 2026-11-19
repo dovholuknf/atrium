@@ -212,6 +212,9 @@ func TestRunLeavesAnAnsweringRoomAlone(t *testing.T) {
 	if got := roomAddressFile(roomLaunch{dir: dir}); got != live {
 		t.Errorf("run looked for the room at %q, want the inherited %q", got, live)
 	}
+	if got := roomAddressFile(roomLaunch{dir: dir, isolated: true}); got != filepath.Join(dir, "daemon.json") {
+		t.Errorf("an isolated run followed the inherited location to %q", got)
+	}
 	t.Setenv("ATRIUM_LOCATION", "")
 	if got := roomAddressFile(roomLaunch{dir: dir, isolated: true}); got != filepath.Join(dir, "daemon.json") {
 		t.Errorf("an isolated run looked for the room at %q", got)

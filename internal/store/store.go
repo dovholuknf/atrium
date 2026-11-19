@@ -319,6 +319,9 @@ type Task struct {
 	DoneSkipped    string `json:"done_skipped,omitempty"`
 	DoneUnverified string `json:"done_unverified,omitempty"`
 	SkippedFiled   string `json:"skipped_filed,omitempty"`
+	// Origin is the remote URL the card's checkout came from, read from its git config: `origin`, else `hub`, else the
+	// first remote. Empty outside a checkout or in one with no remote. The board groups a card by project from it.
+	Origin string `json:"origin,omitempty"`
 	// LaunchReplay is set on the card a launch answered from the key it was made under, and not stored: the answer is
 	// the card the first attempt filed, and no second session was started. See launchkey.go.
 	LaunchReplay bool `json:"launch_replay,omitempty"`
