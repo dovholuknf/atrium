@@ -185,6 +185,21 @@ type SyncResult struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// PRSyncResult is a PR card's branch brought to its pull request's head (atrium_git_sync with no room). State is
+// `current`, `fast-forward` or `reset` (the PR was force-pushed). Commits are the ones new to the branch, newest
+// first, and Dropped how many the branch had that the new head does not.
+type PRSyncResult struct {
+	Card    string   `json:"card"`
+	PR      string   `json:"pr"`
+	Branch  string   `json:"branch"`
+	State   string   `json:"state"`
+	Old     string   `json:"old"`
+	New     string   `json:"new"`
+	Commits []string `json:"commits,omitempty"`
+	Dropped int      `json:"dropped,omitempty"`
+	Text    string   `json:"text"`
+}
+
 // CollectResult is one collect of one room, across the configured repositories.
 type CollectResult struct {
 	Room  string        `json:"room"`

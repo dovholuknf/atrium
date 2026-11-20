@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/docs"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -39,7 +40,8 @@ func hubAskPath(p string) bool {
 		return false
 	}
 	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" || base == hubRoomEventsPath ||
-		base == "/_hub/capabilities" || base == "/_hub/capability-list" {
+		base == "/_hub/capabilities" || base == "/_hub/capability-list" ||
+		base == docs.DropFilesPath || base == docs.DropGetPath {
 		return true
 	}
 	if base == "/_hub/merge" || strings.HasPrefix(base, "/_hub/merge/") {
@@ -76,6 +78,12 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req wire.RelayRequ
 	}
 	if base, _, _ := strings.Cut(req.Path, "?"); base == hubPublishPath {
 		return c.publishAsk(ctx, from, method, req)
+	}
+	if base, _, _ := strings.Cut(req.Path, "?"); base == docs.DropFilesPath || base == docs.DropGetPath {
+		if method != http.MethodPost {
+			return RelayAnswer{Code: http.StatusBadRequest, Error: "the file drop over the link is a POST"}
+		}
+		return c.dropAsk(ctx, from, base, req)
 	}
 	if base, _, _ := strings.Cut(req.Path, "?"); base == hubRoomEventsPath {
 		return c.roomEventAsk(ctx, from, req)

@@ -108,3 +108,30 @@ func TestASlowBodyAfterPromptHeadersIsNotCut(t *testing.T) {
 		t.Fatalf("a download that started promptly was cut: %d %q", res.StatusCode, body)
 	}
 }
+
+func TestATaggedCardReadWhoseBodyStallsIsAnswered(t *testing.T) {
+	release := make(chan struct{})
+	front, _, done := pairWith(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"01a1a297`)
+		w.(http.Flusher).Flush()
+		<-release
+	}), shortWait)
+	defer done()
+	defer close(release)
+
+	start := time.Now()
+	res, err := http.Get(front.URL + "/v1/tasks/testroom~01a1a297-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	took := time.Since(start)
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("a tagged card read whose body stalled got %d %q, want 503", res.StatusCode, body)
+	}
+	if took > 3*testReadWait {
+		t.Fatalf("the read was answered after %s, want about %s", took, testReadWait)
+	}
+}

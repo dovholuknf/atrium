@@ -12,7 +12,7 @@ import (
 )
 
 // A lean worker on a room whose atrium-control is the stdio server must still have every tool its prompts name,
-// atrium_publish included. See docs/changes/publish-lean.md.
+// atrium_publish included, and the drop and worktree tools a full card on the hub has.
 func TestStdioControlServesEveryToolTheLeanPromptsName(t *testing.T) {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
@@ -34,7 +34,7 @@ func TestStdioControlServesEveryToolTheLeanPromptsName(t *testing.T) {
 	for _, tl := range res.Tools {
 		have[tl.Name] = true
 	}
-	want := append(daemon.PromptToolNames(), "atrium_publish", "atrium_merge")
+	want := append(daemon.PromptToolNames(), "atrium_publish", "atrium_merge", "atrium_files", "atrium_get", "atrium_worktrees")
 	for _, name := range want {
 		if !have[name] {
 			t.Errorf("stdio control lacks %s", name)

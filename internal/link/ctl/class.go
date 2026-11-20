@@ -35,6 +35,8 @@ var WorkerTools = map[string]bool{
 	"atrium_export": true,
 	// The cards that push to the hub are workers. See git_hub.go.
 	"atrium_git_push": true,
+	// A pull request's card is a worker and syncs its branch with no room. See git_mcp.go.
+	"atrium_git_sync": true,
 	// And the ones that read code that is not in their cwd. See git_url.go.
 	"atrium_git_url": true,
 	// And the ones that read the CI of a repository, which the hub reads for them. See ci_door.go.

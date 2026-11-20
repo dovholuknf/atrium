@@ -7,7 +7,7 @@ import "time"
 // the board rang "waiting for you" for a card that had been waiting before the deploy.
 //
 // The carried wait is spent on entering a waiting state with no clock of its own, and it stays until a person speaks to
-// the card (ClearCarriedWait), so the resume turn's own end gets it too.
+// the card or a peer sends it work (ClearCarriedWait), so the resume turn's own end gets it too.
 
 func carryWaitOn(q querier, id string, since time.Time) error {
 	_, err := q.Exec(`INSERT INTO waiting_carry (task_id, since) VALUES (?, ?)

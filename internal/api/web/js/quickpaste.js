@@ -56,6 +56,8 @@ function quickPasteSay(url, text, warn) {
 const QUICKPASTE_KINDS = { pr: "PR", issue: "issue", support: "ticket", branch: "branch", "": "link" };
 let quickPasteTimer = 0;
 let quickPasteSeq = 0;
+let quickPasteTurn = Promise.resolve();
+let quickPasteBusy = 0;
 
 // The top result for a link in the switcher: what Enter would open, or why it would not. Drawn by paintSwitcher.
 function quickPasteRow(url) {
@@ -287,7 +289,12 @@ async function quickPasteGo(url, edit, name) {
   }
   const key = linkKeyOf(got) || url;
   const dup = [...linkOpenings].find(([other, o]) => other !== id && o.key === key);
-  if (dup) {
+  // An open still unanswered after a minute is taken to be stuck: a paste of the same link drops it and goes on.
+  if (dup && dup[1].abort && Date.now() - dup[1].since > 60000) {
+    dup[1].abort();
+    linkOpeningEnd(dup[0]);
+    await new Promise(res => setTimeout(res, 0));
+  } else if (dup) {
     linkOpeningEnd(id);
     toast(got.title || key, "already opening, the card comes up when it is ready");
     return;
@@ -305,14 +312,32 @@ async function quickPasteGo(url, edit, name) {
     quickPasteStop(id, url, quickPasteNoRunner());
     return;
   }
-  await oneAtATime("quickpaste-open", async () => {
+  await quickPasteOpen(id, room, url, got);
+}
+
+// One open at a time, as the launch dialog it reads is one. An open behind another waits its turn and fills the dialog
+// again: oneAtATime dropped it, and its tile sat on "recognising the link" with no open sent (u-031).
+async function quickPasteOpen(id, room, url, got) {
+  const waited = quickPasteBusy++ > 0;
+  if (waited) linkOpeningStep(id, "waiting for the link before it");
+  const turn = quickPasteTurn.then(async () => {
     try {
+      if (waited) {
+        if (!linkOpenings.has(id)) return;
+        if (!await openLaunch(null, "", "", null, { url, quiet: true })) { linkOpeningEnd(id); return; }
+        await recogniseLink(got);
+        quickPasteRoom(room);
+      }
       await launchNow({ id, room });
       // A link the open verb does not take launched the old way, which knows nothing of the card drawn for it.
       const o = linkOpenings.get(id);
       if (o && !o.error) linkOpeningEnd(id);
     } catch (e) {
       linkOpeningFail(id, (e && e.message) || String(e));
+    } finally {
+      quickPasteBusy--;
     }
   });
+  quickPasteTurn = turn;
+  await turn;
 }

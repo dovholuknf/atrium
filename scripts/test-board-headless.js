@@ -3086,6 +3086,55 @@ async function sayWhenSection(browser, base) {
   if (errors.length) fail("the say-when page threw: " + errors.join(" | "));
 }
 
+// ── a runner started again on the same card, and a card whose one read hangs (u-remote-card-nothing-attached) ──
+// A restart the board did not ask for closes the socket with "runner exited" and lands a new runner on the card a
+// second later. The pane reattaches to it, not "nothing attached". And a card whose own GET never answers attaches
+// from the list, which still says it is running.
+async function relaunchAttachSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-rel", { supervised: true, pid: 100, worktree: "/tmp/rel", display_title: "relaunched" });
+  mock.landList = [mock.LAND["land-rel"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+      window.__sock = s;
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="land-rel"]', { timeout: slow(15000) });
+    await attachRetry(p, { unit: "relaunchAttach", id: "land-rel", check: () => window.__sock && termTask && termTask.id === "land-rel" });
+    const back = ms => p.waitForFunction(() => window.__sock && termTask && termTask.id === "land-rel", null, { timeout: slow(ms) }).then(() => true, () => false);
+
+    // 1. The runner exits and a new one is on the card: the pane goes back to it.
+    landCard("land-rel", { supervised: true, pid: 200, worktree: "/tmp/rel", display_title: "relaunched" });
+    mock.landList = [mock.LAND["land-rel"]];
+    await p.evaluate(() => { const s = window.__sock; window.__sock = null; s.onclose({ code: 1000, reason: "runner exited" }); });
+    if (!await back(8000)) fail("a runner started again on the same card left the pane with nothing attached");
+
+    // 2. The card's own read hangs and the list has it running: the pane attaches from the list.
+    await ctx.route("**/v1/tasks/land-rel", () => {});
+    await p.evaluate(() => { noteAttachEnded("", ""); window.__sock = null; clearTermPane(); });
+    if (!await back(10000)) fail("a card whose read never answered did not attach from the list that has it running");
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+  if (errors.length) fail("the relaunch page threw: " + errors.join(" | "));
+}
+
 // ── resuming a card says it is opening (u-new-resume-spinner) ─────────────
 // From the click until the terminal's first output the card, its row and the pane say "opening the conversation". A
 // second resume only points at it, a failed launch or the bound turns it into the reason. `RESUME_SHOTS=<dir>` writes
@@ -8122,7 +8171,7 @@ async function termBarOneLineSection(browser, base) {
           .map(h => { const r = h.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })
           .filter(([w, h]) => w || h),
       }));
-      for (const want of ["switch to chat view", "attach a file or photo…", "restart this session", "stop", "terminate and clean up"])
+      for (const want of ["switch to chat view", "attach a file or photo…", "restart this session", "pause", "terminate and clean up"])
         if (!menu.rows.some(r => r.startsWith(want))) fail(tag + "the cog has no " + want + " row: " + JSON.stringify(menu.rows));
       if (!menu.bubbles.length || menu.bubbles.some(([w, h]) => w < 15 || Math.abs(w - h) > 1))
         fail(tag + "a help bubble is missing or squished: " + JSON.stringify(menu.bubbles));
@@ -9225,10 +9274,11 @@ async function termFindSpeakerSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── clean copy: a selection of a reply is copied as written ───────────────
-// With clean copy by default off. A quoted block drawn with an indent, a bar and hard wraps is selected. A plain copy is
-// the render. A "copy clean" button pops up beside the selection, and clicking it copies the reply's own substring,
-// markdown kept. No toast either way. The button goes on clear, scroll and Escape. The default is cleanCopyDefault's.
+// ── clean copy: only the claude prompt and each line's edge spaces go ─────
+// With clean copy by default off. A quoted block drawn with an indent and a bar is selected. A plain copy is the
+// render. A "copy clean" button pops up beside the selection, and clicking it copies the selection with only the claude
+// prompt and each line's edge spaces gone. No toast either way. The button goes on clear, scroll and Escape. The
+// default is cleanCopyDefault's.
 // Also: an image paste no longer toasts where it landed.
 async function cleanCopySection(browser, base) {
   const was = mock.tasksMode;
@@ -9255,25 +9305,8 @@ async function cleanCopySection(browser, base) {
       readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
     localStorage.setItem("atrium.cleanCopy", "0");
   });
-  const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\n"
-    + "```go\nfunc main() {}\n```\n\nThanks.";
-  let mode = "ok";
   await ctx.route("**/v1/tasks/*/files", route => route.fulfill({
     contentType: "application/json", body: JSON.stringify({ paths: ["/work/.atrium/pasted-1.png"] }) }));
-  await ctx.route("**/v1/tasks/*/replies*", route => {
-    if (mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"x"}' });
-    if (mode === "slow") return;
-    const all = /[?&]all=1/.test(route.request().url());
-    if (all) allReads++;
-    // `?all=1` also holds an old reply and one from a conversation before a /clear, which the last ten do not.
-    const older = all ? [
-      { at: "2026-10-14T09:00:00Z", text: "From before the clear:\n\n> The prior transcript holds this sentence about caching.", truncated: false },
-      { at: "2026-10-15T08:00:00Z", text: "An older reply, past the tenth:\n\n> Nothing in the recent ten has this line about retries.", truncated: false },
-    ] : [];
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({
-      source: "transcript", more: false, replies: older.concat([{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }]) }) });
-  });
-  let allReads = 0;
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -9301,7 +9334,8 @@ async function cleanCopySection(browser, base) {
       await p.screenshot({ path: path.join(process.env.SHOTS_DIR, name) });
     };
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-    const want = "> Please review the plan and tell me what is missing from it.";
+    const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
+    const lf = t => String(t).replace(/\r\n/g, "\n");
 
     // 1. A rendered quote: a plain copy is the render, and a button offers the clean one.
     const a = await select(shown, [2, 3]);
@@ -9315,9 +9349,9 @@ async function cleanCopySection(browser, base) {
     if (/copied|written/.test(await toasts())) fail("cleanCopy: a copy raised a toast: " + await toasts());
     await shot("copy-clean-popup-after.png");
     await p.click("#cc-btn");
-    await p.waitForFunction(w => window.__clip[window.__clip.length - 1] === w, want, { timeout: slow(5000) }).catch(() => {});
+    await p.waitForFunction(() => window.__clip.length === 2, null, { timeout: slow(5000) }).catch(() => {});
     const clicked = await p.evaluate(() => window.__clip.slice());
-    if (clicked.length !== 2 || clicked[1] !== want) fail("cleanCopy: the button copied " + JSON.stringify(clicked) + ", not " + JSON.stringify(want));
+    if (clicked.length !== 2 || lf(clicked[1]) !== want) fail("cleanCopy: the button copied " + JSON.stringify(clicked) + ", not " + JSON.stringify(want));
     if (await btn()) fail("cleanCopy: the button stayed after it was clicked");
     if (/copied|written/.test(await toasts())) fail("cleanCopy: the clean copy raised a toast: " + await toasts());
 
@@ -9366,9 +9400,9 @@ async function cleanCopySection(browser, base) {
     const re = await select(shown, [2, 3]);
     if (!re.btn) fail("cleanCopy: no 'copy clean' button after a reattach");
     await p.click("#cc-btn");
-    await p.waitForFunction(w => window.__clip.length && window.__clip[window.__clip.length - 1] === w, want, { timeout: slow(5000) }).catch(() => {});
+    await p.waitForFunction(() => window.__clip.length === 2, null, { timeout: slow(5000) }).catch(() => {});
     const reClip = await p.evaluate(() => window.__clip.slice());
-    if (reClip[reClip.length - 1] !== want) fail("cleanCopy: after a reattach the button copied " + JSON.stringify(reClip) + ", not " + JSON.stringify(want));
+    if (lf(reClip[reClip.length - 1]) !== want) fail("cleanCopy: after a reattach the button copied " + JSON.stringify(reClip) + ", not " + JSON.stringify(want));
 
     // 2. Gone on a click elsewhere, a wheel and Escape.
     await select(shown, [2, 3]);
@@ -9399,74 +9433,39 @@ async function cleanCopySection(browser, base) {
     await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
     if (await btn()) fail("cleanCopy: the button stayed after Escape");
 
-    // 3. Tool output no reply holds: the plain copy is the render, and the button still shows.
+    // 3. Tool output: the plain copy is the render, and the button still shows.
     const b = await select("$ ls -la\r\ntotal 48 files in this directory\r\n", [0, 1]);
     if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail("cleanCopy: a selection matching nothing copied " + JSON.stringify(b.clip) + ", not " + JSON.stringify(b.sel));
-    if (!b.btn) fail("cleanCopy: no button for tool output that matches no reply");
+    if (!b.btn) fail("cleanCopy: no button for tool output");
     await shot("copy-clean-popup-nomatch.png");
 
     // 3b. A three character selection gets the button.
     const s3 = await select("  abc\r\n", [0, 0]);
     if (!s3.btn) fail("cleanCopy: no button for a 3 character selection");
 
-    // 4. The endpoint fails: the plain copy is the render, and the button still shows.
-    mode = "fail";
-    const c = await select(shown, [2, 3]);
-    if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopy: a failed endpoint copied " + JSON.stringify(c.clip) + ", not " + JSON.stringify(c.sel));
-    if (!c.btn) fail("cleanCopy: no button with the replies endpoint down");
-    const clipLen = await p.evaluate(() => window.__clip.length);
+    // 4. A PowerShell comment in a code block keeps its `# ` through the button (t-002).
+    const ps = await select("  # 4. List the worktrees. Only main should remain.  \r\n  git worktree list\r\n", [0, 1]);
+    const psLen = await p.evaluate(() => window.__clip.length);
     await p.click("#cc-btn");
-    await p.waitForFunction(k => window.__clip.length > k, clipLen);
-    const cc = await p.evaluate(() => window.__clip.slice());
-    if (cc[cc.length - 1] !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: the endpoint-down button copied " + JSON.stringify(cc));
+    await p.waitForFunction(k => window.__clip.length > k, psLen, { timeout: slow(5000) }).catch(() => {});
+    const pc = await p.evaluate(() => window.__clip.slice());
+    const hwant = "# 4. List the worktrees. Only main should remain.\ngit worktree list";
+    if (!ps.btn || lf(pc[pc.length - 1]) !== hwant) fail("cleanCopy: a commented command block copied clean as " + JSON.stringify(pc[pc.length - 1]) + ", not " + JSON.stringify(hwant));
 
-    // 4a. The button shows before a slow endpoint answers, and a click before then copies the local de-render.
-    mode = "slow";
-    await p.evaluate(([out]) => {
-      window.__clip = [];
-      resetTerm(term);
-      termSock.onmessage({ data: out });
-    }, [shown]);
-    await p.waitForFunction(() => term.buffer.active.getLine(3).translateToString().trim() !== "");
-    await p.evaluate(() => { term.selectLines(2, 3); window.__offer = offerCleanCopy(); });
-    if (!await btn()) fail("cleanCopy: the button waited for a slow replies endpoint");
-    const slLen = await p.evaluate(() => window.__clip.length);
-    await p.click("#cc-btn");
-    await p.waitForFunction(k => window.__clip.length > k, slLen);
-    const sl = await p.evaluate(() => window.__clip.slice());
-    if (sl.length !== 1 || sl[0] !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: a click before the lookup copied " + JSON.stringify(sl));
-    mode = "ok";
-
-    // 4a2. The reply match still wins when the lookup is done.
-    const w1 = await select(shown, [2, 3]);
-    const wLen = await p.evaluate(() => window.__clip.length);
-    await p.click("#cc-btn");
-    await p.waitForFunction(k => window.__clip.length > k, wLen);
-    const wc = await p.evaluate(() => window.__clip.slice());
-    if (!w1.btn || wc[wc.length - 1] !== want) fail("cleanCopy: the reply match did not win: " + JSON.stringify(wc));
-
-    // 4a2b. A selection through a closing ``` row keeps that row.
-    const fenced = shown + "\r\n  ```go\r\n  func main() {}\r\n  ```\r\n";
-    const f1 = await select(fenced, [0, 7]);
-    if (!/```\s*$/.test(f1.sel)) fail("cleanCopy: the selection does not end on the closing fence, so this proves nothing: " + JSON.stringify(f1.sel));
-    const fLen = await p.evaluate(() => window.__clip.length);
-    await p.click("#cc-btn");
-    await p.waitForFunction(k => window.__clip.length > k, fLen);
-    const fc = await p.evaluate(() => window.__clip.slice());
-    const fwant = reply.slice(0, reply.indexOf("```\n\nThanks") + 3);
-    if (fc[fc.length - 1] !== fwant) fail("cleanCopy: a selection through a closing fence copied " + JSON.stringify(fc[fc.length - 1]) + ", not " + JSON.stringify(fwant));
-
-    // 4a3. The pure de-render.
+    // 4a. Only the claude prompt and each line's edge spaces go, and every other character and every line feed stays.
     const dr = await p.evaluate(() => ({
-      wrap: ccDerender("  ▎ Please review the plan and tell\n  ▎ me what is missing from it.\n"),
-      list: ccDerender("  - first item\n  - second item\n  - third item\n"),
-      para: ccDerender("  A long first line of a paragraph here\n  its tail.\n\n  Next paragraph.\n"),
-      box: ccDerender("╭────────╮\n│ output │\n╰────────╯\n"),
+      hash: ccDerender("  # 4. List the worktrees.  "),
+      lines: ccDerender("  $a = 1\n\n  # 2. next\n  - item\n    indented\n"),
+      crlf: ccDerender("  a  \r\n  b  "),
+      prompt: ccDerender("claude ❯ git status"),
+      bare: ccDerender("  ❯ ls -la"),
+      box: ccDerender("╭────────╮\n│ output │\n╰────────╯"),
     }));
-    if (dr.wrap !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: wrapped paragraph de-rendered to " + JSON.stringify(dr.wrap));
-    if (dr.list !== "- first item\n- second item\n- third item") fail("cleanCopy: list items de-rendered to " + JSON.stringify(dr.list));
-    if (dr.para !== "A long first line of a paragraph here its tail.\n\nNext paragraph.") fail("cleanCopy: paragraphs de-rendered to " + JSON.stringify(dr.para));
-    if (dr.box !== "output") fail("cleanCopy: a box de-rendered to " + JSON.stringify(dr.box));
+    if (dr.hash !== "# 4. List the worktrees.") fail("cleanCopy: a # comment copied clean as " + JSON.stringify(dr.hash));
+    if (dr.lines !== "$a = 1\n\n# 2. next\n- item\nindented\n") fail("cleanCopy: a multi-line block copied clean as " + JSON.stringify(dr.lines));
+    if (dr.crlf !== "a\r\nb") fail("cleanCopy: CRLF lines copied clean as " + JSON.stringify(dr.crlf));
+    if (dr.prompt !== "git status" || dr.bare !== "ls -la") fail("cleanCopy: the prompt was not stripped: " + JSON.stringify([dr.prompt, dr.bare]));
+    if (dr.box !== "╭────────╮\n│ output │\n╰────────╯") fail("cleanCopy: a box copied clean as " + JSON.stringify(dr.box));
 
     // 4a4. A block padded to the width with spaces, each row wrapping into the next (Claude Code's prompt), copies as its
     // own lines with no padding, and a line that genuinely runs on past the width stays one line.
@@ -9480,20 +9479,6 @@ async function cleanCopySection(browser, base) {
     const pwant = "> first line of the prompt\n  second line\n  third\n" + long;
     const pgot = (pd.clip[0] || "").replace(/\r\n/g, "\n");
     if (pgot !== pwant) fail("cleanCopy: a padded block copied " + JSON.stringify(pgot) + ", not " + JSON.stringify(pwant));
-
-    // 4b. A reply older than the last ten, and one from a prior transcript, both offer the button, and the second
-    // selection in the same card reuses the one `?all=1` read.
-    mode = "ok";
-    const o1 = await select("  ▎ Nothing in the recent ten has this line\r\n  ▎ about retries.\r\n", [0, 1]);
-    if (!o1.btn) fail("cleanCopy: no button for a selection in a reply older than the last ten");
-    await shot("copy-clean-older-after.png");
-    const o2 = await select("  ▎ The prior transcript holds this sentence\r\n  ▎ about caching.\r\n", [0, 1]);
-    if (!o2.btn) fail("cleanCopy: no button for a selection in a prior transcript");
-    await p.click("#cc-btn");
-    await p.waitForFunction(w => window.__clip[window.__clip.length - 1] === w, "> The prior transcript holds this sentence about caching.", { timeout: slow(5000) }).catch(() => {});
-    const oc = await p.evaluate(() => window.__clip.slice());
-    if (oc[oc.length - 1] !== "> The prior transcript holds this sentence about caching.") fail("cleanCopy: the prior-transcript button copied " + JSON.stringify(oc));
-    if (allReads !== 1) fail("cleanCopy: the all-replies read ran " + allReads + " times for one card, not once");
 
     // 5. An image pasted into the terminal says nothing about where it landed: the path is already typed.
     await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
@@ -9535,9 +9520,6 @@ async function cleanCopyDefaultSection(browser, base) {
       write: items => Promise.resolve(items[0].getType("text/plain")).then(b => b.text()).then(t => { window.__clip.push(t); }),
       readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
   });
-  const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\nThanks.";
-  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json",
-    body: JSON.stringify({ source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) }));
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -9546,7 +9528,8 @@ async function cleanCopyDefaultSection(browser, base) {
     await attachRetry(p, { unit: "cleanCopyDefault", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await frames(p, 3);
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-    const want = "> Please review the plan and tell me what is missing from it.";
+    const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
+    const lf = t => String(t).replace(/\r\n/g, "\n");
     // Selects the quote, does what ctrl-c does, and reads the copy, the button's label, and what a click on it copies.
     const copy = async () => {
       await p.evaluate(([out]) => {
@@ -9565,10 +9548,10 @@ async function cleanCopyDefaultSection(browser, base) {
       return Object.assign(r, { sel, clicked: await p.evaluate(() => window.__clip[1]) });
     };
 
-    // 1. Under the limit: ctrl-c copies the reply's markdown, and the button copies the render.
+    // 1. Under the limit: ctrl-c copies clean, and the button copies the render.
     const a = await copy();
     if (!/▎/.test(a.sel)) fail("cleanCopyDefault: the selection holds no bar, so this proves nothing: " + JSON.stringify(a.sel));
-    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopyDefault: under the limit ctrl-c copied " + JSON.stringify(a.clip) + ", not " + JSON.stringify(want));
+    if (a.clip.length !== 1 || lf(a.clip[0]) !== want) fail("cleanCopyDefault: under the limit ctrl-c copied " + JSON.stringify(a.clip) + ", not " + JSON.stringify(want));
     if (a.label !== "copy as shown") fail("cleanCopyDefault: under the limit the button reads " + JSON.stringify(a.label));
     if (a.clicked !== a.sel) fail("cleanCopyDefault: copy as shown copied " + JSON.stringify(a.clicked) + ", not the render " + JSON.stringify(a.sel));
 
@@ -9579,14 +9562,14 @@ async function cleanCopyDefaultSection(browser, base) {
       const tag = over ? "over" : "at";
       if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail(`cleanCopyDefault: ${tag} the limit ctrl-c copied ` + JSON.stringify(b.clip));
       if (b.label !== "copy clean") fail(`cleanCopyDefault: ${tag} the limit the button reads ` + JSON.stringify(b.label));
-      if (b.clicked !== want) fail(`cleanCopyDefault: ${tag} the limit copy clean copied ` + JSON.stringify(b.clicked));
+      if (lf(b.clicked) !== want) fail(`cleanCopyDefault: ${tag} the limit copy clean copied ` + JSON.stringify(b.clicked));
     }
 
     // 3. The toggle off: as shown under the default limit, and the button offers clean.
     await p.evaluate(() => { setCleanCopyLimit(""); setCleanCopy(false); });
     const c = await copy();
     if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopyDefault: with the toggle off ctrl-c copied " + JSON.stringify(c.clip));
-    if (c.label !== "copy clean" || c.clicked !== want) fail("cleanCopyDefault: with the toggle off the button was " + JSON.stringify([c.label, c.clicked]));
+    if (c.label !== "copy clean" || lf(c.clicked) !== want) fail("cleanCopyDefault: with the toggle off the button was " + JSON.stringify([c.label, c.clicked]));
     await p.evaluate(() => setCleanCopy(true));
 
     // 4. The gear: defaults, the limit greyed while off, and both kept over a reload.
@@ -9618,9 +9601,8 @@ async function cleanCopyDefaultSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── clean copy under Safari's rule: a clipboard write starts inside the keypress, though the lookup takes 750ms ──
-// The stub refuses a write called after the key handler returns, as Safari does, and holds a ClipboardItem's promise.
-// ctrl-c is a real keypress. Without ClipboardItem the copy is the render at once, never nothing.
+// ── clean copy under Safari's rule: a clipboard write starts inside the keypress ──
+// The stub refuses a write called after the key handler returns, as Safari does. ctrl-c is a real keypress.
 async function cleanCopyGestureSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -9644,7 +9626,7 @@ async function cleanCopyGestureSection(browser, base) {
     window.__refused = 0;
     let inGesture = false;
     window.addEventListener("keydown", () => { inGesture = true; }, true);
-    window.addEventListener("keyup", () => { inGesture = false; window.__gestureEnded = true; if (window.__whenEnded) window.__whenEnded(true); }, true);
+    window.addEventListener("keyup", () => { inGesture = false; }, true);
     const no = () => { window.__refused++; return Promise.reject(new DOMException("not in a gesture", "NotAllowedError")); };
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       writeText: t => { if (!inGesture) return no(); window.__clip.push(t); return Promise.resolve(); },
@@ -9654,12 +9636,6 @@ async function cleanCopyGestureSection(browser, base) {
       },
       readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
   });
-  const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\nThanks.";
-  await ctx.route("**/v1/tasks/*/replies*", async route => {
-    await route.request().frame().evaluate(() => window.__gestureEnded || new Promise(done => { window.__whenEnded = done; }));
-    await route.fulfill({ contentType: "application/json",
-      body: JSON.stringify({ source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) });
-  });
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -9668,9 +9644,9 @@ async function cleanCopyGestureSection(browser, base) {
     await attachRetry(p, { unit: "cleanCopyGesture", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await frames(p, 3);
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-    const want = "> Please review the plan and tell me what is missing from it.";
+    const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
     const copy = async () => {
-      await p.evaluate(out => { window.__clip = []; window.__refused = 0; window.__gestureEnded = false; ccLook = null; resetTerm(term); termSock.onmessage({ data: out }); }, shown);
+      await p.evaluate(out => { window.__clip = []; window.__refused = 0; resetTerm(term); termSock.onmessage({ data: out }); }, shown);
       await termWrite(p, "");
       const sel = await p.evaluate(() => { term.selectLines(2, 3); term.focus(); return termSelectionText(term); });
       await frames(p, 3);
@@ -9680,11 +9656,7 @@ async function cleanCopyGestureSection(browser, base) {
     };
 
     const a = await copy();
-    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopyGesture: ctrl-c with a lookup that answers after the gesture copied " + JSON.stringify(a) + ", not " + JSON.stringify(want));
-
-    await p.evaluate(() => { window.__CI = window.ClipboardItem; delete window.ClipboardItem; });
-    const b = await copy();
-    if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail("cleanCopyGesture: with no ClipboardItem ctrl-c copied " + JSON.stringify(b) + ", not the render");
+    if (a.clip.length !== 1 || a.clip[0].replace(/\r\n/g, "\n") !== want) fail("cleanCopyGesture: ctrl-c copied " + JSON.stringify(a) + ", not " + JSON.stringify(want));
   } finally {
     await ctx.close();
   }
@@ -9717,8 +9689,6 @@ async function cleanCopyTwoSection(browser, base) {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       writeText: () => Promise.resolve(), readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
   });
-  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({
-    contentType: "application/json", body: JSON.stringify({ source: "transcript", more: false, replies: [] }) }));
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -15487,7 +15457,7 @@ async function termMenuSection(browser, base) {
 
     // a running card: the whole menu, in order.
     let m = await openMenu("land-tm-run");
-    const want = ["restart", "new context", "---", "settings", "---", "duplicate agent", "stop", "terminate and clean up"];
+    const want = ["restart", "new context", "---", "settings", "---", "duplicate agent", "pause", "terminate and clean up"];
     if (JSON.stringify(m.labels) !== JSON.stringify(want)) fail("termMenu: a running card's menu is " + JSON.stringify(m.labels));
     // settings has no (?) in the interview's table, so it is the only item allowed without one.
     if (m.noHelp.some(l => l !== "settings")) fail("termMenu: items without their (?): " + JSON.stringify(m.noHelp));
@@ -15495,7 +15465,7 @@ async function termMenuSection(browser, base) {
     if (process.env.TERMMENU_SHOT) await p.screenshot({ path: process.env.TERMMENU_SHOT });
 
     // stop: no question, PATCHes paused.
-    await pick("stop");
+    await pick("pause");
     await until(() => patches.some(x => /land-tm-run/.test(x) && /"status":"paused"/.test(x)), 5000, "the stop's PATCH").catch(() => {});
     if (await dialogUp().count()) fail("termMenu: stop asked before stopping.");
     if (!patches.some(x => /land-tm-run/.test(x) && /"status":"paused"/.test(x))) fail("termMenu: stop did not pause the card: " + JSON.stringify(patches));
@@ -15509,7 +15479,7 @@ async function termMenuSection(browser, base) {
     await p.waitForSelector('#term-list [oncontextmenu*="land-tm-stop"]', { timeout: slow(5000) })
       .catch(() => fail("termMenu: the paused chip did not list the stopped card."));
     m = await openMenu("land-tm-stop");
-    if (m.labels[0] !== "resume" || m.labels.includes("stop") || m.labels.includes("restart")) {
+    if (m.labels[0] !== "resume" || m.labels.includes("pause") || m.labels.includes("restart")) {
       fail("termMenu: a stopped card's menu is " + JSON.stringify(m.labels));
     }
     // a closed card stays off the list even with the paused chip on: its folder was freed, so there is nothing to resume.
@@ -15545,6 +15515,18 @@ async function termMenuSection(browser, base) {
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
     await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     if (closes.length) fail("termMenu: cancelling the foreign worktree dialog still closed it: " + JSON.stringify(closes));
+    foreign = { path: "/g/gwt-wt", branch: "feat/x", repo: "/g/repo", why: "it is a gwt worktree", dirty: 0, unpushed: 0 };
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
+    const cmdText = "git -C /g/repo worktree remove /g/gwt-wt\ngit -C /g/repo branch -d feat/x";
+    if (await p.locator("#ask-body code").count() !== 1 || await p.locator("#ask-body code").textContent() !== cmdText) fail("termMenu: the delete-it-yourself commands are not one block: " + await p.locator("#ask-body").innerHTML());
+    await p.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } }); });
+    await p.locator("#ask-body .copybit").click();
+    if (await p.evaluate(() => window.__copied) !== cmdText) fail("termMenu: the copy button did not copy both commands: " + await p.evaluate(() => window.__copied));
+    await p.locator("dialog[open] button", { hasText: "cancel" }).click();
+    await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
+    foreign = { path: "/g/gwt-wt", branch: "feat/x", repo: "/g/repo", dirty: 0, unpushed: 0 };
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
@@ -20347,6 +20329,33 @@ async function parkedStaysSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// zero-trust-webhook (theme "", no repo entry, launcher_id set) is drawn at the top level with no parent passed in: its tile wears
+// the tint its pane wears.
+async function termtermTileMatchesPaneSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termRow === "function" && typeof termInheritedTheme === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const boss = { id: "claude-sg4~01a149df-3435-784b-8e8f-5fb18223f63f", tags: ["origin:agent"], status: "running", supervised: true,
+        theme: "teal-dusk", display_title: "boss" };
+      const hook = { id: "claude-sg4~01a14a03-4243-732c-85d4-fe2d633cdc9d", tags: ["atrium:subagent"], status: "running", supervised: true,
+        theme: "", alias: "zero-trust-webhook", repo: "ziti-hook", hostname: "sg4", launcher_id: "01a149df-3435-784b-8e8f-5fb18223f63f",
+        spawned_by_id: "01a149df-3435-784b-8e8f-5fb18223f63f", worktree: "D:/worktrees/github/dovholuknf/ziti-hook-minion",
+        display_title: "zero-trust-webhook" };
+      lastTasks = [boss, hook];
+      return { html: termRow(hook, false, false), pane: themeFor(hook).background };
+    });
+    if (!got.html.includes("--tabbg:" + got.pane)) fail("termTileMatchesPane: the tile is not in its pane's colour " + got.pane + ": " + got.html.slice(0, 400));
+    if (!got.html.includes(" worn")) fail("termTileMatchesPane: the tile is not worn");
+    if (errors.length) fail("termTileMatchesPane: page errors: " + errors.join("; "));
+    else console.log("termTileMatchesPane ok");
+  } finally { await ctx.close(); }
+}
+
 // NO RESUME BUTTON, AND A CLICK ON A DEAD CARD DOES NOT RESUME IT. Resume is the right-click menu's.
 async function noResumeButtonSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -22773,6 +22782,141 @@ async function u002Section(browser, base) {
   } finally { await ctx.close(); }
 }
 
+async function childFoldSticksSection(browser, base) {
+  for (const [name, par, kid] of [["bare ids", "", ""], ["hub ids, one room", "m1mini~", "m1mini~"],
+    ["hub ids, child on another room", "m1mini~", "sg3~"]]) await childFoldSticksWith(browser, base, name, par, kid);
+}
+async function childFoldSticksWith(browser, base, name, PP, KP) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const open = async () => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof toggleKids === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    return p;
+  };
+  const seed = (p, extra) => p.evaluate(async ([extra, PP, KP]) => {
+    const card = (id, at, more) => ({ id: PP + id, status: "running", supervised: true, pinned: false, title: id,
+      display_title: id, tags: [], created_at: at, worktree: "/r/" + id, ...more });
+    const sub = (id, at, by) => ({ ...card(id, at, { tags: ["atrium:subagent", "origin:agent"], spawned_by_id: PP + by,
+      wire_name: undefined }), id: KP + id, spawned_by: PP === KP ? undefined : by + "@m1mini" });
+    const cards = [card("opened", "2026-09-01T10:00:00Z"), sub("o-kid", "2026-09-02T10:00:00Z", "opened"),
+      card("never", "2026-09-03T10:00:00Z"), sub("n-kid", "2026-09-04T10:00:00Z", "never")];
+    extra.forEach(id => cards.push(sub(id, "2026-09-05T10:00:00Z", "opened")));
+    boardCards = async () => cards;
+    switchView("terms");
+    await renderTermList();
+  }, [extra, PP, KP]);
+  const look = p => p.evaluate(async PP => {
+    await renderTermList();
+    const btn = id => document.querySelector(`#term-list .card.tab[data-id="${PP}${id}"] button.tkidfold`);
+    return { opened: btn("opened") && btn("opened").getAttribute("aria-expanded"),
+      never: btn("never") && btn("never").getAttribute("aria-expanded"),
+      kids: [...document.querySelectorAll("#term-list .tkids .card.tab")].map(c => c.dataset.id.replace(/^.*~/, "")).sort().join() };
+  }, PP);
+  try {
+    const p = await open();
+    await seed(p, []);
+    let v = await look(p);
+    if (v.opened !== "false" || v.never !== "false" || v.kids !== "") fail("childFoldSticks " + name + ": parents do not start folded: " + JSON.stringify(v));
+    await p.evaluate(async PP => { toggleKids(PP + "opened"); await renderTermList(); }, PP);
+    await seed(p, ["o-kid2"]);
+    v = await look(p);
+    if (v.opened !== "true" || v.never !== "false" || v.kids !== "o-kid,o-kid2") fail("childFoldSticks " + name + ": a new card folded the unfolded parent: " + JSON.stringify(v));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof toggleKids === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await seed(p, ["o-kid2", "o-kid3"]);
+    v = await look(p);
+    if (v.opened !== "true" || v.never !== "false" || v.kids !== "o-kid,o-kid2,o-kid3") fail("childFoldSticks " + name + ": a reload folded the unfolded parent: " + JSON.stringify(v));
+    await p.evaluate(() => toggleTermShow("subagents"));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termSubsOn === "function", null, { timeout: slow(15000) });
+    if (!await p.evaluate(() => termSubsOn())) fail("childFoldSticks " + name + ": the subagents chip did not survive a reload");
+    if (errors.length) fail("childFoldSticks " + name + ": page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+async function childRollupCountSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["g"] }));
+      localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+    });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderTermList === "function", null, { timeout: slow(15000) });
+    const v = await p.evaluate(async () => {
+      const card = (id, at, by) => ({ id, status: "running", supervised: true, pinned: false, title: id, display_title: id,
+        tags: by ? ["atrium:subagent"] : ["g"], spawned_by_id: by, created_at: at, worktree: "/r/p" });
+      const cards = [card("par", "2026-09-01T10:00:00Z"), card("kid", "2026-09-02T10:00:00Z", "par"),
+        card("grand", "2026-09-03T10:00:00Z", "kid"), card("lone", "2026-09-04T10:00:00Z")];
+      boardCards = async () => cards;
+      switchView("terms");
+      await renderTermList();
+      const first = s => (document.querySelector(s) || {}).textContent || "";
+      return { chevron: first('#term-list .card.tab[data-id="par"] .tkidn'), heads: [...document.querySelectorAll("#term-list .tgcount")].map(e => e.parentElement.textContent.replace(/^\u25be/, "")),
+        info: termChildInfo(cards[0], cards).total };
+    });
+    if (v.chevron !== "2" || v.info !== 2 || !v.heads.some(h => /g4/.test(h))) {
+      fail("childRollupCount: a grandchild is left out of a count: " + JSON.stringify(v));
+    }
+    if (errors.length) fail("childRollupCount: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("childRollupCount ok");
+}
+async function nineAgentCountsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["g"] }));
+      localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+    });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderTermList === "function" && typeof renderBoard === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(async () => {
+      const card = (id, by) => ({ id, status: "running", supervised: true, pinned: false, title: id, display_title: id,
+        tags: by ? ["atrium:subagent", "origin:agent"] : ["g"], spawned_by_id: by, created_at: "2026-09-01T10:00:00Z",
+        worktree: "/r/" + id });
+      const cards = ["a1", "a2", "a3", "a4", "a5", "a6", "par"].map(id => card(id)).concat([card("k1", "par"), card("k2", "par")]);
+      boardCards = async () => cards;
+      const text = (sel, root) => ((root || document).querySelector(sel) || {}).textContent || "";
+      const out = {};
+      switchView("terms");
+      await renderTermList();
+      out.termHeading = [...document.querySelectorAll("#term-list .tgname")].filter(e => e.textContent === "g").map(e => e.nextElementSibling.textContent)[0] || "";
+      out.termChevron = text('#term-list .card.tab[data-id="par"] .tkidn');
+      out.popupTotal = String(termChildInfo(cards.find(c => c.id === "par"), cards).total);
+      out.termTab = text("#c-term");
+      switchView("board");
+      await loadCards().catch(() => {});
+      await renderBoard();
+      const badge = id => text(".chip.subs", document.querySelector(`#board [data-id="${id}"]`));
+      out.boardBadge = badge("par");
+      out.boardLine = text("#board-count .running");
+      out.boardSubsPill = String((boardCounts || {}).subagents);
+      switchView("stack");
+      await loadCards().catch(() => {});
+      await renderStack();
+      out.stackBadge = text(".chip.subs", document.querySelector(`#stack [data-id="par"]`));
+      return out;
+    });
+    const want = { termHeading: "9", termChevron: "2", popupTotal: "2", termTab: "9", boardBadge: "2 subagents",
+      boardLine: "9 running: 0 need you, 9 working", boardSubsPill: "2", stackBadge: "2 subagents" };
+    const rows = Object.keys(want).map(k => k.padEnd(14) + " expected " + want[k].padEnd(12) + " shown " + (got[k] ?? "(missing)"));
+    console.log("nineAgentCounts\n" + rows.join("\n"));
+    const bad2 = Object.keys(want).filter(k => got[k] !== want[k]);
+    if (bad2.length) fail("nineAgentCounts: " + bad2.join(", ") + " disagree: " + JSON.stringify(got));
+    if (errors.length) fail("nineAgentCounts: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
 async function childFoldSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -23715,6 +23859,30 @@ async function quickPasteSection(browser, base) {
     await p.waitForFunction(() => !document.querySelector(".card.linkopen"),
       null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the opening card stayed after the open ended"));
     if (await p.evaluate(() => !!document.getElementById("linkopen-dock"))) fail("quickPaste: the dock stayed with nothing in it");
+    st.hold = null;
+
+    // u-031: a link pasted while another open is in flight waits its turn and opens, never left on its first step
+    st.hold = new Promise(res => { release = res; });
+    st.calls = [];
+    const openBodies = () => st.calls.filter(x => x.indexOf("POST /v1/open") === 0).map(x => JSON.parse(x.split(" ").slice(2).join(" ")));
+    const pollCalls = async (cond, what) => {
+      const end = Date.now() + slow(8000);
+      while (!cond() && Date.now() < end) await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
+      if (!cond()) fail("quickPaste: " + what + ": " + st.calls.join(" | "));
+    };
+    await p.evaluate(() => { quickPasteGo("https://github.com/openziti/zrok/pull/14", false); });
+    await pollCalls(() => openBodies().length === 1, "the first paste sent no open");
+    await p.evaluate(() => { quickPasteGo("https://github.com/openziti/zrok/pull/15", false); });
+    await p.waitForFunction(() => /waiting for the link before it/.test([...document.querySelectorAll(".card.linkopen")]
+      .map(e => e.textContent).join(" ")), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: the second paste did not say it waits for the first"));
+    release();
+    await pollCalls(() => openBodies().length === 2, "the second paste was dropped while the first was in flight");
+    const second = openBodies()[1] || {};
+    if (second.url !== "https://github.com/openziti/zrok/pull/15" || second.title !== "review zrok#15")
+      fail("quickPaste: the second paste opened as " + JSON.stringify(second));
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: a card stayed after both opens ended"));
     st.hold = null;
 
     // an open that fails stays as its card with the reason, and no dialog comes up
@@ -29151,7 +29319,7 @@ async function main() {
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, walkLinkFresh: walkLinkFreshSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
-      resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
+      resumeSpinner: resumeSpinnerSection, relaunchAttach: relaunchAttachSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
@@ -29190,7 +29358,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedFitsLone: selectedFitsLoneSection, termBarNowrap: termBarNowrapSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, childFoldSticks: childFoldSticksSection, childRollupCount: childRollupCountSection, nineAgentCounts: nineAgentCountsSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedFitsLone: selectedFitsLoneSection, termBarNowrap: termBarNowrapSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, artifacts: artifactsSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, keptFileLink: keptFileLinkSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -31081,6 +31249,7 @@ async function main() {
     await unit("sayWhen", () => sayWhenSection(browser, base));
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await unit("resumeSpinner", () => resumeSpinnerSection(browser, base));
+    await unit("relaunchAttach", () => relaunchAttachSection(browser, base));
     await unit("pasteSpinner", () => pasteSpinnerSection(browser, base));
     await unit("pasteBig", () => pasteBigSection(browser, base));
     await unit("termDragNotTyped", () => termDragNotTypedSection(browser, base));
@@ -31291,6 +31460,7 @@ async function main() {
     await unit("mergeStripGone", bu("mergeStripGone"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
+    await unit("apiSlots", bu("apiSlots"));
     await unit("interviewTop", bu("interviewTop"));
     await unit("minionPredicate", () => minionPredicateSection(browser, base));
     await unit("minionNeedsYou", () => minionNeedsYouSection(browser, base));
@@ -31305,6 +31475,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("itemOpenHiddenCard", bu("itemOpenHiddenCard"));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
+    await unit("termTileMatchesPane", () => termtermTileMatchesPaneSection(browser, base));
     await unit("noResumeButton", () => noResumeButtonSection(browser, base));
     await unit("terminalsOneLine", () => terminalsOneLineSection(browser, base));
     await unit("controlsCompact", () => controlsCompactSection(browser, base));
@@ -31442,11 +31613,15 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("pullsPanelStage", bu("pullsPanelStage"));
     await unit("pullsPage", bu("pullsPage"));
     await unit("pullsAbsent", bu("pullsAbsent"));
+    await unit("pullsToolbarLink", bu("pullsToolbarLink"));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
     await unit("noReadyChildren", bu("noReadyChildren"));
     await unit("readyNoSeed", bu("readyNoSeed"));
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
     await unit("childFold", () => childFoldSection(browser, base));
+    await unit("nineAgentCounts", () => nineAgentCountsSection(browser, base));
+    await unit("childRollupCount", () => childRollupCountSection(browser, base));
+    await unit("childFoldSticks", () => childFoldSticksSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("u002", () => u002Section(browser, base));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
@@ -31922,7 +32097,7 @@ async function mResumeSection(browser) {
     // a running card cannot be resumed, and says why
     await p.evaluate(() => window.mResume.open("live-1"));
     const run = await p.$eval("#m-rmenu", e => [...e.querySelectorAll(".rmenu-item")].map(b => b.firstChild.textContent.trim()));
-    if (run.join() !== "restart,new context,settings,stop,terminate and clean up,and don't clean up") fail(tag + "a running card was offered " + JSON.stringify(run));
+    if (run.join() !== "restart,new context,settings,pause,terminate and clean up,and don't clean up") fail(tag + "a running card was offered " + JSON.stringify(run));
     await p.tap("#m-rmenu .rmenu-x");
 
     // 3. Resume: one launch with the card's resume id, the row spins and says so, a second resume launches nothing.

@@ -551,6 +551,14 @@ func TestAMessageNothingWillDeliverSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	claude := peerCard(t, d, "quiet")
+	if _, err := d.st.SaveHarness(store.Harness{ID: "claude-window", Label: "claude window", Enabled: true,
+		Cmd: "claude", LaunchMode: "window"}); err != nil {
+		t.Fatal(err)
+	}
+	copied, _, err := d.st.Register(store.Observed{WireName: "copied", Worktree: "/tmp/copied", Runner: "claude-window"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	hooked := peerCard(t, d, "hooked")
 	if err := d.st.SawHook(hooked.ID, store.HookStop); err != nil {
 		t.Fatal(err)
@@ -562,6 +570,7 @@ func TestAMessageNothingWillDeliverSaysSo(t *testing.T) {
 	}{
 		{gem.ID, "undeliverable", true},
 		{claude.ID, "queued-unconfirmed", true},
+		{copied.ID, "queued-unconfirmed", true},
 		{hooked.ID, "queued", false},
 	} {
 		rec := httptest.NewRecorder()

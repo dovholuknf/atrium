@@ -2,12 +2,17 @@ package link
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/docs"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // What the docs package declares and the rest of this package reaches by its old name.
@@ -84,3 +89,41 @@ type (
 )
 
 var attachmentHeader = docs.AttachmentHeader
+
+// AddRoomDropTools is atrium_files and atrium_get on a room's stdio server.
+func AddRoomDropTools(s *mcp.Server, call func(ctx context.Context, method, path string, body, out any) error) {
+	docs.AddRoomDropTools(s, call)
+}
+
+// dropAsk answers a room's atrium_files or atrium_get. FROM THE LINK, as publishAsk: the room is the one that attached
+// and the card is the sender it names on that room, set as the headers the HTTP control server reads.
+func (c *controlMCP) dropAsk(ctx context.Context, from, base string, req wire.RelayRequest) RelayAnswer {
+	agent := strings.TrimSpace(req.From)
+	call := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: http.Header{
+		ctl.AgentHeader: {agent}, wire.RoomHeader: {from}}}}
+	dm := c.docsMCP()
+	var out any
+	var err error
+	if base == docs.DropGetPath {
+		var in docs.GetInput
+		if json.Unmarshal(req.Body, &in) != nil {
+			return RelayAnswer{Code: http.StatusBadRequest, Error: "a get is a POST of a JSON object"}
+		}
+		_, out, err = ctl.Audited(dm, "ctl-get", docs.DescribeGet, dm.GetHandler)(ctx, call, in)
+	} else {
+		var in docs.FilesInput
+		if len(req.Body) > 0 && json.Unmarshal(req.Body, &in) != nil {
+			return RelayAnswer{Code: http.StatusBadRequest, Error: "a files list is a POST of a JSON object"}
+		}
+		_, out, err = dm.FilesHandler(ctx, call, in)
+	}
+	if err != nil {
+		var dr *docsRefusal
+		if errors.As(err, &dr) {
+			return RelayAnswer{Code: dr.Status, Error: err.Error()}
+		}
+		return RelayAnswer{Code: http.StatusBadRequest, Error: err.Error()}
+	}
+	data, _ := json.Marshal(out)
+	return RelayAnswer{OK: true, Data: data}
+}

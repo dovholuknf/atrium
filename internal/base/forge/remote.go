@@ -186,6 +186,13 @@ func (r *Remote) View(ctx context.Context, ref Ref) (*PR, error) {
 	return out.PR, nil
 }
 
+// Forget drops the view of ref that View would reuse, so the next View asks the hub to fetch the head again.
+func (r *Remote) Forget(ref Ref) {
+	r.mu.Lock()
+	delete(r.fetched, ref)
+	r.mu.Unlock()
+}
+
 func (r *Remote) keep(ref Ref, out HubPR) {
 	r.mu.Lock()
 	out.Diff = nil

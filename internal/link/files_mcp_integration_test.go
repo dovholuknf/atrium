@@ -466,3 +466,39 @@ func TestFilesToolPutContentOverTheCapIs413(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+// A room's stdio atrium_get and atrium_files reach the hub as relayed asks, and the get lands in the asking card on the
+// asking room, the link's room and never the body's.
+func TestFilesToolGetAndListRelayedThroughHubAsk(t *testing.T) {
+	h := newFilesHarness(t)
+	if _, err := h.put("r-031", putInput{Content: "payload", Name: "p.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{docs.DropFilesPath, docs.DropGetPath} {
+		if !hubAskPath(p) {
+			t.Fatalf("%s is not relayable", p)
+		}
+	}
+	ans := h.c.hubAsk(context.Background(), "sg3", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
+		Path: docs.DropFilesPath, Body: json.RawMessage(`{}`)})
+	var list filesOutput
+	if !ans.OK || json.Unmarshal(ans.Data, &list) != nil || len(list.Files) != 1 || list.Files[0].Name != "p.txt" {
+		t.Fatalf("files answer = %+v", ans)
+	}
+	ans = h.c.hubAsk(context.Background(), "sg3", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
+		Path: docs.DropGetPath, Body: json.RawMessage(`{"name":"p.txt","room":"sg4"}`)})
+	var got getOutput
+	if !ans.OK || json.Unmarshal(ans.Data, &got) != nil || got.Size != 7 {
+		t.Fatalf("get answer = %+v", ans)
+	}
+	if len(h.drops) != 1 || h.drops[0].room != "sg3" || h.drops[0].card != "card2" {
+		t.Fatalf("the room saw %+v", h.drops)
+	}
+	if len(h.audits) == 0 || !strings.Contains(h.audits[len(h.audits)-1], "ctl-get") {
+		t.Fatalf("audits %v", h.audits)
+	}
+	if miss := h.c.hubAsk(context.Background(), "sg3", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
+		Path: docs.DropGetPath, Body: json.RawMessage(`{"name":"nope"}`)}); miss.OK || miss.Code != 404 {
+		t.Fatalf("missing answer = %+v", miss)
+	}
+}

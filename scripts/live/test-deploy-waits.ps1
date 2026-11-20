@@ -84,6 +84,8 @@ Check 'the reattach budget accepts ziti taking minutes' ($ReattachBudget -ge 300
 Check 'atrium-deploy waits the named reattach budget' ($deploy -match 'Wait-RoomAttached \$start \$ReattachBudget')
 Check 'the mac swap and retry wait for the store before the swap' (([regex]::Matches($deploy, 'WaitStore \+')).Count -ge 2)
 Check 'a store that never released is reported with its pid' ($deploy -match 'still held its store')
+Check 'the mac swap stops the room on its own board, not whoever owns the address file' (
+  $deploy -match 'atrium stop --url http://127\.0\.0\.1:7781 ;')
 Check 'a windows room swaps itself through the hub and no scheduled task is run' (
   $deploy -match "if \(\`$os -eq 'windows'\) \{ Request-RestartInto \`$name" -and $deploy -notmatch 'schtasks')
 

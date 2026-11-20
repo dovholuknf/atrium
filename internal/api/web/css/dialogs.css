@@ -38,6 +38,8 @@
     font: var(--fs-sm)/1.5 var(--mono); color: var(--head);
     word-break: normal; overflow-wrap: anywhere;
   }
+  .cmdrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cmdrow code { flex: 1; min-width: 0; }
   .asktext b { color: var(--head); font-weight: 600; }
   /* The answers are the foot, to the right, the affirmative last: the restart card's order. */
   dialog#ask .dlg-foot { justify-content: flex-end; gap: var(--sp-2); }

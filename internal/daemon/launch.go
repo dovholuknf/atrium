@@ -918,8 +918,14 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 	fork := ""
 	if cloneSrc != nil {
-		if fork, err = d.cloneInto(cloneSrc, cwd, homeDir.Tmp, req.CloneCarry, req.CloneFork); err != nil {
+		var skipped []string
+		if fork, skipped, err = d.cloneInto(cloneSrc, cwd, homeDir.Tmp, req.CloneCarry, req.CloneFork); err != nil {
 			return nil, err
+		}
+		if len(skipped) > 0 {
+			log.Printf("[atrium] the duplicate of %s did not carry %s", cloneSrc.ID, strings.Join(skipped, ", "))
+			req.Brief = strings.TrimRight(req.Brief, "\n") + "\n\nNot carried from the original card, it could not be copied: " +
+				strings.Join(skipped, ", ") + "\n"
 		}
 		if len(req.Env) == 0 {
 			req.Env = cloneSrc.LaunchEnv

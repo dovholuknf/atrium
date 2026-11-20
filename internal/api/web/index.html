@@ -473,6 +473,7 @@ Exports honor whatever filter is applied.">?</span>
             <button id="t-kind-shell" onclick="showTerminal('shell')"
               data-tip="a plain shell in the same directory, for when the agent is not answering">shell</button>
           </span>
+          <a id="t-walk-pr" target="_blank" rel="noopener" hidden data-tip="open the pull request on GitHub, in a new tab"></a>
           <span class="grow"></span>
           <!-- Chat, attach and exit live under the cog (`termSettings`). -->
           <button onclick="sendSignal('int')"
@@ -496,7 +497,6 @@ Exports honor whatever filter is applied.">?</span>
           <!-- Only when the card's directory holds findings, a pull request or a work branch's changes. -->
           <button id="t-walk" hidden onclick="toggleWalk()"
             data-tip="walk this card's findings, or its branch's changes, beside the terminal"><span id="t-walk-label">walk</span></button>
-          <a id="t-walk-pr" target="_blank" rel="noopener" hidden data-tip="open the pull request on GitHub, in a new tab"></a>
           <button id="t-arts" class="icon" type="button" aria-pressed="false" onclick="toggleArts()"
             aria-label="what this session made" data-tip="what this session made"><svg viewBox="0 0 16 16" width="15"
             height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
@@ -1716,7 +1716,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field">
       <label class="check">
         <input type="checkbox" id="s-cleancopy" checked onchange="setCleanCopy(this.checked)">
-        <span>clean copy by default <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="ctrl-c and copy on select give the reply's own text, without the terminal's indents and line breaks. The button by the selection then copies it as shown. Off, every copy is as shown. Kept in this browser only.">?</span></span>
+        <span>clean copy by default <span class="help" tabindex="0" onclick="event.preventDefault()" data-tip="ctrl-c and copy on select give the selection without the claude prompt and the spaces at the start and end of each line. The button by the selection then copies it as shown. Off, every copy is as shown. Kept in this browser only.">?</span></span>
       </label>
     </div>
     <div class="field">

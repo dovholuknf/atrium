@@ -207,26 +207,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
 	}
 
-	fetch := s.PRFetch
-	if fetch == nil {
-		helper := credentialHelper(f.Kind(), forgeCmd)
-		fetch = func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error {
-			if spec.Hub == "" {
-				return fetchPRHead(ctx, dir, spec, dst, helper)
-			}
-			// THE HEAD IS IN THE HUB'S STORE: the room reads it through its link, never from the forge.
-			if s.HubSource == nil {
-				return errors.New("this room has no way to read the hub's store")
-			}
-			url, done, err := s.HubSource(ctx, spec.Hub)
-			if err != nil {
-				return err
-			}
-			defer done()
-			spec.Remote = url
-			return fetchPRHead(ctx, dir, spec, dst, "")
-		}
-	}
+	fetch := s.prHeadFetch(f.Kind(), forgeCmd)
 	// THE ONE REF, and nothing else of the repo: a fetch of the head into its own ref.
 	steps.begin("fetch", "fetching the head of pull request "+strconv.Itoa(req.Number))
 	if err := fetch(ctx, filepath.FromSlash(repoPath), f.FetchSpec(ref), prWorktreeRef(req.Number)); err != nil {
@@ -256,6 +237,30 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	s.setupWorktree(ctx, host, req.Org, req.Repo, dest)
 	res.Path, res.Branch, res.CreatedBranch = dest, branch, made
 	return res, http.StatusOK, nil
+}
+
+// prHeadFetch is PRFetch, else the fetch of one PR head, from the hub's store when the spec names it.
+func (s *Server) prHeadFetch(kind, forgeCmd string) func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error {
+	if s.PRFetch != nil {
+		return s.PRFetch
+	}
+	helper := credentialHelper(kind, forgeCmd)
+	return func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error {
+		if spec.Hub == "" {
+			return fetchPRHead(ctx, dir, spec, dst, helper)
+		}
+		// THE HEAD IS IN THE HUB'S STORE: the room reads it through its link, never from the forge.
+		if s.HubSource == nil {
+			return errors.New("this room has no way to read the hub's store")
+		}
+		url, done, err := s.HubSource(ctx, spec.Hub)
+		if err != nil {
+			return err
+		}
+		defer done()
+		spec.Remote = url
+		return fetchPRHead(ctx, dir, spec, dst, "")
+	}
 }
 
 // haveCheckout is whether the checkout of host/org/repo is already on this room, so finding it can run beside the

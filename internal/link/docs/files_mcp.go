@@ -520,3 +520,26 @@ func (c *MCP) exportFetch(ctx context.Context, room, p string, limit int64) ([]b
 	}
 	return b, ""
 }
+
+// DropFilesPath and DropGetPath are relayed paths that are not HTTP endpoints of the hub: hubAsk answers them in
+// process, for a room's stdio server.
+const (
+	DropFilesPath = "/_hub/drop/files"
+	DropGetPath   = "/_hub/drop/get"
+)
+
+// AddRoomDropTools is atrium_files and atrium_get on a room's stdio server, asked of the hub over the room's link.
+func AddRoomDropTools(s *mcp.Server, call func(ctx context.Context, method, path string, body, out any) error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_files", Description: filesToolDesc},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in FilesInput) (*mcp.CallToolResult, FilesOutput, error) {
+			var out FilesOutput
+			err := call(ctx, http.MethodPost, DropFilesPath, in, &out)
+			return nil, out, err
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_get", Description: getToolDesc},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in GetInput) (*mcp.CallToolResult, GetOutput, error) {
+			var out GetOutput
+			err := call(ctx, http.MethodPost, DropGetPath, in, &out)
+			return nil, out, err
+		})
+}

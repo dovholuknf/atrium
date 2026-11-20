@@ -848,8 +848,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// decides whether the answer needs one putting back, is already on the
 	// context. See `placeCard` and `retagCard`.
 	// A READ THAT A SILENT ROOM HOLDS IS ANSWERED, and not left open. See
-	// `roomReadWait`. The timer only covers the wait for the headers: `rewrite`
-	// stops it the moment they arrive, so a large download is not cut short.
+	// `roomReadWait`. The timer only covers the wait for the headers and any body
+	// `rewrite` reads: it stops on the way out, so a large download is not cut short.
 	if r.Method == http.MethodGet && !isStream(r) {
 		var cancel context.CancelCauseFunc
 		ctx, cancel = context.WithCancelCause(ctx)
@@ -968,10 +968,10 @@ func (p *Proxy) serveAsset(w http.ResponseWriter, r *http.Request, name string) 
 // else in the health payload is the room's and passes through untouched.
 // rewrite is everything the hub changes on the way back out.
 func (p *Proxy) rewrite(res *http.Response) error {
-	// The headers are here, so the wait for them is over. See `roomReadWait`.
+	// Stopped on the way out, not on arrival: a retag below reads the whole body before the board gets a header.
 	if res.Request != nil {
 		if wait, ok := res.Request.Context().Value(headerWaitKey{}).(*time.Timer); ok {
-			wait.Stop()
+			defer wait.Stop()
 		}
 	}
 	if err := p.rewriteHealth(res); err != nil {
