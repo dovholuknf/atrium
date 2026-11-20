@@ -1126,13 +1126,8 @@ async function itemsUxSection(browser, base) {
     await p.route(/\/v1\/tasks(\?.*)?$/, r => r.fulfill({ contentType: "application/json", body: JSON.stringify(fx.tasks) }));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    // A late emerging/hub repaint can send the board back to terms (CI win32 saw 13 rows in a hidden #items), so each poll re-enters items until a row shows.
-    await p.waitForFunction(() => {
-      const v = document.getElementById("items");
-      if (v && v.hidden) switchView("items");
-      const r = document.querySelector(".it-row");
-      return !!r && r.getClientRects().length > 0;
-    }, null, { timeout: slow(10000) });
+    await p.evaluate(() => switchView("items"));
+    await p.waitForSelector(".it-row", { timeout: slow(10000) });
     await p.evaluate(t => { lastTasks = t; itemsHtml = ""; itemsPaint(); }, fx.tasks);
     return { ctx, p };
   };
