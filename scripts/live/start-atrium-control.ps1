@@ -50,7 +50,7 @@ if ($svc) {
   Get-ChildItem env: | Where-Object { $_.Name -like 'CLAUDE_CODE_*' -or $_.Name -like 'CLAUDECODE*' } |
     ForEach-Object { Remove-Item "Env:$($_.Name)" }
   New-Item -ItemType Directory -Force $CtlLogs | Out-Null
-  # The redirect below overwrites room.err, and the lines from before a restart are what explain a stuck card. Keep
+  # The room overwrites room.err, and the lines from before a restart are what explain a stuck card. Keep
   # them as room.err.<timestamp>, as the batch deploy does for claude-sg4, and prune to the newest 20.
   $oldErr = Join-Path $CtlLogs 'room.err'
   if (Test-Path $oldErr) {
@@ -58,9 +58,9 @@ if ($svc) {
     Get-ChildItem $CtlLogs -Filter 'room.err.*' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
       ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
   }
-  # In no job object, through cmd for the redirects.
+  # In no job object, and the room writes its own logs.
   $q = $argv | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }
-  $null = Start-Jobless "`"$CtlExe`" $($q -join ' ') > $CtlLogs\room.out 2> $CtlLogs\room.err" 'control'
+  $null = Start-Jobless "`"$CtlExe`" $($q -join ' ') --log-dir $CtlLogs" 'control' $AtriumRoot
 } }
 
 if (-not $WhatIf) {

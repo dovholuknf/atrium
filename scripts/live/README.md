@@ -97,7 +97,9 @@ when the shell is itself in a job (run once now, hidden, no trigger, deleted onc
 logon entry), then through WMI when the task does not run (breakaway only leaves the innermost
 job, so a room started from a terminal tab stayed in the tab's job, and on 2026-11-09 a WMI start from a card still left
 the deployed sg4-control in that card's job), else with
-`CREATE_BREAKAWAY_FROM_JOB`. It says when the result is still in a job. `test-start-jobless.ps1` covers it.
+`CREATE_BREAKAWAY_FROM_JOB`. The process starts in its root folder, never the caller's, and writes its own logs
+(`--log-dir`: `hub.out` and `hub.err`, `room.out` and `room.err`), with no shell redirect. It says when the result is
+still in a job. `test-start-jobless.ps1` covers it.
 
 A room that answers a stop with 409 (its pty host would die with it) is never stopped with --runners by these scripts on their own. The stop fails, says how many runners are held and nothing has changed. Pass -KillRunners to deploy-batch.ps1, atrium-deploy.ps1 or stop-atrium.ps1 to end them anyway. test-stop-room-409.ps1 covers it.
 

@@ -50,6 +50,7 @@ type atriumFlags struct {
 	files     string
 	open      bool
 	noOpen    bool
+	logDir    string
 	// views are the roots board views are served from. See link/views.go.
 	views []string
 
@@ -95,6 +96,7 @@ func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 		"serve the board from this directory instead of the built-in copy")
 	c.Flags().StringSliceVar(&f.views, "board-views", nil,
 		"serve a board view at <name>.localhost for each live card whose worktree is under this directory and holds a board (repeatable)")
+	logDirFlag(c, &f.logDir)
 	c.Flags().BoolVar(&f.open, "open", false, "print the address and nothing else")
 	c.Flags().StringVar(&f.buildDir, "builds", "",
 		"a directory of atrium_<os>_<arch> binaries to offer rooms that asked for upgrades")
@@ -139,6 +141,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// is the operator's choice and is not touched here.
 	board, err := loopbackBoard(board)
 	if err != nil {
+		return err
+	}
+	if err := redirectLogs(f.logDir, "hub", true); err != nil {
 		return err
 	}
 	raisePriority()
