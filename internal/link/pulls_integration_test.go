@@ -685,11 +685,10 @@ func TestAPlainPullIdFindsItsRoom(t *testing.T) {
 		t.Errorf("beta got %d requests for the row", got)
 	}
 
-	// Counted by path: alpha also gets the proxy's own background requests, which are not this lookup.
-	before := a.count(http.MethodGet, "/v1/prs/pr_a1")
+	before := len(a.requests())
 	code, _, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_a1", "", map[string]string{wire.RoomHeader: "alpha"})
-	if got := a.count(http.MethodGet, "/v1/prs/pr_a1") - before; code != 200 || got != 1 {
-		t.Errorf("a named room was searched: %d, alpha saw %d for the row", code, got)
+	if code != 200 || len(a.requests()) != before+1 {
+		t.Errorf("a named room was searched: %d, alpha saw %d", code, len(a.requests())-before)
 	}
 
 	code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_nowhere/retry", "", nil)
