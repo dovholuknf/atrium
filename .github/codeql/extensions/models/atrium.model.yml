@@ -2,6 +2,7 @@ extensions:
   - addsTo: {pack: codeql/go-all, extensible: barrierModel}
     data:
       - ["github.com/dovholuknf/atrium/internal/base/safepath", "", False, "Contained", "", "", "ReturnValue[0]", "path-injection", "manual"]
+      - ["github.com/dovholuknf/atrium/internal/base/safepath", "", False, "LocalDir", "", "", "ReturnValue[0]", "path-injection", "manual"]
       - ["github.com/dovholuknf/atrium/internal/gitsync", "", False, "ParseName", "", "", "ReturnValue[0]", "path-injection", "manual"]
       # each segment past dest is safeSegment: [A-Za-z0-9._-] only and never dots alone, so the folder is under dest
       - ["github.com/dovholuknf/atrium/internal/base/forge", "", False, "DownloadDir", "", "", "ReturnValue", "path-injection", "manual"]
