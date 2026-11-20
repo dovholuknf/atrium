@@ -193,6 +193,8 @@ type Daemon struct {
 	listening atomic.Pointer[map[int]bool]
 	// gatePoll and gateGiveUp override the short gate's timings when set. Zero is the default, see stopkeep.go.
 	gatePoll, gateGiveUp time.Duration
+	// typingGiveUp overrides how long a stop waits for typing to stop. See drafts.go.
+	typingGiveUp time.Duration
 	// hooksIn counts the turn-end and session hook calls being answered, which the short gate waits out.
 	hooksIn atomic.Int32
 	// hostInJob and hostBuild are what the host's probe said when this daemon connected. A host inside the room
@@ -1444,6 +1446,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// A stop that leaves runners up waits first for the work that lives only in this process, with the listeners and
 	// the board still up and new says held. See stopkeep.go.
 	d.stop.begin()
+	d.typingGate()
 	d.shortGate()
 	// Every session ends from here on, and none of those endings is somebody
 	// deciding. See the session hook's `end`.
@@ -1508,6 +1511,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// somebody was reading, and there is nothing in it to lose that ten seconds
 	// of waiting would save.
 	d.stopShells()
+	d.saveDrafts()
 
 	if n := d.blockedAgents(); n > 0 {
 		log.Printf("[atrium] %d agent connection(s) still parked. they will retry against the "+

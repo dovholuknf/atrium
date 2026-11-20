@@ -34,3 +34,26 @@ func TestWithToolDirsPrependsOnlyWhatTheRunnerLacks(t *testing.T) {
 		t.Fatalf("env = %v", same)
 	}
 }
+
+func TestWithToolDirsPutsGitForWindowsAheadOfAnEarlierGit(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Git for Windows only")
+	}
+	root, cyg := t.TempDir(), filepath.Join(t.TempDir(), "cygwin", "bin")
+	cmd, bin := filepath.Join(root, "cmd"), filepath.Join(root, "bin")
+	for _, d := range []string{cmd, bin, cyg} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeTool(t, cmd, "git")
+	fakeTool(t, bin, "bash")
+	fakeTool(t, cyg, "git")
+	fakeTool(t, cyg, "bash")
+	sep := string(os.PathListSeparator)
+	p := cyg + sep + cmd
+	got := withToolDirs([]string{"PATH=" + p}, p)
+	if want := "PATH=" + cmd + sep + bin + sep + p; got[0] != want {
+		t.Fatalf("env = %v, want %s", got, want)
+	}
+}

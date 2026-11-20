@@ -233,6 +233,7 @@ func (d *Daemon) trustReattachedLine(run *runner, now time.Time) {
 	run.typeMu.Unlock()
 	log.Printf("[atrium] %s: reattached and quiet for %s, and the screen shows no work in progress, so the line is taken as empty",
 		run.taskID, need)
+	d.restoreDraft(run)
 	if d.pending != nil {
 		d.pending.reset(run.taskID)
 	}

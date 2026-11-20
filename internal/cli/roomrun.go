@@ -253,7 +253,7 @@ func startedByFlag(c *cobra.Command, v *string) {
 }
 
 func roomCmd() *cobra.Command {
-	var dir, db, human, agent, startedBy, root, name string
+	var dir, db, human, agent, startedBy, root, name, logDir string
 	var isolated, detach bool
 	c := &cobra.Command{
 		Use:   "room",
@@ -291,6 +291,9 @@ func roomCmd() *cobra.Command {
 				}
 				after = 0
 			}
+			if err := redirectLogs(logDir, "room", false); err != nil {
+				return err
+			}
 			err = runRoom(keys, db, human, agent, after, isolated, startedBy, lay)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
@@ -309,6 +312,7 @@ func roomCmd() *cobra.Command {
 	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report, loopback only (a non-loopback address is refused)")
 	isolatedFlag(c, &isolated)
 	startedByFlag(c, &startedBy)
+	logDirFlag(c, &logDir)
 	c.Flags().BoolVar(&detach, "detach", false,
 		"start the room in the background, logging to room.log beside --dir, and return once it answers")
 	// Hidden: how a hub-triggered restart re-invokes this room detached. It waits

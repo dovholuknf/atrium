@@ -21,6 +21,7 @@ func newPtyHost() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			raisePriority()
 			return ptyhost.Run(ptyhost.RunOptions{StateDir: stateDir, Build: build, IdleExit: idle, Log: logPath})
 		},
 	}

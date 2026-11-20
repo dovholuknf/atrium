@@ -80,6 +80,25 @@ func withToolsLine(text string) string {
 	return strings.TrimRight(text, "\n") + "\n\n" + line
 }
 
+// gitForWindowsDirs is the cmd and bin dirs of the first Git for Windows on path, so its git and bash beat a Cygwin or
+// WSL one that sits earlier. Nil off Windows or when there is none.
+func gitForWindowsDirs(path string) []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" || strings.Contains(strings.ToLower(dir), "cygwin") || strings.Contains(strings.ToLower(dir), "msys") {
+			continue
+		}
+		root := filepath.Dir(dir)
+		bin := filepath.Join(root, "bin")
+		if findTool("git", dir) != "" && findTool("bash", bin) != "" {
+			return []string{dir, bin}
+		}
+	}
+	return nil
+}
+
 // withToolDirs prepends to the runner's PATH the directory of every tool the room has and the runner's env lacks.
 func withToolDirs(env []string, roomPath string) []string {
 	idx, runnerPath := -1, ""
@@ -103,6 +122,7 @@ func withToolDirs(env []string, roomPath string) []string {
 			out = append(out, k+"="+v)
 		}
 	}
+	dirs = append(gitForWindowsDirs(runnerPath+string(os.PathListSeparator)+roomPath), dirs...)
 	if len(dirs) == 0 {
 		return out
 	}

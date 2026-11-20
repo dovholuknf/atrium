@@ -86,7 +86,7 @@ try {
     if ($script:wmiFails) { throw 'Win32_Process Create returned 2' }
     return 200
   }
-  function Start-Breakaway([string]$CommandLine) { $script:calls.Add("breakaway $CommandLine"); return 300 }
+  function Start-Breakaway([string]$CommandLine, [string]$Dir) { $script:calls.Add("breakaway $CommandLine in $Dir"); return 300 }
 
   function Reset([bool]$SelfInJob, [bool]$WmiFails, $WmiPidInJob, $BreakawayPidInJob) {
     $said.Clear(); $script:calls.Clear()
@@ -98,10 +98,15 @@ try {
 
   Reset $true $false $false $true
   $script:taskFails = $false
-  $p = Start-Jobless '"x.exe" room > out 2> err' 'control'
+  $p = Start-Jobless '"x.exe" room --log-dir logs' 'control' $Base
   Check 'from a job it starts through the task scheduler and nothing else' ($p -eq 0 -and $calls.Count -eq 1 -and $calls[0] -like 'task control *launch-control-*.cmd')
   Check 'the task start is said with the task name' (($said -join "`n") -match 'started through the task scheduler as task atrium-live-control, outside this shell''s job')
-  Check 'the task runs the launch script with the command last' ((Get-Content (Get-Launch 'control'))[-1] -eq '"x.exe" room > out 2> err')
+  Check 'the task runs the launch script with the command last' ((Get-Content (Get-Launch 'control'))[-1] -eq '"x.exe" room --log-dir logs')
+  Check 'the launch script runs the command in the root folder' ((Get-Content (Get-Launch 'control')) -contains "cd /d `"$Base`"")
+  Reset $true $false $false $true
+  $threw = $false
+  try { $null = Start-Jobless '"x.exe" room --log-dir logs' 'control' '' } catch { $threw = "$_" -match 'no working directory' }
+  Check 'a start with no working directory is refused before anything starts' ($threw -and $calls.Count -eq 0)
   $script:taskFails = $true
 
   # f-038: the previous start's cmd.exe still runs its launch script when the next start writes one.
@@ -115,7 +120,7 @@ try {
   while (-not (Test-Path $ready) -and (Get-Date) -lt $deadline) { [Threading.Thread]::Sleep(50) }
   Reset $true $false $false $true
   $script:taskFails = $false
-  $null = Start-Jobless "echo relaunched > `"$hit`"" 'control'
+  $null = Start-Jobless "echo relaunched > `"$hit`"" 'control' $Base
   $first = Get-Launch 'control'
   New-Item $stop | Out-Null
   $exited = $prev.WaitForExit(30000)
@@ -124,12 +129,12 @@ try {
   Check 'a start writes a launch script of its own name and removes the old one for its tag' ($first -and -not (Test-Path $old))
   Check 'another tag''s launch script is kept' (Test-Path (Join-Path $Base 'launch-preview-board.cmd'))
   Reset $true $false $false $true
-  $null = Start-Jobless '"x.exe" room > out 2> err' 'control'
+  $null = Start-Jobless '"x.exe" room --log-dir logs' 'control' $Base
   Check 'the next start leaves one launch script for its tag' (@(Get-ChildItem -LiteralPath $Base -Filter 'launch-control*.cmd').Count -eq 1 -and -not (Test-Path $first))
   $script:taskFails = $true
 
   Reset $true $false $false $true
-  $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
+  $p = Start-Jobless '"x.exe" room --log-dir logs' 'room' $Base
   Check 'a task refusal falls back to WMI, said as a WARNING' (($said -join "`n") -match 'WARNING: could not start room through the task scheduler \(Access is denied\)\. trying WMI')
   Check 'from a job with no task it starts through WMI and returns that pid' ($p -eq 200 -and $calls.Count -eq 2 -and $calls[0] -like 'task room *' -and $calls[1] -like 'wmi cmd.exe /c *launch-room-*.cmd*')
   Check 'it says the result is in no job' (($said -join "`n") -match 'in no job object')
@@ -146,7 +151,7 @@ try {
   try {
     $env:Path = "C:\Windows;C:\tools\jq"
     Reset $true $false $false $false
-    $null = Start-Jobless '"x.exe" room > out 2> err' 'room'
+    $null = Start-Jobless '"x.exe" room --log-dir logs' 'room' $Base
     $launch = Get-Content (Get-Launch 'room') -Raw
     $login = @(Get-LoginPath | Where-Object { @('C:\tools\go\bin', 'C:\tools\jq') -notcontains $_ } | ForEach-Object { $_ -replace '%', '%%' })
     $want = (@('C:\tools\go\bin', 'C:\tools\jq') + $login) -join ';'
@@ -159,16 +164,16 @@ try {
   } finally { $env:Path = $oldPath }
 
   Reset $false $false $false $true
-  $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
-  Check 'outside any job it uses breakaway' ($p -eq 300 -and $calls.Count -eq 1 -and $calls[0] -like 'breakaway cmd.exe /c "*x.exe*')
+  $p = Start-Jobless '"x.exe" room --log-dir logs' 'room' $Base
+  Check 'outside any job it uses breakaway' ($p -eq 300 -and $calls.Count -eq 1 -and $calls[0] -eq "breakaway `"x.exe`" room --log-dir logs in $Base")
 
   Reset $true $true $false $false
-  $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
+  $p = Start-Jobless '"x.exe" room --log-dir logs' 'room' $Base
   Check 'a WMI refusal falls back to breakaway' ($p -eq 300 -and $calls.Count -eq 3 -and $calls[2] -like 'breakaway *')
   Check 'the fallback is said as a WARNING with the reason' (($said -join "`n") -match 'WARNING: could not start room through WMI \(Win32_Process Create returned 2\)')
 
   Reset $true $true $false $true
-  $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
+  $p = Start-Jobless '"x.exe" room --log-dir logs' 'room' $Base
   Check 'a result still in a job says so plainly and says what to do' (($said -join "`n") -match 'inside a job object that refused breakaway, inherited from the terminal or task that ran this script' -and ($said -join "`n") -match 'outside any job')
 } finally {
   Remove-Item $Base -Recurse -Force -ErrorAction SilentlyContinue

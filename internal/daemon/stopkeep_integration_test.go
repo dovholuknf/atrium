@@ -356,3 +356,83 @@ func TestHostStateCountsHostRunners(t *testing.T) {
 		t.Fatalf("a host in a job does not say why: %s", w.Body.String())
 	}
 }
+
+// A line typed before a stop is saved, and typed back into the reattached runner once its screen proves the line empty.
+func TestStopKeepsTheTypedLineAndTypesItBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d1 := daemonAt(t, dir)
+	task, _, err := d1.st.Register(store.Observed{WireName: "draft-kept", Worktree: t.TempDir(), Runner: "bash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh, args := someShell(t)
+	if _, err := d1.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	r1 := d1.sup.get(task.ID)
+	r1.noteOperatorTyped([]byte("half a thought"))
+	r1.typeMu.Lock()
+	r1.lastTyped = time.Now().Add(-time.Minute)
+	r1.typeMu.Unlock()
+
+	d1.stop.request("test")
+	d1.shutdown()
+	if b, err := os.ReadFile(d1.draftPath(task.ID)); err != nil || string(b) != "half a thought" {
+		t.Fatalf("the typed line was not saved: %q %v", b, err)
+	}
+
+	d2 := restarted(t, d1, dir)
+	d2.reattachRuns()
+	r2 := d2.sup.get(task.ID)
+	if r2 == nil {
+		t.Fatal("not reattached")
+	}
+	d2.trustReattachedLine(r2, time.Now().Add(time.Hour))
+	if st := r2.typing(); st.Line != "half a thought" || !st.Exact {
+		t.Fatalf("the line was not typed back: %+v", st)
+	}
+	if _, err := os.Stat(d2.draftPath(task.ID)); !os.IsNotExist(err) {
+		t.Fatalf("the draft is still on disk after it was typed back: %v", err)
+	}
+	if err := os.WriteFile(d2.draftPath(task.ID), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r2.noteOperatorTyped([]byte("x"))
+	d2.restoreDraft(r2)
+	if st := r2.typing(); st.Line != "half a thoughtx" {
+		t.Fatalf("a draft was typed over a line that is no longer empty: %+v", st)
+	}
+}
+
+// A stop waits while a key was pressed in the last few seconds, and gives up at its bound.
+func TestStopWaitsForTyping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	_, r := hostRunnerCard(t, d, "gate-typing")
+	d.gatePoll = 10 * time.Millisecond
+
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-typingQuiet + 300*time.Millisecond)
+	r.typeMu.Unlock()
+	start := time.Now()
+	d.typingGate()
+	if took := time.Since(start); took < 250*time.Millisecond || took > 5*time.Second {
+		t.Fatalf("the stop waited %s for a key 300ms from going quiet", took)
+	}
+
+	d.typingGiveUp = 200 * time.Millisecond
+	r.noteOperatorTyped([]byte("a"))
+	start = time.Now()
+	d.typingGate()
+	if took := time.Since(start); took < 200*time.Millisecond || took > 3*time.Second {
+		t.Fatalf("the typing wait took %s against a 200ms bound", took)
+	}
+}

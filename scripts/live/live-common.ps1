@@ -49,15 +49,17 @@ $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 $CtlServes    = 'http://127.0.0.1:7791/v1/settings'
 # How each remote room is started, detached, over ssh: atrium-deploy.ps1 after a swap, start-atrium-remote.ps1 after a
-# failure. A start that finds the room's port answering leaves it alone and exits.
+# failure. A start that finds the room's port answering leaves it alone and exits. Each runs in the room's own folder,
+# which the detached room inherits, never the ssh session's.
 $winEnv ='$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
-  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
-$sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
+  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; Set-Location (Join-Path $HOME ''.atrium'') ; '
+$sg3Detach = 'Set-Location C:/Users/claude/.atrium ; ' +
+  'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
   '--db C:/Users/claude/.atrium/atrium.db'
-$macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
+$macDetach = 'cd ~/.atrium && ~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
   '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
 $zrokEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
-  '$b = Join-Path $HOME ''.atrium-zrok\bin\atrium.exe'' ; '
+  '$b = Join-Path $HOME ''.atrium-zrok\bin\atrium.exe'' ; Set-Location (Join-Path $HOME ''.atrium-zrok'') ; '
 $zrokDetach = '& $b room --detach --isolated --dir (Join-Path $HOME ''.atrium-zrok\room'') ' +
   '--db (Join-Path $HOME ''.atrium-zrok\atrium.db'') --agent 127.0.0.1:7787 --http 127.0.0.1:7791'
 $RemoteStart = [ordered]@{
@@ -786,8 +788,8 @@ public static extern bool IsProcessInJob(System.IntPtr process, System.IntPtr jo
 # window, its own process group, this process's environment. Start-Process cannot do it, so a hub started that way
 # belonged to the job of the room whose shell ran the script, and died when that room was stopped (2026-10-14).
 # Returns the new pid. Throws when the job does not allow breakaway, rather than start something that would not
-# outlive it.
-function Start-Breakaway([string]$CommandLine) {
+# outlive it. Dir is its working directory.
+function Start-Breakaway([string]$CommandLine, [string]$Dir) {
   Initialize-LiveSpawn
   $si = New-Object AtriumLive.Spawn+STARTUPINFO
   $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
@@ -796,7 +798,7 @@ function Start-Breakaway([string]$CommandLine) {
   $flags = 0x01000000 -bor 0x00000200 -bor 0x08000000
   $sb = New-Object Text.StringBuilder $CommandLine
   if (-not [AtriumLive.Spawn]::CreateProcessW([NullString]::Value, $sb, [IntPtr]::Zero, [IntPtr]::Zero, $false, $flags, [IntPtr]::Zero,
-      [NullString]::Value, [ref]$si, [ref]$pi)) {
+      $Dir, [ref]$si, [ref]$pi)) {
     throw "could not start outside the job object, Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()): $CommandLine"
   }
   [AtriumLive.Spawn]::CloseHandle($pi.hProcess) | Out-Null
@@ -882,9 +884,11 @@ function Start-Wmi([string]$CommandLine) {
 
 # New-LaunchScript writes the .cmd a WMI start runs: WMI hands the child no copy of this process's environment, so the
 # ATRIUM_* variables it needs (ATRIUM_HOSTS, ATRIUM_DEBUG_INPUTLAG, ATRIUM_PRIORITY) are set in the script, and nothing
-# else is, so no credential in this shell is written to disk. A value that cannot sit inside set "..." is skipped.
-function New-LaunchScript([string]$Path, [string]$Command, [string[]]$PathRecord = @()) {
+# else is, so no credential in this shell is written to disk. A value that cannot sit inside set "..." is skipped. Dir,
+# when given, is where the command runs.
+function New-LaunchScript([string]$Path, [string]$Command, [string[]]$PathRecord = @(), [string]$Dir) {
   $lines = @('@echo off')
+  if ($Dir) { $lines += ('cd /d "{0}"' -f $Dir) }
   foreach ($e in (Get-ChildItem Env: | Where-Object { $_.Name -like 'ATRIUM_*' })) {
     if ($e.Value -match '["\r\n]') { continue }
     $lines += ('set "{0}={1}"' -f $e.Name, ($e.Value -replace '%', '%%'))
@@ -913,10 +917,12 @@ function Get-LoginPath {
   return @($out | Select-Object -Unique)
 }
 
-# Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
-# when the result is still in one. Returns the pid of the cmd that runs it, 0 for a task. Throws only when no route
-# could start it.
-function Start-Jobless([string]$Command, [string]$Tag, [switch]$ViaTask) {
+# Start-Jobless starts "<exe> args" with no job object over it, by the route Get-StartRoute picks, and says when the
+# result is still in one. The process writes its own logs (--log-dir) and runs in Dir, its root folder and never the
+# caller's, since a card launch with no usable repo falls back to it. Returns the pid of what it started, 0 for a task.
+# Throws when there is no Dir or no route could start it.
+function Start-Jobless([string]$Command, [string]$Tag, [string]$Dir, [switch]$ViaTask) {
+  if (-not $Dir) { throw "no working directory given for $Tag" }
   $route = if ($ViaTask) { 'task' } else { Get-StartRoute (Test-ProcessInJob $PID) }
   $record = Get-PathRecord
   if ($record) {
@@ -934,7 +940,7 @@ function Start-Jobless([string]$Command, [string]$Tag, [switch]$ViaTask) {
   $launch = Join-Path $Base "launch-$Tag-$(Get-Date -Format yyyyMMddHHmmssfff).cmd"
   if ($route -ne 'breakaway') {
     $login = @(Get-LoginPath | Where-Object { $record -notcontains $_ })
-    New-LaunchScript $launch $Command (@($record) + $login)
+    New-LaunchScript $launch $Command (@($record) + $login) $Dir
   }
   if ($route -eq 'task') {
     try {
@@ -953,7 +959,7 @@ function Start-Jobless([string]$Command, [string]$Tag, [switch]$ViaTask) {
       Say "WARNING: could not start $Tag through WMI ($($_.Exception.Message)). falling back to breakaway, which leaves it in any outer job"
     }
   }
-  if ($null -eq $procId) { $procId = Start-Breakaway "cmd.exe /c `"$Command`"" }
+  if ($null -eq $procId) { $procId = Start-Breakaway $Command $Dir }
   $in = Test-ProcessInJob $procId
   if ($in) {
     Say "WARNING: $Tag (pid $procId) is inside a job object that refused breakaway, inherited from the terminal or task that ran this script. closing that terminal can end it and its pty host. run this from a shell started outside any job (a service or scheduled task) to avoid that"
@@ -965,7 +971,7 @@ function Start-Jobless([string]$Command, [string]$Tag, [switch]$ViaTask) {
   return $procId
 }
 
-# Start-Hub starts the atrium detached, through cmd so the redirect appends and the caller's output can end.
+# Start-Hub starts the atrium detached, which appends to hub.out and hub.err itself so the caller's output can end.
 #
 # ATRIUM_HOSTS FROM THE USER ENVIRONMENT (Machine when User is unset), never the caller's. It names the extra
 # hosts the board answers to, the zrok share's among them, and a deploy started from a session that lacks it
@@ -973,7 +979,7 @@ function Start-Jobless([string]$Command, [string]$Tag, [switch]$ViaTask) {
 # hub too. The value used is logged here and in hub.err. @runtime's r-new-hosts-setting, a stored setting, replaces
 # this.
 function Start-Hub([switch]$ViaTask) {
-  $line = "`"$AtriumBin`" $($HubArgs -join ' ') >> $Base\hub.out 2>> $Base\hub.err"
+  $line = "`"$AtriumBin`" $($HubArgs -join ' ') --log-dir $Base"
   $h = Get-LiveHosts
   $said = Get-LiveHostsSaid $h
   Say $said
@@ -981,7 +987,7 @@ function Start-Hub([switch]$ViaTask) {
     Clear-SessionEnv
     Set-LiveHosts $h
     Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} ({1}) =====" -f (Get-Date -Format o), $said)
-    $null = Start-Jobless $line 'hub' -ViaTask:$ViaTask
+    $null = Start-Jobless $line 'hub' $HubDir -ViaTask:$ViaTask
   }
 }
 
@@ -1003,9 +1009,9 @@ function Start-Room {
   Invoke-Step "start room: $AtriumBin $($RoomArgs -join ' ')" {
     Clear-SessionEnv
     Set-LiveHosts $h
-    # Through cmd for the redirects, and in no job object, so stopping a room never takes this one with it and closing the terminal never takes the room.
+    # In no job object, so stopping a room never takes this one with it and closing the terminal never takes the room.
     New-Item -ItemType Directory -Force $RoomLogs | Out-Null
-    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') > $RoomLogs\room.out 2> $RoomLogs\room.err" 'room'
+    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') --log-dir $RoomLogs" 'room' $AtriumRoot
   }
   return $true
 }
