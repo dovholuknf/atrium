@@ -12,8 +12,8 @@ require (
 require (
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/term v0.48.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 )
 

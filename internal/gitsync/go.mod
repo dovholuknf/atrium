@@ -8,6 +8,6 @@ require (
 	golang.org/x/sys v0.50.0
 )
 
-require golang.org/x/text v0.43.0 // indirect
+require golang.org/x/text v0.44.0 // indirect
 
 replace github.com/dovholuknf/atrium/internal/base => ../base
