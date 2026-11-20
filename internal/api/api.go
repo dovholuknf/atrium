@@ -876,6 +876,7 @@ func (s *Server) Handler() http.Handler {
 	if s.GitPush != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/git-push", s.gitPush)
 	}
+	mux.HandleFunc("POST /v1/tasks/{id}/pr-sync", s.prSync)
 	if s.Merged != nil {
 		mux.HandleFunc("POST /v1/merged", s.merged)
 	}

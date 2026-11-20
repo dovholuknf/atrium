@@ -1,9 +1,8 @@
 // Clean copy on a real ctrl-c, in chromium, firefox and webkit, against the real clipboard.
 //
-// Firefox and Safari write to the clipboard only inside a user gesture, and the clean text comes from a reply lookup
-// that can take most of a second. So the board serves a card with a reply in its terminal, the replies endpoint answers
-// after 750ms, part of the reply is selected and ctrl-c is pressed on the keyboard. The clipboard is read back by a real
-// ctrl-v into a textarea. Expected: the reply's markdown, never the render and never nothing.
+// Firefox and Safari write to the clipboard only inside a user gesture. So the board serves a card with a reply in its
+// terminal, part of it is selected and ctrl-c is pressed on the keyboard. The clipboard is read back by a real ctrl-v
+// into a textarea. Expected: the selection with each line's edge spaces gone, never the render and never nothing.
 //
 //   node scripts/check-clipboard-browsers.js [chromium firefox webkit]
 //
@@ -19,10 +18,8 @@ const { attachRetry, landContext } = require("./lib/helpers.js");
 const pw = (() => { try { return require("@playwright/test"); } catch (e) { return require("playwright"); } })();
 
 const MUST_RUN = process.env.FULL_SUITE === "1" || !!process.env.CI;
-const LOOKUP_MS = 750;
-const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\nThanks.";
 const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-const want = "> Please review the plan and tell me what is missing from it.";
+const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
 
 hooks.tasks = () => mock.tasksMode === "land" ? [T1].concat(mock.landList) : [T1];
 
@@ -50,11 +47,6 @@ async function one(name, base) {
       };
       Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     });
-    await ctx.route("**/v1/tasks/*/replies*", async route => {
-      await new Promise(r => setTimeout(r, LOOKUP_MS)); // wait: the slow lookup is what this checks
-      await route.fulfill({ contentType: "application/json",
-        body: JSON.stringify({ source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) });
-    });
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
@@ -66,8 +58,7 @@ async function one(name, base) {
     const sel = await p.evaluate(() => { term.selectLines(2, 3); term.focus(); return termSelectionText(term); });
     if (!/▎/.test(sel)) return { name, result: "FAIL", why: "the selection holds no bar: " + JSON.stringify(sel) };
     await p.keyboard.press("Control+c");
-    // The lookup answers after LOOKUP_MS and the write follows it, so the paste waits that out with room to spare.
-    await new Promise(r => setTimeout(r, LOOKUP_MS + 1000)); // wait: no event marks a finished clipboard write
+    await new Promise(r => setTimeout(r, 1000)); // wait: no event marks a finished clipboard write
     await p.evaluate(() => {
       const ta = document.createElement("textarea");
       ta.id = "clip-probe";

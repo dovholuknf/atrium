@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo, roomsMenuScroll, roomsThemes.
+// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, apiSlots, recogniserRepo, roomsMenuScroll, roomsThemes.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -2083,6 +2083,36 @@ async function hubGateSection(browser, base) {
   if (!bad) console.log("hubGate ok");
 }
 
+// ── a read answers at once while six writes hang (b-board-api-slots-freeze) ──
+async function apiSlotsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  let held = 0;
+  await p.route("**/v1/held-write", () => { held++; });
+  try {
+    await p.clock.install();
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await fakePause(p);
+    await fakeTick(p, 1500);
+    await p.evaluate(() => {
+      window.__writes = [];
+      for (let i = 0; i < API_MAX_INFLIGHT; i++) {
+        api("/v1/held-write", { method: "POST", body: "{}" }).then(() => window.__writes.push("ok"), e => window.__writes.push(e.message));
+      }
+    });
+    await untilTrue(async () => held >= 3 && await p.evaluate(() => apiQueue.length + apiInflight >= API_MAX_INFLIGHT), 5000, "the six writes were out or queued");
+    const read = () => p.evaluate(() => { window.__read = null; api("/v1/tasks").then(() => { window.__read = true; }, e => { window.__read = String(e.message); }); });
+    await read();
+    const answered = await fakeWait(p, () => window.__read !== null, null, 2000, 100).then(() => true, () => false);
+    const got = await p.evaluate(() => window.__read);
+    if (!answered || got !== true) fail("apiSlots: a read did not answer within 2s while six writes hung: " + got);
+    const freed = await fakeWait(p, () => window.__writes.length === 6, null, 121000, 1000).then(() => true, () => false);
+    if (!freed) fail("apiSlots: six held writes were not all timed out after 121s: " + await p.evaluate(() => JSON.stringify(window.__writes)));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // The recogniser editor's default repo: read into the box from the row, and saved back with what was typed.
 async function recogniserRepoSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -2340,11 +2370,12 @@ const units = [
   { name: "restartMenu", run: ({ browser, base }) => restartMenuSection(browser, base) },
   { name: "roomsSetup", run: ({ browser, base }) => roomsSetupSection(browser, base) },
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
+  { name: "apiSlots", run: ({ browser, base }) => apiSlotsSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
   { name: "roomsMenuScroll", run: ({ browser, base }) => roomsMenuScrollSection(browser, base) },
   { name: "roomsThemes", run: ({ browser, base }) => roomsThemesSection(browser, base) },
 ];
-const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
+const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, apiSlots: apiSlotsSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

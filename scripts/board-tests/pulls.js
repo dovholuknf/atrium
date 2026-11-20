@@ -748,6 +748,36 @@ async function pullsAbsentSection(browser, base) {
   if (!bad) console.log("pullsAbsent ok");
 }
 
+// The toolbar's GitHub link belongs to the terminal shown: named from its row, gone when the dock is pointed elsewhere.
+async function pullsToolbarLinkSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof dockPaint === "function" && typeof pulls !== "undefined", null, { timeout: slow(15000) });
+    const state = () => p.evaluate(() => { const a = document.getElementById("t-walk-pr"); return { hidden: a.hidden, text: a.textContent, prev: a.previousElementSibling && a.previousElementSibling.id }; });
+    await p.evaluate(() => {
+      pulls.rows = [{ walker_task: "c1", url: "https://github.com/openziti/ziti-doc/pull/12", org_repo: "openziti/ziti-doc", number: 12 },
+        { walker_task: "c2", url: "https://github.com/openziti/x/commit/abc", org_repo: "", number: 0 }];
+      dock.tenant = { label: () => "walk" };
+      dock.taskId = "c1";
+      dockPaint();
+    });
+    let s = await state();
+    if (s.hidden || s.text !== "view PR ziti-doc#12 on GitHub") fail("toolbarLink: the PR is not named in the link: " + JSON.stringify(s));
+    if (s.prev !== "t-kind") fail("toolbarLink: the link is not right after the shell button: " + s.prev);
+    await p.evaluate(() => { dock.taskId = "c2"; dockPaint(); });
+    s = await state();
+    if (s.hidden || s.text !== "view on GitHub") fail("toolbarLink: a link with no PR is not the plain label: " + JSON.stringify(s));
+    await p.evaluate(() => dockReset());
+    if (!(await state()).hidden) fail("toolbarLink: the previous card's link stays after the terminal is switched");
+    if (errors.length) fail("toolbarLink: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("toolbarLink ok");
+}
+
 // The walk drawer over the real pulls routes: findings from /v1/prs/{id}/findings, an edit behind a content hash,
 // walk marks that move the row's counts, and the walker launch from the row's walk button.
 async function pullsDrawerSection(browser, base) {
@@ -1324,10 +1354,11 @@ const units = [
   { name: "pullsPanelStage", run: ({ browser, base }) => pullsPanelStageSection(browser, base) },
   { name: "pullsPage", run: ({ browser, base }) => pullsPageSection(browser, base) },
   { name: "pullsAbsent", run: ({ browser, base }) => pullsAbsentSection(browser, base) },
+  { name: "pullsToolbarLink", run: ({ browser, base }) => pullsToolbarLinkSection(browser, base) },
   { name: "pullsDrawer", run: ({ browser, base }) => pullsDrawerSection(browser, base) },
   { name: "prMove", run: ({ browser, base }) => prMoveSection(browser, base) },
 ];
-const sections = { pullsMorePending: pullsMorePendingSection, pullsLiveSteps: pullsLiveStepsSection, pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
+const sections = { pullsMorePending: pullsMorePendingSection, pullsLiveSteps: pullsLiveStepsSection, pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsToolbarLink: pullsToolbarLinkSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

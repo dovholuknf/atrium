@@ -433,6 +433,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// A blocked Stop sends the model back to work with the message as its
 	// instruction, so the turn is not over after all.
 	d.turnResumed(task.ID)
+	d.clearCarriedWait(task.ID)
 	d.usage.prompted(task.ID, messagesCause(msgs))
 	d.Publish(task.ID)
 	_, _ = w.Write(out)
@@ -488,6 +489,13 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 	}
 	d.act.set(taskID, ActivityIdle, "")
 	d.Publish(taskID)
+}
+
+// clearCarriedWait starts the next wait afresh, because a person or a peer gave the card new work. See store/waitcarry.go.
+func (d *Daemon) clearCarriedWait(taskID string) {
+	if err := d.st.ClearCarriedWait(taskID); err != nil {
+		log.Printf("[atrium] clear carried wait on %s: %v", taskID, err)
+	}
 }
 
 // turnPaused is a turn that ended with the session's own subagents still out.

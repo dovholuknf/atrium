@@ -1990,7 +1990,7 @@ async function renderBoard(signal) {
   const drawCols = new Set(showCols);
   if (heldCol) drawCols.add(heldCol.id);
   paintBoardCounts(live.filter(t => !roll.rolled.has(t.id) && cardMatchesText(t, q)), roll.rollable);
-  paintBoardCount(shown.filter(t => !roll.rolled.has(t.id)));
+  paintBoardCount(shown);
   fdStatus("board", {
     summary: boardSummary(showCols),
     match: all.length === live.length - roll.rolled.size && offline.length === shown.filter(t => t.offline).length
@@ -2542,7 +2542,10 @@ async function patchTask(id, body) {
     });
     // Pausing stops a runner and resuming starts it again, neither of which
     // is visible from a card moving between columns.
-    if (body.status === "paused") toast("paused", "its runner was stopped");
+    if (body.status === "paused") {
+      const t = (lastTasks || []).find(x => x.id === id);
+      toast((t ? cardLead(t, "board").main || id : id) + " paused", "its runner was stopped");
+    }
     if (res && res.resumed) { toast("resumed", "picked up where it left off"); return res; }
     if (res && res.resume_note) {
       // Nothing started. A card in `running` with no process is the lie this

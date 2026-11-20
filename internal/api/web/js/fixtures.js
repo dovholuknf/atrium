@@ -1932,9 +1932,13 @@ async function launchNow(opening) {
     else linkOpeningName(id, launchResolved.title || "");
     const launch = document.getElementById("launch");
     if (launch.open) launch.close();
+    // The room gives up a worktree at 3 minutes, so an answer that has not come by 5 never will (a room restarted under it).
+    const ctrl = new AbortController();
+    const giveUp = setTimeout(() => ctrl.abort(), 300000);
+    linkOpenings.get(id).abort = () => ctrl.abort();
     try {
       out = await api("/v1/open", {
-        method: "POST", headers, body: JSON.stringify({
+        method: "POST", headers, signal: ctrl.signal, body: JSON.stringify({
           progress: id,
           url,
           why: document.getElementById("l-why").value.trim(),
@@ -1951,10 +1955,11 @@ async function launchNow(opening) {
     } catch (e) {
       if (!(e.body && e.body.code === "not_openable")) {
         const held = e && e.body && e.body.code === "held" ? e.body.card : "";
-        linkOpeningFail(id, (e && e.message) || String(e), held);
+        linkOpeningFail(id, e && e.name === "AbortError" ? "the room did not answer in 5 minutes" : (e && e.message) || String(e), held);
         return;
       }
     } finally {
+      clearTimeout(giveUp);
       if (openProgressId === id) openProgressId = "";
     }
     linkOpeningEnd(id);

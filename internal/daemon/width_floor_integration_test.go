@@ -22,7 +22,7 @@ func TestANarrowViewerIsHeldAtTheFloor(t *testing.T) {
 	attachAs(t, d, "floored", 60, 30)
 
 	// The width only. The height waits out the hold, see `height_hold_test.go`.
-	sizes := f.resized()
+	sizes := resizedTo(t, f, 120)
 	if len(sizes) == 0 || sizes[len(sizes)-1].cols != 120 {
 		t.Fatalf("a 60 column viewer sized the pty to %+v, wanted the 120 floor", sizes)
 	}
@@ -42,7 +42,7 @@ func TestTheFloorFollowsTheSetting(t *testing.T) {
 
 	attachAs(t, d, "floored-200", 150, 30)
 
-	sizes := f.resized()
+	sizes := resizedTo(t, f, 200)
 	if len(sizes) == 0 || sizes[len(sizes)-1].cols != 200 {
 		t.Fatalf("a 150 column viewer under a 200 floor sized the pty to %+v", sizes)
 	}
@@ -69,8 +69,22 @@ func TestAShellIgnoresTheFloor(t *testing.T) {
 
 	attachPath(t, d, "/v1/tasks/shell-floor/attach?kind=shell", 60, 30)
 
-	sizes := f.resized()
+	sizes := resizedTo(t, f, 60)
 	if len(sizes) == 0 || sizes[len(sizes)-1].cols != 60 {
 		t.Fatalf("a shell was sized to %+v, wanted the viewer's 60 columns", sizes)
+	}
+}
+
+// resizedTo is the pty's sizes once its last width is cols, or at the deadline. The attach replays after a 60 ms wait
+// for the size frame, so under load the resize lands after attachVia has returned.
+func resizedTo(t *testing.T, f *fakePTY, cols int) []viewport {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		sizes := f.resized()
+		if (len(sizes) > 0 && sizes[len(sizes)-1].cols == cols) || time.Now().After(deadline) {
+			return sizes
+		}
+		time.Sleep(20 * time.Millisecond) // wait: poll under the 10 s deadline
 	}
 }

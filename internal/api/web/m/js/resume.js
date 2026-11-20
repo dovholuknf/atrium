@@ -117,8 +117,8 @@
         act: () => { if (window.mCard) window.mCard.open(id); } },
       { sep: true },
       t.supervised && !over ? {
-        label: "stop",
-        help: "Stops the agent so it can be resumed later. The card is left out of the list unless the paused filter is on.",
+        label: "pause",
+        help: "Pauses the agent so it can be resumed later. The card is left out of the list unless the paused filter is on.",
         act: () => patch(id, { status: "paused" }).then(done)
       } : null,
       {

@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // atrium_worktrees, the control tool over the room's /v1/worktrees/*. Full class only: `workerTools` does not name it,
@@ -71,4 +72,37 @@ func (c *controlMCP) worktreesHandler(ctx context.Context, req *mcp.CallToolRequ
 		return nil, nil, err
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimRight(res.Text, "\n")}}}, nil, nil
+}
+
+// AddRoomWorktreesTool is atrium_worktrees on a room's stdio server, asked of its own room, which is the only one it
+// reaches without the hub.
+func AddRoomWorktreesTool(s *mcp.Server, me, room string,
+	ask func(ctx context.Context, wait time.Duration, method, path string, body, out any) error) {
+
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_worktrees", Description: worktreesToolDesc},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in worktreesInput) (*mcp.CallToolResult, any, error) {
+			switch strings.TrimSpace(in.Action) {
+			case "audit":
+			case "remove":
+				return nil, nil, &ctl.RefusedError{Msg: "remove is not built yet. audit tells what is removable, and " +
+					"atrium_cull reclaims a finished worker"}
+			default:
+				return nil, nil, &ctl.RefusedError{Msg: "action is audit or remove"}
+			}
+			if strings.TrimSpace(in.Prefix) != "" && len(in.Paths) > 0 {
+				return nil, nil, &ctl.RefusedError{Msg: "prefix and paths together are refused: give one"}
+			}
+			if r := strings.TrimSpace(in.Room); r != "" && !wire.EqualFold(r, room) {
+				return nil, nil, &ctl.RefusedError{Msg: "this session's control server audits its own room, " + room +
+					", only. ask a card on " + r}
+			}
+			var res struct {
+				Text string `json:"text"`
+			}
+			if err := ask(ctx, worktreesTimeout, http.MethodPost, "/v1/worktrees/audit", map[string]any{
+				"repo": in.Repo, "prefix": in.Prefix, "paths": in.Paths, "caller": me}, &res); err != nil {
+				return nil, nil, err
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimRight(res.Text, "\n")}}}, nil, nil
+		})
 }

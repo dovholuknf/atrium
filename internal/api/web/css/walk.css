@@ -62,7 +62,7 @@
   .walk-head #walk-note { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .walk-head .walk-close { margin-left: var(--sp-4); }
   #t-walk { flex: none; white-space: nowrap; }
-  #t-walk-pr { flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--teal); text-decoration: none; }
+  #t-walk-pr { flex: none; white-space: nowrap; font-size: var(--fs-base); color: var(--teal); text-decoration: none; }
   #t-walk-pr:hover, #walk-ghlink:hover { text-decoration: underline; }
   #walk-ghlink { flex: none; white-space: nowrap; font-size: var(--fs-xs); color: var(--teal); text-decoration: none; }
   #t-walk-pr[hidden], #walk-ghlink[hidden] { display: none; }

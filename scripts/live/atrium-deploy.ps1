@@ -254,7 +254,7 @@ $remote = @{
     Exe = '(Join-Path $HOME ''atrium-zrok.new.exe'')'; Token = '(Join-Path $HOME ''.atrium-zrok\room\restart.token'')'
     Log = 'Get-Content (Join-Path $HOME ''.atrium-zrok\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
-    Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait + $macWaitStore +
+    Swap = 'zsh -lic "~/.local/bin/atrium stop --url http://127.0.0.1:7781 ; ' + $macWait + $macWaitStore +
       'mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
       'mv -f ~/.local/bin/atrium.new ~/.local/bin/atrium && chmod +x ~/.local/bin/atrium && ' + $macDetach + '"'
     Retry = 'zsh -lic "' + $macWait + $macWaitStore + $macDetach + '"'

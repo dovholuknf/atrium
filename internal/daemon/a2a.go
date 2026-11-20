@@ -581,6 +581,12 @@ func runnerDelivers(runner string) bool {
 	return false
 }
 
+// copyDelivers is runnerDelivers for a runner row under another id, such as a window-mode copy of claude.
+func (d *Daemon) copyDelivers(runner string) bool {
+	h, err := d.st.Harness(runner)
+	return err == nil && (shared.IsClaude(h) || isCodex(h))
+}
+
 // reachability says whether a message queued to a card will ever arrive, and
 // if not why not.
 func (d *Daemon) reachability(t *store.Task) (string, string) {
@@ -594,7 +600,7 @@ func (d *Daemon) reachability(t *store.Task) (string, string) {
 	if runner == "" {
 		runner = "its runner"
 	}
-	if runnerDelivers(t.Runner) {
+	if runnerDelivers(t.Runner) || d.copyDelivers(t.Runner) {
 		return ReachUnconfirmed, fmt.Sprintf("queued, but %s has never been heard from on a hook that "+
 			"carries messages, so it may never arrive. its atrium hooks may not be installed. "+
 			"relaunch it under atrium so the text can be typed, or ask the human to relay it.", t.WireName)

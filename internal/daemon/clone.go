@@ -152,49 +152,91 @@ func (d *Daemon) cloneCheck(req shared.LaunchRequest, h *store.Harness) (*store.
 }
 
 // cloneInto carries the original's uncommitted changes into the new worktree at cwd and, where the runner's fork recipe
-// says it looks by folder, copies its conversation where it looks for it from cwd. Answers the conversation to fork, "" for none.
-func (d *Daemon) cloneInto(src *store.Task, cwd, tmp string, carry, fork bool) (string, error) {
+// says it looks by folder, copies its conversation where it looks for it from cwd. Answers the conversation to fork, "" for none,
+// and the untracked paths it could not carry.
+func (d *Daemon) cloneInto(src *store.Task, cwd, tmp string, carry, fork bool) (string, []string, error) {
+	var skipped []string
 	if carry {
-		if err := carryChanges(src.Worktree, cwd, tmp); err != nil {
-			return "", fmt.Errorf("could not carry the uncommitted changes: %w", err)
+		var err error
+		if skipped, err = carryChanges(src.Worktree, cwd, tmp); err != nil {
+			return "", nil, fmt.Errorf("could not carry the uncommitted changes: %w", err)
 		}
 	}
 	if !fork {
-		return "", nil
+		return "", skipped, nil
 	}
 	conv := d.ConversationOf(src)
 	if h, err := d.st.Harness(src.Runner); err == nil && h.ForkCopy == "claude" {
 		if err := copySession(src.Worktree, cwd, conv); err != nil {
-			return "", fmt.Errorf("could not copy the conversation to fork: %w", err)
+			return "", nil, fmt.Errorf("could not copy the conversation to fork: %w", err)
 		}
 	}
-	return conv, nil
+	return conv, skipped, nil
 }
 
-// carryChanges applies from's diff against its HEAD to to, and copies its untracked files. tmp holds the patch.
-func carryChanges(from, to, tmp string) error {
+// carryChanges applies from's diff against its HEAD to to, and copies its untracked files. tmp holds the patch. Answers
+// the untracked paths it could not copy, which never fail the carry.
+func carryChanges(from, to, tmp string) ([]string, error) {
 	patch := filepath.Join(tmp, "clone.patch")
 	if _, err := gitIn(from, gitexec.Diff{Revs: []string{"HEAD"}, Binary: true, Output: patch}); err != nil {
-		return err
+		return nil, err
 	}
 	defer os.Remove(patch)
 	if fi, err := os.Stat(patch); err == nil && fi.Size() > 0 {
 		if _, err := gitIn(to, gitexec.Apply{Binary: true, Whitespace: "nowarn", Patch: patch}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	out, err := gitIn(from, gitexec.LsFiles{Others: true, ExcludeStandard: true})
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var skipped []string
 	for _, name := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n") {
 		if name = strings.TrimSpace(name); name != "" {
-			if err := copyInside(from, to, name); err != nil {
-				return err
-			}
+			skipped = append(skipped, carryUntracked(from, to, strings.TrimSuffix(name, "/"))...)
 		}
 	}
-	return nil
+	return skipped, nil
+}
+
+// carryUntracked copies one untracked entry, a folder tree as is, .git included, when git lists a nested repository as
+// one folder. Answers the paths it could not copy.
+func carryUntracked(from, to, name string) []string {
+	root := filepath.Join(from, filepath.FromSlash(name))
+	fi, err := os.Lstat(root)
+	if err != nil {
+		return []string{name}
+	}
+	if !fi.IsDir() {
+		if !fi.Mode().IsRegular() || copyInside(from, to, name) != nil {
+			return []string{name}
+		}
+		return nil
+	}
+	var skipped []string
+	_ = filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
+		rel, rerr := filepath.Rel(from, path)
+		if rerr != nil {
+			return rerr
+		}
+		rel = filepath.ToSlash(rel)
+		switch {
+		case err != nil:
+			skipped = append(skipped, rel)
+			if e != nil && e.IsDir() {
+				return filepath.SkipDir
+			}
+		case e.Type().IsRegular():
+			if copyInside(from, to, rel) != nil {
+				skipped = append(skipped, rel)
+			}
+		case !e.IsDir():
+			skipped = append(skipped, rel)
+		}
+		return nil
+	})
+	return skipped
 }
 
 // copyInside copies one file from one root to the same place under another, through safepath on both sides.
@@ -221,6 +263,7 @@ func copyInside(fromRoot, toRoot, name string) error {
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
+		os.Remove(dst)
 		return err
 	}
 	return out.Close()

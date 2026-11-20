@@ -93,7 +93,7 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 const names = ["shortLabel", "termPathOf", "termPlaceOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
   "termRoomChip", "termRowChips", "termCold", "termHeldLine", "termLeftoverChip", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
-  "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
+  "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termRowsCount", "termGroupsHTML",
   "termFlatGroupsHTML", "termAgeOrder"];
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which

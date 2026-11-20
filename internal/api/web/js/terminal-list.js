@@ -832,8 +832,8 @@ function termMenuItems(id, t) {
     // What the board calls paused. It stops the runner and the card keeps its place, hidden from this list unless
     // the paused filter is on. Resume starts it again.
     t.supervised && !over ? {
-      label: "stop",
-      help: "Stops the agent so it can be resumed later. The card stays on the board, and is left out of this " +
+      label: "pause",
+      help: "Pauses the agent so it can be resumed later. The card stays on the board, and is left out of this " +
         "list unless the paused filter is on.",
       act: () => oneAtATime("pause:" + id, () => patchTask(id, { status: "paused" }).then(refresh))
     } : null,
@@ -1180,14 +1180,15 @@ function termInheritedTheme(t) {
 }
 
 function termRowWear(t, inherit) {
-  const tint = !themeSource(t) && inherit ? termTintOf(inherit) : null;
+  // A row drawn with no parent passed in still wears what its pane wears: `themeFor` tints a nested card from its launcher.
+  const tint = themeSource(t) ? null : inherit ? termTintOf(inherit) : termInheritedTheme(t);
   const given = themeSource(t) || tint;
   const th = given || themeFor(t);
   const on = termTask && t.id === termTask.id;
   const wear = tint ? ((termCold(t) ? termWearOn.exited : termWearOn.idle) ? wearOf(tint) || NO_WEAR : NO_WEAR)
     : given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
   return { cls: wear.cls, vars: (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
-    (tint ? `;--tabedge:${inherit.cursor || inherit.foreground}` : "") + (wear.style ? ";" + wear.style : "") };
+    (tint ? `;--tabedge:${tint.cursor || tint.foreground}` : "") + (wear.style ? ";" + wear.style : "") };
 }
 
 function termRow(t, deep, kid, inherit, plain) {
@@ -1316,7 +1317,8 @@ function termKidsCount(id, pred, kids) {
 function termChildInfo(t, pool) {
   const cards = (pool || []).filter(c => !c.offline);
   const show = termShow();
-  const direct = termNest(cards).kids.get(t.id) || [];
+  const every = termNest(cards).kids;
+  const direct = every.get(t.id) || [];
   if (!direct.length) return null;
   const visible = termNest(cards.filter(c => c.id === t.id || termListed(c, show))).kids;
   const shown = visible.get(t.id) || [];
@@ -1324,7 +1326,7 @@ function termChildInfo(t, pool) {
   const hidden = direct.filter(c => !shownIds.has(c.id));
   const waiting = collectKids(t.id, termOwesHuman, visible);
   const paused = hidden.filter(cardPaused).length;
-  return { total: direct.length, shown: shown.length, hidden: hidden.length, paused, dead: hidden.length - paused,
+  return { total: termKidsCount(t.id, () => true, every), shown: shown.length, hidden: hidden.length, paused, dead: hidden.length - paused,
     running: termKidsCount(t.id, workingNow, visible), waiting,
     // What the popup lists, one per line: the cards that need you at any depth first, then the shown direct children.
     list: waiting.concat(shown.filter(c => !waiting.includes(c))) };
@@ -1644,7 +1646,7 @@ function termFlatGroupsHTML(list, g, folded) {
     // made with `+ new group` here could never be taken away from here.
     // `untagged` is the absence of a group and gets no menu.
     const menu = name && name !== UNTAGGED ? name : "";
-    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
+    const head = termHeading(shown, at, termRowsCount(by.get(name)), off, menu, style, mine, by.get(name), nobody);
     if (off) {
       if (mine) termFoldedRows.set(name, by.get(name));
       return head;
@@ -1786,7 +1788,7 @@ let termTotals = new Map();
 // termCountTotals runs the strip's grouping over the UNFILTERED list and counts
 // each heading, in the same shape the drawing code keys its headings: `g:name`
 // for a flat grouping, the slash path for the tree, and `uncategorized`.
-function termCountTotals(list) {
+function termCountTotals(list, kids) {
   const out = new Map();
   const p = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
   const g = typeof grouper === "function" ? grouper("terms") : null;
@@ -1794,12 +1796,12 @@ function termCountTotals(list) {
   if (!g || !p || (p.mode === "project" && !String(p.by || "").trim())) {
     const walk = (node, path) => {
       const at = node.name ? (path ? path + "/" + node.name : node.name) : "";
-      if (at) out.set(at, termCount(node));
+      if (at) out.set(at, termCount(node, kids));
       for (const kid of node.kids.values()) walk(kid, at);
     };
     const root = termTree(list);
     walk(root, "");
-    out.set("uncategorized", root.rows.length);
+    out.set("uncategorized", termRowsCount(root.rows, kids));
     return out;
   }
   for (const t of list) {
@@ -1808,7 +1810,7 @@ function termCountTotals(list) {
     if (!names.length) names = [""];
     for (const n of names) {
       const at = "g:" + (String(n ?? "") || "uncategorized");
-      out.set(at, (out.get(at) || 0) + 1);
+      out.set(at, (out.get(at) || 0) + 1 + termKidsCount(t.id, () => true, kids));
     }
   }
   return out;
@@ -1865,7 +1867,7 @@ function termNodeHTML(node, depth, path, folded) {
     if (!node.rows.length) return "";
     if (!node.kids.size) return node.rows.map(t => termRow(t, false)).join("");
     const isOff = folded.has("uncategorized");
-    const head = termHeading("uncategorized", "uncategorized", node.rows.length, isOff, "", "", false, node.rows);
+    const head = termHeading("uncategorized", "uncategorized", termRowsCount(node.rows), isOff, "", "", false, node.rows);
     if (isOff) return head;
     return head + `<div class="tnest">${node.rows.map(t => termRow(t, true)).join("")}</div>`;
   })();
@@ -1901,6 +1903,11 @@ function termNodeHTML(node, depth, path, folded) {
   return node.name ? out + `<div class="tnest">${inner}</div>` : out + inner + loose;
 }
 
+// A heading counts its rows and every card nested under them, at any depth, as the folded chevron does.
+function termRowsCount(rows, kids) {
+  return rows.length + rows.reduce((n, t) => n + termKidsCount(t.id, () => true, kids), 0);
+}
+
 // Every row under a heading, at any depth.
 function termNodeRows(node) {
   return [...node.rows, ...[...node.kids.values()].flatMap(termNodeRows)];
@@ -1908,9 +1915,9 @@ function termNodeRows(node) {
 
 // How many sessions are under a heading, at any depth. A folded group has to
 // say what is inside it, or folding loses information rather than hiding it.
-function termCount(node) {
-  let n = node.rows.length;
-  for (const kid of node.kids.values()) n += termCount(kid);
+function termCount(node, kids) {
+  let n = termRowsCount(node.rows, kids);
+  for (const kid of node.kids.values()) n += termCount(kid, kids);
   return n;
 }
 
@@ -2099,7 +2106,7 @@ async function renderTermList() {
   // By age every card is in its age bucket, pinned or not, so there is no pinned bucket.
   const gp = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
   const byAge = !!(gp && gp.on && gp.mode === "recency");
-  termTotals = termCountTotals(tasks.filter(t => !nestAll.nested.has(t.id) && (byAge || !t.pinned || termFiled(t))));
+  termTotals = termCountTotals(tasks.filter(t => !nestAll.nested.has(t.id) && (byAge || !t.pinned || termFiled(t))), nestAll.kids);
   // Before anything is drawn, and over the rows that will BE drawn: a card
   // filtered out above cannot be confused with one on screen.
   termNoteDuplicates(shown);

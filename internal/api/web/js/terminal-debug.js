@@ -364,13 +364,11 @@ function closeTerm(switching) {
 // Tears the pane down without refreshing, so it can be called from inside one.
 function clearTermPane(switching) {
   const was = termTask ? termTask.id : "";
+  const wasPid = termTask ? termTask.pid : 0;
   hideCleanCopy();
-  // The pane is going, so no attach is in flight for what it was showing. A new
-  // one is marked afresh by whatever attaches next.
   clearAttachInFlight(was);
   if (termSock) { termSock.close(); termSock = null; }
-  // Before the terminal goes, so the disposable is not left holding a
-  // reference to a disposed one.
+  // Before the terminal goes, so the disposable never holds a disposed one.
   if (termData) { try { termData.dispose(); } catch (e) {} termData = null; }
   if (term) { term.dispose(); term = null; }
   termFit = null;
@@ -383,21 +381,13 @@ function clearTermPane(switching) {
   if (typeof phoneManualReset === "function") phoneManualReset();
   if (typeof walkReset === "function") walkReset();
   dropThemePreview();
-  // Nothing attached, so nothing for the bridge to span.
   placeTabBridge();
-  // NOT FORGOTTEN HERE. This runs whenever the pane is torn down, and most of
-  // those are not decisions: the daemon restarting, a poll that has not seen
-  // the fixture come back yet, a socket that dropped. Forgetting on any of
-  // them is what made the restore useless across exactly the restart it was
-  // written for. `closeTerm` forgets, because closing it is something you did.
+  // Not forgotten here: most teardowns are outages, and only `closeTerm` is a decision.
   if (switching) return;
-  // Closed for good, so its file goes too.
   if (was) fileViews.delete(bareId(was));
   closeEditor();
   const pane = document.getElementById("term-pane");
   if (pane) pane.classList.remove("dead");
-  // Undo what markTermDead did to the bar, so the next attach gets its own
-  // buttons back rather than a stranded close.
   const bar = document.querySelector(".term-bar");
   if (bar) {
     bar.querySelectorAll("button").forEach(b => { b.hidden = false; });
@@ -410,38 +400,13 @@ function clearTermPane(switching) {
   document.getElementById("t-chips").innerHTML = "";  clearTermScreen(document.getElementById("t-screen"));
   document.getElementById("term-perm").hidden = true;
 
-  // AND THEN GO BACK AND WAIT FOR IT.
-  //
-  // This is the other half of surviving a restart, and it is the half that was
-  // missing. Only one of the two paths through an outage ends in a page
-  // reload: the board reloads when the daemon serves a build it has not seen,
-  // and when the build is unchanged nothing reloads at all. In that case the
-  // socket retry is the only thing trying, and it stops the moment this
-  // function disposes the terminal it was checking for. So the pane sat empty
-  // next to a session that had come back, and the way to get it was to click
-  // the card.
-  //
-  // Safe to fire on every teardown: `waitAndAttach` gives up on a card that is
-  // archived, popped out or replaced by something you attached yourself, and
-  // the deliberate close forgets the card first so there is nothing to wait
-  // for.
   if (was) {
     const kept = localStorage.getItem("atrium.term");
     rlog("pane torn down. was", was, "remembered", kept || "(nothing)");
     if (kept !== was) return;
-    // AN EXIT IS NOT AN OUTAGE, and the daemon already said which this was.
-    //
-    // Waiting is for a session that is coming back. A session somebody ended
-    // is not coming back, so waiting on it put "atrium is restarting" over an
-    // empty pane for ninety seconds and then gave up. Where it goes instead is
-    // `attachLastInstead`.
-    if (endedOnPurpose(was)) { attachLastInstead(was); return; }
-    // SCHEDULED, NOT INLINE. Calling `waitAndAttach` straight from here is what
-    // let a lagging render spin the board: it polls the card, attaches the
-    // instant it answers, and attaching repaints, and the repaint lands back in
-    // this teardown. Routed through the backoff scheduler, at most one reattach
-    // is pending and it slows down if it keeps having to fire. See
-    // `scheduleReattach`.
+    // An exit is not an outage, unless its runner is started again on the same card.
+    if (endedOnPurpose(was)) { attachLastUnlessRelaunched(was, wasPid); return; }
+    // Scheduled with backoff, never inline: an inline attach repaints back into this teardown.
     scheduleReattach(was);
   }
 }

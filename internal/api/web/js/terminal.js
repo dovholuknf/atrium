@@ -1218,8 +1218,6 @@ function openTerm(task) {
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
   term.onScroll(() => { tallFollow(); });
-  const made = term;
-  made.onSelectionChange(() => { if (ccLook && ccLook.mine === made) ccLook = null; });
   // Erase-display 2 keeps the page first. 3 only clears the scrollback, which
   // is the history this is here to keep, so it is swallowed without touching
   // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the
@@ -1504,21 +1502,12 @@ function resetTerm(t) {
 }
 
 // Every copy of a terminal selection comes through here: ctrl-c, ctrl-insert and copy on select.
-//
-// CLEAN COPY. What a terminal selection holds is Claude Code's render of a reply: an indent, a `│`/`▎` bar on a quote,
-// hard line breaks where the TUI wrapped. The raw text is in the transcript, so `cleanCopy` looks for the selection in
-// the card's recent replies and, on a match, a clean copy is the source substring. No match, a slow or failed endpoint:
-// the selection de-rendered locally. The copy as shown is `termSelectionText`. `cleanByDefault` picks which this gives.
+// The copy as shown is `termSelectionText`, the clean one `ccDerender` of it. `cleanByDefault` picks which this gives.
 function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
   const text = termSelectionText(term);
   const refused = () => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); };
-  if (!text.trim() || !cleanByDefault(text)) { navigator.clipboard.writeText(text).catch(refused); return; }
-  // Safari refuses a write that starts after the keypress, so the write starts now and the lookup fills it.
-  if (typeof ClipboardItem !== "function" || !navigator.clipboard.write) { navigator.clipboard.writeText(text).catch(refused); return; }
-  const look = ccLookup(term, text);
-  navigator.clipboard.write([new ClipboardItem({ "text/plain": look.clean.then(t => new Blob([t], { type: "text/plain" })) })])
-    .catch(() => navigator.clipboard.writeText(look.best)).catch(refused);
+  navigator.clipboard.writeText(text.trim() && cleanByDefault(text) ? ccDerender(text) : text).catch(refused);
 }
 
 // xterm joins a soft-wrapped row to the next with no newline and keeps its real spaces, so a block a TUI paints by padding
@@ -1545,79 +1534,29 @@ function termSelectionText(t) {
 }
 
 // THE COPY BUTTON. A small button pops up beside every settled selection at once and copies the other one of the two:
-// "copy as shown" when the default copy is clean, else "copy clean", which copies the best text ready by then: the
-// reply's raw markdown when `cleanCopy` matched the selection in the background, else the selection de-rendered locally
-// by `ccDerender`. The click never waits on the lookup. It goes on a click elsewhere, a wheel, Escape, and when the
-// terminal closes. Never a toast, either way.
+// "copy as shown" when the default copy is clean, else "copy clean", which is `ccDerender` of the selection. It goes on
+// a click elsewhere, a wheel, Escape, and when the terminal closes. Never a toast, either way.
 let ccBtn = null;
 
 function hideCleanCopy() {
   if (ccBtn) { ccBtn.remove(); ccBtn = null; }
 }
 
-// One lookup per selection, shared by the default copy and the button, and dropped when the selection changes.
-let ccLook = null;
-
-function ccLookup(mine, text) {
-  if (ccLook && ccLook.mine === mine && ccLook.text === text) return ccLook;
-  const look = { mine, text, best: ccDerender(text) };
-  look.clean = cleanCopy(text, termTask && termTask.id, selectionEdges(mine))
-    .then(raw => { if (raw != null) look.best = raw; return look.best; });
-  ccLook = look;
-  return look;
-}
-
-const CC_GUTTER = /^\s*[│▎┃║▏▍●⎿]+ ?/;
-const CC_BOXEDGE = /^\s*[╭╮╰╯┌┐└┘├┤┬┴┼─━═╔╗╚╝╠╣]+\s*$/;
-const CC_ITEM = /^\s*([-*+]|\d+[.)])\s/;
-const CC_HEAD = /^\s*#{1,6}\s/;
-
-// A selection of the terminal's render as plain text: the TUI's gutters, bars and box borders dropped, the common left
-// indent dropped, trailing spaces trimmed, and the lines the TUI hard-wrapped joined back into one. Blank lines, list
-// items, headings, code and table lines stay on their own lines, as does a line after one that ended well short of the
-// widest line (the end of a paragraph).
+// clint's rule: a clean copy drops only the `claude ❯` prompt and each line's edge spaces. Every other character and
+// every line feed stays, so a `# ` comment in a copied command block is still a comment.
 function ccDerender(sel) {
-  const rows = [];
-  for (const raw of String(sel).split(/\r?\n/)) {
-    if (CC_BOXEDGE.test(raw)) continue;
-    let s = raw.replace(CC_GUTTER, m => " ".repeat(Math.max(0, m.search(/[│▎┃║▏▍●⎿]/))));
-    s = s.replace(/\s*[│┃║]\s*$/, "").trimEnd();
-    rows.push({ s, len: raw.trimEnd().length });
-  }
-  const body = rows.filter(r => r.s.trim());
-  const indent = body.length ? Math.min(...body.map(r => r.s.length - r.s.trimStart().length)) : 0;
-  const ref = rows.reduce((m, r) => Math.max(m, r.len), 0);
-  const out = [];
-  let joinable = false;
-  for (const r of rows) {
-    const t = r.s.slice(Math.min(indent, r.s.length - r.s.trimStart().length));
-    if (!t.trim()) { out.push(""); joinable = false; continue; }
-    const lead = t.length - t.trimStart().length;
-    const own = CC_ITEM.test(t) || CC_HEAD.test(t) || lead >= 4 || /^```/.test(t.trim()) || /[{};]$/.test(t)
-      || /^\s*\|/.test(t) || /\|.*\|/.test(t);
-    if (joinable && !own) out[out.length - 1] = out[out.length - 1] + " " + t.trim();
-    else out.push(t);
-    joinable = !(CC_HEAD.test(t) || lead >= 4 || /^```/.test(t.trim()) || /[{};]$/.test(t) || /\|/.test(t))
-      && ref - r.len <= 12;
-  }
-  while (out.length && !out[0]) out.shift();
-  while (out.length && !out[out.length - 1]) out.pop();
-  return out.join("\n");
+  return String(sel).replace(/[^\r\n]+/g, line => line.trim().replace(/^(claude\s*)?❯\s*/, ""));
 }
 
-// Called once a selection has settled (the mouseup that ends a press, ctrl-a). The button shows at once. The reply
-// lookup runs behind it and, on a match, upgrades what a click copies. A later selection, or a hide, supersedes it.
-// Resolves when the lookup has finished.
-async function offerCleanCopy() {
+// Called once a selection has settled (the mouseup that ends a press, ctrl-a). The button shows at once.
+function offerCleanCopy() {
   hideCleanCopy();
   if (!term || !term.hasSelection() || !termTask) return;
   const mine = term;
   const text = termSelectionText(mine);
   if (!text.trim()) return;
-  const look = ccLookup(mine, text);
   if (cleanByDefault(text)) showCleanCopyButton(mine, () => text, true);
-  else showCleanCopyButton(mine, () => look.best);
-  await look.clean;
+  else showCleanCopyButton(mine, () => ccDerender(text));
 }
 
 function showCleanCopyButton(mine, textNow, asShown) {
@@ -1632,7 +1571,7 @@ function showCleanCopyButton(mine, textNow, asShown) {
   btn.className = "cc-btn";
   btn.textContent = asShown ? "copy as shown" : "copy clean";
   btn.dataset.tip = asShown ? "copy exactly what the terminal shows: its gutters, indent and line breaks"
-    : "copy without the terminal's gutters and line breaks, as the reply's own markdown when it is one";
+    : "copy without the claude prompt and the spaces at the start and end of each line";
   btn.setAttribute("aria-label", btn.textContent);
   // The press must not clear the selection or take the terminal's focus before the click lands.
   btn.addEventListener("mousedown", e => e.preventDefault());
@@ -1658,134 +1597,6 @@ window.addEventListener("keydown", e => { if (e.key === "Escape") hideCleanCopy(
 // Not on output that scrolls or a redraw that drops the selection: a runner mid-turn did both under the pointer.
 window.addEventListener("pointerdown", e => { if (ccBtn && !ccBtn.contains(e.target)) hideCleanCopy(); }, true);
 window.addEventListener("wheel", () => { if (ccBtn) hideCleanCopy(); }, { capture: true, passive: true });
-
-// Whether the selection covers its first and last rendered rows from their text to their edge. Only then may a match
-// that starts or ends inside a source line take that line's markers (`> `, `- `, `## `, a closing `**`) with it.
-function selectionEdges(t) {
-  const none = { start: false, end: false };
-  try {
-    const p = t.getSelectionPosition();
-    if (!p) return none;
-    const buf = t.buffer.active;
-    const row = y => { const l = buf.getLine(y); return l ? l.translateToString(true) : ""; };
-    return {
-      start: /^[\s│▎┃●⎿]*$/.test(row(p.start.y).slice(0, p.start.x)),
-      end: row(p.end.y).slice(p.end.x).trim() === "",
-    };
-  } catch (e) { return none; }
-}
-
-// What a terminal draws that the source does not have, and what the source has that the terminal does not draw: the
-// bars and gutters, and the markdown markers the TUI turns into styling. Dropped from BOTH sides before comparing.
-const CC_SKIP = /[│▎┃║▏▍●⎿*`#|_>~]/;
-const CC_MIN = 10;       // a shorter selection is a word, and a word is in every reply
-const CC_WAIT = 800;     // ms. The copy waits no longer than this for the endpoint
-
-// Text with every run of whitespace as one space and the skipped characters gone, and for each kept character the
-// index it had in `s`, so a match in the normalized text maps back onto the original.
-function ccNorm(s) {
-  let t = "";
-  const at = [];
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (/\s/.test(c)) {
-      if (t && t[t.length - 1] !== " ") { t += " "; at.push(i); }
-    } else if (!CC_SKIP.test(c)) { t += c; at.push(i); }
-  }
-  if (t.endsWith(" ")) { t = t.slice(0, -1); at.pop(); }
-  return { t, at };
-}
-
-// The source substring a selection was drawn from, or null. The newest reply that holds the selection wins. A
-// selection found twice in one reply is ambiguous and is not guessed at.
-//
-// THE EDGE RULE. The match runs from its first to its last real character. When the selection began at the start of
-// its first rendered row, the source line's leading markers are taken too, but only when nothing else stands before
-// the match on that line (a rendered row that starts mid-paragraph is not the start of the source line). Likewise the
-// end, with the trailing markers. Otherwise the copy is exactly what was selected.
-function cleanCopyFrom(sel, replies, edges) {
-  const s = ccNorm(sel);
-  if (s.t.length < CC_MIN) return null;
-  for (let r = replies.length - 1; r >= 0; r--) {
-    const raw = replies[r] && replies[r].text;
-    if (typeof raw !== "string") continue;
-    const n = ccNorm(raw);
-    const i = n.t.indexOf(s.t);
-    if (i < 0) continue;
-    if (n.t.indexOf(s.t, i + 1) >= 0) return null;
-    let a = n.at[i], b = n.at[i + s.t.length - 1] + 1;
-    if (edges && edges.start) {
-      const ls = raw.lastIndexOf("\n", a - 1) + 1;
-      if (/^[\s>*#_`|~]*([-+]|\d+[.)])?[\s>*#_`|~]*$/.test(raw.slice(ls, a))) a = ls;
-    }
-    if (edges && edges.end) {
-      let le = raw.indexOf("\n", b);
-      if (le < 0) le = raw.length;
-      if (/^[\s*_`|~#>]*$/.test(raw.slice(b, le))) b = le;
-    }
-    // A selection's last rows that normalize to nothing, a closing ``` fence, are past the match and taken line by line.
-    const tail = String(sel).trimEnd().split(/\r?\n/).reverse();
-    for (let k = 0; k < tail.length && tail[k].trim() && !ccNorm(tail[k]).t; k++) {
-      let le = raw.indexOf("\n", b);
-      if (le < 0 || !/^[\s*_`|~#>]*$/.test(raw.slice(b, le))) break;
-      let ne = raw.indexOf("\n", le + 1);
-      if (ne < 0) ne = raw.length;
-      if (!raw.slice(le + 1, ne).trim() || !/^[\s*_`|~#>]*$/.test(raw.slice(le + 1, ne))) break;
-      b = ne;
-    }
-    return raw.slice(a, b).trimEnd();
-  }
-  return null;
-}
-
-// EVERYTHING STILL ON THE SCROLLBACK. The last ten replies answer most selections in one small read. A selection in an
-// older reply, or in a conversation from before a /clear, misses them, and then `?all=1` is asked for: every reply the
-// card's transcripts still hold, bounded on the room. That answer is kept per card and used again until the card's
-// newest reply changes, which the small read already says, so a second selection costs one small read at most.
-const ccAll = new Map(); // task id -> { key, replies }
-
-// One read of the replies endpoint, as a transcript's replies or null. `signal` carries the shared deadline.
-async function ccFetch(url, signal) {
-  const res = await Promise.race([
-    fetch(url, signal ? { signal } : {}),
-    new Promise((_, no) => setTimeout(no, CC_WAIT)),
-  ]);
-  if (!res.ok) return null;
-  const v = await Promise.race([res.json(), new Promise((_, no) => setTimeout(no, CC_WAIT))]);
-  // A card read off the screen answers with the render itself, which is the thing being undone.
-  if (!v || v.source !== "transcript" || !Array.isArray(v.replies)) return null;
-  return v.replies;
-}
-
-// null when there is nothing to improve on. The WHOLE lookup, both reads, is bounded by CC_WAIT and never rejects.
-async function cleanCopy(sel, taskId, edges) {
-  if (!taskId || ccNorm(sel).t.length < CC_MIN) return null;
-  const ctl = typeof AbortController === "function" ? new AbortController() : null;
-  const timer = setTimeout(() => { if (ctl) ctl.abort(); }, CC_WAIT);
-  const sig = ctl ? ctl.signal : null;
-  const base = `/v1/tasks/${encodeURIComponent(taskId)}/replies`;
-  try {
-    const recent = await ccFetch(`${base}?n=10`, sig);
-    if (!recent) return null;
-    const hit = cleanCopyFrom(sel, recent, edges);
-    if (hit != null) return hit;
-    const last = recent.length ? recent[recent.length - 1] : null;
-    const key = last ? `${last.at}|${recent.length}|${(last.text || "").length}` : "";
-    let all = ccAll.get(taskId);
-    if (!all || all.key !== key) {
-      const replies = await ccFetch(`${base}?all=1`, sig);
-      if (!replies) return null;
-      all = { key, replies };
-      if (ccAll.size > 50) ccAll.clear();
-      ccAll.set(taskId, all);
-    }
-    return cleanCopyFrom(sel, all.replies, edges);
-  } catch (e) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 // The browser's own paste event, which is where the clipboard actually is.
 //

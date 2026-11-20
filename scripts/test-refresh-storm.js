@@ -116,6 +116,8 @@ const capSrc =
   "\nlet apiFailStreak = 0;\n" +
   // The hub-health gate is its own concern (the hubGate headless unit). Stubbed open here so this stays about the cap.
   "\nlet hubGateP = null; const hubGateStatus = () => false; function hubGateTrip() {}\n" +
+  // The slot wait has its own headless unit, apiSlots, so 0 leaves this about the cap.
+  "\nconst API_READ_TIMEOUT = 0;\n" +
   region("async function cappedFetch", "\nconst esc");
 
 const cap = new Function(`

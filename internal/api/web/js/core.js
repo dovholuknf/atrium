@@ -275,16 +275,40 @@ function signInAgain() {
 // more retries. Past the cap a call waits its turn rather than opening one more
 // socket, so a storm can never exhaust the pool no matter the event rate.
 const API_MAX_INFLIGHT = 6;
+// Writes hold half the slots at most: the browser also spends a socket per event stream, so reads need the rest.
+const API_MAX_WRITES = API_MAX_INFLIGHT / 2;
 let apiInflight = 0;
+let apiWrites = 0;
 const apiQueue = [];
-function apiSlot() {
-  if (apiInflight < API_MAX_INFLIGHT) { apiInflight++; return Promise.resolve(); }
-  return new Promise(res => apiQueue.push(res));
+const apiFits = (write) => apiInflight < API_MAX_INFLIGHT && (!write || apiWrites < API_MAX_WRITES);
+function apiTake(write) {
+  apiInflight++;
+  if (write) apiWrites++;
 }
-function apiRelease() {
+function apiSlot(path, wait, write) {
+  if (apiFits(write)) { apiTake(write); return Promise.resolve(); }
+  return new Promise((res, rej) => {
+    let timer = 0;
+    const take = () => { clearTimeout(timer); res(); };
+    take.write = write;
+    apiQueue.push(take);
+    // Six calls that never answer must not hold every later read in this queue forever.
+    if (wait) timer = setTimeout(() => {
+      const i = apiQueue.indexOf(take);
+      if (i < 0) return;
+      apiQueue.splice(i, 1);
+      rej(new Error(path + " waited " + wait / 1000 + "s for a free connection"));
+    }, wait);
+  });
+}
+function apiRelease(write) {
   apiInflight--;
-  const next = apiQueue.shift();
-  if (next) { apiInflight++; next(); }
+  if (write) apiWrites--;
+  const i = apiQueue.findIndex(t => apiFits(t.write));
+  if (i < 0) return;
+  const next = apiQueue.splice(i, 1)[0];
+  apiTake(next.write);
+  next();
 }
 
 // How many fetches in a row have failed at the socket, so the refresh loop can
@@ -324,9 +348,12 @@ const api = async (path, opts) => {
 // its signal. Worse, the browser allows six connections per host across every
 // tab and popped-out window on it, each event stream takes one, and the held
 // reads took the rest, so even `/v1/health`, which the hub answers itself,
-// never left the browser. A read is bounded here, whoever made it. Writes are
-// not: an upload may take as long as it takes.
+// never left the browser. A read is bounded here, whoever made it, and so is its
+// wait for a slot. A write is bounded more loosely, since six hung writes held
+// every slot and froze the board. An upload is not: it may take as long as it
+// takes.
 const API_READ_TIMEOUT = 15000;
+const API_WRITE_TIMEOUT = 60000;
 
 // ONE HUB-HEALTH GATE FOR EVERY POLLER.
 //
@@ -368,20 +395,21 @@ const apiFetch = async (path, opts) => {
   const read = !opts || !opts.method || opts.method === "GET";
   for (;;) {
     if (read) while (hubGateP) await hubGateP;
-    await apiSlot();
+    await apiSlot(path, read ? API_READ_TIMEOUT : 0, !read);
     // The gate may have closed while this waited for a slot.
     if (!read || !hubGateP) break;
     apiRelease();
   }
   let timer = 0, timedOut = false;
-  if (read && typeof AbortController !== "undefined") {
+  const limit = read ? API_READ_TIMEOUT : (opts.body instanceof FormData ? 0 : API_WRITE_TIMEOUT);
+  if (limit && typeof AbortController !== "undefined") {
     const ctrl = new AbortController();
     const outer = opts && opts.signal;
     if (outer) {
       if (outer.aborted) ctrl.abort();
       else outer.addEventListener("abort", () => ctrl.abort(), { once: true });
     }
-    timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, API_READ_TIMEOUT);
+    timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, limit);
     opts = Object.assign({}, opts, { signal: ctrl.signal });
   }
   let res;
@@ -394,8 +422,8 @@ const apiFetch = async (path, opts) => {
     // A read that timed out is the wire failing, not a pass being superseded.
     if (timedOut || !(err && err.name === "AbortError")) apiFailStreak++;
     if (read && !(err && err.name === "AbortError")) hubGateTrip();
-    apiRelease();
-    throw timedOut ? new Error(path + " did not answer in " + API_READ_TIMEOUT / 1000 + "s") : err;
+    apiRelease(!read);
+    throw timedOut ? new Error(path + " did not answer in " + limit / 1000 + "s") : err;
   }
   clearTimeout(timer);
   apiFailStreak = 0;
@@ -403,7 +431,7 @@ const apiFetch = async (path, opts) => {
   try {
     return await apiFinish(res);
   } finally {
-    apiRelease();
+    apiRelease(!read);
   }
 };
 
@@ -456,7 +484,7 @@ async function cappedFetch(fetchFn, path, opts, read) {
   const isRead = !opts || !opts.method || opts.method === "GET";
   for (;;) {
     if (isRead) while (hubGateP) await hubGateP;
-    await apiSlot();
+    await apiSlot(path, isRead ? API_READ_TIMEOUT : 0, !isRead);
     if (!isRead || !hubGateP) break;
     apiRelease();
   }
@@ -477,7 +505,7 @@ async function cappedFetch(fetchFn, path, opts, read) {
     }
     throw err;
   } finally {
-    apiRelease();
+    apiRelease(!isRead);
   }
 }
 

@@ -973,7 +973,9 @@ function stopBody(f, t) {
   const cmds = [`git -C ${q(f.repo)} worktree remove ${q(f.path)}`];
   if (f.branch) cmds.push(`git -C ${q(f.repo)} branch -d ${q(f.branch)}`);
   return `${said} Atrium does not offer to delete it: ${esc(f.why)}. To delete it yourself:` +
-    cmds.map(c => `<code>${esc(c)}</code>`).join("");
+    `<div class="cmdrow"><code>${esc(cmds.join("\n"))}</code><button type="button" class="copybit" ` +
+    `data-copy="${esc(cmds.join("\n"))}" data-tip="copy" aria-label="copy the commands" ` +
+    `onclick="copyAliasHandle(this,'',this.dataset.copy)">${copyIcon()}</button></div>`;
 }
 
 async function cleanUpNow(id, t, asked) {

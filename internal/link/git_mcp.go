@@ -25,13 +25,14 @@ const gitTimeout = gitsync.CommandBound + 2*time.Minute
 const GitWait = gitTimeout
 
 type gitSyncInput struct {
-	Room string `json:"room" jsonschema:"the room to sync, as named on the hub"`
+	Room string `json:"room,omitempty" jsonschema:"the room to sync, as named on the hub. empty on a card a pull request link opened brings that card's branch to the pull request's head"`
 	Name string `json:"name,omitempty" jsonschema:"one repository from the hub's git_repos, or empty for all of them"`
 	Init bool   `json:"init,omitempty" jsonschema:"make the clone when the room has none. only ever on a person's or a director's word"`
 }
 
 type gitSyncOutput struct {
-	Results []gitsync.SyncResult `json:"results"`
+	Results []gitsync.SyncResult  `json:"results"`
+	PR      *gitsync.PRSyncResult `json:"pr,omitempty"`
 }
 
 type gitCollectInput struct {
@@ -48,7 +49,12 @@ const gitSyncToolDesc = "Ask the hub to bring a room's clone up to date with cla
 	"`unsupported` (that room's build predates git sync).\n\n" +
 	"`init` makes the clone. Pass it only when the person or director you work for asked for a new " +
 	"clone on that room. There is no path, url, branch or refspec to pass: the repositories are the " +
-	"hub's `git_repos` and the branch is the integration branch."
+	"hub's `git_repos` and the branch is the integration branch.\n\n" +
+	"ON A PULL REQUEST'S CARD, call it with NO room: your room fetches the pull request's current head through " +
+	"the hub, which reads the forge, so no forge login is needed here. Your branch is fast-forwarded to it, or reset " +
+	"when the pull request was force-pushed. `pr` says which, `pr.commits` are the new commits and `pr.text` says it " +
+	"in a sentence. Refused when the worktree has uncommitted changes or the branch has commits the pull request " +
+	"does not, and nothing is moved then."
 
 const gitCollectToolDesc = "Ask the hub to fetch a room's claude/* branches now, and put them where the hub's " +
 	"checkout can merge them (`refs/remotes/<room>/claude/*`).\n\n" +
@@ -56,8 +62,8 @@ const gitCollectToolDesc = "Ask the hub to fetch a room's claude/* branches now,
 	"Call it when a worker has just finished and you do not want to wait. Branches the room deleted " +
 	"are pruned, and claude/main on a room is never collected. Nothing under refs/heads is written."
 
-// registerGit adds the two tools to the control server being built. Through
-// `addTool`, so they land on the full server only: neither is in `workerTools`.
+// registerGit adds the git tools to the control server being built, through `addTool`. Collect is on the full server
+// only. Sync is in `workerTools` too, since a pull request's card is a worker.
 func (c *controlMCP) registerGit(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_git_sync", Description: gitSyncToolDesc},
 		audited(c, "ctl-git-sync", describeGitSync, c.gitSyncHandler))
@@ -75,6 +81,9 @@ func (c *controlMCP) registerGit(s *mcp.Server, class ctl.Class) {
 // describeGitSync names the room and repository, and whether it may have made a clone.
 func describeGitSync(_ *mcp.CallToolRequest, in gitSyncInput, _ gitSyncOutput) (string, string, bool) {
 	what := "git sync"
+	if strings.TrimSpace(in.Room) == "" {
+		what += " (pull request)"
+	}
 	if n := strings.TrimSpace(in.Name); n != "" {
 		what += " " + n
 	}
@@ -153,16 +162,34 @@ func (c *controlMCP) longClient() *controlMCP {
 	return &controlMCP{board: c.board, client: &http.Client{Timeout: gitTimeout, Transport: c.client.Transport}}
 }
 
-func (c *controlMCP) gitSyncHandler(ctx context.Context, _ *mcp.CallToolRequest, in gitSyncInput) (
+func (c *controlMCP) gitSyncHandler(ctx context.Context, req *mcp.CallToolRequest, in gitSyncInput) (
 	*mcp.CallToolResult, gitSyncOutput, error) {
 
 	var out gitSyncOutput
 	if strings.TrimSpace(in.Room) == "" {
-		return nil, out, fmt.Errorf("say which room to sync")
+		if ctl.AgentOf(req) == "" {
+			return nil, out, fmt.Errorf("say which room to sync")
+		}
+		return nil, out, c.prSync(ctx, req, &out)
 	}
 	err := c.longClient().Ask(ctx, http.MethodPost, "/_hub/git/sync", "", map[string]any{
 		"room": in.Room, "name": in.Name, "init": in.Init}, &out)
 	return nil, out, err
+}
+
+// prSync is atrium_git_sync with no room: the calling card's room brings the card's branch to its pull request's head.
+func (c *controlMCP) prSync(ctx context.Context, req *mcp.CallToolRequest, out *gitSyncOutput) error {
+	id, _, err := c.ResolvePeer(ctx, ctl.RoomOf(req), ctl.AgentOf(req))
+	if err != nil {
+		return err
+	}
+	out.PR = &gitsync.PRSyncResult{}
+	err = c.longClient().Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/pr-sync", ctl.RoomOf(req), nil, out.PR)
+	var be *ctl.BoardError
+	if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
+		return fmt.Errorf("this room predates atrium_git_sync for a pull request's card. update the room, or say which room to sync")
+	}
+	return err
 }
 
 func (c *controlMCP) gitCollectHandler(ctx context.Context, _ *mcp.CallToolRequest, in gitCollectInput) (

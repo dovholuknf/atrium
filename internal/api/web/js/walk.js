@@ -80,6 +80,8 @@ function dockReset() {
   if (drawer) { drawer.hidden = true; walkPlace(); }
   const btn = document.getElementById("t-walk");
   if (btn) { btn.hidden = true; btn.classList.remove("go"); }
+  const prLink = document.getElementById("t-walk-pr");
+  if (prLink) prLink.hidden = true;
   walkTenant.reset();
 }
 function walkReset() { dockReset(); }
@@ -211,7 +213,7 @@ function dockPaint() {
     const a = document.getElementById(id);
     if (!a) continue;
     a.hidden = !(prRow && prRow.url);
-    if (!a.hidden) { a.href = prRow.url; a.textContent = "View it on " + walkForgeName(prRow.url); }
+    if (!a.hidden) { a.href = prRow.url; a.textContent = walkLinkLabel(prRow); }
   }
   const btn = document.getElementById("t-walk");
   if (btn && !dock.open) btn.hidden = walkNothing(dock);
@@ -429,6 +431,14 @@ function walkLocate(it, files) {
 function walkPrOf(taskId) {
   if (typeof pulls === "undefined" || !taskId) return null;
   return pulls.rows.find(r => r.walker_task === taskId) || null;
+}
+
+// "view PR ziti-doc#12 on GitHub": the repo's short name and number, or a plain "view on GitHub" without them.
+function walkLinkLabel(r) {
+  const on = " on " + walkForgeName(r.url);
+  const repo = String(r.org_repo || "").split("/").pop();
+  if (!repo || !r.number) return "view" + on;
+  return "view " + (r.kind === "issue" ? "issue" : "PR") + " " + repo + "#" + r.number + on;
 }
 
 // The API's walk words and the drawer's: done is posted.

@@ -1033,51 +1033,68 @@ async function attachLastInstead(gone) {
   openTerm(task);
 }
 
+// A runner that exited and was started again on the same card, which a restart the board did not ask for does.
+const relaunchWaitFor = 6000;
+// One ask of a card while waiting. A hub whose read of one remote card hangs must not cost a full read timeout a try.
+const cardAskFor = 4000;
+
+// The card's row on the board's own list when it has a terminal, not the runner `pid` that just ended. The list is
+// read from every room through the hub, and still answers when the read of the one card does not.
+function listedLive(card, pid) {
+  const rows = typeof lastTasks !== "undefined" ? lastTasks : [];
+  return rows.find(t => t.supervised && !t.offline && bareId(t.id) === bareId(card) && !(pid && t.pid === pid)) || null;
+}
+
+async function askCard(card) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), cardAskFor);
+  try { return await api("/v1/tasks/" + encodeURIComponent(card), { signal: ctrl.signal }); }
+  catch (e) {
+    if (ctrl.signal.aborted) throw new Error("/v1/tasks/" + card + " did not answer in " + cardAskFor / 1000 + "s");
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
+async function attachLastUnlessRelaunched(gone, pid) {
+  const until = Date.now() + relaunchWaitFor;
+  while (Date.now() < until) {
+    if (term || termTask || termOnly() || !isViewing("terms")) return;
+    let task = listedLive(gone, pid);
+    if (!task) {
+      try {
+        const t = await askCard(gone);
+        if (t && t.supervised && !(pid && t.pid === pid)) task = t;
+      } catch (e) {}
+    }
+    if (term || termTask) return;
+    if (task) { rlog("its runner was started again. attaching", gone); termWait(""); openTerm(task); return; }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  attachLastInstead(gone);
+}
+
 async function waitLoop(card) {
   const until = Date.now() + restoreWaitFor;
   let said = false, tries = 0;
-  // ONLY A LINE THIS LOOP WROTE IS THIS LOOP'S TO TAKE DOWN. The pane's wait line is shared: a resume that is still
-  // opening says so there (`openingSay`), and so does a reconnect. This loop runs half a second after boot
-  // (`restoreWhereYouWere`), and a card attached by hand in that half second, a resume for one, is exactly the
-  // "something else attached" it stops for. Stopping used to blank the line unconditionally, which took the
-  // "opening the conversation" line off a pane this loop never touched, and left a spinner on the card with
-  // nothing in the pane to end on. The headless `resumeSpinner` unit caught it. So an exit clears the line only
-  // when this loop put it there and nothing has attached since: an attached pane's line is the pane's.
+  // Only a line this loop wrote is its to take down: an attached pane's line is the pane's.
   const quiet = () => { if (said && !term && !termTask) termWait(""); };
   while (Date.now() < until) {
-    // Somebody got there first: attached something by hand, went to another
-    // view, or popped this one out. Any of those is a decision, and a restore
-    // that overrode it would be the board arguing with you.
+    // Somebody got there first, and a restore that overrode it would be the board arguing with you.
     if (term || termTask) { rlog("stopped: something else attached"); quiet(); return; }
     if (!isViewing("terms")) { rlog("stopped: not on the terminals view"); quiet(); return; }
     if (poppedOut(card)) { rlog("stopped: it is in its own window"); quiet(); return; }
 
     let task = null, err = "", gone = false;
-    try { task = await api("/v1/tasks/" + encodeURIComponent(card)); }
+    try { task = await askCard(card); }
     catch (e) {
       err = e.message;
-      // A CARD THAT IS NOT THERE IS NOT A CARD THAT IS COMING BACK.
-      //
-      // 404 is the room answering, not the room being unreachable, and the
-      // difference matters: unreachable is what this loop exists to wait out,
-      // while not-there is final. A throwaway is deleted the moment its
-      // session ends, so waiting ninety seconds for one left the board saying
-      // "waiting for the session to come back" over an empty terminal list,
-      // which is the board contradicting itself.
-      //
-      // 409 counts too, and only a hub says it: "that card names no room, and
-      // there are several". A bare id remembered from a board that was scoped
-      // to one room cannot be addressed once it is looking at all of them, so
-      // waiting is waiting for something that will never resolve itself.
-      //
-      // 503 is NOT in this list. That is the hub saying no room is attached,
-      // which is the reconnect this loop exists to sit through.
+      // 404 and 409 are final, not a card coming back. 503 is a hub with no room, which this loop sits through.
       gone = e.status === 404 || e.status === 409;
     }
     if (gone) {
       rlog("stopped: the card is gone");
       quiet();
-      // And forgotten, or the next reload waits for it all over again.
+      // Forgotten, or the next reload waits for it all over again.
       try {
         if (localStorage.getItem("atrium.term") === card) localStorage.removeItem("atrium.term");
       } catch (e) {}
@@ -1087,28 +1104,19 @@ async function waitLoop(card) {
     rlog("try", tries, err ? "no answer: " + err
       : "supervised=" + !!(task && task.supervised) +
         " archived=" + !!(task && task.archived_at));
-    // Gone for good rather than not back yet. A card that has been archived is
-    // never going to be supervised again, so waiting out the ninety seconds
-    // would be waiting for nothing.
+    // Archived is gone for good, never supervised again.
     if (task && task.archived_at) { rlog("stopped: the card is archived"); quiet(); return; }
     if (task && task.supervised) { rlog("it is back. attaching"); termWait(""); openTerm(task); return; }
-    // Named as soon as there is a name to use, which is the first answer that
-    // comes back. Before that it is `the session`, which is still better than
-    // an empty pane saying nothing attached while something is happening.
+    const listed = err ? listedLive(card) : null;
+    if (listed) { rlog("no answer about it, and the list has it running. attaching"); termWait(""); openTerm(listed); return; }
     if (!said || task) {
       said = true;
-      // ONLY A RESTART IS CALLED A RESTART. This loop is also how a boot comes
-      // back to the session it was reading, and most of those are an ordinary
-      // reload with the daemon up the whole time. Announcing a restart there
-      // is a sentence the operator can see is false, which is worse than no
-      // sentence: it is the same words the real one uses.
+      // Only a restart is called a restart: most of these are an ordinary reload.
       termWait((restartComing() ? "atrium is restarting. waiting for "
                                 : "waiting for ") + waitName(task) + " to come back…");
     }
     await new Promise(r => setTimeout(r, 1000));
   }
-  // Ninety seconds and it never came back. Saying nothing would leave the
-  // spinner up forever.
   rlog("gave up after", restoreWaitFor / 1000, "seconds");
   quiet();
   toast("could not get back to your session", "it has not come back. pick one from the list.");
