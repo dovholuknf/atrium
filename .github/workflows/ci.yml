@@ -20,8 +20,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 on:
+  # A branch with a PR runs on the pull_request event; a push trigger as well ran every commit twice.
   push:
-    branches: ["**", "!dependabot/**"]
+    branches: [main]
   pull_request:
     branches: [main, "dev-*"]
   workflow_dispatch:
