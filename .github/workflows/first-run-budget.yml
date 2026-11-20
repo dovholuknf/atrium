@@ -1,0 +1,33 @@
+# Check out, install Go, call one script. All the logic is in `scripts/live/first-run-budget.sh`, which runs on a
+# developer's machine exactly as it runs here: from an empty home, `atrium run` and a first card on the board, under
+# a budget in seconds, with the measured time printed every run.
+
+name: first-run-budget
+
+on:
+  push:
+    branches: ["**", "!dependabot/**"]
+  pull_request:
+    branches: [main, "dev-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: first-run-budget-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  first-run-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: bash scripts/live/first-run-budget.sh --runs 3 --budget 30
