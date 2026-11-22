@@ -121,7 +121,7 @@ func newRoot() *cobra.Command {
 		newJoin(), newLeave(), newStop(), newRestartPtyHost(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
-		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), capabilitiesCmd(), mergeCmd(), newWorktree(), newUpdate(), newStatusline(), newAdopt(), newUninstall())
+		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), capabilitiesCmd(), mergeCmd(), newWorktree(), newUpdate(), newStatusline(), newAdopt(), newUninstall(), newDoctor())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/archive/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")
@@ -151,7 +151,7 @@ func newRoot() *cobra.Command {
 // helpGroup is the root help's group for a subcommand, "" for one only a harness runs, which help leaves out.
 func helpGroup(name string) string {
 	switch name {
-	case "run", "launch", "adopt", "stop", "uninstall", "version":
+	case "run", "launch", "adopt", "doctor", "stop", "uninstall", "version":
 		return "start"
 	case "new", "open", "tangent", "twig", "close", "exit", "new-context", "task", "cd", "dispatch", "preview",
 		"archive-workers":
