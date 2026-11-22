@@ -859,7 +859,7 @@ const termLinkHandler = {
     }
     if (!/^https?:/i.test(uri)) return;
     // No confirm: it opened on every PR link an agent printed, and the tab opens with no opener, so the page it
-    // loads cannot reach the board. clint 2026-10-07: "how do i prevent this popup?"
+    // loads cannot reach the board. The operator 2026-10-07: "how do i prevent this popup?"
     const w = open();
     if (!w) return;
     try { w.opener = null; } catch (e) {}
@@ -1181,8 +1181,55 @@ function loadedBuild() {
 function checkBuild(build) {
   if (!build) return;
   if (!boardBuild) { boardBuild = build; return; }
+  // The `board` event already dealt with this build: it reloaded, or said so and left the choice to whoever is typing.
+  if (boardScriptStale && boardSeen && build === boardSeen.build) return;
   buildTarget = build === boardBuild ? "" : build;
   reloadWhenIdle();
+}
+
+// The hub says `board` when the files it serves change. A stylesheet change is swapped into the open page, and a script
+// change reloads it only while nothing is in progress, else says so in a toast. Never a reload under a dialog or a key.
+let boardSeen = null;
+let boardScriptStale = false;
+function boardEvent(d) {
+  if (!d || !d.build) return;
+  const was = boardSeen;
+  boardSeen = d;
+  if (!boardBuild) { boardBuild = d.build; return; }
+  if (d.build === boardBuild) return;
+  // A first event that names another build than the one the page loaded cannot say what changed, so it counts as a script.
+  if (was && d.rest === was.rest && !boardScriptStale) { swapStyles(d.css); boardBuild = d.build; return; }
+  if (was && d.rest === was.rest) { swapStyles(d.css); return; }
+  boardScriptStale = true;
+  if (typingNow() || document.querySelector("dialog[open]")) {
+    const t = toast("board updated", "");
+    const what = t && t.querySelector(".what");
+    if (what && !what.querySelector("a")) {
+      const a = document.createElement("a");
+      a.href = location.href;
+      a.textContent = "reload";
+      a.addEventListener("click", e => { e.preventDefault(); location.reload(); });
+      what.appendChild(a);
+    }
+    return;
+  }
+  buildTarget = d.build;
+  reloadWhenIdle();
+}
+
+// A copy of each board stylesheet beside the old one, which goes once the copy has loaded, so nothing flashes unstyled.
+// The query only gets past the cache, and the server ignores it.
+function swapStyles(tag) {
+  for (const old of document.querySelectorAll('link[rel="stylesheet"]')) {
+    const u = new URL(old.href, location.href);
+    if (u.origin !== location.origin || u.pathname.startsWith("/vendor/")) continue;
+    u.searchParams.set("v", tag);
+    const next = old.cloneNode();
+    next.href = u.href;
+    next.onload = () => old.remove();
+    next.onerror = () => next.remove();
+    old.after(next);
+  }
 }
 
 function reloadWhenIdle() {

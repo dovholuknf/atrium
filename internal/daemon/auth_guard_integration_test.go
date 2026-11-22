@@ -86,7 +86,7 @@ func TestTheLoginCanBeTurnedOffWhenNoPublicShareRuns(t *testing.T) {
 func TestAStoredSignInThatCannotWorkFailsClosed(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.st.SetSetting(publish.SettingAuth, `{"enabled":true,"basic":true,"user":"clint"}`); err != nil {
+	if err := d.st.SetSetting(publish.SettingAuth, `{"enabled":true,"basic":true,"user":"operator"}`); err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()

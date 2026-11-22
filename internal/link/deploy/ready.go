@@ -23,7 +23,6 @@ import (
 )
 
 // The hub's "deploy ready" state, and the one-click deploy behind it. See
-// docs/rnd/factory-shape.md "(a) The hub deploys itself", step one, and
 // internal/deployready for what ready means.
 //
 //	GET  /_hub/deploy-ready          ready, or the commits that block it, and where a deploy stands

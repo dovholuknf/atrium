@@ -69,29 +69,29 @@ func capsOf(def *int, rooms map[string]int) func(string) int {
 	return func(room string) int { return LaunchCaps{Default: def, Rooms: rooms}.For(room) }
 }
 
-// A LAUNCH COUNTS ONLY THE ROOM IT GOES TO. sg3 full and the caller's room with
-// room to spare: the caller's room takes the launch, sg3 refuses it, and the
-// refusal names sg3. Together they are over the old single cap of 10, which is
+// A LAUNCH COUNTS ONLY THE ROOM IT GOES TO. room-d full and the caller's room with
+// room to spare: the caller's room takes the launch, room-d refuses it, and the
+// refusal names room-d. Together they are over the old single cap of 10, which is
 // the refusal that used to happen with free slots on both.
 func TestTheLaunchCapIsPerRoom(t *testing.T) {
 	board := &roomsBoard{rooms: map[string][]map[string]any{
-		"beta": workers(7), "sg3": workers(5),
+		"beta": workers(7), "room-d": workers(5),
 	}}
 	srv := httptest.NewServer(board.handler())
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client(),
-		capFor: capsOf(nil, map[string]int{"beta": 10, "SG3": 5})}
+		capFor: capsOf(nil, map[string]int{"beta": 10, "ROOM-D": 5})}
 
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
 		launchInput{Item: "f-test", Cwd: "/w"}); err != nil {
-		t.Fatalf("7 of 10 on beta, with sg3 full, refused a launch onto beta: %v", err)
+		t.Fatalf("7 of 10 on beta, with room-d full, refused a launch onto beta: %v", err)
 	}
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Item: "f-test", Cwd: "/w", Room: "sg3"})
+		launchInput{Item: "f-test", Cwd: "/w", Room: "room-d"})
 	if err == nil {
-		t.Fatal("a launch onto sg3 with 5 of 5 running went through")
+		t.Fatal("a launch onto room-d with 5 of 5 running went through")
 	}
-	if !strings.Contains(err.Error(), "5 running workers on room sg3") {
+	if !strings.Contains(err.Error(), "5 running workers on room room-d") {
 		t.Errorf("the refusal does not name the room and its cap: %v", err)
 	}
 	if len(board.launched) != 1 || board.launched[0] != "beta" {
@@ -103,14 +103,14 @@ func TestTheLaunchCapIsPerRoom(t *testing.T) {
 // old cap.
 func TestAnUnlistedRoomGetsTheDefaultCap(t *testing.T) {
 	three := 3
-	if n := (LaunchCaps{Default: &three, Rooms: map[string]int{"sg3": 5}}).For("m1mini"); n != 3 {
+	if n := (LaunchCaps{Default: &three, Rooms: map[string]int{"room-d": 5}}).For("room-a"); n != 3 {
 		t.Errorf("an unlisted room got %d, not the default 3", n)
 	}
-	if n := (LaunchCaps{}).For("m1mini"); n != DefaultLaunchCap {
+	if n := (LaunchCaps{}).For("room-a"); n != DefaultLaunchCap {
 		t.Errorf("with nothing set a room got %d, not %d", n, DefaultLaunchCap)
 	}
 	t.Setenv(LaunchCapEnv, "4")
-	if n := (LaunchCaps{Rooms: map[string]int{"sg3": 5}}).For("m1mini"); n != 4 {
+	if n := (LaunchCaps{Rooms: map[string]int{"room-d": 5}}).For("room-a"); n != 4 {
 		t.Errorf("with no default, an unlisted room got %d, not the env cap 4", n)
 	}
 }
@@ -171,30 +171,30 @@ func TestTheLaunchCapsAreSetOnTheHub(t *testing.T) {
 		t.Fatalf("GET with nothing set answered %d %s", code, got)
 	}
 	code, got = do(t, http.MethodPut, front.URL+"/_hub/launch-caps", "application/json",
-		`{"default":5,"rooms":{"claude-sg4":10,"sg3":5,"m1mini":5}}`)
+		`{"default":5,"rooms":{"claude-room-e":10,"room-d":5,"room-a":5}}`)
 	if code != http.StatusOK {
 		t.Fatalf("PUT answered %d %s", code, got)
 	}
 	lc := p.launchCaps()
-	if lc.For("claude-sg4") != 10 || lc.For("sg3") != 5 || lc.For("sg4-wsl") != 5 {
+	if lc.For("claude-room-e") != 10 || lc.For("room-d") != 5 || lc.For("room-e-wsl") != 5 {
 		t.Errorf("after the PUT the caps read %+v", lc)
 	}
 
-	for _, bad := range []string{`{"rooms":{"sg3":-1}}`, `{"rooms":{"sg3":1000}}`, `{"rooms":{" ":2}}`,
+	for _, bad := range []string{`{"rooms":{"room-d":-1}}`, `{"rooms":{"room-d":1000}}`, `{"rooms":{" ":2}}`,
 		`{"default":-2}`, `not json`} {
 		if code, _ := do(t, http.MethodPut, front.URL+"/_hub/launch-caps", "application/json", bad); code != http.StatusBadRequest {
 			t.Errorf("PUT %s answered %d, not 400", bad, code)
 		}
 	}
-	if p.launchCaps().For("sg3") != 5 {
+	if p.launchCaps().For("room-d") != 5 {
 		t.Error("a refused PUT changed the caps")
 	}
 
 	// A stored value that will not parse is the old single cap, never a refusal
 	// of every launch.
 	st.m[SettingLaunchCaps] = "{broken"
-	if n := p.launchCaps().For("sg3"); n != DefaultLaunchCap {
-		t.Errorf("a broken setting gave sg3 a cap of %d, not %d", n, DefaultLaunchCap)
+	if n := p.launchCaps().For("room-d"); n != DefaultLaunchCap {
+		t.Errorf("a broken setting gave room-d a cap of %d, not %d", n, DefaultLaunchCap)
 	}
 }
 
@@ -233,15 +233,15 @@ func TestTheLaunchCapsRouteNeedsAStore(t *testing.T) {
 // Two room keys that differ only in case would give the room a cap at random, so
 // the body is refused, and a misspelt key is a 400 that saves nothing.
 func TestTheLaunchCapsRefuseCaseDuplicatesAndUnknownFields(t *testing.T) {
-	if err := (LaunchCaps{Rooms: map[string]int{"SG3": 1, "sg3": 50}}).check(); err == nil {
-		t.Error("check accepted SG3 and sg3 as two rooms")
+	if err := (LaunchCaps{Rooms: map[string]int{"ROOM-D": 1, "room-d": 50}}).check(); err == nil {
+		t.Error("check accepted ROOM-D and room-d as two rooms")
 	}
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
 	st := &fakeSettings{m: map[string]string{}}
 	p.SetLaunchCaps(st)
 	front := httptest.NewServer(p)
 	defer front.Close()
-	for _, bad := range []string{`{"rooms":{"SG3":1,"sg3":50}}`, `{"room":{"sg3":5}}`} {
+	for _, bad := range []string{`{"rooms":{"ROOM-D":1,"room-d":50}}`, `{"room":{"room-d":5}}`} {
 		if code, _ := do(t, http.MethodPut, front.URL+"/_hub/launch-caps", "application/json", bad); code != http.StatusBadRequest {
 			t.Errorf("PUT %s answered %d, not 400", bad, code)
 		}
@@ -257,10 +257,10 @@ func TestAStoredCaseDuplicateIsLoggedOnce(t *testing.T) {
 	log.SetOutput(&buf)
 	defer log.SetOutput(os.Stderr)
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
-	p.SetLaunchCaps(&fakeSettings{m: map[string]string{SettingLaunchCaps: `{"rooms":{"SG3":1,"sg3":50}}`}})
+	p.SetLaunchCaps(&fakeSettings{m: map[string]string{SettingLaunchCaps: `{"rooms":{"ROOM-D":1,"room-d":50}}`}})
 	for i := 0; i < 3; i++ {
-		if n := p.launchCaps().For("sg3"); n != DefaultLaunchCap {
-			t.Fatalf("sg3 got %d, not the default", n)
+		if n := p.launchCaps().For("room-d"); n != DefaultLaunchCap {
+			t.Fatalf("room-d got %d, not the default", n)
 		}
 	}
 	if got := strings.Count(buf.String(), "launch caps are unusable"); got != 1 {

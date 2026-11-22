@@ -222,8 +222,8 @@ var migrations = []struct {
 		},
 	},
 	{
-		// SOMETHING WAITING ON A HUMAN, SHARED BY EVERY SCREEN. See growl.go and
-		// docs/rnd/persistent-growler-design.md. The id is the notify identity
+		// SOMETHING WAITING ON A HUMAN, SHARED BY EVERY SCREEN. See growl.go.
+		// The id is the notify identity
 		// with the room in front, so a republished card is the same row. No
 		// foreign key, for the reason room_audit has none: the record of a
 		// dismissal outlives the room it was about until the prune takes it.
@@ -277,7 +277,7 @@ var migrations = []struct {
 		},
 	},
 	{
-		// HUB DOCUMENTS, the rows half. See docs.go and docs/rnd/hub-documents-design.md.
+		// HUB DOCUMENTS, the rows half. See docs.go.
 		// The BYTES ARE NOT HERE: they are files named for their SHA-256 under
 		// `<hub data dir>/docs/`, so the ten-minute snapshots stay small. A version row
 		// whose file is gone says so and does not fail the page.
@@ -429,8 +429,8 @@ var migrations = []struct {
 		},
 	},
 	{
-		// WEB PUSH SUBSCRIPTIONS: one row per browser that asked to be told when a card wants it. See push.go and
-		// docs/rnd/web-push-design.md. `endpoint` is the proof of ownership and is unique, so a browser that
+		// WEB PUSH SUBSCRIPTIONS: one row per browser that asked to be told when a card wants it. See push.go.
+		// `endpoint` is the proof of ownership and is unique, so a browser that
 		// subscribes twice is one row. `p256dh` and `auth` are the browser's own keys for encrypting to it. They
 		// are the browser's secrets, handed over for exactly this use, and are never returned by a list.
 		// `failures` counts sends that failed in a row, and `disabled_reason` is set when three did and the
@@ -451,8 +451,8 @@ var migrations = []struct {
 		},
 	},
 	{
-		// BACKLOG ITEMS AND DIRECTOR REPORTS THAT EVERY ROOM CAN READ AND WRITE. See backlog.go and
-		// docs/rnd/reports-channel-design.md. They replace a file in one room's checkout that no other room could see.
+		// BACKLOG ITEMS AND DIRECTOR REPORTS THAT EVERY ROOM CAN READ AND WRITE. See backlog.go.
+		// They replace a file in one room's checkout that no other room could see.
 		//
 		// An item's id is the one the filer gives (`f-new-x`, `r-037`), as the markdown files' ids are, and is never
 		// reused. Status is typed by whoever changes it, or follows the card linked by `card`: built on a done report, blocked or
@@ -586,7 +586,7 @@ var migrations = []struct {
 		},
 	},
 	{
-		// ONE ROW PER ROUND OF clint FETCHING claude/main, re-signing and pushing, so what landed in between can be
+		// ONE ROW PER ROUND OF THE OPERATOR FETCHING claude/main, re-signing and pushing, so what landed in between can be
 		// accounted for. See flow_epoch.go.
 		name: "0016_flow_epoch",
 		stmts: []string{
@@ -605,7 +605,7 @@ var migrations = []struct {
 	},
 	{
 		// THE HUB FILE DROP: a card on any room hands files to a card on any other. One row per name, bytes in
-		// <hub dir>/files/<sha256>. See files.go and docs/rnd/hub-file-drop.md.
+		// <hub dir>/files/<sha256>. See files.go.
 		name: "0017_hub_files",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS hub_files (
@@ -676,7 +676,7 @@ var migrations = []struct {
 	{
 		// ITEM LIFECYCLE L1: THE ITEM IS THE UNIT OF WORK. `work` is one row per backlog id, and `work_card` is every card
 		// attached to it, so two cards launched on one id are one item with two cards. The old `item` table keeps its job as
-		// one card's run (an assignment). See work.go and docs/rnd/item-lifecycle-design.md.
+		// one card's run (an assignment). See work.go.
 		name: "0020_work",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS work (
@@ -1075,8 +1075,7 @@ var migrations = []struct {
 		},
 	},
 	{
-		// THE MERGE QUEUE. A request is never deleted, so the table is the history. See merge.go and
-		// docs/rnd/merge-queue.md.
+		// THE MERGE QUEUE. A request is never deleted, so the table is the history. See merge.go.
 		name: "0034_merge_queue",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS merge_request (

@@ -87,7 +87,7 @@ func rt(p any) reflect.Type { return reflect.TypeOf(p).Elem() }
 func TestWindowsPlanWritesNothingAndApplyConverges(t *testing.T) {
 	spec := mustSpec(t, Windows, winPackSpec)
 	a := adapterFor(t, Windows)
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("V:/") // the drive is there; the root is not
 	m.Dir("C:/Users/localai/.claude")
 	settings := &fakeSettings{vals: map[string]string{}}
@@ -176,7 +176,7 @@ func TestWindowsPlanWritesNothingAndApplyConverges(t *testing.T) {
 func TestPlanOnABareHomeNeedsAnAdminWhenTheDriveIsClosed(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec)
 	a := adapterFor(t, Windows)
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("V:/")
 	m.Denied["V:/"] = true
 	lk := Plan(spec, a, View{FS: m, Env: m})
@@ -184,7 +184,7 @@ func TestPlanOnABareHomeNeedsAnAdminWhenTheDriveIsClosed(t *testing.T) {
 	if Code(lk.Steps) != 13 {
 		t.Fatalf("code %d", Code(lk.Steps))
 	}
-	if len(lk.AdminLines) == 0 || !strings.Contains(strings.Join(lk.AdminLines, "\n"), `icacls V:\ /grant 'SG3\localai:(RA,REA)'`) {
+	if len(lk.AdminLines) == 0 || !strings.Contains(strings.Join(lk.AdminLines, "\n"), `icacls V:\ /grant 'ROOM-D\localai:(RA,REA)'`) {
 		t.Fatalf("lines %q", lk.AdminLines)
 	}
 	if len(lk.Steps) != 1 { // nothing else is touched until the root is sound
@@ -200,7 +200,7 @@ func TestPlanOnABareHomeNeedsAnAdminWhenTheDriveIsClosed(t *testing.T) {
 
 func TestMissingDriveIsNotAnAdminLine(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec)
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	lk := Plan(spec, adapterFor(t, Windows), View{FS: m, Env: m})
 	s := step(lk, "work-root")
 	if s.Status != StatusHuman || !strings.Contains(s.Detail, "mapped drive") || len(lk.AdminLines) != 0 {
@@ -210,7 +210,7 @@ func TestMissingDriveIsNotAnAdminLine(t *testing.T) {
 
 func TestWrongAccountFailsBeforeAnythingIsWritten(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec)
-	m := NewMemFS(winHome, `SG3\someoneelse`)
+	m := NewMemFS(winHome, `ROOM-D\someoneelse`)
 	m.Dir("V:/")
 	lk := Apply(spec, adapterFor(t, Windows), Host{FS: m, Env: m})
 	wantStatus(t, lk, "account", StatusFail)
@@ -218,7 +218,7 @@ func TestWrongAccountFailsBeforeAnythingIsWritten(t *testing.T) {
 		t.Fatal("a wrong account configured something")
 	}
 	// a bare name and a domain-qualified one are the same account
-	if !sameAccount(`SG3\localai`, "localai") || !sameAccount("LocalAI@sg3", `SG3\localai`) {
+	if !sameAccount(`ROOM-D\localai`, "localai") || !sameAccount("LocalAI@room-d", `ROOM-D\localai`) {
 		t.Error("account match")
 	}
 }
@@ -330,7 +330,7 @@ func TestSettingsRunningRoom(t *testing.T) {
 func TestPackRules(t *testing.T) {
 	spec := mustSpec(t, Windows, winPackSpec)
 	a := adapterFor(t, Windows)
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("V:/")
 	m.Dir("V:/localai")
 	m.Dir("C:/Users/localai/.claude")
@@ -473,7 +473,7 @@ func TestMovedPackFolderMeetsAnUncleanFolderOfAnotherRunner(t *testing.T) {
 
 func TestPackWithoutASourceIsAWarn(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec+"packs:\n  - runner: claude\n    repo: o/a\n  - runner: codex\n    repo: o/a\n")
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("V:/")
 	m.Dir("V:/localai")
 	lk := Apply(spec, adapterFor(t, Windows), Host{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}})
@@ -486,7 +486,7 @@ func TestPackWithoutASourceIsAWarn(t *testing.T) {
 }
 
 func TestInstallRefusesNothingOutsideDirAndKeepsOtherFiles(t *testing.T) {
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Put("C:/Users/localai/.claude/settings.json", "mine")
 	src := packFiles()
 	res, err := adapterFor(t, Windows).InstallPack(m, "C:/Users/localai/.claude", src, nil, true)
@@ -497,7 +497,7 @@ func TestInstallRefusesNothingOutsideDirAndKeepsOtherFiles(t *testing.T) {
 		t.Error("an unrelated file was touched")
 	}
 	// plan mode of InstallPack writes nothing
-	m2 := NewMemFS(winHome, `SG3\localai`)
+	m2 := NewMemFS(winHome, `ROOM-D\localai`)
 	if _, err := adapterFor(t, Windows).InstallPack(m2, "C:/Users/localai/.claude", src, nil, false); err != nil || m2.Writes != 0 {
 		t.Errorf("apply=false wrote %d", m2.Writes)
 	}

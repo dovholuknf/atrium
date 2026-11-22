@@ -100,19 +100,19 @@ func TestACIRunReachesTheCardOnARoomThroughTheHubsOwnSayPath(t *testing.T) {
 	}
 	res.Body.Close()
 	hook.Pass(relayCtx(t))
-	got := x.sg4.messages()
+	got := x.roomE.messages()
 	if len(got) != 1 || got[0]["id"] != "s1" || got[0]["from"] != "ci@hub" || got[0]["kind"] != "needs" ||
 		!strings.HasPrefix(got[0]["text"], "CI failure: o/r CI on main") || !strings.HasSuffix(got[0]["text"], forgepkg.CISignoff) {
-		t.Fatalf("sg4 got %+v", got)
+		t.Fatalf("room-e got %+v", got)
 	}
 }
 
 func TestAParkedCardIsPendingUntilARouteWakesIt(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.mu.Lock()
-	x.sg4.parked = map[string]bool{"s1": true}
-	x.sg4.mu.Unlock()
+	x.roomE.mu.Lock()
+	x.roomE.parked = map[string]bool{"s1": true}
+	x.roomE.mu.Unlock()
 	st, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestAParkedCardIsPendingUntilARouteWakesIt(t *testing.T) {
 	if rows, _ := st.CIDeliveriesPending(); len(rows) != 1 {
 		t.Fatalf("a parked card with wake off should stay pending, got %d", len(rows))
 	}
-	if len(x.sg4.messages()) != 0 {
+	if len(x.roomE.messages()) != 0 {
 		t.Fatal("a message reached a parked card")
 	}
 	_ = st.SetCIHookRoutes(`[{"repo":"o/r","to":"@orch","wake":true}]`)
@@ -145,11 +145,11 @@ func TestAParkedCardIsPendingUntilARouteWakesIt(t *testing.T) {
 	}
 	res.Body.Close()
 	hook.Pass(relayCtx(t))
-	if rs := x.sg4.resumes(); len(rs) != 1 || rs[0] != "s1" {
+	if rs := x.roomE.resumes(); len(rs) != 1 || rs[0] != "s1" {
 		t.Fatalf("resumed %v, want s1", rs)
 	}
-	if got := x.sg4.messages(); len(got) != 1 {
-		t.Fatalf("sg4 got %+v, want the newer run only", got)
+	if got := x.roomE.messages(); len(got) != 1 {
+		t.Fatalf("room-e got %+v, want the newer run only", got)
 	}
 	if rows, _ := st.CIDeliveriesPending(); len(rows) != 0 {
 		t.Fatalf("%d still pending", len(rows))

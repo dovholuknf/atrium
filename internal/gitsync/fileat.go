@@ -7,7 +7,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// A FILE AS A COMMIT HELD IT. docs/rnd/doc-debt-from-features.md section 2.8 (the check at `landed`): the hub reads a
+// A FILE AS A COMMIT HELD IT, for the check at `landed`: the hub reads a
 // feature's docs/changes/<item>.md from the commit it landed as. Nothing is checked out and nothing is written.
 
 // fileAtMax bounds what is kept of a file, which is a test plan and never needs more than its top.

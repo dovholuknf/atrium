@@ -16,7 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// RECORDING A TEST, AND TAKING A REVIEW (item lifecycle L4, docs/rnd/item-lifecycle-design.md sections 3 and 4). The change
+// RECORDING A TEST, AND TAKING A REVIEW (item lifecycle L4). The change
 // record's C1 and C2, on the item.
 //
 //	POST /_hub/work/record         {room, card, kind: test, cmd, result: pass|fail, duration_s?, log? | log_file?}

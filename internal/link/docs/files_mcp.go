@@ -21,7 +21,7 @@ import (
 )
 
 // The hub file drop's four tools: atrium_put, atrium_files, atrium_get and atrium_export. The store is
-// internal/hubstore/files.go, the board's half is files_api.go and the design is docs/rnd/hub-file-drop.md.
+// internal/hubstore/files.go, the board's half is files_api.go.
 //
 // IN THE WORKER SET, because workers hand files between rooms. `workerTools` names them.
 //

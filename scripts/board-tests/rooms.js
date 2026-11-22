@@ -646,7 +646,7 @@ async function loginNeededSection(browser, base) {
 // The walk drawer's 3s read of the findings folder, the `rooms` event's follow-up fetch, and the settling
 // re-check of /v1/health. Each is now told by an event, and this proves none of them asks on a clock.
 async function pollsGoneSection(browser, base) {
-  const was = mock.tasksMode, wasB = mock.mockBroadcast, wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const was = mock.tasksMode, wasB = mock.mockBroadcast, wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
   const id = "land-pgone";
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-pgone-"));
   fs.mkdirSync(path.join(dir, "findings"));
@@ -700,7 +700,7 @@ async function pollsGoneSection(browser, base) {
 
     // (b) `rooms` with a payload paints with no fetch, and without `attached` still fetches.
     mock.hubMode = true;
-    mock.sggAttached = false;
+    mock.roomGAttached = false;
     const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c2 = countRequests(ctx2);
     try {
@@ -716,9 +716,9 @@ async function pollsGoneSection(browser, base) {
       await run(p, 2500);
       c2.clear();
       const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, mock.ALPHA),
-        Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, mock.SGG)];
+        Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, mock["ROOM-G"])];
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: " + JSON.stringify({
-        rooms: ["alpha", "sgg"], attached: [mock.ALPHA, mock.SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
+        rooms: ["alpha", "room-g"], attached: [mock.ALPHA, mock["ROOM-G"]], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
       await p.waitForFunction(() => hubRooms.length === 2, null, { timeout: slow(5000) })
         .catch(() => fail("pollsGone: a rooms event with a payload did not paint the second room"));
       await run(p, 700);
@@ -733,7 +733,7 @@ async function pollsGoneSection(browser, base) {
     } finally {
       await ctx2.close();
       mock.hubMode = wasHub;
-      mock.sggAttached = wasSgg;
+      mock.roomGAttached = wasRoomG;
     }
 
     // (c) `health`: halted shows the halt, settling then clear ends it, and nothing re-reads /v1/health.
@@ -1046,9 +1046,9 @@ async function transportToggleSection(browser, base) {
     await p.waitForFunction(() => typeof pathBadges === "function" && !document.getElementById("rooms").hidden,
       null, { timeout: slow(15000) });
     const rooms = [
-      { name: "sg3", transport: "direct", via: "direct", attached: true, paths: [{ kind: "direct", state: "on", mtls: true, addr: "h:7779" },
+      { name: "room-d", transport: "direct", via: "direct", attached: true, paths: [{ kind: "direct", state: "on", mtls: true, addr: "h:7779" },
         { kind: "ziti", state: "off" }, { kind: "zrok", state: "none" }] },
-      { name: "m1mini", transport: "ziti", via: "ziti", attached: true, paths: [{ kind: "direct", state: "up", mtls: true },
+      { name: "room-a", transport: "ziti", via: "ziti", attached: true, paths: [{ kind: "direct", state: "up", mtls: true },
         { kind: "ziti", state: "on", hammering: true, last_error: "connection refused" }, { kind: "zrok", state: "up" }] },
     ];
     await p.evaluate(rs => {
@@ -1062,12 +1062,12 @@ async function transportToggleSection(browser, base) {
     }, rooms);
     const chips = await p.evaluate(() => [...document.querySelectorAll("#tt-rows .roomrow")].map(r => [...r.querySelectorAll(".chip.pth")].map(c => ({
       tag: c.tagName, cls: c.className, text: c.textContent.replace(/\s+/g, " ").trim(), kind: c.dataset.kind || "", on: c.dataset.on || "" }))));
-    const [sg3, mini] = chips;
-    if (sg3[0].tag !== "SPAN" || sg3[0].cls.includes("pthtoggle")) fail("direct must have no switch: " + JSON.stringify(sg3[0]));
-    if (!sg3[1].cls.includes("pth-off") || sg3[1].tag !== "BUTTON" || sg3[1].on !== "1" || !/ziti off/.test(sg3[1].text)) {
-      fail("an off ziti should read off and offer to turn on: " + JSON.stringify(sg3[1]));
+    const [roomD, mini] = chips;
+    if (roomD[0].tag !== "SPAN" || roomD[0].cls.includes("pthtoggle")) fail("direct must have no switch: " + JSON.stringify(roomD[0]));
+    if (!roomD[1].cls.includes("pth-off") || roomD[1].tag !== "BUTTON" || roomD[1].on !== "1" || !/ziti off/.test(roomD[1].text)) {
+      fail("an off ziti should read off and offer to turn on: " + JSON.stringify(roomD[1]));
     }
-    if (sg3[2].tag !== "SPAN") fail("a kind the room cannot dial has a switch: " + JSON.stringify(sg3[2]));
+    if (roomD[2].tag !== "SPAN") fail("a kind the room cannot dial has a switch: " + JSON.stringify(roomD[2]));
     if (!mini[1].cls.includes("hot") || !/!/.test(mini[1].text)) fail("a hammering transport is not flagged: " + JSON.stringify(mini[1]));
     if (mini[1].on !== "0") fail("a live ziti should offer to turn off: " + JSON.stringify(mini[1]));
 
@@ -1087,13 +1087,13 @@ async function transportToggleSection(browser, base) {
 
     await p.locator("#tt-rows .roomrow:nth-child(1) .pthtoggle").click();
     await untilTrue(() => calls.length >= 1, 5000, "the ziti toggle").catch(() => {});
-    if (!calls[0] || calls[0].room !== "sg3" || calls[0].body !== JSON.stringify({ transport: "ziti", on: true })) {
+    if (!calls[0] || calls[0].room !== "room-d" || calls[0].body !== JSON.stringify({ transport: "ziti", on: true })) {
       fail("turning ziti on asked the wrong thing: " + JSON.stringify(calls[0]));
     }
     // The refusal is shown as the room said it.
     await p.locator("#tt-rows .roomrow:nth-child(2) .pthtoggle").nth(1).click();
     await untilTrue(() => calls.length >= 2, 5000, "the zrok toggle").catch(() => {});
-    if (!calls[1] || calls[1].room !== "m1mini" || calls[1].body !== JSON.stringify({ transport: "zrok", on: false })) {
+    if (!calls[1] || calls[1].room !== "room-a" || calls[1].body !== JSON.stringify({ transport: "zrok", on: false })) {
       fail("turning zrok off asked the wrong thing: " + JSON.stringify(calls[1]));
     }
     await p.waitForFunction(() => /last working path to the hub/.test(document.body.innerText), null, { timeout: slow(5000) })
@@ -1134,7 +1134,7 @@ async function hubTransportsSection(browser, base) {
         const b = JSON.parse(req.postData());
         st.puts.push(b);
         if (b.name === "room-ziti") {
-          return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "refused: m1mini reaches this hub only over ziti" }) });
+          return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "refused: room-a reaches this hub only over ziti" }) });
         }
         if (b.name === "board-ziti") st.on = !!b.on;
         if (b.name === "room-zrok") st.zrok = !!b.on;
@@ -1376,16 +1376,16 @@ async function roomsDashSection(browser, base) {
         allFirst: !!(m.firstElementChild && m.firstElementChild.classList.contains("all")),
         off: [...m.querySelectorAll(".rtile-off")].map(b => b.dataset.room + (b.querySelector(".roomx") ? "+x" : "")),
         sparks: m.querySelectorAll("svg.rd-spark polyline").length,
-        mini: /does not report them/.test((m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine') || {}).textContent || ""),
+        mini: /does not report them/.test((m.querySelector('.rtile[data-room="room-a"] .rd-band.machine') || {}).textContent || ""),
         width: m.getBoundingClientRect().width,
       };
     });
-    if (!drawn.open || drawn.rooms.join(",") !== "m1mini,sg3,sg4" || drawn.all !== 1 || !drawn.allFirst) {
+    if (!drawn.open || drawn.rooms.join(",") !== "room-a,room-d,room-e" || drawn.all !== 1 || !drawn.allFirst) {
       fail("the demo menu did not draw the all-rooms tile then one tile per live room: " + JSON.stringify(drawn));
     }
     if (drawn.off.join(",") !== "lab-pc+x") fail("the disconnected demo room is not below with its x: " + JSON.stringify(drawn.off));
     if (drawn.sparks < 5) fail("the demo tiles drew " + drawn.sparks + " sparklines, expected at least 5");
-    if (!drawn.mini) fail("m1mini ships no machine in the demo and its band did not say the room does not report it");
+    if (!drawn.mini) fail("room-a ships no machine in the demo and its band did not say the room does not report it");
     if (drawn.width < 500 || drawn.width > 600) fail("the rooms panel is not about 560px wide: " + drawn.width);
 
     if (shots) {
@@ -1404,10 +1404,10 @@ async function roomsDashSection(browser, base) {
         await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-390.png`) });
       }
       const phone = await p.evaluate(() => {
-        const b = document.querySelector('.rtile[data-room="sg3"] .rt-bands');
+        const b = document.querySelector('.rtile[data-room="room-d"] .rt-bands');
         const m = document.getElementById("rooms-menu").getBoundingClientRect();
         return { cols: getComputedStyle(b).gridTemplateColumns.split(" ").length, right: m.right,
-          sparks: document.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark').length };
+          sparks: document.querySelectorAll('.rtile[data-room="room-d"] svg.rd-spark').length };
       });
       if (phone.cols !== 1 || phone.right > 390 || phone.sparks < 2) {
         fail("at phone width the tile bands did not stack inside the window with their sparklines: " + JSON.stringify(phone));
@@ -1427,29 +1427,29 @@ async function roomsDashSection(browser, base) {
       const card = (id, room, status, over) => Object.assign({ id, room, status, display_title: id,
         last_activity_at: iso(now - 60000) }, over || {});
       roomsDemoCards = [
-        card("a1", "sg3", "running", { telemetry: { seconds: 30, five_hour: { pct: 64, resets_at: iso(now + 3600e3) },
+        card("a1", "room-d", "running", { telemetry: { seconds: 30, five_hour: { pct: 64, resets_at: iso(now + 3600e3) },
           weekly: { pct: 31 } } }),
-        card("a2", "sg3", "running"),
-        card("a3", "sg3", "needs-input"),
-        card("a4", "sg3", "needs-input", { seen: { answered: false, open_questions: ["ok?"] } }),
-        card("a5", "sg3", "done"),
-        card("a6", "sg3", "done", { last_activity_at: iso(now - 30 * 3600e3) }),
-        card("b1", "sg4", "running", { telemetry: { seconds: 60, five_hour: { pct: 82 } } }),
-        card("b2", "sg4", "needs-permission"),
+        card("a2", "room-d", "running"),
+        card("a3", "room-d", "needs-input"),
+        card("a4", "room-d", "needs-input", { seen: { answered: false, open_questions: ["ok?"] } }),
+        card("a5", "room-d", "done"),
+        card("a6", "room-d", "done", { last_activity_at: iso(now - 30 * 3600e3) }),
+        card("b1", "room-e", "running", { telemetry: { seconds: 60, five_hour: { pct: 82 } } }),
+        card("b2", "room-e", "needs-permission"),
         // Stale: a report two hours old does not count.
-        card("c1", "m1mini", "running", { telemetry: { seconds: 7200, five_hour: { pct: 99 }, weekly: { pct: 90 } } }),
+        card("c1", "room-a", "running", { telemetry: { seconds: 7200, five_hour: { pct: 99 }, weekly: { pct: 90 } } }),
       ];
       const tok = (rate, a, b, c, d) => ({ per_min_5m: rate, series_per_min: Array.from({ length: 60 }, (_, i) => rate + i),
         series_end: iso(now), last_24h: { in: a, out: b, cache_read: c, cache_write: d } });
-      onRoomStats({ v: 1, room: "sg3", at: iso(now), tokens: tok(41200, 9100000, 1200000, 61000000, 2900000),
+      onRoomStats({ v: 1, room: "room-d", at: iso(now), tokens: tok(41200, 9100000, 1200000, 61000000, 2900000),
         disk: { path: "D:\\git", free_bytes: 392e9, total_bytes: 512e9, worktrees: 38 },
         runners: [{ kind: "claude", resolves: true }, { kind: "ollama", resolves: false }],
         machine: { cpu_pct: 82, mem_used_bytes: 21e9, mem_total_bytes: 32e9, cpu_series_pct: [71, 80, 82] } });
-      // sg4 has shipped nothing but its CPU: tokens and disk are absent.
-      onRoomStats({ v: 1, room: "sg4", at: iso(now), machine: { cpu_pct: 95, cpu_series_pct: [90, 95] } });
-      onRoomStats({ v: 1, room: "m1mini", at: iso(now), tokens: tok(9000, 1000000, 100000, 5000000, 200000) });
+      // room-e has shipped nothing but its CPU: tokens and disk are absent.
+      onRoomStats({ v: 1, room: "room-e", at: iso(now), machine: { cpu_pct: 95, cpu_series_pct: [90, 95] } });
+      onRoomStats({ v: 1, room: "room-a", at: iso(now), tokens: tok(9000, 1000000, 100000, 5000000, 200000) });
       // A version this board does not know is dropped.
-      onRoomStats({ v: 2, room: "sg3", at: iso(now), tokens: tok(1, 1, 1, 1, 1) });
+      onRoomStats({ v: 2, room: "room-d", at: iso(now), tokens: tok(1, 1, 1, 1, 1) });
       const m = document.getElementById("rooms-menu");
       const n = sel => { const e = m.querySelector(sel); return e ? Number(e.dataset.n) : null; };
       const t = name => m.querySelector(`.rtile[data-room="${name}"]`);
@@ -1458,20 +1458,20 @@ async function roomsDashSection(browser, base) {
         return row ? (row.querySelector(".v") ? row.querySelector(".v").textContent : "dash") : "none";
       };
       return {
-        sg3: { run: n('[data-v="r.sg3.run"]'), idle: n('[data-v="r.sg3.idle"]'), need: n('[data-v="r.sg3.need"]'),
-          done: n('[data-v="r.sg3.done"]'), rate: n('[data-v="r.sg3.rate"]'), day: n('[data-v="r.sg3.24h"]'),
-          cache: n('[data-v="r.sg3.cache"]'), five: lim(t("sg3"), "5h"), week: lim(t("sg3"), "week"),
-          seen: /highest seen/.test(t("sg3").textContent), hot: t("sg3").classList.contains("hot"),
-          build: (t("sg3").querySelector(".rd-build") || {}).dataset,
-          via: [...t("sg3").querySelectorAll(".rt-head .chip")].map(c => c.textContent +
+        "room-d": { run: n('[data-v="r.room-d.run"]'), idle: n('[data-v="r.room-d.idle"]'), need: n('[data-v="r.room-d.need"]'),
+          done: n('[data-v="r.room-d.done"]'), rate: n('[data-v="r.room-d.rate"]'), day: n('[data-v="r.room-d.24h"]'),
+          cache: n('[data-v="r.room-d.cache"]'), five: lim(t("room-d"), "5h"), week: lim(t("room-d"), "week"),
+          seen: /highest seen/.test(t("room-d").textContent), hot: t("room-d").classList.contains("hot"),
+          build: (t("room-d").querySelector(".rd-build") || {}).dataset,
+          via: [...t("room-d").querySelectorAll(".rt-head .chip")].map(c => c.textContent +
             (c.classList.contains("warn") ? "+warn" : "") + (/first choice did not answer/.test(c.dataset.tip || "") ? "+tip" : "")),
-          off: t("sg3").querySelectorAll(".rd-kinds .off").length },
-        sg4: { tokDash: !!t("sg4").querySelector(".rd-band.tokens > .rd-row .rd-dash"),
-          diskDash: /disk\s*\u2014/.test(t("sg4").querySelector(".rd-band.machine").textContent),
-          hot: t("sg4").classList.contains("hot"), five: lim(t("sg4"), "5h"),
-          build: !!t("sg4").querySelector(".rd-build"),
-          via: [...t("sg4").querySelectorAll(".rt-head .chip")].map(c => c.textContent + (c.classList.contains("warn") ? "+warn" : "")) },
-        mini: { five: lim(t("m1mini"), "5h"), week: lim(t("m1mini"), "week") },
+          off: t("room-d").querySelectorAll(".rd-kinds .off").length },
+        "room-e": { tokDash: !!t("room-e").querySelector(".rd-band.tokens > .rd-row .rd-dash"),
+          diskDash: /disk\s*\u2014/.test(t("room-e").querySelector(".rd-band.machine").textContent),
+          hot: t("room-e").classList.contains("hot"), five: lim(t("room-e"), "5h"),
+          build: !!t("room-e").querySelector(".rd-build"),
+          via: [...t("room-e").querySelectorAll(".rt-head .chip")].map(c => c.textContent + (c.classList.contains("warn") ? "+warn" : "")) },
+        mini: { five: lim(t("room-a"), "5h"), week: lim(t("room-a"), "week") },
         all: { run: n('[data-v="all.run"]'), idle: n('[data-v="all.idle"]'), need: n('[data-v="all.need"]'),
           done: n('[data-v="all.done"]'), rate: n('[data-v="all.rate"]'), day: n('[data-v="all.24h"]'),
           cache: n('[data-v="all.cache"]'), five: lim(m.querySelector(".rtile.all"), "5h"),
@@ -1480,25 +1480,25 @@ async function roomsDashSection(browser, base) {
       };
     });
     const want = (label, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) fail(`rooms dash: ${label} was ${JSON.stringify(a)}, expected ${JSON.stringify(b)}`); };
-    want("sg3 agents", [got.sg3.run, got.sg3.idle, got.sg3.need, got.sg3.done], [2, 1, 1, 1]);
-    want("sg3 rate", got.sg3.rate, 41200);
-    want("sg3 24h (in + out + cache writes)", got.sg3.day, 9100000 + 1200000 + 2900000);
-    want("sg3 cache reads", got.sg3.cache, 61000000);
-    want("sg3 limits", [got.sg3.five, got.sg3.week], ["64%", "31%"]);
-    if (!got.sg3.seen || !got.all.seen) fail("a limit bar is not labelled highest seen: " + JSON.stringify([got.sg3.seen, got.all.seen]));
-    if (!got.sg3.hot) fail("sg3 has a card asking and its tile does not pulse");
-    if (!got.sg3.build || !/3b578f0/.test(got.sg3.build.tip || "") || !/a91c2de/.test(got.sg3.build.tip || "")) {
-      fail("sg3's not the hub's build chip does not name both builds: " + JSON.stringify(got.sg3.build));
+    want("room-d agents", [got["room-d"].run, got["room-d"].idle, got["room-d"].need, got["room-d"].done], [2, 1, 1, 1]);
+    want("room-d rate", got["room-d"].rate, 41200);
+    want("room-d 24h (in + out + cache writes)", got["room-d"].day, 9100000 + 1200000 + 2900000);
+    want("room-d cache reads", got["room-d"].cache, 61000000);
+    want("room-d limits", [got["room-d"].five, got["room-d"].week], ["64%", "31%"]);
+    if (!got["room-d"].seen || !got.all.seen) fail("a limit bar is not labelled highest seen: " + JSON.stringify([got["room-d"].seen, got.all.seen]));
+    if (!got["room-d"].hot) fail("room-d has a card asking and its tile does not pulse");
+    if (!got["room-d"].build || !/3b578f0/.test(got["room-d"].build.tip || "") || !/a91c2de/.test(got["room-d"].build.tip || "")) {
+      fail("room-d's not the hub's build chip does not name both builds: " + JSON.stringify(got["room-d"].build));
     }
-    want("sg3 runners not resolving", got.sg3.off, 1);
-    // sg3 asks for direct first, and is on ziti because direct did not answer.
-    if (!got.sg3.via.includes("ziti fallback+warn+tip")) fail("sg3 fell back to ziti and its tile does not say so: " + JSON.stringify(got.sg3.via));
-    if (!got.sg4.via.includes("ziti")) fail("sg4 is on its first choice, ziti, and its chip is not plain: " + JSON.stringify(got.sg4.via));
-    if (!got.sg4.tokDash || !got.sg4.diskDash) fail("sg4's absent tokens and disk did not draw dashes: " + JSON.stringify(got.sg4));
-    if (!got.sg4.hot) fail("sg4 is at 95% cpu and waiting and does not pulse");
-    if (got.sg4.build) fail("sg4 runs the hub's build and wears the not the hub's build chip");
-    want("sg4 5h limit", got.sg4.five, "82%");
-    want("m1mini's stale limits", [got.mini.five, got.mini.week], ["dash", "dash"]);
+    want("room-d runners not resolving", got["room-d"].off, 1);
+    // room-d asks for direct first, and is on ziti because direct did not answer.
+    if (!got["room-d"].via.includes("ziti fallback+warn+tip")) fail("room-d fell back to ziti and its tile does not say so: " + JSON.stringify(got["room-d"].via));
+    if (!got["room-e"].via.includes("ziti")) fail("room-e is on its first choice, ziti, and its chip is not plain: " + JSON.stringify(got["room-e"].via));
+    if (!got["room-e"].tokDash || !got["room-e"].diskDash) fail("room-e's absent tokens and disk did not draw dashes: " + JSON.stringify(got.room-e));
+    if (!got["room-e"].hot) fail("room-e is at 95% cpu and waiting and does not pulse");
+    if (got["room-e"].build) fail("room-e runs the hub's build and wears the not the hub's build chip");
+    want("room-e 5h limit", got["room-e"].five, "82%");
+    want("room-a's stale limits", [got.mini.five, got.mini.week], ["dash", "dash"]);
     want("all-rooms agents", [got.all.run, got.all.idle, got.all.need, got.all.done], [4, 1, 2, 1]);
     want("all-rooms rate", got.all.rate, 41200 + 9000);
     want("all-rooms 24h", got.all.day, 13200000 + 1300000);
@@ -1508,11 +1508,11 @@ async function roomsDashSection(browser, base) {
 
     // A number that moved fades from its old value.
     const fade = await p.evaluate(() => {
-      const s = roomStats.sg3;
+      const s = roomStats["room-d"];
       onRoomStats(Object.assign({}, s, { tokens: Object.assign({}, s.tokens, { per_min_5m: 50000 }) }));
-      const e = document.querySelector('[data-v="r.sg3.rate"]');
+      const e = document.querySelector('[data-v="r.room-d.rate"]');
       return { was: e.dataset.was, fading: e.classList.contains("rd-fade"),
-        still: document.querySelector('[data-v="r.sg3.cache"]').classList.contains("rd-fade") };
+        still: document.querySelector('[data-v="r.room-d.cache"]').classList.contains("rd-fade") };
     });
     if (fade.was !== "41k" || !fade.fading || fade.still) fail("the changed rate did not fade from its old value alone: " + JSON.stringify(fade));
 
@@ -1717,15 +1717,15 @@ async function restartMenuSection(browser, base) {
 // answer is "not answering" and no warning. ROOMS_SETUP_SHOTS=<dir> saves the pill and the row.
 async function roomsSetupSection(browser, base) {
   const shots = process.env.ROOMS_SETUP_SHOTS || "";
-  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
   mock.hubMode = true;
-  mock.sggAttached = true;
+  mock.roomGAttached = true;
   const hooksIssue = { answering: true, hooks_missing: 3, hooks_stale: 1, issues: [{ kind: "hooks", text: "atrium claude hooks: 3 missing, 1 stale" }] };
   mock.ALPHA.setup = { answering: true, hooks_missing: 0, issues: [{ kind: "build", text: "runs a different atrium build than the hub (bbbbbbbb, hub aaaaaaaa)" }] };
-  mock.SGG.setup = hooksIssue;
+  mock["ROOM-G"].setup = hooksIssue;
   mock.ALPHA.local = true;
   mock.ALPHA.commit = "aaaaaaa1111111";
-  mock.SGG.commit = "bbbbbbb2222222";
+  mock["ROOM-G"].commit = "bbbbbbb2222222";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   const errors = [];
@@ -1741,9 +1741,9 @@ async function roomsSetupSection(browser, base) {
         : "  " + (c.querySelector(".k") ? c.querySelector(".k").textContent + ": " : "") + (c.querySelector(".tx") ? c.querySelector(".tx").textContent : c.textContent)).join("\n") }; });
     let s = await pill();
     has("the pill is not warning", s.warn, s);
-    has("the tip does not name sgg's hooks", /sgg[^\n]*\n(  [^\n]*\n)*  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
+    has("the tip does not name room-g's hooks", /room-g[^\n]*\n(  [^\n]*\n)*  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
     has("the tip does not name alpha's build", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip), s);
-    has("the tip does not name sgg's commit as stale", /sgg[^\n]*\n(  [^\n]*\n)*  build: runs commit bbbbbbb2, hub aaaaaaa1/.test(s.tip), s);
+    has("the tip does not name room-g's commit as stale", /room-g[^\n]*\n(  [^\n]*\n)*  build: runs commit bbbbbbb2, hub aaaaaaa1/.test(s.tip), s);
     has("the hub's own room is called stale", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip) && !/runs commit aaaaaaa1/.test(s.tip), s);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
@@ -1757,25 +1757,25 @@ async function roomsSetupSection(browser, base) {
         fix: !!l.querySelector("button.setupfix") })),
       text: r.textContent })));
     let r = await rows();
-    const sgg = r.find(x => x.name === "sgg"), alpha = r.find(x => x.name === "alpha");
-    has("sgg's row does not show the hooks problem with a fix", sgg && sgg.lines.length === 1 && sgg.lines[0].kind === "hooks" && sgg.lines[0].fix, sgg);
+    const roomG = r.find(x => x.name === "room-g"), alpha = r.find(x => x.name === "alpha");
+    has("room-g's row does not show the hooks problem with a fix", roomG && roomG.lines.length === 1 && roomG.lines[0].kind === "hooks" && roomG.lines[0].fix, roomG);
     has("alpha's row does not say the build differs, or it has a button", alpha && alpha.lines.length === 1 &&
       alpha.lines[0].kind === "build" && !alpha.lines[0].fix, alpha);
     if (shots) await (await p.$("#room-list")).screenshot({ path: path.join(shots, "row-after.png") });
 
     // The fix names the room and the pill clears with the row.
     mock.setupFixed.length = 0;
-    await p.click('#room-list .setupfix[data-room="sgg"]');
+    await p.click('#room-list .setupfix[data-room="room-g"]');
     await p.waitForFunction(() => !document.querySelector('#room-list .setupfix'), null, { timeout: slow(10000) })
       .catch(() => fail("roomsSetup: the fix button stayed after the fix"));
-    has("the fix did not post for sgg", mock.setupFixed.length === 1 && mock.setupFixed[0] === "sgg", mock.setupFixed);
+    has("the fix did not post for room-g", mock.setupFixed.length === 1 && mock.setupFixed[0] === "room-g", mock.setupFixed);
     s = await pill();
-    has("the tip still names sgg's hooks after the fix", !/sgg\n(  [^\n]*\n)*  hooks:/.test(s.tip), s);
+    has("the tip still names room-g's hooks after the fix", !/room-g\n(  [^\n]*\n)*  hooks:/.test(s.tip), s);
     has("the pill stopped warning while alpha still has a build issue", s.warn, s);
 
     // A room that does not answer is not a setup problem.
     await p.evaluate(() => applyHubRooms([{ name: "alpha", setup: { answering: false, issues: [] } },
-      { name: "sgg" }], null));
+      { name: "room-g" }], null));
     await p.waitForTimeout(300);
     s = await pill();
     has("a room that did not answer made the pill warn", !s.warn && !/alpha/.test(s.tip), s);
@@ -1830,12 +1830,12 @@ async function roomsSetupSection(browser, base) {
   } finally {
     await ctx.close();
     delete mock.ALPHA.setup;
-    delete mock.SGG.setup;
+    delete mock["ROOM-G"].setup;
     delete mock.ALPHA.local;
     delete mock.ALPHA.commit;
-    delete mock.SGG.commit;
+    delete mock["ROOM-G"].commit;
     mock.hubMode = wasHub;
-    mock.sggAttached = wasSgg;
+    mock.roomGAttached = wasRoomG;
   }
   if (errors.length) fail("roomsSetup: the page threw: " + errors.join(" | "));
 }
@@ -1875,18 +1875,18 @@ async function roomsMachineSection(browser, base) {
       const up = s => ({ started_at: iso(now - s * 1000) });
       const send = (room, machine, process) => onRoomStats({ v: 1, room, at: iso(now), process, machine });
       if (mode === "full") {
-        send("sg3", { cpu_pct: 62, cpu_series_pct: gappy, mem_used_bytes: 21e9, mem_total_bytes: 32e9, mem_series_pct: ramp(50, 66) }, up(9999));
-        send("sg4", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86) }, up(9999));
-        send("m1mini", { mem_used_bytes: 8e9, mem_total_bytes: 16e9, mem_series_pct: ramp(45, 50) }, up(9999));
+        send("room-d", { cpu_pct: 62, cpu_series_pct: gappy, mem_used_bytes: 21e9, mem_total_bytes: 32e9, mem_series_pct: ramp(50, 66) }, up(9999));
+        send("room-e", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86) }, up(9999));
+        send("room-a", { mem_used_bytes: 8e9, mem_total_bytes: 16e9, mem_series_pct: ramp(45, 50) }, up(9999));
       } else if (mode === "none") {
-        for (const r of ["sg3", "sg4", "m1mini"]) send(r, undefined, up(9999));
+        for (const r of ["room-d", "room-e", "room-a"]) send(r, undefined, up(9999));
       } else if (mode === "empty") {
-        for (const r of ["sg3", "sg4"]) send(r, {}, up(9999));
-        send("m1mini", undefined, up(9999));
+        for (const r of ["room-d", "room-e"]) send(r, {}, up(9999));
+        send("room-a", undefined, up(9999));
       } else if (mode === "young") {
-        send("sg3", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(5));
-        send("sg4", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86), stale_since: iso(now - 600e3) }, up(9999));
-        send("m1mini", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(9999));
+        send("room-d", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(5));
+        send("room-e", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86), stale_since: iso(now - 600e3) }, up(9999));
+        send("room-a", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(9999));
       }
       const m = document.getElementById("rooms-menu");
       const tile = n => m.querySelector(`.rtile[data-room="${n}"] .rd-band.machine`);
@@ -1894,7 +1894,7 @@ async function roomsMachineSection(browser, base) {
       const rowsOf = t => [...t.querySelectorAll(".rd-rooms .rd-row")].map(r => r.textContent.replace(/\s+/g, " ").trim());
       return {
         hub: roomsHubBuild(),
-        machine: Object.fromEntries(["sg3", "sg4", "m1mini"].map(n => [n, {
+        machine: Object.fromEntries(["room-d", "room-e", "room-a"].map(n => [n, {
           text: tile(n).textContent.replace(/\s+/g, " ").trim(),
           sparks: [...tile(n).querySelectorAll("svg.rd-spark")].map(s => s.getAttribute("class").replace("rd-spark ", "")),
           polylines: [...tile(n).querySelectorAll("svg.rd-spark.cpu polyline")].length,
@@ -1913,7 +1913,7 @@ async function roomsMachineSection(browser, base) {
       fs.mkdirSync(process.env.SPARK_SHOTS, { recursive: true });
       for (const w of [140, 260]) {
         await p.evaluate(w => document.querySelectorAll("#rooms-menu .rtile .rd-band.machine").forEach(b => { b.style.width = w + "px"; }), w);
-        const band = p.locator('#rooms-menu .rtile[data-room="sg3"] .rd-band.machine');
+        const band = p.locator('#rooms-menu .rtile[data-room="room-d"] .rd-band.machine');
         await band.screenshot({ path: path.join(process.env.SPARK_SHOTS, "machine-band-" + w + ".png") });
         await p.evaluate(() => document.querySelectorAll("#rooms-menu .rtile .rd-band.machine").forEach(b => { b.style.width = ""; }));
       }
@@ -1940,22 +1940,22 @@ async function roomsMachineSection(browser, base) {
       }, w);
       if (bad.length) fail("roomsMachine: a sparkline runs past its box at " + w + "px: " + bad.join("; "));
     }
-    const g3 = full.machine.sg3;
-    has("sg3 did not draw a cpu and a mem sparkline", g3.sparks.join(",") === "cpu,mem", g3);
-    has("sg3 cpu and mem figures", /cpu 62%/.test(g3.text) && /mem 66%/.test(g3.text) && /21\/32 GB used/.test(g3.text), g3.text);
+    const g3 = full.machine["room-d"];
+    has("room-d did not draw a cpu and a mem sparkline", g3.sparks.join(",") === "cpu,mem", g3);
+    has("room-d cpu and mem figures", /cpu 62%/.test(g3.text) && /mem 66%/.test(g3.text) && /21\/32 GB used/.test(g3.text), g3.text);
     has("a null sample in the cpu series was not a gap (expected two runs)", g3.polylines === 2, g3);
-    const gapPoints = await p.evaluate(() => [...document.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark.cpu polyline')]
+    const gapPoints = await p.evaluate(() => [...document.querySelectorAll('.rtile[data-room="room-d"] svg.rd-spark.cpu polyline')]
       .map(l => l.getAttribute("points").split(" ").length));
     has("the gap runs do not hold the samples they should", gapPoints[0] === 11 && gapPoints[1] === 26, gapPoints);
     has("a plain null-free series is one polyline", await p.evaluate(() =>
-      document.querySelectorAll('.rtile[data-room="sg4"] svg.rd-spark.cpu polyline').length) === 1);
+      document.querySelectorAll('.rtile[data-room="room-e"] svg.rd-spark.cpu polyline').length) === 1);
     // macOS shape: memory, no CPU, up for a while: unavailable, in words, no dash.
-    const mini = full.machine.m1mini;
-    has("m1mini cpu was not said to be unavailable", /cpu: not available on this room/.test(mini.text) && /mem 50%/.test(mini.text) && /8\/16 GB used/.test(mini.text), mini.text);
-    has("m1mini drew a cpu sparkline", mini.sparks.join(",") === "mem", mini);
+    const mini = full.machine["room-a"];
+    has("room-a cpu was not said to be unavailable", /cpu: not available on this room/.test(mini.text) && /mem 50%/.test(mini.text) && /8\/16 GB used/.test(mini.text), mini.text);
+    has("room-a drew a cpu sparkline", mini.sparks.join(",") === "mem", mini);
     // All-rooms rows: busiest and tightest, from rooms that report. The hub build is unknown in
     // this fixture only if roomsHubBuild is empty, so the rows are checked by content.
-    has("all-rooms busiest row", full.allRows.some(r => /busiest sg3 62%/.test(r)), full.allRows);
+    has("all-rooms busiest row", full.allRows.some(r => /busiest room-d 62%/.test(r)), full.allRows);
     // The demo's rooms are not all on the hub's build, so the warning row is drawn and the memory
     // line gives way to it: three rows and never four.
     has("all-rooms build warning row", full.allRows.some(r => /1 not the hub's build/.test(r)), full.allRows);
@@ -1968,11 +1968,11 @@ async function roomsMachineSection(browser, base) {
       return [...t.content.querySelectorAll(".rd-rooms .rd-row")].map(r => r.textContent.replace(/\s+/g, " ").trim());
     });
     has("with every room on the hub's build the rows are live, busiest and tightest", onHub.length === 3 &&
-      /busiest sg3 62%/.test(onHub[1]) && /tightest sg4 86% mem/.test(onHub[2]), onHub);
+      /busiest room-d 62%/.test(onHub[1]) && /tightest room-e 86% mem/.test(onHub[2]), onHub);
 
     // No machine at all: words, no dash, and the all-rooms tile drops its busiest and tightest rows.
     const none = await feed("none");
-    for (const n of ["sg3", "sg4", "m1mini"]) {
+    for (const n of ["room-d", "room-e", "room-a"]) {
       has(n + " with no machine did not say the build does not report it", /cpu and memory: this room's build does not report them/.test(none.machine[n].text), none.machine[n].text);
       has(n + " with no machine drew a dash or a sparkline", !none.machine[n].dash && !none.machine[n].sparks.length, none.machine[n]);
     }
@@ -1981,16 +1981,16 @@ async function roomsMachineSection(browser, base) {
 
     // An empty machine object: waiting for the first reading.
     const empty = await feed("empty");
-    has("an empty machine did not say it waits for the first reading", /waiting for the first reading/.test(empty.machine.sg3.text) && !empty.machine.sg3.dash, empty.machine.sg3);
-    has("a room with no machine beside an empty one lost its words", /does not report/.test(empty.machine.m1mini.text));
+    has("an empty machine did not say it waits for the first reading", /waiting for the first reading/.test(empty.machine["room-d"].text) && !empty.machine["room-d"].dash, empty.machine["room-d"]);
+    has("a room with no machine beside an empty one lost its words", /does not report/.test(empty.machine["room-a"].text));
 
     // Young room: cpu is still due. Stale sample: the time, and dimmed figures.
     const young = await feed("young");
-    has("a room started seconds ago said cpu is unavailable", /cpu: waiting for the second reading/.test(young.machine.sg3.text), young.machine.sg3.text);
-    has("stale_since was not drawn as a time", /stale since \d\d:\d\d/.test(young.machine.sg4.text), young.machine.sg4.text);
+    has("a room started seconds ago said cpu is unavailable", /cpu: waiting for the second reading/.test(young.machine["room-d"].text), young.machine["room-d"].text);
+    has("stale_since was not drawn as a time", /stale since \d\d:\d\d/.test(young.machine["room-e"].text), young.machine["room-e"].text);
     has("stale figures are not dimmed", await p.evaluate(() =>
-      Number(getComputedStyle(document.querySelector('.rtile[data-room="sg4"] .rd-stale')).opacity) < 0.9));
-    has("a stale room was named busiest", !young.allRows.some(r => /busiest sg4/.test(r)), young.allRows);
+      Number(getComputedStyle(document.querySelector('.rtile[data-room="room-e"] .rd-stale')).opacity) < 0.9));
+    has("a stale room was named busiest", !young.allRows.some(r => /busiest room-e/.test(r)), young.allRows);
 
     // The hub build unknown: the build row is dropped and nothing draws a dash. Known: it is a number.
     const hub = await p.evaluate(() => {
@@ -2025,7 +2025,7 @@ async function roomsMachineSection(browser, base) {
         .map(e => e.className && e.className.baseVal === undefined ? e.className : e.tagName).slice(0, 5);
       return { right: m.getBoundingClientRect().right, sw: m.scrollWidth, cw: m.clientWidth, wide,
         doc: document.documentElement.scrollWidth,
-        sparks: m.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark').length };
+        sparks: m.querySelectorAll('.rtile[data-room="room-d"] svg.rd-spark').length };
     });
     has("at 390x844 the rooms menu overflows", phone.right <= 390 && phone.sw <= phone.cw + 1 && !phone.wide.length && phone.doc <= 390 && phone.sparks >= 2, phone);
     await feed("none");
@@ -2256,7 +2256,7 @@ async function recogniserRepoSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
   const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-  const zd = { id: "zd", label: "zendesk ticket", pattern: "^https://z/(?P<num>\\d+)$", rank: 50, enabled: true, room: "sgg",
+  const zd = { id: "zd", label: "zendesk ticket", pattern: "^https://z/(?P<num>\\d+)$", rank: 50, enabled: true, room: "room-g",
     kind: "zendesk", title: "zendesk-{num}", tags: "zendesk", cwd: "", prompt: "read it", branch: "zendesk-{num}",
     window: "", theme: "", fetch: "", fetch_args: [], fetch_cwd: "", default_repo: "github.com/openziti/ziti" };
   const puts = [];
@@ -2270,7 +2270,7 @@ async function recogniserRepoSection(browser, base) {
     p.on("pageerror", e => errors.push(e.message));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof editRecogniser === "function" && typeof renderRecognisers === "function", null, { timeout: slow(15000) });
-    await p.evaluate(async () => { await renderRecognisers(); editRecogniser("zd", "sgg"); });
+    await p.evaluate(async () => { await renderRecognisers(); editRecogniser("zd", "room-g"); });
     await p.waitForFunction(() => document.getElementById("recogniser").open, null, { timeout: slow(5000) })
       .catch(() => fail("recogniserRepo: the editor did not open"));
     if (await p.inputValue("#r-default-repo") !== "github.com/openziti/ziti") fail("recogniserRepo: the default repo was not read in");
@@ -2352,10 +2352,10 @@ async function roomsLoginSection(browser, base) {
       const runners = (claude, codex) => [
         Object.assign({ kind: "claude", resolves: true }, claude), Object.assign({ kind: "codex", resolves: true }, codex)];
       const send = (room, rs, al) => onRoomStats({ v: 1, room, at: iso(now), runners: rs, alert: al });
-      send("sg3", runners({ login: "in", login_expires_at: iso(now + 20 * 86400000), login_renews: true }, { login: "in" }));
-      send("sg4", runners({ login: "in", login_expires_at: iso(now + 2 * 86400000) }, { login: "in" }),
+      send("room-d", runners({ login: "in", login_expires_at: iso(now + 20 * 86400000), login_renews: true }, { login: "in" }));
+      send("room-e", runners({ login: "in", login_expires_at: iso(now + 2 * 86400000) }, { login: "in" }),
         { logins_due: [{ kind: "claude", state: "expiring", expires_at: iso(now + 2 * 86400000), fix: "claude auth login" }] });
-      send("m1mini", runners({ login: "out" }, { login: "in" }), { logins_due: [{ kind: "claude", state: "out", fix: "claude auth login" }] });
+      send("room-a", runners({ login: "out" }, { login: "in" }), { logins_due: [{ kind: "claude", state: "out", fix: "claude auth login" }] });
     });
     await p.clock.runFor(300);
     const read = () => p.evaluate(() => {
@@ -2366,21 +2366,21 @@ async function roomsLoginSection(browser, base) {
         return b ? { text: b.textContent, tip: b.dataset.tip, copy: c ? c.dataset.copy : "" } : null;
       };
       const gr = document.createElement("div");
-      gr.innerHTML = growlFull({ id: "sg4|runner-login|x", room: "sg4", reason: "runner-login", title: "sg4: a runner needs a login",
-        body: "claude login expires soon. On sg4 run: claude auth login", subject: "claude auth login", state: "open" });
+      gr.innerHTML = growlFull({ id: "room-e|runner-login|x", room: "room-e", reason: "runner-login", title: "room-e: a runner needs a login",
+        body: "claude login expires soon. On room-e run: claude auth login", subject: "claude auth login", state: "open" });
       const grCopy = gr.querySelector(".gr-fix button.copybit");
       const kind = room => [...m.querySelectorAll(`.rtile[data-room="${room}"] .rd-kinds span`)].map(e => e.dataset.tip);
-      return { sg3: badge("sg3"), sg4: badge("sg4"), m1: badge("m1mini"), kinds: kind("sg4").concat(kind("m1mini")),
+      return { "room-d": badge("room-d"), "room-e": badge("room-e"), m1: badge("room-a"), kinds: kind("room-e").concat(kind("room-a")),
         grCopy: grCopy ? grCopy.dataset.copy : "", grCode: (gr.querySelector(".gr-fix code") || {}).textContent || "",
         tiles: Object.fromEntries([...m.querySelectorAll(".rtile[data-room]")].map(t => [t.dataset.room, t.scrollWidth - t.clientWidth])),
         sw: m.scrollWidth, cw: m.clientWidth, doc: document.documentElement.scrollWidth };
     });
     const d = await read();
     const has = (label, ok, extra) => { if (!ok) fail("roomsLogin: " + label + ": " + JSON.stringify(extra || d)); };
-    has("a healthy room drew an alert", d.sg3 === null);
-    has("the expiring login was not named", d.sg4 && d.sg4.text === "login needed" &&
-      /claude login expires in 2 days\. On sg4 run: claude auth login/.test(d.sg4.tip) && d.sg4.copy === "claude auth login");
-    has("the logged out runner was not named", d.m1 && /claude is not logged in\. On m1mini run: claude auth login/.test(d.m1.tip) &&
+    has("a healthy room drew an alert", d["room-d"] === null);
+    has("the expiring login was not named", d["room-e"] && d["room-e"].text === "login needed" &&
+      /claude login expires in 2 days\. On room-e run: claude auth login/.test(d["room-e"].tip) && d["room-e"].copy === "claude auth login");
+    has("the logged out runner was not named", d.m1 && /claude is not logged in\. On room-a run: claude auth login/.test(d.m1.tip) &&
       d.m1.copy === "claude auth login");
     has("the growler has no copy beside its command", d.grCopy === "claude auth login" && d.grCode === "claude auth login");
     has("the runner chip lost its login line", d.kinds.some(k => /claude\. logged in, token expires/.test(k)) &&
@@ -2393,7 +2393,7 @@ async function roomsLoginSection(browser, base) {
     await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
     await p.clock.runFor(300);
     const phone = await read();
-    has("at 390px a room with an alert overflows", phone.tiles.sg4 <= 1 && phone.tiles.m1mini <= 1 && phone.doc <= 390, phone);
+    has("at 390px a room with an alert overflows", phone.tiles["room-e"] <= 1 && phone.tiles["room-a"] <= 1 && phone.doc <= 390, phone);
     if (shots) await p.screenshot({ path: path.join(shots, "runner-login-390.png") });
     if (errors.length) fail("roomsLogin: the page threw: " + errors.join(" | "));
   } finally {
@@ -2412,14 +2412,14 @@ async function roomsThemesSection(browser, base) {
   mock.tasksMode = "worn";
   mock.wornTasks = [Object.assign({}, T1, { id: "rt-docprev", status: "needs-input", supervised: true, pinned: true,
     theme: "", repo: "", display_title: "docpreview/dashboard-fixes", worktree: "D:/worktrees/github/openziti-test-kitchen/docpreview/aug-revisions" })];
-  mock.cardColorsMock = { default: "", repos: Object.assign({}, was.colors.repos, { "github/openziti-test-kitchen/docpreview": "clint-test" }) };
+  mock.cardColorsMock = { default: "", repos: Object.assign({}, was.colors.repos, { "github/openziti-test-kitchen/docpreview": "operator-test" }) };
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.route(/\/v1\/themes$/, r => r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ themes: lent ? [{ name: "clint-test", palette: pal }] : [] }) }));
+      body: JSON.stringify({ themes: lent ? [{ name: "operator-test", palette: pal }] : [] }) }));
     const streams0 = hubStreams.length;
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.click('.tab[data-view="terms"]');
@@ -2428,7 +2428,7 @@ async function roomsThemesSection(browser, base) {
     await untilTrue(() => hubStreams.length > streams0, 5000, "the hub event stream", 50).catch(() => {});
     if (hubStreams.length <= streams0) fail(tag + "the page never opened its hub event stream");
     if (await p.evaluate(sel => document.querySelector(sel).classList.contains("worn"), row)) {
-      fail(tag + "the row wore clint-test before any room lent it");
+      fail(tag + "the row wore operator-test before any room lent it");
     }
     lent = true;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });

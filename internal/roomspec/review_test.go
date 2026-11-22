@@ -66,21 +66,21 @@ func TestRootGrantsAreNotWiderThanNeeded(t *testing.T) {
 	if len(l) != 1 || l[0] != "sudo chown localai: /srv/localai" {
 		t.Errorf("%q", l)
 	}
-	w := adapterFor(t, Windows).GrantExamine(Grant{Account: `SG3\localai`, Root: "V:/localai", RootNotWritable: true})
-	if len(w) != 1 || !strings.HasSuffix(w[0], `'SG3\localai:(OI)(CI)M'`) || strings.Contains(w[0], ")F") {
+	w := adapterFor(t, Windows).GrantExamine(Grant{Account: `ROOM-D\localai`, Root: "V:/localai", RootNotWritable: true})
+	if len(w) != 1 || !strings.HasSuffix(w[0], `'ROOM-D\localai:(OI)(CI)M'`) || strings.Contains(w[0], ")F") {
 		t.Errorf("%q", w)
 	}
-	w = adapterFor(t, Windows).GrantExamine(Grant{Account: `SG3\localai`, Root: "V:/a/localai", Bad: []string{"V:/a"}, Missing: []string{"V:/a"}})
+	w = adapterFor(t, Windows).GrantExamine(Grant{Account: `ROOM-D\localai`, Root: "V:/a/localai", Bad: []string{"V:/a"}, Missing: []string{"V:/a"}})
 	if !strings.Contains(w[0], "-Force") {
 		t.Errorf("%q", w)
 	}
 }
 
 func TestSameAccountChecksTheDomainWhenBothHaveOne(t *testing.T) {
-	if sameAccount(`OTHER\localai`, `SG3\localai`) {
+	if sameAccount(`OTHER\localai`, `ROOM-D\localai`) {
 		t.Error("another domain")
 	}
-	if !sameAccount(`SG3\localai`, "localai") || !sameAccount("localai", `SG3\localai`) || !sameAccount(`sg3\LocalAI`, `SG3\localai`) {
+	if !sameAccount(`ROOM-D\localai`, "localai") || !sameAccount("localai", `ROOM-D\localai`) || !sameAccount(`room-d\LocalAI`, `ROOM-D\localai`) {
 		t.Error("a bare name and a case difference match")
 	}
 }
@@ -94,7 +94,7 @@ func TestEditsKeepTheFilesOwnLineEndingAndBOM(t *testing.T) {
 		{"new file takes the OS's", "", "cache=V:/localai/cache/npm\r\n"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			m := NewMemFS(winHome, `SG3\localai`)
+			m := NewMemFS(winHome, `ROOM-D\localai`)
 			m.Dir("V:/")
 			m.Dir("V:/localai")
 			if c.in != "" {
@@ -119,7 +119,7 @@ func TestEditsKeepTheFilesOwnLineEndingAndBOM(t *testing.T) {
 
 func TestUTF16FileIsRefusedWithAWarnAndNotTouched(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec+"caches: [npm, pip]\n")
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("V:/")
 	m.Dir("V:/localai")
 	utf16 := "\xff\xfec\x00a\x00c\x00h\x00e\x00=\x00x\x00"
@@ -149,7 +149,7 @@ func TestIniSectionWithAComment(t *testing.T) {
 func TestRerunDoesNotRewriteTheLockForTheTimeAlone(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec)
 	a := adapterFor(t, Windows)
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("V:/")
 	m.Dir("C:/Users/localai/.claude")
 	host := Host{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}}
@@ -163,7 +163,7 @@ func TestRerunDoesNotRewriteTheLockForTheTimeAlone(t *testing.T) {
 }
 
 func TestInstallRefusesPathsOutsideThePack(t *testing.T) {
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	src := &PackSource{Commit: "c", Files: map[string][]byte{
 		"agents/ok.md": []byte("x"), "../evil": []byte("x"), "/abs": []byte("x"), "a/../../b": []byte("x"), `agents\x.md`: []byte("x"), "C:/x": []byte("x"),
 	}}

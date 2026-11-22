@@ -432,12 +432,12 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 	// reconciler and reach for an upstream this test does not stand up.
 	f := newFeeds(nil)
 	merged := &sub{room: "", ch: make(chan wire.Event, 4)}
-	scoped := &sub{room: "sg4", ch: make(chan wire.Event, 4)}
+	scoped := &sub{room: "room-e", ch: make(chan wire.Event, 4)}
 	f.subs[merged] = struct{}{}
 	f.subs[scoped] = struct{}{}
 
-	f.emit(wire.Event{Room: "sg4", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
-	f.emit(wire.Event{Room: "sg4", Kind: "task", Data: []byte(`{"id":"c1"}`)})
+	f.emit(wire.Event{Room: "room-e", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
+	f.emit(wire.Event{Room: "room-e", Kind: "task", Data: []byte(`{"id":"c1"}`)})
 
 	// The scoped board hears both, in order.
 	if e := <-scoped.ch; e.Kind != "going-down" {
@@ -468,9 +468,9 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 // lists do, so two rooms' cards with one id are two cards.
 func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
 	data := []byte(`{"task_id":"c1","output":5}`)
-	a := fields(t, tagEvent(wire.Event{Room: "sg4", Kind: "usage", Data: data}))
-	b := fields(t, tagEvent(wire.Event{Room: "sg5", Kind: "usage", Data: data}))
-	if a["task_id"] != "sg4~c1" || a["room"] != "sg4" || b["task_id"] != "sg5~c1" || b["room"] != "sg5" {
+	a := fields(t, tagEvent(wire.Event{Room: "room-e", Kind: "usage", Data: data}))
+	b := fields(t, tagEvent(wire.Event{Room: "room-f", Kind: "usage", Data: data}))
+	if a["task_id"] != "room-e~c1" || a["room"] != "room-e" || b["task_id"] != "room-f~c1" || b["room"] != "room-f" {
 		t.Fatalf("usage events came out %v and %v", a, b)
 	}
 }
@@ -478,18 +478,18 @@ func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
 // A room's own tagging table has to agree with the list one, because the board
 // builds a url from whichever it saw last.
 func TestEventTaggingMatchesTheListTagging(t *testing.T) {
-	e := wire.Event{Room: "sg4", Kind: "permission", Data: []byte(`{"id":"p1","task_id":"c1"}`)}
+	e := wire.Event{Room: "room-e", Kind: "permission", Data: []byte(`{"id":"p1","task_id":"c1"}`)}
 	obj := fields(t, tagEvent(e))
-	if obj["id"] != "sg4~p1" || obj["task_id"] != "sg4~c1" {
+	if obj["id"] != "room-e~p1" || obj["task_id"] != "room-e~c1" {
 		t.Fatalf("a permission came out %v", obj)
 	}
-	if obj["room"] != "sg4" {
+	if obj["room"] != "room-e" {
 		t.Errorf("a permission lost its room: %v", obj)
 	}
 
 	// An event with no ids still says where it came from.
-	plain := fields(t, tagEvent(wire.Event{Room: "sg4", Kind: "settings", Data: []byte(`{"auto":true}`)}))
-	if plain["room"] != "sg4" || plain["auto"] != true {
+	plain := fields(t, tagEvent(wire.Event{Room: "room-e", Kind: "settings", Data: []byte(`{"auto":true}`)}))
+	if plain["room"] != "room-e" || plain["auto"] != true {
 		t.Fatalf("a payload with no ids was mangled: %v", plain)
 	}
 }
@@ -497,7 +497,7 @@ func TestEventTaggingMatchesTheListTagging(t *testing.T) {
 // A `null` payload decodes into a nil map without an error. Writing the room
 // onto it panicked the stream, eleven times on the live hub.
 func TestANullEventPassesThroughUntagged(t *testing.T) {
-	e := wire.Event{Room: "sg4", Kind: "settings", Data: []byte(`null`)}
+	e := wire.Event{Room: "room-e", Kind: "settings", Data: []byte(`null`)}
 	if got := string(tagEvent(e)); got != "null" {
 		t.Fatalf("a null payload came out %q", got)
 	}

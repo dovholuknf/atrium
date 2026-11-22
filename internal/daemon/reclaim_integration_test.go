@@ -184,7 +184,7 @@ func TestCullKeepsAScratchDirectoryThatHoldsOtherFiles(t *testing.T) {
 	}
 }
 
-// H4 and the clint-started rule: none of these is ever reclaimed, and nothing on disk moves.
+// H4 and the operator-started rule: none of these is ever reclaimed, and nothing on disk moves.
 func TestCullNeverReclaimsWhatMustStay(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")

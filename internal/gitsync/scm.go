@@ -123,7 +123,6 @@ type SCM struct {
 	// From, when set, is where a room attached to a hub clones from instead of the forge: the hub's copy of the
 	// repository, through a loopback to the link (HubLoopback). done closes it. The clone's origin is then set to the
 	// forge's https URL, so the origin check reads it as any other clone, and the room never fetched from the forge.
-	// See docs/rnd/scm-forge-design.md, Built.
 	From func(ctx context.Context, r Ref) (src string, done func(), err error)
 
 	// source is the URL git clones from. It is unexported, so only this package's tests set it:

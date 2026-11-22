@@ -8,7 +8,7 @@ import "testing"
 // every collect does not move them.
 func TestAStepKeepsItsTimesAcrossRederivations(t *testing.T) {
 	s := open(t)
-	s.PutItem(onWork("a1", "sg4", "c1", "f-thing", 1))
+	s.PutItem(onWork("a1", "room-e", "c1", "f-thing", 1))
 	row := WorkStepRow{BacklogID: "f-thing", Step: "landed", State: StepActive, StartedAt: "2026-10-15T10:00:00Z"}
 	if err := s.PutWorkStep(row); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestAStepKeepsItsTimesAcrossRederivations(t *testing.T) {
 // A STEP'S TAG IS STORED (migration 0027), and the branch lookups the record route uses see an item's branch.
 func TestAStepKeepsItsTagAndABranchBelongsToOneItem(t *testing.T) {
 	s := open(t)
-	s.PutItem(onWork("a1", "sg4", "c1", "f-thing", 1))
+	s.PutItem(onWork("a1", "room-e", "c1", "f-thing", 1))
 	if err := s.PutWorkStep(WorkStepRow{BacklogID: "f-thing", Step: "tested", State: StepDone, Tag: TagReported}); err != nil {
 		t.Fatal(err)
 	}

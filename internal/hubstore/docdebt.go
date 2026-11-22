@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// The impact block a `docs` backlog item carries as its body. See docs/rnd/doc-debt-from-features.md section 2.4.
+// The impact block a `docs` backlog item carries as its body.
 // The `stale:` lines are the machine-readable part: they give the meter its page count and the doc worker its list.
 
 // DocDebtStale is one page a feature left wrong, and what it says wrong.

@@ -65,3 +65,6 @@ mercurius.yaml
 /mocks/
 
 shots/
+
+# local scratch for dev scripts: worktrees, demo trees, node_modules
+/.uncommitted/

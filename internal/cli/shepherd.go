@@ -14,7 +14,7 @@ import (
 
 // `atrium shepherd run <item>`: a program that takes one backlog item from launch to a held packet, spending no model
 // tokens of its own. The logic is internal/shepherd, and this is the wiring: the real hub, exec and disk behind the
-// interfaces the machine runs on. See docs/rnd/script-minion.md and docs/changes/rnd-shepherd-core.md.
+// interfaces the machine runs on. See docs/changes/rnd-shepherd-core.md.
 //
 // HIDDEN FROM --help until accept-land lands: a shepherd that holds a packet and has no verb to accept it is half a
 // command, and a person who found it would be left holding the packet.

@@ -11,8 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
-// atrium_record: a worker saying what a test run found, pinned to the commit it ran on. See work_record.go for the rules and
-// docs/rnd/item-lifecycle-design.md section 4.
+// atrium_record: a worker saying what a test run found, pinned to the commit it ran on. See work_record.go for the rules.
 //
 // THERE IS NO SHA FIELD, AND NO KIND BUT `test`. The room reads the commit from the card's own worktree at the moment of the
 // call, with a dirty flag, and the hub refuses a worktree on another branch than the item's. A reported test is shown on the

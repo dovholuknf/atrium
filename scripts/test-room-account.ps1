@@ -9,8 +9,8 @@
 # a fake ssh that answers the account probe with a fixture.
 # What it cannot run: Windows PowerShell 5.1, a real token or UAC, a real Windows or Linux target, or `sudo -n -l` on a machine
 # that has passwordless sudo. Those answers are fixtures taken from what those systems print. ONE whoami list is real:
-# scripts/fixtures/whoami-groups-sg4-claude-nonadmin.csv, captured on sg4 from a non-admin shell of SG4\claude (an ordinary
-# account, NOT a filtered admin token, and real apart from sg4's machine SID, which is a placeholder). The others (a filtered admin, an elevated one, a German one, a domain admin) are written
+# scripts/fixtures/whoami-groups-room-e-claude-nonadmin.csv, captured on room-e from a non-admin shell of ROOM-E\claude (an ordinary
+# account, NOT a filtered admin token, and real apart from room-e's machine SID, which is a placeholder). The others (a filtered admin, an elevated one, a German one, a domain admin) are written
 # in the documented format of `whoami /groups /fo csv /nh` (name, type, SID, attributes), with the integrity label's empty
 # attribute column as the capture has it, and were NOT captured. The German attribute text is from memory. The probe reads
 # only the SID column, which is the same on every language.
@@ -36,9 +36,9 @@ New-Item -ItemType Directory -Force $tmp | Out-Null
 
 try {
 
-$me = [pscustomobject]@{ User = 'clint'; Host = 'SG4' }
+$me = [pscustomobject]@{ User = 'operator'; Host = 'ROOM-E' }
 $std = 'S-1-1-0;S-1-5-32-545;S-1-5-14;S-1-5-4;S-1-2-1;S-1-5-11;S-1-5-15;S-1-5-113;S-1-2-0;S-1-5-64-10;S-1-16-8192'
-function Win { param([string] $user = 'SG3\claude', [string] $elev = 'False', [string] $sids = $std, [string] $h = 'SG3', [string] $docker = '0') KV "user=$user`nhost=$h`nelevated=$elev`nsids=$sids`ndocker=$docker" }
+function Win { param([string] $user = 'ROOM-D\claude', [string] $elev = 'False', [string] $sids = $std, [string] $h = 'ROOM-D', [string] $docker = '0') KV "user=$user`nhost=$h`nelevated=$elev`nsids=$sids`ndocker=$docker" }
 function Why { param($kv, [string] $kind, [string[]] $ops = @(), [bool] $same = $false) (Get-AccountVerdict $kv $kind $me $ops $same).Reasons }
 
 # ── Windows: the token and the groups, by SID ───────────────────────────────
@@ -49,8 +49,8 @@ Check 'win: Administrators and an elevated token' (Why (Win -elev 'True' -sids "
 # whoami gives. WindowsIdentity.Groups would leave the 544 out (see the whoami section below), which is why it is not the source.
 Check 'win: deny-only Administrators in a filtered token is a member, said with the filtered token' (Why (Win -elev 'False' -sids "$std;S-1-5-32-544") 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
 Check 'win: an elevated token alone is named' (Why (Win -elev 'True') 'windows') @('the token is elevated')
-Check 'win: Domain Admins by RID' (Why (Win -user 'CORP\clint' -sids "$std;S-1-5-21-111-222-333-512") 'windows') @('is in Domain Admins (RID 512)')
-Check 'win: Enterprise Admins by RID' (Why (Win -user 'CORP\clint' -sids "$std;S-1-5-21-111-222-333-519") 'windows') @('is in Enterprise Admins (RID 519)')
+Check 'win: Domain Admins by RID' (Why (Win -user 'CORP\operator' -sids "$std;S-1-5-21-111-222-333-512") 'windows') @('is in Domain Admins (RID 512)')
+Check 'win: Enterprise Admins by RID' (Why (Win -user 'CORP\operator' -sids "$std;S-1-5-21-111-222-333-519") 'windows') @('is in Enterprise Admins (RID 519)')
 Check 'win: a RID that only ends in 512 is not Domain Admins' (Why (Win -sids "$std;S-1-5-21-111-222-333-5120;S-1-5-21-111-222-333-1512") 'windows').Count 0
 Check 'win: a domain group NAMED Administrators has another SID and is not it' (Why (Win -sids "$std;S-1-5-21-111-222-333-1105") 'windows').Count 0
 # A German machine: the group is VORDEFINIERT\Administratoren and the name would never match "Administrators". The SID does.
@@ -61,8 +61,8 @@ Check 'win: no user in the answer is unknown' (Get-AccountVerdict @{} 'windows' 
 Check 'win: Backup Operators by SID' (Why (Win -sids "$std;S-1-5-32-551") 'windows') @('is in Backup Operators (S-1-5-32-551, can read every file)')
 Check 'win: Hyper-V Administrators by SID' (Why (Win -sids "$std;S-1-5-32-578") 'windows') @('is in Hyper-V Administrators (S-1-5-32-578, can mount any disk)')
 Check 'win: 5510 and 1578 are not those groups' (Why (Win -sids "$std;S-1-5-32-5510;S-1-5-21-1-2-3-578") 'windows').Count 0
-Check 'win: a user and no group list is unknown, never a clean ok' (Get-AccountVerdict (KV "user=SG3\claude`nhost=SG3`nelevated=False`nsids=") 'windows' $me).Known $false
-Check 'win: ... and the step says so' (Get-AccountResult @('user=SG3\claude', 'elevated=False', 'sids=') 0 'windows' 'sg3' $me @() $false $false $false).Detail 'could not tell who the room runs as on sg3 (the probe listed no groups). see docs/room-accounts.md'
+Check 'win: a user and no group list is unknown, never a clean ok' (Get-AccountVerdict (KV "user=ROOM-D\claude`nhost=ROOM-D`nelevated=False`nsids=") 'windows' $me).Known $false
+Check 'win: ... and the step says so' (Get-AccountResult @('user=ROOM-D\claude', 'elevated=False', 'sids=') 0 'windows' 'room-d' $me @() $false $false $false).Detail 'could not tell who the room runs as on room-d (the probe listed no groups). see docs/room-accounts.md'
 
 # ── the groups as whoami /groups /fo csv /nh prints them (documented format, see the note at the end of the file) ──
 # Column 3 is the SID. Column 4 is the attributes and is LOCALIZED, which is why it is never read.
@@ -122,29 +122,29 @@ $gs = Read-ProbeSids $whoamiGerman
 Check 'whoami: a German filtered token is matched by SID, not by VORDEFINIERT\Administratoren' (Why (Win -user 'PC1\Hans' -h 'PC1' -elev 'False' -sids ($gs -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
 $ds = Read-ProbeSids $whoamiDomain
 Check 'whoami: a group name with a comma does not break the columns' ($ds -contains 'S-1-5-21-111-222-333-1105') $true
-Check 'whoami: a domain admin filtered token says Administrators, Domain Admins and Enterprise Admins' (Why (Win -user 'CORP\clint' -elev 'False' -sids ($ds -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token', 'is in Domain Admins (RID 512)', 'is in Enterprise Admins (RID 519)')
-# The real capture, from sg4: an ordinary account in a non-admin shell.
-$real = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/whoami-groups-sg4-claude-nonadmin.csv'))
+Check 'whoami: a domain admin filtered token says Administrators, Domain Admins and Enterprise Admins' (Why (Win -user 'CORP\operator' -elev 'False' -sids ($ds -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token', 'is in Domain Admins (RID 512)', 'is in Enterprise Admins (RID 519)')
+# The real capture, from room-e: an ordinary account in a non-admin shell.
+$real = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/whoami-groups-room-e-claude-nonadmin.csv'))
 $rf = Read-ProbeFacts $real
 $rl = $rf.Sids
-Check 'real capture (sg4, SG4\claude, non-admin): 13 rows, 13 SIDs read, docker-users found by name' @($real.Count, $rl.Count, $rf.Docker) @(13, 13, '1')
+Check 'real capture (room-e, ROOM-E\claude, non-admin): 13 rows, 13 SIDs read, docker-users found by name' @($real.Count, $rl.Count, $rf.Docker) @(13, 13, '1')
 Check 'real capture: the label row with an empty attribute column and the machine SID groups are read' @(($rl -contains 'S-1-16-8192'), ($rl -contains 'S-1-5-21-1111111111-2222222222-3333333333-1002')) @($true, $true)
-Check 'real capture: it is in docker-users, so it WARNS by name, and nothing else (RIDs 1002 and 1007 are not 512 or 519)' (Why (Win -user 'SG4\claude' -h 'SG4' -elev 'False' -sids ($rl -join ';') -docker $rf.Docker) 'windows') @('is in the group docker-users (Docker Desktop reaches host files)')
-Check 'real capture: and the step is a warn naming docker-users' ((Get-AccountResult @('user=SG4\claude', 'host=SG4', 'elevated=False', "sids=$($rl -join ';')", "docker=$($rf.Docker)") 0 'windows' 'sg4' $me @() $false $false $false).Detail -like 'SG4\claude is in the group docker-users (Docker Desktop reaches host files). an agent in this room*' ) $true
+Check 'real capture: it is in docker-users, so it WARNS by name, and nothing else (RIDs 1002 and 1007 are not 512 or 519)' (Why (Win -user 'ROOM-E\claude' -h 'ROOM-E' -elev 'False' -sids ($rl -join ';') -docker $rf.Docker) 'windows') @('is in the group docker-users (Docker Desktop reaches host files)')
+Check 'real capture: and the step is a warn naming docker-users' ((Get-AccountResult @('user=ROOM-E\claude', 'host=ROOM-E', 'elevated=False', "sids=$($rl -join ';')", "docker=$($rf.Docker)") 0 'windows' 'room-e' $me @() $false $false $false).Detail -like 'ROOM-E\claude is in the group docker-users (Docker Desktop reaches host files). an agent in this room*' ) $true
 # The ordinary non-admin account: the real capture WITHOUT its docker-users row (derived here, the file is untouched).
 $pf = Read-ProbeFacts @($real | Where-Object { $_ -notmatch 'docker-users' })
 Check 'plain non-admin (the capture minus its docker-users row): 12 SIDs, no docker-users' @($pf.Sids.Count, $pf.Docker) @(12, '0')
-Check 'plain non-admin: no admin group, so it reads ok' (Why (Win -user 'SG4\claude' -h 'SG4' -elev 'False' -sids ($pf.Sids -join ';') -docker $pf.Docker) 'windows').Count 0
-Check 'plain non-admin: and the step says the clean ok' (Get-AccountResult @('user=SG4\claude', 'host=SG4', 'elevated=False', "sids=$($pf.Sids -join ';')", "docker=$($pf.Docker)") 0 'windows' 'sg4' $me @() $false $false $false).Detail 'SG4\claude: not elevated, not in an admin group, not the operator''s account'
+Check 'plain non-admin: no admin group, so it reads ok' (Why (Win -user 'ROOM-E\claude' -h 'ROOM-E' -elev 'False' -sids ($pf.Sids -join ';') -docker $pf.Docker) 'windows').Count 0
+Check 'plain non-admin: and the step says the clean ok' (Get-AccountResult @('user=ROOM-E\claude', 'host=ROOM-E', 'elevated=False', "sids=$($pf.Sids -join ';')", "docker=$($pf.Docker)") 0 'windows' 'room-e' $me @() $false $false $false).Detail 'ROOM-E\claude: not elevated, not in an admin group, not the operator''s account'
 Check 'docker-users: any machine prefix and any case, never a longer or shorter name' @((Read-ProbeFacts @('"PC\Docker-Users","Alias","S-1-5-21-1-2-3-1002","x"', '"Everyone","Well-known group","S-1-1-0","x"')).Docker, (Read-ProbeFacts @('"PC\docker-users2","Alias","S-1-5-21-1-2-3-1002","x"', '"Everyone","Well-known group","S-1-1-0","x"')).Docker, (Read-ProbeFacts @('"PC\mydocker-users","Alias","S-1-5-21-1-2-3-1002","x"', '"Everyone","Well-known group","S-1-1-0","x"')).Docker) @('1', '0', '0')
 Check 'docker-users: the verdict says it once, beside other reasons' (Why (Win -elev 'True' -sids "$std;S-1-5-32-544" -docker '1') 'windows') @('is in Administrators (S-1-5-32-544)', 'the token is elevated', 'is in the group docker-users (Docker Desktop reaches host files)')
 Check 'whoami: the standard user list has no admin group in it' (Why (Win -sids ((Read-ProbeSids ($whoamiFiltered | Where-Object { $_ -notmatch 'S-1-5-114|S-1-5-32-544' })) -join ';')) 'windows').Count 0
 
 # ── macOS and Linux: uid, groups, sudo ──────────────────────────────────────
 
-function Unx { param([string] $user = 'claude', [string] $uid = '501', [string] $groups = 'staff,everyone,localaccounts', [string] $rc = '1', [string] $nopw = '0', [string] $all = '0', [string] $h = 'm1mini')
+function Unx { param([string] $user = 'claude', [string] $uid = '501', [string] $groups = 'staff,everyone,localaccounts', [string] $rc = '1', [string] $nopw = '0', [string] $all = '0', [string] $h = 'room-a')
     KV "user=$user`nuid=$uid`ngroups=$groups`nhost=$h`nsudo.rc=$rc`nsudo.nopasswd=$nopw`nsudo.all=$all" }
-Check 'mac: the claude user on m1mini is clean (id -Gn: staff everyone localaccounts)' (Why (Unx) 'mac').Count 0
+Check 'mac: the claude user on room-a is clean (id -Gn: staff everyone localaccounts)' (Why (Unx) 'mac').Count 0
 Check 'mac: uid 0' (Why (Unx -user 'root' -uid '0' -groups 'wheel,daemon,kmem,sys,tty,operator,procview,procmod,everyone,staff,certusers,localaccounts,admin') 'mac') @('is root (uid 0)', 'is in the group wheel', 'is in the group admin')
 Check 'mac: the admin group (a real owner account)' (Why (Unx -user 'owner' -groups 'staff,admin,everyone,_appstore,_lpadmin,localaccounts') 'mac') @('is in the group admin')
 Check 'mac: sudo needing a password is not passwordless' (Why (Unx -rc '1') 'mac').Count 0
@@ -169,18 +169,18 @@ Check 'mac: the sudo group is not a macOS admin group' (Why (Unx -groups 'staff,
 # ── the operator's own account ──────────────────────────────────────────────
 
 $opSay = 'is the account that runs this script, on this machine, so it is the operator''s own login'
-Check 'operator: same login, same machine' (Why (Unx -user 'clint' -h 'sg4') 'linux') @($opSay)
-Check 'operator: the host match ignores case and a domain suffix' (Why (Unx -user 'Clint' -h 'sg4.corp.example') 'linux') @($opSay)
-Check 'operator: same login on ANOTHER machine is not caught (that is what -OperatorAccount is for)' (Why (Unx -user 'clint' -h 'm1mini') 'linux').Count 0
-Check 'operator: the target is local, so the host is not compared' (Why (Unx -user 'clint' -h 'something-else') 'linux' @() $true) @($opSay)
-Check 'operator: a different login on this machine is not the operator' (Why (Unx -user 'claude' -h 'sg4') 'linux').Count 0
-Check 'operator: Windows DOMAIN\name is compared by its name' (Why (Win -user 'SG4\clint' -h 'SG4') 'windows') @($opSay)
-Check 'operator: listed by name' (Why (Unx -user 'owner' -h 'm1mini') 'mac' @('owner')) @('is listed as an operator account (-OperatorAccount or ATRIUM_OPERATOR_ACCOUNT)')
-Check 'operator: listed, case does not matter' (Why (Unx -user 'Owner' -h 'm1mini') 'mac' @('owner')).Count 1
-Check 'operator: listed as name@host matches that host only' @((Why (Unx -user 'owner' -h 'm1mini') 'mac' @('owner@m1mini')).Count, (Why (Unx -user 'owner' -h 'other') 'mac' @('owner@m1mini')).Count) @(1, 0)
-Check 'operator: listed as DOMAIN\name needs the domain too' @((Why (Win -user 'CORP\clint' -h 'PC') 'windows' @('CORP\clint')).Count, (Why (Win -user 'OTHER\clint' -h 'PC') 'windows' @('CORP\clint')).Count) @(1, 0)
-Check 'operator: a listed name does not match a longer name' (Why (Unx -user 'owner2' -h 'm1mini') 'mac' @('owner')).Count 0
-Check 'operator: both rules at once say it once' (Why (Unx -user 'clint' -h 'sg4') 'linux' @('clint')).Count 1
+Check 'operator: same login, same machine' (Why (Unx -user 'operator' -h 'room-e') 'linux') @($opSay)
+Check 'operator: the host match ignores case and a domain suffix' (Why (Unx -user 'Operator' -h 'room-e.corp.example') 'linux') @($opSay)
+Check 'operator: same login on ANOTHER machine is not caught (that is what -OperatorAccount is for)' (Why (Unx -user 'operator' -h 'room-a') 'linux').Count 0
+Check 'operator: the target is local, so the host is not compared' (Why (Unx -user 'operator' -h 'something-else') 'linux' @() $true) @($opSay)
+Check 'operator: a different login on this machine is not the operator' (Why (Unx -user 'claude' -h 'room-e') 'linux').Count 0
+Check 'operator: Windows DOMAIN\name is compared by its name' (Why (Win -user 'ROOM-E\operator' -h 'ROOM-E') 'windows') @($opSay)
+Check 'operator: listed by name' (Why (Unx -user 'owner' -h 'room-a') 'mac' @('owner')) @('is listed as an operator account (-OperatorAccount or ATRIUM_OPERATOR_ACCOUNT)')
+Check 'operator: listed, case does not matter' (Why (Unx -user 'Owner' -h 'room-a') 'mac' @('owner')).Count 1
+Check 'operator: listed as name@host matches that host only' @((Why (Unx -user 'owner' -h 'room-a') 'mac' @('owner@room-a')).Count, (Why (Unx -user 'owner' -h 'other') 'mac' @('owner@room-a')).Count) @(1, 0)
+Check 'operator: listed as DOMAIN\name needs the domain too' @((Why (Win -user 'CORP\operator' -h 'PC') 'windows' @('CORP\operator')).Count, (Why (Win -user 'OTHER\operator' -h 'PC') 'windows' @('CORP\operator')).Count) @(1, 0)
+Check 'operator: a listed name does not match a longer name' (Why (Unx -user 'owner2' -h 'room-a') 'mac' @('owner')).Count 0
+Check 'operator: both rules at once say it once' (Why (Unx -user 'operator' -h 'room-e') 'linux' @('operator')).Count 1
 Check 'operator list: the parameter and the environment, split on commas and semicolons' (Get-OperatorList @('a, b') 'c;d,,e') @('a', 'b', 'c', 'd', 'e')
 Check 'operator list: nothing' @(Get-OperatorList @() '').Count 0
 Check 'operator arg: forms accepted' (@('owner', 'CORP\owner', 'owner@host.example', 'CORP\owner@host') | ForEach-Object { [bool](Test-OperatorArg $_) } | Select-Object -Unique) @($false)
@@ -189,15 +189,15 @@ Check 'operator arg: a space, a pipe and an empty host are refused' (@('a b', 'a
 # ── the step: text, status, refusal ─────────────────────────────────────────
 
 function Res { param($kv, [string] $kind = 'windows', [bool] $accept = $false, [bool] $require = $false, [string[]] $ops = @())
-    $out = @($kv.Keys | ForEach-Object { "$_=$($kv[$_])" }); Get-AccountResult $out 0 $kind 'sg3' $me $ops $false $accept $require }
+    $out = @($kv.Keys | ForEach-Object { "$_=$($kv[$_])" }); Get-AccountResult $out 0 $kind 'room-d' $me $ops $false $accept $require }
 $wAdmin = Win -elev 'True' -sids "$std;S-1-5-32-544"
 $r = Res $wAdmin
 Check 'step: elevated admin on Windows is a warn' @($r.Status, $r.Refuse) @('warn', $false)
-Check 'step: the warn names the account, the reason and the page' ($r.Detail -like 'SG3\claude is in Administrators (S-1-5-32-544) and the token is elevated. *see docs/room-accounts.md*') $true
+Check 'step: the warn names the account, the reason and the page' ($r.Detail -like 'ROOM-D\claude is in Administrators (S-1-5-32-544) and the token is elevated. *see docs/room-accounts.md*') $true
 Check 'step: the warn says how to accept it' ($r.Detail -match '-IAcceptRunningAsMe') $true
 Check 'step: a warn is one line' ($r.Detail -notmatch "`n") $true
 $r = Res (Win)
-Check 'step: a clean Windows account is ok, with no sudo in it' @($r.Status, $r.Detail) @('ok', 'SG3\claude: not elevated, not in an admin group, not the operator''s account')
+Check 'step: a clean Windows account is ok, with no sudo in it' @($r.Status, $r.Detail) @('ok', 'ROOM-D\claude: not elevated, not in an admin group, not the operator''s account')
 $r = Res (Unx) 'mac'
 Check 'step: a clean Unix account is ok with the exact text' @($r.Status, $r.Detail) @('ok', 'claude: not elevated, not in an admin group, no passwordless sudo, not the operator''s account')
 $r = Res (Unx -user 'dev' -uid '1000' -groups 'dev,sudo,wheel' -rc '0' -nopw '1' -all '1') 'linux'
@@ -205,22 +205,22 @@ Check 'step: three reasons read with a comma and an and' ($r.Detail -like 'dev i
 $r = Res (Unx -user 'root' -uid '0' -groups 'root' -rc '0' -nopw '1' -all '1') 'linux'
 Check 'step: two reasons read with an and' ($r.Detail -like 'root is root (uid 0) and can run any command with sudo and no password (sudo -n -l says NOPASSWD: ALL). *') $true
 $r = Res $wAdmin 'windows' $true
-Check 'step: accepted is ok, still names the reason and the flag' @($r.Status, $r.Refuse, ($r.Detail -like 'accepted by the operator (-IAcceptRunningAsMe): SG3\claude is in Administrators (S-1-5-32-544) and the token is elevated. see docs/room-accounts.md')) @('ok', $false, $true)
+Check 'step: accepted is ok, still names the reason and the flag' @($r.Status, $r.Refuse, ($r.Detail -like 'accepted by the operator (-IAcceptRunningAsMe): ROOM-D\claude is in Administrators (S-1-5-32-544) and the token is elevated. see docs/room-accounts.md')) @('ok', $false, $true)
 $r = Res (Win) 'windows' $true
-Check 'step: accepting a clean account changes nothing' $r.Detail 'SG3\claude: not elevated, not in an admin group, not the operator''s account'
+Check 'step: accepting a clean account changes nothing' $r.Detail 'ROOM-D\claude: not elevated, not in an admin group, not the operator''s account'
 $r = Res $wAdmin 'windows' $false $true
 Check 'step: required and elevated is a fail that refuses' @($r.Status, $r.Refuse, ($r.Detail -like '*and -RequireDedicatedAccount does not go on with that. see docs/room-accounts.md')) @('fail', $true, $true)
 $r = Res (Win) 'windows' $false $true
 Check 'step: required and clean goes on' @($r.Status, $r.Refuse) @('ok', $false)
-$r = Res (Unx -user 'clint' -h 'sg4') 'linux' $false $true
+$r = Res (Unx -user 'operator' -h 'room-e') 'linux' $false $true
 Check 'step: required and the operator''s own account refuses' @($r.Status, $r.Refuse) @('fail', $true)
-$r = Get-AccountResult @('err=Cannot call a method on a null-valued expression.') 0 'windows' 'sg3' $me @() $false $false $false
-Check 'step: a probe that errs is a warn saying why, and goes on' @($r.Status, $r.Refuse, ($r.Detail -like 'could not tell who the room runs as on sg3 (Cannot call a method*')) @('warn', $false, $true)
-$r = Get-AccountResult @() 255 'linux' 'sg3' $me @() $false $false $false
-Check 'step: a probe that says nothing and exits 255' $r.Detail 'could not tell who the room runs as on sg3 (the probe exited 255). see docs/room-accounts.md'
-$r = Get-AccountResult @() 0 'linux' 'sg3' $me @() $false $false $false
+$r = Get-AccountResult @('err=Cannot call a method on a null-valued expression.') 0 'windows' 'room-d' $me @() $false $false $false
+Check 'step: a probe that errs is a warn saying why, and goes on' @($r.Status, $r.Refuse, ($r.Detail -like 'could not tell who the room runs as on room-d (Cannot call a method*')) @('warn', $false, $true)
+$r = Get-AccountResult @() 255 'linux' 'room-d' $me @() $false $false $false
+Check 'step: a probe that says nothing and exits 255' $r.Detail 'could not tell who the room runs as on room-d (the probe exited 255). see docs/room-accounts.md'
+$r = Get-AccountResult @() 0 'linux' 'room-d' $me @() $false $false $false
 Check 'step: a probe with no output' ($r.Detail -like '*(the probe said nothing)*') $true
-$r = Get-AccountResult @('err=boom') 0 'windows' 'sg3' $me @() $false $false $true
+$r = Get-AccountResult @('err=boom') 0 'windows' 'room-d' $me @() $false $false $true
 Check 'step: required and the probe cannot tell refuses' @($r.Status, $r.Refuse) @('fail', $true)
 Check 'step: no group is dumped, only the matched reason' ((Res (Win -elev 'True' -sids "$std;S-1-5-32-544;S-1-5-21-1-2-3-1105") 'windows').Detail -notmatch 'S-1-5-21-1-2-3-1105|S-1-5-14') $true
 Check 'step: a clean account prints no group either' ((Res (Unx -groups 'staff,everyone,localaccounts,com.apple.access_ssh')).Detail -notmatch 'com.apple|localaccounts') $true

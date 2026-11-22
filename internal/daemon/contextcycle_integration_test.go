@@ -341,7 +341,7 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 	}
 }
 
-// The limit prompt names atrium's limit with both numbers, the binary and the path, in clint's words.
+// The limit prompt names atrium's limit with both numbers, the binary and the path, in the operator's words.
 func TestTheLimitPromptWording(t *testing.T) {
 	t.Parallel()
 	got := cycle.NewContextLimitPrompt("/data/handoffs/c1.md", "/usr/local/bin/atrium", false, 157_400, 150_000)

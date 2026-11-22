@@ -20,7 +20,7 @@ import (
 )
 
 // atrium_publish, the control tool that puts a document on the hub. See docs_api.go for the
-// store's HTTP half and docs/rnd/hub-documents-design.md for why it exists.
+// store's HTTP half.
 //
 // IN THE WORKER SET, because workers write the reports. `workerTools` names it.
 //

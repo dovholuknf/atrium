@@ -21,7 +21,7 @@ func TestANoticeBecomesAGrowlerOnTheBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	for _, r := range []string{"sg4", "m1mini"} {
+	for _, r := range []string{"room-e", "room-a"} {
 		if _, err := st.Add(r, hubstore.TransportDirect); err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +37,7 @@ func TestANoticeBecomesAGrowlerOnTheBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].RoomName != "m1mini" || !strings.HasPrefix(rows[0].ID, "ci|") || rows[0].Reason != ReasonCI ||
+	if len(rows) != 1 || rows[0].RoomName != "room-a" || !strings.HasPrefix(rows[0].ID, "ci|") || rows[0].Reason != ReasonCI ||
 		!strings.Contains(rows[0].Title, "CI failure: o/r CI on main") || !strings.Contains(rows[0].Body, "no route") {
 		t.Fatalf("growlers = %+v", rows)
 	}

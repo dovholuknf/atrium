@@ -25,7 +25,7 @@ func TestAMidTurnSayToClaudeIsLeftForTheHooks(t *testing.T) {
 	target, _ = d.st.Get(target.ID)
 	d.act.set(target.ID, ActivityTool, "Bash")
 
-	typed, id, err := d.deliverPeerWhenID(target, "sg4/doer", "stop now", "", false)
+	typed, id, err := d.deliverPeerWhenID(target, "room-e/doer", "stop now", "", false)
 	if err != nil || typed || id == "" {
 		t.Fatalf("typed %v id %q err %v, want queued", typed, id, err)
 	}
@@ -79,7 +79,7 @@ func TestAPeerMessageIsTypedAndSentWhenNobodyIsTyping(t *testing.T) {
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
-	typed, how := d.tellByTyping(target, "sg4/builder", "the migration is ready", "", false)
+	typed, how := d.tellByTyping(target, "room-e/builder", "the migration is ready", "", false)
 	if !typed {
 		t.Fatal("queued it when the terminal was free")
 	}
@@ -87,7 +87,7 @@ func TestAPeerMessageIsTypedAndSentWhenNobodyIsTyping(t *testing.T) {
 	if !strings.Contains(got, "the migration is ready") {
 		t.Fatalf("the message never reached the terminal: %q", got)
 	}
-	if !strings.Contains(got, "sg4/builder") {
+	if !strings.Contains(got, "room-e/builder") {
 		t.Fatalf("nothing said who it was from, so it reads as the operator: %q", got)
 	}
 	if !strings.Contains(got, "\r") {
@@ -106,7 +106,7 @@ func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 
-	typed, _ := d.tellByTyping(target, "sg4/builder", "stop what you are doing", "", false)
+	typed, _ := d.tellByTyping(target, "room-e/builder", "stop what you are doing", "", false)
 	if typed {
 		t.Fatalf("typed into a half written command: %q", f.written())
 	}
@@ -126,13 +126,13 @@ func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
 // what split his line: the banner used to open and close with `\r\n`.
 func TestThePeerBannerNeverSubmitsALine(t *testing.T) {
 	t.Parallel()
-	if strings.ContainsAny(peerBanner("sg4/builder"), "\r\n") {
+	if strings.ContainsAny(peerBanner("room-e/builder"), "\r\n") {
 		t.Fatalf("the banner carries a line ending, so it can submit the operator's line: %q",
-			peerBanner("sg4/builder"))
+			peerBanner("room-e/builder"))
 	}
 }
 
-// THE BUG CLINT HIT, end to end through the peer bus. He was composing a line
+// THE BUG THE OPERATOR HIT, end to end through the peer bus. They were composing a line
 // in a supervised session when a peer `atrium_say` arrived. It must not reach
 // the pty at all, and it must fall to the queue so nothing is lost.
 func TestAPeerTellWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
@@ -255,7 +255,7 @@ func TestSubmittingTheLineMakesTheTerminalAvailableAgain(t *testing.T) {
 // closed on the idle rule alone, and the message is DEFERRED rather than typed.
 //
 // This replaces the old "type it but do not press Enter" behaviour. Leaving
-// unsent peer text sitting in the operator's prompt is exactly what clint
+// unsent peer text sitting in the operator's prompt is exactly what the operator
 // wanted gone, so an operator who is clearly at the keyboard now gets nothing
 // dropped into their line: the message waits and is retried once the line is
 // empty and the keyboard has been quiet for peerGateIdle.
@@ -267,7 +267,7 @@ func TestAPeerMessageIsNotTypedWhileTheOperatorIsActive(t *testing.T) {
 	// was touched inside peerGateIdle, so the gate stays shut.
 	r.noteOperatorTyped([]byte("ls\r"))
 
-	typed, _ := d.tellByTyping(target, "sg4/builder", "have a look at this", "", false)
+	typed, _ := d.tellByTyping(target, "room-e/builder", "have a look at this", "", false)
 	if typed {
 		t.Fatalf("typed into a terminal the operator just touched: %q", f.written())
 	}
@@ -289,7 +289,7 @@ func TestAPeerMessageIsTypedOnceTheOperatorGoesQuiet(t *testing.T) {
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
 
-	typed, how := d.tellByTyping(target, "sg4/builder", "have a look at this", "", false)
+	typed, how := d.tellByTyping(target, "room-e/builder", "have a look at this", "", false)
 	if !typed {
 		t.Fatalf("refused an empty, idle line: %q", f.written())
 	}
@@ -319,7 +319,7 @@ func TestACardCanRefusePeerTyping(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if typed, _ := d.tellByTyping(off, "sg4/builder", "anything", "", false); typed {
+	if typed, _ := d.tellByTyping(off, "room-e/builder", "anything", "", false); typed {
 		t.Fatalf("typed into a card that refuses it: %q", f.written())
 	}
 }
@@ -330,7 +330,7 @@ func TestACardWithNoTerminalFallsBackToTheQueue(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	target := cardFor(t, d, "elsewhere")
-	if typed, _ := d.tellByTyping(target, "sg4/builder", "anything", "", false); typed {
+	if typed, _ := d.tellByTyping(target, "room-e/builder", "anything", "", false); typed {
 		t.Fatal("claimed to type into a card with no runner")
 	}
 }
@@ -346,13 +346,13 @@ func TestAtriumTypingDoesNotCountAsTheOperatorTyping(t *testing.T) {
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 
-	if typed, _ := d.tellByTyping(target, "sg4/builder", "first", "", false); !typed {
+	if typed, _ := d.tellByTyping(target, "room-e/builder", "first", "", false); !typed {
 		t.Fatal("the first message did not go")
 	}
 	if r.howBusy() == peerMidLine {
 		t.Fatal("atrium's own typing left the terminal looking mid-line")
 	}
-	if typed, how := d.tellByTyping(target, "sg4/builder", "second", "", false); !typed {
+	if typed, how := d.tellByTyping(target, "room-e/builder", "second", "", false); !typed {
 		t.Fatalf("the second message deferred behind the first: %q", how)
 	}
 }

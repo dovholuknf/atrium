@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-// The two standards Web Push is made of, on the standard library alone. See docs/rnd/web-push-design.md.
+// The two standards Web Push is made of, on the standard library alone.
 //
 //   - RFC 8291 encrypts a payload to ONE browser, so the push service that carries it learns nothing of its text.
 //   - RFC 8292 (VAPID) signs a short JWT with the hub's own key, so the push service knows which application server

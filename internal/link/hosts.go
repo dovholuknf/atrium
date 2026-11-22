@@ -23,7 +23,7 @@ import (
 // headless install, and both are answered.
 //
 // SET FROM THE HUB'S MACHINE ONLY, like the launch caps. This list IS the DNS
-// rebinding guard (docs/rnd/security-design.md stage 0): a name here is a name a
+// rebinding guard: a name here is a name a
 // page could use if it controlled that name's DNS. A board reached over a share
 // must not be able to widen it. Reading stays open.
 

@@ -13,8 +13,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// THE STEPS GIT AND THE BUILDS CAN SEE: landed, deployed, pushed. Item lifecycle L3, docs/rnd/item-lifecycle-design.md
-// sections 3 and 4. Each is OBSERVED, never reported by a card:
+// THE STEPS GIT AND THE BUILDS CAN SEE: landed, deployed, pushed. Item lifecycle L3.
+// Each is OBSERVED, never reported by a card:
 //
 //	landed    the build tip is an ancestor of claude/main on the hub's mirror, at the first commit there that holds it
 //	deployed  the hub and every room the item's code runs on report a build that holds the landed sha

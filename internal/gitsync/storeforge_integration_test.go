@@ -69,7 +69,7 @@ func (x *forgeFix) fetchHead(t *testing.T, name string) (string, error) {
 	t.Helper()
 	dir := t.TempDir()
 	git(t, dir, "init", "-q")
-	if out, err := x.run(dir, roomCard("sg4", "c9"), "fetch", "-q", x.url(forgeRepo), name); err != nil {
+	if out, err := x.run(dir, roomCard("room-e", "c9"), "fetch", "-q", x.url(forgeRepo), name); err != nil {
 		return out, err
 	}
 	return git(t, dir, "rev-parse", "FETCH_HEAD"), nil
@@ -177,7 +177,7 @@ func TestAFirstPushToARepositoryItsForgeHasMakesAndTakesIt(t *testing.T) {
 	t.Parallel()
 	x := newForgeFix(t)
 	sha := x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), forgeRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), forgeRepo, "fix/x:refs/heads/fix/x"))
 	if x.refOn(forgeRepo, "refs/heads/fix/x") != sha || x.refOn(forgeRepo, MainRef) != x.main {
 		t.Fatal("the push is not in the repository, or main was not seeded from the forge")
 	}
@@ -202,7 +202,7 @@ func TestAnUnreachableForgeKeepsTheRefusalAndMakesNothing(t *testing.T) {
 	x := newForgeFix(t)
 	x.down.Store(true)
 	x.branch("fix/x", "x.txt")
-	out, err := x.push(roomCard("sg4", "C1"), forgeRepo, "fix/x:refs/heads/fix/x")
+	out, err := x.push(roomCard("room-e", "C1"), forgeRepo, "fix/x:refs/heads/fix/x")
 	if err == nil || !strings.Contains(out, "atrium rooms git init") {
 		t.Fatalf("push = %v\n%s", err, out)
 	}
@@ -227,7 +227,7 @@ func TestAPushedBranchOfTheSameNameIsNotShadowed(t *testing.T) {
 
 	// A room's card pushes its own fix/x: the forge's copy did not take the name.
 	pushed := x.branch("fix/x", "room.txt")
-	x.must(x.push(roomCard("sg4", "c1"), forgeRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "c1"), forgeRepo, "fix/x:refs/heads/fix/x"))
 	if got := x.refOn(forgeRepo, headsPrefix+"fix/x"); got != pushed {
 		t.Fatalf("refs/heads/fix/x = %q, want the push %s", got, pushed)
 	}
@@ -433,7 +433,7 @@ func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
 	}
 	// A room's own branch is there too.
 	room := x.branch("fix/y", "y.txt")
-	x.must(x.push(roomCard("sg4", "c1"), forgeRepo, "fix/y:refs/heads/fix/y"))
+	x.must(x.push(roomCard("room-e", "c1"), forgeRepo, "fix/y:refs/heads/fix/y"))
 
 	// The forge moves main its own way: main is pushed work and stays, and the forge's tip is served as forge/main.
 	forgeTip := x.forgeMain(t, "b.txt", 2000)
@@ -630,15 +630,15 @@ func TestOrchestratorDeletesABranchTheForgesMainSquashed(t *testing.T) {
 	}
 	t.Parallel()
 	x := newForgeFix(t, func(h *Hub) {
-		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+		h.IsOrchestrator = func(room, card string) bool { return room == "room-e" && card == "ORCH" }
 	})
 	git(t, x.work, "fetch", "-q", x.forge.dir, "main")
 	x.branchOff("claude/sq", "FETCH_HEAD", "s.txt")
 	x.branchOff("claude/open", "FETCH_HEAD", "o.txt")
-	x.must(x.push(roomCard("sg4", "C1"), forgeRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(roomCard("room-e", "C1"), forgeRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
 	x.forge.push(t, "main", "s.txt", "claude/sqs.txt", 3000)
 
-	orch := roomCard("sg4", "ORCH")
+	orch := roomCard("room-e", "ORCH")
 	out, err := x.push(orch, forgeRepo, ":refs/heads/claude/open")
 	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
 		t.Errorf("a branch the forge's main lacks: %v\n%s", err, out)

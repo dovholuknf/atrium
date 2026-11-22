@@ -24,20 +24,20 @@ function is(got, want, what) {
   if (got !== want) { console.error(`FAIL: ${what}: expected ${want}, got ${got}`); bad++; }
 }
 
-const orch = { id: "sg4~7", wire_name: "ogorch" };
+const orch = { id: "room-e~7", wire_name: "ogorch" };
 const other = { id: "m1~7", wire_name: "ogorch" };
-const kid = { id: "sg4~9", spawned_by: "ogorch" };
+const kid = { id: "room-e~9", spawned_by: "ogorch" };
 const cards = [other, orch, kid];
 is(launcherOf(kid, cards), orch, "a bare spawned_by names a launcher on the child's own room");
-is(launcherOf({ id: "sg4~9", spawned_by: "ogorch@m1" }, cards), other, "a qualified spawned_by still names its own room");
-is(launcherOf({ id: "sg4~9", spawned_by: "nobody" }, cards), null, "a bare name nobody holds nests nowhere");
+is(launcherOf({ id: "room-e~9", spawned_by: "ogorch@m1" }, cards), other, "a qualified spawned_by still names its own room");
+is(launcherOf({ id: "room-e~9", spawned_by: "nobody" }, cards), null, "a bare name nobody holds nests nowhere");
 
-const orch2 = { id: "sg4-control~01a0f2da", wire_name: "sg4-control/orchestrator-sg4-control", tags: ["origin:agent"] };
-const resident = { id: "sg3~01a1dd05", wire_name: "sg3/launch-runner-picker", spawned_by: "orchestrator-sg4-control@sg4-control",
-  spawned_by_id: "sg4-control~01a0f2da", tags: ["atrium:item:u-launch-runner-picker", "atrium:lean", "atrium:resident", "origin:agent"] };
+const orch2 = { id: "room-e-control~01a0f2da", wire_name: "room-e-control/orchestrator-room-e-control", tags: ["origin:agent"] };
+const resident = { id: "room-d~01a1dd05", wire_name: "room-d/launch-runner-picker", spawned_by: "orchestrator-room-e-control@room-e-control",
+  spawned_by_id: "room-e-control~01a0f2da", tags: ["atrium:item:u-launch-runner-picker", "atrium:lean", "atrium:resident", "origin:agent"] };
 const nest = termNest([orch2, resident]);
 is((nest.kids.get(orch2.id) || []).map(x => x.id).join(), resident.id, "a resident launched on another room nests under its launcher");
-const director = Object.assign({}, resident, { id: "sg3~d1", tags: ["atrium:director", "atrium:resident", "origin:agent"] });
+const director = Object.assign({}, resident, { id: "room-d~d1", tags: ["atrium:director", "atrium:resident", "origin:agent"] });
 is(termNest([orch2, director]).nested.has(director.id), false, "a director stays a top row");
 
 if (bad) process.exit(1);

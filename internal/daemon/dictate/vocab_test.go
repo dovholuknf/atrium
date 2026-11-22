@@ -7,7 +7,7 @@ import (
 
 func TestCleanSpellsAtriumWordsAndHandles(t *testing.T) {
 	in := " Ask the hub worker to rebase onto claude slash main,\n then Atrium say the sha to voice push to talk.\n [BLANK_AUDIO]"
-	got := Clean(in, []string{"voice-push-to-talk", "sg4"})
+	got := Clean(in, []string{"voice-push-to-talk", "room-e"})
 	want := "Ask the hub worker to rebase onto claude/main, then atrium_say the sha to voice-push-to-talk."
 	if got != want {
 		t.Fatalf("Clean:\n got %q\nwant %q", got, want)

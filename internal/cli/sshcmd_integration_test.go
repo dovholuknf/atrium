@@ -30,10 +30,10 @@ func TestSSHAddWithoutFromSaysNobody(t *testing.T) {
 
 func TestSSHLsListsWhatAddWrote(t *testing.T) {
 	dir := t.TempDir()
-	runSSH(t, dir, "add", "wsl", "127.0.0.1:22", "--from", "m1mini,sg3", "--user", "clint", "--note", "Ubuntu")
+	runSSH(t, dir, "add", "wsl", "127.0.0.1:22", "--from", "room-a,room-d", "--user", "operator", "--note", "Ubuntu")
 	runSSH(t, dir, "add", "win11", "10.0.0.9:22", "--from", "*")
 	out := runSSH(t, dir, "ls")
-	for _, want := range []string{"wsl\t127.0.0.1:22\tm1mini,sg3\tclint\tUbuntu", "win11\t10.0.0.9:22\t*"} {
+	for _, want := range []string{"wsl\t127.0.0.1:22\troom-a,room-d\toperator\tUbuntu", "win11\t10.0.0.9:22\t*"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}

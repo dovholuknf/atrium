@@ -7,7 +7,7 @@ import (
 )
 
 // SHEPHERDS: one row per `atrium shepherd run <item>`, the program that takes one backlog item from launch to a held
-// packet. See docs/rnd/script-minion.md, recommendation 5.
+// packet.
 //
 //   - THE ROW IS WRITTEN BEFORE A PHASE RUNS, so a killed shepherd resumes at the phase it was in and the phase, being
 //     idempotent, repeats safely. The shepherd keeps nothing in memory that this row does not hold.

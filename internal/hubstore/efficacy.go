@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// EFFICACY: HOW WELL THE PROCESS WORKED (item lifecycle L9, docs/rnd/item-lifecycle-design.md section 12).
+// EFFICACY: HOW WELL THE PROCESS WORKED (item lifecycle L9).
 //
 //   - AN EVENT IS A FACT ABOUT A STEP, NOT A GRADE FOR A CARD. `work_event` is append-only, and its key (work_id, kind, at,
 //     sha) is what makes a replayed collect insert nothing. A send-back is counted by the transition: two at different

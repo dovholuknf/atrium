@@ -8,7 +8,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// The reset of claude/main onto the commits clint re-signed and pushed, without losing what landed in between.
+// The reset of claude/main onto the commits the operator re-signed and pushed, without losing what landed in between.
 //
 // THE HUB DOES THE MOVE, AND ONLY AFTER CHECKING. The pre-receive hook holds every pushed ref to a fast-forward, and
 // the reset is the one move that is not, so it is not a push: the merger replays on a branch of its own, and the hub
@@ -25,10 +25,10 @@ const EpochRefPrefix = "refs/atrium/epochs/"
 
 // EpochPlan is what a reset has to carry over.
 type EpochPlan struct {
-	// OldTip is claude/main now, Base is main (the re-signed history clint pushed).
+	// OldTip is claude/main now, Base is main (the re-signed history the operator pushed).
 	OldTip string `json:"old_tip"`
 	Base   string `json:"base"`
-	// Replay is the commits of claude/main that main lacks by patch, oldest first: the work that landed after clint's
+	// Replay is the commits of claude/main that main lacks by patch, oldest first: the work that landed after the operator's
 	// fetch. Empty means main already has everything and claude/main can simply become main.
 	Replay []string `json:"replay"`
 	// Dropped is how many commits of claude/main main has by patch, the re-signed copies.

@@ -389,7 +389,7 @@ function roomHue(name) {
 // ── the master switch (item 79) ─────────────────────────
 //
 // "Off" silences permission requests too. Built first as no, since a session
-// blocks on one until somebody answers, and clint turned it: "it's
+// blocks on one until somebody answers, and the operator turned it: "it's
 // notifications in general" (2026-09-29). They are still listed in the drawer.
 // Flipping it back is this one word.
 const NOTIFY_OFF_SILENCES_PERMISSIONS = true;

@@ -20,10 +20,6 @@ Series: The hub forge and the change lifecycle. Status: idea. Audience: people w
 
 - the four lines on a card
 
-## Sources
-
-- docs/rnd/change-record-design.md
-
 ## Notes for the writer
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.

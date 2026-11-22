@@ -83,14 +83,14 @@ func pushLogRules(t *testing.T, l testLog) {
 		t.Fatal("a ref never pushed has an owner")
 	}
 	// The first pusher owns it, and a later push by the same card does not change that.
-	must(l.Append(ctx, push(fix, "sg4", "C1", 1)))
-	must(l.Append(ctx, push(fix, "sg4", "C1", 2)))
-	if got := owner(fix); got != "sg4/C1" {
+	must(l.Append(ctx, push(fix, "room-e", "C1", 1)))
+	must(l.Append(ctx, push(fix, "room-e", "C1", 2)))
+	if got := owner(fix); got != "room-e/C1" {
 		t.Fatalf("owner = %q", got)
 	}
 	// The operator's push to a card's branch leaves the owner be: first push after the release is the owner.
 	must(l.Append(ctx, push(fix, "", "", 3)))
-	if got := owner(fix); got != "sg4/C1" {
+	if got := owner(fix); got != "room-e/C1" {
 		t.Fatalf("after an operator push, owner = %q", got)
 	}
 	// Refs and repositories are separate.
@@ -109,8 +109,8 @@ func pushLogRules(t *testing.T, l testLog) {
 	must(l.Release(ctx, pushRepo, fix, "operator"))
 	must(l.Release(ctx, pushRepo, "refs/heads/never", "operator"))
 	// The next push after it owns the branch.
-	must(l.Append(ctx, push(fix, "m1mini", "D9", 5)))
-	if got := owner(fix); got != "m1mini/D9" {
+	must(l.Append(ctx, push(fix, "room-a", "D9", 5)))
+	if got := owner(fix); got != "room-a/D9" {
 		t.Fatalf("after release, owner = %q", got)
 	}
 
@@ -123,13 +123,13 @@ func pushLogRules(t *testing.T, l testLog) {
 	// Branches: heads only, each once, with owner and latest push; the released one says so.
 	must(l.Append(ctx, push("refs/tags/v1", "", "", 7)))
 	must(l.Append(ctx, push("refs/heads/main", "", "", 8)))
-	must(l.Append(ctx, push("refs/heads/gone", "sg4", "C3", 9)))
+	must(l.Append(ctx, push("refs/heads/gone", "room-e", "C3", 9)))
 	must(l.Release(ctx, pushRepo, "refs/heads/gone", "card gone"))
 	got, err := l.Branches(ctx, pushRepo)
 	must(err)
 	want := []gitsync.BranchRecord{
-		{Ref: fix, Room: "m1mini", Card: "D9", At: pushAt(5)},
-		{Ref: "refs/heads/gone", Room: "sg4", Card: "C3", At: pushAt(9), Released: true},
+		{Ref: fix, Room: "room-a", Card: "D9", At: pushAt(5)},
+		{Ref: "refs/heads/gone", Room: "room-e", Card: "C3", At: pushAt(9), Released: true},
 		{Ref: "refs/heads/main", At: pushAt(8)},
 		{Ref: "refs/heads/ops", At: pushAt(6)},
 	}
@@ -149,7 +149,7 @@ func pushLogRules(t *testing.T, l testLog) {
 
 	// The last operator push of a ref: the operator's only, the latest, per ref.
 	must(l.Append(ctx, push("refs/heads/main", "", "", 10)))
-	must(l.Append(ctx, push("refs/heads/main", "sg4", "C1", 11)))
+	must(l.Append(ctx, push("refs/heads/main", "room-e", "C1", 11)))
 	at, ok, err := l.LastOperatorPush(ctx, pushRepo, "refs/heads/main")
 	if err != nil || !ok || !at.Equal(pushAt(10)) {
 		t.Fatalf("last operator push = %v %v %v", at, ok, err)
@@ -190,12 +190,12 @@ func pendingRules(t *testing.T, l testLog) {
 	const x, y = "refs/heads/fix/x", "refs/heads/fix/y"
 
 	// A new branch, pending: it is owned, it is listed, and the operator's pending push is no push yet.
-	batch, err := l.Begin(ctx, push(x, "sg4", "C1", 1))
+	batch, err := l.Begin(ctx, push(x, "room-e", "C1", 1))
 	must(err)
 	if batch == "" {
 		t.Fatal("no batch")
 	}
-	if got := ownerOfRef(t, l, x); got != "sg4/C1" {
+	if got := ownerOfRef(t, l, x); got != "room-e/C1" {
 		t.Fatalf("a pending push does not own its branch: %q", got)
 	}
 	pend, _ := l.Pending(ctx, pushRepo)
@@ -220,7 +220,7 @@ func pendingRules(t *testing.T, l testLog) {
 
 	// Settled: the same owner, nothing pending.
 	must(l.Settle(ctx, batch, x))
-	if got := ownerOfRef(t, l, x); got != "sg4/C1" {
+	if got := ownerOfRef(t, l, x); got != "room-e/C1" {
 		t.Fatalf("settled, owner = %q", got)
 	}
 	if pend, _ := l.Pending(ctx, ""); len(pend) != 0 {
@@ -228,7 +228,7 @@ func pendingRules(t *testing.T, l testLog) {
 	}
 
 	// A push git took nothing of leaves no row, and so no owner.
-	b2, err := l.Begin(ctx, push(y, "sg4", "C2", 3))
+	b2, err := l.Begin(ctx, push(y, "room-e", "C2", 3))
 	must(err)
 	must(l.Settle(ctx, b2))
 	if got := ownerOfRef(t, l, y); got != "" {
@@ -239,37 +239,37 @@ func pendingRules(t *testing.T, l testLog) {
 	}
 
 	// A push of two refs, one of which landed: the one that did is kept, the other is not.
-	b3, err := l.Begin(ctx, push("refs/heads/a", "sg4", "C1", 4), push("refs/heads/b", "sg4", "C1", 4))
+	b3, err := l.Begin(ctx, push("refs/heads/a", "room-e", "C1", 4), push("refs/heads/b", "room-e", "C1", 4))
 	must(err)
 	must(l.Settle(ctx, b3, "refs/heads/b"))
-	if ownerOfRef(t, l, "refs/heads/a") != "" || ownerOfRef(t, l, "refs/heads/b") != "sg4/C1" {
+	if ownerOfRef(t, l, "refs/heads/a") != "" || ownerOfRef(t, l, "refs/heads/b") != "room-e/C1" {
 		t.Fatal("a half-landed push was settled whole")
 	}
 
 	// A takeover: while it is pending the old owner is the owner, when it lands the new one is, and when it
 	// does not land NOTHING WAS RELEASED.
-	take := push(x, "sg4", "C9", 5)
+	take := push(x, "room-e", "C9", 5)
 	take.ReleasedBy = "card gone"
 	b4, err := l.Begin(ctx, take)
 	must(err)
-	if got := ownerOfRef(t, l, x); got != "sg4/C1" {
+	if got := ownerOfRef(t, l, x); got != "room-e/C1" {
 		t.Fatalf("a pending takeover owns the branch: %q", got)
 	}
 	must(l.Settle(ctx, b4))
-	if got := ownerOfRef(t, l, x); got != "sg4/C1" {
+	if got := ownerOfRef(t, l, x); got != "room-e/C1" {
 		t.Fatalf("a takeover git refused released the branch: %q", got)
 	}
 	b5, err := l.Begin(ctx, take)
 	must(err)
 	must(l.Settle(ctx, b5, x))
-	if got := ownerOfRef(t, l, x); got != "sg4/C9" {
+	if got := ownerOfRef(t, l, x); got != "room-e/C9" {
 		t.Fatalf("a takeover that landed: owner %q", got)
 	}
 	// And the next card is still held off by the new owner.
-	b6, err := l.Begin(ctx, push(x, "sg4", "C1", 6))
+	b6, err := l.Begin(ctx, push(x, "room-e", "C1", 6))
 	must(err)
 	must(l.Settle(ctx, b6, x))
-	if got := ownerOfRef(t, l, x); got != "sg4/C9" {
+	if got := ownerOfRef(t, l, x); got != "room-e/C9" {
 		t.Fatalf("after the takeover, owner %q", got)
 	}
 }
@@ -288,12 +288,12 @@ func clockBehindRules(t *testing.T, u logUnderTest) {
 	}
 	t0 := pushAt(30)
 	u.setClock(t0)
-	must(l.Append(ctx, push("refs/heads/a", "sg4", "C1", 30), push("refs/heads/b", "sg4", "C1", 30)))
+	must(l.Append(ctx, push("refs/heads/a", "room-e", "C1", 30), push("refs/heads/b", "room-e", "C1", 30)))
 
 	u.setClock(t0.Add(-time.Hour))
 	// The operator pushes to the card's branch: the card is still the owner.
 	must(l.Append(ctx, push("refs/heads/a", "", "", 31)))
-	if got := ownerOfRef(t, l, "refs/heads/a"); got != "sg4/C1" {
+	if got := ownerOfRef(t, l, "refs/heads/a"); got != "room-e/C1" {
 		t.Fatalf("an operator push with the clock behind took the branch: owner %q", got)
 	}
 	// A release releases.
@@ -302,17 +302,17 @@ func clockBehindRules(t *testing.T, u logUnderTest) {
 		t.Fatalf("a release with the clock behind did not release: owner %q", got)
 	}
 	// And the next push owns it, still with the clock behind.
-	must(l.Append(ctx, push("refs/heads/b", "m1mini", "D1", 32)))
-	if got := ownerOfRef(t, l, "refs/heads/b"); got != "m1mini/D1" {
+	must(l.Append(ctx, push("refs/heads/b", "room-a", "D1", 32)))
+	if got := ownerOfRef(t, l, "refs/heads/b"); got != "room-a/D1" {
 		t.Fatalf("the push after a release: owner %q", got)
 	}
 	// A takeover settled with the clock behind.
-	take := push("refs/heads/a", "sg4", "C2", 33)
+	take := push("refs/heads/a", "room-e", "C2", 33)
 	take.ReleasedBy = "card gone"
 	batch, err := l.Begin(ctx, take)
 	must(err)
 	must(l.Settle(ctx, batch, "refs/heads/a"))
-	if got := ownerOfRef(t, l, "refs/heads/a"); got != "sg4/C2" {
+	if got := ownerOfRef(t, l, "refs/heads/a"); got != "room-e/C2" {
 		t.Fatalf("a takeover with the clock behind: owner %q", got)
 	}
 }
@@ -328,7 +328,7 @@ func TestAReleaseAfterARestartWithTheClockBehindStillReleases(t *testing.T) {
 	ctx := context.Background()
 	t0 := pushAt(40)
 	s.gitPushClock = func() time.Time { return t0 }
-	if err := s.Append(ctx, push("refs/heads/x", "sg4", "C1", 40)); err != nil {
+	if err := s.Append(ctx, push("refs/heads/x", "room-e", "C1", 40)); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -361,7 +361,7 @@ func TestStoreAppendIsAllOrNone(t *testing.T) {
 		BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
 		t.Fatal(err)
 	}
-	err := s.Append(ctx, push("refs/heads/fine", "sg4", "C1", 1), push("refs/heads/boom", "sg4", "C1", 1))
+	err := s.Append(ctx, push("refs/heads/fine", "room-e", "C1", 1), push("refs/heads/boom", "room-e", "C1", 1))
 	if err == nil {
 		t.Fatal("the append took a row the database refused")
 	}
@@ -372,7 +372,7 @@ func TestStoreAppendIsAllOrNone(t *testing.T) {
 		t.Fatal("a refused row halted the hub")
 	}
 	// Begin is the same: the first row of a push is not left when the second is refused.
-	if _, err := s.Begin(ctx, push("refs/heads/fine", "sg4", "C1", 1), push("refs/heads/boom", "sg4", "C1", 1)); err == nil {
+	if _, err := s.Begin(ctx, push("refs/heads/fine", "room-e", "C1", 1), push("refs/heads/boom", "room-e", "C1", 1)); err == nil {
 		t.Fatal("begin took a row the database refused")
 	}
 	if pend, _ := s.Pending(ctx, ""); len(pend) != 0 {
@@ -384,10 +384,10 @@ func TestStoreAppendIsAllOrNone(t *testing.T) {
 func TestStoreSettleIsAllOrNone(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
-	if err := s.Append(ctx, push("refs/heads/x", "sg4", "C1", 1)); err != nil {
+	if err := s.Append(ctx, push("refs/heads/x", "room-e", "C1", 1)); err != nil {
 		t.Fatal(err)
 	}
-	take := push("refs/heads/x", "sg4", "C2", 2)
+	take := push("refs/heads/x", "room-e", "C2", 2)
 	take.ReleasedBy = "card gone"
 	batch, err := s.Begin(ctx, take)
 	if err != nil {
@@ -401,7 +401,7 @@ func TestStoreSettleIsAllOrNone(t *testing.T) {
 	if err := s.Settle(ctx, batch, "refs/heads/x"); err == nil {
 		t.Fatal("settle took a row the database refused")
 	}
-	if got := ownerOfRef(t, s, "refs/heads/x"); got != "sg4/C1" {
+	if got := ownerOfRef(t, s, "refs/heads/x"); got != "room-e/C1" {
 		t.Fatalf("a settle that failed released the branch: %q", got)
 	}
 	if pend, _ := s.Pending(ctx, ""); len(pend) != 1 {
@@ -418,7 +418,7 @@ func TestPushLogSurvivesAReopenInOrder(t *testing.T) {
 	}
 	ctx := context.Background()
 	// The same instant for both: the order is the write order, not the clock.
-	a, b := push("refs/heads/x", "sg4", "C1", 1), push("refs/heads/x", "sg4", "C2", 1)
+	a, b := push("refs/heads/x", "room-e", "C1", 1), push("refs/heads/x", "room-e", "C2", 1)
 	if err := s.Append(ctx, a); err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestPushLogSurvivesAReopenInOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if room, card, ok, _ := s.Owner(ctx, pushRepo, "refs/heads/x"); !ok || room != "sg4" || card != "C1" {
+	if room, card, ok, _ := s.Owner(ctx, pushRepo, "refs/heads/x"); !ok || room != "room-e" || card != "C1" {
 		t.Fatalf("owner = %q %q %v", room, card, ok)
 	}
 }
@@ -474,7 +474,7 @@ func TestGitPushMigrationAppliesToAnExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := added(t, s, "sg4")
+	r := added(t, s, "room-e")
 	// Put the database back to how 0007 left it.
 	if _, err := s.db.Exec(`DROP TABLE git_push`); err != nil {
 		t.Fatal(err)
@@ -489,7 +489,7 @@ func TestGitPushMigrationAppliesToAnExistingDatabase(t *testing.T) {
 		t.Fatalf("reopening a database from before 0008: %v", err)
 	}
 	defer s.Close()
-	if err := s.Append(context.Background(), push("refs/heads/x", "sg4", "C1", 1)); err != nil {
+	if err := s.Append(context.Background(), push("refs/heads/x", "room-e", "C1", 1)); err != nil {
 		t.Fatalf("the table is not there: %v", err)
 	}
 	if rooms, _ := s.Rooms(); len(rooms) != 1 || rooms[0].ID != r.ID {

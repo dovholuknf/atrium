@@ -16,9 +16,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 )
 
-// The hub file drop: a place a card leaves a file for a card on another room, or for the board. The design is
-// docs/rnd/hub-file-drop.md, the tools are internal/link/files_mcp.go and the board's routes are
-// internal/link/files_api.go.
+// The hub file drop: a place a card leaves a file for a card on another room, or for the board. The tools
+// are internal/link/files_mcp.go and the board's routes are internal/link/files_api.go.
 //
 // ── what lives where ────────────────────────────────────
 //

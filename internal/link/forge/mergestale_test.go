@@ -14,13 +14,13 @@ func TestMergeStaleResolvesRedAsksNobodyCanAct(t *testing.T) {
 			Requester: who, RequesterRoom: room}
 	}
 	ms := []hubstore.MergeRequest{
-		red(1, "claude/live", "w1", "sg4"),
-		red(2, "claude/relanded", "w1", "sg4"),
+		red(1, "claude/live", "w1", "room-e"),
+		red(2, "claude/relanded", "w1", "room-e"),
 		{N: 3, Repo: "github/o/r", Branch: "claude/relanded", State: hubstore.MergeLanded},
-		red(4, "claude/deleted", "w1", "sg4"),
-		red(5, "claude/merged", "w1", "sg4"),
-		red(6, "claude/closed", "w2", "sg4"),
-		red(7, "claude/culled", "w3", "sg4"),
+		red(4, "claude/deleted", "w1", "room-e"),
+		red(5, "claude/merged", "w1", "room-e"),
+		red(6, "claude/closed", "w2", "room-e"),
+		red(7, "claude/culled", "w3", "room-e"),
 		red(8, "claude/away", "w9", "gone-room"),
 		{N: 9, Repo: "github/o/r", Branch: "claude/deleted", State: hubstore.MergeRefused},
 	}
@@ -33,7 +33,7 @@ func TestMergeStaleResolvesRedAsksNobodyCanAct(t *testing.T) {
 			"claude/away": gitsync.BranchOpen}
 	}
 	cards := func(room string) []ctl.Card {
-		if room != "sg4" {
+		if room != "room-e" {
 			return nil
 		}
 		return []ctl.Card{{ID: "a", Wire: "w1", Status: "done"}, {ID: "b", Wire: "w2", Status: "done", Tags: []string{closedTag}}}
@@ -47,7 +47,7 @@ func TestMergeStaleResolvesRedAsksNobodyCanAct(t *testing.T) {
 		}
 	}
 
-	unknown := []hubstore.MergeRequest{red(1, "claude/deleted", "w3", "sg4")}
+	unknown := []hubstore.MergeRequest{red(1, "claude/deleted", "w3", "room-e")}
 	mergeStale(unknown, func(string) map[string]string { return nil }, func(string) []ctl.Card { return nil })
 	if unknown[0].Stale != "" {
 		t.Fatalf("a request was resolved on no answer: %q", unknown[0].Stale)

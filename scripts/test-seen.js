@@ -51,10 +51,10 @@ function world() {
   const api = async (p, opts) => { posts.push({ p, body: JSON.parse(opts.body) }); return {}; };
   const esc = s => String(s);
   const b = make(doc, { OPEN: 1 }, api, esc);
-  const card = { id: "sg4~c1", seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z" } };
+  const card = { id: "room-e~c1", seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z" } };
   const buffer = { active: { viewportY: 40, baseY: 40 } };
   b.set({
-    term: { buffer }, termTask: { id: "sg4~c1" }, termSock: { readyState: 1 },
+    term: { buffer }, termTask: { id: "room-e~c1" }, termSock: { readyState: 1 },
     lastTasks: [card],
   });
   return { b, doc, posts, card, buffer };
@@ -65,7 +65,7 @@ function world() {
   const { b, posts } = world();
   for (let t = 0; t <= b.SEEN_DWELL_MS + 500; t += 500) b.seenTick(t);
   if (posts.length !== 1) fail(`a full dwell sent ${posts.length} reports, want 1`);
-  else if (posts[0].p !== "/v1/tasks/sg4~c1/seen" || posts[0].body.turn_ended_at !== "2026-09-23T12:00:00.000Z") {
+  else if (posts[0].p !== "/v1/tasks/room-e~c1/seen" || posts[0].body.turn_ended_at !== "2026-09-23T12:00:00.000Z") {
     fail("the report did not name the card and the turn it was showing: " + JSON.stringify(posts[0]));
   }
   // Staying on screen does not report again.

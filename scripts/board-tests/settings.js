@@ -1,6 +1,6 @@
 // settings: settings, themes and skins, providers, preferences.
 //
-// Units: helpTip, helpRoomPane, helpGearBoard, skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant.
+// Units: helpTip, helpRoomPane, helpGearBoard, skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant, dictBoop.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/settings.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -613,7 +613,7 @@ async function aliasSection(browser, base) {
 async function readTabSizeSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -688,7 +688,7 @@ async function readTabSizeSection(browser, base) {
 async function readWidthSkinSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   resetSkins();
@@ -810,7 +810,7 @@ async function readWidthSkinSection(browser, base) {
 
 // ── the board skin follows the room-picker scope ────────────────────────
 // THREE SCOPES, THREE SKINS, HELD AT ONCE. The ALL view wears the hub's skin,
-// and each of two rooms wears its own, so scoping ALL -> alpha -> sgg reads
+// and each of two rooms wears its own, so scoping ALL -> alpha -> room-g reads
 // three different skins back. Then: a save in one scope reaches only that
 // scope and leaks into no other, switching scope re-applies each
 // independently, and a room attaching does not clobber the ALL skin. A fresh
@@ -818,7 +818,7 @@ async function readWidthSkinSection(browser, base) {
 // Both rooms live, so all three scopes are pickable.
 async function skinScopeSection(browser, base) {
   mock.hubMode = true;
-  mock.sggAttached = true;
+  mock.roomGAttached = true;
   resetSkins();
   const skinCtx = await browser.newContext();
   const skin = await skinCtx.newPage();
@@ -883,16 +883,16 @@ async function skinScopeSection(browser, base) {
     await wears("noir", "the ALL view on load");
 
     // Scope to each room in turn: three scopes, three different skins, at once.
-    // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
+    // The hub holds noir, alpha holds moss, room-g holds ember, and no two agree.
     await scopeTo("alpha", "moss");
-    await scopeTo("sgg", "ember");
-    const held = { "": mock.skinFor[""], alpha: mock.skinFor.alpha, sgg: mock.skinFor.sgg };
+    await scopeTo("room-g", "ember");
+    const held = { "": mock.skinFor[""], alpha: mock.skinFor.alpha, "room-g": mock.skinFor["room-g"] };
     const distinct = new Set(Object.values(held));
     if (distinct.size !== 3) {
       fail("the three scopes did not hold three different skins at once: " +
         JSON.stringify(held));
     }
-    if (held[""] !== "noir" || held.alpha !== "moss" || held.sgg !== "ember") {
+    if (held[""] !== "noir" || held.alpha !== "moss" || held["room-g"] !== "ember") {
       fail("the three scopes wore the wrong skins: " + JSON.stringify(held));
     }
 
@@ -905,12 +905,12 @@ async function skinScopeSection(browser, base) {
       fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
         JSON.stringify(mock.skinFor[""]) + ", wanted vapor.");
     }
-    if (mock.skinFor.alpha !== "moss" || mock.skinFor.sgg !== "ember") {
+    if (mock.skinFor.alpha !== "moss" || mock.skinFor["room-g"] !== "ember") {
       fail("saving the ALL skin leaked into a room: " + JSON.stringify(mock.skinFor));
     }
 
     // A skin saved while scoped to alpha lands on alpha alone, and leaves the
-    // hub's ALL skin and sgg's untouched.
+    // hub's ALL skin and room-g's untouched.
     await scopeTo("alpha", "moss");
     await skin.evaluate(() => saveSkin("sandstone"));
     await wears("sandstone", "a skin saved while scoped to alpha");
@@ -918,36 +918,36 @@ async function skinScopeSection(browser, base) {
       fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
         JSON.stringify(mock.skinFor.alpha) + ", wanted sandstone.");
     }
-    if (mock.skinFor[""] !== "vapor" || mock.skinFor.sgg !== "ember") {
+    if (mock.skinFor[""] !== "vapor" || mock.skinFor["room-g"] !== "ember") {
       fail("saving alpha's skin leaked into another scope: " + JSON.stringify(mock.skinFor));
     }
 
-    // A skin saved while scoped to sgg lands on sgg alone.
-    await scopeTo("sgg", "ember");
+    // A skin saved while scoped to room-g lands on room-g alone.
+    await scopeTo("room-g", "ember");
     await skin.evaluate(() => saveSkin("harbour"));
-    await wears(null, "a skin saved while scoped to sgg");
-    if (mock.skinFor.sgg !== "harbour") {
-      fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
-        JSON.stringify(mock.skinFor.sgg) + ", wanted harbour.");
+    await wears(null, "a skin saved while scoped to room-g");
+    if (mock.skinFor["room-g"] !== "harbour") {
+      fail("a skin saved while scoped to room-g did not reach the room: skinFor.room-g is " +
+        JSON.stringify(mock.skinFor["room-g"]) + ", wanted harbour.");
     }
     if (mock.skinFor[""] !== "vapor" || mock.skinFor.alpha !== "sandstone") {
-      fail("saving sgg's skin leaked into another scope: " + JSON.stringify(mock.skinFor));
+      fail("saving room-g's skin leaked into another scope: " + JSON.stringify(mock.skinFor));
     }
 
     // Switching scope re-applies each saved skin independently: ALL is vapor,
-    // alpha is sandstone, sgg is the default harbour (drawn by removing the
+    // alpha is sandstone, room-g is the default harbour (drawn by removing the
     // attribute), and each is read fresh on its own reload.
     await scopeTo(null, "vapor");
     await scopeTo("alpha", "sandstone");
     await picker();
     await Promise.all([
       skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-      skin.evaluate(() => pickRoom("sgg"))
+      skin.evaluate(() => pickRoom("room-g"))
     ]);
-    await wears(null, "scoped back to sgg");
+    await wears(null, "scoped back to room-g");
 
     // Back to ALL: the hub skin is what it was, and a room attaching or
-    // leaving does not change it. This is the bug clint hit on a deploy: a
+    // leaving does not change it. This is the bug the operator hit on a deploy: a
     // room connecting swapped his theme to its own skin and its leaving
     // reverted it, though he never changed scope off ALL.
     //
@@ -975,11 +975,11 @@ async function skinScopeSection(browser, base) {
       const f = bootSkin;
       window.bootSkin = (...a) => { window.__bootSkins++; return f(...a); };
     });
-    mock.sggAttached = false;
+    mock.roomGAttached = false;
     const leftAt = await skin.evaluate(() => hubRead);
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await pastThrottle(leftAt);
-    mock.sggAttached = true;
+    mock.roomGAttached = true;
     const cameAt = await skin.evaluate(() => hubRead);
     const answered = skin.waitForResponse(r => new URL(r.url()).pathname === "/_hub/rooms", { timeout: slow(15000) }).catch(() => {});
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
@@ -1001,7 +1001,7 @@ async function skinScopeSection(browser, base) {
     await skin.close();
     await skinCtx.close();
     mock.hubMode = false;
-    mock.sggAttached = false;
+    mock.roomGAttached = false;
     resetSkins();
   }
 }
@@ -1010,17 +1010,17 @@ async function skinScopeSection(browser, base) {
 // The board loads against a hub that has no room to borrow settings from
 // yet, the window right after a hub restart. The ALL-view `/v1/settings`
 // read is a 409, so the load-time skin read fails and the board is on the
-// default dark. This is exactly what clint saw: a deploy restarts the hub,
+// default dark. This is exactly what the operator saw: a deploy restarts the hub,
 // he reloads before a room is back, and the paper skin never paints. When a
 // room attaches the read succeeds, and the skin must heal there rather than
 // waiting for another manual reload.
 async function skinHealSection(browser, base) {
   mock.hubMode = true;
   mock.hubHasRoom = false;
-  mock.sggAttached = false;
-  // The hub wears paper, a light skin, which is the one clint set and did not
+  mock.roomGAttached = false;
+  // The hub wears paper, a light skin, which is the one the operator set and did not
   // see paint. resetSkins in the finally puts the default back.
-  mock.skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
+  mock.skinFor = { "": "paper", alpha: "moss", "room-g": "ember" };
   const healCtx = await browser.newContext();
   const heal = await healCtx.newPage();
   const healErrors = [];
@@ -1059,15 +1059,63 @@ async function skinHealSection(browser, base) {
   }
 }
 
+async function dictBoopSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    await p.addInitScript(() => {
+      window.boops = 0;
+      window.AudioContext = class {
+        constructor() { this.currentTime = 0; this.destination = {}; }
+        createOscillator() { return { frequency: {}, connect() {}, start() { window.boops++; }, stop() {} }; }
+        createGain() { return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} }; }
+        close() {}
+      };
+      navigator.mediaDevices.getUserMedia = async () => ({ getTracks: () => [] });
+      window.MediaRecorder = class { constructor() { this.state = "inactive"; } start() { this.state = "recording"; } stop() { this.state = "inactive"; if (this.onstop) this.onstop(); } };
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.atriumVoice && typeof setDictBoop === "function", null, { timeout: slow(15000) });
+    const run = async kind => p.evaluate(async kind => {
+      setDictBoop(kind);
+      window.boops = 0;
+      await window.atriumVoice.start();
+      const n = window.boops;
+      window.atriumVoice.cancel();
+      return n;
+    }, kind);
+    const off = await run("off");
+    const onN = await run("blip");
+    const row = await p.evaluate(() => { paintDictation(); return document.getElementById("dk-boop").value; });
+    const gains = await p.evaluate(async () => {
+      setDictBoop("blip");
+      setDictBoopVol(50);
+      const seen = [];
+      const was = window.AudioContext;
+      window.AudioContext = class extends was { createGain() { const g = super.createGain(); g.gain.linearRampToValueAtTime = (v) => seen.push(v); return g; } };
+      window.atriumVoice.boop();
+      window.AudioContext = was;
+      return seen;
+    });
+    if (!gains.some(v => Math.abs(v - 0.04) < 1e-9)) fail("dictBoop: a 50% volume did not halve the tone: " + JSON.stringify(gains));
+    if (off !== 0) fail("dictBoop: the tone fired " + off + " times with the row off");
+    if (onN !== 1) fail("dictBoop: with the row on a start made " + onN + " tones, want 1");
+    if (row !== "blip") fail("dictBoop: the row showed " + row + " after choosing the blip");
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("dictBoop ok");
+}
+
 async function dropdownsInstantSection(browser, base) {
-  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
   mock.hubMode = true;
-  mock.sggAttached = true;
+  mock.roomGAttached = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await ctx.newPage();
     const rows = [Object.assign({}, mock.HON, { room: "alpha" }), Object.assign({}, mock.HON, { id: "hon2", label: "gemini", room: "alpha" }),
-      Object.assign({}, mock.HON, { room: "sgg" })];
+      Object.assign({}, mock.HON, { room: "room-g" })];
     await p.route(/\/v1\//, async r => {
       await new Promise(x => setTimeout(x, 500));
       if (new URL(r.request().url()).pathname === "/v1/harnesses") {
@@ -1102,7 +1150,7 @@ async function dropdownsInstantSection(browser, base) {
     }
   } finally {
     mock.hubMode = wasHub;
-    mock.sggAttached = wasSgg;
+    mock.roomGAttached = wasRoomG;
     await ctx.close();
   }
   if (!bad) console.log("dropdownsInstant ok");
@@ -1462,9 +1510,10 @@ const units = [
   { name: "readWidthSkin", run: ({ browser, base }) => readWidthSkinSection(browser, base) },
   { name: "themePicker", run: ({ browser, base }) => themePickerSection(browser, base) },
   { name: "themePickerShots", run: ({ browser, base }) => themePickerShotsSection(browser, base) },
+  { name: "dictBoop", run: ({ browser, base }) => dictBoopSection(browser, base) },
   { name: "dropdownsInstant", run: ({ browser, base }) => dropdownsInstantSection(browser, base) },
 ];
-const sections = { helpTip: helpTipSection, helpRoomPane: helpRoomPaneSection, helpGearBoard: helpGearBoardSection, skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection };
+const sections = { helpTip: helpTipSection, helpRoomPane: helpRoomPaneSection, helpGearBoard: helpGearBoardSection, skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection, dictBoop: dictBoopSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

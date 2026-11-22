@@ -10,9 +10,9 @@ import (
 )
 
 func newCR(branch, target string) CRNew {
-	return CRNew{Repo: "github/o/r", SourceRoom: "sg3", SourceBranch: branch, SourceSHA: sha40, Target: target,
-		Title: "add the thing", Why: "so it works", CreatedBy: CRParty{Room: "sg3", Card: "C1"},
-		Owner: CRParty{Room: "sg3", Card: "C1"}}
+	return CRNew{Repo: "github/o/r", SourceRoom: "room-d", SourceBranch: branch, SourceSHA: sha40, Target: target,
+		Title: "add the thing", Why: "so it works", CreatedBy: CRParty{Room: "room-d", Card: "C1"},
+		Owner: CRParty{Room: "room-d", Card: "C1"}}
 }
 
 func mustCR(t *testing.T, s *Store, in CRNew) ChangeRequest {
@@ -34,8 +34,8 @@ func TestCRCreateGivesSequentialIDsAndTheShapeTheAPIPromises(t *testing.T) {
 	if a.State != CROpen || a.ClosedAt != nil || a.ClosedBy != nil || a.MergedSHA != nil || a.CreatedAt == "" {
 		t.Fatalf("a new request: %+v", a)
 	}
-	if a.Source != (CRSource{Room: "sg3", Branch: "claude/x", SHA: sha40}) || a.Target.Branch != "main" ||
-		a.Owner != (CRParty{Room: "sg3", Card: "C1"}) || a.CreatedBy.Card != "C1" || a.Change != "" || a.Note != "" {
+	if a.Source != (CRSource{Room: "room-d", Branch: "claude/x", SHA: sha40}) || a.Target.Branch != "main" ||
+		a.Owner != (CRParty{Room: "room-d", Card: "C1"}) || a.CreatedBy.Card != "C1" || a.Change != "" || a.Note != "" {
 		t.Fatalf("a new request: %+v", a)
 	}
 	got, err := s.CRGet("cr_2")
@@ -78,7 +78,7 @@ func TestCRAnOpenRequestForTheSameSourceAndTargetIsHandedBack(t *testing.T) {
 		}
 	}
 	// A closed one may be asked again.
-	if _, err := s.CREnd(a.ID, CRWithdrawn, CRParty{Room: "sg3", Card: "C1"}, "", ""); err != nil {
+	if _, err := s.CREnd(a.ID, CRWithdrawn, CRParty{Room: "room-d", Card: "C1"}, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if c, existed, err := s.CRCreate(again); err != nil || existed || c.ID == a.ID {
@@ -153,7 +153,7 @@ func TestCRTheTableItselfRefusesASecondOpenRequest(t *testing.T) {
 	s := open(t)
 	mustCR(t, s, newCR("claude/x", "main"))
 	_, err := s.db.Exec(`INSERT INTO change_request (id, n, repo, source_room, source_branch, target_branch, title,
-		created_card, created_at) VALUES ('cr_9', 9, 'github/o/r', 'sg3', 'claude/x', 'main', 't', 'C1', 'now')`)
+		created_card, created_at) VALUES ('cr_9', 9, 'github/o/r', 'room-d', 'claude/x', 'main', 't', 'C1', 'now')`)
 	if err == nil {
 		t.Fatal("a second open row for the same source and target was taken")
 	}
@@ -200,11 +200,11 @@ func TestCRListFilters(t *testing.T) {
 	s := open(t)
 	a := mustCR(t, s, newCR("claude/a", "main"))
 	bIn := newCR("claude/b", "claude/main")
-	bIn.SourceRoom, bIn.Owner = "sg4", CRParty{Room: "sg4", Card: "C2"}
+	bIn.SourceRoom, bIn.Owner = "room-e", CRParty{Room: "room-e", Card: "C2"}
 	b := mustCR(t, s, bIn)
-	// A hub branch: no source room, owned by a card on m1mini.
+	// A hub branch: no source room, owned by a card on room-a.
 	cIn := newCR("fix/c", "main")
-	cIn.Repo, cIn.SourceRoom, cIn.Owner = "github/o/other", "", CRParty{Room: "m1mini", Card: "C3"}
+	cIn.Repo, cIn.SourceRoom, cIn.Owner = "github/o/other", "", CRParty{Room: "room-a", Card: "C3"}
 	c := mustCR(t, s, cIn)
 	if _, err := s.CREnd(a.ID, CRMerged, CRParty{Card: CROperator}, "", sha40); err != nil {
 		t.Fatal(err)
@@ -231,14 +231,14 @@ func TestCRListFilters(t *testing.T) {
 		"merged":              {CRFilter{State: CRMerged}, a.ID},
 		"closed (none)":       {CRFilter{State: CRClosed}, ""},
 		"finished (merged)":   {CRFilter{Finished: true}, a.ID},
-		"the source room":     {CRFilter{Room: "sg4"}, b.ID},
-		"a room, any case":    {CRFilter{Room: "SG4"}, b.ID},
-		"the owner's room":    {CRFilter{Room: "m1mini"}, c.ID},
-		"a room with nothing": {CRFilter{Room: "sg9"}, ""},
+		"the source room":     {CRFilter{Room: "room-e"}, b.ID},
+		"a room, any case":    {CRFilter{Room: "ROOM-E"}, b.ID},
+		"the owner's room":    {CRFilter{Room: "room-a"}, c.ID},
+		"a room with nothing": {CRFilter{Room: "room-x"}, ""},
 		"a target":            {CRFilter{Target: "main"}, c.ID + "," + a.ID},
 		"a repo":              {CRFilter{Repo: "github/o/other"}, c.ID},
-		"open in a room":      {CRFilter{State: CROpen, Room: "sg3"}, ""},
-		"two filters":         {CRFilter{Target: "main", Room: "sg3"}, a.ID},
+		"open in a room":      {CRFilter{State: CROpen, Room: "room-d"}, ""},
+		"two filters":         {CRFilter{Target: "main", Room: "room-d"}, a.ID},
 	} {
 		if got := ids(tc.f); got != tc.want {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)
@@ -249,9 +249,9 @@ func TestCRListFilters(t *testing.T) {
 func TestCREndIsOnceAndRecordsWhoAndWhen(t *testing.T) {
 	s := open(t)
 	a := mustCR(t, s, newCR("claude/x", "main"))
-	got, err := s.CREnd(a.ID, CRClosed, CRParty{Room: "sg3", Card: "C9"}, "wrong branch", "")
+	got, err := s.CREnd(a.ID, CRClosed, CRParty{Room: "room-d", Card: "C9"}, "wrong branch", "")
 	if err != nil || got.State != CRClosed || got.Note != "wrong branch" || got.ClosedAt == nil ||
-		got.ClosedBy == nil || *got.ClosedBy != (CRParty{Room: "sg3", Card: "C9"}) || got.MergedSHA != nil {
+		got.ClosedBy == nil || *got.ClosedBy != (CRParty{Room: "room-d", Card: "C9"}) || got.MergedSHA != nil {
 		t.Fatalf("closed: %+v %v", got, err)
 	}
 	// Final, whichever way it is tried, and the row is what it was.
@@ -341,7 +341,7 @@ func TestChangeRequestMigrationAppliesToAnExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := added(t, s, "sg4")
+	r := added(t, s, "room-e")
 	// Put the database back to how 0008 left it.
 	if _, err := s.db.Exec(`DROP TABLE change_request`); err != nil {
 		t.Fatal(err)

@@ -1,8 +1,7 @@
 // ── a card has an address made of names ──────────────────────────────────
 //
 // `/alias/<alias>` opens a card's terminal on its own, the way `#term=<id>` does. `/room/<room>/<name>` is the
-// qualified form that never clashes, and `/room/<room>` is the board scoped to that room. See
-// docs/rnd/card-urls-design.md.
+// qualified form that never clashes, and `/room/<room>` is the board scoped to that room.
 //
 // THE PAGE DOES NOT RESOLVE A NAME ITSELF. It asks the hub's handle-addressed route, `GET /v1/tasks/<alias>` or
 // `GET /v1/tasks/<name>@<room>`, once per open and never on a timer. What comes back is a card, a 404 with what

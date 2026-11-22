@@ -633,6 +633,11 @@ func (s *textScan) feed(line []byte) {
 		s.prompts = append(s.prompts, p)
 		return
 	}
+	if p, ok := promptline.HookPromptOf(line); ok {
+		p.Text, p.Truncated = keepHead(p.Text, replyTextMax)
+		s.prompts = append(s.prompts, p)
+		return
+	}
 	{
 		isUser := bytes.Contains(line, []byte(`"user"`))
 		if !isUser && !bytes.Contains(line, []byte(`"assistant"`)) {

@@ -10,7 +10,7 @@ import (
 )
 
 // The three things an item does besides being filed and set by hand: take an id from the hub, be refreshed from a
-// file, and follow the card that works on it. See docs/rnd/reports-channel-design.md.
+// file, and follow the card that works on it.
 
 // deptPrefix is the prefix of the ids a department's items carry. An item filed with no id takes `<prefix>-<n>`.
 var deptPrefix = map[string]string{

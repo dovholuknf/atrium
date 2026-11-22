@@ -24,21 +24,21 @@ func TestARoomsDiskNoticeRidesTheBeatAndClears(t *testing.T) {
 
 	var notice atomic.Value
 	notice.Store("")
-	room := &Room{Name: "sg3", Dial: plain{addr: ln.Addr().String()}, Handler: http.NotFoundHandler(),
+	room := &Room{Name: "room-d", Dial: plain{addr: ln.Addr().String()}, Handler: http.NotFoundHandler(),
 		T:    Timings{Beat: 50 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 		Disk: func() string { return notice.Load().(string) }}
 	go func() { _ = room.Run(ctx) }()
 	attached := func() string {
 		for _, a := range hub.Rooms() {
-			if a.Name == "sg3" {
+			if a.Name == "room-d" {
 				return a.DiskLow
 			}
 		}
 		return "<absent>"
 	}
 	waitFor(t, 5*time.Second, func() bool { return attached() == "" })
-	notice.Store("sg3: disk getting low. C: has 7 GB free")
-	waitFor(t, 5*time.Second, func() bool { return attached() == "sg3: disk getting low. C: has 7 GB free" })
+	notice.Store("room-d: disk getting low. C: has 7 GB free")
+	waitFor(t, 5*time.Second, func() bool { return attached() == "room-d: disk getting low. C: has 7 GB free" })
 	notice.Store("")
 	waitFor(t, 5*time.Second, func() bool { return attached() == "" })
 }

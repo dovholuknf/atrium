@@ -12,7 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// The shepherd's row over /_hub/shepherds. See docs/rnd/script-minion.md, recommendation 5.
+// The shepherd's row over /_hub/shepherds.
 //
 //	GET  /_hub/shepherds/<item>   the row, or 404
 //	POST /_hub/shepherds/<item>   the row whole, written before the phase it names runs

@@ -13,7 +13,7 @@ import (
 func TestPromptInsideATransactionDoesNotDeadlock(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
 	launcher, _, _ := s.Register(Observed{WireName: "boss", Worktree: "/tmp/boss"})

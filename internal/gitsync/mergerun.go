@@ -24,8 +24,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// The room's half of the merge queue: test one candidate the hub merged, and say how it went. See
-// docs/rnd/merge-queue.md.
+// The room's half of the merge queue: test one candidate the hub merged, and say how it went.
 //
 //	POST /v1/git/merge/run     {n, repo, candidate, base}, sent by the hub over the link. Answers 202 at once.
 //	GET  /v1/git/merge/status  ?n=, the last verdict of a run, from memory, for a hub that restarted mid-run

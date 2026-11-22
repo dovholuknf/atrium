@@ -130,33 +130,33 @@ const dotagents = `/work/dotagents`
 
 func inDir(dir string) string { return fmt.Sprintf(`{"harness":"claude","cwd":%q}`, dir) }
 
-// THE BUG. gwt on sg4 posts a launch with no room. Four rooms, and the directory
+// THE BUG. gwt on room-e posts a launch with no room. Four rooms, and the directory
 // is on one machine only: it goes there, with no question asked.
 func TestAnUnscopedLaunchGoesToTheOneRoomWithTheDirectory(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4"}
-	b := &fakeRoom{name: "sg4-control", host: "sg4", dirs: []string{dotagents}}
-	c := &fakeRoom{name: "sg3", host: "sg3", dirs: []string{"/elsewhere"}}
-	d := &fakeRoom{name: "m1mini", host: "m1mini"}
-	front, done := rooms(t, "sg4", a, b, c, d)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e"}
+	b := &fakeRoom{name: "room-e-control", host: "room-e", dirs: []string{dotagents}}
+	c := &fakeRoom{name: "room-d", host: "room-d", dirs: []string{"/elsewhere"}}
+	d := &fakeRoom{name: "room-a", host: "room-a"}
+	front, done := rooms(t, "room-e", a, b, c, d)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusOK || got.By != "sg4-control" {
-		t.Fatalf("the launch landed on %q (%d %s), want sg4-control", got.By, got.Code, got.Error)
+	if got.Code != http.StatusOK || got.By != "room-e-control" {
+		t.Fatalf("the launch landed on %q (%d %s), want room-e-control", got.By, got.Code, got.Error)
 	}
 	// Only the caller's machine was asked.
 	if c.probes.Load() != 0 || d.probes.Load() != 0 {
-		t.Fatalf("rooms on other machines were asked: sg3 %d, m1mini %d", c.probes.Load(), d.probes.Load())
+		t.Fatalf("rooms on other machines were asked: room-d %d, room-a %d", c.probes.Load(), d.probes.Load())
 	}
 }
 
-// A directory that exists only on sg3 is not launched on sg3 from sg4: the
-// caller is on sg4, and sg4 has no such directory. No picker to fail in.
+// A directory that exists only on room-d is not launched on room-d from room-e: the
+// caller is on room-e, and room-e has no such directory. No picker to fail in.
 func TestAnUnscopedLaunchWithNoRoomHavingTheDirectoryIsNotAPicker(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4"}
-	b := &fakeRoom{name: "sg4-control", host: "sg4"}
-	c := &fakeRoom{name: "sg3", host: "sg3", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b, c)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e"}
+	b := &fakeRoom{name: "room-e-control", host: "room-e"}
+	c := &fakeRoom{name: "room-d", host: "room-d", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b, c)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
@@ -171,49 +171,49 @@ func TestAnUnscopedLaunchWithNoRoomHavingTheDirectoryIsNotAPicker(t *testing.T) 
 	}
 }
 
-// sg4 runs two rooms on one machine, so two matches is the ordinary case there.
+// room-e runs two rooms on one machine, so two matches is the ordinary case there.
 // The caller is asked, and is offered the two that work, not the third that does
 // not have the directory and not the room on another machine that does.
 func TestAnUnscopedLaunchWithTwoMatchesListsOnlyThoseTwo(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dotagents}}
-	b := &fakeRoom{name: "sg4-control", host: "sg4", dirs: []string{dotagents}}
-	c := &fakeRoom{name: "sg4-lacks", host: "sg4"}
-	d := &fakeRoom{name: "sg3", host: "sg3", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b, c, d)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{dotagents}}
+	b := &fakeRoom{name: "room-e-control", host: "room-e", dirs: []string{dotagents}}
+	c := &fakeRoom{name: "room-e-lacks", host: "room-e"}
+	d := &fakeRoom{name: "room-d", host: "room-d", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b, c, d)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
 	if got.Code != http.StatusConflict {
 		t.Fatalf("answered %d, want 409", got.Code)
 	}
-	if strings.Join(got.Rooms, ",") != "claude-sg4,sg4-control" {
-		t.Fatalf("rooms %v, want exactly claude-sg4 and sg4-control", got.Rooms)
+	if strings.Join(got.Rooms, ",") != "claude-room-e,room-e-control" {
+		t.Fatalf("rooms %v, want exactly claude-room-e and room-e-control", got.Rooms)
 	}
 }
 
 // There is no default room. Naming one on the retry is how it is chosen.
 func TestThePickAfterTwoMatchesIsHonouredAsNamed(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dotagents}}
-	b := &fakeRoom{name: "sg4-control", host: "sg4", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{dotagents}}
+	b := &fakeRoom{name: "room-e-control", host: "room-e", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
-	got := launch(t, front, inDir(dotagents), wire.RoomHeader, "claude-sg4")
-	if got.Code != http.StatusOK || got.By != "claude-sg4" {
+	got := launch(t, front, inDir(dotagents), wire.RoomHeader, "claude-room-e")
+	if got.Code != http.StatusOK || got.By != "claude-room-e" {
 		t.Fatalf("the pick landed on %q (%d %s)", got.By, got.Code, got.Error)
 	}
 }
 
 // A silent room is not a match, and does not hold the launch up past its wait.
 func TestARoomThatDoesNotAnswerIsNotAMatch(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dotagents}, slow: 5 * time.Second}
-	b := &fakeRoom{name: "sg4-control", host: "sg4", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{dotagents}, slow: 5 * time.Second}
+	b := &fakeRoom{name: "room-e-control", host: "room-e", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	began := time.Now()
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusOK || got.By != "sg4-control" {
+	if got.Code != http.StatusOK || got.By != "room-e-control" {
 		t.Fatalf("the launch landed on %q (%d %s), want the room that answered", got.By, got.Code, got.Error)
 	}
 	if took := time.Since(began); took > 3*time.Second {
@@ -227,23 +227,23 @@ func TestARoomThatDoesNotAnswerIsNotAMatch(t *testing.T) {
 // machine's too), never a 422 that strands the launch. This is also why the order
 // hub and rooms are deployed in does not matter.
 func TestARoomThatDidNotAnswerKeepsThePickerOverEveryRoom(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", noRoute: true}
-	b := &fakeRoom{name: "sg4-control", host: "sg4"}
-	c := &fakeRoom{name: "sg3", host: "sg3"}
-	front, done := rooms(t, "sg4", a, b, c)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", noRoute: true}
+	b := &fakeRoom{name: "room-e-control", host: "room-e"}
+	c := &fakeRoom{name: "room-d", host: "room-d"}
+	front, done := rooms(t, "room-e", a, b, c)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3,sg4-control" {
+	if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-room-e,room-d,room-e-control" {
 		t.Fatalf("answered %d rooms %v, want the old 409 over every room", got.Code, got.Rooms)
 	}
 }
 
 // Slow is the same as old: not an answer.
 func TestASlowRoomWithNoMatchKeepsThePicker(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", slow: 5 * time.Second}
-	b := &fakeRoom{name: "sg4-control", host: "sg4"}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", slow: 5 * time.Second}
+	b := &fakeRoom{name: "room-e-control", host: "room-e"}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
@@ -256,14 +256,14 @@ func TestASlowRoomWithNoMatchKeepsThePicker(t *testing.T) {
 // on, is "not a directory" on every room, and so was a 422 where the picker used
 // to be. It is not probed and is asked about as before.
 func TestARelativeDirectoryKeepsThePickerAndIsNotProbed(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{".", "~/x", "src"}}
-	b := &fakeRoom{name: "sg3", host: "sg3"}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{".", "~/x", "src"}}
+	b := &fakeRoom{name: "room-d", host: "room-d"}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	for _, dir := range []string{".", "~/x", "src", `\work`, "C:", `C:x`} {
 		got := launch(t, front, inDir(dir))
-		if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3" {
+		if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-room-e,room-d" {
 			t.Fatalf("%q answered %d rooms %v, want the old 409 over every room", dir, got.Code, got.Rooms)
 		}
 	}
@@ -276,13 +276,13 @@ func TestARelativeDirectoryKeepsThePickerAndIsNotProbed(t *testing.T) {
 // path is absolute on a hub that is not, and is asked about.
 func TestAWindowsDriveDirectoryIsAbsoluteWhateverTheHub(t *testing.T) {
 	for _, dir := range []string{`D:\git\dotagents`, `d:/git/dotagents`} {
-		a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dir}}
-		b := &fakeRoom{name: "sg3", host: "sg3"}
-		front, done := rooms(t, "sg4", a, b)
+		a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{dir}}
+		b := &fakeRoom{name: "room-d", host: "room-d"}
+		front, done := rooms(t, "room-e", a, b)
 		got := launch(t, front, inDir(dir))
 		done()
-		if got.Code != http.StatusOK || got.By != "claude-sg4" {
-			t.Fatalf("%q landed on %q (%d %s), want claude-sg4", dir, got.By, got.Code, got.Error)
+		if got.Code != http.StatusOK || got.By != "claude-room-e" {
+			t.Fatalf("%q landed on %q (%d %s), want claude-room-e", dir, got.By, got.Code, got.Error)
 		}
 	}
 }
@@ -292,14 +292,14 @@ func TestAWindowsDriveDirectoryIsAbsoluteWhateverTheHub(t *testing.T) {
 // answer is the old question.
 func TestANetworkPathIsNeverProbed(t *testing.T) {
 	dirs := []string{`\\evil\share\x`, `//evil/share/x`, `\\?\UNC\evil\share`, `\\.\pipe\x`, `/\evil/share`, `\\?\C:\x`}
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: dirs}
-	b := &fakeRoom{name: "sg3", host: "sg3", dirs: dirs}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: dirs}
+	b := &fakeRoom{name: "room-d", host: "room-d", dirs: dirs}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	for _, dir := range dirs {
 		got := launch(t, front, inDir(dir))
-		if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3" {
+		if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-room-e,room-d" {
 			t.Fatalf("%q answered %d rooms %v, want the old 409 over every room", dir, got.Code, got.Rooms)
 		}
 	}
@@ -311,22 +311,22 @@ func TestANetworkPathIsNeverProbed(t *testing.T) {
 // A room marked for deletion starts nothing, so it is not asked and is not a
 // match: the other room on the machine takes the launch with no picker.
 func TestARoomMarkedForDeletionIsNotACandidate(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dotagents}}
-	b := &fakeRoom{name: "sg4-control", host: "sg4", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{dotagents}}
+	b := &fakeRoom{name: "room-e-control", host: "room-e", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 	seen := time.Now()
 	front.Config.Handler.(*Proxy).SetInventory(&remembering{
 		rooms: []Known{
-			{Name: "claude-sg4", Attached: true, State: "marked-for-deletion", FirstSeen: &seen, LastSeen: &seen},
-			{Name: "sg4-control", Attached: true, FirstSeen: &seen, LastSeen: &seen},
+			{Name: "claude-room-e", Attached: true, State: "marked-for-deletion", FirstSeen: &seen, LastSeen: &seen},
+			{Name: "room-e-control", Attached: true, FirstSeen: &seen, LastSeen: &seen},
 		},
 		cards: map[string][]CardState{},
 	})
 
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusOK || got.By != "sg4-control" {
-		t.Fatalf("the launch landed on %q (%d %s), want sg4-control", got.By, got.Code, got.Error)
+	if got.Code != http.StatusOK || got.By != "room-e-control" {
+		t.Fatalf("the launch landed on %q (%d %s), want room-e-control", got.By, got.Code, got.Error)
 	}
 	if a.probes.Load() != 0 {
 		t.Fatal("a room on its way out was asked")
@@ -336,13 +336,13 @@ func TestARoomMarkedForDeletionIsNotACandidate(t *testing.T) {
 // A launch that names a room is placed exactly as before: no directory check,
 // whether or not the room has the directory.
 func TestALaunchThatNamesARoomIsNotChecked(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4"}
-	b := &fakeRoom{name: "sg3", host: "sg3", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e"}
+	b := &fakeRoom{name: "room-d", host: "room-d", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
-	got := launch(t, front, inDir(dotagents), wire.RoomHeader, "claude-sg4")
-	if got.Code != http.StatusOK || got.By != "claude-sg4" {
+	got := launch(t, front, inDir(dotagents), wire.RoomHeader, "claude-room-e")
+	if got.Code != http.StatusOK || got.By != "claude-room-e" {
 		t.Fatalf("a named room was overridden: %q (%d %s)", got.By, got.Code, got.Error)
 	}
 	if a.probes.Load()+b.probes.Load() != 0 {
@@ -352,13 +352,13 @@ func TestALaunchThatNamesARoomIsNotChecked(t *testing.T) {
 
 // A launch that names a card is placed by the card.
 func TestALaunchThatNamesACardIsNotChecked(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4"}
-	b := &fakeRoom{name: "sg3", host: "sg3"}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e"}
+	b := &fakeRoom{name: "room-d", host: "room-d"}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
-	got := launch(t, front, `{"harness":"claude","cwd":"/work/x","task_id":"sg3~abc"}`)
-	if got.Code != http.StatusOK || got.By != "sg3" {
+	got := launch(t, front, `{"harness":"claude","cwd":"/work/x","task_id":"room-d~abc"}`)
+	if got.Code != http.StatusOK || got.By != "room-d" {
 		t.Fatalf("a tagged card was overridden: %q (%d %s)", got.By, got.Code, got.Error)
 	}
 	if a.probes.Load()+b.probes.Load() != 0 {
@@ -369,22 +369,22 @@ func TestALaunchThatNamesACardIsNotChecked(t *testing.T) {
 // A launch with no directory has nothing to check, so it is asked for a room as
 // it always was.
 func TestAnUnscopedLaunchWithNoDirectoryStillAsksForARoom(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4"}
-	b := &fakeRoom{name: "sg3", host: "sg3"}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e"}
+	b := &fakeRoom{name: "room-d", host: "room-d"}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	got := launch(t, front, `{"harness":"claude"}`)
-	if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3" {
+	if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-room-e,room-d" {
 		t.Fatalf("answered %d rooms %v, want the old 409 over every room", got.Code, got.Rooms)
 	}
 }
 
 // Other unscoped writes are still a question.
 func TestAnotherUnscopedWriteStillAsksForARoom(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dotagents}}
-	b := &fakeRoom{name: "sg3", host: "sg3"}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e", dirs: []string{dotagents}}
+	b := &fakeRoom{name: "room-d", host: "room-d"}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	res, err := http.Post(front.URL+"/v1/settings", "application/json", strings.NewReader(`{"x":"y"}`))
@@ -400,15 +400,15 @@ func TestAnotherUnscopedWriteStillAsksForARoom(t *testing.T) {
 // A caller that did not come over loopback cannot be placed on a machine, so
 // every room is asked, and the directory still decides.
 func TestARemoteCallerIsCheckedAgainstEveryRoom(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "sg4"}
-	b := &fakeRoom{name: "sg3", host: "sg3", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "room-e"}
+	b := &fakeRoom{name: "room-d", host: "room-d", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	// A forwarding header is what makes a request not a local operator's.
 	got := launch(t, front, inDir(dotagents), "X-Forwarded-For", "203.0.113.9")
-	if got.Code != http.StatusOK || got.By != "sg3" {
-		t.Fatalf("the launch landed on %q (%d %s), want sg3", got.By, got.Code, got.Error)
+	if got.Code != http.StatusOK || got.By != "room-d" {
+		t.Fatalf("the launch landed on %q (%d %s), want room-d", got.By, got.Code, got.Error)
 	}
 	if a.probes.Load() == 0 {
 		t.Fatal("a remote caller was filtered to the hub's machine")
@@ -418,26 +418,26 @@ func TestARemoteCallerIsCheckedAgainstEveryRoom(t *testing.T) {
 // Rooms that report no host that matches the hub's leave nothing to filter to,
 // and a filter that matches nothing is no filter.
 func TestAHostFilterThatMatchesNoRoomAsksEveryRoom(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "somewhere"}
-	b := &fakeRoom{name: "sg3", host: "else", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "somewhere"}
+	b := &fakeRoom{name: "room-d", host: "else", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusOK || got.By != "sg3" {
-		t.Fatalf("the launch landed on %q (%d %s), want sg3", got.By, got.Code, got.Error)
+	if got.Code != http.StatusOK || got.By != "room-d" {
+		t.Fatalf("the launch landed on %q (%d %s), want room-d", got.By, got.Code, got.Error)
 	}
 }
 
-// The host is compared the way a person would: sg4 and SG4 are one machine.
+// The host is compared the way a person would: room-e and ROOM-E are one machine.
 func TestTheHubsHostIsComparedIgnoringCase(t *testing.T) {
-	a := &fakeRoom{name: "claude-sg4", host: "SG4", dirs: []string{dotagents}}
-	b := &fakeRoom{name: "sg3", host: "sg3", dirs: []string{dotagents}}
-	front, done := rooms(t, "sg4", a, b)
+	a := &fakeRoom{name: "claude-room-e", host: "ROOM-E", dirs: []string{dotagents}}
+	b := &fakeRoom{name: "room-d", host: "room-d", dirs: []string{dotagents}}
+	front, done := rooms(t, "room-e", a, b)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusOK || got.By != "claude-sg4" {
-		t.Fatalf("the launch landed on %q (%d %s), want claude-sg4", got.By, got.Code, got.Error)
+	if got.Code != http.StatusOK || got.By != "claude-room-e" {
+		t.Fatalf("the launch landed on %q (%d %s), want claude-room-e", got.By, got.Code, got.Error)
 	}
 }

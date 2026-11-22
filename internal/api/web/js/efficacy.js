@@ -1,5 +1,5 @@
-// The efficacy page of the items tab: how WELL the process worked, as docs/rnd/item-lifecycle-design.md section 12 draws it
-// (docs/rnd/img/item-lifecycle/efficacy-1400.png and efficacy-2400.png). A page of the items tab, reached from its `efficacy` pill and
+// The efficacy page of the items tab: how WELL the process worked.
+// A page of the items tab, reached from its `efficacy` pill and
 // left by its crumb, drawn into #items-list by `itemsPaint`.
 //
 // THIS FILE ONLY DRAWS. The data is `itemsData.efficacy` (js/items-data.js), the hub's `GET /_hub/work/efficacy`, a read of what the hub's

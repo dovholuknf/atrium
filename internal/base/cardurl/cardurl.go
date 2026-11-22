@@ -1,5 +1,4 @@
-// Package cardurl is which page a readable card address is: stage R3 of
-// docs/rnd/card-urls-design.md.
+// Package cardurl is which page a readable card address is: stage R3 of the card URLs.
 //
 // `/alias/<alias>`, `/room/<room>` and `/room/<room>/<name>` are the board page,
 // and `/m/alias/<alias>` and `/m/room/<room>/<name>` the phone page. The server

@@ -20,17 +20,17 @@ func claudeWithEffort() *store.Harness {
 // The interviewer case, and the ORDER: base, model, effort, extra args, prompt.
 func TestEffortAndExtraArgsGoBeforeThePrompt(t *testing.T) {
 	t.Parallel()
-	args, logged, err := runnerArgsWith(claudeWithEffort(), "", "ask clint", launchOptions{
+	args, logged, err := runnerArgsWith(claudeWithEffort(), "", "ask operator", launchOptions{
 		Model: "claude-haiku-4-5-20251001", Effort: "low", Args: []string{"--verbose"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "--model claude-haiku-4-5-20251001 --effort low --verbose ask clint"
+	want := "--model claude-haiku-4-5-20251001 --effort low --verbose ask operator"
 	if got := strings.Join(args, " "); got != want {
 		t.Fatalf("argv is %q, want %q", got, want)
 	}
-	if !strings.Contains(logged, "--effort low") || strings.Contains(logged, "ask clint") {
+	if !strings.Contains(logged, "--effort low") || strings.Contains(logged, "ask operator") {
 		t.Fatalf("the logged line is %q", logged)
 	}
 }

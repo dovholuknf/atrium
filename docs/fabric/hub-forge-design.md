@@ -15,10 +15,7 @@ Read for this design, 2026-10-02:
 - `docs/fabric/git-sync-design.md` (stage 1 built: bare repos for the repos in `git_repos`, rooms fetching
   `claude/main` over smart HTTP on the link's `git` connection kind, upload-pack only, and the hub collecting rooms'
   `claude/*`);
-- `internal/gitsync/`, `internal/link/git_hub.go`;
-- `docs/rnd/security-design.md` (the reach table, the agent listener, card tokens in stage 2c);
-- `docs/rnd/overlay-room-identity.md`;
-- `docs/rnd/change-record-design.md` and `docs/rnd/review-on-atrium-design.md` section 7.7.
+- `internal/gitsync/`, `internal/link/git_hub.go`.
 
 ## 0. The answer, from clint's answers
 
@@ -321,7 +318,7 @@ refused by the same rules.
 ## 6. Finished, and the change record
 
 - **A change is finished when its branch is on the hub at the head the room has.** The change record's "Pushed" line
-  (`docs/rnd/change-record-design.md`) reads the hub's push log, not a forge.
+  reads the hub's push log, not a forge.
 - **Change requests between rooms** (revision 1's F5) stay. A request names a source (a room's branch, or a pushed
   branch on the hub) and a target, with the change record attached. Its title and why reach the owner as data. A
   request whose target is `main` goes to the orchestrator or clint, who merges on the hub's side, re-signs and pushes
@@ -372,7 +369,7 @@ From the interview's open items, each with the default this design takes:
 
 ## Appendix: Hub forge interview answers (clint)
 
-Merged from `docs/rnd/hub-forge-answers.md` on 2026-10-07.
+Merged from the hub forge answers on 2026-10-07.
 
 ### Q1. Mirror every repo any card works in automatically?
 Answer (2026-10-02): No, wasteful. Not auto, and not a copy made when someone asks either. Clint's model: m1mini is

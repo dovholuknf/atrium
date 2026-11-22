@@ -37,7 +37,7 @@ var terminalReports = map[string]string{
 	"a click, full report": "\x1b[I\x1b[<0;3;4M\x1b[<0;3;4m",
 }
 
-// THE BUG CLINT HIT. Clicking into a terminal sends a focus report, and each
+// THE BUG THE OPERATOR HIT. Clicking into a terminal sends a focus report, and each
 // one added two characters nothing took away, so every say to that card waited
 // behind an empty line. A report must count nothing, move no clock and wake no
 // waiting message.

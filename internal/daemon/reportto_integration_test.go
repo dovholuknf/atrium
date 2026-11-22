@@ -112,8 +112,8 @@ func TestAnUnknownOrForeignReportToRefusesAndCreatesNoCard(t *testing.T) {
 	before, _ := d.st.List()
 	for _, c := range []struct{ to, want string }{
 		{"nobody", "reviewer"},
-		{"review@claude-sg4", "another room"},
-		{"claude-sg4~L1", "another room"},
+		{"review@claude-room-e", "another room"},
+		{"claude-room-e~L1", "another room"},
 	} {
 		_, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: c.to})
 		if err == nil || !strings.Contains(err.Error(), c.want) {

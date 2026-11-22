@@ -10,7 +10,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// The merge queue's git, in the hub's own store. See docs/rnd/merge-queue.md.
+// The merge queue's git, in the hub's own store.
 //
 // THE HUB MERGES AND NEVER CHECKS OUT. `git merge-tree --write-tree` makes the merged tree from objects the store
 // already has, and `commit-tree` the commit, so no working tree is made and no script of the repository runs here.

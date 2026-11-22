@@ -69,23 +69,23 @@ func TestSyncAndCollectTalkToTheHubAndReportNotOK(t *testing.T) {
 		switch r.URL.Path {
 		case "/_hub/git/sync":
 			_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]string{
-				{"room": "sg3", "name": "github/o/r", "state": "absent", "detail": "no clone"}}})
+				{"room": "room-d", "name": "github/o/r", "state": "absent", "detail": "no clone"}}})
 		case "/_hub/git/collect":
-			_ = json.NewEncoder(w).Encode(map[string]any{"room": "sg3", "repos": []map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{"room": "room-d", "repos": []map[string]any{
 				{"name": "github/o/r", "moved": true, "delivered": true, "refs": 2}}})
 		}
 	}))
 	defer hub.Close()
 	addr := strings.TrimPrefix(hub.URL, "http://")
 
-	out, err := runRooms(t, "git", "sync", "sg3", "--init", "--atrium-board-addr", addr)
+	out, err := runRooms(t, "git", "sync", "room-d", "--init", "--atrium-board-addr", addr)
 	if err == nil || !strings.Contains(out, "absent") {
 		t.Fatalf("sync: err=%v out=%s", err, out)
 	}
-	if got[0]["room"] != "sg3" || got[0]["init"] != true {
+	if got[0]["room"] != "room-d" || got[0]["init"] != true {
 		t.Fatalf("hub was sent %v", got[0])
 	}
-	out, err = runRooms(t, "git", "collect", "sg3", "--atrium-board-addr", addr)
+	out, err = runRooms(t, "git", "collect", "room-d", "--atrium-board-addr", addr)
 	if err != nil || !strings.Contains(out, "2 branches") {
 		t.Fatalf("collect: err=%v out=%s", err, out)
 	}
@@ -94,7 +94,7 @@ func TestSyncAndCollectTalkToTheHubAndReportNotOK(t *testing.T) {
 func TestAHubThatPredatesGitSyncSaysSo(t *testing.T) {
 	hub := httptest.NewServer(http.NotFoundHandler())
 	defer hub.Close()
-	_, err := runRooms(t, "git", "collect", "sg3", "--atrium-board-addr", strings.TrimPrefix(hub.URL, "http://"))
+	_, err := runRooms(t, "git", "collect", "room-d", "--atrium-board-addr", strings.TrimPrefix(hub.URL, "http://"))
 	if err == nil || !strings.Contains(err.Error(), "predates") {
 		t.Fatalf("err = %v", err)
 	}

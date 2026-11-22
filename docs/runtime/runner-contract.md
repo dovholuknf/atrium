@@ -1,7 +1,7 @@
 # Runner contract v1
 
 What a runner's hooks or plugin say to a room, and what a room says back. Atrium owns this contract and a kit that
-tests against it. It does not own runners. The design is `docs/rnd/runner-adapters-design.md`, and `hooks.md` is the
+tests against it. It does not own runners. `hooks.md` is the
 rules every hook follows.
 
 An adapter is whatever makes these calls for a runner: atrium's own hooks for claude and codex, or a plugin that

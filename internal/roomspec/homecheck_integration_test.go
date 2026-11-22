@@ -16,11 +16,11 @@ func TestValidateWorkRootForAnotherOperatingSystem(t *testing.T) {
 		{Darwin, "/var/root/work", "al", "root's home"},
 		{Darwin, "/Users/Shared/localai", "al", "every user shares"},
 		{Windows, "C:/Users/Public/localai", "al", "every user shares"},
-		{Windows, "C:/Users/BOB/x", `SG3\al`, "BOB's home"},
+		{Windows, "C:/Users/BOB/x", `ROOM-D\al`, "BOB's home"},
 		{Windows, "C:/Users/al.smith/x", "al", "al.smith's home"},
-		{Windows, "C:/Users/al.smith/x", `SG3\al`, "al.smith's home"},
-		{Windows, "C:/Users/al.OTHER/x", `SG3\al`, "al.OTHER's home"},
-		{Windows, "C:/Users/al.SG3/x", "al", "al.SG3's home"}, // a bare login cannot say its domain: the room judges its real home
+		{Windows, "C:/Users/al.smith/x", `ROOM-D\al`, "al.smith's home"},
+		{Windows, "C:/Users/al.OTHER/x", `ROOM-D\al`, "al.OTHER's home"},
+		{Windows, "C:/Users/al.ROOM-D/x", "al", "al.ROOM-D's home"}, // a bare login cannot say its domain: the room judges its real home
 		{Windows, "relative/dir", "al", "not a drive path"},
 		{Windows, "/srv/localai", "al", "not a drive path"},
 		{Linux, "V:/localai", "al", "drive path"},
@@ -37,8 +37,8 @@ func TestValidateWorkRootForAnotherOperatingSystem(t *testing.T) {
 	for _, c := range []struct{ goos, root, account string }{
 		{Linux, "/home/al/work", "al"},
 		{Darwin, "/Users/AL/work", "al"},
-		{Windows, `C:\Users\al\x`, `SG3\al`},
-		{Windows, "C:/Users/al.SG3/x", `SG3\al`},
+		{Windows, `C:\Users\al\x`, `ROOM-D\al`},
+		{Windows, "C:/Users/al.ROOM-D/x", `ROOM-D\al`},
 		{Windows, "C:/Users/LOCALA~1/x", "localai"},
 		{Linux, "/srv/localai", "al"},
 		{Linux, "/srv/localai", ""},
@@ -52,7 +52,7 @@ func TestValidateWorkRootForAnotherOperatingSystem(t *testing.T) {
 func TestASpecOfPacksAloneNeedsNoWorkRoot(t *testing.T) {
 	head := "version: 1\nname: r1\nos: windows\naccount: localai\n"
 	spec := mustSpec(t, Windows, head+"packs:\n  - runner: claude\n    repo: o/agents\n")
-	m := NewMemFS(winHome, `SG3\localai`)
+	m := NewMemFS(winHome, `ROOM-D\localai`)
 	m.Dir("C:/Users/localai/.claude")
 	ff := &fakeFetcher{src: packFiles(), latest: "abcdef1234567890"}
 	lk := Apply(spec, adapterFor(t, Windows), Host{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}, Fetch: ff, Need: []string{"c-systems-reviewer"}})
@@ -87,10 +87,10 @@ func TestWorkRootIsJudgedWhereTheMachineReallyReachesIt(t *testing.T) {
 			map[string]string{"/srv": "/data"}, ""},
 		{"link into the account's own home", Linux, linSpec, "/srv/localai", linHome, "localai",
 			map[string]string{"/srv": "/home/localai/srv"}, ""},
-		{"junction on a drive", Windows, winSpec, "V:/localai", winHome, `SG3\localai`,
+		{"junction on a drive", Windows, winSpec, "V:/localai", winHome, `ROOM-D\localai`,
 			map[string]string{"V:/localai": "C:/Users/bob/x"}, "bob's home"},
 		{"the profile folder is not the login", Windows, strings.Replace(winSpec, "V:/localai", "C:/Users/LOCALA~1/work", 1), "C:/Users/LOCALA~1/work",
-			Home{Dir: "C:/Users/localai.SG3"}, `SG3\localai`, map[string]string{"C:/Users/LOCALA~1": "C:/Users/localai.SG3"}, ""},
+			Home{Dir: "C:/Users/localai.ROOM-D"}, `ROOM-D\localai`, map[string]string{"C:/Users/LOCALA~1": "C:/Users/localai.ROOM-D"}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			spec := mustSpec(t, c.goos, c.spec)

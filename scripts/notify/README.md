@@ -14,4 +14,4 @@ command with `PUT /_hub/notify` from loopback and run `POST /_hub/notify/test` o
 - The script must not print the token or the URL. The hub keeps the first stderr line.
 - Batching and quiet hours are the board's rules: only changes are sent, and nothing is sent while a desktop tab is
   visible.
-- Two-way replies are not offered. See `docs/rnd/telegram-notify-design.md`.
+- Two-way replies are not offered.

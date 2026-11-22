@@ -43,7 +43,7 @@ func TestTheDefaultRecipeIsSeededOnceAndStaysDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Harness != "claude" || r.Match != "" || r.BudgetUSD <= 0 {
+	if r.Harness != "claude" || r.Match != "" || r.BudgetUSD <= 0 || r.WalkerBrief != DefaultWalkerBrief {
 		t.Fatalf("seed is wrong: %+v", r)
 	}
 	if panel, err := r.Reviewers(); err != nil || len(panel) != 4 {

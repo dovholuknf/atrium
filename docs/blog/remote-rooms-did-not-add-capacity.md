@@ -26,7 +26,6 @@ Series: Rooms, the hub and federation. Status: outline. Audience: people scaling
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)
 - docs/fabric/git-sync-design.md
 - changelog/fabric/2026-09-30-f-019b.md
-- docs/rnd/room-to-room-access-spike.md
 
 ## Notes for the writer
 

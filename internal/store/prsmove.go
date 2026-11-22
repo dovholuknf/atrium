@@ -8,7 +8,7 @@ import (
 
 // A review moves with its PR. These are the store's parts of that: the row's fields as they travel, the lookup by the
 // canonical key, the insert on the room that receives it, and the archive on the room that gave it up. The run folder
-// travels as files and is the api package's part. See docs/rnd/scm-forge-design.md Built.
+// travels as files and is the api package's part. Built.
 
 // PRTransfer is a row's fields as they cross from one room to another. The id, the run folder, the walker and the
 // claim are left out: the receiving room makes its own, and the walker is the new room's card.

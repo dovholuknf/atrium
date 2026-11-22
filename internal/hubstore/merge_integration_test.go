@@ -12,7 +12,7 @@ const mqRepo = "github.com/dovholuknf/atrium"
 
 func mqAsk(t *testing.T, s *Store, branch, sha string) MergeRequest {
 	t.Helper()
-	m, existing, err := s.MergeAsked(MergeAsk{Repo: mqRepo, Branch: branch, SHA: sha, Requester: "w1", RequesterRoom: "SG4"})
+	m, existing, err := s.MergeAsked(MergeAsk{Repo: mqRepo, Branch: branch, SHA: sha, Requester: "w1", RequesterRoom: "ROOM-E"})
 	if err != nil || existing {
 		t.Fatalf("ask %s: %+v %v %v", branch, m, existing, err)
 	}
@@ -23,7 +23,7 @@ func TestMergeAskedQueuesInOrderAndAnswersTheOpenRequestAgain(t *testing.T) {
 	s := open(t)
 	a := mqAsk(t, s, "claude/a", "aaaaaaa1")
 	b := mqAsk(t, s, "claude/b", "bbbbbbb1")
-	if a.N != 1 || b.N != 2 || a.State != MergeQueued || a.RequesterRoom != "sg4" || a.AskedAt == "" {
+	if a.N != 1 || b.N != 2 || a.State != MergeQueued || a.RequesterRoom != "room-e" || a.AskedAt == "" {
 		t.Fatalf("rows: %+v %+v", a, b)
 	}
 	again, existing, err := s.MergeAsked(MergeAsk{Repo: mqRepo, Branch: "claude/a", SHA: "aaaaaaa1"})
@@ -69,8 +69,8 @@ func TestMergeNextRunsOneAtATimeAndAMergersRequestFirst(t *testing.T) {
 	if repos, _ := s.MergeRepos(); len(repos) != 1 || repos[0] != MergeRepoName(mqRepo) {
 		t.Fatalf("repos: %v", repos)
 	}
-	c, err := s.MergeMove(MergeStep{N: a.N, To: MergeConflict, Reason: "conflict in a.go", Merger: "sg4~m1"})
-	if err != nil || c.State != MergeConflict || c.Merger != "sg4~m1" || c.EndedAt != "" {
+	c, err := s.MergeMove(MergeStep{N: a.N, To: MergeConflict, Reason: "conflict in a.go", Merger: "room-e~m1"})
+	if err != nil || c.State != MergeConflict || c.Merger != "room-e~m1" || c.EndedAt != "" {
 		t.Fatalf("conflict: %+v %v", c, err)
 	}
 	fix, _, err := s.MergeAsked(MergeAsk{Repo: mqRepo, Branch: "claude/merge-1", SHA: "ddddddd1", Continues: a.N})
@@ -93,8 +93,8 @@ func TestMergeMoveFollowsTheTableAndNeverLeavesAnEnd(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 	s.MergeMove(MergeStep{N: a.N, To: MergeMerging, Base: "0000000"})
-	m, err := s.MergeMove(MergeStep{N: a.N, To: MergeTesting, Candidate: "1111111", Room: "SG4"})
-	if err != nil || m.Candidate != "1111111" || m.Room != "sg4" || m.StartedAt == "" {
+	m, err := s.MergeMove(MergeStep{N: a.N, To: MergeTesting, Candidate: "1111111", Room: "ROOM-E"})
+	if err != nil || m.Candidate != "1111111" || m.Room != "room-e" || m.StartedAt == "" {
 		t.Fatalf("testing: %+v %v", m, err)
 	}
 	if _, err := s.MergeMove(MergeStep{N: a.N, From: MergeMerging, To: MergeLanded}); !errors.Is(err, ErrMergeMove) {
@@ -147,11 +147,11 @@ func TestSetMergeRoomTakesOnlyARoomTheHubHas(t *testing.T) {
 	if err := s.SetMergeRoom("nowhere"); !IsRefusal(err) {
 		t.Fatalf("unknown room: %v", err)
 	}
-	added(t, s, "SG4")
-	if err := s.SetMergeRoom("SG4"); err != nil {
+	added(t, s, "ROOM-E")
+	if err := s.SetMergeRoom("ROOM-E"); err != nil {
 		t.Fatal(err)
 	}
-	if r, _ := s.MergeRoom(); r != "sg4" {
+	if r, _ := s.MergeRoom(); r != "room-e" {
 		t.Fatalf("room: %q", r)
 	}
 	if err := s.SetMergeRoom(""); err != nil {
@@ -162,13 +162,13 @@ func TestSetMergeRoomTakesOnlyARoomTheHubHas(t *testing.T) {
 func TestMergeSetMergerOnlyOnAConflict(t *testing.T) {
 	s := open(t)
 	a := mqAsk(t, s, "claude/a", "aaaaaaa1")
-	if _, err := s.MergeSetMerger(a.N, "m1@sg4"); !errors.Is(err, ErrMergeMove) {
+	if _, err := s.MergeSetMerger(a.N, "m1@room-e"); !errors.Is(err, ErrMergeMove) {
 		t.Fatalf("queued: %v", err)
 	}
 	s.MergeMove(MergeStep{N: a.N, To: MergeMerging})
 	s.MergeMove(MergeStep{N: a.N, To: MergeConflict, Reason: "conflicts in x"})
-	m, err := s.MergeSetMerger(a.N, "m1@sg4")
-	if err != nil || m.Merger != "m1@sg4" || m.State != MergeConflict {
+	m, err := s.MergeSetMerger(a.N, "m1@room-e")
+	if err != nil || m.Merger != "m1@room-e" || m.State != MergeConflict {
 		t.Fatalf("set: %+v %v", m, err)
 	}
 }

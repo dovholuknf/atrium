@@ -95,7 +95,7 @@ func (h *publishHarness) write(name, body string) {
 }
 
 func (h *publishHarness) publish(in publishInput) (publishOutput, error) {
-	_, out, err := h.c.docsMCP().PublishHandler(context.Background(), ctlReq("r-031", "sg4"), in)
+	_, out, err := h.c.docsMCP().PublishHandler(context.Background(), ctlReq("r-031", "room-e"), in)
 	return out, err
 }
 
@@ -127,14 +127,14 @@ func TestPublishRecordsTheCardAsOrigin(t *testing.T) {
 	}
 	d, _ := h.st.DocGet(out.Slug)
 	v := d.Versions[0]
-	if v.Origin != "card" || v.Card != "sg4~card1" || v.By != "r-031@sg4" || v.Kind != "markdown" {
+	if v.Origin != "card" || v.Card != "room-e~card1" || v.By != "r-031@room-e" || v.Kind != "markdown" {
 		t.Fatalf("version %+v", v)
 	}
 	// And it is in that card's own list, which is what @ui's "published N documents" reads.
-	if l, _ := h.st.DocList("", false, "sg4~card1"); len(l) != 1 {
+	if l, _ := h.st.DocList("", false, "room-e~card1"); len(l) != 1 {
 		t.Fatalf("card list %+v", l)
 	}
-	if l, _ := h.st.DocList("", false, "sg4~card2"); len(l) != 0 {
+	if l, _ := h.st.DocList("", false, "room-e~card2"); len(l) != 0 {
 		t.Fatalf("another card's list %+v", l)
 	}
 }
@@ -318,7 +318,7 @@ func TestPublishInputRules(t *testing.T) {
 	if err == nil {
 		t.Fatal("an anonymous publish was accepted")
 	}
-	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("ghost", "sg4"), publishInput{Title: "t", Content: "a"})
+	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("ghost", "room-e"), publishInput{Title: "t", Content: "a"})
 	if err == nil || !strings.Contains(err.Error(), "no card") {
 		t.Fatalf("an unknown card: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestPublishIsLimitedPerCard(t *testing.T) {
 	if r := refusalOf(t, err); r.Status != 429 {
 		t.Fatalf("%+v", r)
 	}
-	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("r-032", "sg4"), publishInput{Title: "other card", Content: "mine"})
+	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("r-032", "room-e"), publishInput{Title: "other card", Content: "mine"})
 	if err != nil {
 		t.Fatalf("another card was held up: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestPublishIsAWorkerToolAndSaysItIsASpeedBump(t *testing.T) {
 }
 
 func (h *publishHarness) prompt(in docs.PromptInput) (docs.PromptOutput, error) {
-	_, out, err := h.c.docsMCP().PromptHandler(context.Background(), ctlReq("r-031", "sg4"), in)
+	_, out, err := h.c.docsMCP().PromptHandler(context.Background(), ctlReq("r-031", "room-e"), in)
 	return out, err
 }
 

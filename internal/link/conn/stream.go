@@ -18,7 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 )
 
-// An ssh stream: bytes from a caller to a room's own sshd, through the hub. See docs/rnd/ssh-via-hub.md.
+// An ssh stream: bytes from a caller to a room's own sshd, through the hub.
 //
 // ATRIUM CARRIES BYTES AND NOTHING ELSE. No key, password or agent socket passes through here, and the bytes are
 // counted and never read. ssh runs end to end inside the stream and the login is sshd's.

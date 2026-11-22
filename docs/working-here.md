@@ -40,7 +40,7 @@ machine" and not "it is deployed to the live hub".
 - A worker lands its branch with the merge queue: push it to the hub (`git push hub <branch>`), then run
   `atrium merge` (or `atrium_merge`). The hub merges it onto `claude/main`, runs `bash scripts/test-touched.sh` and
   answers merged with the sha, red with the failing tests, a conflict, or refused with the reason. A card cannot push
-  `claude/main`, only the operator and the queue move it (`docs/rnd/merge-queue.md`). Never push `main` or a tag, and
+  `claude/main`, only the operator and the queue move it. Never push `main` or a tag, and
   never ask the orchestrator to move `claude/main` by hand. `atrium merge --list` shows the queue, and landing on
   `main` is the operator's `atrium merge land`.
 

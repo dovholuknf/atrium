@@ -103,6 +103,14 @@ still in a job. `test-start-jobless.ps1` covers it.
 
 A room that answers a stop with 409 (its pty host would die with it) is never stopped with --runners by these scripts on their own. The stop fails, says how many runners are held and nothing has changed. Pass -KillRunners to deploy-batch.ps1, atrium-deploy.ps1 or stop-atrium.ps1 to end them anyway. test-stop-room-409.ps1 covers it.
 
+## A target already on the build is left alone
+
+`atrium-deploy.ps1` and `deploy-batch.ps1` ask the hub what each target runs (the hub's own commit from its deploy
+queue, a room's from its connection) and never restart one that already runs the build. `-Control` alone therefore
+deploys only sg4-control once the hub and the rooms are current, and `-Rooms ... -Control` in one call does the control
+room last with the hub restarted at most once. A target the hub cannot place is deployed. `test-deploy-current.ps1`
+and `test-deploy-batch-preflight.ps1` cover it.
+
 ## ssh routes to remote rooms
 
 `atrium-deploy.ps1` reaches a remote room by its bare name first, then `<room>.atrium`, which rides the hub and works

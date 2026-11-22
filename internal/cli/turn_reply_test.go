@@ -14,7 +14,13 @@ const replyDeploy = "Run this:\n\n```\npwsh scripts/live/atrium-deploy.ps1\n```\
 func replyEnv(t *testing.T, guardOn string) {
 	t.Helper()
 	t.Setenv("ATRIUM_GUARD", guardOn)
-	t.Setenv(guardRulesEnv, "")
+	rules := filepath.Join(t.TempDir(), "rules.json")
+	raw := `{"rules":[{"id":"reply-deploy","check":"reply-pattern","tools":["reply"],"reason":"do not hand over a deploy command ({name})",` +
+		`"params":{"scope":"fence","patterns":["atrium-deploy\\.ps1"]}}]}`
+	if err := os.WriteFile(rules, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(guardRulesEnv, rules)
 }
 
 func TestReplyGuardBlocksADeployCommand(t *testing.T) {

@@ -20,12 +20,12 @@ func TestDeployClickWaitsForANewContextAndNamesTheCard(t *testing.T) {
 	r.commit("Review\n\nAtrium-Verdict: hub-ok "+code, map[string]string{"docs/backlog/rt/r-new-review-a.md": "ok"})
 	tip := r.git("rev-parse", "HEAD")
 	p, started := readyProxy(t, r, base, scriptFile(t))
-	runs := []deploy.NewContextRun{{Room: "sg4", Card: "01a0f2da", Name: "orchestrator", Step: "clear", N: 2}}
+	runs := []deploy.NewContextRun{{Room: "room-e", Card: "01a0f2da", Name: "orchestrator", Step: "clear", N: 2}}
 	p.deployReady().Clearing = func(context.Context) []deploy.NewContextRun { return runs }
 
 	body := `{"tip":"` + tip + `"}`
 	rec := postDeploy(p, loopbackReq(http.MethodPost, "/_hub/deploy-ready/deploy", body))
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "orchestrator@sg4 (step 2 of 3, clear)") {
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "orchestrator@room-e (step 2 of 3, clear)") {
 		t.Fatalf("click over a clear = %d %s", rec.Code, rec.Body)
 	}
 	if len(*started) != 0 {

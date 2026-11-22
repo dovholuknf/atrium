@@ -24,7 +24,6 @@ Series: The software company: directors and workers. Status: outline. Audience: 
 ## Sources
 
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)
-- docs/rnd/operator-focus.md sections 0 to 2
 
 ## Notes for the writer
 

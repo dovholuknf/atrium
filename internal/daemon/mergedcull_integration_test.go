@@ -144,7 +144,7 @@ func TestAHeldWorkerIsNeverMarkedOrCulled(t *testing.T) {
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
-	if err := d.HoldCull(worker.ID, "clint"); err != nil {
+	if err := d.HoldCull(worker.ID, "operator"); err != nil {
 		t.Fatal(err)
 	}
 	if res := markedMerged(t, d, DefaultCullInto); len(res.Marked) != 0 {
@@ -164,12 +164,12 @@ func TestAHoldAfterTheMarkCancelsIt(t *testing.T) {
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
 	markedMerged(t, d, DefaultCullInto)
-	if err := d.HoldCull(worker.ID, "clint"); err != nil {
+	if err := d.HoldCull(worker.ID, "operator"); err != nil {
 		t.Fatal(err)
 	}
 	w := itemOf(t, d, worker.ID)
-	if w.CullAt != nil || w.HeldBy != "clint" {
-		t.Fatalf("item = %+v, want no mark and held by clint", w)
+	if w.CullAt != nil || w.HeldBy != "operator" {
+		t.Fatalf("item = %+v, want no mark and held by operator", w)
 	}
 }
 

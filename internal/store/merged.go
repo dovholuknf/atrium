@@ -8,7 +8,7 @@ import (
 )
 
 // The merged-cull mark: a worker whose branch a merge covered is culled after a
-// grace period unless somebody keeps it. See docs/rnd/merged-cull-design.md.
+// grace period unless somebody keeps it.
 //
 // The mark lives on the work item, not the card, because only a card another
 // session launched has one, and that is exactly the set this applies to.

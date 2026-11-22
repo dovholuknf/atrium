@@ -79,8 +79,8 @@ const card = (id) => ({ id, task_id: id, agent: "an agent" });
 const describe = (t) => ({ title: t.id, body: "" });
 
 // Two rooms attached: ids come tagged.
-const tagged = [card("sg4~01a0"), card("sg4~01b1"), card("sgg~02c2")];
-// sgg drops (2 -> 1): sg4's cards go BARE, sgg's cards leave.
+const tagged = [card("room-e~01a0"), card("room-e~01b1"), card("room-g~02c2")];
+// room-g drops (2 -> 1): room-e's cards go BARE, room-g's cards leave.
 const bare = [card("01a0"), card("01b1")];
 
 // ── the diff is on the bare id ──────────────────────────────────────────────
@@ -105,7 +105,7 @@ if (harness.announced.length !== 1 || harness.announced[0].ids.join() !== "03d3"
 }
 
 // ── the READY/WAITING path is diffed on the bare id too ─────────────────────
-// The false alert clint saw was "css-changes is ready" fired when a room
+// The false alert the operator saw was "css-changes is ready" fired when a room
 // attached: the ready/waiting kind runs through the same `check`, so a card
 // present before and after the room-set change (its id flipping bare<->tagged)
 // must NOT re-announce as ready. Same guarantee as arrivals, asserted here for
@@ -138,15 +138,15 @@ harness.reseed();                                  // room set changed
 // covers the flip in the other direction (1 -> 2) and any set churn a bare-id
 // diff alone would not, since a card leaving and a different one arriving on the
 // same tick would otherwise read as one arrival.
-harness.check("waiting", tagged.concat(card("sgg~04e4")), describe);
+harness.check("waiting", tagged.concat(card("room-g~04e4")), describe);
 if (harness.announced.length) {
   fail("reseed did not silence the room-set-change tick: " +
     JSON.stringify(harness.announced) + ". A room attaching or detaching must " +
     "re-seed the baseline, not announce the churn.");
 }
 // And the very next tick diffs normally again: reseed is one-shot.
-harness.check("waiting", tagged.concat(card("sgg~04e4"), card("sgg~05f5")), describe);
-if (harness.announced.length !== 1 || harness.announced[0].ids.join() !== "sgg~05f5") {
+harness.check("waiting", tagged.concat(card("room-g~04e4"), card("room-g~05f5")), describe);
+if (harness.announced.length !== 1 || harness.announced[0].ids.join() !== "room-g~05f5") {
   fail("reseed was not one-shot: the tick after a room change did not resume " +
     "diffing: " + JSON.stringify(harness.announced));
 }

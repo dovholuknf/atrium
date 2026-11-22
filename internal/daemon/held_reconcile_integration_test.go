@@ -18,10 +18,10 @@ func TestTheHeldChipIsRecomputedFromWhatIsStillPending(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	r.noteOperatorTyped([]byte("half a command"))
 
-	m1, _ := d.st.QueueFromPeer(target.ID, "one", "sg4/doer")
-	d.deferPeerInjection(target.ID, m1.ID, "sg4/doer", "one", "", false)
-	m2, _ := d.st.QueueFromPeer(target.ID, "two", "sg4/doer")
-	d.deferPeerInjection(target.ID, m2.ID, "sg4/doer", "two", "", false)
+	m1, _ := d.st.QueueFromPeer(target.ID, "one", "room-e/doer")
+	d.deferPeerInjection(target.ID, m1.ID, "room-e/doer", "one", "", false)
+	m2, _ := d.st.QueueFromPeer(target.ID, "two", "room-e/doer")
+	d.deferPeerInjection(target.ID, m2.ID, "room-e/doer", "two", "", false)
 	if a := heldView(d, target.ID); a == nil || a.HeldCount != 2 {
 		t.Fatalf("two held messages should read as two: %+v", a)
 	}
@@ -52,10 +52,10 @@ func TestAHeldChipWithNoInjectorEntryIsCleared(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
-	if _, err := d.st.QueueFromPeer(target.ID, "queued", "sg4/doer"); err != nil {
+	if _, err := d.st.QueueFromPeer(target.ID, "queued", "room-e/doer"); err != nil {
 		t.Fatal(err)
 	}
-	d.act.setHeld(target.ID, heldPeer{from: "sg4/doer", why: HeldForLine, count: 1})
+	d.act.setHeld(target.ID, heldPeer{from: "room-e/doer", why: HeldForLine, count: 1})
 	if a := heldView(d, target.ID); a != nil && a.HeldPeer != "" {
 		t.Fatalf("a chip nothing is retrying survived: %+v", a)
 	}

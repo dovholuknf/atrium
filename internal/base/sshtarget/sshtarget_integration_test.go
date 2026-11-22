@@ -10,14 +10,14 @@ import (
 
 func TestSSHTargetAddLoadRemove(t *testing.T) {
 	dir := t.TempDir()
-	if err := Add(dir, Target{Name: "wsl", Addr: "127.0.0.1:22", From: []string{"m1mini"}, User: "clint"}, false); err != nil {
+	if err := Add(dir, Target{Name: "wsl", Addr: "127.0.0.1:22", From: []string{"room-a"}, User: "operator"}, false); err != nil {
 		t.Fatal(err)
 	}
 	s, err := Load(dir)
 	if err != nil || len(s.Targets) != 1 {
 		t.Fatalf("load: %+v %v", s, err)
 	}
-	if got, ok := Find(s, "wsl"); !ok || got.Addr != "127.0.0.1:22" || got.User != "clint" {
+	if got, ok := Find(s, "wsl"); !ok || got.Addr != "127.0.0.1:22" || got.User != "operator" {
 		t.Fatalf("find: %+v %v", got, ok)
 	}
 	if err := Remove(dir, "wsl"); err != nil {
@@ -78,14 +78,14 @@ func TestSSHTargetWrongVersionIsAnError(t *testing.T) {
 }
 
 func TestSSHTargetAllowsStarAndCase(t *testing.T) {
-	if Allows(Target{}, "m1mini") {
+	if Allows(Target{}, "room-a") {
 		t.Fatal("an empty from list allowed a room")
 	}
 	if !Allows(Target{From: []string{"*"}}, "anyone") {
 		t.Fatal("* refused")
 	}
-	g := Target{From: []string{"M1Mini"}}
-	if !Allows(g, "m1mini") || Allows(g, "sg3") {
+	g := Target{From: []string{"Room-a"}}
+	if !Allows(g, "room-a") || Allows(g, "room-d") {
 		t.Fatal("case or exclusion wrong")
 	}
 }

@@ -28,7 +28,7 @@ runners:
 
 room:                        # @rnd's slot, room-autostart-design section 4
   survives: none             # none | logoff | reboot. atrium asks for reboot once the spikes land
-  runner_auth: [claude, codex]   # atrium-87300: codex joins once its smoke passes. it did, f-005 m1mini row 10
+  runner_auth: [claude, codex]   # atrium-87300: codex joins once its smoke passes. it did, f-005 room-a row 10
 
 env: {}                      # names the runner must see. values only when they are not secrets
 services: []                 # names from the inventory (f-003), never a URL. nothing for atrium

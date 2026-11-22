@@ -1,7 +1,7 @@
 // Where the items tab gets its data. ONE FILE, THE SEAM: js/items.js draws and never fetches, so wiring the hub's L2 to L5 routes is
 // an edit to this file and nothing else.
 //
-// WHAT THE TAB DRAWS (docs/rnd/item-lifecycle-design.md, section 7). An item is:
+// WHAT THE TAB DRAWS. An item is:
 //
 //   id          what /_hub/items/<id> is called with (the answer and cancel POSTs use it too)
 //   backlog     the id shown, the backlog id (`id` until the hub says otherwise)
@@ -17,7 +17,7 @@
 //   coordination, prices, price_table   (detail only) [{ name, note, usd }], [{ k, v }], "v3, list prices"
 //
 // A list answer is { items, stats } and a detail answer is one item. `stats` is optional and derived from the rows when the
-// hub sends none. Money is an ESTIMATE from real token counts (clint, section 11 answer 4): the tokens are always kept.
+// hub sends none. Money is an ESTIMATE from real token counts (the operator, section 11 answer 4): the tokens are always kept.
 //
 // L7: `/_hub/work` (L2) is read beside the items and its steps are laid over the row with the same backlog id (`itemWithWork`), and a design
 // the engine is waiting on the human for becomes the approval question. Both are best effort: an older hub's 404 leaves the one step below.
@@ -123,7 +123,7 @@ function itemCardKind(a, tasks, stateOf) {
 // The question an assignment holds for the person: its ask text, else its note. Empty is nothing to answer.
 function itemQuestionText(a) { return ((a.ask && a.ask.text) || a.note || "").trim(); }
 
-// THE ONE ANSWER to "does this item need clint". The header chip, the group and the tab's badge all read it. A design waiting on
+// THE ONE ANSWER to "does this item need the operator". The header chip, the group and the tab's badge all read it. A design waiting on
 // the approval, or a block owned by the human that carries a question. A block with no text is nothing to answer, and a block owned
 // by a session is that session's to answer.
 function itemNeedsYou(it) {

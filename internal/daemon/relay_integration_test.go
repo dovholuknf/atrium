@@ -18,11 +18,11 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// roomDaemon is a test daemon that is the room m1mini, linked to a fake hub.
+// roomDaemon is a test daemon that is the room room-a, linked to a fake hub.
 func roomDaemon(t *testing.T) (*Daemon, *fakeRelay) {
 	t.Helper()
 	d := testDaemon(t)
-	d.opts.Room = "m1mini"
+	d.opts.Room = "room-a"
 	d.Relays.Kick = func() {}
 	f := &fakeRelay{}
 	d.SetRelay(f)
@@ -59,12 +59,12 @@ func TestASayToAnotherRoomIsRelayed(t *testing.T) {
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 
-	code, out := say(t, d, map[string]string{"from": "sa1", "to": "atrium-87300@claude-sg4", "text": "green"})
-	if code != http.StatusOK || out["delivered"] != "queued" || out["to"] != "atrium-87300@claude-sg4" {
+	code, out := say(t, d, map[string]string{"from": "sa1", "to": "atrium-87300@claude-room-e", "text": "green"})
+	if code != http.StatusOK || out["delivered"] != "queued" || out["to"] != "atrium-87300@claude-room-e" {
 		t.Fatalf("%d %+v", code, out)
 	}
 	got := f.says()
-	if len(got) != 1 || got[0].From != "sa1" || got[0].Room != "claude-sg4" || got[0].To != "atrium-87300" ||
+	if len(got) != 1 || got[0].From != "sa1" || got[0].Room != "claude-room-e" || got[0].To != "atrium-87300" ||
 		got[0].Text != "green" {
 		t.Fatalf("relay got %+v", got)
 	}
@@ -77,7 +77,7 @@ func TestASayToAnotherRoomIsRelayed(t *testing.T) {
 func TestASayToAnotherRoomNeedsASender(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	code, out := say(t, d, map[string]string{"to": "x@claude-sg4", "text": "hi"})
+	code, out := say(t, d, map[string]string{"to": "x@claude-room-e", "text": "hi"})
 	if code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "operator") {
 		t.Fatalf("%d %+v", code, out)
 	}
@@ -94,7 +94,7 @@ func TestASayToThisRoomIsLocal(t *testing.T) {
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "sa2")
 
-	for _, to := range []string{"sa2", "@sa2", "sa2@M1MINI"} {
+	for _, to := range []string{"sa2", "@sa2", "sa2@ROOM-A"} {
 		code, out := say(t, d, map[string]string{"from": "sa1", "to": to, "text": "hi " + to})
 		if code != http.StatusOK || out["card"] != target.ID || out["to"] != "sa2" {
 			t.Fatalf("say %q: %d %+v", to, code, out)
@@ -119,13 +119,13 @@ func TestAnUnreachableRoomIsHeldAndSentLater(t *testing.T) {
 		return hublink.RelayResult{}, hublink.ErrRelayDown
 	})
 
-	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "later"})
+	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-room-e", "text": "later"})
 	if code != http.StatusOK || out["delivered"] != "held" {
 		t.Fatalf("%d %+v", code, out)
 	}
 	settle(d)
 	rows := owed(t, d)
-	if len(rows) != 1 || rows[0].FromTask != sender.ID || rows[0].ToRoom != "claude-sg4" || rows[0].Text != "later" ||
+	if len(rows) != 1 || rows[0].FromTask != sender.ID || rows[0].ToRoom != "claude-room-e" || rows[0].Text != "later" ||
 		rows[0].Source != store.RelaySourceSay || rows[0].Attempts == 0 {
 		t.Fatalf("outbox = %+v, want the message held with a failed try", rows)
 	}
@@ -137,7 +137,7 @@ func TestAnUnreachableRoomIsHeldAndSentLater(t *testing.T) {
 		t.Fatal("the held message was not sent when the hub answered")
 	}
 	got := f.says()
-	if last := got[len(got)-1]; last.To != "orch" || last.Room != "claude-sg4" || last.From != "sa1" {
+	if last := got[len(got)-1]; last.To != "orch" || last.Room != "claude-room-e" || last.From != "sa1" {
 		t.Fatalf("drain sent %+v", last)
 	}
 }
@@ -148,9 +148,9 @@ func TestATargetRoomNotAttachedIsHeld(t *testing.T) {
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
-		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
+		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-room-e is not attached"}, nil
 	})
-	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
+	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-room-e", "text": "x"})
 	if out["delivered"] != "held" {
 		t.Fatalf("%+v", out)
 	}
@@ -168,7 +168,7 @@ func TestAnUnconfirmedSayIsNotHeld(t *testing.T) {
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
 		return hublink.RelayResult{}, hublink.ErrRelayUnconfirmed
 	})
-	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
+	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-room-e", "text": "x"})
 	if out["delivered"] != "unconfirmed" {
 		t.Fatalf("%+v", out)
 	}
@@ -183,7 +183,7 @@ func TestAnOldHubIsNotHeldFor(t *testing.T) {
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) { return hublink.RelayResult{}, hublink.ErrRelayOld })
-	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
+	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-room-e", "text": "x"})
 	if code != http.StatusBadGateway || !strings.Contains(out["error"].(string), "older") {
 		t.Fatalf("%d %+v", code, out)
 	}
@@ -200,7 +200,7 @@ func TestARefusalFromTheOtherRoomIsPassedBack(t *testing.T) {
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
 		return hublink.RelayResult{Code: 404, Error: "no session called \"nobody\". these would have worked: orch"}, nil
 	})
-	code, out := say(t, d, map[string]string{"from": "sa1", "to": "nobody@claude-sg4", "text": "x"})
+	code, out := say(t, d, map[string]string{"from": "sa1", "to": "nobody@claude-room-e", "text": "x"})
 	if code != http.StatusNotFound || !strings.Contains(out["error"].(string), "orch") {
 		t.Fatalf("%d %+v", code, out)
 	}
@@ -214,7 +214,7 @@ func TestTellReachesAnotherRoom(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	raw, _ := json.Marshal(map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "hello"})
+	raw, _ := json.Marshal(map[string]string{"from": "sa1", "to": "orch@claude-room-e", "text": "hello"})
 	rec := httptest.NewRecorder()
 	d.handleTell(rec, httptest.NewRequest(http.MethodPost, "/tell", bytes.NewReader(raw)))
 	if rec.Code != http.StatusOK || len(f.says()) != 1 {
@@ -226,22 +226,22 @@ func TestTellReachesAnotherRoom(t *testing.T) {
 func TestASayFromADaemonWithNoHubIsRefused(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.opts.Room = "m1mini"
+	d.opts.Room = "room-a"
 	peerCard(t, d, "sa1")
-	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
+	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-room-e", "text": "x"})
 	if code != http.StatusServiceUnavailable || !strings.Contains(out["error"].(string), "hub") {
 		t.Fatalf("%d %+v", code, out)
 	}
 }
 
-// remoteWorker is a worker launched by `orch` on claude-sg4, card L1 there.
+// remoteWorker is a worker launched by `orch` on claude-room-e, card L1 there.
 func remoteWorker(t *testing.T, d *Daemon) *store.Task {
 	t.Helper()
 	w := peerCard(t, d, "worker")
 	if err := d.st.SetTags(w.ID, []string{"sdk", OriginAgentTag}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetLineage(w.ID, "orch@claude-sg4", "claude-sg4~L1"); err != nil {
+	if err := d.st.SetLineage(w.ID, "orch@claude-room-e", "claude-room-e~L1"); err != nil {
 		t.Fatal(err)
 	}
 	prompt(t, d, w.ID)
@@ -272,8 +272,8 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 	f.set(nil)
 	d.DrainRelays()
 	got := f.says()
-	if last := got[len(got)-1]; last.To != "L1" || last.Room != "claude-sg4" || last.From != "worker" {
-		t.Fatalf("the notice went as %+v, want to card L1 on claude-sg4 from worker", last)
+	if last := got[len(got)-1]; last.To != "L1" || last.Room != "claude-room-e" || last.From != "worker" {
+		t.Fatalf("the notice went as %+v, want to card L1 on claude-room-e from worker", last)
 	}
 	if len(owed(t, d)) != 0 {
 		t.Fatal("the notice was not cleared once it went")
@@ -287,7 +287,7 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 }
 
 // Item 62. The ledger's `ended` notice reaches a launcher on another room. Its
-// arbiter is `claude-sg4~L1`, which is no card here, and the notice was
+// arbiter is `claude-room-e~L1`, which is no card here, and the notice was
 // logged as having nowhere to go.
 func TestAnEndedNoticeReachesALauncherOnAnotherRoom(t *testing.T) {
 	t.Parallel()
@@ -309,7 +309,7 @@ func TestAnEndedNoticeReachesALauncherOnAnotherRoom(t *testing.T) {
 	settle(d)
 	rows := owed(t, d)
 	if len(rows) != 1 || rows[0].Source != store.RelaySourceNotice || rows[0].ToCard != "L1" ||
-		rows[0].ToRoom != "claude-sg4" || !strings.Contains(rows[0].Text, "ended without a final report") {
+		rows[0].ToRoom != "claude-room-e" || !strings.Contains(rows[0].Text, "ended without a final report") {
 		t.Fatalf("outbox = %+v", rows)
 	}
 	// The same end seen again is not a second notice.
@@ -348,9 +348,9 @@ func TestSayingToARemoteLauncherCountsAsReporting(t *testing.T) {
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
 	f.set(func(s hublink.RelaySay) (hublink.RelayResult, error) {
-		return hublink.RelayResult{OK: true, Delivered: "queued", To: "orch@claude-sg4", Card: "claude-sg4~L1"}, nil
+		return hublink.RelayResult{OK: true, Delivered: "queued", To: "orch@claude-room-e", Card: "claude-room-e~L1"}, nil
 	})
-	if code, out := say(t, d, map[string]string{"from": "worker", "to": "@orch@claude-sg4", "text": "done soon"}); code != 200 {
+	if code, out := say(t, d, map[string]string{"from": "worker", "to": "@orch@claude-room-e", "text": "done soon"}); code != 200 {
 		t.Fatalf("%d %+v", code, out)
 	}
 	got, _ := d.st.Get(w.ID)
@@ -368,10 +368,10 @@ func TestTheDrainDropsAnUnconfirmedSayAndKeepsANotice(t *testing.T) {
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
 		return hublink.RelayResult{}, hublink.ErrRelayDown
 	})
-	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-sg4", "", "a say", "", "", store.RelaySourceSay); err != nil {
+	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-room-e", "", "a say", "", "", store.RelaySourceSay); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-sg4", "L1", "a notice", "", "", store.RelaySourceNotice); err != nil {
+	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-room-e", "L1", "a notice", "", "", store.RelaySourceNotice); err != nil {
 		t.Fatal(err)
 	}
 	settle(d)
@@ -405,7 +405,7 @@ func TestAHeldMessageExpires(t *testing.T) {
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
 		return hublink.RelayResult{}, hublink.ErrRelayDown
 	})
-	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-sg4", "", "old", "", "", store.RelaySourceSay); err != nil {
+	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-room-e", "", "old", "", "", store.RelaySourceSay); err != nil {
 		t.Fatal(err)
 	}
 	settle(d)
@@ -425,7 +425,7 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 	d, _ := roomDaemon(t)
 	h := slowHarness(t, d)
 	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
-		SpawnedBy: "orch@claude-sg4", SpawnedByID: "claude-sg4~L1"})
+		SpawnedBy: "orch@claude-room-e", SpawnedByID: "claude-room-e~L1"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
 	}
@@ -434,13 +434,13 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SpawnedBy != "orch@claude-sg4" || got.SpawnedByID != "claude-sg4~L1" {
+	if got.SpawnedBy != "orch@claude-room-e" || got.SpawnedByID != "claude-room-e~L1" {
 		t.Fatalf("lineage %q / %q", got.SpawnedBy, got.SpawnedByID)
 	}
 	if d.launcherOf(got) != nil {
 		t.Fatal("a launcher on another room was found on this one")
 	}
-	if name, room, ok := d.RemoteLauncher(got); !ok || name != "orch" || room != "claude-sg4" {
+	if name, room, ok := d.RemoteLauncher(got); !ok || name != "orch" || room != "claude-room-e" {
 		t.Fatalf("remote launcher = %q %q %v", name, room, ok)
 	}
 
@@ -461,14 +461,14 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 func TestRoomPeersComeFromTheHub(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	f.peers = []hublink.RemotePeer{{Handle: "orch@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~L1", Status: "working"}}
+	f.peers = []hublink.RemotePeer{{Handle: "orch@claude-room-e", Room: "claude-room-e", Card: "claude-room-e~L1", Status: "working"}}
 	rec := httptest.NewRecorder()
 	d.HandleRoomPeers(rec, httptest.NewRequest(http.MethodGet, "/v1/peers/rooms", nil))
 	var out struct {
 		Peers []hublink.RemotePeer `json:"peers"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	if rec.Code != 200 || len(out.Peers) != 1 || out.Peers[0].Room != "claude-sg4" {
+	if rec.Code != 200 || len(out.Peers) != 1 || out.Peers[0].Room != "claude-room-e" {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -500,18 +500,18 @@ func TestACardOnAnotherRoomIsReadAndExitedThroughTheHub(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 
-	code, out := roomCard(d, "orch@claude-sg4", true)
+	code, out := roomCard(d, "orch@claude-room-e", true)
 	task, _ := out["task"].(map[string]any)
-	if code != http.StatusOK || task == nil || task["card"] != "claude-sg4~L1" || task["handle"] != "orch@claude-sg4" {
+	if code != http.StatusOK || task == nil || task["card"] != "claude-room-e~L1" || task["handle"] != "orch@claude-room-e" {
 		t.Fatalf("card: %d %+v", code, out)
 	}
-	code, out = roomExit(d, "claude-sg4~01ABC")
-	if code != http.StatusOK || out["asked"] != true || out["card"] != "claude-sg4~L1" {
+	code, out = roomExit(d, "claude-room-e~01ABC")
+	if code != http.StatusOK || out["asked"] != true || out["card"] != "claude-room-e~L1" {
 		t.Fatalf("exit: %d %+v", code, out)
 	}
 	got := f.reachedAll()
-	if len(got) != 2 || got[0] != (hublink.RelaySay{Room: "claude-sg4", To: "orch", Text: "card", When: "true"}) ||
-		got[1] != (hublink.RelaySay{Room: "claude-sg4", To: "01ABC", Text: "exit"}) {
+	if len(got) != 2 || got[0] != (hublink.RelaySay{Room: "claude-room-e", To: "orch", Text: "card", When: "true"}) ||
+		got[1] != (hublink.RelaySay{Room: "claude-room-e", To: "01ABC", Text: "exit"}) {
 		t.Fatalf("hub asked %+v", got)
 	}
 }
@@ -521,7 +521,7 @@ func TestACardOnAnotherRoomIsReadAndExitedThroughTheHub(t *testing.T) {
 func TestACardOnThisRoomIsAnsweredLocal(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	for _, to := range []string{"sa1@M1MINI", "m1mini~01ABC", "sa1"} {
+	for _, to := range []string{"sa1@ROOM-A", "room-a~01ABC", "sa1"} {
 		code, out := roomCard(d, to, false)
 		if code != http.StatusOK || out["local"] == nil || out["local"] == "" {
 			t.Fatalf("card %q: %d %+v", to, code, out)
@@ -545,7 +545,7 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 		return hublink.RelayResult{Code: http.StatusNotFound, Error: "no session called \"nobody\". these would have worked: orch"}, nil
 	}
 	f.mu.Unlock()
-	code, out := roomExit(d, "nobody@claude-sg4")
+	code, out := roomExit(d, "nobody@claude-room-e")
 	if code != http.StatusNotFound || !strings.Contains(fmt.Sprint(out["error"]), "orch") {
 		t.Fatalf("refusal: %d %+v", code, out)
 	}
@@ -554,7 +554,7 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 		return hublink.RelayResult{Code: http.StatusBadRequest, Error: "this hub does not know the relay op \"exit\""}, nil
 	}
 	f.mu.Unlock()
-	code, out = roomExit(d, "orch@claude-sg4")
+	code, out = roomExit(d, "orch@claude-room-e")
 	if code != http.StatusBadGateway || !strings.Contains(fmt.Sprint(out["error"]), "hub is older") {
 		t.Fatalf("old hub: %d %+v", code, out)
 	}
@@ -563,7 +563,7 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 		return hublink.RelayResult{}, hublink.ErrRelayDown
 	}
 	f.mu.Unlock()
-	if code, _ = roomCard(d, "orch@claude-sg4", false); code != http.StatusBadGateway {
+	if code, _ = roomCard(d, "orch@claude-room-e", false); code != http.StatusBadGateway {
 		t.Fatalf("hub down: %d", code)
 	}
 }
@@ -572,8 +572,8 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 func TestACardAcrossRoomsWithNoHubIsRefused(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.opts.Room = "m1mini"
-	code, out := roomCard(d, "orch@claude-sg4", false)
+	d.opts.Room = "room-a"
+	code, out := roomCard(d, "orch@claude-room-e", false)
 	if code != http.StatusServiceUnavailable || !strings.Contains(fmt.Sprint(out["error"]), "not a room linked") {
 		t.Fatalf("%d %+v", code, out)
 	}
@@ -589,9 +589,9 @@ func TestACrossRoomExitHandsTheHubWhoIsAsking(t *testing.T) {
 		body string
 		want hublink.RelaySay
 	}{
-		{`{"to":"claude-sg4~01ABC","from":"me"}`, hublink.RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit"}},
-		{`{"to":"claude-sg4~01ABC","from":"me","force":true}`,
-			hublink.RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit", When: "force"}},
+		{`{"to":"claude-room-e~01ABC","from":"me"}`, hublink.RelaySay{Room: "claude-room-e", To: "01ABC", From: "me", Text: "exit"}},
+		{`{"to":"claude-room-e~01ABC","from":"me","force":true}`,
+			hublink.RelaySay{Room: "claude-room-e", To: "01ABC", From: "me", Text: "exit", When: "force"}},
 	} {
 		rec := httptest.NewRecorder()
 		d.HandleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", strings.NewReader(c.body)))

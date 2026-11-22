@@ -233,12 +233,12 @@ async function realChecks(browser, view, shot) {
   eq(subs.length, 1, "real hub: one device listed after the phone turns on");
   eq(subs[0] && subs[0].service, "fcm.googleapis.com", "real hub: the list says the push service and not the endpoint");
   if (JSON.stringify(subs).includes("fake-endpoint")) bad("real hub: the list leaks the endpoint");
-  await page.fill("#m-push-name", "Clint's Pixel");
+  await page.fill("#m-push-name", "Operator's Pixel");
   await page.dispatchEvent("#m-push-name", "change");
   await page.waitForFunction(() => /named/.test(document.getElementById("m-push-note").textContent), null, { timeout: 8000 })
     .catch(async () => bad("real hub: the rename was not taken: " + await page.textContent("#m-push-note")));
   subs = await listed();
-  eq([subs.length, subs[0] && subs[0].label], [1, "Clint's Pixel"], "real hub: a rename is the same device with a new label");
+  eq([subs.length, subs[0] && subs[0].label], [1, "Operator's Pixel"], "real hub: a rename is the same device with a new label");
   await shot(page, "real-named");
 
   // The desktop gear.
@@ -253,7 +253,7 @@ async function realChecks(browser, view, shot) {
     .catch(() => bad("real hub: the phone alerts row is not drawn in the gear"));
   const items = () => dp.$$eval("#s-hp-list li", l => l.map(x => x.textContent));
   eq((await items()).length, 1, "gear: one device in the list");
-  if (!/Clint's Pixel/.test((await items())[0] || "")) bad("gear: the device label is not in the list: " + JSON.stringify(await items()));
+  if (!/Operator's Pixel/.test((await items())[0] || "")) bad("gear: the device label is not in the list: " + JSON.stringify(await items()));
   eq(await dp.isChecked("#s-hp-enabled"), true, "gear: the switch reads on");
   await dp.locator("#s-hp-row").scrollIntoViewIfNeeded();
   await shot(dp, "real-gear");
@@ -371,13 +371,13 @@ async function realChecks(browser, view, shot) {
 
       // ── the phone's own name: shown while on, sent as a second subscribe of the same endpoint, kept across a load ─
       eq(await page.evaluate(() => document.getElementById("m-push-name-row").hidden), false, "the name field while on");
-      await page.fill("#m-push-name", "Clint's Pixel");
+      await page.fill("#m-push-name", "Operator's Pixel");
       await page.dispatchEvent("#m-push-name", "change");
       await page.waitForFunction(() => /named/.test(document.getElementById("m-push-note").textContent), null, { timeout: 5000 })
         .catch(() => bad("the rename was never confirmed"));
       eq(hub.posts.length, 2, "a rename is a second subscribe");
-      eq([(hub.posts[1] || {}).label, (hub.posts[1] || {}).endpoint], ["Clint's Pixel", sent.endpoint], "the rename names the same device");
-      eq(await page.evaluate(() => localStorage.getItem("atrium.push.label")), "Clint's Pixel", "the name is kept in this browser");
+      eq([(hub.posts[1] || {}).label, (hub.posts[1] || {}).endpoint], ["Operator's Pixel", sent.endpoint], "the rename names the same device");
+      eq(await page.evaluate(() => localStorage.getItem("atrium.push.label")), "Operator's Pixel", "the name is kept in this browser");
       await shot(page, "named");
 
       // ── off again: the hub is told with the endpoint as proof, and the browser unsubscribes ──────────────────

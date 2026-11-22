@@ -2,7 +2,7 @@
 // board and terminals (js/filter-drawer.js): a search box, then SHOW (status), PRIORITY, DEPT, SORT BY and GROUP. Items
 // also sort by a click on a header (and back again on a second), and take a new priority from the select on a row.
 //
-// The hub holds both so a director on any room sees what another room filed. See docs/rnd/reports-channel-design.md.
+// The hub holds both so a director on any room sees what another room filed.
 // Filing, changing a status and adding a report are `atrium backlog` and `atrium reports`, and the tools of the same
 // names. The board only changes a priority.
 //

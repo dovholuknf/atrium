@@ -24,7 +24,7 @@ import (
 // card said: the commit it is at, whether anything there is uncommitted, and the branch. It also keeps the log.
 //
 //   - THE CARD NEVER NAMES A SHA. There is no field for one. `at_sha` is `git rev-parse HEAD` in the card's worktree at the
-//     moment of the call, so an old test cannot be passed off as current. See docs/rnd/item-lifecycle-design.md section 4.
+//     moment of the call, so an old test cannot be passed off as current.
 //   - THE LOG IS KEPT OUTSIDE EVERY REPO, in `<state dir>/items/<backlog id>/tests/`, folders 0700 and files 0600, because a
 //     test log can hold env values and tokens and the atrium repo is public. A log file the card names is resolved through
 //     internal/safepath against the card's own directory, so it cannot point anywhere else.

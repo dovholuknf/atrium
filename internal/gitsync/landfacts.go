@@ -10,7 +10,7 @@ import (
 )
 
 // WHAT THE HUB'S MIRROR SAYS OF AN ITEM'S LANDING AND PUSHING, for the item lifecycle's `landed` and `pushed` steps and
-// for the scope of `deployed`. See docs/rnd/item-lifecycle-design.md, stage L3.
+// for the scope of `deployed`.
 //
 //   - A COMMIT COUNTS AS THERE WHEN IT IS AN ANCESTOR OR HAS ITS PATCH THERE. Nearly everything lands on claude/main by
 //     cherry-pick and is re-signed onto origin's main, and both give the same change a new sha. So every commit of the

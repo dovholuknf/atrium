@@ -14,7 +14,7 @@ import (
 )
 
 // The two halves of the transport order: the hub's, which every room is told,
-// and a room's own, which wins on that machine. See docs/rnd/room-transport-order.md.
+// and a room's own, which wins on that machine.
 
 // roomTransportsCmd is `atrium rooms transports`, the hub's order.
 //

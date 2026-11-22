@@ -19,17 +19,17 @@ func TestASayToAMovedCardIsForwarded(t *testing.T) {
 	if _, err := d.st.Freeze(old.ID, "mv1", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetMovedTo(old.ID, "mv1", "sg3~NEW1"); err != nil {
+	if err := d.st.SetMovedTo(old.ID, "mv1", "room-d~NEW1"); err != nil {
 		t.Fatal(err)
 	}
 	for _, to := range []string{"sa2", old.ID} {
 		code, out := say(t, d, map[string]string{"from": "sa1", "to": to, "text": "hi"})
-		if code != 200 || out["forwarded"] != "moved to sg3~NEW1" {
+		if code != 200 || out["forwarded"] != "moved to room-d~NEW1" {
 			t.Fatalf("%s: %d %+v", to, code, out)
 		}
 	}
 	got := f.says()
-	if len(got) != 2 || got[0].Room != "sg3" || got[0].To != "NEW1" {
+	if len(got) != 2 || got[0].Room != "room-d" || got[0].To != "NEW1" {
 		t.Fatalf("relay got %+v", got)
 	}
 }
@@ -75,7 +75,7 @@ func TestFollowMovedChainsAndLoops(t *testing.T) {
 	if _, err := d.st.Freeze(a.ID, "m", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetMovedTo(a.ID, "m", "m1mini~"+b.ID); err != nil {
+	if err := d.st.SetMovedTo(a.ID, "m", "room-a~"+b.ID); err != nil {
 		t.Fatal(err)
 	}
 	a, _ = d.st.Get(a.ID)
@@ -86,7 +86,7 @@ func TestFollowMovedChainsAndLoops(t *testing.T) {
 	if _, err := d.st.Freeze(b.ID, "m2", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetMovedTo(b.ID, "m2", "m1mini~"+a.ID); err != nil {
+	if err := d.st.SetMovedTo(b.ID, "m2", "room-a~"+a.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.followMoved(a); err == nil || !strings.Contains(err.Error(), "loops at") {
@@ -106,7 +106,7 @@ func TestALauncherThatMovedIsFollowed(t *testing.T) {
 	if _, err := d.st.Freeze(l.ID, "m", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetMovedTo(l.ID, "m", "sg3~NEW1"); err != nil {
+	if err := d.st.SetMovedTo(l.ID, "m", "room-d~NEW1"); err != nil {
 		t.Fatal(err)
 	}
 	w, _ = d.st.Get(w.ID)
@@ -114,7 +114,7 @@ func TestALauncherThatMovedIsFollowed(t *testing.T) {
 		t.Fatalf("launcher %+v", got)
 	}
 	w, _ = d.st.Get(w.ID)
-	if w.SpawnedByID != "sg3~NEW1" || !strings.HasSuffix(w.SpawnedBy, "@sg3") {
+	if w.SpawnedByID != "room-d~NEW1" || !strings.HasSuffix(w.SpawnedBy, "@room-d") {
 		t.Fatalf("not re-pointed: %q %q", w.SpawnedBy, w.SpawnedByID)
 	}
 }
@@ -140,7 +140,7 @@ func TestARepeatLaunchForOneMoveAnswersTheSameCard(t *testing.T) {
 		<-errCh
 	}()
 	h := slowHarness(t, d)
-	req := shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "sg3~OLD1", Pinned: true, PinOrder: 3}
+	req := shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "room-d~OLD1", Pinned: true, PinOrder: 3}
 	a, err := d.Launch(req)
 	if err != nil {
 		t.Skipf("could not spawn a slow test runner on this machine: %v", err)
@@ -151,7 +151,7 @@ func TestARepeatLaunchForOneMoveAnswersTheSameCard(t *testing.T) {
 		t.Fatalf("repeat: %v %v", b, err)
 	}
 	got := mustGet(t, d, a.ID)
-	if got.MovedFrom != "sg3~OLD1" || !got.Pinned || got.PinOrder != 3 {
+	if got.MovedFrom != "room-d~OLD1" || !got.Pinned || got.PinOrder != 3 {
 		t.Fatalf("%+v", got)
 	}
 }

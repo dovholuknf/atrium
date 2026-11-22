@@ -34,7 +34,7 @@ const TASKS = [
   live("P", "build the thing", { tags: ["origin:agent"], worktree: "/w/build" }),
   live("k1", "worker one", { tags: [SUB], spawned_by_id: "P", activity: Object.assign({ what: "tool", tool: "Bash" }, HELD) }),
   card("k2", "worker two (asks)", "needs-input", { supervised: true, pid: 9, tags: [SUB], spawned_by_id: "P", ask: "which branch?" }),
-  card("k3", "r-provision-sgg", "needs-input", Object.assign({ tags: [SUB], spawned_by_id: "P" }, PARKED)),
+  card("k3", "r-provision-room-g", "needs-input", Object.assign({ tags: [SUB], spawned_by_id: "P" }, PARKED)),
   card("k4", "attach-crossed-pane", "needs-input", Object.assign({ tags: [SUB], spawned_by_id: "P" }, PARKED)),
   card("k5", "launch-dialog", "paused", { tags: [SUB], spawned_by_id: "P" }),
   card("k6", "ci-triage", "dead", { tags: [SUB], spawned_by_id: "P" }),

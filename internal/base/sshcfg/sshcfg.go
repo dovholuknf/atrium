@@ -1,4 +1,4 @@
-// Package sshcfg writes the ssh config blocks that reach a room through the hub. See docs/rnd/ssh-via-hub.md.
+// Package sshcfg writes the ssh config blocks that reach a room through the hub.
 //
 // IT IS THE ONE OPT-IN EXCEPTION to atrium never editing ~/.ssh/config, and it is narrow. It writes its OWN file,
 // ~/.ssh/atrium_config, and adds exactly one line, `Include atrium_config`, at the top of ~/.ssh/config when that line

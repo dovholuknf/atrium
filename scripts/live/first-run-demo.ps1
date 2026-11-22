@@ -10,7 +10,7 @@ param(
   [string]$Ref = 'claude/main',
   [ValidateRange(7900, 7999)][int]$Port = 7920,
   [string]$Name = 'atrium-first-run',
-  [string]$Src = 'D:/tmp/atrium-first-run/src',
+  [string]$Src = (Join-Path $PSScriptRoot '../../.uncommitted/atrium-first-run/src'),
   [string]$SshHost = 'agentwsl'
 )
 

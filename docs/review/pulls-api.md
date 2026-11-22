@@ -1,7 +1,7 @@
 # The pulls API: routes and JSON (r-pr-store, part 0)
 
-Fixed before the store exists so @ui can build the pulls view against it. Design:
-`docs/rnd/pulls-view-design.md`. Nothing here changes after it is committed. Later parts may ADD a field or a route,
+Fixed before the store exists so @ui can build the pulls view against it.
+Nothing here changes after it is committed. Later parts may ADD a field or a route,
 and never rename or retype one.
 
 All routes are on the human listener (`:7778`), JSON in and out, and none exists on the agent listener. A board pause

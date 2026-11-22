@@ -2,7 +2,7 @@
 // same way a room-set change does, and must NOT re-attach the pane when it did
 // not.
 //
-// THE BUG. clint switches browser tabs away from an attached sg4 pane and back,
+// THE BUG. The operator switches browser tabs away from an attached room-e pane and back,
 // types, and the input garbles. It is the same class the room flip already
 // fixed (bae77e1): a re-fit that changes cols/rows reflows xterm's buffer and
 // moves the cursor against it, a non-binding viewer gets no SIGWINCH so the
@@ -86,7 +86,7 @@ const mkTerm = (cols, rows) => ({ cols, rows });
 
 // ── a return that reflowed the grid re-attaches once ─────────────────────────
 harness.setTerm(mkTerm(80, 24));
-harness.setTask({ id: "claude-sg4~01a0" });
+harness.setTask({ id: "claude-room-e~01a0" });
 // Away: the grid is remembered.
 harness.setVisible(false);
 harness.fire();

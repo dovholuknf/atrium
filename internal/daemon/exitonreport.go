@@ -97,7 +97,7 @@ func staysOpen(t *store.Task) bool {
 }
 
 // LinkTagPrefix marks a card a link opened (`link:<key>`, internal/api/open.go). Its lifetime is the link's: a done
-// report does not end it, and only a close or the operator does. See docs/rnd/card-lifecycle-design.md section 7.
+// report does not end it, and only a close or the operator does.
 const LinkTagPrefix = "link:"
 
 func isLinkCard(t *store.Task) bool {

@@ -1,7 +1,7 @@
 # Branch status: landed, open, orphaned, room-only
 
 Status: DESIGN. Nothing here is built. It is for @rnd review before any build. Backlog item `f-branch-status-view`.
-Input: `docs/research/branch-audit-2026-10-12.md` on `claude/branch-audit`, and a measurement on the live hub mirror
+Input: the branch audit of 2026-10-12 on `claude/branch-audit`, and a measurement on the live hub mirror
 (section 8).
 
 ## 1. The problem

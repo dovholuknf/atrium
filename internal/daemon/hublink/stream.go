@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// An ssh stream, from a person on this machine to another room's sshd, through the hub. See docs/rnd/ssh-via-hub.md.
+// An ssh stream, from a person on this machine to another room's sshd, through the hub.
 //
 // THE ROOM HOLDS THE TRANSPORT, so `atrium ssh-proxy` posts here and the room dials the hub with the dialer it already
 // has, ziti identity loaded. A CLI loading its own per ssh connection would cost seconds per scp. The agent listener is

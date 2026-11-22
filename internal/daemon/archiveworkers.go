@@ -11,7 +11,7 @@ import (
 )
 
 // The one-time tidy: archive the done WORKER cards that piled up before merged
-// workers were culled on their own. See docs/rnd/merged-cull-design.md.
+// workers were culled on their own.
 //
 // ARCHIVE ONLY. This reuses the store's ArchiveCulled, which takes a card off
 // the board and keeps the row, its history and its ledger. It never calls Prune

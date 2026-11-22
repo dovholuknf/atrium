@@ -40,12 +40,12 @@ function load(urls, focusedUrl) {
   check("a doc and a phone page only: a new board opens", t.log.opened.length === 1 && t.log.opened[0].startsWith(ORIGIN + "/?"), JSON.stringify(t.log));
   check("neither doc nor phone page focused", t.log.focused.length === 0, JSON.stringify(t.log));
 
-  const a = ORIGIN + "/index.html", b = ORIGIN + "/room/sg3";
+  const a = ORIGIN + "/index.html", b = ORIGIN + "/room/room-d";
   t = load([a, b], b);
   await t.openBoard(ORIGIN, "", "", "");
   check("the focused board wins among several", t.log.focused.join() === b, JSON.stringify(t.log));
 
-  t = load([ORIGIN + "/#term=abc", ORIGIN + "/room/sg3/alias/x"]);
+  t = load([ORIGIN + "/#term=abc", ORIGIN + "/room/room-d/alias/x"]);
   await t.openBoard(ORIGIN, "", "", "");
   check("popped-out terminals are not boards", t.log.opened.length === 1, JSON.stringify(t.log));
 

@@ -151,7 +151,7 @@ func TestAPeerTypedPromptIsNotTheOperator(t *testing.T) {
 	if err := d.st.NoteTurnEnded(target.ID, store.TurnQuestions{Known: true, Block: true, List: []string{"q"}}); err != nil {
 		t.Fatal(err)
 	}
-	if typed, _ := d.tellByTyping(target, "sg4/sa21", "report: done", "", false); !typed {
+	if typed, _ := d.tellByTyping(target, "room-e/sa21", "report: done", "", false); !typed {
 		t.Fatal("the peer message was not typed")
 	}
 	if !r.promptWasPeer(time.Now()) {
@@ -258,7 +258,7 @@ func TestAHumanLaunchedCardStillWearsTheDot(t *testing.T) {
 	}
 }
 
-// The launcher reading a report is not clint answering a question.
+// The launcher reading a report is not the operator answering a question.
 func TestLauncherSeenLeavesQuestionsOpen(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)

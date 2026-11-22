@@ -42,7 +42,7 @@ func TestHeldForLineOnlyWhenTheGateIsShut(t *testing.T) {
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	r.noteOperatorTyped([]byte("half a thought"))
-	if typed, _ := d.deliverPeer(target, "sg4/doer", "hello"); typed {
+	if typed, _ := d.deliverPeer(target, "room-e/doer", "hello"); typed {
 		t.Fatal("typed into a part written line")
 	}
 	if a := d.act.get(target.ID); a == nil || a.HeldFor != HeldForLine {

@@ -51,29 +51,29 @@ func TestAnOlderRoomKeepsDeployedActiveAndIsNamed(t *testing.T) {
 		Facts: landedFacts("internal/link/x.go"),
 		Hub:   BuildSeen{Name: "hub", Commit: landedSHA, Contains: true, Known: true},
 		Rooms: []BuildSeen{
-			{Name: "sg3", Commit: landedSHA, Contains: true, Known: true},
-			{Name: "sg4", Commit: older, Known: true},
-			{Name: "sg5"},
+			{Name: "room-d", Commit: landedSHA, Contains: true, Known: true},
+			{Name: "room-e", Commit: older, Known: true},
+			{Name: "room-f"},
 		},
 	}
 	d := stepOf(t, DeriveGit(in), StepDeployed)
 	if d.State != hubstore.StepActive {
 		t.Fatalf("deployed = %+v", d)
 	}
-	if got := strings.Join(d.Waiting, ","); got != "sg4,sg5" {
+	if got := strings.Join(d.Waiting, ","); got != "room-e,room-f" {
 		t.Fatalf("waiting on %q", got)
 	}
-	for _, want := range []string{"sg4 (on 2222222)", "sg5 (does not report a build)"} {
+	for _, want := range []string{"room-e (on 2222222)", "room-f (does not report a build)"} {
 		if !strings.Contains(d.Reason, want) {
 			t.Fatalf("reason %q lacks %q", d.Reason, want)
 		}
 	}
-	if strings.Contains(d.Reason, "sg3") {
+	if strings.Contains(d.Reason, "room-d") {
 		t.Fatalf("a room that has it is named: %q", d.Reason)
 	}
 	// Once the last room reports a build that holds it, the step is done.
-	in.Rooms[1], in.Rooms[2] = BuildSeen{Name: "sg4", Commit: landedSHA, Contains: true, Known: true},
-		BuildSeen{Name: "sg5", Commit: landedSHA, Contains: true, Known: true}
+	in.Rooms[1], in.Rooms[2] = BuildSeen{Name: "room-e", Commit: landedSHA, Contains: true, Known: true},
+		BuildSeen{Name: "room-f", Commit: landedSHA, Contains: true, Known: true}
 	if d = stepOf(t, DeriveGit(in), StepDeployed); d.State != hubstore.StepDone || d.SHA != landedSHA {
 		t.Fatalf("every room has it: %+v", d)
 	}
@@ -84,7 +84,7 @@ func TestHubOnlyCodeIgnoresTheRooms(t *testing.T) {
 	in := GitInput{
 		Facts: landedFacts("internal/hubstore/x.go"),
 		Hub:   BuildSeen{Name: "hub", Commit: landedSHA, Contains: true, Known: true},
-		Rooms: []BuildSeen{{Name: "sg4"}},
+		Rooms: []BuildSeen{{Name: "room-e"}},
 	}
 	if d := stepOf(t, DeriveGit(in), StepDeployed); d.State != hubstore.StepDone {
 		t.Fatalf("a room that does not run hub code holds it up: %+v", d)

@@ -1,7 +1,7 @@
 // Change requests on the phone (/m): a sheet with two screens, the list and one request's page, like the desktop board's
 // Requests view (js/changereq.js) and the same data, through js/changereq-core.js (which answers from js/changereq-mock.js only
 // when asked). docs/fabric/hub-forge-design.md section 6. Stage 5 is MANUAL: a request into `main` waits for the orchestrator or
-// clint to merge on the hub's side, and this sheet only RECORDS that it happened. It has no merge button and no word that says
+// the operator to merge on the hub's side, and this sheet only RECORDS that it happened. It has no merge button and no word that says
 // it merges.
 //
 // A DOOR ONLY WHERE THERE IS A HUB THAT ANSWERS. The "requests" button in the header stays hidden until the list answers once;
@@ -49,7 +49,7 @@
     if (!b) return;
     const n = st.reqs.filter(C.needsOperator).length;
     b.textContent = n ? "requests " : "requests";
-    if (n) { const em = el("em", "", String(n)); em.setAttribute("aria-label", n + " need the orchestrator or clint"); b.appendChild(em); }
+    if (n) { const em = el("em", "", String(n)); em.setAttribute("aria-label", n + " need the orchestrator or you"); b.appendChild(em); }
   }
 
   // ---- the sheet ---------------------------------------------------------------------------------------------------
@@ -150,7 +150,7 @@
       lane.append(avatar(C.sourceRoom(r)), el("span", "crm-br", r.source.branch), el("span", "crm-arrow", "→"), el("span", "crm-br", "main"));
       const foot = el("div", "crm-hfoot");
       foot.append(el("span", "crm-quiet", r.id + " · " + age(r.created_at)), btn("Open", () => openPage(r.id)));
-      h.append(el("span", "crm-k", "Needs the orchestrator or clint"), el("h3", "", r.title), lane, foot);
+      h.append(el("span", "crm-k", "Needs the orchestrator or you"), el("h3", "", r.title), lane, foot);
       root.appendChild(h);
     });
     const seg = el("div", "crm-seg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "which requests");
@@ -220,7 +220,7 @@
   function drawGate(r) {
     const main = C.needsOperator(r);
     const g = el("section", "crm-gate" + (main ? " main" : ""));
-    g.appendChild(el("b", "", main ? "Needs the orchestrator or clint" : "Waiting to be merged"));
+    g.appendChild(el("b", "", main ? "Needs the orchestrator or you" : "Waiting to be merged"));
     g.appendChild(el("span", "", main ? "A request into main is merged on the hub's side for now. Nothing on the board does it." : "The board does not merge. Merge it on the hub's side, then record it here."));
     const steps = el("ol", "crm-steps");
     ["Merge it on the hub's side", "Re-sign and push", "Record the sha here"].forEach((t, i) => { const li = el("li"); li.append(el("b", "", String(i + 1)), document.createTextNode(t)); steps.appendChild(li); });
@@ -273,7 +273,7 @@
   }
   function drawForm() {
     const f = st.form, root = el("div", "crm-form");
-    root.appendChild(note("Asks for a branch on the hub to go into another. The board does not merge it: the orchestrator or clint does, on the hub's side."));
+    root.appendChild(note("Asks for a branch on the hub to go into another. The board does not merge it: the orchestrator or you do, on the hub's side."));
     const keyOf = r => (r.host || "github") + "/" + r.owner + "/" + r.repo;
     const branches = () => { const r = (st.repos || []).find(x => keyOf(x) === f.repo); return r ? (r.branches || []).map(b => b.name) : []; };
     const field = (id, label, node) => { const l = el("label", "", label); l.htmlFor = id; node.id = id; root.append(l, node); return node; };

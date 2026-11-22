@@ -3,7 +3,7 @@
 #   pwsh -File scripts\room-check.ps1 sg3
 #   pwsh -File scripts\room-check.ps1 m1mini -Project D:\git\github\me\other
 #   pwsh -File scripts\room-check.ps1 sg3 -Fix
-#   pwsh -File scripts\room-check.ps1 sg3 -Fix -Yes         # clint's alone on a real room
+#   pwsh -File scripts\room-check.ps1 sg3 -Fix -Yes         # The operator's alone on a real room
 #
 # It reads the project's atrium.requirements.yaml (docs/fabric/room-requirements-design.md), checks what the room has against
 # it, and with -Fix does what a script can do about the rest. The requirements are the design's section 4 table, one
@@ -45,7 +45,7 @@
 #
 # WITHOUT -Fix IT WRITES NOTHING, on the room or here. (The smoke card is the one thing that runs.) With -Fix it does
 # every `apply` fix whose scope is machine or room. A fix at ACCOUNT scope (the hooks, which change every project and
-# every room on that account) and any RESTART need -Yes as well, and on a real room -Yes is clint's alone. Before
+# every room on that account) and any RESTART need -Yes as well, and on a real room -Yes is the operator's alone. Before
 # either, the change is printed, with the file's backup path.
 #
 # ROWS THAT NEED WHAT IS NOT BUILT are `skip` and say what they wait for: the state dir, sign-in, `survives`, env,
@@ -320,7 +320,7 @@ if ($req.atrium) {
             & git -C $Project merge-base --is-ancestor $min $sha 2>$null
             if ($LASTEXITCODE -eq 0) { Row 'binary' 'ok' "$v has $min as an ancestor" }
             else {
-                Row 'binary' 'human' "$v does not have $min in its history. run: pwsh -File scripts\provision-room.ps1 $Target -Name $Room -FromCheckout, then -Restart -Yes (clint, a restart is a real room's)"
+                Row 'binary' 'human' "$v does not have $min in its history. run: pwsh -File scripts\provision-room.ps1 $Target -Name $Room -FromCheckout, then -Restart -Yes (the operator, a restart is a real room's)"
                 Unmet 'human'
             }
         }
@@ -677,7 +677,7 @@ true
                     Row "hooks.$rn" 'done' "installed atrium's hooks in $path, backup $(if ($res.backup) { $res.backup } else { 'none needed' })"
                 } catch { Row "hooks.$rn" 'fail' "POST /v1/hooks/install: $($_.Exception.Message)"; Unmet 'human' }
             } else {
-                Row "hooks.$rn" 'fail' "$($chk.detail) ($path). this is an ACCOUNT change: -Fix -Yes runs POST /v1/hooks/install on $Room, backup $path.atrium-<stamp>.bak. -Yes is clint's alone on a real room"
+                Row "hooks.$rn" 'fail' "$($chk.detail) ($path). this is an ACCOUNT change: -Fix -Yes runs POST /v1/hooks/install on $Room, backup $path.atrium-<stamp>.bak. -Yes is the operator's alone on a real room"
                 Unmet 'fixable'
             }
         }
@@ -806,9 +806,9 @@ if (-not $mf) {
     if (-not $mf.workroot) { Row 'work-root' 'skip' 'the manifest on the room records no work root (provision-room.ps1 -WorkRoot)' }
     # The rows are the room's own: `atrium room setup --plan` on the room, from a room.yaml rebuilt from the manifest. The agent
     # pack row is judged here against the commit the hub's mirror has, since the room is not told the hub's address.
-    # No `agentpack` record is not a choice of none: a run whose mirror could not be fetched leaves none. Only -NoAgentPack
-    # records one (`none`), so a missing pack is read against the default repository and shows as a row.
-    $packRepo = if ($mf.agentpack.repo) { "$($mf.agentpack.repo)" } else { 'dovholuknf/dotfiles' }
+    # There is no default pack: a manifest that names no repository has no pack to judge.
+    $packRepo = "$($mf.agentpack.repo)"
+    if (-not $packRepo) { $noPack = $true }
     $packBranch = if ($mf.agentpack.branch) { "$($mf.agentpack.branch)" } else { 'main' }
     try { $yaml = New-RoomSpecYaml -Name $(if ($mf.name) { "$($mf.name)" } else { $Room }) -Os $kind -WorkRoot $(if ($mf.workroot) { "$($mf.workroot)" } else { '' }) -PackRepo $(if ($noPack) { '' } else { $packRepo }) -PackBranch $packBranch -PackRunners $(if ($mf.agentpack.runners) { @($mf.agentpack.runners) } else { @('claude') }) }
     catch { $yaml = $null; Row 'work-root' 'fail' "the manifest's work root cannot be written into a room.yaml: $_"; Unmet 'human' }
@@ -848,7 +848,7 @@ if ($script:unmet.restart -gt 0) {
         if ($r.Code -eq 0) { Row 'restart' 'done' "$Room came back attached"; $script:unmet.restart = 0 }
         else { Row 'restart' 'fail' "provision -Restart exited $($r.Code): $(($r.Out | Select-Object -Last 2) -join ' | ')"; Unmet 'human' }
     } else {
-        Row 'restart' 'warn' "$Room needs a restart to see what changed. pwsh -File scripts\provision-room.ps1 $Target -Name $Room -Restart -Yes (clint's alone on a real room)"
+        Row 'restart' 'warn' "$Room needs a restart to see what changed. pwsh -File scripts\provision-room.ps1 $Target -Name $Room -Restart -Yes (the operator's alone on a real room)"
     }
 }
 

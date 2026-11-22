@@ -191,9 +191,9 @@ func TestTheLineAModelReads(t *testing.T) {
 	t.Parallel()
 	both := URLAnswer{State: URLFound, Repo: "github/o/r", Branch: "fix/x", Branches: []URLBranch{{Name: "fix/x", Sources: []URLSource{
 		{Source: "hub", URL: "http://h/git/hub/github/o/r.git", SHA: sha1h},
-		{Source: "room", Room: "sg4", Online: true, URL: "http://h/git/room/sg4/github/o/r.git", SHA: sha2h, Ahead: ptr(true)},
+		{Source: "room", Room: "room-e", Online: true, URL: "http://h/git/room/room-e/github/o/r.git", SHA: sha2h, Ahead: ptr(true)},
 	}}}}
-	if got := both.Text(); !strings.HasPrefix(got, "fetch it with: git fetch http://h/git/room/sg4/github/o/r.git fix/x") {
+	if got := both.Text(); !strings.HasPrefix(got, "fetch it with: git fetch http://h/git/room/room-e/github/o/r.git fix/x") {
 		t.Errorf("room ahead: %s", got)
 	}
 	both.Branches[0].Sources[1].Ahead = ptr(false)
@@ -201,15 +201,15 @@ func TestTheLineAModelReads(t *testing.T) {
 		t.Errorf("room not ahead: %s", got)
 	}
 	roomOnly := URLAnswer{State: URLFound, Branch: "b", Branches: []URLBranch{{Name: "b", Sources: []URLSource{
-		{Source: "room", Room: "sg4", URL: "http://h/git/room/sg4/x.git"}}}}}
-	if got := roomOnly.Text(); !strings.Contains(got, "git fetch http://h/git/room/sg4/x.git b") {
+		{Source: "room", Room: "room-e", URL: "http://h/git/room/room-e/x.git"}}}}}
+	if got := roomOnly.Text(); !strings.Contains(got, "git fetch http://h/git/room/room-e/x.git b") {
 		t.Errorf("%s", got)
 	}
 	miss := URLAnswer{State: URLNotFound, Note: "no", Closest: &URLClosest{Repos: []string{"a", "b"}, Branches: []string{"c"}}}
 	if got := miss.Text(); got != "not found: no. closest repositories: a, b. closest branches: c" {
 		t.Errorf("%s", got)
 	}
-	if got := (URLAnswer{State: URLOffline, Note: "sg4 is not connected"}).Text(); got != "offline: sg4 is not connected" {
+	if got := (URLAnswer{State: URLOffline, Note: "room-e is not connected"}).Text(); got != "offline: room-e is not connected" {
 		t.Errorf("%s", got)
 	}
 }
@@ -257,10 +257,10 @@ func TestAnAdvertisementPastTheCapIsNotRead(t *testing.T) {
 	if len(big) <= lookupAdvertMax {
 		t.Fatalf("the advertisement is %d, not past the cap", len(big))
 	}
-	rooms := &lookupRooms{rooms: []RoomInfo{room("sg3")}, serve: func(string) (string, error) { return big, nil }}
+	rooms := &lookupRooms{rooms: []RoomInfo{room("room-d")}, serve: func(string) (string, error) { return big, nil }}
 	h := lookupHub(t, rooms, "github/o/r")
 	a := h.Lookup(context.Background(), URLQuery{Repo: "o/r", Base: "http://h"})
-	if len(a.Branches) != 0 || !strings.Contains(a.Note, "sg3 did not answer") {
+	if len(a.Branches) != 0 || !strings.Contains(a.Note, "room-d did not answer") {
 		t.Fatalf("a room that sent %d bytes was read: %+v", len(big), a)
 	}
 	// The same advertisement within the cap is read.
@@ -281,8 +281,8 @@ func TestAnAnswerIsCutAtFiveHundredBranches(t *testing.T) {
 		}
 		return string(advert(lines...))
 	}
-	rooms := &lookupRooms{rooms: []RoomInfo{room("sg3"), room("sg4")}, serve: func(r string) (string, error) {
-		if r == "sg3" {
+	rooms := &lookupRooms{rooms: []RoomInfo{room("room-d"), room("room-e")}, serve: func(r string) (string, error) {
+		if r == "room-d" {
 			return adv("a"), nil
 		}
 		return adv("b"), nil
@@ -313,7 +313,7 @@ func TestAnAmbiguousShortNameIsAnsweredWithTheCandidates(t *testing.T) {
 // answer is held.
 func TestADownRoomIsAskedAgainAndAnAnsweringRoomIsHeld(t *testing.T) {
 	t.Parallel()
-	rooms := &lookupRooms{rooms: []RoomInfo{room("sg3")}, serve: func(string) (string, error) { return "", errors.New("down") }}
+	rooms := &lookupRooms{rooms: []RoomInfo{room("room-d")}, serve: func(string) (string, error) { return "", errors.New("down") }}
 	h := lookupHub(t, rooms, "github/o/r")
 	for i := 0; i < 3; i++ {
 		h.Lookup(context.Background(), URLQuery{Repo: "o/r", Base: "http://h"})
@@ -355,7 +355,7 @@ func TestOnlyAnOkOrBehindSyncCountsARoomAsHavingARepo(t *testing.T) {
 // What the caller typed as a room is cut, in the note and in the list.
 func TestARoomNamedAtLengthIsCutInTheAnswer(t *testing.T) {
 	t.Parallel()
-	rooms := &lookupRooms{rooms: []RoomInfo{room("sg3")}, serve: func(string) (string, error) { return "", errors.New("x") }}
+	rooms := &lookupRooms{rooms: []RoomInfo{room("room-d")}, serve: func(string) (string, error) { return "", errors.New("x") }}
 	h := lookupHub(t, rooms, "github/o/r")
 	long := strings.Repeat("r", 5000)
 	a := h.Lookup(context.Background(), URLQuery{Repo: "o/r", Room: long, Branch: long, Base: "http://h"})
@@ -374,7 +374,7 @@ func TestForCardRewritesTheHubsURLsAndTakesTheRoomsAway(t *testing.T) {
 	t.Parallel()
 	a := URLAnswer{State: URLFound, Repo: "github/o/r", Branch: "fix/x", Branches: []URLBranch{{Name: "fix/x", Sources: []URLSource{
 		{Source: "hub", URL: "http://127.0.0.1:7778/git/hub/github/o/r.git", SHA: sha1h},
-		{Source: "room", Room: "sg4", Online: true, URL: "http://127.0.0.1:7778/git/room/sg4/github/o/r.git", SHA: sha2h, Ahead: ptr(true)},
+		{Source: "room", Room: "room-e", Online: true, URL: "http://127.0.0.1:7778/git/room/room-e/github/o/r.git", SHA: sha2h, Ahead: ptr(true)},
 	}}}}
 	c := a.ForCard("http://127.0.0.1:7777/git/")
 	hub, rm := c.Branches[0].Sources[0], c.Branches[0].Sources[1]
@@ -399,7 +399,7 @@ func TestForCardRewritesTheHubsURLsAndTakesTheRoomsAway(t *testing.T) {
 	}
 	// A room's branch alone has no URL and says what to do.
 	only := URLAnswer{State: URLFound, Branch: "b", Branches: []URLBranch{{Name: "b", Sources: []URLSource{
-		{Source: "room", Room: "sg4", Online: true, URL: "http://h/git/room/sg4/x.git"}}}}}.ForCard("http://127.0.0.1:7777/git/")
+		{Source: "room", Room: "room-e", Online: true, URL: "http://h/git/room/room-e/x.git"}}}}}.ForCard("http://127.0.0.1:7777/git/")
 	if got := only.Text(); strings.Contains(got, "git fetch") || !strings.Contains(got, "atrium_git_push") {
 		t.Fatalf("%s", got)
 	}
@@ -445,7 +445,7 @@ func TestAMirrorsIntegrationBranchAndMainAnswerReadOnly(t *testing.T) {
 	if a := x.h.Lookup(bg, URLQuery{Repo: "github/m/mirror", Base: "http://h"}); len(a.Branches) != 3 {
 		t.Errorf("the listing: %+v", a.Branches)
 	}
-	if out, err := x.push(roomCard("sg4", "C1"), "github/m/mirror", "claude/w1:refs/heads/claude/main"); err == nil ||
+	if out, err := x.push(roomCard("room-e", "C1"), "github/m/mirror", "claude/w1:refs/heads/claude/main"); err == nil ||
 		!strings.Contains(out, "is a mirror the hub keeps in step") {
 		t.Errorf("claude/main was pushed: %v\n%s", err, out)
 	}
@@ -461,11 +461,11 @@ func TestAskHubLookupTakesTheHubsAnswer(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(
 			`{"state":"found","repo":"github/o/r","branch":"claude/x","branches":[{"name":"claude/x","sources":[{"source":"hub","url":"http://hub/git/hub/github/o/r.git","sha":"` + sha1h + `"}]}]}`))}, nil
 	})
-	ans, err := AskHubLookup(context.Background(), rt, URLQuery{Repo: "o/r", Branch: " claude/x ", Room: "sg4"})
+	ans, err := AskHubLookup(context.Background(), rt, URLQuery{Repo: "o/r", Branch: " claude/x ", Room: "room-e"})
 	if err != nil || ans.State != URLFound || ans.Branches[0].Sources[0].SHA != sha1h {
 		t.Fatalf("answer = %+v %v", ans, err)
 	}
-	if len(asked) != 1 || asked[0] != LinkBase+LinkLookupPath+"?branch=claude%2Fx&repo=o%2Fr&room=sg4" {
+	if len(asked) != 1 || asked[0] != LinkBase+LinkLookupPath+"?branch=claude%2Fx&repo=o%2Fr&room=room-e" {
 		t.Fatalf("asked %v", asked)
 	}
 }

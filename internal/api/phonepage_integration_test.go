@@ -53,7 +53,7 @@ func TestPhonePageLoadsEveryFile(t *testing.T) {
 		}
 		rel, _ := filepath.Rel(filepath.Join("web", "m"), p)
 		rel = filepath.ToSlash(rel)
-		if rel != "index.html" && !named[rel] && !strings.HasPrefix(rel, "icons/") {
+		if rel != "index.html" && !named[rel] && !strings.HasPrefix(rel, "icons/") && rel != "boop.mp3" { // fetched by js/voice.js, not named by the page
 			t.Errorf("web/m/%s is not loaded by web/m/index.html", rel)
 		}
 		return nil

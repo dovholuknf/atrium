@@ -11,8 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A card by its handle on the room's own port. See
-// docs/rnd/handle-addressed-http-design.md section 6.
+// A card by its handle on the room's own port.
 //
 // ONE WRAPPER IN FRONT OF THE MUX, so every `/v1/tasks/{id}...` route takes a
 // name and no handler changes. The segment is looked up the way the room

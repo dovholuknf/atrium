@@ -7,7 +7,6 @@ import (
 
 // The forge CLIs atrium knows. A room keeps no forge configuration: a room with a hub never runs one, and a room with
 // no hub runs the CLI by its own name against its default host. Atrium never holds a credential.
-// See docs/rnd/scm-forge-design.md, the answers section.
 
 // ForgeTool is one forge CLI atrium knows how to ask for its login status.
 type ForgeTool struct {

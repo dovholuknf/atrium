@@ -208,7 +208,7 @@ func TestTheReplayCannotEraseItself(t *testing.T) {
 		t.Fatal("stripped the colour as well")
 	}
 	// And the history/live divider is GONE. It used to sit under the flattened
-	// history so the first live redraw did not read as corruption; clint found
+	// history so the first live redraw did not read as corruption; the operator found
 	// it noise on every reattach and asked to ditch the whole preamble.
 	if strings.Contains(got, "live from here") || strings.Contains(got, "everything above is history") {
 		t.Fatalf("emitted the attach preamble that was removed: %q", got)

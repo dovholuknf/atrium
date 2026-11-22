@@ -24,7 +24,6 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 - commit 367a38da
 - docs/decisions-log.md (2026-09-23/24)
-- docs/rnd/review-on-atrium-design.md section 7
 
 ## Notes for the writer
 

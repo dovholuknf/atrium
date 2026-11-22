@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The pty host is the third process a keystroke crosses, and at Normal it lagged keys on sg3 under a go test load.
+// The pty host is the third process a keystroke crosses, and at Normal it lagged keys on room-d under a go test load.
 func TestThePtyHostRunsAboveNormal(t *testing.T) {
 	self := windows.CurrentProcess()
 	was, err := windows.GetPriorityClass(self)

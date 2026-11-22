@@ -167,8 +167,8 @@ func TestABranchOnAnOnlineRoomAloneAnswersTheRoomsURL(t *testing.T) {
 		t.Fatalf("%+v", a)
 	}
 	room := sourceOf(&a.Branches[0], "room")
-	if room == nil || room.Room != "SG3" || !room.Online || room.SHA != x.claudeW1 || room.Ahead != nil ||
-		!strings.HasSuffix(room.URL, "/git/room/SG3/github/o/r.git") {
+	if room == nil || room.Room != "ROOM-D" || !room.Online || room.SHA != x.claudeW1 || room.Ahead != nil ||
+		!strings.HasSuffix(room.URL, "/git/room/ROOM-D/github/o/r.git") {
 		t.Fatalf("room source: %+v", room)
 	}
 	// And the URL it gives is one git can fetch from.
@@ -251,17 +251,17 @@ func TestAnOfflineRoomAnswersOfflineBeforeAnyoneFetches(t *testing.T) {
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "feat/done")
 	x.cancel()
-	waitFor(t, 5*time.Second, func() bool { return !x.hub.Has("sg3") })
+	waitFor(t, 5*time.Second, func() bool { return !x.hub.Has("room-d") })
 	posts := x.posts.Load()
 
 	// Asked of that room.
-	a := x.ask(t, "repo=o/r&branch=claude/w1&room=SG3")
+	a := x.ask(t, "repo=o/r&branch=claude/w1&room=ROOM-D")
 	if a.State != gitsync.URLOffline || len(a.Offline) != 1 || !strings.Contains(a.Note, "not connected") {
 		t.Fatalf("room asked: %+v", a)
 	}
 	// Not asked of any room: the branch is not on the hub, and the room that synced the repository is gone.
 	a = x.ask(t, "repo=o/r&branch=claude/w1")
-	if a.State != gitsync.URLOffline || len(a.Offline) != 1 || !strings.EqualFold(a.Offline[0], "SG3") {
+	if a.State != gitsync.URLOffline || len(a.Offline) != 1 || !strings.EqualFold(a.Offline[0], "ROOM-D") {
 		t.Fatalf("no room named: %+v", a)
 	}
 	// A branch the hub has is still answered, and the room is named as away.
@@ -489,7 +489,7 @@ func TestTheToolReturnsTheEndpointsJSONAndALine(t *testing.T) {
 	same(map[string]any{"repo": "o/r", "branch": "fix/live"}, "repo=o%2Fr&branch=fix%2Flive")
 	same(map[string]any{"repo": "o/r"}, "repo=o%2Fr")
 	same(map[string]any{"repo": "nope/nope"}, "repo=nope%2Fnope")
-	same(map[string]any{"repo": "o/r", "branch": "claude/w1", "room": "SG3"}, "repo=o%2Fr&branch=claude%2Fw1&room=SG3")
+	same(map[string]any{"repo": "o/r", "branch": "claude/w1", "room": "ROOM-D"}, "repo=o%2Fr&branch=claude%2Fw1&room=ROOM-D")
 
 	a := call(map[string]any{"repo": "o/r", "branch": "fix/live"})
 	text, _ := a["text"].(string)
@@ -517,7 +517,7 @@ func TestABranchPushedByARoomThatIsGoneNamesTheRoomAsAway(t *testing.T) {
 	x.g.PushLog = log
 	x.pushToStore(t, x.claudeW1, "feat/done")
 	batch, err := log.Begin(context.Background(), gitsync.PushRow{Repo: "github/o/r", Ref: "refs/heads/feat/done",
-		New: x.claudeW1, Room: "m1mini", Card: "c1", At: time.Now()})
+		New: x.claudeW1, Room: "room-a", Card: "c1", At: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,11 +525,11 @@ func TestABranchPushedByARoomThatIsGoneNamesTheRoomAsAway(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := x.ask(t, "repo=o/r&branch=feat/done")
-	if a.State != gitsync.URLFound || len(a.Offline) != 1 || a.Offline[0] != "m1mini" {
+	if a.State != gitsync.URLFound || len(a.Offline) != 1 || a.Offline[0] != "room-a" {
 		t.Fatalf("%+v", a)
 	}
 	// Asked of that room, it is not connected.
-	if a := x.ask(t, "repo=o/r&branch=feat/done&room=m1mini"); a.State != gitsync.URLOffline {
+	if a := x.ask(t, "repo=o/r&branch=feat/done&room=room-a"); a.State != gitsync.URLOffline {
 		t.Fatalf("%+v", a)
 	}
 }
@@ -604,7 +604,7 @@ func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testin
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
 	base, cards := x.forwarder(t)
-	ans, text := x.toolAs(t, "card1", "SG3")(map[string]any{"repo": "o/r", "branch": "fix/live"})
+	ans, text := x.toolAs(t, "card1", "ROOM-D")(map[string]any{"repo": "o/r", "branch": "fix/live"})
 
 	hub := sourceOf(branchOf(ans, "fix/live"), "hub")
 	if hub == nil || hub.URL != base+"hub/github/o/r.git" {
@@ -650,7 +650,7 @@ func TestACardIsGivenNoURLForARoomsWorkInProgress(t *testing.T) {
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	base, _ := x.forwarder(t)
-	card := x.toolAs(t, "card1", "SG3")
+	card := x.toolAs(t, "card1", "ROOM-D")
 
 	ans, text := card(map[string]any{"repo": "o/r", "branch": "claude/w1"})
 	room := sourceOf(branchOf(ans, "claude/w1"), "room")
@@ -699,7 +699,7 @@ func TestACardWhoseRoomDoesNotSayWhereItsForwarderIsIsGivenNoURL(t *testing.T) {
 		"a secure scheme":          "https://127.0.0.1:7777/git/",
 	} {
 		x.setRemote(remote)
-		ans, text := x.toolAs(t, "card1", "SG3")(map[string]any{"repo": "o/r", "branch": "fix/live"})
+		ans, text := x.toolAs(t, "card1", "ROOM-D")(map[string]any{"repo": "o/r", "branch": "fix/live"})
 		hub := sourceOf(branchOf(ans, "fix/live"), "hub")
 		if hub == nil || hub.URL != "" || hub.Note != gitsync.NoHubRemote {
 			t.Fatalf("%s: the hub source is %+v, want no URL and the note", name, hub)

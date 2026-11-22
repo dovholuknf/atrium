@@ -1,4 +1,4 @@
-// Package sshwizard is the step engine behind turning ssh on for a room. See docs/rnd/room-ssh-wizard-design.md.
+// Package sshwizard is the step engine behind turning ssh on for a room.
 //
 // THIS PART ONLY READS. A Check looks at the machine and says what it found, and nothing here writes a key, an
 // authorized_keys file, an ssh config or the room's switch. The fixes are a later step and live in their own file.

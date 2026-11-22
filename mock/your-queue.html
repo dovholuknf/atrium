@@ -269,17 +269,17 @@ const GATES = [
 ];
 const MIN = 1, HR = 60, DAY = 1440;
 const ITEMS = [
-  { id: 'ci', title: 'Merge CI failed: claude/main run 4412', proj: 'atrium', verb: 'UNBLOCK', gate: 'stuck', stage: 5, skip: [], age: 14 * MIN, card: 'claude-sg4', stuck: true, surface: null,
+  { id: 'ci', title: 'Merge CI failed: claude/main run 4412', proj: 'atrium', verb: 'UNBLOCK', gate: 'stuck', stage: 5, skip: [], age: 14 * MIN, card: 'claude-room-e', stuck: true, surface: null,
     hist: { 5: ['Agent landed 3 cards, CI run 4412 failed on windows.', 'TestSupervisorRestart timed out after 60s. Re-run fails the same way, so it is not a flake. Worker is parked waiting on you.'] } },
   { id: 'cull', title: 'Branch cull interview', proj: 'atrium', verb: 'ANSWER', gate: 'interview', stage: 1, skip: [], age: 3 * HR + 5, card: 'cull-1',
     hist: { 0: ['"too many claude/* branches, clean them up"', 'Backlog item u-cull. 37 stale claude/* branches in the hub, 5 checked out in worktrees.'] } },
   { id: 'walkiv', title: 'How the walk should work', proj: 'atrium', verb: 'ANSWER', gate: 'interview', stage: 1, skip: [], age: 1 * DAY + 2 * HR, card: 'walk-design',
     hist: { 0: ['"the walk is the thing i use most, i want to play with how it works"', 'Open design question on the walk: where it opens, what Send back does, step order.'] } },
-  { id: 'bringup', title: 'Bring-up mock', proj: 'ziti', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 5 * HR + 20, card: 'sgg', surface: 'bringup',
+  { id: 'bringup', title: 'Bring-up mock', proj: 'ziti', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 5 * HR + 20, card: 'room-g', surface: 'bringup',
     hist: { 0: ['"first run of a new machine takes too long to trust"', 'Bring-up should show each machine step with a live result.'], 2: ['Approved design doc 2h earlier today', 'Bring-up as a checklist that fills in as the room reports each step.'] } },
-  { id: 'stepper', title: 'Stepper mock', proj: 'atrium', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 2 * HR + 10, card: 'm1mini', surface: 'stepper',
+  { id: 'stepper', title: 'Stepper mock', proj: 'atrium', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 2 * HR + 10, card: 'room-a', surface: 'stepper',
     hist: { 0: ['"a stepper for items, like the walk, but for stages"', 'Stage stepper showing which gate an item is at.'] } },
-  { id: 'voice', title: 'Voice push-to-talk mock', proj: 'atrium', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 40 * MIN, card: 'claude-sg4', surface: 'voice',
+  { id: 'voice', title: 'Voice push-to-talk mock', proj: 'atrium', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 40 * MIN, card: 'claude-room-e', surface: 'voice',
     hist: { 0: ['"hold a key and talk to the card"', 'Push-to-talk button on the terminal bar, transcript lands in the compose line.'] } },
   { id: 'plan', title: 'Service and package manager plan doc', proj: 'ziti', verb: 'APPROVE', gate: 'design', stage: 2, skip: [], age: 1 * DAY + 30, card: 'svc-plan', surface: 'doc',
     hist: { 0: ['"services and packages need one manager, not three scripts"', 'Plan doc proposing one service and package manager across rooms.'], 1: ['Answered 4 of 4', 'Decided: one manager, per-room config, no daemon restart on package change.'] } },
@@ -423,7 +423,7 @@ function paneHtml() {
 }
 function termHtml(it) {
   const t = {
-    ci: `<span class="d">$ gh run view 4412 --log-failed</span>\n<span class="r">FAIL</span> atrium/internal/daemon  60.2s\n--- <span class="r">FAIL</span>: TestSupervisorRestart (60.01s)\n    supervisor_test.go:211: timed out waiting for ptyhost to reattach\n    supervisor_test.go:211: last state: restarting (attempt 4)\n<span class="r">FAIL</span>\n\n<span class="y">claude-sg4:</span> I landed the three cards and CI is red on windows. The same test failed on the re-run, so I think\nthe merge changed reattach timing. I have stopped. Restart me to try a fix, unblock me with a hint,\nor drop the merge.\n\n<span class="g">&gt;</span> _`,
+    ci: `<span class="d">$ gh run view 4412 --log-failed</span>\n<span class="r">FAIL</span> atrium/internal/daemon  60.2s\n--- <span class="r">FAIL</span>: TestSupervisorRestart (60.01s)\n    supervisor_test.go:211: timed out waiting for ptyhost to reattach\n    supervisor_test.go:211: last state: restarting (attempt 4)\n<span class="r">FAIL</span>\n\n<span class="y">claude-room-e:</span> I landed the three cards and CI is red on windows. The same test failed on the re-run, so I think\nthe merge changed reattach timing. I have stopped. Restart me to try a fix, unblock me with a hint,\nor drop the merge.\n\n<span class="g">&gt;</span> _`,
     cull: `<span class="y">cull-1:</span> I have the list of 37 claude/* branches. I want to ask you about each bucket.\nOpen the ask to answer one at a time.\n\n<span class="g">&gt;</span> _`,
     walkiv: `<span class="y">walk-design:</span> Four questions on how the walk should work.\n\n<span class="g">&gt;</span> _`,
   }[it.id] || `<span class="y">${esc(it.card)}:</span> ${esc(it.title)} is ready for your ${it.verb.toLowerCase()}.\n<span class="d">(plain terminal, scrollback and all)</span>\n\n<span class="g">&gt;</span> _`;
@@ -456,7 +456,7 @@ function ivHtml(it) {
 
 /* ---------- walk ---------- */
 const SURF = {
-  bringup: ['Bring-up', ['sgg', 'Steps', 'Log'], [['Install ptyhost', 100], ['Join the hub', 100], ['Attach card list', 55], ['First card launches', 0]], 'Retry step', 'Skip'],
+  bringup: ['Bring-up', ['room-g', 'Steps', 'Log'], [['Install ptyhost', 100], ['Join the hub', 100], ['Attach card list', 55], ['First card launches', 0]], 'Retry step', 'Skip'],
   stepper: ['Stepper', ['Item', 'Stages', 'History'], [['Idea', 100], ['Interview', 100], ['Design', 100], ['Mock', 50], ['Build', 0]], 'Advance', 'Send back'],
   voice: ['Push to talk', ['Terminal', 'Voice', 'Settings'], [['Hold space to talk', 100], ['Transcript: "restart the build"', 100], ['Send to compose line', 0]], 'Send', 'Cancel'],
   doc: ['Service manager', ['Plan', 'Packages', 'Rollout'], [['One manager per room', 100], ['Package pin file', 70], ['No daemon restart', 40]], 'Accept plan', 'Comment'],

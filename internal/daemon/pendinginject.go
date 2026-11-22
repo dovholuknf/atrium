@@ -16,7 +16,7 @@ import (
 // The gate (see injectPeer) types a peer message into a terminal only when the
 // operator's line is empty and the keyboard has been quiet. When it is not, the
 // message is queued for the ordinary hook delivery AND handed here, so atrium
-// keeps trying to put it on screen the way clint reads his sessions rather than
+// keeps trying to put it on screen the way the operator reads their sessions rather than
 // only ever behind a tool call.
 //
 // NEVER LOST AND NEVER DROPPED. The durable copy is the message row in the

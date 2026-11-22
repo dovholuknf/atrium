@@ -55,6 +55,74 @@ func QueuedPromptOf(line []byte) (Prompt, bool) {
 	return p, true
 }
 
+const hookBanner = "Message from the human, sent through atrium"
+
+// HookPromptOf is the operator's message in a line Claude Code wrote when a hook carried it: a Stop hook's
+// `stop_hook_summary` (hookErrors) or a permission hook's error `tool_result`. Both open with hookBanner and end
+// the banner at the first blank line. A batch mixed with a peer's says so in its banner and is left out.
+func HookPromptOf(line []byte) (Prompt, bool) {
+	if !bytes.Contains(line, []byte(hookBanner)) {
+		return Prompt{}, false
+	}
+	var rec struct {
+		Type      string   `json:"type"`
+		Subtype   string   `json:"subtype"`
+		Sidechain bool     `json:"isSidechain"`
+		Timestamp string   `json:"timestamp"`
+		Errors    []string `json:"hookErrors"`
+		Message   struct {
+			Content any `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(line, &rec) != nil || rec.Sidechain {
+		return Prompt{}, false
+	}
+	var texts []string
+	switch {
+	case rec.Type == "system" && rec.Subtype == "stop_hook_summary":
+		texts = rec.Errors
+	case rec.Type == "user":
+		blocks, _ := rec.Message.Content.([]any)
+		for _, b := range blocks {
+			m, _ := b.(map[string]any)
+			if m["type"] != "tool_result" || m["is_error"] != true {
+				continue
+			}
+			switch c := m["content"].(type) {
+			case string:
+				texts = append(texts, c)
+			case []any:
+				for _, p := range c {
+					if pm, ok := p.(map[string]any); ok {
+						if s, ok := pm["text"].(string); ok {
+							texts = append(texts, s)
+						}
+					}
+				}
+			}
+		}
+	}
+	at, err := time.Parse(time.RFC3339Nano, rec.Timestamp)
+	if err != nil {
+		return Prompt{}, false
+	}
+	for _, t := range texts {
+		i := strings.Index(t, hookBanner)
+		if i < 0 {
+			continue
+		}
+		rest := t[i+len(hookBanner):]
+		j := strings.Index(rest, "\n\n")
+		if j < 0 || !strings.HasPrefix(rest, ":") && !strings.HasPrefix(rest, ".") {
+			continue
+		}
+		if text := strings.TrimSpace(rest[j+2:]); text != "" {
+			return Prompt{At: at.UTC(), Text: text, Kind: PromptOperator}, true
+		}
+	}
+	return Prompt{}, false
+}
+
 // PromptOf is a user line's text and kind, or false for a line that is not
 // somebody talking to the card: a tool result, a hook's or a task's
 // notification, a command's output.

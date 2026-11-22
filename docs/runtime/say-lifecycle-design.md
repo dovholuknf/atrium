@@ -226,7 +226,7 @@ rows with `reply_wanted` and no `replied_at`. A row is open until it is answered
 `dead`, then `lapsed`), or until seven days pass (`lapsed`, by the sweep below).
 
 This is a record on the card. It is NOT a stuck badge, not a column move, and not a notice. `owed_at` and
-`docs/rnd/owed-report-design.md` are about a report owed to a LAUNCHER and drive the STUCK escalation. A reply owed to any
+the owed report are about a report owed to a LAUNCHER and drive the STUCK escalation. A reply owed to any
 sender is a different debt with a different creditor, so it has its own table, its own count and no path into
 `OwesReport`, `stuckNow` or `PromptKey`. `owed_at` is not read or written by anything here.
 

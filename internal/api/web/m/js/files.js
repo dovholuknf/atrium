@@ -1,4 +1,4 @@
-// The hub file drop and the card folders, as sources of the one files list that docs.js draws. See docs/rnd/hub-file-drop.md.
+// The hub file drop and the card folders, as sources of the one files list that docs.js draws.
 //
 // One module for the phone's /m shell and the desktop board: the drop's rows, an upload with an optional note, a delete that
 // asks in the page, and a card's folders read from its own room. It talks only to `/_hub/files` with a plain same-origin

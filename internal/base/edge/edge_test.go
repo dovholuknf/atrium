@@ -51,7 +51,7 @@ func TestTheBrowserEdge(t *testing.T) {
 		{"a cross-site read is a read", http.MethodGet, "127.0.0.1:7778",
 			map[string]string{"Sec-Fetch-Site": "cross-site"}, 200},
 		{"a rebound host", http.MethodGet, "evil.example:7778", nil, 403},
-		{"a rebound host to a lan name", http.MethodPost, "sg4:7778", nil, 403},
+		{"a rebound host to a lan name", http.MethodPost, "room-e:7778", nil, 403},
 		{"a foreign websocket", http.MethodGet, "127.0.0.1:7778",
 			map[string]string{"Upgrade": "websocket", "Connection": "Upgrade", "Origin": "https://evil.example"}, 403},
 		{"the board's own websocket", http.MethodGet, "127.0.0.1:7778",
@@ -89,9 +89,9 @@ func TestASharedListenerAnswersOnlyItsNames(t *testing.T) {
 
 // $ATRIUM_HOSTS ADDS A NAME to every listener.
 func TestEnvHostsAddsNames(t *testing.T) {
-	t.Setenv(EnvHosts, "sg4.lan, 10.0.0.9")
+	t.Setenv(EnvHosts, "room-e.lan, 10.0.0.9")
 	h := Named(ok)
-	for host, want := range map[string]int{"sg4.lan:7778": 200, "10.0.0.9": 200, "evil.example": 403} {
+	for host, want := range map[string]int{"room-e.lan:7778": 200, "10.0.0.9": 200, "evil.example": 403} {
 		if got := status(h, http.MethodGet, host, nil); got != want {
 			t.Errorf("%s answered %d, want %d", host, got, want)
 		}

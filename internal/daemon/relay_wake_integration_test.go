@@ -15,7 +15,7 @@ func TestAWakeSayToAnotherRoomAsksTheHubToResumeIt(t *testing.T) {
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 
-	raw := map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "wake up", "wake": true}
+	raw := map[string]any{"from": "sa1", "to": "orch@claude-room-e", "text": "wake up", "wake": true}
 	code, out := sayAny(t, d, raw)
 	if code != http.StatusOK || out["delivered"] != "queued" {
 		t.Fatalf("%d %+v", code, out)
@@ -24,7 +24,7 @@ func TestAWakeSayToAnotherRoomAsksTheHubToResumeIt(t *testing.T) {
 		t.Fatalf("relay got %+v, want one say with Wake", got)
 	}
 
-	if _, _ = sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "plain"}); f.says()[1].Wake {
+	if _, _ = sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-room-e", "text": "plain"}); f.says()[1].Wake {
 		t.Fatal("a say without wake asked for one")
 	}
 }
@@ -40,12 +40,12 @@ func TestAWakeSayToAnUnreachableRoomIsRefusedNotHeld(t *testing.T) {
 			return hublink.RelayResult{}, hublink.ErrRelayDown
 		},
 		func(hublink.RelaySay) (hublink.RelayResult, error) {
-			return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
+			return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-room-e is not attached"}, nil
 		},
 	} {
 		f.set(down)
-		code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
-		if code != http.StatusFailedDependency || !strings.Contains(out["error"].(string), "claude-sg4") {
+		code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-room-e", "text": "x", "wake": true})
+		if code != http.StatusFailedDependency || !strings.Contains(out["error"].(string), "claude-room-e") {
 			t.Fatalf("%d %+v, want a 424 naming the room", code, out)
 		}
 		if len(owed(t, d)) != 0 {
@@ -62,7 +62,7 @@ func TestAnUnconfirmedWakeSayIsNotHeld(t *testing.T) {
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
 		return hublink.RelayResult{Unconfirmed: true, Error: "no answer"}, nil
 	})
-	_, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
+	_, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-room-e", "text": "x", "wake": true})
 	if out["delivered"] != "unconfirmed" || len(owed(t, d)) != 0 {
 		t.Fatalf("%+v", out)
 	}
@@ -78,7 +78,7 @@ func TestAWakeSayAnsweredParkedMeansTheHubIsOld(t *testing.T) {
 		return hublink.RelayResult{OK: true, Delivered: "parked", Warning: "not sent: this card is parked, send again with wake=true",
 			To: s.To + "@" + s.Room, Card: s.Room + "~L1"}, nil
 	})
-	code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
+	code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-room-e", "text": "x", "wake": true})
 	msg, _ := out["error"].(string)
 	if code != http.StatusFailedDependency || !strings.Contains(msg, "older than cross-room wake") ||
 		strings.Contains(msg, "send again") {
@@ -86,7 +86,7 @@ func TestAWakeSayAnsweredParkedMeansTheHubIsOld(t *testing.T) {
 	}
 
 	// Without wake a parked answer is the target's own, and passes through as it always did.
-	code, out = sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
+	code, out = sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-room-e", "text": "x"})
 	if code != http.StatusOK || out["delivered"] != "parked" {
 		t.Fatalf("%d %+v", code, out)
 	}

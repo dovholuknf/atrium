@@ -52,7 +52,7 @@ func writeRoomCert(t *testing.T, dir string) {
 func recordRoom(t *testing.T, roomDirName string) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "daemon.json")
-	raw, _ := json.Marshal(daemon.Location{Agent: "http://localhost:7777", Room: "sg3", RoomDir: roomDirName, PID: 1})
+	raw, _ := json.Marshal(daemon.Location{Agent: "http://localhost:7777", Room: "room-d", RoomDir: roomDirName, PID: 1})
 	if err := os.WriteFile(p, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}

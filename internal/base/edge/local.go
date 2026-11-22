@@ -7,7 +7,7 @@ import (
 
 // LocalOperator reports whether a request is the machine's own user, at a
 // browser or a shell on this machine, as opposed to anybody a local proxy let
-// in. See docs/rnd/local-proxy-trust-design.md.
+// in.
 //
 // A LOOPBACK ADDRESS ALONE IS NOT ENOUGH. A share started by hand, `zrok share`
 // pointed at 127.0.0.1, connects from loopback on behalf of whoever reached the

@@ -17,7 +17,7 @@ import (
 // It is the seam between the daemon's policy (the ring, the screen model, the
 // typing gate, viewports, carryover, injection) and the thing that holds a
 // process on a pseudo terminal. Today that is go-pty in this process. The
-// design in docs/rnd/rolling-restart-design.md puts it in a separate host, and
+// rolling restart design puts it in a separate host, and
 // the interface is written so a host can satisfy it: output is a stream of
 // bytes, an exit is a code delivered once, and there is nothing here that only
 // makes sense inside one process (no handle, no *os.Process, no file

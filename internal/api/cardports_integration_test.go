@@ -101,7 +101,7 @@ func TestPortsAreHandedOutOnceAndComeBackOnClose(t *testing.T) {
 func TestTheDefaultPortRangeIsTheRoomsOwnBlock(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
 	seen := map[string]bool{}
-	for _, room := range []string{"sg4", "sg4-control", "sa89", ""} {
+	for _, room := range []string{"room-e", "room-e-control", "sa89", ""} {
 		oh.srv.Room = room
 		r, err := oh.srv.cardPortRange()
 		if err != nil || r.Lo < cardPortBase || r.Hi >= 49152 || r.Hi-r.Lo != cardPortBlock-1 {

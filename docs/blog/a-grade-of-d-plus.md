@@ -22,7 +22,6 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 ## Sources
 
-- docs/rnd/opencode-token-routing.md section 0
 - docs/backlog/review/review-new-security-audit-kimi.md (grading only)
 - the factory log of 2026-10-01 and 10-02 (held, off-repo for now; paraphrase only)
 

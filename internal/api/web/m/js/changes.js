@@ -1,5 +1,5 @@
 // The changes sheet: what a card's worktree changed, read on the phone, and a line of it quoted into the composer. Read only:
-// nothing here edits, stages or discards. Design: docs/rnd/changes-view-design.md and docs/backlog/ui/u-new-m-code-review.md.
+// nothing here edits, stages or discards. See docs/backlog/ui/u-new-m-code-review.md.
 //
 // Two ways in. The chip on a reply that edited files ("3 files edited", from the `edited` count /replies carries, with no git
 // number on it) opens THAT turn: one `?turn=<reply at>` call, made when the chip is tapped. The card's "changes" button opens

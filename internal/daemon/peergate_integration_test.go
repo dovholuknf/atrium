@@ -94,7 +94,7 @@ func TestInjectPeerAbortsWhenAKeystrokeRacesTheLock(t *testing.T) {
 
 	done := make(chan bool, 1)
 	go func() {
-		wrote, _ := r.injectPeer("[peer sg4/doer] ", "the migration is ready")
+		wrote, _ := r.injectPeer("[peer room-e/doer] ", "the migration is ready")
 		done <- wrote
 	}()
 

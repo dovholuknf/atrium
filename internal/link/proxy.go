@@ -176,6 +176,8 @@ type Proxy struct {
 	landGit   LandGit
 	ciRuns    func(context.Context) ([]CIPoint, error)
 	hubBuild  string
+	// live is the root board's version when it is read from disk. See boardlive.go.
+	live *liveBoard
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// setup is what each attached room's setup was last read as. See setupwatch.go.
@@ -552,6 +554,7 @@ func (p *Proxy) rememberCardRoom(bare, room string) {
 
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
 	seenhost.Note(r)
 	// THE ROOM'S SSH ROUTE IS NOT REACHABLE FROM A BOARD REQUEST, and neither are the headers it trusts. Everything
 	// under `/_link/` is a 404 here, and the two headers the hub sets itself on a stream are dropped from whatever is
@@ -871,6 +874,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.WithContext(ctx)
 	_ = named
+	if isUpload(r) {
+		var done func(string)
+		w, r, done = timeUpload(w, r, t0)
+		defer done(room)
+	}
 	// The other rooms get the list from the hub; this one gets the write itself.
 	if limitsNamed && limitsErr == nil {
 		go p.fanContextLimits(context.Background(), limits, room)
@@ -1208,7 +1216,7 @@ type Known struct {
 	Transport string `json:"transport"`
 	// Via and Fallback are the live half of the transport: what the room is
 	// attached over right now, and whether that is its first choice. Empty while
-	// it is not attached. See docs/rnd/room-transport-order.md.
+	// it is not attached.
 	Via      string `json:"via,omitempty"`
 	Fallback bool   `json:"fallback,omitempty"`
 	// Starved is attached in name only: no data connection is arriving, so the
@@ -1298,7 +1306,7 @@ type Inventory interface {
 	Holding() ([]string, error)
 	// HubSkin is the skin the ALL view wears, which is the hub's own and not a
 	// room's. Empty means unset, read by the serving side as the default. See
-	// `hubSettings` in fanout.go and `docs/archive/hub-room-requirements.md`.
+	// `hubSettings` in fanout.go.
 	HubSkin() (string, error)
 	// SetHubSkin records the skin the ALL view wears, which is how a skin saved
 	// while looking at all rooms lands somewhere instead of being refused for

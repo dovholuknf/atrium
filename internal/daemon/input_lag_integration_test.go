@@ -36,7 +36,7 @@ func TestOperatorKeystrokeStaysFastDuringPeerInjection(t *testing.T) {
 
 	wroteCh := make(chan bool, 1)
 	go func() {
-		wrote, _ := r.injectPeer("[peer sg4/doer] ", "the migration is ready")
+		wrote, _ := r.injectPeer("[peer room-e/doer] ", "the migration is ready")
 		wroteCh <- wrote
 	}()
 	testwait.EventuallyEvery(t, time.Millisecond, 5*time.Second, "the injection to enter its held pause", func() bool {

@@ -1255,7 +1255,7 @@ window.addEventListener("storage", e => {
 //     Wanted, reasonably: grouping is board-wide and today it is lost when you
 //     open a different browser. `internal/api/settings.go` refuses the field
 //     rather than leaving that to be discovered.
-//   - Federation. `docs/archive/federation-design-v2.md` puts many machines behind one
+//   - Federation. The second federation design puts many machines behind one
 //     board, and a grouping function shipped from a leaf and run in the
 //     forum's browser crosses a boundary that does not exist today.
 //   - What the function can already reach. These run with full page scope, so

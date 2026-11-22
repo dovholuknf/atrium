@@ -23,7 +23,7 @@ func recordRig(t *testing.T, branch string) *itemRig {
 		x.calls = append(x.calls, room+" "+path)
 		return http.StatusOK, []byte(`{"at_sha":"` + recSHA + `","dirty":true,"branch":"` + branch + `","log_path":"/x/log"}`), nil
 	}
-	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-b", "room": "sg4", "card": "c1",
+	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-b", "room": "room-e", "card": "c1",
 		"generation": 1, "state": "running", "revision": 1, "owner_kind": "human", "created_by": "orch",
 		"work_id": "f-x", "step": "building"}), loopAddr)
 	if code != http.StatusOK {
@@ -33,7 +33,7 @@ func recordRig(t *testing.T, branch string) *itemRig {
 }
 
 func (x *itemRig) record(extra map[string]any) (int, string) {
-	b := map[string]any{"room": "sg4", "card": "c1", "kind": "test", "cmd": "go test ./...", "result": "pass"}
+	b := map[string]any{"room": "room-e", "card": "c1", "kind": "test", "cmd": "go test ./...", "result": "pass"}
 	for k, v := range extra {
 		b[k] = v
 	}
@@ -109,7 +109,7 @@ func TestTheReviewRouteRefusesACardAndAnotherOrigin(t *testing.T) {
 		x.p.ServeHTTP(rec, r)
 		return rec.Code
 	}
-	if c := req(loopAddr, "sg4/c1"); c != http.StatusForbidden {
+	if c := req(loopAddr, "room-e/c1"); c != http.StatusForbidden {
 		t.Fatalf("a card's review: %d", c)
 	}
 	if c := req("203.0.113.9:4000", ""); c != http.StatusForbidden {

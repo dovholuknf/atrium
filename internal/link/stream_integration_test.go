@@ -154,7 +154,7 @@ func (s *streamRig) door(room string, headers ...string) (net.Conn, *bufio.Reade
 		s.t.Fatal(err)
 	}
 	s.t.Cleanup(func() { c.Close() })
-	req := fmt.Sprintf("POST /_hub/ssh/%s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: %s\r\nX-Atrium-Claim: claude@sg4\r\n",
+	req := fmt.Sprintf("POST /_hub/ssh/%s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: %s\r\nX-Atrium-Claim: claude@room-e\r\n",
 		room, addr, StreamUpgrade)
 	for _, h := range headers {
 		req += h + "\r\n"
@@ -183,15 +183,15 @@ func readBanner(t *testing.T, br *bufio.Reader, c net.Conn) {
 	}
 }
 
-// THE WHOLE FEATURE: the hub machine's operator reaches sg3's sshd through the hub, sees the banner first, echoes
+// THE WHOLE FEATURE: the hub machine's operator reaches room-d's sshd through the hub, sees the banner first, echoes
 // bytes, half closes, and both ends audit it without a byte of content.
 func TestAnSSHStreamReachesTheRoomsSSHDThroughTheHub(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3")
-	s.set("sg3", true, "hub")
-	s.heard("sg3", true)
+	s := newStreamRig(t, 100*time.Millisecond, "room-d")
+	s.set("room-d", true, "hub")
+	s.heard("room-d", true)
 
-	c, br, resp := s.door("sg3")
+	c, br, resp := s.door("room-d")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d: %s", resp.StatusCode, streamBody(t, resp))
 	}
@@ -211,7 +211,7 @@ func TestAnSSHStreamReachesTheRoomsSSHDThroughTheHub(t *testing.T) {
 	}
 
 	waitFor(t, 10*time.Second, func() bool { return s.hasLine("ssh-close", "ended by") })
-	if !s.hasLine("ssh-open", "hub -> sg3") || !s.hasLine("ssh-open", "claims claude@sg4") {
+	if !s.hasLine("ssh-open", "hub -> room-d") || !s.hasLine("ssh-open", "claims claude@room-e") {
 		t.Fatalf("the open was not recorded as the doc says: %v", s.lines())
 	}
 	for _, l := range s.lines() {
@@ -221,7 +221,7 @@ func TestAnSSHStreamReachesTheRoomsSSHDThroughTheHub(t *testing.T) {
 	}
 	// The room's own record, joined to the hub's by the stream id.
 	waitFor(t, 10*time.Second, func() bool {
-		for _, l := range remoteaccess.RecentLog(s.rooms["sg3"].dir, 10) {
+		for _, l := range remoteaccess.RecentLog(s.rooms["room-d"].dir, 10) {
 			if l.Event == "close" && l.Caller == "hub" && l.BytesIn == int64(len("secret bytes")) {
 				return true
 			}
@@ -233,27 +233,27 @@ func TestAnSSHStreamReachesTheRoomsSSHDThroughTheHub(t *testing.T) {
 // ANOTHER ROOM, by its certificate. The caller is the name the certificate carries.
 func TestAnotherRoomOpensAStreamAndIsNamedByItsCertificate(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3", "m1mini")
-	s.set("sg3", true, "m1mini")
-	s.heard("sg3", true)
+	s := newStreamRig(t, 100*time.Millisecond, "room-d", "room-a")
+	s.set("room-d", true, "room-a")
+	s.heard("room-d", true)
 
-	conn, err := s.rooms["m1mini"].room.OpenStream(context.Background(), "sg3", "claude@m1mini")
+	conn, err := s.rooms["room-a"].room.OpenStream(context.Background(), "room-d", "claude@room-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
 	br := bufio.NewReader(conn)
 	readBanner(t, br, conn)
-	if !s.hasLine("ssh-open", "m1mini -> sg3") {
+	if !s.hasLine("ssh-open", "room-a -> room-d") {
 		t.Fatalf("the caller was not the room's name: %v", s.lines())
 	}
 
 	// The hub door is not on that list.
-	_, _, resp := s.door("sg3")
-	if resp.StatusCode != http.StatusForbidden || !strings.Contains(streamBody(t, resp), "sg3 does not offer ssh to hub") {
+	_, _, resp := s.door("room-d")
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(streamBody(t, resp), "room-d does not offer ssh to hub") {
 		t.Fatalf("the hub got through a from list that does not name it: %d", resp.StatusCode)
 	}
-	if !s.hasLine("ssh-refused", "sg3 does not offer ssh to hub") {
+	if !s.hasLine("ssh-refused", "room-d does not offer ssh to hub") {
 		t.Fatalf("the refusal was not audited: %v", s.lines())
 	}
 }
@@ -261,15 +261,15 @@ func TestAnotherRoomOpensAStreamAndIsNamedByItsCertificate(t *testing.T) {
 // OFF IS OFF, said in the operator's words, and costs the room nothing.
 func TestAStreamToARoomWithRemoteAccessOffIsRefusedInWords(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3", "m1mini")
-	s.heard("sg3", false)
-	_, _, resp := s.door("sg3")
+	s := newStreamRig(t, 100*time.Millisecond, "room-d", "room-a")
+	s.heard("room-d", false)
+	_, _, resp := s.door("room-d")
 	body := streamBody(t, resp)
 	if resp.StatusCode != http.StatusForbidden ||
-		!strings.Contains(body, "sg3 has remote access off. turn it on at that machine: atrium room remote-access on") {
+		!strings.Contains(body, "room-d has remote access off. turn it on at that machine: atrium room remote-access on") {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
-	_, err := s.rooms["m1mini"].room.OpenStream(context.Background(), "sg3", "")
+	_, err := s.rooms["room-a"].room.OpenStream(context.Background(), "room-d", "")
 	if err == nil || !strings.Contains(err.Error(), "remote access off") {
 		t.Fatalf("a room was told %v", err)
 	}
@@ -280,12 +280,12 @@ func TestAStreamToARoomWithRemoteAccessOffIsRefusedInWords(t *testing.T) {
 func TestTheRoomChecksItsOwnFileWhateverTheHubBelieves(t *testing.T) {
 	lightSlot(t)
 	// The watcher ticks every three seconds, so the hub keeps believing it is on for a moment after the file changes.
-	s := newStreamRig(t, 3*time.Second, "sg3")
-	s.set("sg3", true, "hub")
-	s.heard("sg3", true)
-	s.set("sg3", false, "hub")
+	s := newStreamRig(t, 3*time.Second, "room-d")
+	s.set("room-d", true, "hub")
+	s.heard("room-d", true)
+	s.set("room-d", false, "hub")
 
-	_, _, resp := s.door("sg3")
+	_, _, resp := s.door("room-d")
 	body := streamBody(t, resp)
 	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "remote access off") {
 		t.Fatalf("the room granted what its file no longer allows: %d %s", resp.StatusCode, body)
@@ -294,7 +294,7 @@ func TestTheRoomChecksItsOwnFileWhateverTheHubBelieves(t *testing.T) {
 		t.Fatalf("not audited: %v", s.lines())
 	}
 	var refused bool
-	for _, l := range remoteaccess.RecentLog(s.rooms["sg3"].dir, 10) {
+	for _, l := range remoteaccess.RecentLog(s.rooms["room-d"].dir, 10) {
 		if l.Event == "refused" {
 			refused = true
 		}
@@ -307,16 +307,16 @@ func TestTheRoomChecksItsOwnFileWhateverTheHubBelieves(t *testing.T) {
 // TURNING IT OFF ends every open stream within Timings.Access.
 func TestTurningRemoteAccessOffEndsAnOpenStream(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3")
-	s.set("sg3", true, "hub")
-	s.heard("sg3", true)
+	s := newStreamRig(t, 100*time.Millisecond, "room-d")
+	s.set("room-d", true, "hub")
+	s.heard("room-d", true)
 
-	c, br, resp := s.door("sg3")
+	c, br, resp := s.door("room-d")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d: %s", resp.StatusCode, streamBody(t, resp))
 	}
 	readBanner(t, br, c)
-	s.set("sg3", false, "hub")
+	s.set("room-d", false, "hub")
 
 	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := io.ReadAll(br); err != nil {
@@ -326,7 +326,7 @@ func TestTurningRemoteAccessOffEndsAnOpenStream(t *testing.T) {
 	c.Close()
 	// The room knows why it ended it.
 	waitFor(t, 10*time.Second, func() bool {
-		for _, l := range remoteaccess.RecentLog(s.rooms["sg3"].dir, 10) {
+		for _, l := range remoteaccess.RecentLog(s.rooms["room-d"].dir, 10) {
 			if l.Event == "close" && l.EndedBy == "remote access being turned off" {
 				return true
 			}
@@ -334,22 +334,22 @@ func TestTurningRemoteAccessOffEndsAnOpenStream(t *testing.T) {
 		return false
 	})
 	waitFor(t, 10*time.Second, func() bool { return s.hasLine("ssh-close", "ended by the target") })
-	s.heard("sg3", false)
+	s.heard("room-d", false)
 }
 
 // A from list that drops a caller ends that caller's streams and leaves the rest.
 func TestADroppedCallerLosesItsStreamsAndOthersKeepThem(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3", "m1mini")
-	s.set("sg3", true, "hub", "m1mini")
-	s.heard("sg3", true)
+	s := newStreamRig(t, 100*time.Millisecond, "room-d", "room-a")
+	s.set("room-d", true, "hub", "room-a")
+	s.heard("room-d", true)
 
-	hc, hbr, resp := s.door("sg3")
+	hc, hbr, resp := s.door("room-d")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	readBanner(t, hbr, hc)
-	mc, err := s.rooms["m1mini"].room.OpenStream(context.Background(), "sg3", "")
+	mc, err := s.rooms["room-a"].room.OpenStream(context.Background(), "room-d", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,10 +357,10 @@ func TestADroppedCallerLosesItsStreamsAndOthersKeepThem(t *testing.T) {
 	mbr := bufio.NewReader(mc)
 	readBanner(t, mbr, mc)
 
-	s.set("sg3", true, "hub")
+	s.set("room-d", true, "hub")
 	_ = mc.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := io.ReadAll(mbr); err != nil {
-		t.Fatalf("m1mini's stream outlived its place on the list: %v", err)
+		t.Fatalf("room-a's stream outlived its place on the list: %v", err)
 	}
 	// The hub's stream still echoes.
 	if _, err := io.WriteString(hc, "x"); err != nil {
@@ -376,20 +376,20 @@ func TestADroppedCallerLosesItsStreamsAndOthersKeepThem(t *testing.T) {
 // SIXTEEN OPEN STREAMS PER TARGET ROOM, and the seventeenth is refused in words.
 func TestTheSeventeenthStreamIsRefused(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3")
-	s.set("sg3", true, "hub")
-	s.heard("sg3", true)
+	s := newStreamRig(t, 100*time.Millisecond, "room-d")
+	s.set("room-d", true, "hub")
+	s.heard("room-d", true)
 
 	for i := 0; i < MaxStreams; i++ {
-		c, br, resp := s.door("sg3")
+		c, br, resp := s.door("room-d")
 		if resp.StatusCode != http.StatusSwitchingProtocols {
 			t.Fatalf("stream %d: %d %s", i+1, resp.StatusCode, streamBody(t, resp))
 		}
 		readBanner(t, br, c)
 	}
-	_, _, resp := s.door("sg3")
+	_, _, resp := s.door("room-d")
 	if body := streamBody(t, resp); resp.StatusCode != http.StatusTooManyRequests ||
-		!strings.Contains(body, "sg3 already has 16 open ssh streams") {
+		!strings.Contains(body, "room-d already has 16 open ssh streams") {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
 }
@@ -397,20 +397,20 @@ func TestTheSeventeenthStreamIsRefused(t *testing.T) {
 // sshd not answering is said as such, with the port.
 func TestASSHDThatDoesNotAnswerIsSaidInWords(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3")
+	s := newStreamRig(t, 100*time.Millisecond, "room-d")
 	// A port that was just free.
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	dead := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 	st := remoteaccess.State{Version: remoteaccess.Version, On: true, Port: dead, From: []string{"hub"}}
-	if err := remoteaccess.Save(s.rooms["sg3"].dir, st); err != nil {
+	if err := remoteaccess.Save(s.rooms["room-d"].dir, st); err != nil {
 		t.Fatal(err)
 	}
-	s.heard("sg3", true)
-	_, _, resp := s.door("sg3")
+	s.heard("room-d", true)
+	_, _, resp := s.door("room-d")
 	body := streamBody(t, resp)
 	if resp.StatusCode != http.StatusBadGateway ||
-		!strings.Contains(body, fmt.Sprintf("sg3 could not reach its sshd on 127.0.0.1:%d", dead)) {
+		!strings.Contains(body, fmt.Sprintf("room-d could not reach its sshd on 127.0.0.1:%d", dead)) {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
 }
@@ -419,10 +419,10 @@ func TestASSHDThatDoesNotAnswerIsSaidInWords(t *testing.T) {
 // forwarding header takes the door away. In every case the room sees nothing.
 func TestTheBoardCannotReachTheStreamRoute(t *testing.T) {
 	lightSlot(t)
-	s := newStreamRig(t, 100*time.Millisecond, "sg3")
-	s.set("sg3", true, "*")
-	s.heard("sg3", true)
-	seen := s.rooms["sg3"].seen
+	s := newStreamRig(t, 100*time.Millisecond, "room-d")
+	s.set("room-d", true, "*")
+	s.heard("room-d", true)
+	seen := s.rooms["room-d"].seen
 	base := s.front.URL
 
 	do := func(method, path string, h map[string]string) *http.Response {
@@ -442,18 +442,18 @@ func TestTheBoardCannotReachTheStreamRoute(t *testing.T) {
 	for _, h := range []map[string]string{{"Origin": "http://127.0.0.1:7778"}, {"Sec-Fetch-Site": "same-origin"}} {
 		h["Connection"] = "Upgrade"
 		h["Upgrade"] = StreamUpgrade
-		resp := do("POST", "/_hub/ssh/sg3", h)
+		resp := do("POST", "/_hub/ssh/room-d", h)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Fatalf("a page with %v got %d", h, resp.StatusCode)
 		}
 	}
 	// A plain POST, as fetch would send, is not an upgrade.
-	if resp := do("POST", "/_hub/ssh/sg3", nil); resp.StatusCode != http.StatusBadRequest {
+	if resp := do("POST", "/_hub/ssh/room-d", nil); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("a POST that was not an upgrade got %d", resp.StatusCode)
 	}
 	// A forwarding header says this did not start on the hub machine.
-	resp := do("POST", "/_hub/ssh/sg3", map[string]string{"X-Forwarded-For": "10.0.0.9",
+	resp := do("POST", "/_hub/ssh/room-d", map[string]string{"X-Forwarded-For": "10.0.0.9",
 		"Connection": "Upgrade", "Upgrade": StreamUpgrade})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
@@ -517,8 +517,8 @@ func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
 		return ln, port, true
 	}
 
-	s := newStreamRig(t, 100*time.Millisecond, "sg3")
-	dir := s.rooms["sg3"].dir
+	s := newStreamRig(t, 100*time.Millisecond, "room-d")
+	dir := s.rooms["room-d"].dir
 	save := func(addr string, port int) {
 		st := remoteaccess.State{Version: remoteaccess.Version, On: true, Addr: addr, Port: port, From: []string{"hub"}}
 		if err := remoteaccess.Save(dir, st); err != nil {
@@ -537,8 +537,8 @@ func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
 			continue
 		}
 		save("", port)
-		s.heard("sg3", true)
-		_, _, resp := s.door("sg3")
+		s.heard("room-d", true)
+		_, _, resp := s.door("room-d")
 		body := streamBody(t, resp)
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			ln.Close()
@@ -552,7 +552,7 @@ func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
 	defer ln.Close()
 
 	save("127.0.0.2", port)
-	c, br, resp := s.door("sg3")
+	c, br, resp := s.door("room-d")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d: %s", resp.StatusCode, streamBody(t, resp))
 	}

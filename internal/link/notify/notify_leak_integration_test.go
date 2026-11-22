@@ -17,7 +17,7 @@ import (
 // real notifier and the real command sink, with a card whose payload carries the
 // command a permission wants, a question, a recap, a diff and a path. The fake
 // command records everything it was given, and none of it may be there. This is
-// the claim docs/rnd/telegram-notify-design.md rests on.
+// the claim the telegram notify design rests on.
 func TestNotifyCommandNeverSeesWhatACardHolds(t *testing.T) {
 	sink, out := recordingCommand(t)
 	secrets := []string{"CANARY-CMD-rm-rf", "CANARY-QUESTION", "CANARY-RECAP", "CANARY-DIFF", "CANARY-PATH", "CANARY-TOKEN"}

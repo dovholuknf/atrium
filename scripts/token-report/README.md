@@ -8,9 +8,6 @@ The overnight token-efficiency report, repeatable. Three scripts, PowerShell 7 (
 | `build.ps1` | turns that folder into three CSVs for a window |
 | `run.ps1` | `fetch.ps1` then `build.ps1`, one command |
 
-The baseline is `docs/reports/token-efficiency-2026-10-15.md` and its CSVs in
-`docs/reports/token-efficiency-2026-10-15/`.
-
 ## Where the inputs come from
 
 `atrium_export` is an MCP tool, but it only calls two room endpoints through the hub and stores the answers in the
@@ -32,7 +29,7 @@ commit them.
 
 ```
 pwsh scripts/token-report/run.ps1 -Start 2026-10-16T02:30:00Z -End 2026-10-16T10:45:00Z `
-    -InDir $env:TEMP/usage-1016 -OutDir docs/reports/token-efficiency-2026-10-16
+    -InDir $env:TEMP/usage-1016 -OutDir build.claude/token-efficiency-2026-10-16
 ```
 
 `-Start` and `-End` are RFC 3339 UTC. `-HubUrl` defaults to `http://127.0.0.1:7778`, and use the address, not
@@ -98,7 +95,7 @@ Four numbers, from the `ALL` row, the cards CSV and the says CSV:
 - **Say-started turns**: `say_turns` over `turns` in `ALL`. Then, in the says CSV, the count of `turn_started` rows
   and the sum of their `cache_read` over `ALL` cache read.
 
-Baseline, overnight 2026-10-15 (02:30Z to 10:45Z), from `docs/reports/token-efficiency-2026-10-15.md`:
+Baseline, overnight 2026-10-15 (02:30Z to 10:45Z):
 
 | number | value |
 | --- | --- |

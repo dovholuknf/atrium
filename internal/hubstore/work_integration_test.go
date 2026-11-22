@@ -13,7 +13,7 @@ func onWork(id, room, card, work string, rev int) Item {
 // TWO CARDS ON ONE BACKLOG ID MAKE ONE WORK ROW AND TWO ATTACHMENTS.
 func TestTwoCardsOnOneIdMakeOneWorkRowWithTwoCards(t *testing.T) {
 	s := open(t)
-	for _, it := range []Item{onWork("a1", "sg4", "c1", "f-thing", 1), onWork("a2", "sg5", "c2", "f-thing", 1)} {
+	for _, it := range []Item{onWork("a1", "room-e", "c1", "f-thing", 1), onWork("a2", "room-f", "c2", "f-thing", 1)} {
 		if _, _, err := s.PutItem(it); err != nil {
 			t.Fatal(err)
 		}
@@ -34,7 +34,7 @@ func TestTwoCardsOnOneIdMakeOneWorkRowWithTwoCards(t *testing.T) {
 // A REPLAYED PUSH, AND A ROOM'S OUTBOX AFTER A RECONNECT, CHANGE NOTHING.
 func TestAReplayedPushChangesNoWork(t *testing.T) {
 	s := open(t)
-	it := onWork("a1", "sg4", "c1", "f-thing", 1)
+	it := onWork("a1", "room-e", "c1", "f-thing", 1)
 	s.PutItem(it)
 	if _, applied, err := s.PutItem(it); err != nil || applied {
 		t.Fatalf("replay applied=%v err=%v", applied, err)
@@ -56,7 +56,7 @@ func TestAReplayedPushChangesNoWork(t *testing.T) {
 // A PUSH THAT NAMES NO BACKLOG ID IS ADHOC, which is what a room older than this sends.
 func TestAPushWithNoWorkIdIsAdhoc(t *testing.T) {
 	s := open(t)
-	got, _, err := s.PutItem(onWork("a1", "sg4", "c1", "", 1))
+	got, _, err := s.PutItem(onWork("a1", "room-e", "c1", "", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestAPushWithNoWorkIdIsAdhoc(t *testing.T) {
 // THE BACKFILL: an assignment from before this stage has no work id, and the migration gives it an adhoc one. Run twice.
 func TestTheWorkBackfillMakesAdhocRowsAndIsIdempotent(t *testing.T) {
 	s := open(t)
-	s.PutItem(onWork("old1", "sg4", "c1", "f-x", 1))
+	s.PutItem(onWork("old1", "room-e", "c1", "f-x", 1))
 	// put the database back to how it stood at 0019: no work rows, no work id on the assignment
 	for _, q := range []string{`DELETE FROM work_card`, `DELETE FROM work`, `UPDATE item SET work_id = ''`} {
 		if _, err := s.db.Exec(q); err != nil {

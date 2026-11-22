@@ -9,8 +9,7 @@ import (
 )
 
 // THE DERIVED STEPS OF AN ITEM, as the hub last read them (item lifecycle L3: landed, deployed, pushed). A cache, written
-// by the derivation and never by a card: a bug in the rule is fixed by running it again. See
-// docs/rnd/item-lifecycle-design.md sections 2.4 and 4.1.
+// by the derivation and never by a card: a bug in the rule is fixed by running it again.
 
 // The states of a step.
 const (

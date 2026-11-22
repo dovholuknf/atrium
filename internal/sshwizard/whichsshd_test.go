@@ -11,14 +11,14 @@ import (
 func wslMachine() *fakeEnv {
 	return &fakeEnv{
 		goos: "windows", env: map[string]string{"ProgramData": `C:\ProgramData`},
-		host: "sg3", addrs: []string{"127.0.0.1", "::1", "192.168.1.147", "fe80::1"},
+		host: "room-d", addrs: []string{"127.0.0.1", "::1", "192.168.1.147", "fe80::1"},
 		files: map[string]string{
-			`C:\ProgramData\ssh\ssh_host_ed25519_key.pub`: keyLine("ssh-ed25519", "win") + " root@sg3\n",
+			`C:\ProgramData\ssh\ssh_host_ed25519_key.pub`: keyLine("ssh-ed25519", "win") + " root@room-d\n",
 		},
 		scans: map[string]string{
 			"127.0.0.1:22":     scanOut("OpenSSH_8.9p1 Ubuntu-3ubuntu0.1", "ssh-ed25519", "wsl"),
 			"::1:22":           scanOut("OpenSSH_8.9p1 Ubuntu-3ubuntu0.1", "ssh-ed25519", "wsl"),
-			"sg3:22":           scanOut("OpenSSH_for_Windows_9.5", "ssh-ed25519", "win"),
+			"room-d:22":        scanOut("OpenSSH_for_Windows_9.5", "ssh-ed25519", "win"),
 			"192.168.1.147:22": scanOut("OpenSSH_for_Windows_9.5", "ssh-ed25519", "win"),
 		},
 		owners: map[string]string{"127.0.0.1:22": "wslrelay"},
@@ -74,7 +74,7 @@ func TestWithoutHostKeyFilesAnAnswerIsUnknownNotMine(t *testing.T) {
 
 func TestWhichRefusesWSLRelayAndChoosesTheMachinesName(t *testing.T) {
 	f := Which(context.Background(), wslMachine(), 22)
-	if f.Chosen != "sg3" || f.Pinned {
+	if f.Chosen != "room-d" || f.Pinned {
 		t.Fatalf("chose %q pinned=%v: %v", f.Chosen, f.Pinned, f.Notes)
 	}
 	all := strings.Join(f.Notes, "\n")
@@ -91,7 +91,7 @@ func TestWhichRefusesWSLRelayAndChoosesTheMachinesName(t *testing.T) {
 
 func TestWhichPinsAnIPWhenNoNameMatches(t *testing.T) {
 	env := wslMachine()
-	delete(env.scans, "sg3:22")
+	delete(env.scans, "room-d:22")
 	f := Which(context.Background(), env, 22)
 	if f.Chosen != "192.168.1.147" || !f.Pinned {
 		t.Fatalf("%+v", f)

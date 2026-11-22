@@ -74,7 +74,7 @@ func fullSources(s *store.Store, clk Clock, out *[][]byte) Sources {
 
 func storeFreeSources(clk Clock, out *[][]byte) Sources {
 	return Sources{
-		Room: "sg3", Started: t0.Add(-time.Hour), Clock: clk,
+		Room: "room-d", Started: t0.Add(-time.Hour), Clock: clk,
 		Usage:        noUsage,
 		ProcessTimes: func() (time.Duration, uint64, error) { return 3 * time.Second, 212000000, nil },
 		Disk:         func() (string, uint64, uint64, error) { return "C:/x", 392, 512, nil },
@@ -119,7 +119,7 @@ func TestSnapshotShape(t *testing.T) {
 	if _, ok := mach["mem_used_bytes"]; !ok {
 		t.Error("mem_used_bytes missing after one sample")
 	}
-	if got["v"].(float64) != 1 || got["room"] != "sg3" || got["at"] != "2026-09-29T19:04:10Z" {
+	if got["v"].(float64) != 1 || got["room"] != "room-d" || got["at"] != "2026-09-29T19:04:10Z" {
 		t.Errorf("header wrong: %v", got)
 	}
 	for _, r := range got["runners"].([]any) {

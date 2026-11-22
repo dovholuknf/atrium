@@ -99,10 +99,10 @@ func newGitFixture(t *testing.T, hubSaysGit, roomSaysGit bool, roomHandler http.
 	if roomHandler == nil {
 		roomHandler = http.NotFoundHandler()
 	}
-	room := &Room{Name: "sg3", Dial: plain{addr: hubLn.Addr().String()}, Handler: roomHandler, Git: roomSaysGit,
+	room := &Room{Name: "room-d", Dial: plain{addr: hubLn.Addr().String()}, Handler: roomHandler, Git: roomSaysGit,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("sg3") && room.State().Up })
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("room-d") && room.State().Up })
 	return &gitFixture{hub: hub, room: room, sha: run(t, bare, "rev-parse", "refs/heads/claude/main"), bare: bare}
 }
 
@@ -138,7 +138,7 @@ func TestNothingIsDialledWithoutTheCapability(t *testing.T) {
 	if _, err := x.room.DialGit(context.Background()); !errors.Is(err, ErrNoGit) {
 		t.Fatalf("DialGit = %v, want ErrNoGit", err)
 	}
-	if x.hub.RoomSaysGit("sg3") {
+	if x.hub.RoomSaysGit("room-d") {
 		t.Fatal("the hub counted a room that did not say Git")
 	}
 	for _, a := range x.hub.Rooms() {
@@ -158,7 +158,7 @@ func TestAGitConnectionWithAStaleSessionIsRefused(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer conn.Close()
-		return sayHello(conn, bufio.NewReader(conn), hello{Kind: gitKind, Room: "sg3", Session: session})
+		return sayHello(conn, bufio.NewReader(conn), hello{Kind: gitKind, Room: "room-d", Session: session})
 	}
 	for _, s := range []string{"", "not-the-session"} {
 		w, err := dial(s)
@@ -180,7 +180,7 @@ func TestAHubKnowsWhichRoomsSaidGit(t *testing.T) {
 	}
 	lightSlot(t)
 	x := newGitFixture(t, true, true, nil)
-	if !x.hub.RoomSaysGit("SG3") {
+	if !x.hub.RoomSaysGit("ROOM-D") {
 		t.Fatal("the hub did not record the room's Git")
 	}
 }
@@ -209,15 +209,15 @@ func TestTheHubFetchesFromARoomOverThePool(t *testing.T) {
 		Resolve: func(name string) (string, bool) { return filepath.Join(work, ".git"), name == "github/o/r" },
 	}
 	x := newGitFixture(t, true, true, roomGit)
-	f, err := gitsync.NewForwarder(x.hub.Transport("sg3"), "sg3.room.atrium.internal", "/v1/git")
+	f, err := gitsync.NewForwarder(x.hub.Transport("room-d"), "room-d.room.atrium.internal", "/v1/git")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
 	dst := t.TempDir()
 	run(t, dst, "init", "-q")
-	run(t, dst, "fetch", "-q", "--no-tags", f.URL+"/github/o/r.git", "+refs/heads/claude/*:refs/rooms/sg3/claude/*")
-	if got := run(t, dst, "rev-parse", "refs/rooms/sg3/claude/w"); got != sha {
+	run(t, dst, "fetch", "-q", "--no-tags", f.URL+"/github/o/r.git", "+refs/heads/claude/*:refs/rooms/room-d/claude/*")
+	if got := run(t, dst, "rev-parse", "refs/rooms/room-d/claude/w"); got != sha {
 		t.Fatalf("got %s want %s", got, sha)
 	}
 }

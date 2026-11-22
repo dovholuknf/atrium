@@ -11,7 +11,7 @@ import (
 
 // ITEMS, STAGE 2B: A BLOCKED ITEM THAT IS NOT MOVING, AND A MESSAGE THAT MAY HAVE BEEN LOST TO A CLEAR. What matters is
 // whether the owner acted and whether the worker resumed, not whether a notice was "read". See
-// docs/changes/items-stage2b.md and docs/rnd/atrium-items-decisions.md section 3.
+// docs/changes/items-stage2b.md.
 //
 //   - ONE ALERT PER STALL. A stall is one revision of a blocked item, and the alert is recorded on that revision
 //     (`stuck_alerted`), so no tick and no second path can repeat it. The item moving is a new stall.

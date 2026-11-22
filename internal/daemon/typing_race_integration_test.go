@@ -25,7 +25,7 @@ func TestASayMidTurnIsTypedImmediatelyByDefault(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
 
-	typed, err := d.deliverPeer(target, "sg4/doer", "stop now")
+	typed, err := d.deliverPeer(target, "room-e/doer", "stop now")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestASayWhenDoneWaitsForTheTurnToEnd(t *testing.T) {
 	d.act.set(target.ID, ActivityTool, "Bash")
 
 	if code := message(t, d, target.ID, map[string]string{
-		"text": "neither matrix exists", "from": "sg4/doer", "when": "done",
+		"text": "neither matrix exists", "from": "room-e/doer", "when": "done",
 	}); code != http.StatusOK {
 		t.Fatalf("message answered %d", code)
 	}
@@ -166,7 +166,7 @@ func TestARunnerThatTakesNoMidTurnInputFallsBackToDone(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityThinking, "")
 
-	if typed, _ := d.deliverPeer(target, "sg4/doer", "stop now"); typed || f.written() != "" {
+	if typed, _ := d.deliverPeer(target, "room-e/doer", "stop now"); typed || f.written() != "" {
 		t.Fatalf("typed mid-turn into a runner that does not take it: %q", f.written())
 	}
 	if a := d.act.get(target.ID); a == nil || a.HeldFor != HeldForTurn {
@@ -191,7 +191,7 @@ func TestAnImmediateSayWaitsForTheLineToEmpty(t *testing.T) {
 	partial := "it could be that was th"
 	r.noteOperatorTyped([]byte(partial))
 
-	if typed, _ := d.deliverPeer(target, "sg4/doer", "the build is green"); typed {
+	if typed, _ := d.deliverPeer(target, "room-e/doer", "the build is green"); typed {
 		t.Fatal("typed into a part written line")
 	}
 	if a := d.act.get(target.ID); a == nil || a.HeldFor != HeldForLine || a.HeldCount != 1 {
@@ -228,7 +228,7 @@ func TestAnImmediateSayWaitsForAnOpenDialog(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.dialogRaised(target.ID)
 
-	if typed, _ := d.deliverPeer(target, "sg4/doer", "stop now"); typed || f.written() != "" {
+	if typed, _ := d.deliverPeer(target, "room-e/doer", "stop now"); typed || f.written() != "" {
 		t.Fatalf("typed into a terminal with a dialog open: %q", f.written())
 	}
 	if a := d.act.get(target.ID); a == nil || a.HeldFor != HeldForDialog {
@@ -244,11 +244,11 @@ func TestTheHeldSignalCountsTheMessages(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	r.noteOperatorTyped([]byte("half a thought"))
 	for _, text := range []string{"first", "second"} {
-		if typed, _ := d.deliverPeer(target, "sg4/doer", text); typed {
+		if typed, _ := d.deliverPeer(target, "room-e/doer", text); typed {
 			t.Fatal("typed into a part written line")
 		}
 	}
-	if a := d.act.get(target.ID); a == nil || a.HeldCount != 2 || a.HeldPeer != "sg4/doer" {
+	if a := d.act.get(target.ID); a == nil || a.HeldCount != 2 || a.HeldPeer != "room-e/doer" {
 		t.Fatalf("the held signal does not count two messages: %+v", a)
 	}
 }

@@ -65,7 +65,7 @@ func launchAgainst(t *testing.T, b *launchBoardFake, room string) {
 }
 
 func farLaunch() map[string]any {
-	return map[string]any{"card": "claude-sg4~K1", "handle": "kid@claude-sg4", "title": "rev", "status": "running",
+	return map[string]any{"card": "claude-room-e~K1", "handle": "kid@claude-room-e", "title": "rev", "status": "running",
 		"watch": "http://hub/#term=K1", "brief": "/srv/repo/BRIEF.md", "model": "opus"}
 }
 
@@ -74,16 +74,16 @@ func farLaunch() map[string]any {
 // the working directory it is given is left without a BRIEF.md.
 func TestStdioLaunchOnAnotherRoomGoesToThePeersRouteAndTouchesNoDisk(t *testing.T) {
 	b := &launchBoardFake{answer: farLaunch()}
-	launchAgainst(t, b, "m1mini")
+	launchAgainst(t, b, "room-a")
 	here := t.TempDir()
 
 	for _, cwd := range []string{"/srv/not/on/this/machine", here} {
-		_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: cwd, Room: "claude-sg4",
+		_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: cwd, Room: "claude-room-e",
 			Brief: "the brief", Prompt: "go", Title: "rev", Model: "opus", Env: map[string]string{"A": "b"}})
 		if err != nil {
 			t.Fatalf("launch on %s: %v", cwd, err)
 		}
-		if out.Card != "claude-sg4~K1" || out.Handle != "kid@claude-sg4" || out.Watch != "http://hub/#term=K1" ||
+		if out.Card != "claude-room-e~K1" || out.Handle != "kid@claude-room-e" || out.Watch != "http://hub/#term=K1" ||
 			out.Brief != "/srv/repo/BRIEF.md" || out.Status != "running" || out.Model != "opus" {
 			t.Fatalf("out = %+v", out)
 		}
@@ -92,7 +92,7 @@ func TestStdioLaunchOnAnotherRoomGoesToThePeersRouteAndTouchesNoDisk(t *testing.
 		t.Fatalf("/v1/launch got %d, /v1/peers/launch got %d", len(b.local), len(b.across))
 	}
 	got := b.across[0]
-	if got["room"] != "claude-sg4" || got["from"] != "sa1" || got["cwd"] != "/srv/not/on/this/machine" ||
+	if got["room"] != "claude-room-e" || got["from"] != "sa1" || got["cwd"] != "/srv/not/on/this/machine" ||
 		got["brief"] != "the brief" || got["prompt"] != "go" || got["runner"] != "" ||
 		got["env"].(map[string]any)["A"] != "b" {
 		t.Fatalf("the room was sent %+v", got)
@@ -105,10 +105,10 @@ func TestStdioLaunchOnAnotherRoomGoesToThePeersRouteAndTouchesNoDisk(t *testing.
 // Every launch field reaches the room's peers route, so a launch on another room can make its home there.
 func TestStdioLaunchOnAnotherRoomCarriesEveryLaunchField(t *testing.T) {
 	b := &launchBoardFake{answer: farLaunch()}
-	launchAgainst(t, b, "m1mini")
+	launchAgainst(t, b, "room-a")
 	off := false
 	_, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Repo: "github.com/o/r", Branch: "claude/x",
-		Base: "claude/main", Room: "claude-sg4", Resident: true, Scratch: true, Lean: &off, MCP: []string{"m"},
+		Base: "claude/main", Room: "claude-room-e", Resident: true, Scratch: true, Lean: &off, MCP: []string{"m"},
 		Theme: "dusk", Chat: true, Isolated: true, ItemOwner: "human"})
 	if err != nil || len(b.across) != 1 {
 		t.Fatalf("launch: %v, across %d", err, len(b.across))
@@ -120,7 +120,7 @@ func TestStdioLaunchOnAnotherRoomCarriesEveryLaunchField(t *testing.T) {
 		t.Fatalf("the room was sent %+v", got)
 	}
 	b.across = nil
-	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Home: true, Room: "claude-sg4"}); err != nil ||
+	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Home: true, Room: "claude-room-e"}); err != nil ||
 		len(b.across) != 1 || b.across[0]["home"] != true {
 		t.Fatalf("home launch: %v, %+v", err, b.across)
 	}
@@ -131,8 +131,8 @@ func TestStdioLaunchOnAnotherRoomCarriesTheHubsWarning(t *testing.T) {
 	a := farLaunch()
 	a["warning"] = "WARNING: the room is older than launch options, so model was NOT applied. "
 	b := &launchBoardFake{answer: a}
-	launchAgainst(t, b, "m1mini")
-	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w", Room: "claude-sg4", Model: "opus"})
+	launchAgainst(t, b, "room-a")
+	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w", Room: "claude-room-e", Model: "opus"})
 	if err != nil || !strings.HasPrefix(out.Note, "WARNING: the room is older") || !strings.Contains(out.Note, "started.") {
 		t.Fatalf("note = %q, %v", out.Note, err)
 	}
@@ -141,9 +141,9 @@ func TestStdioLaunchOnAnotherRoomCarriesTheHubsWarning(t *testing.T) {
 // This room's own name, or none, is today's path: /v1/launch, and the briefing written
 // here before the runner starts.
 func TestStdioLaunchOnThisRoomIsTheLocalPathUntouched(t *testing.T) {
-	for _, room := range []string{"", "m1mini", "M1MINI"} {
+	for _, room := range []string{"", "room-a", "ROOM-A"} {
 		b := &launchBoardFake{}
-		launchAgainst(t, b, "m1mini")
+		launchAgainst(t, b, "room-a")
 		dir := t.TempDir()
 		_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: dir, Room: room, Brief: "hello"})
 		if err != nil || out.Card != "L1" {
@@ -164,7 +164,7 @@ func TestStdioLaunchTheDaemonCallsLocalCarriesOnHere(t *testing.T) {
 	b := &launchBoardFake{answer: map[string]any{"local": true}}
 	launchAgainst(t, b, "")
 	dir := t.TempDir()
-	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: dir, Room: "m1mini", Brief: "hello"})
+	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: dir, Room: "room-a", Brief: "hello"})
 	if err != nil || out.Card != "L1" || len(b.across) != 1 || len(b.local) != 1 {
 		t.Fatalf("out = %+v, %v, across %d local %d", out, err, len(b.across), len(b.local))
 	}
@@ -181,13 +181,13 @@ func TestStdioLaunchRefusalsReachTheCallerInTheirWords(t *testing.T) {
 		msg  string
 		want []string
 	}{
-		{404, `this hub knows no room called "atlantis". rooms: claude-sg4, m1mini`, []string{"atlantis", "claude-sg4", "m1mini"}},
-		{503, "room claude-sg4 is not answering (it is not attached), so nothing was started", []string{"not answering"}},
-		{504, "it may or may not have started on claude-sg4. look at the peers on that room before launching again", []string{"may or may not"}},
+		{404, `this hub knows no room called "atlantis". rooms: claude-room-e, room-a`, []string{"atlantis", "claude-room-e", "room-a"}},
+		{503, "room claude-room-e is not answering (it is not attached), so nothing was started", []string{"not answering"}},
+		{504, "it may or may not have started on claude-room-e. look at the peers on that room before launching again", []string{"may or may not"}},
 		{502, "the hub is older than launching on another room, so it cannot carry this. update the hub", []string{"older than launching on another room", "update the hub"}},
 	} {
 		b := &launchBoardFake{code: c.code, answer: map[string]any{"error": c.msg}}
-		launchAgainst(t, b, "m1mini")
+		launchAgainst(t, b, "room-a")
 		here := t.TempDir()
 		_, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: here, Room: "atlantis", Brief: "b"})
 		if err == nil {
@@ -207,10 +207,10 @@ func TestStdioLaunchRefusalsReachTheCallerInTheirWords(t *testing.T) {
 // This room predates the route: it says so and does not launch here by mistake.
 func TestStdioLaunchOnARoomOlderThanTheRouteSaysSo(t *testing.T) {
 	b := &launchBoardFake{bare: true}
-	launchAgainst(t, b, "m1mini")
-	_, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w", Room: "claude-sg4"})
+	launchAgainst(t, b, "room-a")
+	_, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w", Room: "claude-room-e"})
 	if err == nil || !strings.Contains(err.Error(), "this room is older than launching on another room") ||
-		!strings.Contains(err.Error(), "claude-sg4") || len(b.local) != 0 {
+		!strings.Contains(err.Error(), "claude-room-e") || len(b.local) != 0 {
 		t.Fatalf("err = %v, local %d", err, len(b.local))
 	}
 }

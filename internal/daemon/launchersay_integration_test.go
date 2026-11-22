@@ -10,14 +10,14 @@ import (
 
 func TestALauncherOnAnotherRoomIsMatchedBySpawnedBy(t *testing.T) {
 	d := testDaemon(t)
-	worker := &store.Task{SpawnedBy: "orchestrator-sg4-control@sg4-control"}
-	if !d.isLauncherOf("orchestrator-sg4-control@SG4-control", worker) {
+	worker := &store.Task{SpawnedBy: "orchestrator-room-e-control@room-e-control"}
+	if !d.isLauncherOf("orchestrator-room-e-control@ROOM-E-control", worker) {
 		t.Fatal("a say from the recorded remote launcher is not recognised")
 	}
-	if d.isLauncherOf("someone-else@sg4-control", worker) {
+	if d.isLauncherOf("someone-else@room-e-control", worker) {
 		t.Fatal("another room's session is taken for the launcher")
 	}
-	if d.isLauncherOf("orchestrator-sg4-control@sg4-control", &store.Task{SpawnedBy: store.HumanLauncher}) {
+	if d.isLauncherOf("orchestrator-room-e-control@room-e-control", &store.Task{SpawnedBy: store.HumanLauncher}) {
 		t.Fatal("a human-launched card has a launcher")
 	}
 }

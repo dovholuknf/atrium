@@ -20,7 +20,7 @@ const ITEMS = () => [
   { id: "bk-done", dept: "fabric", title: "Finished work", status: "done", priority: "medium", created_at: ago(30), changed_at: ago(6) },
   { id: "bk-held", dept: "ops", title: "Parked idea", status: "held", priority: "low", created_at: ago(40), changed_at: ago(7) },
 ];
-const REPORTS = () => [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "sg4", subject: "bk-high-new built", body: "done and tested", at: ago(1), read_at: null, read_by: null }];
+const REPORTS = () => [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "room-e", subject: "bk-high-new built", body: "done and tested", at: ago(1), read_at: null, read_by: null }];
 
 // A hub board with the backlog routes answered here. `posts` and `gets` are what the page asked, `answer` shapes the
 // POST. The list is flat unless `o.grouped`, so the order tests read one list. The caller closes the context and puts hubMode back.
@@ -544,7 +544,7 @@ async function backlogResultSection(browser, base) {
   let b;
   try {
     const items = ITEMS().map(x => x.id !== "bk-high-new" ? x : Object.assign({}, x, { status: "built",
-      result: "done abc1234: the result reaches the item", result_ref: "abc1234", result_card: "sg4~c7", result_at: ago(1) }));
+      result: "done abc1234: the result reaches the item", result_ref: "abc1234", result_card: "room-e~c7", result_at: ago(1) }));
     b = await backlogBoard(browser, base, { items });
     const got = await b.p.evaluate(() => {
       const row = document.querySelector('#backlog-items .bl-row[data-id="bk-high-new"]');
@@ -553,7 +553,7 @@ async function backlogResultSection(browser, base) {
         titleLeft: title ? Math.round(title.getBoundingClientRect().left) : -2,
         others: document.querySelectorAll('#backlog-items .bl-row[data-id]:not([data-id="bk-high-new"]) .bl-result').length };
     });
-    if (!got.text.includes("done abc1234: the result reaches the item") || !got.text.includes("sg4~c7")) fail("backlogResult: the result line reads " + JSON.stringify(got.text));
+    if (!got.text.includes("done abc1234: the result reaches the item") || !got.text.includes("room-e~c7")) fail("backlogResult: the result line reads " + JSON.stringify(got.text));
     if (got.left !== got.titleLeft) fail("backlogResult: the result is not under the title: " + got.left + " vs " + got.titleLeft);
     if (got.others) fail("backlogResult: an item with no result shows one");
     if (b.errors.length) fail("backlogResult: threw " + b.errors.join(" | "));

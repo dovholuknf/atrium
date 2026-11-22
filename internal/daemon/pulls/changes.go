@@ -22,7 +22,7 @@ import (
 )
 
 // GET /v1/tasks/{id}/changes?against=head|base, or ?turn=<at>
-// (docs/rnd/changes-view-design.md, section 1, and the `turn` addition from r-changes).
+// (the `turn` addition is from r-changes).
 //
 // IT RUNS IN THE CARD'S WORKTREE AND TAKES NO PATH. The only paths git is ever given are
 // the ones a transcript named, and each of those went through safepath first (turns.go).

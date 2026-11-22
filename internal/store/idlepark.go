@@ -9,7 +9,7 @@ import (
 
 // SettingIdleParkAfter is how long a subject card sits idle before it is parked.
 // Whole seconds, or `off`. Empty means off: atrium never parks a card on its own
-// unless the operator turned this on. See docs/rnd/keepalive-policy-design.md
+// unless the operator turned this on.
 // section 7.
 const SettingIdleParkAfter = "idle_park_after"
 

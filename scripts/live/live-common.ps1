@@ -3,7 +3,7 @@
 #   . "$PSScriptRoot\live-common.ps1"
 #
 # These are this machine's deploy scripts, kept in the repo so they are reviewed and versioned. They are deployed by
-# copying them over C:\Users\claude\.atrium2\scripts\. See docs/archive/one-atrium-cutover.md.
+# copying them over C:\Users\claude\.atrium2\scripts\.
 #
 # THE ONE BINARY IS ALSO THE HOOK BINARY. C:\Users\claude\.atrium\bin\atrium.exe is what every hook line in
 # settings.json runs, several times a second, as well as the atrium (`run --no-room`) and the room (`room`). Two rules
@@ -96,10 +96,10 @@ $LinkAdvertise = Get-LinkAdvertise
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
   '--link-advertise', $LinkAdvertise, '--atrium-dir', $HubDir)
 # The hub serves the board from the main checkout, so a board change merged to claude/main is live on a browser
-# refresh with no build. clint 2026-10-07: "i'd like this hub to be switched over to allowing live edits".
+# refresh with no build. The operator 2026-10-07: "i'd like this hub to be switched over to allowing live edits".
 $HubArgs += @('--board', [IO.Path]::Combine($Repo, 'internal\api\web'))
 # One board view per worker worktree under D:\worktrees, at http://<worktree-folder>.localhost:7778/, so several UI changes
-# are live side by side. See docs/rnd/board-views-design.md.
+# are live side by side.
 $HubArgs += @('--board-views', 'D:\worktrees')
 # The hub's ziti transports are settings in the gear, and these flags SEED them: a flag wins for that run, and the first
 # change made in the gear replaces it. They stay here so a hub with no stored settings still binds all three, since
@@ -187,7 +187,6 @@ function Wait-NewContextsDone([int]$MaxSeconds = 1200) {
 # Set-DeployHold sets the room's deploy hold, so every card's next gated call is refused with "end your turn and
 # wait", and the room that comes back lifts it and types a continue line into each card that was working. A card idle
 # at the time is left alone. Returns $true when the hold is on (or was already), $false when it could not be set.
-# See docs/rnd/resume-says-continue-design.md.
 $RoomHoldUrl = 'http://127.0.0.1:7781/v1/hold'
 function Set-DeployHold([string]$Why = 'deploy-batch') {
   $body = @{ action = 'start'; by = 'deploy-batch'; whys = @($Why) } | ConvertTo-Json -Compress
@@ -205,7 +204,6 @@ function Set-DeployHold([string]$Why = 'deploy-batch') {
 # protect. It reads GET /v1/preflight: the pty host is on, it would not die with the room's task (in_job false), and no
 # runner lives in the room's own process (one started before the setting went on does, and ends with it). Any doubt,
 # an old room with no such route included, answers $false and the hold is kept.
-# See docs/rnd/next-room-last-room.md, phase 2.
 $RoomPreflightUrl = 'http://127.0.0.1:7781/v1/preflight'
 function Test-RunnersSurvive([string]$Url = $RoomPreflightUrl, [hashtable]$Headers = @{}) {
   try { $r = Invoke-RestMethod $Url -Headers $Headers -TimeoutSec 10 } catch { return $false }
@@ -864,7 +862,7 @@ function Start-Task([string]$Launch, [string]$Tag) {
       Start-Sleep -Milliseconds 250
     }
     if ($st.Status -ne 'Running' -and (-not $st -or -not $st.'Last Result' -or $st.'Last Result' -eq '267011')) {
-      throw "task $name did not run in 10s. it runs only while this user is logged on at the console"
+      throw "task $name did not run in 10s (status '$($st.Status)', last result '$($st.'Last Result')'). it runs only while this user is logged on at the console"
     }
   } finally {
     $null = schtasks.exe /Delete /TN $name /F 2>&1
@@ -876,10 +874,16 @@ function Start-Task([string]$Launch, [string]$Tag) {
 # Start-Wmi starts a command line through Win32_Process Create: WmiPrvSE is its parent, so it is in no job of ours and
 # survives the terminal that ran the script. Hidden. Returns the pid, throws when WMI refuses.
 function Start-Wmi([string]$CommandLine) {
-  $si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
-  $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $CommandLine; ProcessStartupInformation = $si }
-  if ($r.ReturnValue -ne 0) { throw "Win32_Process Create returned $($r.ReturnValue): $CommandLine" }
-  return [int]$r.ProcessId
+  # CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP, so the child leaves any job WMI's host or the caller put it in.
+  foreach ($flags in 0x01000200, 0) {
+    $prop = @{ ShowWindow = [uint16]0 }
+    if ($flags) { $prop.CreateFlags = [uint32]$flags }
+    $si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property $prop
+    $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $CommandLine; ProcessStartupInformation = $si }
+    if ($r.ReturnValue -eq 0) { return [int]$r.ProcessId }
+    if ($flags) { Say "WARNING: WMI refused breakaway from the job ($($r.ReturnValue)). starting without it" }
+  }
+  throw "Win32_Process Create returned $($r.ReturnValue): $CommandLine"
 }
 
 # New-LaunchScript writes the .cmd a WMI start runs: WMI hands the child no copy of this process's environment, so the
@@ -1030,6 +1034,28 @@ function Write-DeployQueue {
   Say "deploy queue saved to $out for HANDOFF"
 }
 
+# Test-OnCommit says whether a running commit is the one a deploy would put live. One that is unknown is never on it.
+function Test-OnCommit([string]$Running, [string]$Commit) {
+  if ($Running.Length -lt 7 -or $Commit.Length -lt 7) { return $false }
+  $n = [Math]::Min($Running.Length, $Commit.Length)
+  return $Running.Substring(0, $n) -eq $Commit.Substring(0, $n)
+}
+
+# Get-LiveCommits is the commit each target runs, by name, as the hub says: the hub's own from its deploy queue and each
+# attached room's from its connection. A target the hub cannot place is left out, and so is never skipped.
+$HubQueueJson = 'http://127.0.0.1:7778/_hub/deploy-queue'
+function Get-LiveCommits {
+  $live = @{}
+  try {
+    foreach ($a in @((Invoke-RestMethod $HubRooms -TimeoutSec 5).rooms)) {
+      $c = if ($a.commit) { [string]$a.commit } elseif ($a.setup -and $a.setup.commit) { [string]$a.setup.commit } else { '' }
+      if ($c) { $live[[string]$a.name] = $c }
+    }
+  } catch {}
+  try { $h = [string](Invoke-RestMethod $HubQueueJson -TimeoutSec 10).hub; if ($h) { $live['hub'] = $h } } catch {}
+  return $live
+}
+
 # Invoke-Capped runs one process with a wall-clock cap and returns @{ Code; Out; TimedOut }. ssh's ConnectTimeout bounds
 # only the connect: a session that connects and then stalls has no bound (2026-10-14: an `echo ok` hung 26 minutes and
 # a log tail 46, both on m1mini). A process still running at the cap is killed with its whole tree. Output is read
@@ -1168,9 +1194,21 @@ function Resolve-SshRoute([string]$Name, [scriptblock]$Probe, [string]$User = ''
 function Get-SshFailure($Route, [string]$User = '') {
   $who = if ($User) { $User } else { $env:USERNAME }
   if (@($Route.Results | Where-Object { $_.Out -match 'Permission denied' }).Count -gt 0) {
-    return "failed - ssh refused as $who, the host answered and rejected the key"
+    $key = @($Route.Results | ForEach-Object { [regex]::Match([string]$_.Out, 'Offering public key: (\S+)').Groups[1].Value } |
+      Where-Object { $_ })[0]
+    $from = if ($key) { ", local account $env:USERNAME offered key $key" } else { ", local account $env:USERNAME" }
+    return "failed - ssh refused as $who, the host answered and rejected the key$from"
   }
   return 'failed - offline, ssh could not connect by any route'
+}
+
+# The Windows account whose ssh key the remote rooms trust. Test-RemoteAccount answers '' when $Who is it, else the one
+# line that says who ran the script, which account it needs and the command to run as that account.
+$RemoteAccount = 'claude'
+function Test-RemoteAccount([string]$Script, [string]$Who = $env:USERNAME) {
+  if ($Who -eq $RemoteAccount) { return '' }
+  return "run as $Who, but the remote rooms trust only the $RemoteAccount account's ssh key. run it as ${RemoteAccount}: " +
+    "runas /user:$RemoteAccount `"pwsh -NoProfile -File $Script`""
 }
 
 # The swap stops the room, and over "<room>.atrium" the ssh session rides that room, so it can die mid-swap. On mac

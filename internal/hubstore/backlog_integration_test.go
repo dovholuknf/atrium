@@ -12,7 +12,7 @@ import (
 
 func newItem(id, dept string) ItemNew {
 	return ItemNew{ID: id, Dept: dept, Title: "do the thing", Body: "why\n\tand how", Priority: "HIGH",
-		FiledBy: "orch@sg4", FiledRoom: "SG4"}
+		FiledBy: "orch@room-e", FiledRoom: "ROOM-E"}
 }
 
 func TestItemFileThenGetAndListFromAnotherRoom(t *testing.T) {
@@ -21,7 +21,7 @@ func TestItemFileThenGetAndListFromAnotherRoom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Status != ItemOpen || b.FiledRoom != "sg4" || b.CreatedAt == "" || b.ChangedBy != "orch@sg4" {
+	if b.Status != ItemOpen || b.FiledRoom != "room-e" || b.CreatedAt == "" || b.ChangedBy != "orch@room-e" {
 		t.Fatalf("filed: %+v", b)
 	}
 	if _, err := s.ItemFile(newItem("r-037", "runtime")); err != nil {
@@ -77,8 +77,8 @@ func TestItemStatusAndOpenFilter(t *testing.T) {
 	s := open(t)
 	_, _ = s.ItemFile(newItem("a", "fabric"))
 	_, _ = s.ItemFile(newItem("b", "fabric"))
-	b, err := s.ItemSetStatus("a", ItemDone, "fabric@m1mini")
-	if err != nil || b.Status != ItemDone || b.ChangedBy != "fabric@m1mini" {
+	b, err := s.ItemSetStatus("a", ItemDone, "fabric@room-a")
+	if err != nil || b.Status != ItemDone || b.ChangedBy != "fabric@room-a" {
 		t.Fatalf("set: %+v %v", b, err)
 	}
 	open, _ := s.ItemList(ItemFilter{Open: true})
@@ -95,8 +95,8 @@ func TestItemStatusAndOpenFilter(t *testing.T) {
 
 func TestReportsAreAppendedListedAndReadOnce(t *testing.T) {
 	s := open(t)
-	a, err := s.ReportAdd(ReportNew{FromBy: "fabric@m1mini", FromRoom: "M1Mini", Subject: "landed", Body: "all good"})
-	if err != nil || a.ID != "rp_1" || a.FromRoom != "m1mini" || a.ReadAt != nil {
+	a, err := s.ReportAdd(ReportNew{FromBy: "fabric@room-a", FromRoom: "Room-a", Subject: "landed", Body: "all good"})
+	if err != nil || a.ID != "rp_1" || a.FromRoom != "room-a" || a.ReadAt != nil {
 		t.Fatalf("add: %+v %v", a, err)
 	}
 	b, _ := s.ReportAdd(ReportNew{ToDept: "fabric", Subject: "second"})
@@ -107,12 +107,12 @@ func TestReportsAreAppendedListedAndReadOnce(t *testing.T) {
 	if len(list) != 2 || list[0].ID != "rp_2" {
 		t.Fatalf("newest first: %+v", list)
 	}
-	r, err := s.ReportRead("rp_1", "orch@sg4")
-	if err != nil || r.ReadAt == nil || *r.ReadBy != "orch@sg4" {
+	r, err := s.ReportRead("rp_1", "orch@room-e")
+	if err != nil || r.ReadAt == nil || *r.ReadBy != "orch@room-e" {
 		t.Fatalf("read: %+v %v", r, err)
 	}
 	again, _ := s.ReportRead("rp_1", "someone-else")
-	if *again.ReadBy != "orch@sg4" {
+	if *again.ReadBy != "orch@room-e" {
 		t.Fatalf("first reader lost: %+v", again)
 	}
 	unread, _ := s.ReportList(ReportFilter{Unread: true})
@@ -163,12 +163,12 @@ func TestItemUpsertIsIdempotentAndKeepsTheCard(t *testing.T) {
 	if _, how, _ = s.ItemUpsert(n, ItemHeld); how != "unchanged" {
 		t.Errorf("a second import of the same file was %s", how)
 	}
-	if _, err := s.ItemLink("f-003", "sg4~c1", "orch"); err != nil {
+	if _, err := s.ItemLink("f-003", "room-e~c1", "orch"); err != nil {
 		t.Fatal(err)
 	}
 	n.Title = "moved"
 	b, how, err = s.ItemUpsert(n, ItemDone)
-	if err != nil || how != "updated" || b.Title != "moved" || b.Status != ItemDone || b.Card != "sg4~c1" {
+	if err != nil || how != "updated" || b.Title != "moved" || b.Status != ItemDone || b.Card != "room-e~c1" {
 		t.Fatalf("changed file: %+v %s %v", b, how, err)
 	}
 	if _, _, err := s.ItemUpsert(n, "wat"); err == nil {
@@ -183,25 +183,25 @@ func TestACardsReportMovesTheItemLinkedToIt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	b, err := s.ItemLink("f-1", "sg4~c1", "orch")
-	if err != nil || b.Status != ItemInProgress || b.Card != "sg4~c1" {
+	b, err := s.ItemLink("f-1", "room-e~c1", "orch")
+	if err != nil || b.Status != ItemInProgress || b.Card != "room-e~c1" {
 		t.Fatalf("link: %+v %v", b, err)
 	}
-	if _, err := s.ItemLink("nope", "sg4~c9", "orch"); !errors.Is(err, ErrItemNotFound) {
+	if _, err := s.ItemLink("nope", "room-e~c9", "orch"); !errors.Is(err, ErrItemNotFound) {
 		t.Errorf("link of an unknown item: %v", err)
 	}
 	for _, c := range []struct{ report, want string }{{"blocked", ItemBlocked}, {"done", ItemBuilt}, {"incomplete", ItemIncomplete}} {
-		b, followed, err := s.ItemFollow("sg4~c1", c.report, "w")
+		b, followed, err := s.ItemFollow("room-e~c1", c.report, "w")
 		if err != nil || !followed || b.Status != c.want {
 			t.Errorf("%s: %+v %v %v", c.report, b, followed, err)
 		}
 	}
 	for _, report := range []string{"question", "progress"} {
-		if _, followed, _ := s.ItemFollow("sg4~c1", report, "w"); followed {
+		if _, followed, _ := s.ItemFollow("room-e~c1", report, "w"); followed {
 			t.Errorf("a %s report moved the item", report)
 		}
 	}
-	if _, followed, err := s.ItemFollow("sg4~c2", "done", "w"); followed || err != nil {
+	if _, followed, err := s.ItemFollow("room-e~c2", "done", "w"); followed || err != nil {
 		t.Errorf("a card with no item: %v %v", followed, err)
 	}
 	if g, _ := s.ItemGet("f-2"); g.Status != ItemOpen {
@@ -233,8 +233,8 @@ func TestItemEdit(t *testing.T) {
 	s := open(t)
 	_, _ = s.ItemFile(newItem("a", "fabric"))
 	title, body, blank := "new title", "new body", " "
-	b, err := s.ItemEdit("a", &title, nil, "orch@sg4")
-	if err != nil || b.Title != "new title" || b.Body == "new body" || b.ChangedBy != "orch@sg4" {
+	b, err := s.ItemEdit("a", &title, nil, "orch@room-e")
+	if err != nil || b.Title != "new title" || b.Body == "new body" || b.ChangedBy != "orch@room-e" {
 		t.Fatalf("title: %+v %v", b, err)
 	}
 	if b, err = s.ItemEdit("a", nil, &body, "x"); err != nil || b.Title != "new title" || b.Body != "new body" {
@@ -255,8 +255,8 @@ func TestItemAppend(t *testing.T) {
 	s := open(t)
 	s.clock = func() time.Time { return time.Date(2026, 10, 17, 18, 0, 0, 0, time.UTC) }
 	_, _ = s.ItemFile(newItem("a", "fabric"))
-	b, err := s.ItemAppend("a", " one more line \n", "qa@sg4")
-	if err != nil || b.Body != "why\n\tand how\n\nqa@sg4 2026-10-17: one more line" || b.ChangedBy != "qa@sg4" ||
+	b, err := s.ItemAppend("a", " one more line \n", "qa@room-e")
+	if err != nil || b.Body != "why\n\tand how\n\nqa@room-e 2026-10-17: one more line" || b.ChangedBy != "qa@room-e" ||
 		b.Title != "do the thing" {
 		t.Fatalf("append: %+v %v", b, err)
 	}
@@ -283,8 +283,8 @@ func TestItemSetPriorityAndFilter(t *testing.T) {
 	n := newItem("b", "fabric")
 	n.Priority = ""
 	_, _ = s.ItemFile(n)
-	b, err := s.ItemSetPriority("b", "Low", "orch@sg4")
-	if err != nil || b.Priority != "low" || b.ChangedBy != "orch@sg4" {
+	b, err := s.ItemSetPriority("b", "Low", "orch@room-e")
+	if err != nil || b.Priority != "low" || b.ChangedBy != "orch@room-e" {
 		t.Fatalf("set: %+v %v", b, err)
 	}
 	if b, err = s.ItemSetPriority("b", "unset", "x"); err != nil || b.Priority != "" {
@@ -348,8 +348,8 @@ func TestAResultMovesTheItemOutOfOpenAndADoneItemStaysDone(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	b, err := s.ItemResult("f-1", "  done abc1234: the fix\x07 "+strings.Repeat("x", ItemResultMax), "abc1234", "sg4~c1", "sg4~c1")
-	if err != nil || b.Status != ItemBuilt || b.ResultRef != "abc1234" || b.ResultCard != "sg4~c1" || b.ResultAt == "" ||
+	b, err := s.ItemResult("f-1", "  done abc1234: the fix\x07 "+strings.Repeat("x", ItemResultMax), "abc1234", "room-e~c1", "room-e~c1")
+	if err != nil || b.Status != ItemBuilt || b.ResultRef != "abc1234" || b.ResultCard != "room-e~c1" || b.ResultAt == "" ||
 		!strings.HasPrefix(b.Result, "done abc1234: the fix ") || len([]rune(b.Result)) != ItemResultMax {
 		t.Fatalf("result: %+v %v", b, err)
 	}
@@ -362,11 +362,11 @@ func TestAResultMovesTheItemOutOfOpenAndADoneItemStaysDone(t *testing.T) {
 	if _, err := s.ItemSetStatus("f-2", ItemDone, "orch"); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := s.ItemResult("f-2", "done def5678", "def5678", "sg4~c2", "sg4~c2"); err != nil || b.Status != ItemDone ||
+	if b, err := s.ItemResult("f-2", "done def5678", "def5678", "room-e~c2", "room-e~c2"); err != nil || b.Status != ItemDone ||
 		b.Result != "done def5678" {
 		t.Errorf("a done item: %+v %v", b, err)
 	}
-	if _, err := s.ItemResult("nope", "done", "", "sg4~c3", "sg4~c3"); !errors.Is(err, ErrItemNotFound) {
+	if _, err := s.ItemResult("nope", "done", "", "room-e~c3", "room-e~c3"); !errors.Is(err, ErrItemNotFound) {
 		t.Errorf("an unknown item: %v", err)
 	}
 }

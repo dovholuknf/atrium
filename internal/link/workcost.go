@@ -13,7 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// WHAT AN ITEM COST, THE PURE PART (item lifecycle L5, docs/rnd/item-lifecycle-design.md section 6). ItemCost reads the
+// WHAT AN ITEM COST, THE PURE PART (item lifecycle L5). ItemCost reads the
 // rows the hub ingested (workusage.go), the item's steps and its cards, and answers per step and for coordination.
 // It reads no clock and no store, so a table feeds it and a repricing is a recompute.
 //

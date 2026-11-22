@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// THE STOP THAT LEAVES RUNNERS UP. See docs/rnd/rolling-restart-design.md sections 3.4 and 5.
+// THE STOP THAT LEAVES RUNNERS UP.
 //
 // With `pty_host` on, a runner lives in the host and not in this process, so `atrium stop` stops the daemon and
 // leaves every host runner running for the next daemon to reattach. `atrium stop --runners` is today's stop: every

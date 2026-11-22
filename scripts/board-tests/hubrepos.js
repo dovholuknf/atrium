@@ -24,8 +24,8 @@ async function hubReposSection(browser, base) {
       { host: "github", owner: "openziti", repo: "ziti", url: "git@hub.atrium:openziti/ziti.git", path: "/git/hub/github/openziti/ziti.git",
         main: { sha: "abcdef0123456789", at: ago1 },
         branches: [
-          { name: "fix/x", sha: "1234567890abcdef", room: "sg4", card: "c-known", at: ago1, released: false },
-          { name: "old/y", sha: "fedcba9876543210", room: "sg4", card: "c-gone", at: ago1, released: true }] },
+          { name: "fix/x", sha: "1234567890abcdef", room: "room-e", card: "c-known", at: ago1, released: false },
+          { name: "old/y", sha: "fedcba9876543210", room: "room-e", card: "c-gone", at: ago1, released: true }] },
       { host: "gitlab.com", owner: "acme", repo: "thing", url: "git@hub.atrium:gitlab.com/acme/thing.git", path: "/git/hub/gitlab.com/acme/thing.git",
         main: { sha: "", at: null }, branches: [] }];
     await p.route(/\/_hub\/git\/repos$/, r => {
@@ -38,7 +38,7 @@ async function hubReposSection(browser, base) {
     await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(5000) }).catch(() => {});
     const open = async () => {
       await p.evaluate(() => {
-        lastTasks = [{ id: "c-known", room: "sg4", title: "fix the x", display_title: "fix the x", status: "working" }];
+        lastTasks = [{ id: "c-known", room: "room-e", title: "fix the x", display_title: "fix the x", status: "working" }];
         return switchView("hubrepos");
       });
       await p.waitForFunction(() => (hubRepos.loaded || hubRepos.note) && !hubRepos.inflight, null, { timeout: slow(10000) });
@@ -74,9 +74,9 @@ async function hubReposSection(browser, base) {
     if (!got.copies.includes("git remote add hub git@hub.atrium:gitlab.com/acme/thing.git\ngit push hub <branch>")) fail("hubRepos: the how-to copy value is wrong: " + JSON.stringify(got.copies));
     if (!got.tip) fail("hubRepos: a branch age has no exact-time tooltip");
     if (got.unlabeled) fail("hubRepos: " + got.unlabeled + " copy buttons have no aria-label");
-    if (!/fix\/x/.test(got.branches[0]) || !/sg4 c-known/.test(got.branches[0]) || !/fix the x/.test(got.branches[0]))
+    if (!/fix\/x/.test(got.branches[0]) || !/room-e c-known/.test(got.branches[0]) || !/fix the x/.test(got.branches[0]))
       fail("hubRepos: the known-card branch is wrong: " + got.branches[0]);
-    if (!/sg4 c-gone/.test(got.branches[1]) || /undefined|null/.test(got.branches[1]) || !/released/.test(got.branches[1]))
+    if (!/room-e c-gone/.test(got.branches[1]) || /undefined|null/.test(got.branches[1]) || !/released/.test(got.branches[1]))
       fail("hubRepos: the gone-card released branch is wrong: " + got.branches[1]);
     if (got.released !== 1) fail("hubRepos: released should be marked once, got " + got.released);
     // THE SWITCHER: Shelf with nothing stored, a click moves it, the arrow keys move it as one radio group, an unknown
@@ -361,7 +361,7 @@ async function hubReposLedgerSection(browser, base) {
       if (r.n !== 6 || r.tags !== "BUTTON" || r.cur.join() !== "openziti/ziti") fail(tag + ": the list is wrong " + JSON.stringify(r));
       if (r.name !== "ziti" || r.count !== "12" || r.sha.length !== 7 || r.nsz < 44) fail(tag + ": the repo hero is wrong " + JSON.stringify(r));
       if (r.ev !== 12 || r.rel !== 2 || r.days.join() !== "Today,Yesterday,This week,Earlier" || r.who !== 3 || r.avatars !== 12) fail(tag + ": the timeline is wrong " + JSON.stringify(r));
-      if (r.term !== "$ git clone git@hub.atrium:openziti/ziti.git" || !/^sg4 c-101$/.test(r.chip) || !r.title) fail(tag + ": the terminal or the who/when is wrong " + JSON.stringify(r));
+      if (r.term !== "$ git clone git@hub.atrium:openziti/ziti.git" || !/^room-e c-101$/.test(r.chip) || !r.title) fail(tag + ": the terminal or the who/when is wrong " + JSON.stringify(r));
       if (r.cut !== HR_LONG) fail(tag + ": the long branch name is not cut with its tooltip: " + r.cut);
       if (r.cols < 900 || r.listW > 420) fail(tag + ": at 2000px the panes do not use the width " + JSON.stringify({ cols: r.cols, listW: r.listW }));
       await hubReposCopyRows(p, tag);
@@ -602,7 +602,7 @@ async function hubReposFeedSection(browser, base) {
           first: items[0].textContent, known: !![...document.querySelectorAll(".hr-it .hr-title")].find(t => /chase the link flap/.test(t.textContent)), hot: document.querySelectorAll(".hr-it.hot").length }; }, HR_LONG);
       if (r.chips !== 6 || r.pressed !== 1) fail(tag + ": the repo rail is wrong " + JSON.stringify(r));
       if (r.items !== 27 || r.mains !== 4 || r.rel !== 7 || r.days.join() !== "Today,Yesterday,This week,Earlier") fail(tag + ": the feed is wrong " + JSON.stringify(r));
-      if (!/^sg4pushed to openziti\/ziti/.test(r.first.replace(/\s+/g, "")) && !/sg4/.test(r.first)) fail(tag + ": the newest push is not first: " + r.first);
+      if (!/^room-epushed to openziti\/ziti/.test(r.first.replace(/\s+/g, "")) && !/room-e/.test(r.first)) fail(tag + ": the newest push is not first: " + r.first);
       if (r.cols < 2 || r.pills !== 27 || !r.cut || !r.known || r.big !== 4 || r.rooms !== 3) fail(tag + ": at 2000px the feed is not laid out " + JSON.stringify(r));
       if (r.clones.length !== 5 || !r.clones.includes("git@hub.atrium:openziti/ziti.git")) fail(tag + ": the clone panel is wrong " + JSON.stringify(r.clones));
       await hubReposCopyRows(p, tag);

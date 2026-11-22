@@ -123,7 +123,7 @@ func TestACrossRoomFyiKeepsItsKind(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	code, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-sg4", "text": "stop", "kind": "fyi"})
+	code, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-room-e", "text": "stop", "kind": "fyi"})
 	if code >= 400 {
 		t.Fatalf("%d %+v", code, out)
 	}
@@ -134,7 +134,7 @@ func TestACrossRoomFyiKeepsItsKind(t *testing.T) {
 	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
 		return hublink.RelayResult{}, hublink.ErrRelayDown
 	})
-	if _, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-sg4", "text": "later", "kind": "fyi"}); out["delivered"] != "held" {
+	if _, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-room-e", "text": "later", "kind": "fyi"}); out["delivered"] != "held" {
 		t.Fatalf("%+v", out)
 	}
 	settle(d)
@@ -149,7 +149,7 @@ func TestACrossRoomFyiKeepsItsKind(t *testing.T) {
 	}
 
 	// A needs say goes with no kind.
-	if _, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-sg4", "text": "go"}); out["delivered"] == "held" {
+	if _, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-room-e", "text": "go"}); out["delivered"] == "held" {
 		t.Fatalf("%+v", out)
 	}
 	got = f.says()

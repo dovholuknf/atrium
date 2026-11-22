@@ -14,7 +14,7 @@ import (
 )
 
 // The hub's backlog and its director reports, which every room reads and writes through the hub. See
-// internal/hubstore/backlog.go for the rows and docs/rnd/reports-channel-design.md for why they are here.
+// internal/hubstore/backlog.go for the rows.
 //
 //	GET  /_hub/backlog?dept=&status=&open=1   the items, filtered, without their bodies. bodies=1 keeps the first
 //	                                          backlogExcerptMax bytes of each, which the board searches

@@ -33,7 +33,7 @@ func gitPost(t *testing.T, url string, body any) (int, map[string]any) {
 func TestTheHubGitRoutesAre404UntilWired(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	if code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "sg4"}); code != 404 {
+	if code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "room-e"}); code != 404 {
 		t.Fatalf("unwired = %d", code)
 	}
 }
@@ -46,19 +46,19 @@ func TestTheHubGitRoutesAnswerAndRefuseWhatTheyShould(t *testing.T) {
 	x.proxy.SetGit(g)
 
 	// The fake rooms never said Git, so a sync of every repository (none) is empty and fine.
-	code, out := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "sg4"})
+	code, out := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "room-e"})
 	if code != 200 {
 		t.Fatalf("sync = %d %v", code, out)
 	}
 	// A name that is not in git_repos is refused, and so is a room that is not attached.
-	if code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "sg4", "name": "github/o/r"}); code != 409 {
+	if code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "room-e", "name": "github/o/r"}); code != 409 {
 		t.Fatalf("unlisted name = %d", code)
 	}
 	if code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "nowhere"}); code != 409 {
 		t.Fatalf("unattached room = %d", code)
 	}
 	// A room that never said Git cannot be collected from.
-	if code, out := gitPost(t, x.board+"/_hub/git/collect", map[string]any{"room": "sg4"}); code != 409 ||
+	if code, out := gitPost(t, x.board+"/_hub/git/collect", map[string]any{"room": "room-e"}); code != 409 ||
 		!strings.Contains(out["error"].(string), "predates git sync") {
 		t.Fatalf("collect = %d %v", code, out)
 	}
@@ -79,7 +79,7 @@ func TestTheHubGitRoutesAnswerAndRefuseWhatTheyShould(t *testing.T) {
 // a room's branches, fetch them or start a sync.
 func TestTheBoardProxyRefusesEverythingUnderV1Git(t *testing.T) {
 	hub := NewHub(Timings{})
-	p := NewProxy(hub, nil, "", func() string { return "sg3" })
+	p := NewProxy(hub, nil, "", func() string { return "room-d" })
 	for _, c := range []struct{ method, path, ctype string }{
 		{"GET", "/v1/git/github/o/r.git/info/refs?service=git-upload-pack", ""},
 		{"POST", "/v1/git/github/o/r.git/git-upload-pack", "application/x-git-upload-pack-request"},
@@ -91,7 +91,7 @@ func TestTheBoardProxyRefusesEverythingUnderV1Git(t *testing.T) {
 		if c.ctype != "" {
 			req.Header.Set("Content-Type", c.ctype)
 		}
-		req.Header.Set(wire.RoomHeader, "sg3")
+		req.Header.Set(wire.RoomHeader, "room-d")
 		rec := httptest.NewRecorder()
 		p.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "never through the board") {
@@ -107,18 +107,18 @@ func TestTheGitToolsAreAudited(t *testing.T) {
 		*mcp.CallToolResult, gitSyncOutput, error) {
 		return nil, gitSyncOutput{}, nil
 	})
-	if _, _, err := sync(context.Background(), nil, gitSyncInput{Room: "sg3", Name: "github/o/r", Init: true}); err != nil {
+	if _, _, err := sync(context.Background(), nil, gitSyncInput{Room: "room-d", Name: "github/o/r", Init: true}); err != nil {
 		t.Fatal(err)
 	}
 	col := audited(c, "ctl-git-collect", describeGitCollect, func(context.Context, *mcp.CallToolRequest, gitCollectInput) (
 		*mcp.CallToolResult, gitsync.CollectResult, error) {
 		return nil, gitsync.CollectResult{}, nil
 	})
-	if _, _, err := col(context.Background(), nil, gitCollectInput{Room: "sg3"}); err != nil {
+	if _, _, err := col(context.Background(), nil, gitCollectInput{Room: "room-d"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 || !strings.HasPrefix(rows[0], "sg3|ctl-git-sync|") || !strings.Contains(rows[0], "git sync github/o/r (init)") ||
-		!strings.HasPrefix(rows[1], "sg3|ctl-git-collect|") {
+	if len(rows) != 2 || !strings.HasPrefix(rows[0], "room-d|ctl-git-sync|") || !strings.Contains(rows[0], "git sync github/o/r (init)") ||
+		!strings.HasPrefix(rows[1], "room-d|ctl-git-collect|") {
 		t.Fatalf("rows = %v", rows)
 	}
 }
@@ -141,7 +141,7 @@ func TestNoGitToolOrRouteTakesAPathURLRefspecOrBranch(t *testing.T) {
 	g := &gitsync.Hub{Dir: t.TempDir(), Rooms: x.hub.GitRooms(),
 		Repos: func() ([]gitsync.Repo, error) { return nil, nil }, Runner: gitsync.NewRunner()}
 	x.proxy.SetGit(g)
-	code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "sg4", "branch": "claude/ui", "url": "http://x", "path": "C:/"})
+	code, _ := gitPost(t, x.board+"/_hub/git/sync", map[string]any{"room": "room-e", "branch": "claude/ui", "url": "http://x", "path": "C:/"})
 	if code != 200 {
 		t.Fatalf("sync = %d", code)
 	}

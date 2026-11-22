@@ -8,8 +8,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// The proof half of a merge whose worker is on ANOTHER room. See
-// docs/rnd/merged-cull-design.md, "Across rooms".
+// The proof half of a merge whose worker is on ANOTHER room.
 //
 // A remote worker's branch comes back to this machine through
 // `room-git.ps1 fetch` as `<room>/claude/<id>`, and the area branch it merged

@@ -31,7 +31,7 @@ type stdioBoard struct {
 }
 
 // acrossAnswer is what the fake room says to an address: local when it names
-// m1mini, reached across otherwise.
+// room-a, reached across otherwise.
 func acrossAnswer(to string) map[string]any {
 	name, room := to, ""
 	if i := strings.LastIndexAny(to, "@~"); i >= 0 {
@@ -41,7 +41,7 @@ func acrossAnswer(to string) map[string]any {
 			name, room = to[i+1:], to[:i]
 		}
 	}
-	if strings.EqualFold(room, "m1mini") {
+	if strings.EqualFold(room, "room-a") {
 		return map[string]any{"local": name}
 	}
 	return nil
@@ -78,7 +78,7 @@ func (b *stdioBoard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"task": map[string]any{
-			"card": "claude-sg4~L1", "handle": "orch@claude-sg4", "status": "working",
+			"card": "claude-room-e~L1", "handle": "orch@claude-room-e", "status": "working",
 			"events": []map[string]any{{"at": "t", "kind": "launched"}},
 		}})
 	case r.URL.Path == "/v1/peers/exit" && !b.noAcross:
@@ -94,7 +94,7 @@ func (b *stdioBoard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "no session called \"nobody\". these would have worked: orch"})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"asked": true, "card": "claude-sg4~L1", "handle": "orch@claude-sg4"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"asked": true, "card": "claude-room-e~L1", "handle": "orch@claude-room-e"})
 	case r.URL.Path == "/v1/tasks/c2/exit":
 		b.exited = append(b.exited, "c2")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
@@ -128,13 +128,13 @@ func stdioAgainst(t *testing.T, b *stdioBoard, room string) {
 // the operator, and passes `name@room` to the room to relay.
 func TestStdioSayNamesTheSenderAndTakesAnotherRoom(t *testing.T) {
 	b := &stdioBoard{}
-	stdioAgainst(t, b, "m1mini")
+	stdioAgainst(t, b, "room-a")
 
-	_, out, err := sayHandler(context.Background(), nil, SayInput{To: "atrium-87300@claude-sg4", Text: "hi"})
+	_, out, err := sayHandler(context.Background(), nil, SayInput{To: "atrium-87300@claude-room-e", Text: "hi"})
 	if err != nil {
 		t.Fatalf("say: %v", err)
 	}
-	if len(b.said) != 1 || b.said[0]["from"] != "sa1" || b.said[0]["to"] != "atrium-87300@claude-sg4" {
+	if len(b.said) != 1 || b.said[0]["from"] != "sa1" || b.said[0]["to"] != "atrium-87300@claude-room-e" {
 		t.Fatalf("the room got %+v", b.said)
 	}
 	if out.Delivered != "held" || !strings.Contains(out.Note, "held") {
@@ -146,7 +146,7 @@ func TestStdioSayNamesTheSenderAndTakesAnotherRoom(t *testing.T) {
 // refuses another room with a sentence.
 func TestStdioSayAgainstAnOlderRoom(t *testing.T) {
 	b := &stdioBoard{noSay: true}
-	stdioAgainst(t, b, "m1mini")
+	stdioAgainst(t, b, "room-a")
 
 	_, out, err := sayHandler(context.Background(), nil, SayInput{To: "sa2", Text: "hi"})
 	if err != nil || out.ToCard != "c2" {
@@ -155,7 +155,7 @@ func TestStdioSayAgainstAnOlderRoom(t *testing.T) {
 	if len(b.message) != 1 || b.message[0]["from"] != "sa1" {
 		t.Fatalf("the message went as %+v, want it from sa1", b.message)
 	}
-	_, _, err = sayHandler(context.Background(), nil, SayInput{To: "x@claude-sg4", Text: "hi"})
+	_, _, err = sayHandler(context.Background(), nil, SayInput{To: "x@claude-room-e", Text: "hi"})
 	if err == nil || !strings.Contains(err.Error(), "older") {
 		t.Fatalf("err = %v, want the room called older", err)
 	}
@@ -164,7 +164,7 @@ func TestStdioSayAgainstAnOlderRoom(t *testing.T) {
 // atrium_report on the stdio server files on the caller's own card.
 func TestStdioReportFilesOnTheCallersCard(t *testing.T) {
 	b := &stdioBoard{}
-	stdioAgainst(t, b, "m1mini")
+	stdioAgainst(t, b, "room-a")
 
 	_, out, err := reportHandler(context.Background(), nil, ReportInput{Status: "done", Summary: "did it", SHA: "abc"})
 	if err != nil || !out.Recorded || out.LauncherTold != true {
@@ -179,28 +179,28 @@ func TestStdioReportFilesOnTheCallersCard(t *testing.T) {
 // asked of this room, which asks its hub. A bare name never goes that way.
 func TestStdioTaskAndExitReachAnotherRoom(t *testing.T) {
 	b := &stdioBoard{}
-	stdioAgainst(t, b, "m1mini")
+	stdioAgainst(t, b, "room-a")
 
-	_, task, err := taskHandler(context.Background(), nil, TaskInput{Card: "orch@claude-sg4", Events: true})
-	if err != nil || task.Card != "claude-sg4~L1" || task.Handle != "orch@claude-sg4" || len(task.Events) != 1 ||
+	_, task, err := taskHandler(context.Background(), nil, TaskInput{Card: "orch@claude-room-e", Events: true})
+	if err != nil || task.Card != "claude-room-e~L1" || task.Handle != "orch@claude-room-e" || len(task.Events) != 1 ||
 		task.Note == "" {
 		t.Fatalf("task = %+v, %v", task, err)
 	}
-	_, out, err := exitHandler(context.Background(), nil, ExitInput{Card: "claude-sg4~01ABC"})
-	if err != nil || !out.Asked || out.Card != "claude-sg4~L1" || out.Handle != "orch@claude-sg4" {
+	_, out, err := exitHandler(context.Background(), nil, ExitInput{Card: "claude-room-e~01ABC"})
+	if err != nil || !out.Asked || out.Card != "claude-room-e~L1" || out.Handle != "orch@claude-room-e" {
 		t.Fatalf("exit = %+v, %v", out, err)
 	}
-	if len(b.across) != 2 || b.across[0] != "card orch@claude-sg4 events=1" || b.across[1] != "exit claude-sg4~01ABC" {
+	if len(b.across) != 2 || b.across[0] != "card orch@claude-room-e events=1" || b.across[1] != "exit claude-room-e~01ABC" {
 		t.Fatalf("the room was asked %v", b.across)
 	}
-	_, _, err = exitHandler(context.Background(), nil, ExitInput{Card: "nobody@claude-sg4"})
+	_, _, err = exitHandler(context.Background(), nil, ExitInput{Card: "nobody@claude-room-e"})
 	if err == nil || !strings.Contains(err.Error(), "orch") {
 		t.Fatalf("err = %v, want the far room's refusal", err)
 	}
 
 	// This room's own name, and a bare name, are found here.
 	b.across = nil
-	for _, card := range []string{"sa2@M1MINI", "sa2"} {
+	for _, card := range []string{"sa2@ROOM-A", "sa2"} {
 		_, task, err = taskHandler(context.Background(), nil, TaskInput{Card: card})
 		if err != nil || task.Card != "c2" {
 			t.Fatalf("task %q = %+v, %v", card, task, err)
@@ -218,12 +218,12 @@ func TestStdioTaskAndExitReachAnotherRoom(t *testing.T) {
 // cannot reach another room.
 func TestStdioTaskAndExitAgainstAnOlderRoom(t *testing.T) {
 	b := &stdioBoard{noAcross: true}
-	stdioAgainst(t, b, "m1mini")
+	stdioAgainst(t, b, "room-a")
 
-	if _, out, err := exitHandler(context.Background(), nil, ExitInput{Card: "sa2@m1mini"}); err != nil || out.Card != "c2" {
+	if _, out, err := exitHandler(context.Background(), nil, ExitInput{Card: "sa2@room-a"}); err != nil || out.Card != "c2" {
 		t.Fatalf("exit on own room = %+v, %v", out, err)
 	}
-	_, _, err := taskHandler(context.Background(), nil, TaskInput{Card: "orch@claude-sg4"})
+	_, _, err := taskHandler(context.Background(), nil, TaskInput{Card: "orch@claude-room-e"})
 	if err == nil || !strings.Contains(err.Error(), "older") {
 		t.Fatalf("err = %v, want the room called older", err)
 	}
@@ -232,16 +232,16 @@ func TestStdioTaskAndExitAgainstAnOlderRoom(t *testing.T) {
 // atrium_peers without `rooms` appends the everywhere cards its room lists, and
 // a room that predates them leaves the list as it is.
 func TestStdioPeersAppendTheEverywhereCards(t *testing.T) {
-	b := &stdioBoard{rooms: []map[string]any{{"handle": "atrium-87300@claude-sg4", "card": "claude-sg4~s1",
-		"room": "claude-sg4", "status": "running", "everywhere": true}}}
-	stdioAgainst(t, b, "m1mini")
+	b := &stdioBoard{rooms: []map[string]any{{"handle": "atrium-87300@claude-room-e", "card": "claude-room-e~s1",
+		"room": "claude-room-e", "status": "running", "everywhere": true}}}
+	stdioAgainst(t, b, "room-a")
 
 	_, out, err := peersHandler(context.Background(), nil, PeersInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	last := out.Peers[len(out.Peers)-1]
-	if last.Handle != "atrium-87300@claude-sg4" || !last.Everywhere || len(out.Peers) != 2 {
+	if last.Handle != "atrium-87300@claude-room-e" || !last.Everywhere || len(out.Peers) != 2 {
 		t.Fatalf("peers = %+v", out.Peers)
 	}
 	if len(b.peersAsked) != 1 || b.peersAsked[0] != "everywhere=1" {
@@ -249,7 +249,7 @@ func TestStdioPeersAppendTheEverywhereCards(t *testing.T) {
 	}
 
 	old := &stdioBoard{}
-	stdioAgainst(t, old, "m1mini")
+	stdioAgainst(t, old, "room-a")
 	_, out, err = peersHandler(context.Background(), nil, PeersInput{})
 	if err != nil || len(out.Peers) != 1 {
 		t.Fatalf("an older room's list = %+v, %v", out.Peers, err)
@@ -260,7 +260,7 @@ func TestStdioPeersAppendTheEverywhereCards(t *testing.T) {
 // with. And a say reply names the recipient as to_card, never card.
 func TestStdioExitWithNoCardExitsTheCaller(t *testing.T) {
 	b := &stdioBoard{}
-	stdioAgainst(t, b, "m1mini")
+	stdioAgainst(t, b, "room-a")
 	t.Setenv("ATRIUM_AGENT_NAME", "sa2")
 	_, out, err := exitHandler(context.Background(), nil, ExitInput{})
 	if err != nil || !out.Asked || out.Card != "c2" {

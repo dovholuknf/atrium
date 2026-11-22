@@ -14,7 +14,7 @@ import (
 //
 // A FORCED TURN, ON PURPOSE. The restart wake is typed only because a session
 // asked for it. This one is typed because the room took the session's turn away
-// from it, by crashing, by being killed, or by a planned stop or a deploy. clint
+// from it, by crashing, by being killed, or by a planned stop or a deploy. The operator
 // decided on 2026-09-25 that a turn the room interrupted is the room's to hand
 // back, so the one case "no forced turns" does not cover is atrium's own exit.
 //

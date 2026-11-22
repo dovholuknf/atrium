@@ -1319,7 +1319,7 @@ type view struct {
 	Mercurius string `json:"mercurius,omitempty"`
 	// Merged is the chip's data: the branch this worker's merge covered, when it
 	// will be culled, and who held it. Absent on a card that is neither marked
-	// nor held. Durable. See docs/rnd/merged-cull-design.md.
+	// nor held. Durable.
 	// Embedded, so the fields sit flat on the card: cull_at, cull_into, cull_held.
 	*store.MergedView
 	// LandedKept is why a card whose work landed has not been reclaimed: a tag, a hold, a question, uncommitted changes.

@@ -18,7 +18,7 @@ func keygenMakes(m *fakeMachine) {
 	m.onRun = func(m *fakeMachine, line string) {
 		if strings.HasPrefix(line, "ssh-keygen -q") {
 			m.fakeEnv.files[fxPriv] = "private"
-			m.fakeEnv.files[fxPub] = keyLine("ssh-ed25519", "mine") + " atrium:sg3\n"
+			m.fakeEnv.files[fxPub] = keyLine("ssh-ed25519", "mine") + " atrium:room-d\n"
 		}
 	}
 }
@@ -35,8 +35,8 @@ func stepOf(rep Report, n int) Result { return rep.Results[n-1] }
 func TestFixMakesPublishesAndInstalls(t *testing.T) {
 	m := winMachine()
 	keygenMakes(m)
-	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4") + " their comment", SSHOn: true},
-		PeerKey{Room: "m1mini", Key: keyLine("ssh-ed25519", "m1mini")})
+	hubWith(m, PeerKey{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e") + " their comment", SSHOn: true},
+		PeerKey{Room: "room-a", Key: keyLine("ssh-ed25519", "room-a")})
 	m.sw.From = []string{"*"}
 	// What the hub holds after the publish is what the next check reads back.
 	m.published = nil
@@ -51,13 +51,13 @@ func TestFixMakesPublishesAndInstalls(t *testing.T) {
 		t.Fatalf("the .ssh directory was not made: %v", m.mkdirs)
 	}
 	got := m.fakeEnv.files[fxAuth]
-	for _, w := range []string{keyLine("ssh-ed25519", "mine") + " atrium:sg3\n", keyLine("ssh-ed25519", "sg4") + " atrium:sg4\n", beginMark, endMark} {
+	for _, w := range []string{keyLine("ssh-ed25519", "mine") + " atrium:room-d\n", keyLine("ssh-ed25519", "room-e") + " atrium:room-e\n", beginMark, endMark} {
 		if !strings.Contains(got, w) {
 			t.Fatalf("authorized_keys lacks %q:\n%s", w, got)
 		}
 	}
-	// m1mini is allowed by the from list "*" and is in. The comment another room put on its key is dropped.
-	if strings.Contains(got, "their comment") || !strings.Contains(got, "atrium:m1mini") {
+	// room-a is allowed by the from list "*" and is in. The comment another room put on its key is dropped.
+	if strings.Contains(got, "their comment") || !strings.Contains(got, "atrium:room-a") {
 		t.Fatalf("authorized_keys:\n%s", got)
 	}
 	if m.modes[fxAuth] != 0o600 {
@@ -72,9 +72,9 @@ func TestFixMakesPublishesAndInstalls(t *testing.T) {
 // A PERSON'S OWN KEYS ARE NEVER TOUCHED, a removed room's key leaves, and a second run changes nothing.
 func TestFixRewritesOnlyAtriumsBlock(t *testing.T) {
 	m := winMachine().withKey()
-	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4"), SSHOn: true})
+	hubWith(m, PeerKey{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e"), SSHOn: true})
 	m.sw.From = []string{"*"}
-	mine := "ssh-rsa AAAAB3 clint@laptop\n"
+	mine := "ssh-rsa AAAAB3 operator@laptop\n"
 	after := "command=\"echo hi\" ssh-ed25519 " + blob("theirs") + " ci\n"
 	m.fakeEnv.files[fxAuth] = mine + beginMark + "\n" + keyLine("ssh-ed25519", "gone") + " atrium:gone\n" + endMark + "\n" + after
 	_, acts := Fix(context.Background(), m, Options{SelfTest: true})
@@ -88,7 +88,7 @@ func TestFixRewritesOnlyAtriumsBlock(t *testing.T) {
 		t.Fatalf("%+v", acts)
 	}
 	got := m.fakeEnv.files[fxAuth]
-	if strings.Contains(got, "atrium:gone") || !strings.Contains(got, "atrium:sg4") {
+	if strings.Contains(got, "atrium:gone") || !strings.Contains(got, "atrium:room-e") {
 		t.Fatalf("the block is wrong:\n%s", got)
 	}
 	if !strings.HasPrefix(got, mine) || !strings.Contains(got, after) {
@@ -109,7 +109,7 @@ func TestFixRewritesOnlyAtriumsBlock(t *testing.T) {
 // A BLOCK WITH NO END, or a hub that cannot say, leaves the file as it was.
 func TestFixRefusesWhatItCannotDoSafely(t *testing.T) {
 	m := winMachine().withKey()
-	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4")})
+	hubWith(m, PeerKey{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e")})
 	m.sw.From = []string{"*"}
 	broken := "ssh-rsa AAAAB3 me\n" + beginMark + "\n" + keyLine("ssh-ed25519", "x") + "\n"
 	m.fakeEnv.files[fxAuth] = broken
@@ -140,10 +140,10 @@ func TestFixWindowsAdministratorsFile(t *testing.T) {
 	const admin = `C:\ProgramData\ssh\administrators_authorized_keys`
 	setup := func(elevated bool) *fakeMachine {
 		m := winMachine().withKey()
-		m.runs["Get-LocalGroupMember"] = ranAnswer{out: "SG3\\claude\n"}
+		m.runs["Get-LocalGroupMember"] = ranAnswer{out: "ROOM-D\\claude\n"}
 		m.runs["icacls"] = ranAnswer{}
 		m.account.Elevated = elevated
-		hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4")})
+		hubWith(m, PeerKey{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e")})
 		m.sw.From = []string{"*"}
 		return m
 	}
@@ -159,7 +159,7 @@ func TestFixWindowsAdministratorsFile(t *testing.T) {
 	}
 	m = setup(true)
 	Fix(context.Background(), m, Options{SelfTest: true})
-	if !strings.Contains(m.fakeEnv.files[admin], "atrium:sg4") {
+	if !strings.Contains(m.fakeEnv.files[admin], "atrium:room-e") {
 		t.Fatalf("not written:\n%s", m.fakeEnv.files[admin])
 	}
 	ran := strings.Join(m.ran, "\n")
@@ -254,7 +254,7 @@ func TestFixDropsWhatTheHubRelayedThatIsNotAKey(t *testing.T) {
 func TestSyncOfASettledRoomIsOnePass(t *testing.T) {
 	m := winMachine()
 	keygenMakes(m)
-	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4"), SSHOn: true})
+	hubWith(m, PeerKey{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e"), SSHOn: true})
 	m.sw.From = []string{"*"}
 	m.published = nil
 	Fix(context.Background(), m, Options{})
@@ -286,7 +286,7 @@ func TestSyncRunsNoSSHAndNoScan(t *testing.T) {
 	m := winMachine().withKey()
 	m.have["ssh"] = true
 	m.sw.On, m.sw.From = true, []string{"*"}
-	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4"), SSHOn: true, Online: true})
+	hubWith(m, PeerKey{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e"), SSHOn: true, Online: true})
 	m.published = nil
 	rep, acts := Sync(context.Background(), m, Options{SelfTest: true}, 6, 7)
 	if len(acts) != 2 {
@@ -307,7 +307,7 @@ func TestSyncRunsNoSSHAndNoScan(t *testing.T) {
 			t.Fatalf("step %d was checked: %+v", n, stepOf(rep, n))
 		}
 	}
-	if got := m.fakeEnv.files[fxAuth]; !strings.Contains(got, "atrium:sg3") || !strings.Contains(got, "atrium:sg4") {
+	if got := m.fakeEnv.files[fxAuth]; !strings.Contains(got, "atrium:room-d") || !strings.Contains(got, "atrium:room-e") {
 		t.Fatalf("authorized_keys:\n%s", got)
 	}
 }

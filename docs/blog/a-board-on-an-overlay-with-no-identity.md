@@ -25,7 +25,6 @@ Series: Overlays and zrok. Status: idea. Audience: OpenZiti and zrok users.
 
 - docs/fabric/overlays.md
 - docs/fabric/ziti-zrok-flow-design.md
-- docs/rnd/overlay-room-identity.md
 - changelog/fabric/2026-09-30-f-022.md
 
 ## Notes for the writer

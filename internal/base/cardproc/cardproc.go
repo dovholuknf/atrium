@@ -1,9 +1,9 @@
 // Package cardproc is what a card's inventory needs from the operating system for its processes and ports: when a
 // process started, so a recycled pid is never taken for the one recorded, how to stop a process and its children,
-// and which ports the system has reserved. Design: docs/rnd/card-lifecycle-design.md section 9. Item
+// and which ports the system has reserved. Item
 // r-card-procs-ports.
 //
-// It runs nothing on its own. The process registry (docs/rnd/process-registry-design.md) is a separate item.
+// It runs nothing on its own. The process registry is a separate item.
 package cardproc
 
 import (

@@ -55,7 +55,7 @@ func TestEnterAfterAPasteSendsIt(t *testing.T) {
 	}
 }
 
-// THE BUG CLINT HIT. A message with no sender, which is how a script or another
+// THE BUG THE OPERATOR HIT. A message with no sender, which is how a script or another
 // session using the API arrives, was typed straight in over a line he was
 // writing. It must be queued and the terminal left alone.
 func TestAnOperatorMessageNeverTypesIntoAPartWrittenLine(t *testing.T) {

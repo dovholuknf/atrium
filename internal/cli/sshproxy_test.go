@@ -63,22 +63,22 @@ const deadAddr = "http://127.0.0.1:1"
 func TestTheProxyWritesOnlyStreamBytesToStdout(t *testing.T) {
 	var seen atomic.Value
 	hub := fakeDoor(t, http.StatusSwitchingProtocols, "", nil, &seen)
-	code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: hub.URL, room2: deadAddr, claim: "claude@sg4"}, "ssh bytes")
+	code, out, errs := runProxyT(t, proxyOpts{room: "room-d", hub: hub.URL, room2: deadAddr, claim: "claude@room-e"}, "ssh bytes")
 	if code != 0 || out != "SSH-2.0-fake\r\nssh bytes" || errs != "" {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
-	if got := seen.Load(); got != "POST /_hub/ssh/sg3 room= claim=claude@sg4" {
+	if got := seen.Load(); got != "POST /_hub/ssh/room-d room= claim=claude@room-e" {
 		t.Fatalf("the hub door was asked %v", got)
 	}
 }
 
 // EVERY REFUSAL IS ONE SENTENCE ON STDERR, exit 255, and nothing on stdout, which ssh would read as protocol.
 func TestARefusalIsOneSentenceOnStderrAndExit255(t *testing.T) {
-	sentence := "sg3 has remote access off. turn it on at that machine: atrium room remote-access on"
+	sentence := "room-d has remote access off. turn it on at that machine: atrium room remote-access on"
 	var roomHits atomic.Int64
 	hub := fakeDoor(t, http.StatusForbidden, `{"error":"`+sentence+`"}`, nil, nil)
 	room := fakeDoor(t, http.StatusSwitchingProtocols, "", &roomHits, nil)
-	code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: hub.URL, room2: room.URL}, "")
+	code, out, errs := runProxyT(t, proxyOpts{room: "room-d", hub: hub.URL, room2: room.URL}, "")
 	if code != 255 || out != "" || errs != sentence+"\n" {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
@@ -97,18 +97,18 @@ func TestAMissingHubDoorFallsToTheRoomDoor(t *testing.T) {
 		"404":     fakeDoor(t, http.StatusNotFound, "404 page not found\n", nil, nil).URL,
 		"a page":  fakeDoor(t, http.StatusOK, "<html>the room's own board</html>", nil, nil).URL,
 	} {
-		code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: hub, room2: room.URL, claim: "u@h"}, "x")
+		code, out, errs := runProxyT(t, proxyOpts{room: "room-d", hub: hub, room2: room.URL, claim: "u@h"}, "x")
 		if code != 0 || out != "SSH-2.0-fake\r\nx" || errs != "" {
 			t.Fatalf("%s: code %d stdout %q stderr %q", name, code, out, errs)
 		}
-		if got := seen.Load(); got != "POST /stream room=sg3 claim=u@h" {
+		if got := seen.Load(); got != "POST /stream room=room-d claim=u@h" {
 			t.Fatalf("%s: the room door was asked %v", name, got)
 		}
 	}
 }
 
 func TestNeitherDoorSaysSoInWords(t *testing.T) {
-	code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: deadAddr, room2: deadAddr}, "")
+	code, out, errs := runProxyT(t, proxyOpts{room: "room-d", hub: deadAddr, room2: deadAddr}, "")
 	if code != 255 || out != "" || errs != "no atrium hub or room is running on this machine\n" {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
@@ -118,7 +118,7 @@ func TestViaRoomNeverTriesTheHubDoor(t *testing.T) {
 	var hubHits atomic.Int64
 	hub := fakeDoor(t, http.StatusSwitchingProtocols, "", &hubHits, nil)
 	room := fakeDoor(t, http.StatusSwitchingProtocols, "", nil, nil)
-	code, _, _ := runProxyT(t, proxyOpts{room: "sg3", via: "room", hub: hub.URL, room2: room.URL}, "")
+	code, _, _ := runProxyT(t, proxyOpts{room: "room-d", via: "room", hub: hub.URL, room2: room.URL}, "")
 	if code != 0 || hubHits.Load() != 0 {
 		t.Fatalf("code %d, the hub door was asked %d times", code, hubHits.Load())
 	}
@@ -127,7 +127,7 @@ func TestViaRoomNeverTriesTheHubDoor(t *testing.T) {
 func TestARoomsRefusalIsSaidAsTheRoomSaidIt(t *testing.T) {
 	sentence := "this room is not attached to a hub right now"
 	room := fakeDoor(t, http.StatusServiceUnavailable, `{"error":"`+sentence+`"}`, nil, nil)
-	code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: deadAddr, room2: room.URL}, "")
+	code, out, errs := runProxyT(t, proxyOpts{room: "room-d", hub: deadAddr, room2: room.URL}, "")
 	if code != 255 || out != "" || errs != sentence+"\n" {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
@@ -138,7 +138,7 @@ func TestTheProxyFallsBackToTheAltHubDoor(t *testing.T) {
 	var seen atomic.Value
 	hub := fakeDoor(t, http.StatusSwitchingProtocols, "", nil, &seen)
 	other := fakeDoor(t, http.StatusNotFound, "", nil, nil)
-	code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: other.URL, hubAlt: hub.URL, room2: deadAddr}, "x")
+	code, out, errs := runProxyT(t, proxyOpts{room: "room-d", hub: other.URL, hubAlt: hub.URL, room2: deadAddr}, "x")
 	if code != 0 || out != "SSH-2.0-fake\r\nx" || errs != "" {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}

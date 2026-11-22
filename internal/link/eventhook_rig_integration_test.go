@@ -69,16 +69,16 @@ func TestARoomsRelayedSubscribeIsStampedFromTheLink(t *testing.T) {
 	if ans := ask(hubSubsPath, `{"action":"subscribe","kind":"land","card":"m1"}`); !ans.OK {
 		t.Fatalf("own card: %+v", ans)
 	}
-	if rows, _ := st.EventSubsOf("m1mini~m1"); len(rows) != 1 || rows[0].CreatedBy != "sa1@m1mini" {
+	if rows, _ := st.EventSubsOf("room-a~m1"); len(rows) != 1 || rows[0].CreatedBy != "sa1@room-a" {
 		t.Fatalf("rows %+v", rows)
 	}
-	if ans := ask(hubSubsPath, `{"action":"subscribe","kind":"land","card":"sg4~s1"}`); ans.OK || ans.Code != http.StatusForbidden {
+	if ans := ask(hubSubsPath, `{"action":"subscribe","kind":"land","card":"room-e~s1"}`); ans.OK || ans.Code != http.StatusForbidden {
 		t.Fatalf("another room's card: %+v", ans)
 	}
-	if ans := ask(hubSubsPath, `{"action":"subscribe","kind":"land","card":"m1","room":"sg4"}`); !ans.OK {
+	if ans := ask(hubSubsPath, `{"action":"subscribe","kind":"land","card":"m1","room":"room-e"}`); !ans.OK {
 		t.Fatalf("a room named in the body: %+v", ans)
 	}
-	if rows, _ := st.EventSubsOf("sg4~m1"); len(rows) != 0 {
+	if rows, _ := st.EventSubsOf("room-e~m1"); len(rows) != 0 {
 		t.Fatalf("a room's own say of its name wrote %+v", rows)
 	}
 	if ans := ask("/_hub/events", landBodyJSON("stopped", "", "", 0, "")); ans.OK {
@@ -104,16 +104,16 @@ func TestTheProxyDeliversAnEventToACardOnARoom(t *testing.T) {
 		res.Body.Close()
 		return res
 	}
-	if res := post("/_hub/events/subs", `{"action":"subscribe","kind":"land","card":"sg4~s1","wake":true}`); res.StatusCode != http.StatusOK {
+	if res := post("/_hub/events/subs", `{"action":"subscribe","kind":"land","card":"room-e~s1","wake":true}`); res.StatusCode != http.StatusOK {
 		t.Fatalf("subscribe: %d", res.StatusCode)
 	}
 	if res := post("/_hub/events", landBodyJSON("pushed", landFrom, landTo, 14, "")); res.StatusCode != http.StatusAccepted {
 		t.Fatalf("event: %d", res.StatusCode)
 	}
 	hook.Pass(relayCtx(t))
-	got := x.sg4.messages()
+	got := x.roomE.messages()
 	if len(got) != 1 || got[0]["id"] != "s1" || got[0]["from"] != "land@testhub" || got[0]["kind"] != "fyi" ||
 		!strings.HasPrefix(got[0]["text"], "Landed: o/r main") {
-		t.Fatalf("sg4 got %+v", got)
+		t.Fatalf("room-e got %+v", got)
 	}
 }

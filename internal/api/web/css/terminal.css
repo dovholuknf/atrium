@@ -1065,18 +1065,30 @@
 #t-newpill:hover { filter: brightness(1.1); }
 
 /* Push-to-talk, js/dictate.js: the mic in the shortcut strip beside "details", and its state in a pill above the
-   strip. Not on a phone, where the composer has its own mic. */
+   strip. While a clip transcribes the mic itself grows into a "transcribing" bubble with a ring spinning round the
+   icon. Not on a phone, where the composer has its own mic. */
 .dict-dock { flex: 0 0 auto; display: flex; align-items: center; }
 body.term-phone .dict-dock { display: none; }
-.dict-pill { position: absolute; right: 10px; bottom: calc(100% + 8px); z-index: 30; }
+.dict-pill { position: absolute; right: 10px; bottom: calc(100% + 2px); z-index: 30; }
 .dict-mic { width: 26px; height: 26px; margin: -3px 0; border-radius: 50%; display: grid; place-items: center;
-  padding: 0; color: var(--body); background: var(--card-0); border: 1px solid var(--stroke-dim);
-  box-shadow: 0 4px 14px rgba(var(--shadow-rgb),.35); cursor: pointer; touch-action: none; user-select: none; }
-.dict-mic:hover { color: var(--head); border-color: var(--stroke); }
+  padding: 0; color: var(--term-fg, var(--body)); background: color-mix(in srgb, currentColor 10%, transparent);
+  border: 1px solid var(--term-line, var(--stroke-dim)); cursor: pointer; touch-action: none; user-select: none; }
+.dict-mic:hover { color: var(--term-fg, var(--head)); border-color: currentColor;
+  background: color-mix(in srgb, currentColor 18%, transparent); }
+body:has(.dict-mic:active, .dict-dock[data-st="listening"], .dict-dock[data-st="transcribing"]) #tip { display: none; }
 .dict-mic svg { display: block; }
 .dict-dock[data-st="listening"] .dict-mic { color: #fff; background: var(--danger); border-color: var(--danger);
   transform: scale(1.08); }
-.dict-dock[data-st="transcribing"] .dict-mic { color: var(--teal); border-color: var(--teal); }
+.dict-mic .dict-busy { display: none; }
+.dict-ic { position: relative; display: grid; place-items: center; }
+.dict-dock[data-st="transcribing"] .dict-mic { width: auto; gap: 7px; grid-auto-flow: column; padding: 0 3px 0 12px;
+  border-radius: 999px; color: var(--head); background: var(--card-0); border-color: var(--stroke-dim);
+  box-shadow: 0 4px 14px rgba(var(--shadow-rgb),.3); font: 600 var(--fs-sm)/1 var(--sans); cursor: default; }
+.dict-dock[data-st="transcribing"] .dict-mic .dict-busy { display: block; }
+.dict-dock[data-st="transcribing"] .dict-ic { width: 22px; height: 22px; color: var(--teal); }
+.dict-dock[data-st="transcribing"] .dict-ic svg { width: 13px; height: 13px; }
+.dict-dock[data-st="transcribing"] .dict-ic::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--teal); border-right-color: transparent; animation: dict-spin .8s linear infinite; }
 .dict-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; max-width: min(640px, 70vw);
   padding: 7px 12px 7px 10px; border-radius: 999px; font: 600 var(--fs-sm)/1.35 var(--sans); color: var(--head);
   background: var(--card-0); border: 1px solid var(--stroke-dim); box-shadow: 0 6px 20px rgba(var(--shadow-rgb),.35); }
@@ -1089,8 +1101,6 @@ body.term-phone .dict-dock { display: none; }
 .dict-pill .lvl i:nth-child(2) { animation-delay: .15s; }
 .dict-pill .lvl i:nth-child(3) { animation-delay: .3s; }
 .dict-pill .lvl i:nth-child(4) { animation-delay: .1s; }
-.dict-pill .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--teal); border-right-color: transparent;
-  animation: dict-spin .8s linear infinite; }
 .dict-dock[data-st="refused"] .dict-pill, .dict-dock[data-st="error"] .dict-pill { border-radius: var(--r-md);
   border-color: var(--warn); font-weight: 400; }
 .dict-pill .x { flex: none; border: 0; background: none; color: var(--dim); cursor: pointer; padding: 0 2px; }
@@ -1098,5 +1108,5 @@ body.term-phone .dict-dock { display: none; }
 @keyframes dict-lvl { from { height: 3px; } to { height: 14px; } }
 @keyframes dict-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .dict-pill .dot, .dict-pill .lvl i, .dict-pill .spin { animation: none; }
+  .dict-pill .dot, .dict-pill .lvl i, .dict-ic::after { animation: none; }
 }

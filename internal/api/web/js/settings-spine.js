@@ -138,7 +138,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-spinner").value = spinnerKind();
   document.getElementById("s-hoverfocus").checked = hoverFocus;
   paintCleanCopy();
-  if (typeof dictKey === "function") document.getElementById("s-dictkey").value = dictKey();
+  if (typeof paintDictation === "function") paintDictation();
   document.getElementById("s-termreturn").value = termReturnMode();
   document.getElementById("s-termkeep").value = String(termKeepN());
   document.getElementById("s-termkeeplines").value = String(termKeepLines());
@@ -1915,6 +1915,7 @@ function connect() {
     if (typeof paintRooms === "function") paintRooms();
     loadGlobalAuto();
     if (typeof loadHubHosts === "function") loadHubHosts();
+    if (typeof loadHubProfile === "function") loadHubProfile();
     if (typeof loadHubTransports === "function") loadHubTransports();
     // Assume the daemon is coming up until it says otherwise.
     //
@@ -2103,6 +2104,9 @@ function connect() {
     roomsSeen = names;
     // The hub lends `/v1/themes` from its first attached room, so a board loaded before that room was back lacks its themes.
     if (moved || themesStale()) loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); repaintWearers(); });
+  });
+  es.addEventListener("board", e => {
+    try { boardEvent(JSON.parse(e.data)); } catch (err) {}
   });
   es.addEventListener("overlays", e => {
     let next;

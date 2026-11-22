@@ -365,7 +365,7 @@ func TestNewWorkWithNoRunnerStartsTheRecipesOrClaude(t *testing.T) {
 // the open names the room before any worktree is made, never unknown harness "".
 func TestNewWorkWithNoStartableRunnerNamesTheRoom(t *testing.T) {
 	nh := newNewWorkHarness(t)
-	nh.srv.Room = "m1mini"
+	nh.srv.Room = "room-a"
 	hs, err := nh.srv.st.Harnesses()
 	if err != nil {
 		t.Fatal(err)
@@ -398,7 +398,7 @@ func TestNewWorkWithNoStartableRunnerNamesTheRoom(t *testing.T) {
 	nh.launched = nil
 	nh.runner(t, "other", false)
 	code, out = nh.newWork(t, map[string]any{"name": "no.runner"})
-	if msg, _ := out["error"].(string); code != 400 || msg != "no runner is installed and turned on on m1mini. here, other is on PATH but turned off: "+
+	if msg, _ := out["error"].(string); code != 400 || msg != "no runner is installed and turned on on room-a. here, other is on PATH but turned off: "+
 		"turn it on in the board's runner settings" {
 		t.Errorf("%d %v", code, out)
 	}

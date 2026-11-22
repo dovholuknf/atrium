@@ -7,7 +7,7 @@ import "testing"
 func TestCapabilityLatestIsTheNewestPerRoomAndCap(t *testing.T) {
 	s := open(t)
 	row := func(state, reason, at string) CapabilityRow {
-		return CapabilityRow{Room: "sg3", Cap: "go", At: at, State: state, Reason: reason}
+		return CapabilityRow{Room: "room-d", Cap: "go", At: at, State: state, Reason: reason}
 	}
 	for _, r := range []CapabilityRow{row("fail", "not on PATH", "2026-11-16T10:00:00Z"), row("pass", "ok", "2026-11-16T11:00:00Z"),
 		row("pass", "ok", "2026-11-16T12:00:00Z")} {

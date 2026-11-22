@@ -24,8 +24,6 @@ Series: The software company: directors and workers. Status: idea. Audience: eng
 
 - docs/backlog/rnd/QUEUE.md
 - commit 20135a7b
-- docs/rnd/freeze-budget-design.md
-- docs/rnd/operator-focus.md
 
 ## Notes for the writer
 

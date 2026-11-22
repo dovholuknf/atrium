@@ -13,7 +13,7 @@ func TestFileAtReadsAFileAsACommitHeldIt(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	work := x.branch("fix/x", "x.go")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	st := x.h.Store()
 
 	if _, ok, err := st.FileAt(bg, hubRepo, work, "docs/changes/x.md"); err != nil || ok {

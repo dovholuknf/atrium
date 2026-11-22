@@ -42,7 +42,7 @@ const server = http.createServer((req, res) => {
   const json = (o, code) => { res.writeHead(code || 200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
   if (p === "/" || p === "/index.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(HTML); }
   if (p.startsWith("/v1/events")) { res.writeHead(200, { "Content-Type": "text/event-stream" }); return res.write(": open"); }
-  if (p === "/_hub/rooms") return json({ rooms: [{ name: "sg4" }] });
+  if (p === "/_hub/rooms") return json({ rooms: [{ name: "room-e" }] });
   if (p === "/_hub/inventory") return json({ rooms: [] });
   if (p === "/_hub/backlog" && req.method === "GET") {
     let list = items;

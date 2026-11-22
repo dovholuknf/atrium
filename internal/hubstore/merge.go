@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
-// The merge queue's rows. See migration 0034 and docs/rnd/merge-queue.md.
+// The merge queue's rows. See migration 0034.
 //
 //   - A REQUEST IS NEVER DELETED, so the table is the history the board and `atrium merge --list` read.
 //   - A STATE ONLY MOVES ALONG mergeMoves, and an end state is never left.

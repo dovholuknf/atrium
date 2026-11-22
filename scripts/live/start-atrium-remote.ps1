@@ -13,6 +13,9 @@ Assert-NotSupervised
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'remote-start.log'
 
+$wrongAccount = Test-RemoteAccount $PSCommandPath
+if ($wrongAccount) { Say "FATAL: $wrongAccount"; exit 1 }
+
 $ssh = (Get-Command ssh).Source
 $sshOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 function Get-OnHub { try { @((Invoke-RestMethod $HubRooms -TimeoutSec 3).rooms | ForEach-Object { $_.name }) } catch { @() } }
@@ -26,7 +29,7 @@ foreach ($name in $names) {
   if (-not $r) { Say "${name}: not a remote room this script knows"; $failed = $true; continue }
   if ($onHub -contains $name) { Say "$name already on the hub. nothing to do."; continue }
   $user = Get-RoomSshUser $r.Ssh
-  $route = Resolve-SshRoute $r.Ssh { param($cand) Invoke-Capped $ssh ($sshOpts + @($cand, 'echo ok')) 40 } $user
+  $route = Resolve-SshRoute $r.Ssh { param($cand) Invoke-Capped $ssh ($sshOpts + @('-v', $cand, 'echo ok')) 40 } $user
   if (-not $route.Host) { Say "${name}: $(Get-SshFailure $route $user)"; $failed = $true; continue }
   Invoke-Step "start $name over ssh $($route.Host)" {
     $x = Invoke-Capped $ssh ($sshOpts + @($route.Host, $r.Cmd)) 60

@@ -221,7 +221,7 @@ async function openBoard(origin, goTo, taskFor, key, path) {
 //
 // The hub sends one small JSON payload, four plain fields and no more: `title` is the card's name, `body` is one phrase
 // for why it wants you, `tag` is the card id so a newer alert for the same card replaces the older, and `path` is the
-// card's `/m` path. Never the command a permission wants to run, a question or a recap. See docs/rnd/web-push-design.md.
+// card's `/m` path. Never the command a permission wants to run, a question or a recap.
 //
 // EVERY PUSH SHOWS A NOTIFICATION. iOS revokes a subscription that receives a push and shows nothing, so a payload
 // that cannot be read still shows the generic line. The browser has already decrypted the payload by the time this

@@ -87,7 +87,7 @@ func newHubFixture(t *testing.T, roomGit bool) *hubFixture {
 	}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	x.rooms = &fakeRooms{srv: srv, name: "SG3", git: roomGit, up: true}
+	x.rooms = &fakeRooms{srv: srv, name: "ROOM-D", git: roomGit, up: true}
 	x.h = &Hub{
 		Dir:   x.hub,
 		Rooms: x.rooms,
@@ -184,25 +184,25 @@ func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *test
 	git(t, x.roomWork, "checkout", "-q", "claude/main")
 	headsBefore := git(t, x.checkout, "for-each-ref", "refs/heads")
 
-	res, err := x.h.Collect(bg, "SG3")
+	res, err := x.h.Collect(bg, "ROOM-D")
 	if err != nil || len(res.Repos) != 1 || res.Repos[0].Error != "" {
 		t.Fatalf("collect: %+v err=%v", res, err)
 	}
 	bare := x.h.Bare("github/o/r")
-	if got := git(t, bare, "rev-parse", "refs/rooms/sg3/claude/a"); got != shaA {
-		t.Fatalf("bare refs/rooms/sg3/claude/a = %s", got)
+	if got := git(t, bare, "rev-parse", "refs/rooms/room-d/claude/a"); got != shaA {
+		t.Fatalf("bare refs/rooms/room-d/claude/a = %s", got)
 	}
-	if got := git(t, x.checkout, "rev-parse", "refs/remotes/sg3/claude/a"); got != shaA {
-		t.Fatalf("checkout refs/remotes/sg3/claude/a = %s", got)
+	if got := git(t, x.checkout, "rev-parse", "refs/remotes/room-d/claude/a"); got != shaA {
+		t.Fatalf("checkout refs/remotes/room-d/claude/a = %s", got)
 	}
 	if !res.Repos[0].Moved || !res.Repos[0].Delivered {
 		t.Fatalf("first collect should have moved and delivered: %+v", res.Repos[0])
 	}
 	// claude/main on the room is never collected, though this room advertised it.
-	if out := git(t, bare, "for-each-ref", "refs/rooms/sg3/claude/main"); out != "" {
+	if out := git(t, bare, "for-each-ref", "refs/rooms/room-d/claude/main"); out != "" {
 		t.Fatalf("claude/main was collected: %s", out)
 	}
-	if out := git(t, x.checkout, "for-each-ref", "refs/remotes/sg3/claude/main"); out != "" {
+	if out := git(t, x.checkout, "for-each-ref", "refs/remotes/room-d/claude/main"); out != "" {
 		t.Fatalf("claude/main was delivered: %s", out)
 	}
 	// Never a branch under refs/heads in the checkout.
@@ -211,7 +211,7 @@ func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *test
 	}
 
 	// A collect that moved nothing does not touch the checkout, and FETCH_HEAD is never written.
-	res, err = x.h.Collect(bg, "SG3")
+	res, err = x.h.Collect(bg, "ROOM-D")
 	if err != nil || res.Repos[0].Moved || res.Repos[0].Delivered {
 		t.Fatalf("second collect: %+v err=%v", res.Repos[0], err)
 	}
@@ -223,25 +223,25 @@ func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *test
 
 	// A hub killed between the collect and the delivery leaves the checkout short. The next
 	// collect notices, though it moved nothing.
-	git(t, x.checkout, "update-ref", "-d", "refs/remotes/sg3/claude/a")
-	res, err = x.h.Collect(bg, "SG3")
+	git(t, x.checkout, "update-ref", "-d", "refs/remotes/room-d/claude/a")
+	res, err = x.h.Collect(bg, "ROOM-D")
 	if err != nil || res.Repos[0].Moved || !res.Repos[0].Delivered {
 		t.Fatalf("repair collect: %+v err=%v", res.Repos[0], err)
 	}
-	if got := git(t, x.checkout, "rev-parse", "refs/remotes/sg3/claude/a"); got != shaA {
+	if got := git(t, x.checkout, "rev-parse", "refs/remotes/room-d/claude/a"); got != shaA {
 		t.Fatalf("not repaired: %s", got)
 	}
 
 	// The branch is deleted on the room, and pruned from both.
 	git(t, x.roomWork, "branch", "-q", "-D", "claude/a")
-	res, err = x.h.Collect(bg, "SG3")
+	res, err = x.h.Collect(bg, "ROOM-D")
 	if err != nil || !res.Repos[0].Moved || !res.Repos[0].Delivered {
 		t.Fatalf("prune collect: %+v err=%v", res.Repos[0], err)
 	}
-	if out := git(t, bare, "for-each-ref", "refs/rooms/sg3"); out != "" {
+	if out := git(t, bare, "for-each-ref", "refs/rooms/room-d"); out != "" {
 		t.Fatalf("not pruned from the bare repository: %s", out)
 	}
-	if out := git(t, x.checkout, "for-each-ref", "refs/remotes/sg3"); out != "" {
+	if out := git(t, x.checkout, "for-each-ref", "refs/remotes/room-d"); out != "" {
 		t.Fatalf("not pruned from the checkout: %s", out)
 	}
 }
@@ -260,11 +260,11 @@ func TestHeadPointingAtAHiddenRefIsNotAdvertised(t *testing.T) {
 	git(t, x.roomWork, "checkout", "-q", "-b", "claude/a")
 	shaA := commit(t, x.roomWork, "a.txt", "worker a")
 	git(t, x.roomWork, "checkout", "-q", "claude/main")
-	if _, err := x.h.Collect(bg, "sg3"); err != nil {
+	if _, err := x.h.Collect(bg, "room-d"); err != nil {
 		t.Fatal(err)
 	}
 	bare := x.h.Bare("github/o/r")
-	git(t, bare, "symbolic-ref", "HEAD", "refs/rooms/sg3/claude/a")
+	git(t, bare, "symbolic-ref", "HEAD", "refs/rooms/room-d/claude/a")
 	// Hidden by name: not advertised as HEAD whatever it points at.
 	srv := httptest.NewServer(x.h.Backend())
 	_, body0 := get(t, srv.URL+"/github/o/r.git/info/refs?service=git-upload-pack")
@@ -314,12 +314,12 @@ func TestAStaleLockUnderAnOwnedRefIsRemovedAndOneElsewhereIsLeft(t *testing.T) {
 		}
 		return p
 	}
-	ownedBare := mk(filepath.Join(x.h.Bare("github/o/r"), "refs", "rooms", "sg3", "claude", "a.lock"), old)
-	ownedCk := mk(filepath.Join(x.checkout, ".git", "refs", "remotes", "sg3", "claude", "a.lock"), old)
+	ownedBare := mk(filepath.Join(x.h.Bare("github/o/r"), "refs", "rooms", "room-d", "claude", "a.lock"), old)
+	ownedCk := mk(filepath.Join(x.checkout, ".git", "refs", "remotes", "room-d", "claude", "a.lock"), old)
 	elsewhere := mk(filepath.Join(x.checkout, ".git", "refs", "heads", "somebody.lock"), old)
-	otherRoom := mk(filepath.Join(x.checkout, ".git", "refs", "remotes", "m1mini", "claude", "z.lock"), old)
+	otherRoom := mk(filepath.Join(x.checkout, ".git", "refs", "remotes", "room-a", "claude", "z.lock"), old)
 
-	if _, err := x.h.Collect(bg, "SG3"); err != nil {
+	if _, err := x.h.Collect(bg, "ROOM-D"); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{ownedBare, ownedCk} {
@@ -333,8 +333,8 @@ func TestAStaleLockUnderAnOwnedRefIsRemovedAndOneElsewhereIsLeft(t *testing.T) {
 		}
 	}
 	// A young lock is a command that may still be running, and is left.
-	young := mk(filepath.Join(x.h.Bare("github/o/r"), "refs", "rooms", "sg3", "claude", "young.lock"), time.Now())
-	if _, err := x.h.Collect(bg, "SG3"); err != nil {
+	young := mk(filepath.Join(x.h.Bare("github/o/r"), "refs", "rooms", "room-d", "claude", "young.lock"), time.Now())
+	if _, err := x.h.Collect(bg, "ROOM-D"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(young); err != nil {
@@ -345,14 +345,14 @@ func TestAStaleLockUnderAnOwnedRefIsRemovedAndOneElsewhereIsLeft(t *testing.T) {
 func TestARoomThatDidNotSayGitIsNeverAskedNorDialled(t *testing.T) {
 	t.Parallel()
 	x := newHubFixture(t, false)
-	res, err := x.h.Sync(bg, "sg3", "", false)
+	res, err := x.h.Sync(bg, "room-d", "", false)
 	if err != nil || len(res) != 1 || res[0].State != "unsupported" {
 		t.Fatalf("sync = %+v err=%v", res, err)
 	}
-	if _, err := x.h.Collect(bg, "sg3"); err == nil {
+	if _, err := x.h.Collect(bg, "room-d"); err == nil {
 		t.Fatal("a collect from a room that never said Git was tried")
 	}
-	x.h.Attached(bg, "sg3")
+	x.h.Attached(bg, "room-d")
 	time.Sleep(300 * time.Millisecond) // wait: a negative check, the room must not be contacted
 	if x.syncs.Load() != 0 || x.requests.Load() != 0 {
 		t.Fatalf("the room was contacted: syncs=%d requests=%d", x.syncs.Load(), x.requests.Load())
@@ -363,7 +363,7 @@ func TestSyncAsksTheRoomAndRecordsItsAnswer(t *testing.T) {
 	t.Parallel()
 	x := newHubFixture(t, true)
 	x.answer.Store("behind")
-	res, err := x.h.Sync(bg, "sg3", "github/o/r", true)
+	res, err := x.h.Sync(bg, "room-d", "github/o/r", true)
 	if err != nil || len(res) != 1 || res[0].State != "behind" || res[0].Detail != "said so" {
 		t.Fatalf("sync = %+v err=%v", res, err)
 	}
@@ -374,13 +374,13 @@ func TestSyncAsksTheRoomAndRecordsItsAnswer(t *testing.T) {
 	if body["name"] != "github/o/r" || body["init"] != true {
 		t.Fatalf("the room was sent %v", body)
 	}
-	if _, err := x.h.Sync(bg, "sg3", "github/o/nope", false); err == nil {
+	if _, err := x.h.Sync(bg, "room-d", "github/o/nope", false); err == nil {
 		t.Fatal("a name not in git_repos was accepted")
 	}
 	if _, err := x.h.Sync(bg, "nowhere", "", false); err == nil {
 		t.Fatal("a room that is not attached was accepted")
 	}
-	st := x.h.Status().Rooms["sg3"]
+	st := x.h.Status().Rooms["room-d"]
 	if st.State != "behind" || len(st.Repos) != 1 || st.Repos[0].Name != "github/o/r" {
 		t.Fatalf("status = %+v", st)
 	}
@@ -395,21 +395,21 @@ func TestSyncAsksTheRoomAndRecordsItsAnswer(t *testing.T) {
 func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
 	t.Parallel()
 	x := newHubFixture(t, true)
-	x.rooms.host = "Sg4"
-	x.h.SelfHost = "sg4"
-	res, err := x.h.Sync(bg, "sg3", "", true)
+	x.rooms.host = "Room-e"
+	x.h.SelfHost = "room-e"
+	res, err := x.h.Sync(bg, "room-d", "", true)
 	if err != nil || len(res) != 1 || res[0].State != "skipped" || res[0].Detail != SameMachine {
 		t.Fatalf("sync = %+v err=%v", res, err)
 	}
-	if _, err := x.h.Collect(bg, "sg3"); err == nil || err.Error() != SameMachine {
+	if _, err := x.h.Collect(bg, "room-d"); err == nil || err.Error() != SameMachine {
 		t.Fatalf("collect err = %v", err)
 	}
-	x.h.Attached(bg, "sg3")
+	x.h.Attached(bg, "room-d")
 	time.Sleep(300 * time.Millisecond) // wait: a negative check, the room must not be contacted
 	if x.syncs.Load() != 0 || x.requests.Load() != 0 {
 		t.Fatalf("the room was contacted: syncs=%d requests=%d", x.syncs.Load(), x.requests.Load())
 	}
-	if st := x.h.Status().Rooms["sg3"]; st == nil || st.Repos[0].Detail != SameMachine {
+	if st := x.h.Status().Rooms["room-d"]; st == nil || st.Repos[0].Detail != SameMachine {
 		t.Fatalf("status = %+v", st)
 	}
 }
@@ -419,10 +419,10 @@ func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
 func TestTheRoomOnAnotherMachineIsNotSkipped(t *testing.T) {
 	t.Parallel()
 	x := newHubFixture(t, true)
-	x.rooms.host = "Sg4"
+	x.rooms.host = "Room-e"
 	x.h.SelfHost = "elsewhere"
 	x.answer.Store("ok")
-	if _, err := x.h.Sync(bg, "sg3", "", false); err != nil || x.syncs.Load() != 1 {
+	if _, err := x.h.Sync(bg, "room-d", "", false); err != nil || x.syncs.Load() != 1 {
 		t.Fatalf("a different host was skipped: syncs=%d err=%v", x.syncs.Load(), err)
 	}
 }
@@ -430,7 +430,7 @@ func TestTheRoomOnAnotherMachineIsNotSkipped(t *testing.T) {
 func TestRoomNamesInRefsAreLowercasedAndCheckedByGit(t *testing.T) {
 	t.Parallel()
 	h := &Hub{Runner: NewRunner()}
-	if k, err := h.RoomKey(bg, "SG3"); err != nil || k != "sg3" {
+	if k, err := h.RoomKey(bg, "ROOM-D"); err != nil || k != "room-d" {
 		t.Fatalf("key = %q err=%v", k, err)
 	}
 	for _, bad := range []string{"", "a b", "a..b", "a:b", "a~b", "a\\b", "a[b", "x.lock/"} {
@@ -487,7 +487,7 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 	git(t, x.roomWork, "checkout", "-q", "-b", "claude/a")
 	shaA := commit(t, x.roomWork, "a.txt", "worker a")
 	git(t, x.roomWork, "checkout", "-q", "claude/main")
-	if _, err := x.h.Collect(bg, "sg3"); err != nil {
+	if _, err := x.h.Collect(bg, "room-d"); err != nil {
 		t.Fatal(err)
 	}
 	// The room moves on, and then stalls its upload-pack, so the next collect hangs.
@@ -510,7 +510,7 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 	})
 	defer close(stall)
 	done := make(chan struct{})
-	go func() { _, _ = x.h.Collect(bg, "sg3"); close(done) }()
+	go func() { _, _ = x.h.Collect(bg, "room-d"); close(done) }()
 	select {
 	case <-stalled:
 	case <-time.After(30 * time.Second):
@@ -521,9 +521,9 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 	}
 	<-done
 	for _, dir := range []string{x.h.Bare("github/o/r"), x.checkout} {
-		ref := "refs/rooms/sg3/claude/a"
+		ref := "refs/rooms/room-d/claude/a"
 		if dir == x.checkout {
-			ref = "refs/remotes/sg3/claude/a"
+			ref = "refs/remotes/room-d/claude/a"
 		}
 		got := git(t, dir, "rev-parse", ref)
 		if got != shaA && got != shaB {

@@ -76,7 +76,7 @@ func TestAPeerMessageCannotEndItsOwnPaste(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if typed, _ := d.tellByTyping(fresh, "sg4/builder", hostile, "", false); !typed {
+	if typed, _ := d.tellByTyping(fresh, "room-e/builder", hostile, "", false); !typed {
 		t.Fatal("the message was not typed")
 	}
 	got := f.written()

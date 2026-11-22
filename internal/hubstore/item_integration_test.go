@@ -5,8 +5,8 @@ package hubstore
 import "testing"
 
 func anItem(rev int, state string) Item {
-	return Item{ID: "it-1", Room: "sg4", Card: "c1", Generation: 1, State: state, Revision: rev,
-		OwnerKind: OwnerSession, Owner: "orch@sg4", CreatedBy: "orch@sg4"}
+	return Item{ID: "it-1", Room: "room-e", Card: "c1", Generation: 1, State: state, Revision: rev,
+		OwnerKind: OwnerSession, Owner: "orch@room-e", CreatedBy: "orch@room-e"}
 }
 
 // A REPLAYED PUSH IS A NO-OP: the same (item_id, revision, state) changes nothing and says so.
@@ -90,14 +90,14 @@ func TestResolveOwner(t *testing.T) {
 		spec, creator, kind, owner string
 		refused                    bool
 	}{
-		{"", "orch@sg4", OwnerSession, "orch@sg4", false},
-		{"human", "orch@sg4", OwnerHuman, "", false},
-		{"merger", "orch@sg4", "", "", true},
-		{"role:director", "orch@sg4", OwnerRole, RoleDirector, false},
+		{"", "orch@room-e", OwnerSession, "orch@room-e", false},
+		{"human", "orch@room-e", OwnerHuman, "", false},
+		{"merger", "orch@room-e", "", "", true},
+		{"role:director", "orch@room-e", OwnerRole, RoleDirector, false},
 		{"orchestrator", "x", OwnerRole, RoleOrchestrator, false},
-		{"tester", "orch@sg4", "", "", true},
-		{"role:tester", "orch@sg4", "", "", true},
-		{"boss", "orch@sg4", "", "", true},
+		{"tester", "orch@room-e", "", "", true},
+		{"role:tester", "orch@room-e", "", "", true},
+		{"boss", "orch@room-e", "", "", true},
 		{"", "", "", "", true},
 	} {
 		k, o, err := ResolveOwner(c.spec, c.creator)
@@ -121,13 +121,13 @@ func TestItemHolderResolvesARoleAtTheTime(t *testing.T) {
 	if _, _, ok, _ := s.ItemHolder(it); ok {
 		t.Fatal("nobody holds director yet")
 	}
-	s.RoleSet(RoleDirector, "sg4", "c7", "clint")
+	s.RoleSet(RoleDirector, "room-e", "c7", "operator")
 	room, card, ok, err := s.ItemHolder(it)
-	if err != nil || !ok || room != "sg4" || card != "c7" {
+	if err != nil || !ok || room != "room-e" || card != "c7" {
 		t.Fatalf("holder: %q %q %v %v", room, card, ok, err)
 	}
-	s.RoleSet(RoleDirector, "sg3", "c8", "clint")
-	if room, card, _, _ = s.ItemHolder(it); room != "sg3" || card != "c8" {
+	s.RoleSet(RoleDirector, "room-d", "c8", "operator")
+	if room, card, _, _ = s.ItemHolder(it); room != "room-d" || card != "c8" {
 		t.Fatalf("the holder changed: %q %q", room, card)
 	}
 }

@@ -12,7 +12,7 @@ import (
 // the lifecycle needs of git is two things: how many commits the branch has moved since each commit a test names, and what
 // the verdict trailers say of the item's own commits. Both are read through internal/deployready, so a verdict means here what
 // it means to a deploy. gitsync cannot import deployready (deployready's own tests use gitsync), so the checker comes in through
-// Store.Checker, which the hub's wiring sets. See docs/rnd/item-lifecycle-design.md, stage L4.
+// Store.Checker, which the hub's wiring sets.
 
 // Evidence is what the mirror says of one item's branch.
 type Evidence struct {

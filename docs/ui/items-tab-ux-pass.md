@@ -3,7 +3,7 @@
 Status: built (phases 1 to 3, board only). Phase 4 waits on open question 2. Backlog item `u-items-tab-ux-pass`. Written 2026-10-16 after clint looked at the tab on
 a wide monitor and said "not sure what this is showing me".
 
-Read first: `docs/rnd/item-lifecycle-design.md` (the tab exists to serve that lifecycle: an item is a backlog id at work,
+The tab exists to serve the item lifecycle (an item is a backlog id at work,
 eight steps from designed to pushed, a card does each step). The code: `internal/api/web/js/items.js`, `items-data.js`,
 `css/items.css`.
 

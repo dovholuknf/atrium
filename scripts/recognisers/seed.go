@@ -1,7 +1,7 @@
 // Package recognisers is the seed for the hub's recogniser table: the rows in this directory, built into the binary.
 //
 // The hub seeds its table from these once, so a hub and its rooms recognise a pasted link with nothing loaded by
-// hand. load.ps1 stays for loading a file of your own. See docs/rnd/card-lifecycle-design.md, section 2.
+// hand. load.ps1 stays for loading a file of your own.
 package recognisers
 
 import (

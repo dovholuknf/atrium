@@ -1,5 +1,5 @@
-// ptyhost-spike is stage 0 of f-011, a THROWAWAY. It proves or disproves the pty host of
-// docs/rnd/rolling-restart-design.md section 3 and is not part of the product. It is not wired into the atrium
+// ptyhost-spike is stage 0 of f-011, a THROWAWAY. It proves or disproves the pty host
+// and is not part of the product. It is not wired into the atrium
 // binary, the supervisor or the cobra root, on purpose.
 //
 //	ptyhost-spike host   -name N [-cols C -rows R -ring BYTES] -- cmd args...   own ONE pty, serve the pipe

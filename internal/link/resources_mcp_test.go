@@ -15,21 +15,21 @@ import (
 
 func TestLinuxFromCapsShowsSSHHostsWithDockerAndWSLC(t *testing.T) {
 	rows := []hubstore.CapabilityRow{
-		{Room: "SG4", Cap: "ssh:zbox", State: "fail", Reason: "timeout"},
-		{Room: "SG4", Cap: "ssh:agentwsl", State: "pass", Reason: "ok"},
-		{Room: "SG4", Cap: "docker:agentwsl", State: "pass"},
-		{Room: "SG4", Cap: "wslc", State: "pass"},
-		{Room: "SG4", Cap: "docker", State: "fail", Reason: "docker not on PATH"},
-		{Room: "SG4", Cap: "go", State: "pass"},
+		{Room: "ROOM-E", Cap: "ssh:zbox", State: "fail", Reason: "timeout"},
+		{Room: "ROOM-E", Cap: "ssh:agentwsl", State: "pass", Reason: "ok"},
+		{Room: "ROOM-E", Cap: "docker:agentwsl", State: "pass"},
+		{Room: "ROOM-E", Cap: "wslc", State: "pass"},
+		{Room: "ROOM-E", Cap: "docker", State: "fail", Reason: "docker not on PATH"},
+		{Room: "ROOM-E", Cap: "go", State: "pass"},
 		{Room: "mac", Cap: "go", State: "pass"},
 	}
 	got := linuxFromCaps(rows)
 	if _, ok := got["mac"]; ok {
 		t.Fatalf("a room with no linux results has an entry: %+v", got["mac"])
 	}
-	l := got["sg4"]
+	l := got["room-e"]
 	if l == nil || len(l.SSH) != 2 {
-		t.Fatalf("sg4 linux wrong: %+v", l)
+		t.Fatalf("room-e linux wrong: %+v", l)
 	}
 	if l.SSH[0] != (resourceSSH{Host: "agentwsl", State: "pass", Docker: "pass"}) ||
 		l.SSH[1] != (resourceSSH{Host: "zbox", State: "fail: timeout"}) {
@@ -54,7 +54,7 @@ func TestResourcesPassesItsOutputSchema(t *testing.T) {
 	ctx := context.Background()
 	s := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
 	c := &controlMCP{rooms: func() []resourceRoom {
-		return []resourceRoom{{Name: "sg4", Online: true, OS: "windows", Arch: "amd64", Host: "h", Version: "v",
+		return []resourceRoom{{Name: "room-e", Online: true, OS: "windows", Arch: "amd64", Host: "h", Version: "v",
 			Seen: "2026-11-19T00:00:00Z", Tools: map[string]string{"go": "go.exe"},
 			Linux: &resourceLinux{SSH: []resourceSSH{{Host: "agentwsl", State: "pass", Docker: "pass"}}, WSLC: "pass",
 				Docker: "fail: no"}}}

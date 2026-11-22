@@ -25,7 +25,7 @@ import (
 // IT OPENS THE LINK. `POST /v1/open` makes the worktree, the review and the card
 // in one call, or answers the card the link already has, and this prints where
 // the card is. The same verb the board's paste and ctrl-alt-r call. See
-// internal/api/open.go and docs/rnd/card-lifecycle-design.md section 3.
+// internal/api/open.go.
 //
 // `--show` is the old print and starts nothing. Writing a recogniser is a loop
 // of paste, look, adjust the template, and a verb that opened a card every time

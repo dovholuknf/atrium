@@ -74,7 +74,7 @@ func TestAModelSwitchIsTypedAndRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, out := switchModel(t, d, target.ID, `{"model":"Opus","from":"sg4/orch"}`)
+	code, out := switchModel(t, d, target.ID, `{"model":"Opus","from":"room-e/orch"}`)
 	if code != http.StatusOK || out["typed"] != true || out["delivered"] != "terminal" {
 		t.Fatalf("answered %d %v, want typed", code, out)
 	}
@@ -88,9 +88,9 @@ func TestAModelSwitchIsTypedAndRecorded(t *testing.T) {
 		t.Fatalf("the card's model is %q, want opus, so a resume keeps it", got.Model)
 	}
 	evs := modelEvents(t, d, target.ID)
-	if len(evs) != 1 || evs[0]["asked_by"] != "sg4/orch" || evs[0]["from"] != "sonnet" ||
+	if len(evs) != 1 || evs[0]["asked_by"] != "room-e/orch" || evs[0]["from"] != "sonnet" ||
 		evs[0]["to"] != "opus" || evs[0]["state"] != "typed" {
-		t.Fatalf("events = %v, want one typed switch by sg4/orch", evs)
+		t.Fatalf("events = %v, want one typed switch by room-e/orch", evs)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestAModelSwitchWaitsForTheLineAndThenTypes(t *testing.T) {
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 
-	code, out := switchModel(t, d, target.ID, `{"model":"haiku","from":"sg4/orch"}`)
+	code, out := switchModel(t, d, target.ID, `{"model":"haiku","from":"room-e/orch"}`)
 	if code != http.StatusOK || out["typed"] != false || out["delivered"] != "waiting" || out["note"] == nil {
 		t.Fatalf("answered %d %v, want waiting with a note", code, out)
 	}

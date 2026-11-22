@@ -18,11 +18,11 @@ const (
 func wk(id string) hubstore.Work { return hubstore.Work{BacklogID: id, Title: id, Kind: "code"} }
 
 func stepCard(c, step string) hubstore.WorkCard {
-	return hubstore.WorkCard{BacklogID: "f-x", Room: "sg4", Card: c, Step: step}
+	return hubstore.WorkCard{BacklogID: "f-x", Room: "room-e", Card: c, Step: step}
 }
 
 func asg(id, c, state, note, at string) hubstore.Item {
-	return hubstore.Item{ID: id, Room: "sg4", Card: c, State: state, Note: note, CreatedAt: at, UpdatedAt: at}
+	return hubstore.Item{ID: id, Room: "room-e", Card: c, State: state, Note: note, CreatedAt: at, UpdatedAt: at}
 }
 
 func designFact(sha, ref string) hubstore.WorkFact {
@@ -170,7 +170,7 @@ func TestBuildDirectlyAndAdhocSkipDesignedAndApproved(t *testing.T) {
 				t.Errorf("%s: %s = %+v", name, s, st)
 			}
 		}
-		if b := derivedStep(l, "building"); b.State != hubstore.StepActive || b.Reason != "" || b.Cards != `["sg4/c1"]` {
+		if b := derivedStep(l, "building"); b.State != hubstore.StepActive || b.Reason != "" || b.Cards != `["room-e/c1"]` {
 			t.Errorf("%s: building = %+v", name, b)
 		}
 		if l.State != hubstore.ItemStateRunning || l.Current != hubstore.StepBuilding {

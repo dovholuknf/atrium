@@ -19,15 +19,15 @@ const data = {
   caps: [
     { id: "go", kind: "toolchain" }, { id: "gcc", kind: "toolchain" },
     { id: "ssh:cdwsl", kind: "reach", optional: true },
-    { id: "build:atrium", kind: "build", not_expected: ["m1mini"] },
+    { id: "build:atrium", kind: "build", not_expected: ["room-a"] },
     { id: "gh-auth", kind: "access" }
   ],
-  rooms: [{ name: "sg3", online: true }, { name: "m1mini", online: true, running: ["gh-auth"] }],
+  rooms: [{ name: "room-d", online: true }, { name: "room-a", online: true, running: ["gh-auth"] }],
   results: [
-    res("sg3", "go", "pass"), res("sg3", "gcc", "fail"), res("sg3", "ssh:cdwsl", "fail"), res("sg3", "build:atrium", "pass"),
-    res("sg3", "gh-auth", "pass"),
-    res("m1mini", "go", "pass"), res("m1mini", "gcc", "pass"), res("m1mini", "ssh:cdwsl", "fail"), res("m1mini", "build:atrium", "fail"),
-    res("m1mini", "gh-auth", "pass")
+    res("room-d", "go", "pass"), res("room-d", "gcc", "fail"), res("room-d", "ssh:cdwsl", "fail"), res("room-d", "build:atrium", "pass"),
+    res("room-d", "gh-auth", "pass"),
+    res("room-a", "go", "pass"), res("room-a", "gcc", "pass"), res("room-a", "ssh:cdwsl", "fail"), res("room-a", "build:atrium", "fail"),
+    res("room-a", "gh-auth", "pass")
   ]
 };
 const rows = capsCells(data);
@@ -55,9 +55,9 @@ if (!/m1try is already probing/.test(busy)) fail("a busy room was not named as a
 const down = capsRerunFailed(502, { unreached: { m1try: "{\"error\":\"boom\"}" } });
 if (down !== "Not re-run. m1try: boom") fail("a failed re-run did not show the room's reason: " + down);
 // A red cell says what to do: the capability's own fix, else one by its kind, naming the room.
-if (!/^Run gh auth login.*Re-run.$/.test(capsFix({ id: "gh-auth", kind: "access", fix: "Run gh auth login on the room's machine" }, "m1mini"))) fail("a fix from the list is not used");
-if (!/Install gcc on sg3/.test(capsFix({ id: "gcc", kind: "toolchain" }, "sg3"))) fail("a toolchain miss does not say to install it on its room");
-if (!/sg3 can reach cdwsl/.test(capsFix({ id: "ssh:cdwsl", kind: "reach" }, "sg3"))) fail("a reach miss does not name the host");
+if (!/^Run gh auth login.*Re-run.$/.test(capsFix({ id: "gh-auth", kind: "access", fix: "Run gh auth login on the room's machine" }, "room-a"))) fail("a fix from the list is not used");
+if (!/Install gcc on room-d/.test(capsFix({ id: "gcc", kind: "toolchain" }, "room-d"))) fail("a toolchain miss does not say to install it on its room");
+if (!/room-d can reach cdwsl/.test(capsFix({ id: "ssh:cdwsl", kind: "reach" }, "room-d"))) fail("a reach miss does not name the host");
 
 if (bad) process.exit(1);
 console.log("caps groups: all green collapses, anything else opens, and a click wins.");

@@ -7,7 +7,7 @@ import (
 )
 
 // WORK: THE ITEM IS THE UNIT OF WORK, one per backlog id, with every card that touches it attached. The `item` table
-// (item.go) is one card's run of it, an assignment. See docs/rnd/item-lifecycle-design.md, stage L1.
+// (item.go) is one card's run of it, an assignment.
 //
 //   - ONE WORK ROW PER BACKLOG ID. A second launch on the same id attaches another card to the same row and never makes
 //     a second one.

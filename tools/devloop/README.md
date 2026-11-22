@@ -40,7 +40,7 @@ retried. `--ssh` names the host when it differs from the room, `--remote-repo` t
 devloop shots --room sg3 'C:\tmp\shots'
 ```
 
-Copies the PNGs in a room's directory to `D:\tmp\shots\<room>\` (`--out` to change). The bytes travel as base64 over
+Copies the PNGs in a room's directory to `build.claude/shots/<room>/` (`--out` to change). The bytes travel as base64 over
 ssh, since scp fails against a PowerShell default shell. `--shell sh` for a room whose shell is not PowerShell.
 
 ## usage

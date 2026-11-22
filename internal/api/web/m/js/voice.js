@@ -27,12 +27,57 @@
     return "";
   }
 
+  const boopKind = () => { try { const v = localStorage.getItem("atrium.dictate.boop"); return v === "off" || v === "blip" ? v : "voice"; } catch (e) { return "voice"; } };
+
+  const boopVol = () => { try { const v = parseInt(localStorage.getItem("atrium.dictate.boopvol"), 10); return v >= 0 && v <= 200 ? v / 100 : 1; } catch (e) { return 1; } };
+
+  let clip = null, clipBytes = null;
+
+  const fetchBoop = () => { clipBytes = clipBytes || fetch("/m/boop.mp3").then(r => r.arrayBuffer()); return clipBytes; };
+
+  // The recorded boop is decoded once and played through the same context path as the blip.
+  function voiceBoop(ctx) {
+    clip = clip || fetchBoop().then(b => ctx.decodeAudioData(b.slice(0)));
+    return clip.then(buf => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const g = ctx.createGain();
+      g.gain.value = boopVol();
+      src.connect(g);
+      g.connect(ctx.destination);
+      src.onended = () => ctx.close();
+      src.start();
+    });
+  }
+
+  // Once the stream is live: off, a soft 80 ms sine blip, or the recorded voice boop.
+  function boop() {
+    const kind = boopKind();
+    if (kind === "off") return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      if (kind === "voice") { voiceBoop(ctx).catch(() => ctx.close()); return; }
+      const osc = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+      osc.frequency.value = 660;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.08 * boopVol(), t + 0.02);
+      g.gain.linearRampToValueAtTime(0, t + 0.08);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.onended = () => ctx.close();
+      osc.start(t);
+      osc.stop(t + 0.08);
+    } catch (e) {}
+  }
+
   async function start() {
     if (rec) return;
     const why = blocked();
     if (why) throw new Error(why);
     const r = { chunks: [], at: 0, stream: null, mr: null, gone: false };
     rec = r;
+    if (boopKind() === "voice") fetchBoop().catch(() => { clipBytes = null; });
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
@@ -48,6 +93,7 @@
     r.mr.ondataavailable = e => { if (e.data && e.data.size) r.chunks.push(e.data); };
     r.mr.start();
     r.at = Date.now();
+    boop();
   }
 
   function release(r) {
@@ -149,5 +195,5 @@
     return new Blob([out.buffer], { type: "audio/wav" });
   }
 
-  window.atriumVoice = { blocked, capturable, fromFile, timing, ready, start, stop, cancel, active: () => !!rec };
+  window.atriumVoice = { boop, blocked, capturable, fromFile, timing, ready, start, stop, cancel, active: () => !!rec };
 })();

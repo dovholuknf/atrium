@@ -55,7 +55,8 @@ function chatScopeNow() { return typeof roomNow === "function" ? roomNow() || ""
 // The frame's page cannot read this page's variables, so it is sent the card's palette too.
 let chatWornVars = [];
 function chatWearOf(t) {
-  const w = t && wearFor(t);
+  const tint = t && !themeSource(t) && typeof termInheritedTheme === "function" ? termInheritedTheme(t) : null;
+  const w = t && (wearFor(t) || (tint && wearOf(tint)));
   const vars = {};
   if (w) for (const kv of w.style.split(";")) { const i = kv.indexOf(":"); vars[kv.slice(0, i)] = kv.slice(i + 1); }
   return vars;

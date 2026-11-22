@@ -58,6 +58,26 @@ try {
   Check 'a task that never runs (no console logon) throws, so the start falls back, and is deleted' ($threw -and $sched[-1] -eq '/Delete atrium-live-control')
   Remove-Item Function:schtasks.exe, Function:Start-Sleep
 
+  $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Start-Wmi' }, $true) |
+    Select-Object -First 1
+  . ([scriptblock]::Create($def.Extent.Text))
+  $script:cim = [System.Collections.Generic.List[string]]::new(); $script:cimRefuseBreakaway = $false
+  function New-CimInstance { param($ClassName, [switch]$ClientOnly, $Property) [pscustomobject]$Property }
+  function Invoke-CimMethod {
+    param($ClassName, $MethodName, $Arguments)
+    $fl = $Arguments.ProcessStartupInformation.CreateFlags
+    $script:cim.Add("flags=$fl")
+    if ($fl -and $script:cimRefuseBreakaway) { return [pscustomobject]@{ ReturnValue = 21; ProcessId = 0 } }
+    [pscustomobject]@{ ReturnValue = 0; ProcessId = 777 }
+  }
+  $said.Clear()
+  $procId = Start-Wmi 'cmd.exe /c x'
+  Check 'a WMI start asks to break away from any job, in its own process group' ($procId -eq 777 -and $cim.Count -eq 1 -and $cim[0] -eq 'flags=16777728')
+  $cim.Clear(); $script:cimRefuseBreakaway = $true
+  $procId = Start-Wmi 'cmd.exe /c x'
+  Check 'a WMI that refuses breakaway is asked again without it, said as a WARNING' ($procId -eq 777 -and ($cim -join ',') -eq 'flags=16777728,flags=' -and ($said -join "`n") -match 'WARNING: WMI refused breakaway from the job \(21\)')
+  Remove-Item Function:New-CimInstance, Function:Invoke-CimMethod, Function:Start-Wmi
+
   $env:ATRIUM_HOSTS = 'a.example,b.example'
   $env:ATRIUM_PCT = '50%'
   $env:ATRIUM_QUOTE = 'has "quote"'
@@ -117,14 +137,16 @@ try {
   Set-Content (Join-Path $Base 'launch-preview-board.cmd') 'rem another tag'
   $prev = Start-Process cmd.exe -ArgumentList '/c', "`"$old`"" -PassThru -WindowStyle Hidden
   $deadline = (Get-Date).AddSeconds(30)
-  while (-not (Test-Path $ready) -and (Get-Date) -lt $deadline) { [Threading.Thread]::Sleep(50) }
+  while (-not (Test-Path $ready) -and -not $prev.HasExited -and (Get-Date) -lt $deadline) { [Threading.Thread]::Sleep(50) }
+  $cmdRefused = -not (Test-Path $ready) -and $prev.HasExited
   Reset $true $false $false $true
   $script:taskFails = $false
   $null = Start-Jobless "echo relaunched > `"$hit`"" 'control' $Base
   $first = Get-Launch 'control'
   New-Item $stop | Out-Null
   $exited = $prev.WaitForExit(30000)
-  Check 'the previous start''s cmd ran its room' (Test-Path $ready)
+  if ($cmdRefused) { Write-Host 'SKIP  the previous start''s cmd ran its room: this host refuses to run a .cmd from the temp folder' }
+  else { Check 'the previous start''s cmd ran its room' (Test-Path $ready) }
   Check 'the previous start''s cmd ends with its room and runs nothing the next start wrote' ($exited -and -not (Test-Path $hit))
   Check 'a start writes a launch script of its own name and removes the old one for its tag' ($first -and -not (Test-Path $old))
   Check 'another tag''s launch script is kept' (Test-Path (Join-Path $Base 'launch-preview-board.cmd'))

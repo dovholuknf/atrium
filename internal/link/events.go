@@ -184,6 +184,7 @@ func (f *feeds) addWith(room string, everywhere bool) *sub {
 	f.mu.Unlock()
 	if started != nil {
 		go f.reconcile(started)
+		go f.watchBoard(started)
 	} else {
 		select {
 		case f.wake <- struct{}{}:
@@ -625,6 +626,7 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 
 	// The growlers as they stand, first, so a fresh tab has them. See growl.go.
 	p.notifyService().OpenGrowls(s.ch)
+	p.openBoard(s.ch)
 	// A DESKTOP TAB'S STREAM IS WHAT KEEPS ITS PRESENCE TRUE. When this request
 	// ends, whether by a closed tab, a crash or a sleeping laptop, the tab is no
 	// longer visible. See presence in notify.go.

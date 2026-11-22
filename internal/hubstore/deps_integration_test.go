@@ -15,7 +15,7 @@ func item(id string) itemgate.Target { return itemgate.Target{Kind: itemgate.Kin
 
 func addGate(t *testing.T, s *Store, waiter string, on ...itemgate.Target) []itemgate.Gate {
 	t.Helper()
-	gs, err := s.AddGates(depRepo, waiter, on, "because", "runtime@sg4")
+	gs, err := s.AddGates(depRepo, waiter, on, "because", "runtime@room-e")
 	if err != nil {
 		t.Fatalf("add %s: %v", waiter, err)
 	}
@@ -29,7 +29,7 @@ func TestAddingAGateTwiceAnswersTheSameRow(t *testing.T) {
 	if len(a) != 1 || len(b) != 1 || a[0].ID != b[0].ID {
 		t.Fatalf("a %+v b %+v", a, b)
 	}
-	if a[0].AddedBy != "runtime@sg4" || a[0].Why != "because" || !a[0].Open() {
+	if a[0].AddedBy != "runtime@room-e" || a[0].Why != "because" || !a[0].Open() {
 		t.Fatalf("row = %+v", a[0])
 	}
 	// Met, the same gate can be added again as a new open row.
@@ -138,7 +138,7 @@ func TestALoopThroughLiveIsRefused(t *testing.T) {
 		t.Fatal("waiting live on itself should be refused")
 	}
 	// Free text and the other conditions are not edges.
-	addGate(t, s, "r-901", itemgate.Target{Kind: itemgate.KindCond, Target: "room:sg3"})
+	addGate(t, s, "r-901", itemgate.Target{Kind: itemgate.KindCond, Target: "room:room-d"})
 }
 
 func TestARenameMovesOpenGatesOnly(t *testing.T) {

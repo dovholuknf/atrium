@@ -49,8 +49,8 @@ func (p *Proxy) addPageHints(ctx context.Context, m *hubstore.DocDebtMeter) {
 	}
 }
 
-// GET /_hub/doc-debt: how far behind the docs are, from the open `docs` backlog items. See internal/hubstore/docdebtmeter.go
-// and docs/rnd/doc-debt-from-features.md section 2.5. Open like the backlog list it reads, and it names no path on the hub's
+// GET /_hub/doc-debt: how far behind the docs are, from the open `docs` backlog items. See internal/hubstore/docdebtmeter.go.
+// Open like the backlog list it reads, and it names no path on the hub's
 // disk, only the pages the items name. Without a backlog wired it answers 404. Nothing draws it yet.
 // Each counted item with a landed sha also says which of its pages changed since, see addPageHints.
 func (p *Proxy) serveDocDebt(w http.ResponseWriter, r *http.Request) {

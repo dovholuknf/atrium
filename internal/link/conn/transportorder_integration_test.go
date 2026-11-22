@@ -18,7 +18,6 @@ import (
 // A hub on two listeners, and a room with a ladder over both. The "direct" and
 // "ziti" here are plain TCP: what is under test is the order, the fallback, the
 // move back and what the hub says about it, not either transport.
-// See docs/rnd/room-transport-order.md.
 
 type switchable struct {
 	addr  string
@@ -77,7 +76,7 @@ func TestRoomFallsBackInOrderAndComesBack(t *testing.T) {
 	var mu sync.Mutex
 	var heard []Path
 	room := &Room{
-		Name: "m1mini", Dial: ladder,
+		Name: "room-a", Dial: ladder,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }),
 		T: Timings{Beat: 100 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond,
 			ProbeEvery: 50 * time.Millisecond},
@@ -89,8 +88,8 @@ func TestRoomFallsBackInOrderAndComesBack(t *testing.T) {
 	}
 	go func() { _ = room.Run(ctx) }()
 
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("m1mini") })
-	a, _ := attachedAs(hub, "m1mini")
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("room-a") })
+	a, _ := attachedAs(hub, "room-a")
 	if a.Via != "ziti" || !a.Fallback {
 		t.Fatalf("attached via %q fallback=%v, want ziti as a fallback", a.Via, a.Fallback)
 	}
@@ -106,7 +105,7 @@ func TestRoomFallsBackInOrderAndComesBack(t *testing.T) {
 	// Direct comes back. Two good probes later the room moves up on its own.
 	direct.down.Store(false)
 	waitFor(t, 10*time.Second, func() bool {
-		a, ok := attachedAs(hub, "m1mini")
+		a, ok := attachedAs(hub, "room-a")
 		return ok && a.Via == "direct" && !a.Fallback
 	})
 	if s := room.State(); s.Transport != "direct" || s.Fallback {
@@ -156,7 +155,7 @@ func TestARefusalDoesNotFallBack(t *testing.T) {
 	}
 }
 
-// claude-sg4 on 2026-10-14. The room joined at the address it reaches the hub on,
+// claude-room-e on 2026-10-14. The room joined at the address it reaches the hub on,
 // and the hub's welcome advertised one from a network the hub had left. Learning
 // that list must not move a single data dial off the address the control
 // connection reached, or the pool never fills while the room looks attached.
@@ -185,7 +184,7 @@ func TestDataFollowsTheControlWhenTheHubAdvertisesAnotherAddress(t *testing.T) {
 		}
 		return out
 	}
-	saved := Saved{Transport: "direct", Hub: ln.Addr().String(), Room: "claude-sg4"}
+	saved := Saved{Transport: "direct", Hub: ln.Addr().String(), Room: "claude-room-e"}
 	ladder := NewLadder(rungsFor(saved, RoomTransports{}))
 	// What learnHubPaths does: the hub's list written down and the ladder rebuilt.
 	// Before the fix the advertise replaced the joined address right here.
@@ -198,19 +197,19 @@ func TestDataFollowsTheControlWhenTheHubAdvertisesAnotherAddress(t *testing.T) {
 	// those are the ones that come through Dial on the ladder.
 	spy := &dataSpy{Ladder: ladder, want: ln.Addr().String()}
 	room := &Room{
-		Name: "claude-sg4", Dial: spy,
+		Name: "claude-room-e", Dial: spy,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }),
 		T:       Timings{Beat: 100 * time.Millisecond, Warm: 2, Backoff: 20 * time.Millisecond, DialWait: 200 * time.Millisecond},
 		OnPaths: learn,
 	}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("claude-sg4") })
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("claude-room-e") })
 
 	// The hub asks for more, as a board request does, after the room learnt.
 	dctx, dcancel := context.WithTimeout(ctx, 3*time.Second)
 	defer dcancel()
 	for i := 0; i < 3; i++ {
-		c, err := hub.Dial(dctx, "claude-sg4")
+		c, err := hub.Dial(dctx, "claude-room-e")
 		if err != nil {
 			t.Fatalf("data connection %d never arrived: %v (data dials went to the advertise %d times)",
 				i, err, spy.off.Load())
@@ -331,13 +330,13 @@ func TestRoomFollowsAChangedOrder(t *testing.T) {
 			}
 			ladder := NewLadder(rungs("ziti"))
 			room := &Room{
-				Name: "claude-sg4", Dial: ladder, Handler: http.NotFoundHandler(),
+				Name: "claude-room-e", Dial: ladder, Handler: http.NotFoundHandler(),
 				T: Timings{Beat: 100 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond,
 					DialWait: 200 * time.Millisecond, ProbeEvery: 50 * time.Millisecond},
 			}
 			go func() { _ = room.Run(ctx) }()
 			waitFor(t, 5*time.Second, func() bool {
-				a, ok := attachedAs(hub, "claude-sg4")
+				a, ok := attachedAs(hub, "claude-room-e")
 				return ok && a.Via == "ziti"
 			})
 
@@ -345,14 +344,14 @@ func TestRoomFollowsAChangedOrder(t *testing.T) {
 			ladder.Set(rungs("direct"))
 			if tc.topAnswer {
 				waitFor(t, 10*time.Second, func() bool {
-					a, ok := attachedAs(hub, "claude-sg4")
+					a, ok := attachedAs(hub, "claude-room-e")
 					return ok && a.Via == "direct" && !a.Fallback
 				})
 				return
 			}
 			// Probed, never answered: still on ziti.
 			waitFor(t, 5*time.Second, func() bool { return direct.n() >= 3 })
-			if a, ok := attachedAs(hub, "claude-sg4"); !ok || a.Via != "ziti" {
+			if a, ok := attachedAs(hub, "claude-room-e"); !ok || a.Via != "ziti" {
 				t.Fatalf("attached %+v ok=%v, want still on ziti", a, ok)
 			}
 		})

@@ -1,5 +1,5 @@
 // Package edge is the browser edge of every listener a browser can reach:
-// stage 0 of docs/rnd/security-design.md.
+// stage 0 of the security design.
 //
 // ── what it stops ───────────────────────────────────────
 //
@@ -240,7 +240,7 @@ func hostOf(s string) string {
 //
 // `<name>.localhost` counts. RFC 6761 makes every name under `localhost` loopback
 // and browsers resolve them so without asking DNS, which is how a hub's board
-// views are addressed. See docs/rnd/board-views-design.md.
+// views are addressed.
 func LoopbackHost(hostport string) bool {
 	host := hostOf(hostport)
 	if host == "localhost" || (strings.HasSuffix(host, ".localhost") && len(host) > len(".localhost")) {

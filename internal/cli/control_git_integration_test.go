@@ -162,7 +162,7 @@ func TestStdioGitURLPutsTheHubsURLsOnThisRoomsForwarder(t *testing.T) {
 	b := &gitBoard{answer: map[string]any{"state": "found", "repo": "github/o/r", "branch": "claude/x",
 		"branches": []map[string]any{{"name": "claude/x", "sources": []map[string]any{
 			{"source": "hub", "url": "http://hub/git/hub/github/o/r.git", "sha": strings.Repeat("a", 40)},
-			{"source": "room", "room": "sg4", "online": true, "url": "http://hub/git/room/sg4/github/o/r.git", "sha": strings.Repeat("b", 40)},
+			{"source": "room", "room": "room-e", "online": true, "url": "http://hub/git/room/room-e/github/o/r.git", "sha": strings.Repeat("b", 40)},
 		}}}}}
 	cs := gitSession(t, b)
 	out, msg := callTool(t, cs, "atrium_git_url", map[string]any{"repo": "o/r", "branch": "claude/x"})

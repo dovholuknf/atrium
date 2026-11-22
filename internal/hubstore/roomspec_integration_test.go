@@ -10,18 +10,18 @@ import (
 	"testing"
 )
 
-const goodSpec = "version: 1\nname: sg3\nos: windows\naccount: localai\nwork_root: V:/localai\ncaches: [npm, go]\n"
+const goodSpec = "version: 1\nname: room-d\nos: windows\naccount: localai\nwork_root: V:/localai\ncaches: [npm, go]\n"
 
 const goodLock = `{"version":1,"spec_hash":"abc","os":"windows","steps":[{"step":"work-root","status":"ok"}]}`
 
 // THE SPEC IS KEPT VERBATIM, WITH ITS HASH, and a second set replaces it.
 func TestRoomSpecIsStoredVerbatimWithItsHash(t *testing.T) {
 	s := open(t)
-	added(t, s, "sg3")
-	if _, err := s.RoomSpecOf("sg3"); !errors.Is(err, ErrNoRoomSpec) {
+	added(t, s, "room-d")
+	if _, err := s.RoomSpecOf("room-d"); !errors.Is(err, ErrNoRoomSpec) {
 		t.Fatalf("before any set: %v", err)
 	}
-	sp, err := s.SetRoomSpec("SG3", []byte(goodSpec), "clint")
+	sp, err := s.SetRoomSpec("ROOM-D", []byte(goodSpec), "operator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,15 +29,15 @@ func TestRoomSpecIsStoredVerbatimWithItsHash(t *testing.T) {
 	if sp.SHA256 != hex.EncodeToString(sum[:]) {
 		t.Fatalf("hash %s", sp.SHA256)
 	}
-	got, err := s.RoomSpecOf("sg3")
-	if err != nil || got.YAML != goodSpec || got.SetBy != "clint" || got.SetAt.IsZero() {
+	got, err := s.RoomSpecOf("room-d")
+	if err != nil || got.YAML != goodSpec || got.SetBy != "operator" || got.SetAt.IsZero() {
 		t.Fatalf("got %+v %v", got, err)
 	}
 	next := goodSpec + "# changed\n"
-	if _, err := s.SetRoomSpec("sg3", []byte(next), "clint"); err != nil {
+	if _, err := s.SetRoomSpec("room-d", []byte(next), "operator"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.RoomSpecOf("sg3"); got.YAML != next {
+	if got, _ := s.RoomSpecOf("room-d"); got.YAML != next {
 		t.Fatalf("not replaced: %q", got.YAML)
 	}
 }
@@ -45,23 +45,23 @@ func TestRoomSpecIsStoredVerbatimWithItsHash(t *testing.T) {
 // OBSERVED NEVER OVERWRITES DESIRED, and neither way round.
 func TestPostingALockNeverTouchesTheSpec(t *testing.T) {
 	s := open(t)
-	added(t, s, "sg3")
-	if _, err := s.RoomLockOf("sg3"); !errors.Is(err, ErrNoRoomLock) {
+	added(t, s, "room-d")
+	if _, err := s.RoomLockOf("room-d"); !errors.Is(err, ErrNoRoomLock) {
 		t.Fatalf("before any lock: %v", err)
 	}
-	if _, err := s.SetRoomSpec("sg3", []byte(goodSpec), "a"); err != nil {
+	if _, err := s.SetRoomSpec("room-d", []byte(goodSpec), "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.PutRoomLock("sg3", []byte(goodLock)); err != nil {
+	if _, err := s.PutRoomLock("room-d", []byte(goodLock)); err != nil {
 		t.Fatal(err)
 	}
-	if sp, _ := s.RoomSpecOf("sg3"); sp.YAML != goodSpec {
+	if sp, _ := s.RoomSpecOf("room-d"); sp.YAML != goodSpec {
 		t.Fatalf("the lock changed the spec: %q", sp.YAML)
 	}
-	if _, err := s.SetRoomSpec("sg3", []byte(goodSpec+"# x\n"), "a"); err != nil {
+	if _, err := s.SetRoomSpec("room-d", []byte(goodSpec+"# x\n"), "a"); err != nil {
 		t.Fatal(err)
 	}
-	lk, err := s.RoomLockOf("sg3")
+	lk, err := s.RoomLockOf("room-d")
 	if err != nil || string(lk.Lock) != goodLock || lk.ReceivedAt.IsZero() {
 		t.Fatalf("the spec changed the lock: %+v %v", lk, err)
 	}
@@ -70,37 +70,37 @@ func TestPostingALockNeverTouchesTheSpec(t *testing.T) {
 // WHAT THE HUB REFUSES: a wrong version, a wrong name, a credential, and a size over the bound.
 func TestRoomSpecRefusals(t *testing.T) {
 	s := open(t)
-	added(t, s, "sg3")
+	added(t, s, "room-d")
 	for name, spec := range map[string]string{
-		"version 2":  "version: 2\nname: sg3\n",
-		"no version": "name: sg3\n",
-		"other name": "version: 1\nname: sg4\n",
-		"not yaml":   "version: 1\nname: [sg3\n",
+		"version 2":  "version: 2\nname: room-d\n",
+		"no version": "name: room-d\n",
+		"other name": "version: 1\nname: room-e\n",
+		"not yaml":   "version: 1\nname: [room-d\n",
 		"empty":      "",
-		"token":      "version: 1\nname: sg3\ngithub_token: abc\n",
-		"nested":     "version: 1\nname: sg3\npacks:\n  - {runner: claude, Password: x}\n",
-		"secret":     "version: 1\nname: sg3\nsecret: x\n",
-		"key":        "version: 1\nname: sg3\nkey: x\n",
-		"too big":    "version: 1\nname: sg3\nnote: " + strings.Repeat("a", MaxRoomSpec) + "\n",
+		"token":      "version: 1\nname: room-d\ngithub_token: abc\n",
+		"nested":     "version: 1\nname: room-d\npacks:\n  - {runner: claude, Password: x}\n",
+		"secret":     "version: 1\nname: room-d\nsecret: x\n",
+		"key":        "version: 1\nname: room-d\nkey: x\n",
+		"too big":    "version: 1\nname: room-d\nnote: " + strings.Repeat("a", MaxRoomSpec) + "\n",
 	} {
-		_, err := s.SetRoomSpec("sg3", []byte(spec), "x")
+		_, err := s.SetRoomSpec("room-d", []byte(spec), "x")
 		if err == nil || !IsRefusal(err) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	if _, err := s.RoomSpecOf("sg3"); !errors.Is(err, ErrNoRoomSpec) {
+	if _, err := s.RoomSpecOf("room-d"); !errors.Is(err, ErrNoRoomSpec) {
 		t.Fatalf("a refused spec was stored: %v", err)
 	}
 	for name, lock := range map[string]string{
 		"version 2": `{"version":2}`, "not json": `nope`, "credential": `{"version":1,"auth_token":"x"}`,
 		"array": `[1]`,
 	} {
-		if _, err := s.PutRoomLock("sg3", []byte(lock)); err == nil {
+		if _, err := s.PutRoomLock("room-d", []byte(lock)); err == nil {
 			t.Errorf("lock %s accepted", name)
 		}
 	}
 	// A key that merely contains the letters is fine.
-	if _, err := s.SetRoomSpec("sg3", []byte("version: 1\nname: sg3\nkeyboard: us\n"), "x"); err != nil {
+	if _, err := s.SetRoomSpec("room-d", []byte("version: 1\nname: room-d\nkeyboard: us\n"), "x"); err != nil {
 		t.Fatalf("keyboard: %v", err)
 	}
 }
@@ -119,27 +119,27 @@ func TestRoomSpecUnknownRoomAndMigrationTwice(t *testing.T) {
 // THE KEY TRIPWIRE, as a table: names that must trip it, in nested lists and mixed case, and names that must not.
 func TestCredentialTripwire(t *testing.T) {
 	trips := []string{
-		"version: 1\nname: sg3\nGitHub_Token: x\n",
-		"version: 1\nname: sg3\npacks:\n  - runner: claude\n    extras:\n      - {PrivateKey: x}\n",
-		"version: 1\nname: sg3\nauth: x\n",
-		"version: 1\nname: sg3\nAuthorization: Bearer x\n",
-		"version: 1\nname: sg3\nbearer: x\n",
-		"version: 1\nname: sg3\nCookie: x\n",
-		"version: 1\nname: sg3\nsession: x\n",
-		"version: 1\nname: sg3\nssh_key: x\n",
-		"version: 1\nname: sg3\nlayout: {deep: [{ok: 1}, {DB-Password: x}]}\n",
+		"version: 1\nname: room-d\nGitHub_Token: x\n",
+		"version: 1\nname: room-d\npacks:\n  - runner: claude\n    extras:\n      - {PrivateKey: x}\n",
+		"version: 1\nname: room-d\nauth: x\n",
+		"version: 1\nname: room-d\nAuthorization: Bearer x\n",
+		"version: 1\nname: room-d\nbearer: x\n",
+		"version: 1\nname: room-d\nCookie: x\n",
+		"version: 1\nname: room-d\nsession: x\n",
+		"version: 1\nname: room-d\nssh_key: x\n",
+		"version: 1\nname: room-d\nlayout: {deep: [{ok: 1}, {DB-Password: x}]}\n",
 	}
 	for _, y := range trips {
-		if err := CheckRoomSpec("sg3", []byte(y)); err == nil || !strings.Contains(err.Error(), "credential") {
+		if err := CheckRoomSpec("room-d", []byte(y)); err == nil || !strings.Contains(err.Error(), "credential") {
 			t.Errorf("not tripped: %q (%v)", y, err)
 		}
 	}
 	passes := []string{
-		"version: 1\nname: sg3\nkeyboard: us\n",
-		"version: 1\nname: sg3\nauthors: [a]\npacks:\n  - {runner: claude, repo: o/r, from: claude}\n",
+		"version: 1\nname: room-d\nkeyboard: us\n",
+		"version: 1\nname: room-d\nauthors: [a]\npacks:\n  - {runner: claude, repo: o/r, from: claude}\n",
 	}
 	for _, y := range passes {
-		if err := CheckRoomSpec("sg3", []byte(y)); err != nil {
+		if err := CheckRoomSpec("room-d", []byte(y)); err != nil {
 			t.Errorf("tripped: %q (%v)", y, err)
 		}
 	}
@@ -148,8 +148,8 @@ func TestCredentialTripwire(t *testing.T) {
 // A lock post is written to the room's audit log like a spec set.
 func TestLockPostIsLogged(t *testing.T) {
 	s := open(t)
-	r := added(t, s, "sg3")
-	if _, err := s.PutRoomLock("sg3", []byte(goodLock)); err != nil {
+	r := added(t, s, "room-d")
+	if _, err := s.PutRoomLock("room-d", []byte(goodLock)); err != nil {
 		t.Fatal(err)
 	}
 	var n int

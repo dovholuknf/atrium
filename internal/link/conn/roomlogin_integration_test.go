@@ -36,13 +36,13 @@ func TestARoomsLoginNeededRidesTheBeatAndRingsOnce(t *testing.T) {
 
 	var reason atomic.Value
 	reason.Store("")
-	room := &Room{Name: "m1mini", Dial: plain{addr: ln.Addr().String()}, Handler: http.NotFoundHandler(),
+	room := &Room{Name: "room-a", Dial: plain{addr: ln.Addr().String()}, Handler: http.NotFoundHandler(),
 		T:     Timings{Beat: 50 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 		Login: func() string { return reason.Load().(string) }}
 	go func() { _ = room.Run(ctx) }()
 	attachedLogin := func() string {
 		for _, a := range hub.Rooms() {
-			if a.Name == "m1mini" {
+			if a.Name == "room-a" {
 				return a.LoginNeeded
 			}
 		}
@@ -57,7 +57,7 @@ func TestARoomsLoginNeededRidesTheBeatAndRingsOnce(t *testing.T) {
 		t.Fatalf("rang %d times for one spell, wanted 1", n)
 	}
 	mu.Lock()
-	if len(heard) != 1 || heard[0] != "m1mini:claude needs a login" {
+	if len(heard) != 1 || heard[0] != "room-a:claude needs a login" {
 		t.Fatalf("heard %v", heard)
 	}
 	mu.Unlock()

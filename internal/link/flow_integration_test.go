@@ -17,7 +17,7 @@ func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
 	if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-x", "dept": "fabric", "title": "do x"}), loopAddr); code != http.StatusCreated {
 		t.Fatalf("file: %d %s", code, body)
 	}
-	code, body := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "orchestrator", "room": "sg4", "card": "c1", "by": "clint"}), loopAddr)
+	code, body := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "orchestrator", "room": "room-e", "card": "c1", "by": "operator"}), loopAddr)
 	if code != 200 || !strings.Contains(body, `"c1"`) {
 		t.Fatalf("role set: %d %s", code, body)
 	}
@@ -42,7 +42,7 @@ func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
 	if code, body = x.send("GET", "/_hub/flow/checks?sha=abc1234", "", loopAddr); code != 200 || !strings.Contains(body, "sanity") {
 		t.Fatalf("checks: %d %s", code, body)
 	}
-	if code, body = x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "sg4", "sha": "abc1234"}), loopAddr); code != 200 {
+	if code, body = x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "room-e", "sha": "abc1234"}), loopAddr); code != 200 {
 		t.Fatalf("deploy: %d %s", code, body)
 	}
 	if code, body = x.send("GET", "/_hub/flow/deploys", "", loopAddr); code != 200 || !strings.Contains(body, "abc1234") {
@@ -52,7 +52,7 @@ func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
 
 func TestFlowIsWrittenOnlyFromTheHubsMachine(t *testing.T) {
 	x := newBacklogRig(t)
-	code, _ := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "orchestrator", "room": "sg4", "card": "c1"}), "203.0.113.9:4000")
+	code, _ := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "orchestrator", "room": "room-e", "card": "c1"}), "203.0.113.9:4000")
 	if code != http.StatusForbidden {
 		t.Fatalf("got %d", code)
 	}
@@ -119,10 +119,10 @@ func TestFlowStageIsReadFromGitChecksAndDeploys(t *testing.T) {
 		t.Fatalf("tested: %s", s)
 	}
 	// Two rooms report deploys: one runs it, one does not. Deployed waits for both.
-	x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "sg4", "sha": "def5678"}), loopAddr)
-	x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "sg3", "sha": "0000000"}), loopAddr)
+	x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "room-e", "sha": "def5678"}), loopAddr)
+	x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "room-d", "sha": "0000000"}), loopAddr)
 	s, o := stage()
-	if s != "tested" || !strings.Contains(js(o["behind_rooms"]), "sg3") || !strings.Contains(js(o["deployed_on"]), "sg4") {
+	if s != "tested" || !strings.Contains(js(o["behind_rooms"]), "room-d") || !strings.Contains(js(o["deployed_on"]), "room-e") {
 		t.Fatalf("one room behind: %s %v", s, o)
 	}
 	g.covered["0000000"] = true
@@ -143,7 +143,7 @@ func TestFlowStageIsReadFromGitChecksAndDeploys(t *testing.T) {
 func TestFlowEpochOpensAndClosesThroughTheGitPlan(t *testing.T) {
 	x := newBacklogRig(t)
 	x.p.SetFlowGit(&fakeFlowGit{covered: map[string]bool{}})
-	code, body := x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "open", "by": "clint"}), loopAddr)
+	code, body := x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "open", "by": "operator"}), loopAddr)
 	if code != 200 || str(obj(t, body), "fetched_sha") != "aaaaaaa" {
 		t.Fatalf("open takes claude/main's tip: %d %s", code, body)
 	}

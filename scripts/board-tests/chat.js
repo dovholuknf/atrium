@@ -1,12 +1,12 @@
 // chat: the chat tab and the chatter tab.
 //
-// Units: chatter, chatterTab, chatTab, chatBridge, chatPaste, chatKeep, chatCap, chatFast, chatReview.
+// Units: chatColours, chatter, chatterTab, chatTab, chatBridge, chatDarkCard, chatPaste, chatKeep, chatCap, chatFast, chatReview.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/chat.js` runs just these units, the way the full run would.
 const path = require("path");
 const fs = require("fs");
 const { slow, until, frames, settleStyle } = require("../lib/browser.js");
-const { mock, landCard } = require("../lib/mock.js");
+const { mock, landCard, WEB_ROOT } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { landContext } = require("../lib/helpers.js");
 
@@ -504,6 +504,39 @@ async function chatBridgeSection(browser, base) {
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
+async function chatDarkCardSection(browser, base) {
+  const was = mock.tasksMode, skin = mock.skinFor[""];
+  mock.tasksMode = "land";
+  mock.skinFor[""] = "linen";
+  const tag = "chatDarkCard: ";
+  const { ctx, p, errors } = await chatOpen(browser, base, {});
+  try {
+    mock.LAND["chat-a"].theme = "matrix";
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    const fr = await (await p.$('#chat-frame-host iframe[data-card="chat-a"]')).contentFrame();
+    await fr.waitForSelector("#m-compose .mc", { timeout: slow(10000) });
+    await settleStyle(p);
+    const lum = await fr.evaluate(() => {
+      const mc = document.querySelector("#m-compose .mc");
+      const c = (getComputedStyle(mc).backgroundImage.match(/rgba?\([^)]*\)/) || [""])[0].match(/[\d.]+/g) || [];
+      return { worn: document.body.classList.contains("worn"), l: c.length ? (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 : -1 };
+    });
+    if (!lum.worn) fail(tag + "the frame is not wearing the card colour");
+    else if (lum.l < 0 || lum.l > 0.5) fail(tag + "the composer fade is light under a dark card on a light skin: " + JSON.stringify(lum));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.skinFor[""] = skin;
+    delete mock.LAND["chat-a"].theme;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
 async function chatPasteSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -768,19 +801,35 @@ async function chatReviewSection(browser, base) {
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
+// Every card colour on every skin, the chat view drawn from the real stylesheets: each text against what it sits on, AA or fail.
+async function chatColoursSection(browser, base) {
+  const { chatColours } = require("../lib/chat-colours.js");
+  const { bad, total } = await chatColours(browser, base, WEB_ROOT);
+  if (bad.length) {
+    const by = {};
+    for (const x of bad) (by[x.name] = by[x.name] || []).push(x);
+    fail("chatColours: " + bad.length + " of " + total + " text pairs are under AA: " + Object.entries(by).map(([k, v]) => {
+      const w = v.reduce((a, x) => x.ratio < a.ratio ? x : a);
+      return k + " x" + v.length + " (" + w.ratio + " on " + w.card + " / " + w.skin + ")";
+    }).join(", "));
+  }
+}
+
 const units = [
+  { name: "chatColours", run: ({ browser, base }) => chatColoursSection(browser, base) },
   { name: "chatReview", run: ({ browser, base }) => chatReviewSection(browser, base) },
   ...(process.env.CHAT_MEASURE ? [{ name: "chatMeasure", run: ({ browser, base }) => chatMeasureSection(browser, base) }] : []),
   { name: "chatKeep", run: ({ browser, base }) => chatKeepSection(browser, base) },
   { name: "chatCap", run: ({ browser, base }) => chatCapSection(browser, base) },
   { name: "chatFast", run: ({ browser, base }) => chatFastSection(browser, base) },
   { name: "chatBridge", run: ({ browser, base }) => chatBridgeSection(browser, base) },
+  { name: "chatDarkCard", run: ({ browser, base }) => chatDarkCardSection(browser, base) },
   { name: "chatPaste", run: ({ browser, base }) => chatPasteSection(browser, base) },
   { name: "chatter", run: ({ browser, base }) => chatterSection(browser, base) },
   { name: "chatterTab", run: ({ browser, base }) => chatterTabSection(browser, base) },
   { name: "chatTab", run: ({ browser, base }) => chatTabSection(browser, base) },
 ];
-const sections = { chatReview: chatReviewSection, ...(process.env.CHAT_MEASURE ? { chatMeasure: chatMeasureSection } : {}), chatKeep: chatKeepSection, chatCap: chatCapSection, chatFast: chatFastSection, chatBridge: chatBridgeSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
+const sections = { chatColours: chatColoursSection, chatReview: chatReviewSection, ...(process.env.CHAT_MEASURE ? { chatMeasure: chatMeasureSection } : {}), chatKeep: chatKeepSection, chatCap: chatCapSection, chatFast: chatFastSection, chatBridge: chatBridgeSection, chatDarkCard: chatDarkCardSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

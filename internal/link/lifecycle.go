@@ -11,7 +11,7 @@ import (
 // THE STEP ENGINE, THE PURE PART (item lifecycle L2). Derive reads everything an item has and answers its eight steps and
 // the item's own state. It reads no clock, no git and no store, so a bug in it is fixed by running it again, and a test
 // feeds it a table. What it needs from git is already a DocView when it is called. See lifecycle_engine.go for the part
-// that gathers it, and docs/rnd/item-lifecycle-design.md sections 2.4, 3 and 4.1.
+// that gathers it.
 //
 // WHAT THIS STAGE SEES: designed, approved and building. The other five stay pending until their stages land (L3 to L5),
 // and the item is `finished` once everything this stage can see is done.

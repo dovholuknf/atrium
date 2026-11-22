@@ -41,7 +41,7 @@ func TestTurningZitiOffKeepsTheLinkOnDirectAndOnResumes(t *testing.T) {
 	var mu sync.Mutex
 	var saved []string
 	room := &Room{
-		Name: "m1mini", Dial: ladder,
+		Name: "room-a", Dial: ladder,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }),
 		T: Timings{Beat: 100 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond,
 			ProbeEvery: 50 * time.Millisecond, PathsEvery: 50 * time.Millisecond},
@@ -54,7 +54,7 @@ func TestTurningZitiOffKeepsTheLinkOnDirectAndOnResumes(t *testing.T) {
 	}
 	go func() { _ = room.Run(ctx) }()
 
-	waitFor(t, 5*time.Second, func() bool { a, ok := attachedAs(hub, "m1mini"); return ok && a.Via == "ziti" })
+	waitFor(t, 5*time.Second, func() bool { a, ok := attachedAs(hub, "room-a"); return ok && a.Via == "ziti" })
 	waitFor(t, 5*time.Second, func() bool {
 		for _, p := range room.pathsNow() {
 			if p.Kind == "direct" && p.State == PathUp {
@@ -67,7 +67,7 @@ func TestTurningZitiOffKeepsTheLinkOnDirectAndOnResumes(t *testing.T) {
 	if err := room.SetTransport(ctx, "ziti", false); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 5*time.Second, func() bool { a, ok := attachedAs(hub, "m1mini"); return ok && a.Via == "direct" })
+	waitFor(t, 5*time.Second, func() bool { a, ok := attachedAs(hub, "room-a"); return ok && a.Via == "direct" })
 	mu.Lock()
 	if len(saved) != 1 || saved[0] != "ziti" {
 		t.Fatalf("the choice written down is %v, want [ziti]", saved)
@@ -80,7 +80,7 @@ func TestTurningZitiOffKeepsTheLinkOnDirectAndOnResumes(t *testing.T) {
 	if got := ziti.n(); got != n {
 		t.Fatalf("ziti was dialled %d more times while turned off", got-n)
 	}
-	if a, ok := attachedAs(hub, "m1mini"); !ok || a.Via != "direct" {
+	if a, ok := attachedAs(hub, "room-a"); !ok || a.Via != "direct" {
 		t.Fatalf("the link did not stay on direct: %+v", a)
 	}
 	var state string
@@ -100,7 +100,7 @@ func TestTurningZitiOffKeepsTheLinkOnDirectAndOnResumes(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("turning on answered %d: %s", rec.Code, rec.Body)
 	}
-	waitFor(t, 10*time.Second, func() bool { a, ok := attachedAs(hub, "m1mini"); return ok && a.Via == "ziti" })
+	waitFor(t, 10*time.Second, func() bool { a, ok := attachedAs(hub, "room-a"); return ok && a.Via == "ziti" })
 	mu.Lock()
 	if len(saved) != 0 {
 		t.Fatalf("still written down as off: %v", saved)
@@ -131,10 +131,10 @@ func TestTheLastWorkingPathIsNotTurnedOff(t *testing.T) {
 		{Path: Path{Transport: "ziti", Service: "atrium-hub"}, Dial: ziti},
 		{Path: Path{Transport: "direct", Addr: lnD.Addr().String()}, Dial: direct},
 	})
-	room := &Room{Name: "sg3", Dial: ladder, Handler: http.NotFoundHandler(),
+	room := &Room{Name: "room-d", Dial: ladder, Handler: http.NotFoundHandler(),
 		T: Timings{Beat: 100 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond, DialWait: time.Second}}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { _, ok := attachedAs(hub, "sg3"); return ok })
+	waitFor(t, 5*time.Second, func() bool { _, ok := attachedAs(hub, "room-d"); return ok })
 
 	err = room.SetTransport(ctx, "ziti", false)
 	if err == nil || !strings.Contains(err.Error(), "last working path to the hub") {
@@ -143,7 +143,7 @@ func TestTheLastWorkingPathIsNotTurnedOff(t *testing.T) {
 	if ladder.IsOff("ziti") {
 		t.Fatal("it was turned off anyway")
 	}
-	if a, ok := attachedAs(hub, "sg3"); !ok || a.Via != "ziti" {
+	if a, ok := attachedAs(hub, "room-d"); !ok || a.Via != "ziti" {
 		t.Fatalf("the link moved: %+v", a)
 	}
 }

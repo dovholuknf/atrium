@@ -445,7 +445,7 @@ async function launchLinkSection(browser, base) {
       const got = { walks: [], tabs: [] };
       window.walkDirOpen = d => got.walks.push(d);
       window.openLinkReused = u => got.tabs.push(u);
-      termTask = { id: "sgg~c1" };
+      termTask = { id: "room-g~c1" };
       openTermURL({ preventDefault() {} }, "http://127.0.0.1:1/#card=c1&walk=/w/x");
       openTermURL({ preventDefault() {} }, "http://127.0.0.1:1/#card=c2&walk=/w/y");
       termTask = null;

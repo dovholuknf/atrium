@@ -95,6 +95,39 @@ func TestAnUploadLandsUnderTheCardsDirectory(t *testing.T) {
 	}
 }
 
+func TestAnUploadForABusySessionAnswersAtOnce(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = st.AppendEvent(task.ID, store.EventNotified, map[string]any{"by": "busy"})
+				time.Sleep(time.Millisecond) // wait: paces the busy-session event writer, no condition to wait on
+			}
+		}
+	}()
+	defer func() { close(stop); <-done }()
+
+	start := time.Now()
+	w := httptest.NewRecorder()
+	s.uploadFiles(w, uploadReq(t, task.ID, []string{"pasted.png", "pasted.png", "pasted.png"}, bytes.Repeat([]byte("x"), 1<<20)))
+	took := time.Since(start)
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload answered %d: %s", w.Code, w.Body.String())
+	}
+	if took > 5*time.Second {
+		t.Fatalf("three 1MB pasted images took %s to land with the session busy", took)
+	}
+}
+
 // The destination is computed, so a caller trying to name one has nothing to
 // name it with. This is the whole security argument for the first version, and
 // it is worth a test that says so.
@@ -475,5 +508,47 @@ func TestDownloadingOutsideTheWorktreeSendsTheResolvedPath(t *testing.T) {
 	}
 	if got, err := url.PathUnescape(w.Header().Get(RealPathHeader)); err != nil || got != target {
 		t.Errorf("resolved to %q (%v), want %q", got, err, target)
+	}
+}
+
+func TestAnUploadSaysWhereItsTimeWent(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+
+	r := uploadReq(t, task.ID, []string{"pasted.png"}, []byte("bytes"))
+	r.Header.Set("X-Atrium-Upload", "abc123")
+	w := httptest.NewRecorder()
+	s.uploadFiles(w, r)
+	got := w.Header().Get("Server-Timing")
+	for _, step := range []string{"room-read", "room-write", "room-event"} {
+		if !strings.Contains(got, step) {
+			t.Fatalf("Server-Timing %q has no %s", got, step)
+		}
+	}
+}
+
+func TestAnUploadSentAgainWithTheSameIdSavesOnce(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+
+	var bodies []string
+	for range 2 {
+		r := uploadReq(t, task.ID, []string{"pasted.png"}, []byte("bytes"))
+		r.Header.Set("X-Atrium-Upload", "retry-1")
+		w := httptest.NewRecorder()
+		s.uploadFiles(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("upload answered %d: %s", w.Code, w.Body.String())
+		}
+		bodies = append(bodies, w.Body.String())
+	}
+	if bodies[0] != bodies[1] {
+		t.Fatalf("the repeat answered %s, the first %s", bodies[1], bodies[0])
+	}
+	entries, err := os.ReadDir(filepath.Join(work, ".atrium", "incoming"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("%d files landed for one upload id: %v", len(entries), err)
 	}
 }

@@ -30,7 +30,7 @@ import (
 )
 
 // A CARD'S OWN ZITI OVERLAY: a throwaway network the card owns for a test, never the operator's network and never
-// the board's share. Design: docs/rnd/card-lifecycle-design.md section 10, Interview Q8 and Q9. Item f-card-overlay.
+// the board's share. Q8 and Q9. Item f-card-overlay.
 //
 //	POST /v1/tasks/{id}/overlay {action: up, name}                          a quickstart on two of the card's ports
 //	POST /v1/tasks/{id}/overlay {action: identity, overlay, name, roles}    an identity, created and enrolled
@@ -42,7 +42,7 @@ import (
 // quickstart and each tunneler as a proc, each identity. Closing the card stops the tunnelers, then the quickstart
 // (procs stop newest first), then deletes the folder. The sweep frees a row whose folder or file is gone.
 //
-// THE ROOM NEVER ELEVATES. A tunneler in tun mode needs admin or root, so it is refused with the command to ask clint
+// THE ROOM NEVER ELEVATES. A tunneler in tun mode needs admin or root, so it is refused with the command to ask the operator
 // to run in an elevated shell (Q9). Host and proxy mode need nothing.
 //
 // The admin password is made here and written to the overlay's folder, never to the inventory. Identities are made
@@ -469,7 +469,7 @@ func mgmt(ctx context.Context, c *http.Client, token, method, u string, body, ou
 	return json.Unmarshal(raw, out)
 }
 
-// elevatedTunnel is the command to ask clint to run for a tunneler in tun mode, which needs admin or root.
+// elevatedTunnel is the command to ask the operator to run for a tunneler in tun mode, which needs admin or root.
 func elevatedTunnel(file string) string {
 	if runtime.GOOS == "windows" {
 		return `ziti-edge-tunnel run -i "` + filepath.FromSlash(file) + `"   (in an Administrator shell)`
@@ -500,7 +500,7 @@ func (s *Server) overlayTunnel(w http.ResponseWriter, t *store.Task, in overlayR
 	}
 	if mode == "tun" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "needs_elevation", "command": elevatedTunnel(file),
-			"error": "a tunneler in tun mode needs admin or root, and atrium never elevates. stop and ask clint to run " +
+			"error": "a tunneler in tun mode needs admin or root, and atrium never elevates. stop and ask the operator to run " +
 				"the command below in an elevated shell on this machine, saying what it is for, and the command that " +
 				"stops it. or use host or proxy mode, which need neither"})
 		return

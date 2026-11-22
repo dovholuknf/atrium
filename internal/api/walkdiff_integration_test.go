@@ -123,7 +123,7 @@ func TestWalkDiffCarriesUncommittedChanges(t *testing.T) {
 	}
 }
 
-// A CARD WHOSE BRANCH IS ALREADY IN ITS BASE AND WHOSE WORK IS ONLY NEW FILES still has a walk: docprev on claude-sg4.
+// A CARD WHOSE BRANCH IS ALREADY IN ITS BASE AND WHOSE WORK IS ONLY NEW FILES still has a walk: docprev on claude-room-e.
 func TestWalkDiffCarriesUntrackedFiles(t *testing.T) {
 	t.Parallel()
 	s, st, work := fileServer(t)
@@ -328,7 +328,7 @@ func TestWalkDiffPrefersClaudeMainOverANearerMain(t *testing.T) {
 }
 
 // A CARD ON CLAUDE/MAIN ITSELF HAS NO BRANCH FILES, so its button counts the unstaged and staged: the orch card on
-// sg4-control showed "walk branch: 396 files" for one dirty package.json.
+// room-e-control showed "walk branch: 396 files" for one dirty package.json.
 func TestWalkDiffOnClaudeMainItselfHasNoBranchFiles(t *testing.T) {
 	t.Parallel()
 	s, st, work := fileServer(t)

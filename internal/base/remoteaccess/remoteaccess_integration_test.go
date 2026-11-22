@@ -22,14 +22,14 @@ func TestMissingFileIsOff(t *testing.T) {
 
 func TestSaveLoadAndAllows(t *testing.T) {
 	dir := t.TempDir()
-	if err := Save(dir, State{On: true, Port: 2222, From: []string{"hub", "M1Mini"}, SetBy: "claude@sg3"}); err != nil {
+	if err := Save(dir, State{On: true, Port: 2222, From: []string{"hub", "Room-a"}, SetBy: "claude@room-d"}); err != nil {
 		t.Fatal(err)
 	}
 	s, err := Load(dir)
-	if err != nil || !s.On || s.Port != 2222 || s.SetAt == "" || s.SetBy != "claude@sg3" {
+	if err != nil || !s.On || s.Port != 2222 || s.SetAt == "" || s.SetBy != "claude@room-d" {
 		t.Fatalf("round trip: %+v %v", s, err)
 	}
-	for who, want := range map[string]bool{"hub": true, "m1mini": true, "sg4": false, "": false} {
+	for who, want := range map[string]bool{"hub": true, "room-a": true, "room-e": false, "": false} {
 		if got := s.Allows(who); got != want {
 			t.Errorf("Allows(%q) = %v, want %v", who, got, want)
 		}
@@ -79,7 +79,7 @@ func TestBrokenFileIsOffWithTheReason(t *testing.T) {
 }
 
 func TestParseFrom(t *testing.T) {
-	if got, err := ParseFrom("hub, m1mini"); err != nil || len(got) != 2 || got[1] != "m1mini" {
+	if got, err := ParseFrom("hub, room-a"); err != nil || len(got) != 2 || got[1] != "room-a" {
 		t.Fatalf("%v %v", got, err)
 	}
 	if got, err := ParseFrom("*"); err != nil || got[0] != "*" {
@@ -123,7 +123,7 @@ func TestAddrDefaultsRoundTripsAndIsValidated(t *testing.T) {
 	if err != nil || s.Host() != "127.0.0.1" || s.Addr != "" {
 		t.Fatalf("a file with no addr dials 127.0.0.1: %+v %v", s, err)
 	}
-	for _, a := range []string{"192.168.1.147", "::1", "sg3.lan", "fe80::1"} {
+	for _, a := range []string{"192.168.1.147", "::1", "room-d.lan", "fe80::1"} {
 		if err := Save(dir, State{On: true, Addr: a, From: []string{"hub"}}); err != nil {
 			t.Fatal(err)
 		}

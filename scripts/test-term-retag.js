@@ -93,9 +93,9 @@ const harness = new Function(`
 const sup = (id) => ({ id, supervised: true });
 
 // ── 2 -> 1: the attached tagged card is re-resolved to bare, not torn down ───
-harness.setTask({ id: "claude-sg4~01a0", supervised: true });
-harness.store["atrium.term"] = "claude-sg4~01a0";
-harness.setKindFor("claude-sg4~01a0");
+harness.setTask({ id: "claude-room-e~01a0", supervised: true });
+harness.store["atrium.term"] = "claude-room-e~01a0";
+harness.setKindFor("claude-room-e~01a0");
 
 // The single room now serves the card bare. This is the poll that used to loop.
 let tore = harness.reconcile([sup("01a0"), sup("02b1")]);
@@ -142,12 +142,12 @@ if (harness.resynced() !== 1) {
 // ── 1 -> 2: the bare attached card is re-resolved to tagged, both directions ──
 harness.setTask({ id: "01a0", supervised: true });
 harness.store["atrium.term"] = "01a0";
-tore = harness.reconcile([sup("claude-sg4~01a0"), sup("claude-sgg~02b1")]);
+tore = harness.reconcile([sup("claude-room-e~01a0"), sup("claude-room-g~02b1")]);
 if (tore) {
   fail("a second room joining tore the attached pane down. The flip loops both " +
     "ways, so the bare->tagged direction must re-resolve too.");
 }
-if (harness.getTask().id !== "claude-sg4~01a0") {
+if (harness.getTask().id !== "claude-room-e~01a0") {
   fail("the attached card was not re-resolved to the tagged id after a room " +
     "joined. termTask.id is " + JSON.stringify(harness.getTask().id) + ".");
 }
@@ -177,8 +177,8 @@ if (harness.resynced() !== 2) {
 // The cached list drops `supervised` a beat before the single-card poll does.
 // Tearing the pane down on that lag is the OTHER way this loop was spun, and the
 // in-flight guard must survive the bare-id change.
-harness.setTask({ id: "claude-sg4~03c2", supervised: true });
-harness.setInFlight("claude-sg4~03c2");
+harness.setTask({ id: "claude-room-e~03c2", supervised: true });
+harness.setInFlight("claude-room-e~03c2");
 // The list lags: the card is present bare but not yet supervised. Even so, an
 // in-flight attach must hold the pane.
 tore = harness.reconcile([{ id: "03c2", supervised: false }]);

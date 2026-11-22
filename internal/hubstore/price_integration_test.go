@@ -61,9 +61,9 @@ func TestEveryPriceRowIsPinned(t *testing.T) {
 // A replay of rows adds nothing, and a delivery whose counts grew is updated once.
 func TestWorkUsageIsKeptOnceAndADeliveryThatGrewIsUpdated(t *testing.T) {
 	s := open(t)
-	u := WorkUsageRow{Room: "SG4", UsageID: "u1", BacklogID: "f-x", Card: "c1", Model: "m", StartedAt: "2026-10-15T10:00:00Z",
+	u := WorkUsageRow{Room: "ROOM-E", UsageID: "u1", BacklogID: "f-x", Card: "c1", Model: "m", StartedAt: "2026-10-15T10:00:00Z",
 		EndedAt: "2026-10-15T10:01:00Z", Tokens: tokenprice.Tokens{Input: 5}}
-	d := WorkUsageRow{Room: "sg4", UsageID: "d:1", BacklogID: "f-x", Card: "c1", Class: ClassCoord, Source: "delivery", Model: "m",
+	d := WorkUsageRow{Room: "room-e", UsageID: "d:1", BacklogID: "f-x", Card: "c1", Class: ClassCoord, Source: "delivery", Model: "m",
 		StartedAt: "2026-10-15T10:00:00Z", EndedAt: "2026-10-15T10:00:00Z", Tokens: tokenprice.Tokens{Input: 3}}
 	if n, err := s.AddWorkUsage([]WorkUsageRow{u, d}); err != nil || n != 2 {
 		t.Fatalf("first: %d %v", n, err)
@@ -80,7 +80,7 @@ func TestWorkUsageIsKeptOnceAndADeliveryThatGrewIsUpdated(t *testing.T) {
 		t.Fatalf("%d rows", len(rows))
 	}
 	for _, r := range rows {
-		if r.UsageID == "u1" && (r.Input != 5 || r.Room != "sg4") {
+		if r.UsageID == "u1" && (r.Input != 5 || r.Room != "room-e") {
 			t.Fatalf("a usage row changed: %+v", r)
 		}
 		if r.UsageID == "d:1" && r.Input != 4 {

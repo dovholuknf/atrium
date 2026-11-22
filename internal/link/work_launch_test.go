@@ -107,7 +107,7 @@ func TestABareItemIdTagBecomesTheWorkTag(t *testing.T) {
 func TestAnItemWithAResultIsRefusedUnlessTheLaunchSaysRerun(t *testing.T) {
 	call := func(_ context.Context, _, _ string, _, out any) error {
 		*out.(*hubstore.BacklogItem) = hubstore.BacklogItem{ID: "f-thing", Result: "done abc1234: it works",
-			ResultCard: "sg4~c1", ResultAt: "2026-11-14T19:00:00Z"}
+			ResultCard: "room-e~c1", ResultAt: "2026-11-14T19:00:00Z"}
 		return nil
 	}
 	_, _, err := ResolveItem(context.Background(), call, "f-thing", "", "me", "r")

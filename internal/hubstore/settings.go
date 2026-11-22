@@ -20,8 +20,8 @@ import (
 //
 // ── why the hub owns a board skin at all ─────────────────
 //
-// A skin is about the BOARD's appearance, and `docs/archive/hub-room-requirements.md`
-// gives anything about the board to the hub. The ALL view is the hub's view, so
+// A skin is about the BOARD's appearance, and the hub and room requirements
+// give anything about the board to the hub. The ALL view is the hub's view, so
 // the skin it wears is the hub's own, not one borrowed from whichever room
 // sorts first. That borrow is the bug: with a second room mid-attach the ALL
 // view would swap to that room's skin and back, and a save from ALL had no room
@@ -74,7 +74,7 @@ func (s *Store) OverlayLegacyRefused() (bool, error) {
 // transports in, a comma list of kinds such as `direct,ziti`. Empty reads as the
 // default, direct then ziti then zrok. It orders, it does not enable: the hub
 // listens on what `--transport` says. Validated by the caller, which knows the
-// kinds. See docs/rnd/room-transport-order.md.
+// kinds.
 const SettingRoomTransportOrder = "room_transport_order"
 
 // RoomTransportOrder reads the order as written, "" when unset.
@@ -91,8 +91,8 @@ func (s *Store) SetRoomTransportOrder(v string) error {
 // ── why the hub owns this, and the room keeps its own ────
 //
 // Board-wide "approve everything" is BOARD POLICY: one answer for every session
-// on every room, including ones that have not started. `docs/archive/hub-room-requirements.md`
-// gives anything about the board to the hub, so this is the hub's to hold, the
+// on every room, including ones that have not started. The hub and room requirements
+// give anything about the board to the hub, so this is the hub's to hold, the
 // same as the skin above. It used to live in the room as `global_auto`, which
 // only ever covered sessions THAT room's gate had seen and, in the ALL view, had
 // no room to be written to at all. That is the bug this moves off the room.

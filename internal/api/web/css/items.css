@@ -1,4 +1,4 @@
-/* The items tab (js/items.js): the list, an item's page and a blocked item, as docs/rnd/img/item-lifecycle/ draws them.
+/* The items tab (js/items.js): the list, an item's page and a blocked item.
    Existing tokens only and no colour written here, so a skin repaints the tab. The mockups are the spec for spacing.
    The one orange, --wait, is for a thing waiting on the operator and nothing else here. Teal is progress and done, blue to teal is
    "here". A sha is mono in --path, a card is the mono blue chip, and the four token colours below are the same in every view. */

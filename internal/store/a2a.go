@@ -267,7 +267,7 @@ func (t *Task) OwesReport() bool {
 // opening prompt names the session that asked for the launch as its sender, so
 // a reopen by the operator is not counted. The operator, a note, an action, atrium's own wake and a message
 // from any other session do not. Decided here, where the stamp is, so a door
-// written later cannot forget it. See docs/rnd/owed-report-design.md.
+// written later cannot forget it.
 //
 // A launcher's fyi does not count either: it asks for no reply ("stop, nothing
 // else to do"), so the worker owes none, and no nudge or silent-stop notice

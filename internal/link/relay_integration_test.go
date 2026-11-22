@@ -196,15 +196,15 @@ func (f *relayRoom) says() []map[string]string {
 }
 
 // relayPair is a hub serving its board and control tools on loopback, and two
-// fake rooms attached to it: m1mini and sg4.
+// fake rooms attached to it: room-a and room-e.
 type relayPair struct {
-	hub         *Hub
-	proxy       *Proxy
-	board       string
-	mini, sg4   *relayRoom
-	miniR, sg4R *Room
-	stop        func()
-	control     *controlMCP
+	hub           *Hub
+	proxy         *Proxy
+	board         string
+	mini, roomE   *relayRoom
+	miniR, roomER *Room
+	stop          func()
+	control       *controlMCP
 }
 
 func newRelayPair(t *testing.T) *relayPair {
@@ -229,7 +229,7 @@ func newRelayPair(t *testing.T) *relayPair {
 	x.mini = &relayRoom{tasks: []map[string]any{
 		{"id": "m1", "wire_name": "sa1", "status": "working", "alias": "sa1"},
 	}}
-	x.sg4 = &relayRoom{tasks: []map[string]any{
+	x.roomE = &relayRoom{tasks: []map[string]any{
 		{"id": "s1", "wire_name": "atrium-87300", "status": "needs-input", "alias": "orch"},
 		{"id": "s2", "wire_name": "gone", "status": "done"},
 	}}
@@ -239,9 +239,9 @@ func newRelayPair(t *testing.T) *relayPair {
 		go func() { _ = r.Run(ctx) }()
 		return r
 	}
-	x.miniR, x.sg4R = room("m1mini", x.mini), room("sg4", x.sg4)
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("m1mini") && hub.Has("sg4") })
-	waitFor(t, 5*time.Second, func() bool { return x.miniR.State().Up && x.sg4R.State().Up })
+	x.miniR, x.roomER = room("room-a", x.mini), room("room-e", x.roomE)
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("room-a") && hub.Has("room-e") })
+	waitFor(t, 5*time.Second, func() bool { return x.miniR.State().Up && x.roomER.State().Up })
 	x.control = newControl(x.board, hub, nil)
 	x.stop = func() { cancel(); hubLn.Close(); boardLn.Close() }
 	return x
@@ -253,24 +253,24 @@ func relayCtx(t *testing.T) context.Context {
 	return ctx
 }
 
-// THE FEATURE. A card on m1mini names a card on sg4 as `name@room`, the hub
-// carries it, and it arrives as a PEER message from `sa1@m1mini`, never as the
+// THE FEATURE. A card on room-a names a card on room-e as `name@room`, the hub
+// carries it, and it arrives as a PEER message from `sa1@room-a`, never as the
 // operator.
 func TestARelayedMessageArrivesFromTheSenderAtItsRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 		To: "atrium-87300", Text: "the build is green"})
 	if err != nil {
 		t.Fatalf("relay: %v", err)
 	}
-	if !ans.OK || ans.To != "atrium-87300@sg4" || ans.Card != "sg4~s1" || ans.Delivered != "queued" {
+	if !ans.OK || ans.To != "atrium-87300@room-e" || ans.Card != "room-e~s1" || ans.Delivered != "queued" {
 		t.Fatalf("answer = %+v", ans)
 	}
-	got := x.sg4.messages()
-	if len(got) != 1 || got[0]["id"] != "s1" || got[0]["from"] != "sa1@m1mini" || got[0]["text"] != "the build is green" {
-		t.Fatalf("sg4 got %+v, want one message to s1 from sa1@m1mini", got)
+	got := x.roomE.messages()
+	if len(got) != 1 || got[0]["id"] != "s1" || got[0]["from"] != "sa1@room-a" || got[0]["text"] != "the build is green" {
+		t.Fatalf("room-e got %+v, want one message to s1 from sa1@room-a", got)
 	}
 }
 
@@ -280,8 +280,8 @@ func TestARelayResolvesAnAliasAndFoldsTheRoomName(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "SG4", To: "@orch", Text: "hi"})
-	if err != nil || !ans.OK || ans.To != "atrium-87300@SG4" {
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "ROOM-E", To: "@orch", Text: "hi"})
+	if err != nil || !ans.OK || ans.To != "atrium-87300@ROOM-E" {
 		t.Fatalf("relay by alias = %+v, %v", ans, err)
 	}
 }
@@ -292,10 +292,10 @@ func TestTheSendersRoomComesFromTheConnection(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1@sg4", Room: "sg4", To: "atrium-87300", Text: "x"})
-	got := x.sg4.messages()
-	if len(got) != 1 || !strings.HasSuffix(got[0]["from"], "@m1mini") {
-		t.Fatalf("from = %+v, want it to end in the asking room @m1mini", got)
+	_, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1@room-e", Room: "room-e", To: "atrium-87300", Text: "x"})
+	got := x.roomE.messages()
+	if len(got) != 1 || !strings.HasSuffix(got[0]["from"], "@room-a") {
+		t.Fatalf("from = %+v, want it to end in the asking room @room-a", got)
 	}
 }
 
@@ -305,11 +305,11 @@ func TestARelayWithNoSenderIsRefused(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, Room: "sg4", To: "atrium-87300", Text: "x"})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, Room: "room-e", To: "atrium-87300", Text: "x"})
 	if err != nil || ans.OK || ans.Code != http.StatusBadRequest || !strings.Contains(ans.Error, "operator") {
 		t.Fatalf("answer = %+v, %v, want a 400 naming the operator", ans, err)
 	}
-	if len(x.sg4.messages()) != 0 {
+	if len(x.roomE.messages()) != 0 {
 		t.Fatal("nothing should have been delivered")
 	}
 }
@@ -320,7 +320,7 @@ func TestANameTheTargetDoesNotHaveIsARefusalThatListsWhoIs(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4", To: "nobody", Text: "x"})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e", To: "nobody", Text: "x"})
 	if err != nil || ans.OK || ans.Unreachable || ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, "atrium-87300") {
 		t.Fatalf("answer = %+v, %v", ans, err)
 	}
@@ -342,11 +342,11 @@ func TestARoomTheHubDoesNotKnowIsARefusal(t *testing.T) {
 func TestAFailedPostIsUnconfirmedNotUnreachable(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.mu.Lock()
-	x.sg4.msgCode = http.StatusBadGateway
-	x.sg4.mu.Unlock()
+	x.roomE.mu.Lock()
+	x.roomE.msgCode = http.StatusBadGateway
+	x.roomE.mu.Unlock()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4", To: "atrium-87300", Text: "x"})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e", To: "atrium-87300", Text: "x"})
 	if err != nil || ans.OK || ans.Unreachable || !ans.Unconfirmed {
 		t.Fatalf("answer = %+v, %v, want unconfirmed", ans, err)
 	}
@@ -362,9 +362,9 @@ func TestPeersAcrossRoomsAreMarkedWithTheirRoom(t *testing.T) {
 	if err != nil || !ans.OK {
 		t.Fatalf("peers = %+v, %v", ans, err)
 	}
-	if len(ans.Peers) != 1 || ans.Peers[0].Handle != "atrium-87300@sg4" || ans.Peers[0].Room != "sg4" ||
-		ans.Peers[0].Card != "sg4~s1" || ans.Peers[0].Alias != "orch@sg4" {
-		t.Fatalf("peers = %+v, want only atrium-87300@sg4 (the done card and m1mini's own left out)", ans.Peers)
+	if len(ans.Peers) != 1 || ans.Peers[0].Handle != "atrium-87300@room-e" || ans.Peers[0].Room != "room-e" ||
+		ans.Peers[0].Card != "room-e~s1" || ans.Peers[0].Alias != "orch@room-e" {
+		t.Fatalf("peers = %+v, want only atrium-87300@room-e (the done card and room-a's own left out)", ans.Peers)
 	}
 }
 
@@ -384,19 +384,19 @@ func TestAHubSideSayToAnotherRoomGoesThroughTheSendersRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "hello"})
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "hello"})
 	if err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	said := x.mini.says()
-	if len(said) != 1 || said[0]["from"] != "sa1" || said[0]["to"] != "atrium-87300@sg4" || said[0]["text"] != "hello" {
-		t.Fatalf("m1mini's /v1/say got %+v", said)
+	if len(said) != 1 || said[0]["from"] != "sa1" || said[0]["to"] != "atrium-87300@room-e" || said[0]["text"] != "hello" {
+		t.Fatalf("room-a's /v1/say got %+v", said)
 	}
-	if out.Delivered != "queued" || out.To != "atrium-87300@sg4" {
+	if out.Delivered != "queued" || out.To != "atrium-87300@room-e" {
 		t.Fatalf("out = %+v", out)
 	}
-	if len(x.sg4.messages()) != 0 {
+	if len(x.roomE.messages()) != 0 {
 		t.Fatal("the hub delivered it itself, when the sender's room should have")
 	}
 }
@@ -408,10 +408,10 @@ func TestAHubSideSayPassesAHeldAnswerOn(t *testing.T) {
 	defer x.stop()
 	for _, word := range []string{"held", "unconfirmed"} {
 		x.mini.mu.Lock()
-		x.mini.sayAnswer = map[string]any{"delivered": word, "to": "atrium-87300@sg4", "note": "the note for " + word}
+		x.mini.sayAnswer = map[string]any{"delivered": word, "to": "atrium-87300@room-e", "note": "the note for " + word}
 		x.mini.mu.Unlock()
-		_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-			sayInput{To: "atrium-87300@sg4", Text: "hello"})
+		_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+			sayInput{To: "atrium-87300@room-e", Text: "hello"})
 		if err != nil || out.Delivered != word || out.Note != "the note for "+word {
 			t.Fatalf("%s: out = %+v, %v", word, out, err)
 		}
@@ -419,7 +419,7 @@ func TestAHubSideSayPassesAHeldAnswerOn(t *testing.T) {
 }
 
 // A sender's room older than /v1/say: the hub delivers it itself, as
-// `sa1@m1mini`, and says the ledger did not see it.
+// `sa1@room-a`, and says the ledger did not see it.
 func TestAHubSideSayFromAnOldRoomIsDeliveredDirectly(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
@@ -427,14 +427,14 @@ func TestAHubSideSayFromAnOldRoomIsDeliveredDirectly(t *testing.T) {
 	x.mini.noSay = true
 	x.mini.mu.Unlock()
 
-	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "hello"})
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "hello"})
 	if err != nil {
 		t.Fatalf("say: %v", err)
 	}
-	got := x.sg4.messages()
-	if len(got) != 1 || got[0]["from"] != "sa1@m1mini" {
-		t.Fatalf("sg4 got %+v", got)
+	got := x.roomE.messages()
+	if len(got) != 1 || got[0]["from"] != "sa1@room-a" {
+		t.Fatalf("room-e got %+v", got)
 	}
 	if !strings.Contains(out.Note, "older") {
 		t.Fatalf("note = %q, want it to say the room is older", out.Note)
@@ -446,7 +446,7 @@ func TestAHubSideSayToAnotherRoomNeedsTheSender(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("", "m1mini"), sayInput{To: "atrium-87300@sg4", Text: "x"})
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("", "room-a"), sayInput{To: "atrium-87300@room-e", Text: "x"})
 	if err == nil || !strings.Contains(err.Error(), "operator") {
 		t.Fatalf("err = %v, want a refusal naming the operator", err)
 	}
@@ -458,13 +458,13 @@ func TestAHubSideSayToOwnRoomIsLocal(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	for _, to := range []string{"atrium-87300", "atrium-87300@sg4", "@orch@SG4"} {
-		_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "sg4"), sayInput{To: to, Text: "x"})
+	for _, to := range []string{"atrium-87300", "atrium-87300@room-e", "@orch@ROOM-E"} {
+		_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "room-e"), sayInput{To: to, Text: "x"})
 		if err != nil || out.ToCard != "s1" {
 			t.Fatalf("say %q = %+v, %v", to, out, err)
 		}
 	}
-	if len(x.mini.says()) != 0 || len(x.sg4.says()) != 0 {
+	if len(x.mini.says()) != 0 || len(x.roomE.says()) != 0 {
 		t.Fatal("a same-room say took the cross-room path")
 	}
 }
@@ -476,20 +476,20 @@ func TestALaunchOntoAnotherRoomRecordsTheLauncherAcross(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, out, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Item: "f-test", Cwd: "/w", Room: "sg4"})
+	_, out, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "room-a"), launchInput{Item: "f-test", Cwd: "/w", Room: "room-e"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
-	x.sg4.mu.Lock()
-	got := x.sg4.launched
-	x.sg4.mu.Unlock()
+	x.roomE.mu.Lock()
+	got := x.roomE.launched
+	x.roomE.mu.Unlock()
 	x.mini.mu.Lock()
 	wrong := x.mini.launched
 	x.mini.mu.Unlock()
-	if wrong != nil || got["spawned_by"] != "sa1@m1mini" || got["spawned_by_id"] != "m1mini~m1" {
-		t.Fatalf("sg4 launched with %+v, m1mini with %+v", got, wrong)
+	if wrong != nil || got["spawned_by"] != "sa1@room-a" || got["spawned_by_id"] != "room-a~m1" {
+		t.Fatalf("room-e launched with %+v, room-a with %+v", got, wrong)
 	}
-	if out.Handle != "kid@sg4" || out.Card != "sg4~kid" {
+	if out.Handle != "kid@room-e" || out.Card != "room-e~kid" {
 		t.Fatalf("out = %+v, want the handle and card named across", out)
 	}
 }
@@ -499,20 +499,20 @@ func TestHubSidePeersListOtherRoomsWhenAsked(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, out, err := x.control.peersHandler(relayCtx(t), ctlReq("sa1", "m1mini"), peersInput{Rooms: true})
+	_, out, err := x.control.peersHandler(relayCtx(t), ctlReq("sa1", "room-a"), peersInput{Rooms: true})
 	if err != nil {
 		t.Fatalf("peers: %v", err)
 	}
 	var far *peer
 	for i := range out.Peers {
-		if out.Peers[i].Room == "sg4" {
+		if out.Peers[i].Room == "room-e" {
 			far = &out.Peers[i]
 		}
 	}
-	if far == nil || far.Handle != "atrium-87300@sg4" {
-		t.Fatalf("peers = %+v, want atrium-87300@sg4 marked with its room", out.Peers)
+	if far == nil || far.Handle != "atrium-87300@room-e" {
+		t.Fatalf("peers = %+v, want atrium-87300@room-e marked with its room", out.Peers)
 	}
-	_, out, _ = x.control.peersHandler(relayCtx(t), ctlReq("sa1", "m1mini"), peersInput{})
+	_, out, _ = x.control.peersHandler(relayCtx(t), ctlReq("sa1", "room-a"), peersInput{})
 	for _, p := range out.Peers {
 		if p.Room != "" {
 			t.Fatalf("without rooms, no other room's peer should be listed: %+v", out.Peers)
@@ -526,25 +526,25 @@ func TestARelayReadsAndExitsACardOnAnotherRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayCard, Room: "sg4", To: "@orch"})
-	if err != nil || !ans.OK || ans.Task == nil || ans.Task.Card != "sg4~s1" ||
-		ans.Task.Handle != "atrium-87300@sg4" || ans.Task.Status != "needs-input" {
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayCard, Room: "room-e", To: "@orch"})
+	if err != nil || !ans.OK || ans.Task == nil || ans.Task.Card != "room-e~s1" ||
+		ans.Task.Handle != "atrium-87300@room-e" || ans.Task.Status != "needs-input" {
 		t.Fatalf("card = %+v (task %+v), %v", ans, ans.Task, err)
 	}
-	ans, err = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "sg4", To: "s1"})
-	if err != nil || !ans.OK || ans.Card != "sg4~s1" || ans.To != "atrium-87300@sg4" {
+	ans, err = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "room-e", To: "s1"})
+	if err != nil || !ans.OK || ans.Card != "room-e~s1" || ans.To != "atrium-87300@room-e" {
 		t.Fatalf("exit = %+v, %v", ans, err)
 	}
-	if got := x.sg4.exits(); len(got) != 1 || got[0] != "s1" {
-		t.Fatalf("sg4 exits = %v", got)
+	if got := x.roomE.exits(); len(got) != 1 || got[0] != "s1" {
+		t.Fatalf("room-e exits = %v", got)
 	}
 	// Its own room is refused, an unknown name lists who is there, and an
 	// unknown room is named.
-	if ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "M1MINI", To: "sa1"}); ans.OK ||
+	if ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "ROOM-A", To: "sa1"}); ans.OK ||
 		ans.Code != http.StatusBadRequest {
 		t.Fatalf("own room = %+v", ans)
 	}
-	if ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "sg4", To: "nobody"}); ans.OK ||
+	if ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "room-e", To: "nobody"}); ans.OK ||
 		ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, "atrium-87300") {
 		t.Fatalf("unknown name = %+v", ans)
 	}
@@ -552,7 +552,7 @@ func TestARelayReadsAndExitsACardOnAnotherRoom(t *testing.T) {
 		!strings.Contains(ans.Error, "atlantis") {
 		t.Fatalf("unknown room = %+v", ans)
 	}
-	if len(x.mini.exits()) != 0 || len(x.sg4.exits()) != 1 {
+	if len(x.mini.exits()) != 0 || len(x.roomE.exits()) != 1 {
 		t.Fatal("a refused exit reached a room")
 	}
 }
@@ -564,20 +564,20 @@ func TestAHubSideExitReachesACardOnAnotherRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	for _, card := range []string{"atrium-87300@sg4", "orch@sg4", "@orch@SG4", "sg4~s1"} {
-		_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: card})
+	for _, card := range []string{"atrium-87300@room-e", "orch@room-e", "@orch@ROOM-E", "room-e~s1"} {
+		_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"), exitInput{Card: card})
 		if err != nil {
 			t.Fatalf("exit %q: %v", card, err)
 		}
-		if !out.Asked || !strings.EqualFold(out.Card, "sg4~s1") || !strings.EqualFold(out.Handle, "atrium-87300@sg4") {
-			t.Fatalf("exit %q = %+v, want sg4~s1 named across", card, out)
+		if !out.Asked || !strings.EqualFold(out.Card, "room-e~s1") || !strings.EqualFold(out.Handle, "atrium-87300@room-e") {
+			t.Fatalf("exit %q = %+v, want room-e~s1 named across", card, out)
 		}
 	}
-	if got := x.sg4.exits(); len(got) != 4 || got[0] != "s1" || got[3] != "s1" {
-		t.Fatalf("sg4 was asked to exit %v, want s1 four times", got)
+	if got := x.roomE.exits(); len(got) != 4 || got[0] != "s1" || got[3] != "s1" {
+		t.Fatalf("room-e was asked to exit %v, want s1 four times", got)
 	}
 	if got := x.mini.exits(); len(got) != 0 {
-		t.Fatalf("m1mini was asked to exit %v", got)
+		t.Fatalf("room-a was asked to exit %v", got)
 	}
 }
 
@@ -587,19 +587,19 @@ func TestAHubSideExitStaysHomeAndRefusesAnUnknownRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("other", "m1mini"), exitInput{Card: "sa1@m1mini"})
+	_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("other", "room-a"), exitInput{Card: "sa1@room-a"})
 	if err != nil || out.Card != "m1" || out.Handle != "sa1" {
 		t.Fatalf("exit on own room = %+v, %v", out, err)
 	}
 	if got := x.mini.exits(); len(got) != 1 || got[0] != "m1" {
-		t.Fatalf("m1mini exits = %v", got)
+		t.Fatalf("room-a exits = %v", got)
 	}
-	_, _, err = x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: "x@atlantis"})
+	_, _, err = x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"), exitInput{Card: "x@atlantis"})
 	if err == nil || !strings.Contains(err.Error(), "atlantis") {
 		t.Fatalf("err = %v, want a refusal naming atlantis", err)
 	}
-	if len(x.sg4.exits()) != 0 {
-		t.Fatal("an unknown room's exit reached sg4")
+	if len(x.roomE.exits()) != 0 {
+		t.Fatal("an unknown room's exit reached room-e")
 	}
 }
 
@@ -608,17 +608,17 @@ func TestAHubSideTaskReadsACardOnAnotherRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	for _, card := range []string{"atrium-87300@sg4", "orch@sg4", "sg4~s1"} {
-		_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{Card: card})
+	for _, card := range []string{"atrium-87300@room-e", "orch@room-e", "room-e~s1"} {
+		_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "room-a"), taskInput{Card: card})
 		if err != nil {
 			t.Fatalf("task %q: %v", card, err)
 		}
-		if out.Card != "sg4~s1" || out.Handle != "atrium-87300@sg4" || out.Status != "needs-input" {
+		if out.Card != "room-e~s1" || out.Handle != "atrium-87300@room-e" || out.Status != "needs-input" {
 			t.Fatalf("task %q = %+v", card, out)
 		}
 	}
 	// Empty is still the caller's own card, on its own room.
-	_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{})
+	_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "room-a"), taskInput{})
 	if err != nil || out.Card != "m1" || out.Handle != "sa1" {
 		t.Fatalf("own task = %+v, %v", out, err)
 	}
@@ -630,25 +630,25 @@ func TestACardLaunchedOnAnotherRoomCanBeReadAndExited(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, launched, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Item: "f-test", Cwd: "/w", Room: "sg4"})
+	_, launched, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "room-a"), launchInput{Item: "f-test", Cwd: "/w", Room: "room-e"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
-	x.sg4.mu.Lock()
-	x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": "kid", "wire_name": "kid", "status": "running"})
-	x.sg4.mu.Unlock()
+	x.roomE.mu.Lock()
+	x.roomE.tasks = append(x.roomE.tasks, map[string]any{"id": "kid", "wire_name": "kid", "status": "running"})
+	x.roomE.mu.Unlock()
 	for _, card := range []string{launched.Card, launched.Handle} {
-		_, task, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{Card: card})
+		_, task, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "room-a"), taskInput{Card: card})
 		if err != nil || task.Card != launched.Card {
 			t.Fatalf("task %q = %+v, %v", card, task, err)
 		}
-		_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: card})
+		_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"), exitInput{Card: card})
 		if err != nil || out.Card != launched.Card || out.Handle != launched.Handle {
 			t.Fatalf("exit %q = %+v, %v", card, out, err)
 		}
 	}
-	if got := x.sg4.exits(); len(got) != 2 || got[0] != "kid" {
-		t.Fatalf("sg4 exits = %v", got)
+	if got := x.roomE.exits(); len(got) != 2 || got[0] != "kid" {
+		t.Fatalf("room-e exits = %v", got)
 	}
 }
 
@@ -659,14 +659,14 @@ func TestAHubSideExitWithNoCardExitsTheCaller(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{})
+	_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"), exitInput{})
 	if err != nil || !out.Asked || out.Card != "m1" || out.Handle != "sa1" {
 		t.Fatalf("exit with no card = %+v, %v", out, err)
 	}
 	if got := x.mini.exits(); len(got) != 1 || got[0] != "m1" {
-		t.Fatalf("m1mini exits = %v, want only the caller's own m1", got)
+		t.Fatalf("room-a exits = %v, want only the caller's own m1", got)
 	}
-	if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("", "m1mini"), exitInput{}); err == nil {
+	if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("", "room-a"), exitInput{}); err == nil {
 		t.Fatal("an exit with no card and no caller was accepted")
 	}
 	raw, _ := json.Marshal(sayOutput{To: "sa1", ToCard: "m1"})
@@ -684,28 +684,28 @@ func TestAHubSideExitWithNoCardExitsTheCaller(t *testing.T) {
 func TestACrossRoomExitCarriesWhoIsAskingToTheTarget(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.mu.Lock()
-	x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": "s3", "wire_name": "boss", "status": "working",
+	x.roomE.mu.Lock()
+	x.roomE.tasks = append(x.roomE.tasks, map[string]any{"id": "s3", "wire_name": "boss", "status": "working",
 		"alias": "boss", "tags": []string{"atrium:director"}})
-	x.sg4.mu.Unlock()
+	x.roomE.mu.Unlock()
 
 	want := func(t *testing.T, got map[string]any, force bool) {
 		t.Helper()
-		if got["from"] != "sa1@m1mini" || got["foreign"] != true || (got["force"] == true) != force {
-			t.Fatalf("the target room was asked with %v, want from sa1@m1mini, foreign true, force %v", got, force)
+		if got["from"] != "sa1@room-a" || got["foreign"] != true || (got["force"] == true) != force {
+			t.Fatalf("the target room was asked with %v, want from sa1@room-a, foreign true, force %v", got, force)
 		}
 	}
-	// The hub's own tool, called by sa1 on m1mini.
+	// The hub's own tool, called by sa1 on room-a.
 	for _, c := range []struct {
 		card  string
 		force bool
-	}{{"sg4~s1", false}, {"sg4~s1", true}, {"sg4~s3", false}, {"sg4~s3", true}} {
-		before := len(x.sg4.exitAsks())
-		if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+	}{{"room-e~s1", false}, {"room-e~s1", true}, {"room-e~s3", false}, {"room-e~s3", true}} {
+		before := len(x.roomE.exitAsks())
+		if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"),
 			exitInput{Card: c.card, Force: c.force}); err != nil {
 			t.Fatalf("hub tool %+v: %v", c, err)
 		}
-		asks := x.sg4.exitAsks()
+		asks := x.roomE.exitAsks()
 		if len(asks) != before+1 {
 			t.Fatalf("hub tool %+v: the target room was asked %d times", c, len(asks)-before)
 		}
@@ -714,12 +714,12 @@ func TestACrossRoomExitCarriesWhoIsAskingToTheTarget(t *testing.T) {
 	// The relay op, sent by a room for a session on it.
 	for _, force := range []bool{false, true} {
 		for _, to := range []string{"orch", "boss"} {
-			before := len(x.sg4.exitAsks())
-			ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "sg4", To: to, From: "sa1", Force: force})
+			before := len(x.roomE.exitAsks())
+			ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "room-e", To: to, From: "sa1", Force: force})
 			if err != nil || !ans.OK {
 				t.Fatalf("relay exit %s: %+v, %v", to, ans, err)
 			}
-			asks := x.sg4.exitAsks()
+			asks := x.roomE.exitAsks()
 			if len(asks) != before+1 {
 				t.Fatalf("relay exit %s: the target room was asked %d times", to, len(asks)-before)
 			}
@@ -727,11 +727,11 @@ func TestACrossRoomExitCarriesWhoIsAskingToTheTarget(t *testing.T) {
 		}
 	}
 	// An ask with no asker is the operator's, and says so by sending nothing.
-	before := len(x.sg4.exitAsks())
-	if ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "sg4", To: "orch"}); err != nil || !ans.OK {
+	before := len(x.roomE.exitAsks())
+	if ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayExit, Room: "room-e", To: "orch"}); err != nil || !ans.OK {
 		t.Fatalf("operator relay exit: %+v, %v", ans, err)
 	}
-	if asks := x.sg4.exitAsks(); len(asks) != before+1 || asks[len(asks)-1]["from"] != nil {
+	if asks := x.roomE.exitAsks(); len(asks) != before+1 || asks[len(asks)-1]["from"] != nil {
 		t.Fatalf("an ask with no asker arrived as %v", asks[len(asks)-1])
 	}
 }

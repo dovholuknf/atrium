@@ -1066,7 +1066,7 @@
   }
 
   // ── the card's address ───────────────────────────────────────────────────
-  // `/m/alias/<alias>` and `/m/room/<room>/<name>` open a card, the phone's side of docs/rnd/card-urls-design.md. Names
+  // `/m/alias/<alias>` and `/m/room/<room>/<name>` open a card, the phone's side of the card URLs. Names
   // are compared the way the resolver does, without a leading `@` and in lower case. The lookup is one read per open.
   const enc = encodeURIComponent;
   const dec = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };

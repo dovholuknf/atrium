@@ -499,14 +499,14 @@ function checkNesting(list, what, opts = {}) {
 // 7. A CARD NAMES ITS ROOM ONLY WHEN THERE IS MORE THAN ONE. The hub tags a
 //    card id `room~id` exactly while a second room is attached (see the hub's
 //    tagFor / splitTag and `roomOf`), so the room chip must appear on a tagged
-//    id and vanish on a bare one. This is the whole feature: clint could not tell
-//    an sg4 card from an sgg one, and the tag is the only per-card room signal.
+//    id and vanish on a bare one. This is the whole feature: the operator could not tell
+//    an room-e card from an room-g one, and the tag is the only per-card room signal.
 {
-  is(roomOf("claude-sgg~01a0-beef"), "claude-sgg", "roomOf reads the tag off a tagged id");
+  is(roomOf("claude-room-g~01a0-beef"), "claude-room-g", "roomOf reads the tag off a tagged id");
   is(roomOf("01a0-beef"), "", "roomOf answers empty for a bare id");
 
-  const tagged = termRoomChip({ id: "claude-sgg~01a0-beef" });
-  if (!/class="chip room"/.test(tagged) || !tagged.includes("claude-sgg")) {
+  const tagged = termRoomChip({ id: "claude-room-g~01a0-beef" });
+  if (!/class="chip room"/.test(tagged) || !tagged.includes("claude-room-g")) {
     fail(`a tagged card's row does not badge its room: ${JSON.stringify(tagged)}`);
   }
   is(termRoomChip({ id: "01a0-beef" }), "", "a bare card's row shows no room badge");

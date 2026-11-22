@@ -2,7 +2,7 @@
 // FILE, SWAPPABLE: delete it once the hub answers (js/items-data.js reads `window.itemsMock` only when the URL asks, `?itemsmock=1`,
 // for that load alone, and a fixed note says so).
 //
-// The rows are the three mockups of docs/rnd/img/item-lifecycle/ (list, detail, blocked). Those mockups give two item rows
+// The rows are the three item lifecycle mockups (list, detail, blocked). Those mockups give two item rows
 // different totals from the same item's detail, so the list totals here are the list mockup's and the detail's are the sum of
 // its steps. A real hub answers one set. State lives in this page only: an answer unblocks the item, a cancel finishes it.
 (function () {
@@ -33,25 +33,25 @@
 
   // A row for the list: the steps are only as detailed as the list needs.
   function row(o) {
-    return Object.assign({ owner_kind: "session", owner: "orchestrator", created_by: "orchestrator", room: "sg4", body: "", ask: null,
+    return Object.assign({ owner_kind: "session", owner: "orchestrator", created_by: "orchestrator", room: "room-e", body: "", ask: null,
       coordination: [], prices: PRICES, price_table: TABLE, revision: 2, generation: 1, note: "" }, o);
   }
 
   const seed = () => [
     row({ id: "rd-item-lifecycle", title: "Items as the unit of work: step timeline, tokens and cost", priority: "high", dept: "rnd", state: "blocked",
-      owner_kind: "human", owner: "clint", card: "c-designer-3", cards: [{ name: "designer-3", id: "c-designer-3", room: "sg4" }],
+      owner_kind: "human", owner: "operator", card: "c-designer-3", cards: [{ name: "designer-3", id: "c-designer-3", room: "room-e" }],
       created_at: ago(130), updated_at: ago(12),
       body: "One backlog item shown from designed to pushed: its steps, the cards on it and what each cost.",
       ask: { who: "approval", kind: "approval", sha: "e3a91c0", text: "The design is ready. Approve it with the open questions in section 11, or send it back?", since: ago(12),
         options: [] },
       steps: steps({ 0: done(130, 25, { cards: [who("designer-3", "designer")], sha: "e3a91c0", strength: "reported", fact: "docs/rnd/item-lifecycle-design.md",
           usd: 1.84, tokens: tok(38, 11, 330, 33) }),
-        1: { state: "blocked", from: ago(25), cards: [who("clint", "human")], fact: "waiting on your approval", usd: 0, tokens: null } }),
+        1: { state: "blocked", from: ago(25), cards: [who("operator", "human")], fact: "waiting on your approval", usd: 0, tokens: null } }),
       tokens: tok(38, 11, 330, 33), usd: 1.84, coord_usd: 0.21 }),
 
     row({ id: "f-ptyhost-reconnect", title: "Pty host: reattach terminals after a room restart", priority: "high", dept: "fabric", state: "blocked",
-      owner_kind: "human", owner: "clint", card: "c-builder-ptyhost",
-      cards: [{ name: "builder-ptyhost", id: "c-builder-ptyhost", room: "sg4" }, { name: "reviewer-1", id: "c-reviewer-1", room: "sg4" }],
+      owner_kind: "human", owner: "operator", card: "c-builder-ptyhost",
+      cards: [{ name: "builder-ptyhost", id: "c-builder-ptyhost", room: "room-e" }, { name: "reviewer-1", id: "c-reviewer-1", room: "room-e" }],
       created_at: ago(302), updated_at: ago(41),
       body: "After a room restart the pty host should hand the same terminals back. Today the room starts a fresh host when the old pipe is gone.",
       ask: { who: "builder-ptyhost", since: ago(41), brief: "Windows named pipes cannot be reopened by name after the host exits. Fall back to a fresh host (loses scrollback), or keep a stub pipe alive?",
@@ -60,7 +60,7 @@
       coordination: [{ name: "relay-1", note: "relay turns about it", usd: 0.31 }, { name: "orchestrator", note: "turns about it", usd: 0 }],
       steps: steps({ 0: done(258, 190, { cards: [who("designer-4", "designer")], sha: "a47be19", strength: "reported", fact: "docs/rnd/ptyhost-reattach.md",
           usd: 0.52, tokens: tok(14, 2, 150, 11) }),
-        1: done(190, 184, { cards: [who("clint", "human")], strength: "observed", fact: "approved at a47be19", usd: 0, tokens: null }),
+        1: done(190, 184, { cards: [who("operator", "human")], strength: "observed", fact: "approved at a47be19", usd: 0, tokens: null }),
         2: { state: "blocked", from: ago(184), cards: [who("builder-ptyhost", "builder"), who("relay-1", "minion relay", true)], sha: "5d0c2f8",
           strength: "observed", fact: "2 commits so far on claude/ptyhost-reconnect", usd: 1.94, tokens: tok(52, 8, 910, 47) },
         3: { fact: "the room runs the touched tests at the building tip" }, 4: { fact: "a reviewer takes the branch" },
@@ -68,22 +68,22 @@
       tokens: tok(120, 0, 2100, 81), usd: 7.40, coord_usd: 0.66 }),
 
     row({ id: "f-room-handoff", title: "Room handoff: move a card between rooms with its folder", priority: "high", dept: "fabric", state: "running",
-      card: "c-builder-handoff", cards: [{ name: "designer-1", id: "c-designer-1", room: "sg4" }, { name: "builder-handoff", id: "c-builder-handoff", room: "sg4" }],
+      card: "c-builder-handoff", cards: [{ name: "designer-1", id: "c-designer-1", room: "room-e" }, { name: "builder-handoff", id: "c-builder-handoff", room: "room-e" }],
       created_at: ago(1560), updated_at: ago(40),
       steps: steps({ 0: done(1560, 1300, { cards: [who("designer-1", "designer")], usd: 1.1, tokens: tok(20, 3, 300, 18) }),
-        1: done(1300, 1290, { cards: [who("clint", "human")], usd: 0 }),
+        1: done(1300, 1290, { cards: [who("operator", "human")], usd: 0 }),
         2: { state: "active", from: ago(184), cards: [who("builder-handoff", "builder")], usd: 5.02, tokens: tok(76, 12, 1400, 56) } }),
       tokens: tok(96, 0, 1700, 74), usd: 6.12, coord_usd: 0.48 }),
 
     row({ id: "u-chat-tab", title: "Chat tab: terminals list beside the phone conversation view", priority: "medium", dept: "ui", state: "running",
-      card: "c-builder-chat", cards: [{ name: "builder-chat", id: "c-builder-chat", room: "sg4" }, { name: "reviewer-2", id: "c-reviewer-2", room: "sg4" }],
+      card: "c-builder-chat", cards: [{ name: "builder-chat", id: "c-builder-chat", room: "room-e" }, { name: "reviewer-2", id: "c-reviewer-2", room: "room-e" }],
       created_at: ago(400), updated_at: ago(6),
       steps: steps({ 0: done(400, 380, { usd: 0.4 }), 1: done(380, 372, { usd: 0 }), 2: done(372, 90, { usd: 1.6 }), 3: done(90, 70, { usd: 0.3 }),
         4: done(70, 6, { usd: 0.77 }), 5: { state: "active", from: ago(6), usd: null } }),
       tokens: tok(51, 0, 890, 45), usd: 3.07, coord_usd: 0.19 }),
 
     row({ id: "r-usage-export", title: "Usage export per card and turn for the hub", priority: "medium", dept: "rnd", state: "running",
-      card: "c-builder-usage", cards: [{ name: "builder-usage", id: "c-builder-usage", room: "sg4" }],
+      card: "c-builder-usage", cards: [{ name: "builder-usage", id: "c-builder-usage", room: "room-e" }],
       created_at: ago(1925), updated_at: ago(30),
       steps: steps({ 0: done(1520, 1500, {}), 1: done(1500, 1490, {}), 2: done(1490, 300, {}), 3: done(300, 280, {}), 4: done(280, 200, {}), 5: done(200, 190, {}),
         6: { state: "active", from: ago(190), note: "deployed to 2 of 3 rooms" } }),
@@ -94,13 +94,13 @@
       tokens: null, usd: 0, coord_usd: null }),
 
     row({ id: "u-items-tab", title: "Items tab on the hub board: grouped list, answer, cancel", priority: "high", dept: "ui", state: "finished",
-      card: "c-builder-items", cards: [{ name: "builder-items", id: "c-builder-items", room: "sg4" }],
+      card: "c-builder-items", cards: [{ name: "builder-items", id: "c-builder-items", room: "room-e" }],
       created_at: ago(1200), updated_at: ago(60), note: "done: c19f7aa",
       body: "Show every item the hub holds, grouped by state, with an answer box for the ones blocked on the human and a cancel for the ones running. Title and body come from the backlog item.",
       coordination: [{ name: "relay-2", note: "relay turns about it", usd: 0.31 }, { name: "orchestrator", note: "turns about it", usd: 0.27 }],
       steps: steps({ 0: done(318, 219, { cards: [who("designer-3", "designer")], sha: "e3a91c0", strength: "reported", fact: "docs/rnd/item-lifecycle-design.md",
           usd: 0.71, tokens: tok(18, 3, 201, 14) }),
-        1: done(219, 202, { cards: [who("clint", "human")], strength: "observed", fact: "approved at e3a91c0, no questions open", usd: 0, tokens: null }),
+        1: done(219, 202, { cards: [who("operator", "human")], strength: "observed", fact: "approved at e3a91c0, no questions open", usd: 0, tokens: null }),
         2: done(202, 60, { cards: [who("builder-items", "builder"), who("relay-2", "minion relay", true)], sha: "7b02d4e", strength: "observed",
           fact: "4 commits on claude/items-tab", usd: 2.38, tokens: tok(41, 9, 622, 40) }),
         3: done(60, 49, { cards: [who("builder-items", "builder")], sha: "7b02d4e", strength: "observed", fact: "scripts/test-touched.sh passed, 0 commits since",
@@ -110,7 +110,7 @@
         5: done(15, 8, { cards: [who("merger-1", "merger")], sha: "c19f7aa", strength: "observed", fact: "claude/main fast-forwarded",
           usd: 0.11, tokens: tok(3, 1, 40, 2) }),
         6: { state: "active", from: ago(8), note: "deployed to 2 of 3 rooms", when: "rooms 2 of 3 · since " + clock(ago(8)), sha: "c19f7aa", strength: "observed",
-          fact: "sg3 and m1mini on build 0.9.4-c19f7aa, sg4 pending" },
+          fact: "room-d and room-a on build 0.9.4-c19f7aa, room-e pending" },
         7: { fact: "origin/main has not reached c19f7aa" } }),
       tokens: tok(60, 0, 1000, 48), usd: 3.55, coord_usd: 0.25 }),
   ];
@@ -124,10 +124,10 @@
 
   const finished = [
     row({ id: "u-items-tab-v1", title: "Items tab on the hub board: grouped list, answer, cancel", priority: "medium", dept: "ui", state: "finished",
-      card: "c-builder-items-1", cards: [{ name: "builder-items", id: "c-builder-items-1", room: "sg4" }], created_at: ago(900), updated_at: ago(60),
+      card: "c-builder-items-1", cards: [{ name: "builder-items", id: "c-builder-items-1", room: "room-e" }], created_at: ago(900), updated_at: ago(60),
       steps: steps({}).map(s => Object.assign(s, { state: "done" })), tokens: tok(60, 0, 1000, 48), usd: 3.55, coord_usd: 0.25 }),
     row({ id: "r-new-item-deps", title: "Items can depend on other items", priority: "medium", dept: "rnd", state: "finished", card: "c-builder-deps",
-      cards: [{ name: "builder-deps", id: "c-builder-deps", room: "sg4" }], created_at: ago(2400), updated_at: ago(1440),
+      cards: [{ name: "builder-deps", id: "c-builder-deps", room: "room-e" }], created_at: ago(2400), updated_at: ago(1440),
       steps: steps({}).map(s => Object.assign(s, { state: "done" })), tokens: tok(40, 0, 650, 30), usd: 2.30, coord_usd: 0.14 }),
   ];
   // The list mockup's first finished row is u-items-tab itself, so the list carries the finished one under another id with the
@@ -138,7 +138,7 @@
 
   const shown = () => rows.filter(r => !r.detailOnly);
   const stats = () => ({
-    needs_you: shown().filter(r => r.state === "blocked" && r.owner_kind === "human").length, who: "clint",
+    needs_you: shown().filter(r => r.state === "blocked" && r.owner_kind === "human").length, who: "operator",
     in_flight: shown().filter(r => r.state === "running" || r.state === "blocked").length, working: 3,
     spend_today: 14.6, spend_coord: 1.4, landed_week: 9, landed_median: "7h 20m", landed_cost: 3.10 });
 

@@ -1395,7 +1395,7 @@ var migrations = []struct {
 	{
 		// WHO STARTED THIS CARD, kept so a worker can address its launcher back.
 		//
-		// See docs/rnd/agent-lineage-design.md. Two columns rather than one: the
+		// Two columns rather than one: the
 		// HANDLE names the parent for a peer message and prints on the card, and
 		// the ID is the direct link the board can click to. Both empty on a card
 		// nobody launched, which is every card written before this existed and
@@ -1766,8 +1766,7 @@ var migrations = []struct {
 		// `owed_at` is the last prompt that made this card owe its launcher a
 		// report: its opening prompt or a message from the launcher, and nothing
 		// else. `prompted_at` stays the last prompt from anyone. The backfill
-		// keeps a debt that is open today open, on the old wider basis. See
-		// docs/rnd/owed-report-design.md.
+		// keeps a debt that is open today open, on the old wider basis.
 		name: "0068_owed_at",
 		stmts: []string{
 			`ALTER TABLE task ADD COLUMN owed_at TEXT NOT NULL DEFAULT ''`,
@@ -1825,8 +1824,7 @@ var migrations = []struct {
 	},
 	{
 		// The last moment a person did something to a card and what they did, and
-		// when a card was parked: no process, status kept. Empty means never. See
-		// docs/rnd/keepalive-policy-design.md sections 1, 4 and 7.
+		// when a card was parked: no process, status kept. Empty means never.
 		name: "0071_human_at_parked_at",
 		stmts: []string{
 			`ALTER TABLE task ADD COLUMN human_at TEXT NOT NULL DEFAULT ''`,
@@ -1874,7 +1872,7 @@ var migrations = []struct {
 	{
 		// The merged-cull mark on a work item: which merge covered it, when the
 		// room will cull it, and who held it. Empty text is "never". See
-		// merged.go and docs/rnd/merged-cull-design.md.
+		// merged.go.
 		name: "0075_work_merged_cull",
 		stmts: []string{
 			`ALTER TABLE work_item ADD COLUMN merged_at     TEXT NOT NULL DEFAULT ''`,
@@ -1928,7 +1926,7 @@ var migrations = []struct {
 	},
 	{
 		// The pulls index: one row per PR review run. An index over a run folder,
-		// never a finding. See prs.go and docs/rnd/pulls-view-design.md.
+		// never a finding. See prs.go.
 		name: "0078_pr_review",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS pr_review (
@@ -1989,7 +1987,7 @@ var migrations = []struct {
 				(name, match, harness, panel, verify_at, critics, second, walker_brief,
 				 budget_usd, turns_cap, updated_at)
 			 VALUES ('default', '', 'claude', '` + DefaultPRPanel + `', 'med', '[]', '',
-				'` + DefaultWalkerBrief + `', 3.0, 12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+				'` + walkerBriefSeeded + `', 3.0, 12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
 		},
 	},
 	{
@@ -2019,7 +2017,7 @@ var migrations = []struct {
 	{
 		// WHERE A PR ROW STANDS WITH THE HUB'S CLAIM TABLE: '' for a room with no hub, 'claimed', 'pending' for a row
 		// made while the hub could not be reached (asked again when it returns), or 'folded into <room>' for one the
-		// hub says another room owns. See docs/rnd/scm-forge-design.md section 6.
+		// hub says another room owns.
 		name: "0082_pr_claim",
 		stmts: []string{
 			`ALTER TABLE pr_review ADD COLUMN claim TEXT NOT NULL DEFAULT ''`,
@@ -2027,7 +2025,7 @@ var migrations = []struct {
 	},
 	{
 		// A ROOM KEEPS NO FORGE CONFIGURATION. The forge CLIs and their logins are the hub's, so the per-room host and
-		// command name the board used to save are gone. See docs/rnd/scm-forge-design.md, Built.
+		// command name the board used to save are gone.
 		name: "0083_drop_room_forge_config",
 		stmts: []string{
 			`DELETE FROM setting WHERE key LIKE 'forge.%'`,
@@ -2036,7 +2034,7 @@ var migrations = []struct {
 	{
 		// A CARD MOVED BETWEEN ROOMS. `moved_to` is on the old card, `moved_from` on the new one, each as `room~id`. The
 		// freeze holds a card for the length of a move, and its queue takes everything said to it meanwhile, each with
-		// its id so the other room can drop a repeat. See docs/rnd/room-handoff-design.md, M1.
+		// its id so the other room can drop a repeat.
 		name: "0084_room_move",
 		stmts: []string{
 			`ALTER TABLE task ADD COLUMN moved_to TEXT NOT NULL DEFAULT ''`,
@@ -2093,8 +2091,7 @@ var migrations = []struct {
 	{
 		// A CARD'S INVENTORY: everything the room made for the card, so finish removes exactly that and a sweep
 		// can find what a crash left. `seq` counts per card. `freed_at` is set when the thing is gone, with what
-		// removing it said in `freed_err`. `bytes` is the size last measured, -1 before any measure. See
-		// docs/rnd/card-lifecycle-design.md section 6.
+		// removing it said in `freed_err`. `bytes` is the size last measured, -1 before any measure.
 		name: "0088_card_resources",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS card_resources (
@@ -2114,7 +2111,7 @@ var migrations = []struct {
 	},
 	{
 		// THE REPO A LINK THAT NAMES NONE OPENS IN, "host/org/repo", for a Zendesk ticket or a Discourse topic.
-		// Empty is a scratch folder of the card's own. See docs/rnd/card-lifecycle-design.md, Interview Q6.
+		// Empty is a scratch folder of the card's own.
 		name: "0089_recogniser_default_repo",
 		stmts: []string{
 			`ALTER TABLE recogniser ADD COLUMN default_repo TEXT NOT NULL DEFAULT ''`,
@@ -2621,6 +2618,14 @@ var migrations = []struct {
 			`ALTER TABLE ask ADD COLUMN stage TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE task ADD COLUMN ask_verb TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE task ADD COLUMN ask_stage TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// The seeded walker brief named one person. A default recipe still holding it gets the generic one.
+		name: "0126_walker_brief_generic",
+		stmts: []string{
+			`UPDATE pr_recipe SET walker_brief = '` + DefaultWalkerBrief + `'
+			 WHERE name = 'default' AND walker_brief = '` + walkerBriefSeeded + `'`,
 		},
 	},
 }

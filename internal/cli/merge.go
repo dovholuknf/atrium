@@ -20,7 +20,7 @@ import (
 )
 
 // `atrium merge`: the merge queue from a shell, over /_hub/merge, reached as the backlog is (backlogCall). See
-// internal/link/merge.go and docs/rnd/merge-queue.md.
+// internal/link/merge.go.
 
 func mergeCmd() *cobra.Command {
 	var board, branch, repo string

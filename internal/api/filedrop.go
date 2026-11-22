@@ -18,7 +18,7 @@ import (
 )
 
 // The room's half of the hub file drop. The hub's atrium_get sends the bytes of a drop file here, over the link, and
-// this writes them inside the card the tool was called from. Designed in docs/rnd/hub-file-drop.md.
+// this writes them inside the card the tool was called from.
 //
 // NOT THROUGH UPLOAD. Upload follows paste_keep, and in scrap mode it writes to ScrapDir, which is outside the card.
 // This always resolves against the card's own directory with safepath.Contained, before and after it creates

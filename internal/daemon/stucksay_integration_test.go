@@ -50,3 +50,12 @@ func TestAKeyAfterASayStopsTheSecondEnter(t *testing.T) {
 		t.Fatalf("%d Enters, want 1: %q", n, f.written())
 	}
 }
+
+// The operator's channel types with no banner, and its eaten Enter is pressed again like a peer's.
+func TestAnOperatorSayWhoseEnterWasEatenIsSubmittedAgain(t *testing.T) {
+	r, f := stuckRunner(t, string(idleFrameWithText("a chat message")))
+	if ok, err := r.injectPeer("", "a chat message"); err != nil || !ok {
+		t.Fatalf("injectPeer: %v %v", ok, err)
+	}
+	until(t, "a second Enter", func() bool { return strings.Count(f.written(), "\r") >= 2 })
+}

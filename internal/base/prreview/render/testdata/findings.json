@@ -23,7 +23,7 @@
    "exposure": {"who": "", "likely": "", "opt_in": ""},
    "cause": "introduced", "found": "traced", "leak": "", "raised_by": "codebase-steward",
    "dispute": "dup only fails at the descriptor limit, which the caller has already hit.",
-   "left_for_clint": true},
+   "left_for_operator": true},
   {"sev": "low", "path": "src/http.c", "line": 22, "code": "return rc;",
    "says": "LLM review says the result is returned without logging, and LLM review says that hides failures in `src/nothere.c`.",
    "fix": "Log the result here, or return it through `out`.",

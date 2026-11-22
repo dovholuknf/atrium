@@ -114,11 +114,11 @@ func resends(checks []Check) []Resend {
 	return out
 }
 
-// before is the walk order of 5.6: disputes left for clint, then the severity band, then rank, then the order the
+// before is the walk order of 5.6: disputes left for the operator, then the severity band, then rank, then the order the
 // PR reads in. File name is never a key.
 func before(a, b Finding, d diffInfo) bool {
-	if a.LeftForClint != b.LeftForClint {
-		return a.LeftForClint
+	if a.LeftForOperator != b.LeftForOperator {
+		return a.LeftForOperator
 	}
 	sa, sb := band(a.Sev), band(b.Sev)
 	if sa != sb {
@@ -228,8 +228,8 @@ func text(prURL string, f Finding, sev string, failed map[int]bool, gone []strin
 		b.WriteString("Second opinion: disputes. " + f.Dispute + "\n")
 	}
 	switch {
-	case f.LeftForClint:
-		b.WriteString("Settled: left for clint\n")
+	case f.LeftForOperator:
+		b.WriteString("Settled: left for the operator\n")
 	case f.Settled != "":
 		b.WriteString("Settled: " + f.Settled + "\n")
 	}
@@ -257,7 +257,7 @@ func walk(files []File) string {
 }
 
 // WalkStartedError is Write refusing to render over a walk already begun. A rerun of step 6 and 7 would reset every
-// state to open and lose what clint did.
+// state to open and lose what the operator did.
 type WalkStartedError struct {
 	Lines []string
 }

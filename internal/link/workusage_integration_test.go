@@ -41,7 +41,7 @@ func (f *usageRoom) lines(_ context.Context, _, path string, each func([]byte) e
 
 func (x *itemRig) attach(t *testing.T, id, card, step string) {
 	t.Helper()
-	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-" + card, "room": "sg4", "card": card,
+	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-" + card, "room": "room-e", "card": card,
 		"generation": 1, "state": "running", "revision": 1, "owner_kind": "human", "created_by": "orch", "work_id": id, "step": step}), loopAddr)
 	if code != http.StatusOK {
 		t.Fatalf("attach: %d %s", code, body)
@@ -74,12 +74,12 @@ func TestAPullKeepsAnItemsRowsOnceAndAReplayAddsNothing(t *testing.T) {
 		usageLine("u3", "stranger", "claude-opus-5-5", now.Add(3*time.Minute), now.Add(4*time.Minute), 9, 9),
 		usageLine("old", "b1", "claude-opus-5-5", now.Add(-5*time.Hour), now.Add(-4*time.Hour), 7, 7),
 	}
-	s, err := x.p.PullRoomUsage(context.Background(), "sg4", now.Add(time.Hour))
+	s, err := x.p.PullRoomUsage(context.Background(), "room-e", now.Add(time.Hour))
 	if err != nil || s.Added != 2 || s.Kept != 2 {
 		t.Fatalf("first pull: %+v %v", s, err)
 	}
 	before := x.cost(t, "f-x")
-	s, err = x.p.PullRoomUsage(context.Background(), "sg4", now.Add(2*time.Hour))
+	s, err = x.p.PullRoomUsage(context.Background(), "room-e", now.Add(2*time.Hour))
 	if err != nil || s.Added != 0 {
 		t.Fatalf("a replay added %d: %+v %v", s.Added, s, err)
 	}
@@ -110,20 +110,20 @@ func TestAFailedPullLeavesTheCursorAndANewCardPullsItsEarlierRows(t *testing.T) 
 	now := time.Now().UTC()
 	room.usage = []map[string]any{usageLine("u1", "b1", "claude-sonnet-5-5", now.Add(time.Minute), now.Add(2*time.Minute), 10, 1)}
 	room.broken = true
-	if _, err := x.p.PullRoomUsage(context.Background(), "sg4", now.Add(time.Hour)); err == nil {
+	if _, err := x.p.PullRoomUsage(context.Background(), "room-e", now.Add(time.Hour)); err == nil {
 		t.Fatal("a room that does not answer is an error the tick logs")
 	}
-	if _, _, have, _ := x.st.UsageCursor("sg4"); have {
+	if _, _, have, _ := x.st.UsageCursor("room-e"); have {
 		t.Fatal("a failed pull moved the cursor")
 	}
 	room.broken = false
-	if s, _ := x.p.PullRoomUsage(context.Background(), "sg4", now.Add(time.Hour)); s.Added != 1 {
+	if s, _ := x.p.PullRoomUsage(context.Background(), "room-e", now.Add(time.Hour)); s.Added != 1 {
 		t.Fatalf("after the room came back: %+v", s)
 	}
 	// A second card, attached later, has a row from before the cursor.
 	room.usage = append(room.usage, usageLine("u9", "r1", "claude-sonnet-5-5", now.Add(3*time.Minute), now.Add(4*time.Minute), 20, 2))
 	x.attach(t, "f-x", "r1", "reviewed")
-	if s, _ := x.p.PullRoomUsage(context.Background(), "sg4", now.Add(2*time.Hour)); s.Added != 1 {
+	if s, _ := x.p.PullRoomUsage(context.Background(), "room-e", now.Add(2*time.Hour)); s.Added != 1 {
 		t.Fatalf("the new card's row: %+v", s)
 	}
 }
@@ -135,7 +135,7 @@ func TestAModelWithNoPriceShowsAQuestionMarkOnTheRoute(t *testing.T) {
 	x.p.roomLines = room.lines
 	now := time.Now().UTC()
 	room.usage = []map[string]any{usageLine("u1", "b1", "claude-brand-new-1", now.Add(time.Minute), now.Add(2*time.Minute), 10, 1)}
-	x.p.PullRoomUsage(context.Background(), "sg4", now.Add(time.Hour))
+	x.p.PullRoomUsage(context.Background(), "room-e", now.Add(time.Hour))
 	c := x.cost(t, "f-x")
 	h := c["headline"].(map[string]any)
 	if h["display"] != "?" || h["known"] != false || h["unpriced_tokens"].(float64) == 0 {
@@ -168,7 +168,7 @@ func TestCoordinationComesFromDeliveriesAndSplitsAcrossItems(t *testing.T) {
 		// a turn nobody on an item caused is overhead.
 		d("d4", "orch", "elsewhere", "", 800),
 	}
-	if s, err := x.p.PullRoomUsage(context.Background(), "sg4", now.Add(time.Hour)); err != nil || s.Added != 2 {
+	if s, err := x.p.PullRoomUsage(context.Background(), "room-e", now.Add(time.Hour)); err != nil || s.Added != 2 {
 		t.Fatalf("pull: %+v %v", s, err)
 	}
 	a, b := x.cost(t, "f-a")["coordination"].(map[string]any), x.cost(t, "f-b")["coordination"].(map[string]any)
@@ -180,7 +180,7 @@ func TestCoordinationComesFromDeliveriesAndSplitsAcrossItems(t *testing.T) {
 		t.Fatalf("each item takes a share: %v %v", ta, tb)
 	}
 	// A replay adds nothing, even though the deliveries are read again.
-	if s, _ := x.p.PullRoomUsage(context.Background(), "sg4", now.Add(2*time.Hour)); s.Added != 0 {
+	if s, _ := x.p.PullRoomUsage(context.Background(), "room-e", now.Add(2*time.Hour)); s.Added != 0 {
 		t.Fatalf("replay added %d", s.Added)
 	}
 	// The headline is the steps alone: nothing here is a step.

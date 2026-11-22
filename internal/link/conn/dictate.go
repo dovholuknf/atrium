@@ -14,7 +14,7 @@ import (
 )
 
 // The dictate kind: a room sending a push-to-talk clip up to its hub's whisper. Dialled by the room, one clip, one
-// answer, closed, like the relay. The hub reaches into nothing. docs/rnd/voice-dictation-hub.md.
+// answer, closed, like the relay. The hub reaches into nothing.
 
 const dictateKind = wire.DictateKind
 

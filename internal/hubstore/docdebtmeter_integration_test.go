@@ -37,7 +37,7 @@ func fileDocItem(t *testing.T, s *Store, id, feature string, pages ...string) {
 // landFeature makes the feature's work row and ends its landed step at `at`.
 func landFeature(t *testing.T, s *Store, id string, at time.Time) {
 	t.Helper()
-	if _, _, err := s.PutItem(onWork("a-"+id, "sg4", "c-"+id, id, 1)); err != nil {
+	if _, _, err := s.PutItem(onWork("a-"+id, "room-e", "c-"+id, id, 1)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.PutWorkStep(WorkStepRow{BacklogID: id, Step: StepLanded, State: StepDone, StartedAt: ts(at), EndedAt: ts(at), SHA: "abc"}); err != nil {
@@ -104,7 +104,7 @@ func TestDocDebtAgeStartsAtLandedOrFilingAndPendingDoesNotCount(t *testing.T) {
 	// no work row: counts from filing, day 0
 	fileDocItem(t, s, "d-2", "f-byhand", "b.md")
 	// a work row with no landed step is pending
-	if _, _, err := s.PutItem(onWork("a-w", "sg4", "c-w", "f-wip", 1)); err != nil {
+	if _, _, err := s.PutItem(onWork("a-w", "room-e", "c-w", "f-wip", 1)); err != nil {
 		t.Fatal(err)
 	}
 	fileDocItem(t, s, "d-3", "f-wip", "c.md")

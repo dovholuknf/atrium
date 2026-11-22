@@ -30,7 +30,7 @@ const flowToolDesc = "The merge flow, kept on the hub: who holds each role, whic
 	"- `stage {id, stage, branch?, sha?, note?}`: report an item's stage.\n" +
 	"- `checks {sha?}` / `check {sha, name, result}`: list, or record that a check passed, failed or timed out on a sha.\n" +
 	"- `epoch`: the open epoch, the latest ones, and the plan for resetting claude/main onto main: the commits to replay. " +
-	"`epoch_open {sha?}`: clint fetched claude/main (at sha, or where it is now). " +
+	"`epoch_open {sha?}`: the operator fetched claude/main (at sha, or where it is now). " +
 	"`epoch_close {branch?, expect?}`: the MERGER ONLY. Replay the plan's commits on a branch with main under it, push " +
 	"it, and give it here; the hub checks that nothing is lost and moves claude/main. No branch is for a plan with nothing to replay.\n" +
 	"- `repo {repo?}`: the hub repository stages are read from, like `github.com/dovholuknf/atrium`. Without repo, read it.\n" +

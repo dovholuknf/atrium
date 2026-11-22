@@ -14,8 +14,8 @@ import (
 )
 
 // The idle clock: a card that has sat idle for `idle_park_after` is parked, and a
-// director writes its handoff first. See docs/rnd/keepalive-policy-design.md section
-// 7. Who is subject is idlepark.go. This is the tick and what it does.
+// director writes its handoff first.
+// Who is subject is idlepark.go. This is the tick and what it does.
 
 // idleHandoffAfter is how long a card is idle before its handoff is taken, at
 // the earliest: before the one hour cache goes cold, so the capture turn reads a

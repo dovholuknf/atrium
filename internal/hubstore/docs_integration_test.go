@@ -105,7 +105,7 @@ func TestSlugShapes(t *testing.T) {
 	}
 	// A title that leaves nothing gets doc-<sha8>.
 	s := open(t)
-	r := mustAdd(t, s, DocInput{Title: "", Name: "", Data: []byte("# hi"), Origin: "card", By: "r-1@sg4", Card: "sg4~1"})
+	r := mustAdd(t, s, DocInput{Title: "", Name: "", Data: []byte("# hi"), Origin: "card", By: "r-1@room-e", Card: "room-e~1"})
 	if !strings.HasPrefix(r.Slug, "doc-") || len(r.Slug) != 12 {
 		t.Fatalf("fallback slug %q", r.Slug)
 	}
@@ -219,21 +219,21 @@ func TestACardIsLimitedToThirtyAnHour(t *testing.T) {
 
 	pub := func(card, body string) error {
 		_, err := s.DocAdd(DocInput{Title: "t " + body, Name: "t.md", Data: []byte(body), Origin: "card",
-			By: "r@sg4", Card: card, Rate: true})
+			By: "r@room-e", Card: card, Rate: true})
 		return err
 	}
 	for i := 0; i < 30; i++ {
-		if err := pub("sg4~a", string(rune('A'+i))+"x"); err != nil {
+		if err := pub("room-e~a", string(rune('A'+i))+"x"); err != nil {
 			t.Fatalf("publish %d: %v", i, err)
 		}
 	}
-	wantKind(t, pub("sg4~a", "one too many"), DocRate)
-	if err := pub("sg4~b", "other card"); err != nil {
+	wantKind(t, pub("room-e~a", "one too many"), DocRate)
+	if err := pub("room-e~b", "other card"); err != nil {
 		t.Fatalf("another card is limited too: %v", err)
 	}
 	mustAdd(t, s, docIn("Upload", "u.md", "board upload"))
 	clock = clock.Add(61 * time.Minute)
-	if err := pub("sg4~a", "next hour"); err != nil {
+	if err := pub("room-e~a", "next hour"); err != nil {
 		t.Fatalf("an hour later: %v", err)
 	}
 }
@@ -470,7 +470,7 @@ func TestListFiltersAndOrder(t *testing.T) {
 	s.clock = func() time.Time { clock = clock.Add(time.Second); return clock }
 
 	mustAdd(t, s, docIn("Usage report", "u.md", "1"))
-	mustAdd(t, s, DocInput{Title: "Eval", Name: "e.md", Data: []byte("2"), Origin: "card", By: "r-9@sg4", Card: "sg4~9"})
+	mustAdd(t, s, DocInput{Title: "Eval", Name: "e.md", Data: []byte("2"), Origin: "card", By: "r-9@room-e", Card: "room-e~9"})
 	mustAdd(t, s, docIn("usage again", "u2.md", "3"))
 	l, _ := s.DocList("", false, "")
 	if len(l) != 3 || l[0].Title != "usage again" {
@@ -479,8 +479,8 @@ func TestListFiltersAndOrder(t *testing.T) {
 	if l, _ := s.DocList("USAGE", false, ""); len(l) != 2 {
 		t.Fatalf("filter gave %d", len(l))
 	}
-	l, _ = s.DocList("", false, "sg4~9")
-	if len(l) != 1 || l[0].Slug != "eval" || l[0].Latest.Origin != "card" || l[0].Latest.Card != "sg4~9" {
+	l, _ = s.DocList("", false, "room-e~9")
+	if len(l) != 1 || l[0].Slug != "eval" || l[0].Latest.Origin != "card" || l[0].Latest.Card != "room-e~9" {
 		t.Fatalf("card filter %+v", l)
 	}
 	// A new version moves a document to the top and counts.
@@ -752,7 +752,7 @@ func TestIsTextCutInsideCharacter(t *testing.T) {
 
 func TestADocumentNamesTheRoomItCameFrom(t *testing.T) {
 	s := open(t)
-	mustAdd(t, s, DocInput{Title: "From a card", Name: "c.md", Data: []byte("1"), Origin: "card", By: "r-1@sg4", Card: "sg4~1"})
+	mustAdd(t, s, DocInput{Title: "From a card", Name: "c.md", Data: []byte("1"), Origin: "card", By: "r-1@room-e", Card: "room-e~1"})
 	mustAdd(t, s, docIn("From the board", "b.md", "2"))
 	rows, err := s.DocList("", false, "")
 	if err != nil {
@@ -762,7 +762,7 @@ func TestADocumentNamesTheRoomItCameFrom(t *testing.T) {
 	for _, r := range rows {
 		got[r.Title] = r.Latest.Room
 	}
-	if got["From a card"] != "sg4" || got["From the board"] != "" {
+	if got["From a card"] != "room-e" || got["From the board"] != "" {
 		t.Fatalf("rooms %v", got)
 	}
 }

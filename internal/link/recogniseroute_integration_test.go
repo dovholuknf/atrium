@@ -119,12 +119,12 @@ func TestEveryLinkGwtOpensIsRecognisedToTheSamePlace(t *testing.T) {
 		// gwt discourse: /t/<slug>/<id>, a trailing post number, /t/<id>, in openziti/ziti.
 		{mfaTopic + "/5123", "discourse-topic", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
 		{mfaTopic + "/5123/7", "discourse-topic", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
-		{mfaTopic + "/5123?u=clint#post_3", "discourse-topic", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
+		{mfaTopic + "/5123?u=operator#post_3", "discourse-topic", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
 		{"https://openziti.discourse.group/t/5123", "discourse-topic", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
 		// gwt discourse with no id: the forum redirects /t/<slug> to /t/<slug>/<id>, and the id is read off that.
 		{mfaTopic, "discourse-topic-slug", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
 		{mfaTopic + "/", "discourse-topic-slug", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
-		{mfaTopic + "?u=clint", "discourse-topic-slug", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
+		{mfaTopic + "?u=operator", "discourse-topic-slug", wt + "github/openziti/ziti/discourse-5123", "discourse-5123"},
 		// gwt clone: a bare repo url, on the main clone, a .git dropped.
 		{"https://github.com/openziti/ziti", "github-repo", src + "github/openziti/ziti", ""},
 		{"https://github.com/openziti/ziti.git", "github-repo", src + "github/openziti/ziti", ""},

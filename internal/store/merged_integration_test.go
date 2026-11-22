@@ -80,7 +80,7 @@ func TestAHoldKeepsACardAcrossARestartAndANewTurn(t *testing.T) {
 	if ok, _ := s.MarkMerged(worker.ID, "claude/main", "a", "b", time.Now().Add(time.Hour)); !ok {
 		t.Fatal("not marked")
 	}
-	if err := s.HoldCull(worker.ID, "clint"); err != nil {
+	if err := s.HoldCull(worker.ID, "operator"); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -91,13 +91,13 @@ func TestAHoldKeepsACardAcrossARestartAndANewTurn(t *testing.T) {
 	}
 	defer s.Close()
 	w := mustItem(t, s, worker.ID)
-	if w.HeldBy != "clint" || w.CullAt != nil {
+	if w.HeldBy != "operator" || w.CullAt != nil {
 		t.Fatalf("after a restart: %+v", w)
 	}
 	if err := s.SetStatus(worker.ID, StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	if w := mustItem(t, s, worker.ID); w.HeldBy != "clint" {
+	if w := mustItem(t, s, worker.ID); w.HeldBy != "operator" {
 		t.Fatalf("a new turn dropped the hold: %+v", w)
 	}
 	if ok, _ := s.MarkMerged(worker.ID, "claude/main", "a", "b", time.Now()); ok {
@@ -107,7 +107,7 @@ func TestAHoldKeepsACardAcrossARestartAndANewTurn(t *testing.T) {
 		t.Fatalf("a held card is due: %+v", due)
 	}
 	v, _ := s.MergedViewFor(worker.ID)
-	if v == nil || v.HeldBy != "clint" {
+	if v == nil || v.HeldBy != "operator" {
 		t.Fatalf("the view does not say it is held: %+v", v)
 	}
 }

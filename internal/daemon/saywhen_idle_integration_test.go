@@ -31,7 +31,7 @@ func TestADoneMessageToABusySessionStillWaits(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
 
-	doneTo(t, d, target.ID, "sg4/doer", "build is green")
+	doneTo(t, d, target.ID, "room-e/doer", "build is green")
 	d.pending.attempt(target.ID)
 	if got := f.written(); got != "" {
 		t.Fatalf("a done message was typed mid-turn: %q", got)
@@ -59,7 +59,7 @@ func TestAMessageToAnIdleRunnerWithoutMidTurnInputIsTypedAtOnce(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityIdle, "")
 
-	if code := message(t, d, target.ID, map[string]string{"text": "ping", "from": "sg4/doer"}); code != 200 {
+	if code := message(t, d, target.ID, map[string]string{"text": "ping", "from": "room-e/doer"}); code != 200 {
 		t.Fatalf("message answered %d", code)
 	}
 	if got := f.written(); !strings.Contains(got, "ping") {
@@ -74,7 +74,7 @@ func TestALooksIdleSessionHasNoTurnToWaitFor(t *testing.T) {
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityThinking, "")
-	doneTo(t, d, target.ID, "sg4/doer", "build is green")
+	doneTo(t, d, target.ID, "room-e/doer", "build is green")
 	d.pending.attempt(target.ID)
 	if got := f.written(); got != "" {
 		t.Fatalf("typed mid-turn: %q", got)
@@ -90,7 +90,7 @@ func TestALooksIdleSessionHasNoTurnToWaitFor(t *testing.T) {
 // sayDone sends a `when: done` message without expecting it to be queued.
 func sayDone(t *testing.T, d *Daemon, taskID, text string) {
 	t.Helper()
-	fields := map[string]string{"text": text, "when": "done", "from": "sg4/doer"}
+	fields := map[string]string{"text": text, "when": "done", "from": "room-e/doer"}
 	if code := message(t, d, taskID, fields); code != http.StatusOK {
 		t.Fatalf("message answered %d", code)
 	}

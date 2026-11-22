@@ -571,20 +571,20 @@ function roomNeedsYou(name) {
 
 const ROOMS_DEMO_HUB_BUILD = "a91c2de";
 const ROOMS_DEMO_SET = [
-  { name: "sg3", host: "sg3", os: "windows", transport: "direct", via: "ziti", fallback: true,
+  { name: "room-d", host: "room-d", os: "windows", transport: "direct", via: "ziti", fallback: true,
     paths: [{ kind: "direct", state: "down", addr: "192.168.102.41:7779", mtls: true, last_error: "no answer within 10s" },
       { kind: "ziti", state: "on", addr: "atrium-hub", rtt_ms: 38 }, { kind: "zrok", state: "none" }], version: "3b578f0",
     up: 4 * 3600 + 12 * 60, cpu: 71, mem: 32e9, used: 21e9, disk: 512e9, free: 392e9, rate: 41000,
     path: "D:\\git", worktrees: 38, cards: { running: 7, idle: 2, asks: 1, done: 12 },
     runners: [["claude", true], ["codex", true], ["ollama", false]] },
-  { name: "sg4", host: "sg4", os: "windows", transport: "ziti",
+  { name: "room-e", host: "room-e", os: "windows", transport: "ziti",
     paths: [{ kind: "direct", state: "up", addr: "192.168.1.68:7779", mtls: true, rtt_ms: 2 }, { kind: "ziti", state: "on", addr: "atrium-hub", rtt_ms: 31 },
       { kind: "zrok", state: "unlistened", last_error: "the hub is not listening on zrok" }], version: ROOMS_DEMO_HUB_BUILD,
     up: 26 * 3600 + 3 * 60, cpu: 88, mem: 64e9, used: 49e9, disk: 1000e9, free: 318e9, rate: 72000,
     path: "E:\\worktrees", worktrees: 61, cards: { running: 11, idle: 1, perms: 1, done: 23 },
     runners: [["claude", true], ["codex", true], ["gemini", true]] },
   // THIS BUILD SHIPS NO `machine`, so the band says the room does not report it.
-  { name: "m1mini", host: "m1mini.local", os: "darwin", transport: "zrok",
+  { name: "room-a", host: "room-a.local", os: "darwin", transport: "zrok",
     paths: [{ kind: "direct", state: "up", addr: "192.168.1.68:7779", mtls: true, rtt_ms: 11 }, { kind: "ziti", state: "none" }, { kind: "zrok", state: "on" }], version: ROOMS_DEMO_HUB_BUILD,
     up: 3 * 86400 + 5 * 3600, noMachine: true, disk: 256e9, free: 88e9, rate: 9000,
     path: "/Users/claude/git", worktrees: 14, cards: { running: 2, idle: 3, done: 5 },
@@ -637,18 +637,18 @@ function roomsDemoStart() {
     add(r.cards.perms, "needs-permission");
     add(r.cards.done, "done");
   }
-  // Limit reports on a few cards, the way a statusline posts them: sg3's cards
-  // run near the five-hour line, m1mini reports only the week.
+  // Limit reports on a few cards, the way a statusline posts them: room-d's cards
+  // run near the five-hour line, room-a reports only the week.
   const tele = (id, five, week, age) => {
     const t = roomsDemoCards.find(c => c.id === id);
     if (!t) return;
     t.telemetry = { seconds: age, five_hour: five == null ? undefined : { pct: five, resets_at: iso(now + 97 * 60000) },
       weekly: week == null ? undefined : { pct: week, resets_at: iso(now + 3 * 86400000) } };
   };
-  tele("demo-sg3-running-0", 64, 31, 40);
-  tele("demo-sg3-running-3", 58, 30, 300);
-  tele("demo-sg4-running-1", 82, 47, 90);
-  tele("demo-m1mini-running-0", null, 22, 600);
+  tele("demo-room-d-running-0", 64, 31, 40);
+  tele("demo-room-d-running-3", 58, 30, 300);
+  tele("demo-room-e-running-1", 82, 47, 90);
+  tele("demo-room-a-running-0", null, 22, 600);
   roomsDemoTick();
   roomsDemoTimer = setInterval(roomsDemoTick, 2000);
 }
@@ -664,9 +664,9 @@ function roomsDemoTick() {
     const lastRate = st.rate[st.rate.length - 1];
     st.rate.push(Math.round(demoWalk(lastRate, r.rate * 0.15, r.rate * 0.35, r.rate * 1.8)));
     st.rate.shift();
-    // sg4 runs hot, so the pulse shows. The others wander in the middle.
+    // room-e runs hot, so the pulse shows. The others wander in the middle.
     const lastCpu = st.cpu[st.cpu.length - 1];
-    st.cpu.push(Math.round(demoWalk(lastCpu, 7, r.name === "sg4" ? 78 : 8, 99)));
+    st.cpu.push(Math.round(demoWalk(lastCpu, 7, r.name === "room-e" ? 78 : 8, 99)));
     st.cpu.shift();
     st.mem.push(Math.round(100 * st.used / (r.mem || 1)));
     st.mem.shift();

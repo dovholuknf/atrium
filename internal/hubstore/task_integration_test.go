@@ -12,7 +12,7 @@ import (
 func taskStore(t *testing.T) *Store {
 	t.Helper()
 	s := open(t)
-	if _, _, err := s.PutItem(onWork("a1", "sg4", "c1", "f-x", 1)); err != nil {
+	if _, _, err := s.PutItem(onWork("a1", "room-e", "c1", "f-x", 1)); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -105,21 +105,21 @@ func TestOnlyAPendingTaskBeginsAndAHeldOneDoesNot(t *testing.T) {
 	if moved, _ := s.TaskSetHeld("f-x", "t1", true); !moved {
 		t.Fatal("hold")
 	}
-	if _, began, _ := s.TaskBegin("f-x", "t1", "sg4"); began {
+	if _, began, _ := s.TaskBegin("f-x", "t1", "room-e"); began {
 		t.Fatal("a held task began")
 	}
 	if items, _ := s.TaskItemsWithPending(); len(items) != 0 {
 		t.Fatalf("a held task is pending: %v", items)
 	}
 	s.TaskSetHeld("f-x", "t1", false)
-	got, began, err := s.TaskBegin("f-x", "t1", "sg4")
-	if err != nil || !began || got.State != TaskRunning || got.Attempt != 1 || got.Room != "sg4" {
+	got, began, err := s.TaskBegin("f-x", "t1", "room-e")
+	if err != nil || !began || got.State != TaskRunning || got.Attempt != 1 || got.Room != "room-e" {
 		t.Fatalf("begin: %+v %v %v", got, began, err)
 	}
 	if busy, _ := s.TaskBusy("f-x"); !busy {
 		t.Fatal("an item with a running task is not busy")
 	}
-	if _, began, _ := s.TaskBegin("f-x", "t1", "sg4"); began {
+	if _, began, _ := s.TaskBegin("f-x", "t1", "room-e"); began {
 		t.Fatal("a running task began again")
 	}
 }
@@ -127,7 +127,7 @@ func TestOnlyAPendingTaskBeginsAndAHeldOneDoesNot(t *testing.T) {
 func TestAnUnconfirmedLaunchIsResolvedByTheCardThatReportsIn(t *testing.T) {
 	s := taskStore(t)
 	addTask(t, s, "one")
-	begun, _, _ := s.TaskBegin("f-x", "t1", "sg4")
+	begun, _, _ := s.TaskBegin("f-x", "t1", "room-e")
 	if err := s.TaskLaunched("f-x", "t1", "", true, "lost"); err != nil {
 		t.Fatal(err)
 	}
@@ -137,27 +137,27 @@ func TestAnUnconfirmedLaunchIsResolvedByTheCardThatReportsIn(t *testing.T) {
 	if busy, _ := s.TaskBusy("f-x"); !busy {
 		t.Fatal("an unconfirmed task leaves the item free for another launch")
 	}
-	if moved, _ := s.TaskCardSeen("f-x", "sg5", "c9", begun.StartedAt); moved {
+	if moved, _ := s.TaskCardSeen("f-x", "room-f", "c9", begun.StartedAt); moved {
 		t.Fatal("a card on another room took the task")
 	}
-	if moved, _ := s.TaskCardSeen("f-x", "sg4", "c9", begun.StartedAt); !moved {
+	if moved, _ := s.TaskCardSeen("f-x", "room-e", "c9", begun.StartedAt); !moved {
 		t.Fatal("the card that reported in did not take the task")
 	}
-	if got, _ := s.TaskGet("f-x", "t1"); got.State != TaskRunning || got.Card != "sg4~c9" {
+	if got, _ := s.TaskGet("f-x", "t1"); got.State != TaskRunning || got.Card != "room-e~c9" {
 		t.Fatalf("after: %+v", got)
 	}
 }
 
 func captured(attempt int) TaskEvent {
-	return TaskEvent{BacklogID: "f-x", TaskID: "t1", Attempt: attempt, Card: "sg4~c1", Line: "wrote it", Why: "asked",
+	return TaskEvent{BacklogID: "f-x", TaskID: "t1", Attempt: attempt, Card: "room-e~c1", Line: "wrote it", Why: "asked",
 		Learned: "use the cache", Recap: "the recap", Files: []TaskFile{{Path: "out.txt", Name: "f-x-t1-out.txt", Size: 3}}}
 }
 
 func TestACapturedResultIsWrittenOnceAndAReplayIsANoOp(t *testing.T) {
 	s := taskStore(t)
 	addTask(t, s, "one")
-	s.TaskBegin("f-x", "t1", "sg4")
-	s.TaskLaunched("f-x", "t1", "sg4~c1", false, "")
+	s.TaskBegin("f-x", "t1", "room-e")
+	s.TaskLaunched("f-x", "t1", "room-e~c1", false, "")
 	if moved, _ := s.TaskCapturingNow(captured(1)); !moved {
 		t.Fatal("capturing")
 	}
@@ -189,8 +189,8 @@ func TestACapturedResultIsWrittenOnceAndAReplayIsANoOp(t *testing.T) {
 func TestAFailedTaskIsRetriedAsANewAttemptAndTheOldAttemptIsIgnored(t *testing.T) {
 	s := taskStore(t)
 	addTask(t, s, "one")
-	s.TaskBegin("f-x", "t1", "sg4")
-	s.TaskLaunched("f-x", "t1", "sg4~c1", false, "")
+	s.TaskBegin("f-x", "t1", "room-e")
+	s.TaskLaunched("f-x", "t1", "room-e~c1", false, "")
 	got, applied, _ := s.TaskFailedAs(TaskEvent{BacklogID: "f-x", TaskID: "t1", Attempt: 1, Folder: "/cards/a1", Reason: "exit 1"})
 	if !applied || got.State != TaskFailed || got.Folder != "/cards/a1" {
 		t.Fatalf("failed: %+v", got)
@@ -198,7 +198,7 @@ func TestAFailedTaskIsRetriedAsANewAttemptAndTheOldAttemptIsIgnored(t *testing.T
 	if moved, _ := s.TaskRetry("f-x", "t1"); !moved {
 		t.Fatal("retry")
 	}
-	if got, began, _ := s.TaskBegin("f-x", "t1", "sg4"); !began || got.Attempt != 2 {
+	if got, began, _ := s.TaskBegin("f-x", "t1", "room-e"); !began || got.Attempt != 2 {
 		t.Fatalf("attempt 2: %+v", got)
 	}
 	if _, applied, _ := s.TaskCapturedAs(captured(1)); applied {

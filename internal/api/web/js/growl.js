@@ -2,7 +2,7 @@
 //
 // Something waiting on a human that stays until it is handled, dismissed, or its reason ends. The hub holds the
 // state and says the WHOLE open set on every `growls` event, so this file keeps no state of its own that an event
-// does not replace. See docs/rnd/persistent-growler-design.md.
+// does not replace.
 //
 // NOTHING IS FETCHED. The hub sends one `growls` event when each stream opens, so the set arrives on load and on a
 // reopen without asking. A board whose stream never sends one (a room served alone) draws nothing and behaves as it

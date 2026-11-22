@@ -8,8 +8,8 @@ import (
 )
 
 func TestRoomRowOfflineRoom(t *testing.T) {
-	got := roomRow(link.Known{Name: "sgg"})
-	want := []string{"sgg", "-", "-", "-", "no", "never", "-", "-"}
+	got := roomRow(link.Known{Name: "room-g"})
+	want := []string{"room-g", "-", "-", "-", "no", "never", "-", "-"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

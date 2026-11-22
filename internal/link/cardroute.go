@@ -54,8 +54,7 @@ type cardRoomKey = wire.CardRoomKey
 //
 // It returns the request to carry on with, or false once it has answered.
 //
-// A NAME IS RESOLVED HERE, BEFORE ANY ROOM SEES IT, in this order. See
-// docs/rnd/handle-addressed-http-design.md section 4.
+// A NAME IS RESOLVED HERE, BEFORE ANY ROOM SEES IT, in this order.
 //
 //  1. `room~id`, a tagged id, names the room outright.
 //  2. `name@room` is looked for on that room only.

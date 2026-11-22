@@ -1,7 +1,6 @@
 # The hub and the rooms
 
-Status: built. This is the reference for how atrium runs today. The designs that led here are in `docs/archive/`
-(`hub-room-plan.md`, `hub-room-requirements.md`, `one-atrium-plan.md`, the federation and forum designs), and the
+Status: built. This is the reference for how atrium runs today. The
 decisions that shaped it are `docs/fabric/hub-decisions.md`.
 
 Atrium is one binary with two long-running commands. `atrium run` is the hub: it serves the board and holds no work.
@@ -123,7 +122,7 @@ The room always dials the hub, never the reverse. A hub restart is a room notici
 | OpenZiti | `--openziti <identity>` | the machines are on an OpenZiti network |
 
 A ziti or zrok room from before certificates were minted for overlays can still attach without one until
-`atrium rooms legacy refuse` turns that off (decision 18, `docs/rnd/overlay-room-identity.md`).
+`atrium rooms legacy refuse` turns that off (decision 18).
 
 ## Managing rooms
 

@@ -6,7 +6,7 @@
 //   3. registers the service worker and subscribes the browser to its push service with that key
 //   4. hands the hub the subscription (`POST /_hub/push/subscriptions`), whose answer may be a refusal in words
 // A second tap undoes it: `DELETE /_hub/push/subscriptions` with the endpoint in the body, which is the proof this
-// browser owns it, and then the browser's own unsubscribe. See docs/rnd/web-push-design.md.
+// browser owns it, and then the browser's own unsubscribe.
 //
 // FIVE THINGS THE ROW CAN SAY, and the reason is always on the row, never a silent switch that does nothing:
 //   off          nothing is subscribed. The switch is there.

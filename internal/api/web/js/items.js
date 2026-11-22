@@ -1,6 +1,6 @@
 // The items tab: every backlog item the hub holds, from designed to pushed. HUB-ONLY, like the backlog: `/_hub/items` is a 404 on a
 // plain daemon, so the tab shows once the hub probe in rooms.js has found a hub, through `paintItemsTab`.
-// The look is docs/rnd/item-lifecycle-design.md section 7 (list, detail, blocked), in the board's own tokens: css/items.css.
+// The look is list, detail and blocked, in the board's own tokens: css/items.css.
 //
 // THIS FILE ONLY DRAWS. Where the data comes from is js/items-data.js (`itemsData`), the one file that changes when the hub's
 // step, git and cost routes land. Every number it shows is already an item field, and every dollar is an ESTIMATE from real token
@@ -454,7 +454,7 @@ function itemQuestionHtml(it) {
     '" data-id="' + id + '">' + (approval ? "send back" : "send") + "</button></div></div>";
 }
 
-// The landed check (docs/rnd/doc-debt-from-features.md 2.8). `docs.not_said` is a landed feature whose change note says nothing of its
+// The landed check. `docs.not_said` is a landed feature whose change note says nothing of its
 // docs, and `docs.offer` a landed doc worker's item whose doc item is still open. Neither acts: the offer opens the doc item, and a person
 // closes it. The board remembers a dismissed offer, since the hub does not.
 const ITEMS_DOCS_KEY = "atrium.items.docsOfferDismissed";

@@ -34,7 +34,7 @@ func (f *fakeDesignGit) TouchesSince(context.Context, string, string, string) (i
 
 func (x *itemRig) designerFinished(t *testing.T) {
 	t.Helper()
-	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-d", "room": "sg4", "card": "c1",
+	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-d", "room": "room-e", "card": "c1",
 		"generation": 1, "state": "finished", "revision": 1, "owner_kind": "human", "created_by": "orch",
 		"note": designSHA[:12], "work_id": "f-x", "step": "designed"}), loopAddr)
 	if code != http.StatusOK {
@@ -124,7 +124,7 @@ func (f *fakeNoteGit) FileAt(context.Context, string, string, string) (string, b
 
 func (x *itemRig) spikerFinished(t *testing.T) {
 	t.Helper()
-	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-s", "room": "sg4", "card": "c1",
+	code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-s", "room": "room-e", "card": "c1",
 		"generation": 1, "state": "finished", "revision": 1, "owner_kind": "human", "created_by": "orch",
 		"note": designSHA[:12], "work_id": "f-x", "step": "spiked"}), loopAddr)
 	if code != http.StatusOK {
@@ -215,10 +215,10 @@ func TestSendingASpikeBackTypesTheNoteToTheSpiker(t *testing.T) {
 	x.p.designGit = &fakeNoteGit{fakeDesignGit: fakeDesignGit{last: designSHA}, text: "Decision: question which room?"}
 	x.spikerFinished(t)
 
-	if code, body := x.send("POST", "/_hub/work/f-x", js(map[string]any{"do": "send_back", "note": "ask sg4"}), loopAddr); code != http.StatusOK {
+	if code, body := x.send("POST", "/_hub/work/f-x", js(map[string]any{"do": "send_back", "note": "ask room-e"}), loopAddr); code != http.StatusOK {
 		t.Fatalf("send back: %d %s", code, body)
 	}
-	if len(x.calls) != 1 || !strings.Contains(x.calls[0], "/v1/items/it-s/sendback") || !strings.Contains(x.calls[0], "ask sg4") {
+	if len(x.calls) != 1 || !strings.Contains(x.calls[0], "/v1/items/it-s/sendback") || !strings.Contains(x.calls[0], "ask room-e") {
 		t.Fatalf("the room was not asked to type the note: %v", x.calls)
 	}
 	_, body := x.send("GET", "/_hub/work/f-x", "", loopAddr)

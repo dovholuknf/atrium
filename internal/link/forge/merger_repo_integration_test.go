@@ -39,7 +39,7 @@ func TestMergerLaunchNamesARepoTheRoomMakesAWorktreeOf(t *testing.T) {
 	c := launchCaller{in: make(chan ctl.LaunchInput, 1)}
 	p := New(Calls{Ctl: func() ctl.Caller { return c }, BacklogStore: func() *hubstore.Store { return st },
 		WorkOfTags: func([]string) string { return "f-1" }})
-	m := hubstore.MergeRequest{N: 23, Repo: "github/o/r", Branch: "claude/foo", Requester: "w1", RequesterRoom: "sg4", Room: "sg4"}
+	m := hubstore.MergeRequest{N: 23, Repo: "github/o/r", Branch: "claude/foo", Requester: "w1", RequesterRoom: "room-e", Room: "room-e"}
 	if _, err := p.mergeLaunchMerger(context.Background(), m, gitsync.MergeResult{Conflicts: []string{"a.txt"}}); err != nil {
 		t.Fatal(err)
 	}

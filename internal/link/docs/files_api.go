@@ -15,8 +15,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// The hub file drop, the board's half. The tools are files_mcp.go, the store is internal/hubstore/files.go and the
-// design is docs/rnd/hub-file-drop.md.
+// The hub file drop, the board's half. The tools are files_mcp.go, the store is internal/hubstore/files.go.
 //
 //	GET  /_hub/files                      the list and the drop's usage
 //	POST /_hub/files                      upload one file, multipart: file, note, ttl_days

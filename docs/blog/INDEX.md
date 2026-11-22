@@ -141,7 +141,7 @@ Git between rooms, verdicts as trailers, and the stages a change passes before c
 ## How these were found
 
 - Two read-only digs of the repo: the shipped half from README, FEATURES, the changelogs, the docs and the git log,
-  and the designed and wanted half from `docs/rnd` and `docs/backlog`. Their merged result is `inventory.md`.
+ and the designed and wanted half from `docs/backlog`. Their merged result is `inventory.md`.
 - The orchestrator's factory status and evaluations, and the factory log. These are kept off the repo because they
   quote clint, and are used here as paraphrased sources only.
 - The recap index on sg4 has no atrium rows, so nothing from it is used here.

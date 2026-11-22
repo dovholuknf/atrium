@@ -27,7 +27,7 @@ func TestFilesAPIRouteIsAbsentWithoutAStore(t *testing.T) {
 
 func TestFilesAPIListUploadRawDelete(t *testing.T) {
 	h := newDocsHub(t)
-	m := wantCode(t, h.putFile("table one.csv", "a,b\n1,2\n", map[string]string{"note": "for sg4", "ttl_days": "2"}), 201)
+	m := wantCode(t, h.putFile("table one.csv", "a,b\n1,2\n", map[string]string{"note": "for room-e", "ttl_days": "2"}), 201)
 	if m["name"] != "table one.csv" || m["size"] != float64(8) || m["expires"] == "" {
 		t.Fatalf("answer %+v", m)
 	}
@@ -43,7 +43,7 @@ func TestFilesAPIListUploadRawDelete(t *testing.T) {
 		fm := f.(map[string]any)
 		byName[fm["name"].(string)] = fm
 	}
-	if a := byName["table one.csv"]; a["origin"] != "local" || a["by"] != "operator" || a["note"] != "for sg4" {
+	if a := byName["table one.csv"]; a["origin"] != "local" || a["by"] != "operator" || a["note"] != "for room-e" {
 		t.Fatalf("row %+v", a)
 	}
 	if a := byName["share.txt"]; a["origin"] != "share" || a["by"] != "share" {

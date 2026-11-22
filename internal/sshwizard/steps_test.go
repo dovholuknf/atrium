@@ -110,19 +110,19 @@ func (m *fakeMachine) Publish(_ context.Context, r PublishRecord) error {
 func (m *fakeMachine) SaveUser(u string) error                  { m.savedUser = u; m.sw.User = u; return nil }
 func (m *fakeMachine) Peers(context.Context) ([]PeerKey, error) { return m.peers, m.peersErr }
 
-// winMachine is sg3 at the start: joined and proven, a standard user, Windows sshd running, wslrelay on loopback,
+// winMachine is room-d at the start: joined and proven, a standard user, Windows sshd running, wslrelay on loopback,
 // nothing set up for ssh.
 func winMachine() *fakeMachine {
 	return &fakeMachine{
 		fakeEnv: wslMachine(),
 		runs: map[string]ranAnswer{
 			getService:             {out: "Running|Automatic\n"},
-			"Get-LocalGroupMember": {out: "SG3\\Administrator\n"},
+			"Get-LocalGroupMember": {out: "ROOM-D\\Administrator\n"},
 		},
 		exists:  map[string]bool{},
 		have:    map[string]bool{"ssh-keygen": true},
 		home:    `C:\Users\claude`,
-		joined:  Joined{Room: "sg3", Proven: true},
+		joined:  Joined{Room: "room-d", Proven: true},
 		account: Account{Name: "claude"},
 		users:   map[string]bool{"claude": true},
 		sw:      remoteaccess.State{Version: 1, Port: 22},
@@ -172,8 +172,8 @@ func TestTheElevenStepsAreInOrderAndNamed(t *testing.T) {
 
 func TestStep1WhereAmI(t *testing.T) {
 	m := winMachine()
-	want(t, m.step(t, 1, Options{}), OK, "room sg3 on Windows, running as claude (not elevated)")
-	m.joined = Joined{Room: "sg3", Rejoin: "run `atrium rooms token`"}
+	want(t, m.step(t, 1, Options{}), OK, "room room-d on Windows, running as claude (not elevated)")
+	m.joined = Joined{Room: "room-d", Rejoin: "run `atrium rooms token`"}
 	r := m.step(t, 1, Options{})
 	want(t, r, Failed, "no certificate")
 	want(t, r, Failed, "atrium rooms token")
@@ -253,12 +253,12 @@ func TestStep3WhichSSHD(t *testing.T) {
 	m := winMachine()
 	// Saved addr is the default and loopback is wslrelay's: the wizard chooses the machine's name.
 	r := m.step(t, 3, Options{})
-	want(t, r, Todo, "sg3:22 is this machine's sshd")
+	want(t, r, Todo, "room-d:22 is this machine's sshd")
 	want(t, r, Todo, "127.0.0.1:22 is WSL's sshd (wslrelay), not Windows'")
 
 	// Already pointed at the right one.
-	m.sw.Addr = "sg3"
-	want(t, m.step(t, 3, Options{}), OK, "sg3:22 is this machine's sshd")
+	m.sw.Addr = "room-d"
+	want(t, m.step(t, 3, Options{}), OK, "room-d:22 is this machine's sshd")
 
 	// ssh is on and dials the wslrelay: loud, not silent.
 	m.sw = remoteaccess.State{Version: 1, On: true, Port: 22, From: []string{"hub"}}
@@ -271,7 +271,7 @@ func TestStep3WhichSSHD(t *testing.T) {
 
 	// Something answers, and none of it is this machine's.
 	m3 := winMachine()
-	delete(m3.fakeEnv.scans, "sg3:22")
+	delete(m3.fakeEnv.scans, "room-d:22")
 	delete(m3.fakeEnv.scans, "192.168.1.147:22")
 	want(t, m3.step(t, 3, Options{}), Failed, "no address answers with this machine's own sshd host key")
 }
@@ -333,20 +333,20 @@ func TestStep7InstallTheOthersKeys(t *testing.T) {
 	// The hub cannot say yet and there is no block.
 	want(t, m.step(t, 7, opt), Todo, "no atrium block")
 
-	block := "ssh-rsa AAAA user@laptop\n# BEGIN atrium (managed)\n" + keyLine("ssh-ed25519", "mine") + " atrium:sg3\n# END atrium\n"
+	block := "ssh-rsa AAAA user@laptop\n# BEGIN atrium (managed)\n" + keyLine("ssh-ed25519", "mine") + " atrium:room-d\n# END atrium\n"
 	m.fakeEnv.files[auth] = block
 	want(t, m.step(t, 7, opt), OK, "not compared with the hub's set")
 
-	// With the hub's set: sg4 is allowed by from, m1mini is not, a room outside the from list is not, and a room's own switch is not read.
+	// With the hub's set: room-e is allowed by from, room-a is not, a room outside the from list is not, and a room's own switch is not read.
 	m.peersErr = nil
-	m.sw.From = []string{"hub", "sg4"}
+	m.sw.From = []string{"hub", "room-e"}
 	m.peers = []PeerKey{
-		{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4"), SSHOn: true},
-		{Room: "m1mini", Key: keyLine("ssh-ed25519", "m1mini"), SSHOn: true},
+		{Room: "room-e", Key: keyLine("ssh-ed25519", "room-e"), SSHOn: true},
+		{Room: "room-a", Key: keyLine("ssh-ed25519", "room-a"), SSHOn: true},
 		{Room: "off", Key: keyLine("ssh-ed25519", "off"), SSHOn: false},
 	}
 	want(t, m.step(t, 7, opt), Todo, "needs 1 key(s) added and 0 removed")
-	m.fakeEnv.files[auth] = block[:strings.Index(block, "# END")] + keyLine("ssh-ed25519", "sg4") + " atrium:sg4\n# END atrium\n"
+	m.fakeEnv.files[auth] = block[:strings.Index(block, "# END")] + keyLine("ssh-ed25519", "room-e") + " atrium:room-e\n# END atrium\n"
 	want(t, m.step(t, 7, opt), OK, "1 room key(s) and this room's own")
 
 	// A removed room's key still in the block is a removal to do. A key outside the block is never read.
@@ -355,13 +355,13 @@ func TestStep7InstallTheOthersKeys(t *testing.T) {
 	want(t, m.step(t, 7, opt), Todo, "1 removed")
 
 	// --no-self-test leaves this room's own key out of what is wanted.
-	m.fakeEnv.files[auth] = "# BEGIN atrium\n" + keyLine("ssh-ed25519", "sg4") + "\n# END atrium\n"
+	m.fakeEnv.files[auth] = "# BEGIN atrium\n" + keyLine("ssh-ed25519", "room-e") + "\n# END atrium\n"
 	want(t, m.step(t, 7, Options{SelfTest: false}), OK, "1 room key(s)")
 }
 
 func TestStep7TheWindowsAdministratorsFile(t *testing.T) {
 	m := winMachine().withKey()
-	m.runs["Get-LocalGroupMember"] = ranAnswer{out: "SG3\\Administrator\nSG3\\claude\n"}
+	m.runs["Get-LocalGroupMember"] = ranAnswer{out: "ROOM-D\\Administrator\nRoomD\\claude\n"}
 	m.fakeEnv.files[`C:\ProgramData\ssh\sshd_config`] = "Port 22\nMatch Group administrators\n       AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys\n"
 	r := m.step(t, 7, Options{SelfTest: true})
 	want(t, r, NeedsHuman, "administrators_authorized_keys")
@@ -373,7 +373,7 @@ func TestStep7TheWindowsAdministratorsFile(t *testing.T) {
 	want(t, m.step(t, 7, Options{SelfTest: true}), Todo, "no atrium block")
 	// A standard user who is not an administrator keeps the home file and needs no one.
 	m.account = Account{Name: "claude"}
-	m.runs["Get-LocalGroupMember"] = ranAnswer{out: "SG3\\Administrator\n"}
+	m.runs["Get-LocalGroupMember"] = ranAnswer{out: "ROOM-D\\Administrator\n"}
 	r = m.step(t, 7, Options{SelfTest: true})
 	want(t, r, Todo, ".ssh")
 }
@@ -391,7 +391,7 @@ func TestManagedKeysReadsOnlyInsideTheBlock(t *testing.T) {
 func TestStep8RoundTrip(t *testing.T) {
 	const auth = `C:\Users\claude\.ssh\authorized_keys`
 	m := winMachine().withKey()
-	m.sw = remoteaccess.State{Version: 1, On: true, Addr: "sg3", Port: 22, From: []string{"hub"}}
+	m.sw = remoteaccess.State{Version: 1, On: true, Addr: "room-d", Port: 22, From: []string{"hub"}}
 	m.fakeEnv.files[auth] = "# BEGIN atrium\n" + keyLine("ssh-ed25519", "mine") + "\n# END atrium\n"
 	opt := Options{SelfTest: true}
 
@@ -401,11 +401,11 @@ func TestStep8RoundTrip(t *testing.T) {
 	m.sw.On = true
 
 	for out, sub := range map[string]string{
-		"claude@sg3: Permission denied (publickey).": "step 5 or 7",
-		"Connection closed by UNKNOWN port 65535":    "before a banner",
-		"SSH-2.0-OpenSSH_8.9p1 Ubuntu mismatch":      "wrong sshd",
-		"Host key verification failed.":              "host key mismatch",
-		"ssh: Could not resolve hostname sg3":        "atrium_config",
+		"claude@room-d: Permission denied (publickey).": "step 5 or 7",
+		"Connection closed by UNKNOWN port 65535":       "before a banner",
+		"SSH-2.0-OpenSSH_8.9p1 Ubuntu mismatch":         "wrong sshd",
+		"Host key verification failed.":                 "host key mismatch",
+		"ssh: Could not resolve hostname room-d":        "atrium_config",
 	} {
 		m.runs["ssh -o BatchMode=yes"] = ranAnswer{out: out, err: errors.New("exit status 255")}
 		want(t, m.step(t, 8, opt), Failed, sub)
@@ -413,7 +413,7 @@ func TestStep8RoundTrip(t *testing.T) {
 	m.runs["ssh -o BatchMode=yes"] = ranAnswer{out: "atrium-ok\n"}
 	want(t, m.step(t, 8, opt), OK, "atrium-ok")
 	last := m.ran[len(m.ran)-1]
-	if !strings.Contains(last, "BatchMode=yes") || !strings.Contains(last, "sg3 echo atrium-ok") {
+	if !strings.Contains(last, "BatchMode=yes") || !strings.Contains(last, "room-d echo atrium-ok") {
 		t.Fatalf("the ssh that ran: %q", last)
 	}
 
@@ -424,7 +424,7 @@ func TestStep8WaitsForThePathToBeBuilt(t *testing.T) {
 	m := winMachine().withKey()
 	m.sw = remoteaccess.State{Version: 1, On: true, Port: 22, From: []string{"hub"}}
 	// Step 7 has no block yet for a non elevated admin: nothing may be run as a login test.
-	m.runs["Get-LocalGroupMember"] = ranAnswer{out: "SG3\\claude\n"}
+	m.runs["Get-LocalGroupMember"] = ranAnswer{out: "ROOM-D\\claude\n"}
 	r := m.step(t, 8, Options{SelfTest: true})
 	want(t, r, Skipped, "waits for step 3")
 	for _, l := range m.ran {
@@ -441,23 +441,23 @@ func TestStep9ReachTheOthers(t *testing.T) {
 	m.peersErr = nil
 	want(t, m.step(t, 9, opt), OK, "nobody to reach")
 	m.peers = []PeerKey{
-		{Room: "sg4", Online: true, SSHOn: true},
-		{Room: "m1mini", Online: true, SSHOn: true},
+		{Room: "room-e", Online: true, SSHOn: true},
+		{Room: "room-a", Online: true, SSHOn: true},
 		{Room: "asleep", Online: false, SSHOn: true},
-		{Room: "sg3", Online: true, SSHOn: true},
+		{Room: "room-d", Online: true, SSHOn: true},
 	}
-	m.runs["ConnectTimeout=10 sg4"] = ranAnswer{out: "atrium-ok"}
-	m.runs["ConnectTimeout=10 m1mini"] = ranAnswer{out: "Permission denied (publickey).", err: errors.New("exit status 255")}
+	m.runs["ConnectTimeout=10 room-e"] = ranAnswer{out: "atrium-ok"}
+	m.runs["ConnectTimeout=10 room-a"] = ranAnswer{out: "Permission denied (publickey).", err: errors.New("exit status 255")}
 	r := m.step(t, 9, opt)
 	want(t, r, Failed, "reached 1 of 2")
-	want(t, r, Failed, "sg4: reached")
+	want(t, r, Failed, "room-e: reached")
 	want(t, r, Failed, "it picks it up within a minute")
 	for _, l := range r.Detail {
-		if strings.HasPrefix(l, "asleep") || strings.HasPrefix(l, "sg3") {
+		if strings.HasPrefix(l, "asleep") || strings.HasPrefix(l, "room-d") {
 			t.Fatalf("asked a room that is offline or is this one: %v", r.Detail)
 		}
 	}
-	m.runs["ConnectTimeout=10 m1mini"] = ranAnswer{out: "atrium-ok"}
+	m.runs["ConnectTimeout=10 room-a"] = ranAnswer{out: "atrium-ok"}
 	want(t, m.step(t, 9, opt), OK, "reached 2 of 2")
 }
 
@@ -470,19 +470,19 @@ func TestStep10Config(t *testing.T) {
 	want(t, r, OK, "holds 0 block(s)")
 	want(t, r, OK, "cannot be read yet")
 	m.peersErr = nil
-	m.peers = []PeerKey{{Room: "sg4", SSHOn: true}, {Room: "m1mini", SSHOn: true}, {Room: "off"}}
-	m.shown.Rooms = []string{"sg4"}
+	m.peers = []PeerKey{{Room: "room-e", SSHOn: true}, {Room: "room-a", SSHOn: true}, {Room: "off"}}
+	m.shown.Rooms = []string{"room-e"}
 	want(t, m.step(t, 10, opt), Todo, "no block for 1 room(s)")
-	m.shown.Rooms = []string{"sg4", "m1mini"}
+	m.shown.Rooms = []string{"room-e", "room-a"}
 	want(t, m.step(t, 10, opt), OK, "holds 2 block(s)")
 }
 
 func TestStep11On(t *testing.T) {
 	m := winMachine()
-	want(t, m.step(t, 11, Options{From: []string{"sg4"}}), Todo, "ssh is off in this room. this step turns it on, for sg4")
+	want(t, m.step(t, 11, Options{From: []string{"room-e"}}), Todo, "ssh is off in this room. this step turns it on, for room-e")
 	// On and dialling the chosen address.
-	m.sw = remoteaccess.State{Version: 1, On: true, Addr: "sg3", Port: 22, From: []string{"hub"}}
-	want(t, m.step(t, 11, Options{}), OK, "ssh is on: on, sg3:22, from hub")
+	m.sw = remoteaccess.State{Version: 1, On: true, Addr: "room-d", Port: 22, From: []string{"hub"}}
+	want(t, m.step(t, 11, Options{}), OK, "ssh is on: on, room-d:22, from hub")
 	// On, but at loopback, which is wslrelay's: the wrong sshd is loud, and what waits on it waits.
 	m.sw.Addr = ""
 	want(t, m.step(t, 11, Options{}), Skipped, "waits for step 3")
@@ -536,9 +536,9 @@ func TestStep9NeverPassesAHostileRoomToSSH(t *testing.T) {
 	m.peersErr = nil
 	m.peers = []PeerKey{
 		{Room: "-oProxyCommand=x", Online: true, SSHOn: true},
-		{Room: "sg4", Online: true, SSHOn: true},
+		{Room: "room-e", Online: true, SSHOn: true},
 	}
-	m.runs["ConnectTimeout=10 sg4"] = ranAnswer{out: "atrium-ok"}
+	m.runs["ConnectTimeout=10 room-e"] = ranAnswer{out: "atrium-ok"}
 	r := m.step(t, 9, Options{SelfTest: true})
 	want(t, r, Failed, "reached 1 of 2")
 	want(t, r, Failed, "not a room name")

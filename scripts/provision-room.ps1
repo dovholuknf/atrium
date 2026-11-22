@@ -110,7 +110,7 @@
 # nothing. A machine with no atrium yet is checked by the first run. With no work root the room.yaml is the agent pack alone:
 # the old shared folder behaviour stays and the pack is installed. A failed pack is a warn and never an exit code.
 #
-# THE AGENT PACK. Unless -NoAgentPack, the agents and skills of -AgentPackRepo (dovholuknf/dotfiles, branch
+# THE AGENT PACK. Only when -AgentPackRepo names one (there is no default), its agents and skills (branch
 # -AgentPackBranch main), claude/agents/*.md and claude/skills/<name>/, are installed as real files in the account's
 # ~/.claude by `atrium room setup --apply`, and the commit is recorded in ~/.claude/atrium-agent-pack.json. They come from
 # the hub's own mirror of the repository, cloned WHOLE here and sent as a tarball (`--pack-dir`), because the room's
@@ -247,9 +247,9 @@ param(
     # it, nothing of them on the system drive. See "the work root". Takes the place of the shared folder.
     [string] $WorkRoot,
     # The operator's agents and skills are installed from the hub's mirror of -AgentPackRepo into the account's ~/.claude,
-    # unless -NoAgentPack. See "the agent pack".
+    # only when one is named and not -NoAgentPack. See "the agent pack".
     [switch] $NoAgentPack,
-    [string] $AgentPackRepo = 'dovholuknf/dotfiles',
+    [string] $AgentPackRepo = '',
     [string] $AgentPackBranch = 'main',
     # Read only: the account and shared folder steps say what they find and what they would do, then the run ends.
     [switch] $Check,
@@ -365,6 +365,7 @@ $AllowedFolders = Split-List $AllowedFolders
 if ($PSBoundParameters.ContainsKey('WorkRoot') -and (-not $WorkRoot -or $WorkRoot -match '[\x00-\x1f\x7f]')) {
     Write-Host "provision args fail -WorkRoot '$WorkRoot' is empty or holds a control character"; exit 1
 }
+if (-not $AgentPackRepo) { $NoAgentPack = [switch]$true }
 if (-not $NoAgentPack) {
     $why = Test-PackArg $AgentPackRepo $AgentPackBranch
     if ($why) { Write-Host "provision args fail $why"; exit 1 }
@@ -1324,7 +1325,7 @@ function Invoke-AllowedFolders {
 # NEVER A FAILURE. A room that is not signed in still works, it only needs a
 # person. So this says the exact command and goes on. It never carries, copies
 # or reads a credential: the answer is read from the CLI, and the sign-in is
-# done by clint, at a terminal, with their own browser.
+# done by the operator, at a terminal, with their own browser.
 function Test-ClaudeAuth {
     $authState = 'na'
     if (@($Runners + $Install) -contains 'claude') {

@@ -340,7 +340,7 @@ func cmdUsage(args []string, out io.Writer) error {
 	untilS := fs.String("until", "", "window end, RFC3339, default now")
 	src := fs.String("src", ".", "directory with usage-<room>-*.jsonl and tasks-<room>-*.json")
 	dir := fs.String("out", ".", "directory to write the CSVs and summary to")
-	rooms := fs.String("rooms", "claude-sg4,m1mini,sg3,sg4-control,sgg", "comma separated rooms")
+	rooms := fs.String("rooms", "", "comma separated rooms, required")
 	hub := fs.String("hub", defaultHub, "hub base URL")
 	landedF := fs.String("landed", "", "JSON file mapping card title to the sha it landed as")
 	name := fs.String("name", "", "suffix for the output file names, default the since date")
@@ -350,6 +350,9 @@ func cmdUsage(args []string, out io.Writer) error {
 	since := parseTime(*sinceS)
 	if since.IsZero() {
 		return fmt.Errorf("--since needs an RFC3339 time")
+	}
+	if strings.TrimSpace(*rooms) == "" {
+		return fmt.Errorf("--rooms needs the rooms to read, comma separated")
 	}
 	var until time.Time
 	if *untilS != "" {

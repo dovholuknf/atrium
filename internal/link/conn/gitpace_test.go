@@ -77,7 +77,7 @@ func (pipeDialer) Describe() string                         { return "pipe" }
 
 func TestARelayHoldsTheYieldUntilItsReply(t *testing.T) {
 	a, b := net.Pipe()
-	r := &Room{Name: "sgg", up: true, Dial: pipeDialer{a}, T: DefaultTimings()}
+	r := &Room{Name: "room-g", up: true, Dial: pipeDialer{a}, T: DefaultTimings()}
 	held := make(chan int32, 1)
 	go func() {
 		defer b.Close()

@@ -1,5 +1,5 @@
 // Package remoteaccess is a room's switch for letting its own sshd be reached through the hub, the file
-// `remote_access.json` beside the room's key. See docs/rnd/ssh-via-hub.md.
+// `remote_access.json` beside the room's key.
 //
 // ATRIUM CARRIES BYTES AND HOLDS NO CREDENTIAL. This file says whether the room's own sshd (127.0.0.1, one port) may
 // be reached over the link, and by whom. The login is sshd's own.

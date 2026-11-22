@@ -56,7 +56,7 @@ func TestMovedPackFolderIsCheckedBeforeAnythingIsWritten(t *testing.T) {
 			m.Dir("/srv/localai")
 		} else {
 			spec = mustSpec(t, Windows, winSpec+"packs:\n  - runner: "+c.runner+"\n    repo: o/a\n")
-			m = NewMemFS(winHome, `SG3\localai`)
+			m = NewMemFS(winHome, `ROOM-D\localai`)
 			m.Dir("V:/")
 			m.Dir("V:/localai")
 		}

@@ -3,7 +3,7 @@
 //
 // ALL OF THAT STATE IS ONE OBJECT, `mock`. A section sets `mock.tasksMode = "worn"` where it used to set a module-level
 // `tasksMode`, and `mock.snapshot()` / `mock.reset(snapshot)` put every field back to how it was when the snapshot was
-// taken. That covers the loose `let`s and the objects a section mutates in place (the cards PIN, LOOSE, ALPHA, SGG, the
+// taken. That covers the loose `let`s and the objects a section mutates in place (the cards PIN, LOOSE, ALPHA, ROOM-G, the
 // switch rows HON, HOFF, FON, FOFF, LAND, the Set of dismissed questions, the write logs), so a unit that leaves one
 // changed cannot reach the next unit. A new piece of state a section changes goes on `mock` as `mock.name = initial`,
 // never as a module-level `let` or a `const` mutated in place: the listing in test-board-headless.js fails on a `let`.
@@ -221,11 +221,11 @@ mock.loopListSupervised = false;
 mock.soloMode = "ok";       // ok | noroom | gone
 // Whether the mock answers the `/_hub/*` probes as a hub. Off by default so the
 // board runs as a plain daemon for the tests above; the room-picker test turns
-// it on and loads a fresh page. `sggAttached` is the one room that flips from
+// it on and loads a fresh page. `roomGAttached` is the one room that flips from
 // disconnected to live under the open dropdown.
 mock.hubMode = false;
 mock.setupFixed = [];
-mock.sggAttached = false;
+mock.roomGAttached = false;
 // Whether the hub has a room to borrow `/v1/settings` from. False is the window
 // right after a hub restart: no room has re-attached, so the ALL-view read is
 // answered with the same 409 the real hub gives, and the board's load-time skin
@@ -260,7 +260,7 @@ mock.sseRefuse = false;
 mock.sseRefused = 0;
 mock.gateCalls = { input: 0, pause: 0, resume: 0 };
 mock.ALPHA = { name: "alpha", host: "alpha-host" };
-mock.SGG = { name: "sgg", host: "sgg-host" };
+mock["ROOM-G"] = { name: "room-g", host: "room-g-host" };
 
 // The operational audit feed the hub serves, newest first, across two rooms and
 // a hub-level line so the room and kind filters have something to sort. `auditLive`
@@ -268,14 +268,14 @@ mock.SGG = { name: "sgg", host: "sgg-host" };
 const AUDIT_BASE = [
   { id: "a4", at: "2026-09-19T12:06:00Z", room: "alpha", kind: "permission-requested",
     detail: "Bash: ls" },
-  { id: "a3", at: "2026-09-19T12:05:00Z", room: "sgg", kind: "room-attached",
-    detail: "sgg running v2" },
-  { id: "a2", at: "2026-09-19T12:02:00Z", room: "sgg", kind: "session-start",
+  { id: "a3", at: "2026-09-19T12:05:00Z", room: "room-g", kind: "room-attached",
+    detail: "room-g running v2" },
+  { id: "a2", at: "2026-09-19T12:02:00Z", room: "room-g", kind: "session-start",
     detail: "second card started on claude" },
   { id: "a1", at: "2026-09-19T12:00:00Z", kind: "hub-started", detail: "the hub came up" }
 ];
 mock.auditLive = false;
-const AUDIT_LIVE = { id: "a5", at: "2026-09-19T12:10:00Z", room: "sgg", kind: "session-exit",
+const AUDIT_LIVE = { id: "a5", at: "2026-09-19T12:10:00Z", room: "room-g", kind: "session-exit",
   detail: "second card exited with code 0 after 3s" };
 // `auditMany` swaps in a feed far taller than the window, for the scroll test, and
 // `auditManyLive` puts one more line on top of it.
@@ -283,9 +283,9 @@ mock.auditMany = false;
 mock.auditManyLive = false;
 const AUDIT_MANY = Array.from({ length: 150 }, (_, i) => ({
   id: "m" + (150 - i), at: new Date(Date.UTC(2026, 8, 19, 12, 0, 150 - i)).toISOString(),
-  room: i % 2 ? "sgg" : "alpha", kind: "session-start", detail: "card " + (150 - i) + " started"
+  room: i % 2 ? "room-g" : "alpha", kind: "session-start", detail: "card " + (150 - i) + " started"
 }));
-const AUDIT_MANY_LIVE = { id: "m151", at: "2026-09-19T12:03:00Z", room: "sgg", kind: "session-exit",
+const AUDIT_MANY_LIVE = { id: "m151", at: "2026-09-19T12:03:00Z", room: "room-g", kind: "session-exit",
   detail: "card 151 exited" };
 function auditFeed() {
   if (mock.auditMany) return mock.auditManyLive ? [AUDIT_MANY_LIVE].concat(AUDIT_MANY) : AUDIT_MANY.slice();
@@ -300,8 +300,8 @@ function resetAudit() { mock.auditLive = false; mock.auditMany = false; mock.aud
 // while scoped to a room lands on that room, and never on the hub. The list is
 // the same across scopes; only the selected one differs.
 const SKINS = ["harbour", "moss", "noir", "ember", "vapor", "sandstone"];
-mock.skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
-function resetSkins() { mock.skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
+mock.skinFor = { "": "noir", alpha: "moss", "room-g": "ember" };
+function resetSkins() { mock.skinFor = { "": "noir", alpha: "moss", "room-g": "ember" }; }
 function settingsBody(room) {
   const skin = mock.skinFor[room] != null ? mock.skinFor[room] : mock.skinFor[""];
   return Object.assign({ global_auto: mock.gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS,
@@ -507,7 +507,7 @@ function walkRoute(req, res, url) {
   return true;
 }
 
-// THE UNIFIED CARD (docs/rnd/unified-card.md): one card per state, and 111 finished ones for the cap.
+// THE UNIFIED CARD: one card per state, and 111 finished ones for the cap.
 const UC_AT = new Date(Date.UTC(2026, 8, 19, 12, 0, 0)).toISOString();
 const ucCard = (id, status, more) => Object.assign({
   id, status, display_title: id, runner: "claude", rank: 1, worktree: "/tmp/" + id, why: "", idle_seconds: 30, wait_seconds: 0,
@@ -727,7 +727,7 @@ const server = http.createServer((req, res) => {
     if (id === "loop1") { sendJSON(res, LOOP); return; }
     // The solo card under its room-tagged spelling, the form the hub serves
     // while more than one room is attached. See `popoutTagFlipSection`.
-    if (id === "sgg~s1") { sendJSON(res, Object.assign({}, SOLO, { id: "sgg~s1" })); return; }
+    if (id === "room-g~s1") { sendJSON(res, Object.assign({}, SOLO, { id: "room-g~s1" })); return; }
     sendJSON(res, id === "s1" ? SOLO : id === "pin1" ? mock.PIN : (id === "t2" ? T2 : T1));
     return;
   }
@@ -752,11 +752,11 @@ const server = http.createServer((req, res) => {
   // The rooms pill's fix: the room it wrote to, and the setup the hub then reads clean.
   if (url === "/v1/hooks/install" && req.method === "POST") {
     mock.setupFixed.push(req.headers["x-atrium-room"] || "");
-    delete mock.SGG.setup;
+    delete mock["ROOM-G"].setup;
     sendJSON(res, { report: { missing: 0, hooks: [] }, backup: "C:/Users/x/.claude/settings.json.atrium-1.bak", changed: true });
     return;
   }
-  if (url.startsWith("/_hub/setup-check") && req.method === "POST") { sendJSON(res, { room: "sgg", setup: null }); return; }
+  if (url.startsWith("/_hub/setup-check") && req.method === "POST") { sendJSON(res, { room: "room-g", setup: null }); return; }
   if (url === "/v1/sources") { sendJSON(res, { sources: [] }); return; }
   if (url === "/v1/recognisers") { sendJSON(res, { recognisers: [] }); return; }
   if (url === "/v1/actions") { sendJSON(res, { actions: [] }); return; }
@@ -893,18 +893,18 @@ const server = http.createServer((req, res) => {
     // The board answers every /_hub path 404 itself once this probe says it is not a hub.
     if (!mock.hubMode && !mock.boardDocs) { res.writeHead(404); res.end("not a hub"); return; }
     if (!mock.hubHasRoom) { sendJSON(res, { rooms: [] }); return; }
-    sendJSON(res, { rooms: mock.sggAttached ? [mock.ALPHA, mock.SGG] : [mock.ALPHA] });
+    sendJSON(res, { rooms: mock.roomGAttached ? [mock.ALPHA, mock["ROOM-G"]] : [mock.ALPHA] });
     return;
   }
   if (url === "/_hub/inventory") {
     if (!mock.hubMode) { res.writeHead(404); res.end("not a hub"); return; }
     const alpha = Object.assign({ transport: "direct", attached: true,
       first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T12:00:00Z" }, mock.ALPHA);
-    // sgg has dialled in before, so it shows disconnected until it attaches: the
+    // room-g has dialled in before, so it shows disconnected until it attaches: the
     // picker only lists an ever-connected room, never one that is only inventory.
-    const sgg = Object.assign({ transport: "direct", attached: mock.sggAttached,
-      first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T11:00:00Z" }, mock.SGG);
-    sendJSON(res, { rooms: [alpha, sgg] });
+    const roomG = Object.assign({ transport: "direct", attached: mock.roomGAttached,
+      first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T11:00:00Z" }, mock["ROOM-G"]);
+    sendJSON(res, { rooms: [alpha, roomG] });
     return;
   }
   if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
@@ -942,14 +942,14 @@ const server = http.createServer((req, res) => {
       sendJSON(res, { items });
       return;
     }
-    sendJSON(res, { reports: [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "sg4", subject: "f-003 built",
+    sendJSON(res, { reports: [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "room-e", subject: "f-003 built",
       body: "done and tested", at: "2026-09-30T12:00:00Z", read_at: null, read_by: null }] });
     return;
   }
   // The items a human owns that are blocked or finished. See js/backlog.js.
   if (url.startsWith("/_hub/items")) {
     if (!mock.hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    sendJSON(res, { items: [{ item_id: "it-aa11", room: "sg4", card: "c1", state: "blocked", revision: 2,
+    sendJSON(res, { items: [{ item_id: "it-aa11", room: "room-e", card: "c1", state: "blocked", revision: 2,
       owner_kind: "human", updated_at: "2026-10-13T12:00:00Z" }] });
     return;
   }

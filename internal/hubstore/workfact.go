@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// THE STEP ENGINE'S EVIDENCE (item lifecycle L2). The derived step rows are workstep.go's, one model for every stage. See docs/rnd/item-lifecycle-design.md, sections 3 and 4.1.
+// THE STEP ENGINE'S EVIDENCE (item lifecycle L2). The derived step rows are workstep.go's, one model for every stage.
 //
 //   - A FACT IS APPENDED AND NEVER EDITED. The unique key is (backlog_id, kind, ref, at_sha), so the same approval of the same
 //     design, or the same design noticed twice, is one row. `ref` is what tells two facts of one kind at one sha apart:

@@ -51,9 +51,9 @@ func newSpecHub(t *testing.T, rooms ...string) *specHub {
 	return &specHub{addr: ln.Addr().String(), st: st, front: front}
 }
 
-const specSG3 = "version: 1\nname: sg3\nos: windows\n"
+const specRoomD = "version: 1\nname: room-d\nos: windows\n"
 
-const specSG4 = "version: 1\nname: sg4\nos: linux\n"
+const specRoomE = "version: 1\nname: room-e\nos: linux\n"
 
 func lockFor(os string) []byte {
 	return []byte(`{"version":1,"os":"` + os + `","steps":[]}`)
@@ -61,34 +61,34 @@ func lockFor(os string) []byte {
 
 // A ROOM READS ITS OWN SPEC AND POSTS ITS OWN LOCK, and the hash comes with the spec.
 func TestRoomFetchesItsSpecAndPostsItsLock(t *testing.T) {
-	h := newSpecHub(t, "sg3", "sg4")
+	h := newSpecHub(t, "room-d", "room-e")
 	ctx := context.Background()
-	if _, _, err := FetchRoomSpec(ctx, plain{h.addr}, "sg3"); !errors.Is(err, ErrNoRoomSpec) {
+	if _, _, err := FetchRoomSpec(ctx, plain{h.addr}, "room-d"); !errors.Is(err, ErrNoRoomSpec) {
 		t.Fatalf("before a spec: %v", err)
 	}
-	sp, err := h.st.SetRoomSpec("sg3", []byte(specSG3), "t")
+	sp, err := h.st.SetRoomSpec("room-d", []byte(specRoomD), "t")
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, sum, err := FetchRoomSpec(ctx, plain{h.addr}, "sg3")
-	if err != nil || string(raw) != specSG3 || sum != sp.SHA256 {
+	raw, sum, err := FetchRoomSpec(ctx, plain{h.addr}, "room-d")
+	if err != nil || string(raw) != specRoomD || sum != sp.SHA256 {
 		t.Fatalf("fetch = %q %q %v", raw, sum, err)
 	}
-	if err := PostRoomLock(ctx, plain{h.addr}, "sg3", lockFor("windows")); err != nil {
+	if err := PostRoomLock(ctx, plain{h.addr}, "room-d", lockFor("windows")); err != nil {
 		t.Fatal(err)
 	}
-	lk, err := h.st.RoomLockOf("sg3")
+	lk, err := h.st.RoomLockOf("room-d")
 	if err != nil || !strings.Contains(string(lk.Lock), `"windows"`) {
 		t.Fatalf("lock = %+v %v", lk, err)
 	}
-	if got, _ := h.st.RoomSpecOf("sg3"); got.YAML != specSG3 {
+	if got, _ := h.st.RoomSpecOf("room-d"); got.YAML != specRoomD {
 		t.Fatal("posting a lock changed the spec")
 	}
 	// A lock with a credential is refused by the hub, and the last lock stays.
-	if err := PostRoomLock(ctx, plain{h.addr}, "sg3", []byte(`{"version":1,"api_token":"x"}`)); err == nil {
+	if err := PostRoomLock(ctx, plain{h.addr}, "room-d", []byte(`{"version":1,"api_token":"x"}`)); err == nil {
 		t.Fatal("a credential was accepted")
 	}
-	if lk2, _ := h.st.RoomLockOf("sg3"); string(lk2.Lock) != string(lk.Lock) {
+	if lk2, _ := h.st.RoomLockOf("room-d"); string(lk2.Lock) != string(lk.Lock) {
 		t.Fatal("a refused lock replaced the last")
 	}
 }
@@ -96,60 +96,60 @@ func TestRoomFetchesItsSpecAndPostsItsLock(t *testing.T) {
 // ROOM X CANNOT READ OR WRITE ROOM Y'S SPEC. The path names no room, and what a room puts in a header or the query to
 // say it is another is never read.
 func TestRoomCannotReachAnotherRoomsSpecOrLock(t *testing.T) {
-	h := newSpecHub(t, "sg3", "sg4")
+	h := newSpecHub(t, "room-d", "room-e")
 	ctx := context.Background()
-	if _, err := h.st.SetRoomSpec("sg3", []byte(specSG3), "t"); err != nil {
+	if _, err := h.st.SetRoomSpec("room-d", []byte(specRoomD), "t"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.st.SetRoomSpec("sg4", []byte(specSG4), "t"); err != nil {
+	if _, err := h.st.SetRoomSpec("room-e", []byte(specRoomE), "t"); err != nil {
 		t.Fatal(err)
 	}
 	// Each room gets its own.
-	if raw, _, err := FetchRoomSpec(ctx, plain{h.addr}, "sg4"); err != nil || string(raw) != specSG4 {
-		t.Fatalf("sg4 fetched %q %v", raw, err)
+	if raw, _, err := FetchRoomSpec(ctx, plain{h.addr}, "room-e"); err != nil || string(raw) != specRoomE {
+		t.Fatalf("room-e fetched %q %v", raw, err)
 	}
-	// sg4 posts a lock: only sg4 has one.
-	if err := PostRoomLock(ctx, plain{h.addr}, "sg4", lockFor("linux")); err != nil {
+	// room-e posts a lock: only room-e has one.
+	if err := PostRoomLock(ctx, plain{h.addr}, "room-e", lockFor("linux")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.st.RoomLockOf("sg3"); !errors.Is(err, hubstore.ErrNoRoomLock) {
-		t.Fatalf("sg4's lock landed on sg3: %v", err)
+	if _, err := h.st.RoomLockOf("room-d"); !errors.Is(err, hubstore.ErrNoRoomLock) {
+		t.Fatalf("room-e's lock landed on room-d: %v", err)
 	}
 
-	// sg4 now tries to be sg3, by header, by query and by path, on the raw connection.
+	// room-e now tries to be room-d, by header, by query and by path, on the raw connection.
 	conn, err := plain{h.addr}.Dial(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
 	br := bufio.NewReader(conn)
-	if _, err := sayHello(conn, br, hello{Kind: roomSpecKind, Room: "sg4"}); err != nil {
+	if _, err := sayHello(conn, br, hello{Kind: roomSpecKind, Room: "room-e"}); err != nil {
 		t.Fatal(err)
 	}
-	io.WriteString(conn, "GET /_room/spec?room=sg3 HTTP/1.1\r\nHost: hub\r\n"+RoomSpecRoomHeader+": sg3\r\n\r\n")
+	io.WriteString(conn, "GET /_room/spec?room=room-d HTTP/1.1\r\nHost: hub\r\n"+RoomSpecRoomHeader+": room-d\r\n\r\n")
 	res, err := http.ReadResponse(br, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(res.Body)
-	if string(body) != specSG4 {
+	if string(body) != specRoomE {
 		t.Fatalf("a spoofed header read %q", body)
 	}
-	io.WriteString(conn, "POST /_room/lock?room=sg3 HTTP/1.1\r\nHost: hub\r\n"+RoomSpecRoomHeader+
-		": sg3\r\nContent-Length: 38\r\n\r\n"+`{"version":1,"os":"forged","steps":[]}`)
+	io.WriteString(conn, "POST /_room/lock?room=room-d HTTP/1.1\r\nHost: hub\r\n"+RoomSpecRoomHeader+
+		": room-d\r\nContent-Length: 38\r\n\r\n"+`{"version":1,"os":"forged","steps":[]}`)
 	res2, err := http.ReadResponse(br, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	res2.Body.Close()
-	if _, err := h.st.RoomLockOf("sg3"); !errors.Is(err, hubstore.ErrNoRoomLock) {
-		t.Fatalf("a spoofed header wrote sg3's lock: %v", err)
+	if _, err := h.st.RoomLockOf("room-d"); !errors.Is(err, hubstore.ErrNoRoomLock) {
+		t.Fatalf("a spoofed header wrote room-d's lock: %v", err)
 	}
-	if lk, _ := h.st.RoomLockOf("sg4"); !strings.Contains(string(lk.Lock), "forged") {
-		t.Fatalf("the forged lock should have landed on sg4 itself: %s", lk.Lock)
+	if lk, _ := h.st.RoomLockOf("room-e"); !strings.Contains(string(lk.Lock), "forged") {
+		t.Fatalf("the forged lock should have landed on room-e itself: %s", lk.Lock)
 	}
 	// A path with a room in it is nothing.
-	io.WriteString(conn, "GET /_room/sg3/spec HTTP/1.1\r\nHost: hub\r\n\r\n")
+	io.WriteString(conn, "GET /_room/room-d/spec HTTP/1.1\r\nHost: hub\r\n\r\n")
 	res3, err := http.ReadResponse(br, nil)
 	if err != nil || res3.StatusCode != http.StatusNotFound {
 		t.Fatalf("a path naming a room = %v %v", res3, err)
@@ -158,7 +158,7 @@ func TestRoomCannotReachAnotherRoomsSpecOrLock(t *testing.T) {
 
 // THE BOARD READS A ROOM'S SPEC AND LOCK, and cannot write them.
 func TestBoardReadsSpecAndLockReadOnly(t *testing.T) {
-	h := newSpecHub(t, "sg3")
+	h := newSpecHub(t, "room-d")
 	get := func(method, path string) (int, string) {
 		req, _ := http.NewRequest(method, h.front.URL+path, strings.NewReader("x"))
 		res, err := http.DefaultClient.Do(req)
@@ -169,27 +169,27 @@ func TestBoardReadsSpecAndLockReadOnly(t *testing.T) {
 		b, _ := io.ReadAll(res.Body)
 		return res.StatusCode, string(b)
 	}
-	if code, _ := get("GET", "/_hub/rooms/sg3/spec"); code != 404 {
+	if code, _ := get("GET", "/_hub/rooms/room-d/spec"); code != 404 {
 		t.Fatalf("no spec yet = %d", code)
 	}
-	if _, err := h.st.SetRoomSpec("sg3", []byte(specSG3), "t"); err != nil {
+	if _, err := h.st.SetRoomSpec("room-d", []byte(specRoomD), "t"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.st.PutRoomLock("sg3", lockFor("windows")); err != nil {
+	if _, err := h.st.PutRoomLock("room-d", lockFor("windows")); err != nil {
 		t.Fatal(err)
 	}
-	code, body := get("GET", "/_hub/rooms/sg3/spec")
+	code, body := get("GET", "/_hub/rooms/room-d/spec")
 	var sp hubstore.RoomSpec
-	if code != 200 || json.Unmarshal([]byte(body), &sp) != nil || sp.YAML != specSG3 || sp.SHA256 == "" {
+	if code != 200 || json.Unmarshal([]byte(body), &sp) != nil || sp.YAML != specRoomD || sp.SHA256 == "" {
 		t.Fatalf("spec = %d %s", code, body)
 	}
-	code, body = get("GET", "/_hub/rooms/sg3/lock")
+	code, body = get("GET", "/_hub/rooms/room-d/lock")
 	var lk hubstore.RoomLock
 	if code != 200 || json.Unmarshal([]byte(body), &lk) != nil || !strings.Contains(string(lk.Lock), "windows") {
 		t.Fatalf("lock = %d %s", code, body)
 	}
 	for _, m := range []string{"POST", "PUT", "DELETE"} {
-		if code, _ := get(m, "/_hub/rooms/sg3/spec"); code != 405 {
+		if code, _ := get(m, "/_hub/rooms/room-d/spec"); code != 405 {
 			t.Errorf("%s spec = %d", m, code)
 		}
 	}
@@ -205,7 +205,7 @@ func TestBoardReadsSpecAndLockReadOnly(t *testing.T) {
 	if c1 != 404 || c2 != 404 || b1 != b2 {
 		t.Errorf("lock: unknown %d %q, none %d %q", c1, b1, c2, b2)
 	}
-	if got, _ := h.st.RoomSpecOf("sg3"); got.YAML != specSG3 {
+	if got, _ := h.st.RoomSpecOf("room-d"); got.YAML != specRoomD {
 		t.Fatal("the board changed the spec")
 	}
 }
@@ -222,7 +222,7 @@ func TestLegacyConnectionCannotNameARoomForItsSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range []string{"sg3", "never"} {
+	for _, r := range []string{"room-d", "never"} {
 		if _, err := st.Add(r, hubstore.TransportDirect); err != nil {
 			t.Fatal(err)
 		}
@@ -232,14 +232,14 @@ func TestLegacyConnectionCannotNameARoomForItsSpec(t *testing.T) {
 	}
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: 2 * time.Second, Warm: 2})
 	hub.Authenticated = OverlayAuthenticated
-	hub.Enrolled = func(name string) bool { return name == "sg3" }
+	hub.Enrolled = func(name string) bool { return name == "room-d" }
 	p := NewProxy(hub, nil, "", nil)
 	p.SetRoomSpecs(st)
 	ctx, stop := context.WithCancel(context.Background())
 	go func() { _ = hub.Serve(ctx, legacyListener{ln}) }()
 	t.Cleanup(func() { stop(); ln.Close(); st.Close() })
 
-	for _, claim := range []string{"sg3", "never"} {
+	for _, claim := range []string{"room-d", "never"} {
 		if _, _, err := FetchRoomSpec(ctx, plain{ln.Addr().String()}, claim); err == nil {
 			t.Errorf("a legacy connection read the spec of %s", claim)
 		}

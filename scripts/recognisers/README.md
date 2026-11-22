@@ -95,7 +95,7 @@ each row afterwards.
 overwritten, and a row you delete does not come back. A room with a hub reads the hub's rows. A room with no hub,
 or one whose hub cannot be asked, keeps its own table. Against a hub, `load.ps1` writes the hub's table and `-Room`
 is not needed. Against a single room with no hub it writes that room's. A 400 (a pattern that does not compile)
-prints the hub's own sentence. See `docs/rnd/card-lifecycle-design.md`, section 2.
+prints the hub's own sentence.
 
 ```powershell
 ./load.ps1 -Path ./github.json -Root D:/worktrees/github

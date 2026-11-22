@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// A pull request's head in the hub's store, for rooms. See docs/rnd/scm-forge-design.md, Built.
+// A pull request's head in the hub's store, for rooms.
 //
 // A ROOM NEVER FETCHES FROM A FORGE. The hub holds the repository in its store (Hold) and fetches a PR's head into
 // `refs/atrium/pr/<N>` there (FetchPR). A room reads both through its link like any other ref of the store. Every

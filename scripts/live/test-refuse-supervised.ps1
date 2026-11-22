@@ -41,6 +41,8 @@ $all = Resolve-DeployRooms -Rooms @('all')
 Check 'all leaves sg4-control out' ($all -notcontains 'sg4-control' -and $all -contains 'sgg' -and $all -contains 'sgg-zrok')
 $both = Resolve-DeployRooms -Rooms @('local') -Control -IKnowItKillsMyShell
 Check 'both switches add sg4-control, last of the local ones' (($both -join ',') -eq 'hub,claude-sg4,sg4-control')
+$one = Resolve-DeployRooms -Rooms @('hub', 'sgg', 'claude-sg4') -Control -IKnowItKillsMyShell
+Check "-Rooms with -Control is one list, sg4-control last, got $($one -join ',')" (($one -join ',') -eq 'hub,claude-sg4,sg4-control,sgg')
 Check '-Control alone refuses' ($null -ne (Test-ControlOptIn -Control))
 Check '-IKnowItKillsMyShell alone refuses' ($null -ne (Test-ControlOptIn -IKnowItKillsMyShell))
 Check 'neither is fine' ($null -eq (Test-ControlOptIn))

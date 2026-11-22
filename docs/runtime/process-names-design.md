@@ -1,7 +1,7 @@
 # Each atrium process named for its role: atrium-hub, atrium-room, atrium-pty
 
-Backlog item `f-process-names`. Status: designed, not built. This replaces the build plan in
-`docs/rnd/process-names-design.md` (2026-10-14). That file's spike results (`docs/rnd/process-names-spike.md`) still
+Backlog item `f-process-names`. Status: designed, not built. This replaces the build plan of
+2026-10-14. That plan's spike results still
 stand and are relied on here: a file's own name is what Task Manager, `Get-Process` and the macOS kernel name show, and
 a symlink does not get its own name on macOS.
 

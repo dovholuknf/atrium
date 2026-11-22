@@ -23,7 +23,7 @@ import (
 // A room restart ends every terminal it owns. The fixtures and reopenSaved bring
 // the sessions back, and a resumed session sits idle until somebody types into
 // it. The orchestrator is one of those sessions, so a deploy it ran left it
-// waiting for clint to type "we up". A wake is that line, queued before the
+// waiting for the operator to type "we up". A wake is that line, queued before the
 // restart and typed by the room after.
 //
 // NOT A FORCED TURN. `peers.go` explains why one session's words are gated on

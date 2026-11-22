@@ -23,7 +23,6 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 ## Sources
 
-- docs/rnd/factory-shape.md
 - docs/backlog/README.md
 - changelog/fabric/2026-09-30-f-021.md
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)

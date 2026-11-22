@@ -4,7 +4,6 @@
 // A DOLLAR FIGURE IS NEVER STORED. It is worked out from the real token counts per type (input, cache write 5m, cache
 // write 1h, cache read, output) at the moment someone reads it, so a repricing is a recompute and tokens are never
 // hidden behind dollars. It is an ESTIMATE: list price, which is what the same tokens would cost off a subscription.
-// See docs/rnd/item-lifecycle-design.md section 6.
 //
 // THE MONEY IS INTEGER. A price is dollars per million tokens to at most four places, so a row's cost is
 // `tokens * price` in units of 1e-10 dollar with no division at all. Integers add exactly, so the steps of an item

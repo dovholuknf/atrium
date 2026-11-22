@@ -199,12 +199,12 @@ func TestMutualIsReportedOnlyWhenTheRungSaysSo(t *testing.T) {
 
 func TestOnlyViaSkipsARoomWithAnotherPathUp(t *testing.T) {
 	h := NewHub(Timings{})
-	h.rooms[wire.KeyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
+	h.rooms[wire.KeyOf("room-a")] = &attached{name: "room-a", via: "ziti",
 		paths: []PathState{{Kind: "direct", State: PathDown}, {Kind: "ziti", State: PathOn}}}
-	h.rooms[wire.KeyOf("sg3")] = &attached{name: "sg3", via: "ziti",
+	h.rooms[wire.KeyOf("room-d")] = &attached{name: "room-d", via: "ziti",
 		paths: []PathState{{Kind: "direct", State: PathUp}, {Kind: "ziti", State: PathOn}}}
 	got := h.OnlyVia("ziti")
-	if len(got) != 1 || got[0] != "m1mini" {
+	if len(got) != 1 || got[0] != "room-a" {
 		t.Fatalf("only on ziti: %v", got)
 	}
 }

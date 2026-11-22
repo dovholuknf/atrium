@@ -675,7 +675,7 @@ func timeoutOf(doc map[string]json.RawMessage, hook, command string) float64 {
 // isDotfilesGate reports whether a command is the dotfiles script that
 // atrium's permission gate replaces.
 //
-// THE REPLACEMENT DECISION (f-006, clint 2026-09-30). The script counts as the
+// THE REPLACEMENT DECISION (f-006, the operator 2026-09-30). The script counts as the
 // gate installed but stale, the way `atrium-session-hook.ps1` counts for the
 // session row, so the board offers the fix and install rewrites it in place.
 // It used to stand aside for the script instead.

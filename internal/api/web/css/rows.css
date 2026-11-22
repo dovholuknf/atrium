@@ -433,7 +433,7 @@
   }
   .rmark svg { width: 26px; height: 26px; display: block; }
   /* NEUTRAL: every runner is --label on the chip tint, told apart by its shape. Orange belongs to waiting alone, so the
-     claude mark no longer wears it (docs/rnd/unified-card.md 2.4). */
+     claude mark no longer wears it. */
 
   /* ── the mark moves while the runner does ────────────────────────────────
      The mark itself says whether a session is working, so a row in the strip carries that without spending

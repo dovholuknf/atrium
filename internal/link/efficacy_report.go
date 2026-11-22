@@ -8,7 +8,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// THE EFFICACY VIEW'S ANSWER (docs/rnd/item-lifecycle-design.md section 12), built from the outcomes the collect derived. Pure:
+// THE EFFICACY VIEW'S ANSWER, built from the outcomes the collect derived. Pure:
 // it reads no store, so a test hands it rows and a clock.
 
 // EffReportIn is what a report is built from.

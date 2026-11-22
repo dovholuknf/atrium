@@ -28,7 +28,7 @@ A new agent: `AGENTS.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-rooms
 | `fabric/hub-and-rooms.md` | a contributor or an agent | the hub, rooms, joining, ports, cross-room addressing, as built |
 | `security/` | a contributor, an agent or the operator | the product security audit, and what stops an agent from committing as itself or reaching a remote |
 | `security/network-footprint.md` | a security reviewer, or someone deciding on a work machine | every port atrium listens on and every connection it opens |
-| `story.md` | anyone | how atrium got here, each step with what broke and the archived doc behind it |
+| `story.md` | anyone | how atrium got here, each step with what broke |
 | `runtime/wiring-a-runner.md` | an agent wiring up a new runner | the hook contract, measured |
 | `user-guide.md` | a human using atrium | the working patterns, until they move to the site |
 | `room-accounts.md` | an operator | running a room as its own account, and what atrium warns about |
@@ -39,7 +39,6 @@ A new agent: `AGENTS.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-rooms
 | `troubleshooting-tests.md` | an agent on a flaky or slow test | worked cases: a board unit that flakes, a Go test slow only on CI, a timing assertion under load, a test that fails only beside others, a log after a test ended |
 | `qa/lessons-learned.md` | an agent or director on flaky tests and CI | the rules that held, the CI shape, how to read a run |
 | `backlog/<dept>/` | the directors, and `atrium backlog import` | one file per backlog item. The live backlog is on the hub |
-| `archive/` | anyone curious | designs a later doc replaced, each with a `Status: superseded by` line |
 | `blog/` | the blog | post ideas and outlines, nothing published |
 | `backlog.md`, `backlog-2.md` | nobody new | the old backlog, frozen |
 
@@ -54,8 +53,6 @@ A new agent: `AGENTS.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-rooms
 | `review/` | code review, its director and its memory | @review |
 | `release/` | packaging, landing work | @merge |
 | `orchestrator/` | the orchestrator's boot and wrap-up checklists | @orchestrator |
-| `rnd/` | designs, spikes, research and reads of other tools | @rnd |
-| `archive/` | superseded designs | nobody, they do not change |
 
 ## The status line
 
@@ -72,9 +69,12 @@ code, so it names where the code is.
 
 ## Where a new doc goes
 
-A design that is not built yet goes in `rnd/`, whoever writes it, with `Status: proposed, not built.` When it is
-built, the director of the area that owns the code moves it into that area's folder with `git mv`, updates its status
-line, and fixes every path that names it (`git grep docs/rnd/<name>`). A reference for code that exists goes straight
-into its area. A design that a later doc replaces moves to `archive/` with a `superseded by` line.
+A design goes in the folder of the area that will own the code, with `Status: proposed, not built.` until it is built.
+A design that a later doc replaces is deleted, and git keeps it.
+
+## History
+
+The old designs, spikes, research, reports and interviews (`docs/rnd/`, `docs/research/`, `docs/archive/`,
+`docs/reports/`, `docs/interviews/`) left main. They are on the `claude/history-docs` branch.
 
 `changes/` stays at the top because every brief, `DIRECTOR.md` and `CLAUDE.md` name it there.

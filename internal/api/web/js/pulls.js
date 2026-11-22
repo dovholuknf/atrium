@@ -1,6 +1,6 @@
 // The pulls view: the PRs atrium is reviewing, one row each, newest first.
 //
-// docs/rnd/pulls-view-design.md section 4, over the API in docs/review/pulls-api.md (/v1/prs). A row is a fact about a
+// Over the API in docs/review/pulls-api.md (/v1/prs). A row is a fact about a
 // run, written by the daemon. This file holds the rows it was told about and draws them, and decides nothing.
 //
 // LIVE THE WAY THE REST OF THE BOARD IS: the rows are read once at load and again when the event stream reopens,
@@ -153,8 +153,8 @@ function onPrEvent(ev) {
 function onPullsStreamOpen() { loadPulls(); }
 
 // ── the words ───────────────────────────────────────────
-// docs/rnd/pulls-redesign.md. A row is drawn from what the daemon sent and, for the card, from the board's own task
-// list. The daemon does not write a verdict, a tests total or per-stage status yet (docs/rnd/pulls-overhaul.md phase 1),
+// A row is drawn from what the daemon sent and, for the card, from the board's own task
+// list. The daemon does not write a verdict, a tests total or per-stage status yet,
 // so the board derives them and prefers the daemon's word the day it sends one (`verdict`, `tests`, `stages`).
 
 const PULL_STAGES = ["worktree", "deps", "panel", "review"];
@@ -675,7 +675,7 @@ async function pullsLeftClose(i) {
 }
 
 // ── moving a review to another room ─────────────────────
-// docs/rnd/pr-review-workflow.md 5.1. The hub moves the claim and the review with it, then this makes the PR's worktree
+// The hub moves the claim and the review with it, then this makes the PR's worktree
 // on the new room, launches a new card there and sets it as the walker. The old card is left alone.
 
 // The online rooms. Nothing to move to when there is one, and the action is not drawn.

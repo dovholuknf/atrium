@@ -19,11 +19,11 @@ func quietSince(r *runner) {
 func holdTwo(t *testing.T, d *Daemon, id string) {
 	t.Helper()
 	for _, text := range []string{"first words", "second words"} {
-		m, err := d.st.QueueFromPeer(id, text, "sg4/doer")
+		m, err := d.st.QueueFromPeer(id, text, "room-e/doer")
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.deferPeerInjection(id, m.ID, "sg4/doer", text, "", false)
+		d.deferPeerInjection(id, m.ID, "room-e/doer", text, "", false)
 	}
 	t.Cleanup(func() { d.pending.stopAll() })
 }

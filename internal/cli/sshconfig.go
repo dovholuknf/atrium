@@ -20,7 +20,7 @@ import (
 )
 
 // sshConfigCmd is `atrium ssh config add|rm|show`: the opt-in helper that writes the Host blocks `atrium ssh-proxy
-// --print-config` prints. See docs/rnd/ssh-via-hub.md.
+// --print-config` prints.
 //
 // THE ONE EXCEPTION to atrium never editing ~/.ssh/config, and a narrow one. It writes its own file,
 // ~/.ssh/atrium_config, and adds one `Include atrium_config` line at the top of ~/.ssh/config when that is missing,
@@ -259,7 +259,7 @@ func roomsToConfigure(args []string, all bool, hub string, need bool) ([]string,
 	resp, err := cl.Get(boardAddress(hub) + "/_hub/rooms")
 	if err != nil {
 		return nil, errors.New("--all needs the hub on this machine, and none answers here. name the rooms instead: " +
-			"atrium ssh config add sg3 m1mini")
+			"atrium ssh config add room-a room-b")
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -270,7 +270,7 @@ func roomsToConfigure(args []string, all bool, hub string, need bool) ([]string,
 	}
 	if resp.StatusCode != http.StatusOK || json.Unmarshal(b, &v) != nil {
 		return nil, errors.New("--all needs the hub on this machine, and what answers here is not the hub. " +
-			"name the rooms instead: atrium ssh config add sg3 m1mini")
+			"name the rooms instead: atrium ssh config add room-a room-b")
 	}
 	var names []string
 	for _, r := range v.Rooms {

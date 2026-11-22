@@ -3,7 +3,7 @@
 //
 // A bucket is a name, the source files it owns (`sources`), and the tests that prove them. Board buckets name headless
 // units (`units`) and node scripts (`tests`, run by the planner, and `checks`, listed only). Go buckets name a package
-// and the files it owns. See docs/rnd/test-layout-design.md.
+// and the files it owns.
 //
 // MATCHING. A pattern is a name or a glob where `*` stands for any run of characters (not `/` in a path, so
 // `js/*.js` is one folder deep, and `**` crosses folders). A name written out in full beats a glob, so `termsDrawerPush`

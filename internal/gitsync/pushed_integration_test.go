@@ -17,7 +17,7 @@ type pushedFix struct {
 	card who
 }
 
-// pushedFixture is a hub whose fix/x is at `tip`, pushed by sg4's C1, with these commits on it:
+// pushedFixture is a hub whose fix/x is at `tip`, pushed by room-e's C1, with these commits on it:
 //
 //	first   the branch's first commit, the hub's tip
 //	later   a commit on fix/x the hub has under another name (fix/ahead), so it holds it and fix/x is behind it
@@ -25,7 +25,7 @@ type pushedFix struct {
 //	local   a commit on fix/x that was never pushed anywhere
 func pushedFixture(t *testing.T) (*pushedFix, map[string]string) {
 	t.Helper()
-	x := &pushedFix{recvFix: newRecv(t), card: roomCard("sg4", "C1")}
+	x := &pushedFix{recvFix: newRecv(t), card: roomCard("room-e", "C1")}
 	x.seedMain(hubRepo)
 	sha := map[string]string{}
 	sha["first"] = x.branch("fix/x", "x.txt")
@@ -92,7 +92,7 @@ func TestPushedCarriesTheOwnerAndTheTimeOfTheLastPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Room != "sg4" || got.Card != "C1" || got.Released {
+	if got.Room != "room-e" || got.Card != "C1" || got.Released {
 		t.Fatalf("owner: %+v", got)
 	}
 	when, err := time.Parse(time.RFC3339, got.At)
@@ -230,19 +230,19 @@ func TestRoomBranchIsTheTipTheRoomAdvertises(t *testing.T) {
 	git(t, x.roomWork, "switch", "-q", "-c", "claude/x")
 	want := commit(t, x.roomWork, "x.txt", "x")
 
-	got, found, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/x")
+	got, found, err := x.h.RoomBranch(bg, "room-d", "github/o/r", "claude/x")
 	if err != nil || !found || got != want {
 		t.Fatalf("%q %v %v, want %q", got, found, err, want)
 	}
-	got, found, err = x.h.RoomBranch(bg, "SG3", "github/o/r", "claude/main")
+	got, found, err = x.h.RoomBranch(bg, "ROOM-D", "github/o/r", "claude/main")
 	if err != nil || !found || got != strings.TrimSpace(tip) {
 		t.Fatalf("claude/main: %q %v %v", got, found, err)
 	}
-	if _, found, err = x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/nope"); err != nil || found {
+	if _, found, err = x.h.RoomBranch(bg, "room-d", "github/o/r", "claude/nope"); err != nil || found {
 		t.Fatalf("a branch the room lacks: %v %v", found, err)
 	}
 	// A longer name that starts with the asked one is not it.
-	if _, found, _ = x.h.RoomBranch(bg, "sg3", "github/o/r", "claude"); found {
+	if _, found, _ = x.h.RoomBranch(bg, "room-d", "github/o/r", "claude"); found {
 		t.Fatal("a prefix found a branch")
 	}
 }
@@ -250,7 +250,7 @@ func TestRoomBranchIsTheTipTheRoomAdvertises(t *testing.T) {
 func TestRoomBranchOfARepositoryTheRoomDoesNotServeIsNotFound(t *testing.T) {
 	t.Parallel()
 	x := newHubFixture(t, true)
-	if _, found, err := x.h.RoomBranch(bg, "sg3", "github/o/other", "claude/main"); err != nil || found {
+	if _, found, err := x.h.RoomBranch(bg, "room-d", "github/o/other", "claude/main"); err != nil || found {
 		t.Fatalf("%v %v", found, err)
 	}
 }
@@ -259,14 +259,14 @@ func TestRoomBranchSaysWhyARoomCannotBeAsked(t *testing.T) {
 	t.Parallel()
 	x := newHubFixture(t, true)
 	x.rooms.up = false
-	if _, _, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) ||
+	if _, _, err := x.h.RoomBranch(bg, "room-d", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) ||
 		!strings.Contains(err.Error(), "not connected") {
 		t.Fatalf("an unattached room: %v", err)
 	}
 
 	x = newHubFixture(t, false)
 	before := x.requests.Load()
-	if _, _, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) {
+	if _, _, err := x.h.RoomBranch(bg, "room-d", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) {
 		t.Fatalf("a room that does not serve git: %v", err)
 	}
 	if x.requests.Load() != before {
@@ -275,14 +275,14 @@ func TestRoomBranchSaysWhyARoomCannotBeAsked(t *testing.T) {
 
 	x = newHubFixture(t, true)
 	x.rooms.srv.Close()
-	if _, _, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) {
+	if _, _, err := x.h.RoomBranch(bg, "room-d", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) {
 		t.Fatalf("a room that is gone: %v", err)
 	}
 
-	if _, _, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "a..b"); err == nil {
+	if _, _, err := x.h.RoomBranch(bg, "room-d", "github/o/r", "a..b"); err == nil {
 		t.Fatal("a bad branch name was taken")
 	}
-	if _, _, err := x.h.RoomBranch(bg, "sg3", "nonsense", "claude/main"); err == nil {
+	if _, _, err := x.h.RoomBranch(bg, "room-d", "nonsense", "claude/main"); err == nil {
 		t.Fatal("a bad repository name was taken")
 	}
 }
@@ -305,7 +305,7 @@ func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
 			bad := httptest.NewServer(h)
 			t.Cleanup(bad.Close)
 			x.rooms.srv = bad
-			if sha, found, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) {
+			if sha, found, err := x.h.RoomBranch(bg, "room-d", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) {
 				t.Fatalf("%q %v %v", sha, found, err)
 			}
 		})

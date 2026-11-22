@@ -17,7 +17,7 @@ func TestForChoosesByAddress(t *testing.T) {
 		addr, host string
 		want       int
 	}{
-		{"127.0.0.1:7781", "sg4:7781", 403},
+		{"127.0.0.1:7781", "room-e:7781", 403},
 		{"localhost:7781", "localhost:7781", 200},
 		{"192.168.1.68:7781", "192.168.1.68:7781", 200},
 		{"192.168.1.68:7781", "evil.example:7781", 403},

@@ -12,8 +12,7 @@ import (
 )
 
 // LEARNINGS.md, THE POOL'S MEMORY. A pool card may leave one paragraph with `learned` on atrium_done, and atrium appends
-// it to LEARNINGS.md in the card's directory. See docs/changes/items-stage3.md and docs/rnd/atrium-items-decisions.md
-// section 8.
+// it to LEARNINGS.md in the card's directory. See docs/changes/items-stage3.md.
 //
 //   - ATRIUM ONLY APPENDS. Only the human edits or prunes the file, and nothing here ever rewrites or drops an entry.
 //   - THE FILE IS CAPPED, at LearningsMaxEntries entries or LearningsMaxBytes bytes. An entry that would pass the cap is

@@ -8,7 +8,7 @@ import (
 )
 
 // Growlers: something waiting on a human, one row the laptop, the desktop and
-// the phone all read. See docs/rnd/persistent-growler-design.md.
+// the phone all read.
 //
 // ── who decides what ────────────────────────────────────
 //

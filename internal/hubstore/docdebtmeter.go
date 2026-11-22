@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// THE DOC-DEBT METER. See docs/rnd/doc-debt-from-features.md sections 2.5, 2.8 and 6. Computed on every ask from the open
+// THE DOC-DEBT METER. Computed on every ask from the open
 // `docs` backlog items and the feature steps, and stored nowhere, so there is no migration. The two thresholds are hub
 // settings in the same key-value table as every other.
 const (

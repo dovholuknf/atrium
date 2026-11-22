@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// A REFUSED HOOK IS AN UNREACHABLE HOOK, stage 1 of docs/rnd/security-design.md.
+// A REFUSED HOOK IS AN UNREACHABLE HOOK, stage 1 of the security design.
 // Whatever the agent listener answers, 401, 403, 500 or a body that is not the
 // answer, no hook says anything to Claude Code: the permission falls to its own
 // prompt, the turn ends as it would, and nothing else is printed. So no later

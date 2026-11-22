@@ -23,10 +23,8 @@ Series: Cards, not agents. Status: idea. Audience: people designing notification
 
 ## Sources
 
-- docs/rnd/persistent-growler-design.md
 - changelog/ui/2026-09-30-u-growler.md
 - commit a8134b47
-- docs/rnd/operator-focus.md 1.2
 
 ## Notes for the writer
 

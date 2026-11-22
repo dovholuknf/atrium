@@ -35,15 +35,15 @@ func TestARelayedFyiKeepsItsKind(t *testing.T) {
 	defer x.stop()
 
 	for _, kind := range []string{"fyi", ""} {
-		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 			To: "atrium-87300", Text: "stop, nothing else to do", Kind: kind})
 		if err != nil || !ans.OK {
 			t.Fatalf("%q: answer = %+v, %v", kind, ans, err)
 		}
-		got := x.sg4.messages()
+		got := x.roomE.messages()
 		last := got[len(got)-1]
 		if k := last["kind"]; k != kind {
-			t.Fatalf("sg4 got kind %q, want %q: %+v", k, kind, last)
+			t.Fatalf("room-e got kind %q, want %q: %+v", k, kind, last)
 		}
 	}
 }

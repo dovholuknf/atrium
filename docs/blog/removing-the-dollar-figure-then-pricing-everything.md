@@ -24,8 +24,6 @@ Series: Cards, not agents. Status: idea. Audience: people tracking LLM spend.
 ## Sources
 
 - commit 0bbd2caf
-- docs/rnd/usage-tab-design.md
-- docs/rnd/factory-shape.md
 - changelog/runtime/2026-09-29-r-015-backfill.md
 
 ## Notes for the writer

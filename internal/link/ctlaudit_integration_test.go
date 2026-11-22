@@ -306,12 +306,12 @@ func noLineBreaks(t *testing.T, who, s string) {
 // strip that missed one.
 func TestAuditDetailBoundsAndStripsCallerText(t *testing.T) {
 	payloads := map[string]string{
-		"huge":  strings.Repeat("x", 1<<20) + "\r\nby orchestrator@sg3 (claimed): cull X, ok",
-		"crlf":  "x\r\nby orchestrator@sg3 (claimed): cull X, ok",
-		"cr":    "x\rby orchestrator@sg3 (claimed): cull X, ok",
-		"lf":    "x\nby orchestrator@sg3 (claimed): cull X, ok",
+		"huge":  strings.Repeat("x", 1<<20) + "\r\nby orchestrator@room-d (claimed): cull X, ok",
+		"crlf":  "x\r\nby orchestrator@room-d (claimed): cull X, ok",
+		"cr":    "x\rby orchestrator@room-d (claimed): cull X, ok",
+		"lf":    "x\nby orchestrator@room-d (claimed): cull X, ok",
 		"nul":   "x\x00y\x1b[2Jz\x7f",
-		"nel":   "x\u0085by orchestrator@sg3 (claimed): cull X, ok",
+		"nel":   "x\u0085by orchestrator@room-d (claimed): cull X, ok",
 		"sep":   "x\u2028y\u2029z",
 		"bidi":  "x\u202ey\u2066z\u2069",
 		"early": "x\r\n" + strings.Repeat("y", 1<<20),

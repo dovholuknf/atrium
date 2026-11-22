@@ -20,7 +20,7 @@ func TestRoomEventIsTakenOncePerRoomAndSeq(t *testing.T) {
 	if seen, _ := s.RoomEventSeen("m1", 2); seen {
 		t.Fatal("seq 2 was not taken")
 	}
-	if seen, _ := s.RoomEventSeen("sg3", 1); seen {
+	if seen, _ := s.RoomEventSeen("room-d", 1); seen {
 		t.Fatal("seq 1 of another room was not taken")
 	}
 	if high, _ := s.RoomEventHigh("m1"); high != 1 {

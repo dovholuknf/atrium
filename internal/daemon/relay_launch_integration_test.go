@@ -34,8 +34,8 @@ func launchBody(room string) map[string]any {
 func TestARoomLaunchGoesToTheHubWholeAndNamesTheCardAcross(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	code, out := roomLaunch(t, d, launchBody("claude-sg4"))
-	if code != http.StatusOK || out["card"] != "claude-sg4~kid" || out["handle"] != "kid@claude-sg4" ||
+	code, out := roomLaunch(t, d, launchBody("claude-room-e"))
+	if code != http.StatusOK || out["card"] != "claude-room-e~kid" || out["handle"] != "kid@claude-room-e" ||
 		out["watch"] != "http://hub/#term=kid" || out["status"] != "running" || out["title"] != "review" ||
 		out["model"] != "opus" {
 		t.Fatalf("answer = %d %+v", code, out)
@@ -45,7 +45,7 @@ func TestARoomLaunchGoesToTheHubWholeAndNamesTheCardAcross(t *testing.T) {
 		t.Fatalf("the hub was asked %d times", len(got))
 	}
 	l := got[0]
-	if l.From != "sa1" || l.Room != "claude-sg4" || l.Cwd != "/srv/repo" || l.Brief != "the brief" ||
+	if l.From != "sa1" || l.Room != "claude-room-e" || l.Cwd != "/srv/repo" || l.Brief != "the brief" ||
 		l.Prompt != "do it" || l.Runner != "claude" || l.Model != "opus" || l.Env["A"] != "b" ||
 		len(l.Tags) != 1 || len(l.LeanAgents) != 1 {
 		t.Fatalf("the hub got %+v", l)
@@ -57,7 +57,7 @@ func TestARoomLaunchGoesToTheHubWholeAndNamesTheCardAcross(t *testing.T) {
 func TestARoomLaunchOnThisRoomIsLocalAndAsksNobody(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	for _, room := range []string{"m1mini", "M1MINI", " m1mini "} {
+	for _, room := range []string{"room-a", "ROOM-A", " room-a "} {
 		code, out := roomLaunch(t, d, launchBody(room))
 		if code != http.StatusOK || out["local"] != true || out["card"] != nil {
 			t.Fatalf("%q = %d %+v", room, code, out)
@@ -71,14 +71,14 @@ func TestARoomLaunchOnThisRoomIsLocalAndAsksNobody(t *testing.T) {
 func TestARoomLaunchNeedsADirectoryAndALink(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	b := launchBody("claude-sg4")
+	b := launchBody("claude-room-e")
 	b["cwd"] = " "
 	if code, _ := roomLaunch(t, d, b); code != http.StatusBadRequest || len(f.launched()) != 0 {
 		t.Fatalf("no cwd = %d, the hub asked %d times", code, len(f.launched()))
 	}
 	d.SetRelay(nil)
-	code, out := roomLaunch(t, d, launchBody("claude-sg4"))
-	if code != http.StatusServiceUnavailable || !strings.Contains(out["error"].(string), "claude-sg4") {
+	code, out := roomLaunch(t, d, launchBody("claude-room-e"))
+	if code != http.StatusServiceUnavailable || !strings.Contains(out["error"].(string), "claude-room-e") {
 		t.Fatalf("no link = %d %+v", code, out)
 	}
 }
@@ -91,8 +91,8 @@ func TestARoomLaunchRefusalKeepsItsCodeAndWords(t *testing.T) {
 		code int
 		msg  string
 	}{
-		{404, `this hub knows no room called "atlantis". rooms: claude-sg4, m1mini`},
-		{409, "at the launch cap of 10 running workers on room claude-sg4. wait for one to finish"},
+		{404, `this hub knows no room called "atlantis". rooms: claude-room-e, room-a`},
+		{409, "at the launch cap of 10 running workers on room claude-room-e. wait for one to finish"},
 		{400, "is not a directory"},
 	} {
 		d, f := roomDaemon(t)
@@ -115,18 +115,18 @@ func TestARoomLaunchThatCannotBeTakenIsRefusedNotHeld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
-		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached to the hub right now"}, nil
+		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-room-e is not attached to the hub right now"}, nil
 	}
-	code, out := roomLaunch(t, d, launchBody("claude-sg4"))
+	code, out := roomLaunch(t, d, launchBody("claude-room-e"))
 	msg, _ := out["error"].(string)
 	if code != http.StatusServiceUnavailable || !strings.Contains(msg, "not answering") ||
-		!strings.Contains(msg, "claude-sg4") || !strings.Contains(msg, "nothing is held") {
+		!strings.Contains(msg, "claude-room-e") || !strings.Contains(msg, "nothing is held") {
 		t.Fatalf("down room = %d %q", code, msg)
 	}
 	f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
 		return hublink.RelayResult{}, hublink.ErrRelayDown
 	}
-	code, out = roomLaunch(t, d, launchBody("claude-sg4"))
+	code, out = roomLaunch(t, d, launchBody("claude-room-e"))
 	msg, _ = out["error"].(string)
 	if code != http.StatusServiceUnavailable || !strings.Contains(msg, "hub is not answering") {
 		t.Fatalf("down hub = %d %q", code, msg)
@@ -152,7 +152,7 @@ func TestARoomLaunchThatMayHaveStartedIsUnconfirmedAndNotRetried(t *testing.T) {
 	} {
 		d, f := roomDaemon(t)
 		f.launch = fn
-		code, out := roomLaunch(t, d, launchBody("claude-sg4"))
+		code, out := roomLaunch(t, d, launchBody("claude-room-e"))
 		msg, _ := out["error"].(string)
 		if code != http.StatusGatewayTimeout || !strings.Contains(msg, "may or may not have started") ||
 			!strings.Contains(msg, "before launching again") {
@@ -179,7 +179,7 @@ func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
 	} {
 		d, f := roomDaemon(t)
 		f.launch = fn
-		code, out := roomLaunch(t, d, launchBody("claude-sg4"))
+		code, out := roomLaunch(t, d, launchBody("claude-room-e"))
 		msg, _ := out["error"].(string)
 		if code != http.StatusBadGateway || !strings.Contains(msg, "older than launching on another room") ||
 			!strings.Contains(msg, "update the hub") {
@@ -191,7 +191,7 @@ func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
 	f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
 		return hublink.RelayResult{}, errors.New("boom")
 	}
-	if code, out := roomLaunch(t, d, launchBody("claude-sg4")); code != http.StatusBadGateway || out["error"] != "boom" {
+	if code, out := roomLaunch(t, d, launchBody("claude-room-e")); code != http.StatusBadGateway || out["error"] != "boom" {
 		t.Fatalf("other error = %d %+v", code, out)
 	}
 }
@@ -201,12 +201,12 @@ func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
 func TestARoomLaunchCarriesRepoHomeScratchAndTheRest(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	b := launchBody("claude-sg4")
+	b := launchBody("claude-room-e")
 	delete(b, "cwd")
 	b["repo"], b["branch"], b["base"], b["home"], b["resident"], b["scratch"] = "github.com/o/r", "claude/x", "claude/main", false, true, true
 	b["lean"], b["mcp"], b["theme"], b["chat"], b["item"], b["item_owner"] = false, []string{"m"}, "dusk", true, true, "human"
 	f.launch = func(l hublink.RelayLaunch) (hublink.RelayResult, error) {
-		return hublink.RelayResult{OK: true, Card: "claude-sg4~kid", Carried: true}, nil
+		return hublink.RelayResult{OK: true, Card: "claude-room-e~kid", Carried: true}, nil
 	}
 	if code, out := roomLaunch(t, d, b); code != http.StatusOK || out["warning"] != "" {
 		t.Fatalf("answer = %d %+v", code, out)
@@ -218,7 +218,7 @@ func TestARoomLaunchCarriesRepoHomeScratchAndTheRest(t *testing.T) {
 		t.Fatalf("the hub got %+v", l)
 	}
 	f.launch = nil
-	home := launchBody("claude-sg4")
+	home := launchBody("claude-room-e")
 	delete(home, "cwd")
 	home["home"] = true
 	code, out := roomLaunch(t, d, home)

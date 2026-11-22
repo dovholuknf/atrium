@@ -1,4 +1,4 @@
-/* The pulls view (js/pulls.js, docs/rnd/pulls-redesign.md). Every colour is an existing token, tints use the -rgb
+/* The pulls view (js/pulls.js). Every colour is an existing token, tints use the -rgb
    triples so a skin follows, and the one new variable is --pull-bar, the colour of a card's left edge. */
   :root {
     --pull-ready: var(--teal);

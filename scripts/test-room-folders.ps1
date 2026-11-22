@@ -100,7 +100,7 @@ $tmp = Join-Path ([IO.Path]::GetTempPath()) ("room-folders-test-" + [guid]::NewG
 New-Item -ItemType Directory -Force $tmp | Out-Null
 try {
     # The curly quotes are U+2018 and U+2019: PowerShell ends a single-quoted string at them too, and macOS autocorrects
-    # ' to them, so a folder called "Clint's work" must arrive whole and run nothing.
+    # ' to them, so a folder called "Operator's work" must arrive whole and run nothing.
     $q1 = [string][char]0x2018; $q2 = [string][char]0x2019
     $weird = @("/srv/plain", "/srv/my work", "/srv/it's", 'C:\Users\me\a b',
         "/srv/a$q2; Write-Output INJECTED; $q2", "/srv/${q1}x${q2}", '/srv/$x', '/srv/`tick', '/srv/a|b&c')

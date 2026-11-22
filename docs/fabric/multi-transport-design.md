@@ -11,7 +11,7 @@ address for an hour. sg3 and m1mini did have ziti and still took about five minu
 ## The short version
 
 The brief assumes the hub takes one transport and a join string names one. That is out of date. Most of the ladder is
-already built (`docs/rnd/room-transport-order.md`, `internal/link/ladder.go`, `internal/link/transports.go`). What
+already built (`internal/link/ladder.go`, `internal/link/transports.go`). What
 tonight showed is that the ladder is a good answer to the wrong failure. It handles a dial that fails. It does not
 handle a connection that was up and then silently stopped, a hub address that went stale, or a room that has no rung to
 fall to.
@@ -68,7 +68,7 @@ key. The hub's attach already treats it so: a same-key reattach replaces the old
 
 Two things this does not give, and the design must not pretend it does:
 
-- A ziti identity is NOT a room's name. `docs/rnd/overlay-room-identity.md` section 2 shows the caller id is client set.
+- A ziti identity is NOT a room's name. The caller id is client set.
   The ziti identity proves reach and nothing else. That is why a ziti identity can be shared or rotated without touching
   who the room is.
 - The legacy path (an overlay room with no certificate) still exists beside this until `atrium rooms legacy refuse`. A
@@ -193,7 +193,7 @@ first, says so (decision 11 of the order doc already does that).
 
 ### 4. Two paths at once
 
-The all-at-once note (`docs/rnd/room-transport-all-at-once.md`) asked for one badge per path, each live. There are three
+The all-at-once note asked for one badge per path, each live. There are three
 ways to read it, and they cost very different amounts:
 
 | Reading | Cost | Gets you |
@@ -423,7 +423,6 @@ design as a whole before any phase is built. The questions are kept as they were
 
 ## Read first (what this was written from)
 
-`docs/fabric/overlays.md`, `docs/fabric/ziti-zrok-flow-design.md`, `docs/rnd/overlay-room-identity.md`,
-`docs/rnd/room-transport-order.md`, `docs/rnd/room-transport-all-at-once.md`, `docs/changes/room-transport-order.md`,
+`docs/fabric/overlays.md`, `docs/fabric/ziti-zrok-flow-design.md`, `docs/changes/room-transport-order.md`,
 `internal/link/{ziti,direct,overlaytls,ladder,transports,room,hub}.go`, `internal/cli/{transport,atrium_run,roomjoinflags,advertisecheck}.go`,
 `scripts/sgg/bringup-sgg.md`. The brief also named `docs/fabric/hub-room-plan.md`, which does not exist in this tree.

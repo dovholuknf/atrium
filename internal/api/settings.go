@@ -57,8 +57,9 @@ func globalAutoView(s *Server) map[string]any {
 	// rather than parsed, because `off` is a value and so is a number of
 	// seconds, and the board has to be able to show which one it is.
 	for key, field := range map[string]string{
-		store.SettingSweepDead:  "sweep_dead_after",
-		store.SettingPruneAfter: "prune_after",
+		store.SettingSweepDead:        "sweep_dead_after",
+		store.SettingPruneAfter:       "prune_after",
+		store.SettingIncomingKeepDays: "incoming_keep_days",
 		// Seconds a landed worker waits after its runner exits before it is pruned. Empty is 300.
 		store.SettingLandedReclaimGrace: "landed_reclaim_grace",
 		// How long a worker whose branch merged stays before it is culled.
@@ -280,6 +281,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// and setting it to `off` are different requests.
 		SweepDead  *string `json:"sweep_dead_after"`
 		PruneAfter *string `json:"prune_after"`
+		// Days a pasted or uploaded file stays in a card's incoming folder, `off`, or empty for seven.
+		IncomingKeepDays *string `json:"incoming_keep_days"`
 		// Seconds a merged worker waits before it is culled, or `off`.
 		MergedCullGrace *string `json:"merged_cull_grace"`
 		// Seconds a landed worker waits after its runner exits before it is pruned, or `off`.
@@ -534,6 +537,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := housekeeping(s, key, *value); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	if body.IncomingKeepDays != nil {
+		v := strings.TrimSpace(*body.IncomingKeepDays)
+		if n, err := strconv.Atoi(v); v != "" && v != "off" && (err != nil || n <= 0) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("incoming_keep_days is a whole number of days, off, or empty for the default"))
+			return
+		}
+		if err := s.st.SetSetting(store.SettingIncomingKeepDays, v); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}
 	}

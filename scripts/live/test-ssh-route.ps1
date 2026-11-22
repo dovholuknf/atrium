@@ -8,7 +8,7 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'New-RestartIntoRead', 'Invoke-RestartInto') {
+foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'Test-RemoteAccount', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'New-RestartIntoRead', 'Invoke-RestartInto') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -63,8 +63,15 @@ Check 'the shipped file names sgg as localai' ((Get-RoomSshUser 'sgg' $null (Joi
 
 $denied = { param($h) [pscustomobject]@{ Code = 255; TimedOut = $false; Out = "${h}: Permission denied (publickey)." } }
 $r = Resolve-SshRoute 'sgg' $denied 'claude'
-Check 'refused key says refused as the user, not offline' ((Get-SshFailure $r 'claude') -eq 'failed - ssh refused as claude, the host answered and rejected the key')
-$r = Resolve-SshRoute 'm1mini' { param($h) [pscustomobject]@{ Code = 255; TimedOut = $false; Out = 'Could not resolve hostname' } }
+Check 'refused key says refused as the user, not offline' ((Get-SshFailure $r 'claude') -eq "failed - ssh refused as claude, the host answered and rejected the key, local account $env:USERNAME")
+$offered = { param($h) [pscustomobject]@{ Code = 255; TimedOut = $false; Out = "debug1: Offering public key: C:/Users/x/.ssh/id_ed25519 ED25519 SHA256:abc`n${h}: Permission denied (publickey)." } }
+$r = Resolve-SshRoute 'sgg' $offered 'localai'
+Check 'refused key names the local account and the key file offered' ((Get-SshFailure $r 'localai') -match "local account $env:USERNAME offered key C:/Users/x/\.ssh/id_ed25519$")
+$RemoteAccount = 'claude'
+Check 'the trusted account is let through' ((Test-RemoteAccount 'C:/s/start-atrium-remote.ps1' 'claude') -eq '')
+$msg = Test-RemoteAccount 'C:/s/start-atrium-remote.ps1' 'localai'
+Check 'a wrong account is refused with who ran it, the account needed and the command' ($msg -match 'run as localai' -and $msg -match 'only the claude account' -and $msg -match 'runas /user:claude "pwsh -NoProfile -File C:/s/start-atrium-remote\.ps1"')
+$r =Resolve-SshRoute 'm1mini' { param($h) [pscustomobject]@{ Code = 255; TimedOut = $false; Out = 'Could not resolve hostname' } }
 Check 'no answer is still offline' ((Get-SshFailure $r) -match '^failed - offline')
 
 # The swap runs detached, so an ssh session that dies mid-swap does not decide anything: the hub does.

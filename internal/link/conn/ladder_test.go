@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// See docs/rnd/room-transport-order.md for the rules these pin.
+// for the rules these pin.
 
 func kinds(ps []Path) string {
 	out := make([]string, len(ps))
@@ -47,16 +47,16 @@ func TestArrangeFollowsTheOrderAndPutsTheRestLast(t *testing.T) {
 }
 
 // A room joined over direct that was told about a ziti identity locally climbs
-// ziti then direct, with nothing heard from the hub. This is m1mini and sg3.
+// ziti then direct, with nothing heard from the hub. This is room-a and room-d.
 func TestCandidatesWithoutTheHubUseTheJoinAndTheLocalPaths(t *testing.T) {
-	saved := Saved{Transport: "direct", Hub: "sg4:7779", Room: "m1mini"}
+	saved := Saved{Transport: "direct", Hub: "room-e:7779", Room: "room-a"}
 	got, skipped := Candidates(saved, RoomTransports{
-		Paths: []Path{{Transport: "ziti", Identity: "/r/m1mini.json"}},
+		Paths: []Path{{Transport: "ziti", Identity: "/r/room-a.json"}},
 	})
 	if kinds(got) != "ziti,direct" {
 		t.Fatalf("got %s, want ziti,direct (the default puts ziti first)", kinds(got))
 	}
-	if got[1].Addr != "sg4:7779" || got[1].From != "join" {
+	if got[1].Addr != "room-e:7779" || got[1].From != "join" {
 		t.Fatalf("direct rung %+v, want the joined address from the join", got[1])
 	}
 	if got[0].Service != DefaultZitiService || got[0].From != "local" {
@@ -92,12 +92,12 @@ func TestCandidatesLayerJoinHubAndLocalInThatOrder(t *testing.T) {
 	}
 }
 
-// claude-sg4 on 2026-10-14: joined at 127.0.0.1:7779, on the hub's own machine,
+// claude-room-e on 2026-10-14: joined at 127.0.0.1:7779, on the hub's own machine,
 // while the hub advertised 192.168.1.68:7779 from a network it had left. The
 // advertise replaced the join, every data dial timed out, and the room looked
 // attached because the control connection had been dialled first.
 func TestCandidatesNeverLayTheHubsAdvertiseOverTheJoinedAddress(t *testing.T) {
-	saved := Saved{Transport: "direct", Hub: "127.0.0.1:7779", Room: "claude-sg4"}
+	saved := Saved{Transport: "direct", Hub: "127.0.0.1:7779", Room: "claude-room-e"}
 	tr := RoomTransports{Hub: []Path{{Transport: "direct", Addr: "192.168.1.68:7779"}}}
 	got, _ := Candidates(saved, tr)
 	if len(got) != 2 || got[0].Addr != "127.0.0.1:7779" || got[1].Addr != "192.168.1.68:7779" {
@@ -116,11 +116,11 @@ func TestCandidatesNeverLayTheHubsAdvertiseOverTheJoinedAddress(t *testing.T) {
 	}
 }
 
-// claude-sg4 runs on the hub's own machine and still attached over ziti, so every board call and keystroke paid the
+// claude-room-e runs on the hub's own machine and still attached over ziti, so every board call and keystroke paid the
 // overlay's 85ms where loopback is 1ms. A direct rung on this machine's loopback climbs first whatever the order
 // says, and ziti stays below it as the fallback.
 func TestALoopbackDirectRungClimbsBeforeZitiWhateverTheOrderSays(t *testing.T) {
-	saved := Saved{Transport: "direct", Hub: "127.0.0.1:7779", Room: "claude-sg4"}
+	saved := Saved{Transport: "direct", Hub: "127.0.0.1:7779", Room: "claude-room-e"}
 	tr := RoomTransports{
 		Hub:   []Path{{Transport: "ziti"}, {Transport: "direct", Addr: "192.168.1.68:7779"}},
 		Paths: []Path{{Transport: "ziti", Identity: "/id.json"}},
@@ -131,14 +131,14 @@ func TestALoopbackDirectRungClimbsBeforeZitiWhateverTheOrderSays(t *testing.T) {
 		t.Fatalf("got %+v, want loopback direct, then ziti, then the advertised direct", got)
 	}
 	// A hub on another machine keeps the order it was given.
-	saved.Hub = "sg4:7779"
+	saved.Hub = "room-e:7779"
 	tr.Hub = nil
 	if got, _ = Candidates(saved, tr); kinds(got) != "ziti,direct" {
 		t.Fatalf("a remote hub reordered to %s, want ziti,direct", kinds(got))
 	}
 	for addr, want := range map[string]bool{
 		"127.0.0.1:7779": true, "localhost:7779": true, "[::1]:7779": true, "127.0.0.1": true,
-		"192.168.1.68:7779": false, "sg4:7779": false, "": false,
+		"192.168.1.68:7779": false, "room-e:7779": false, "": false,
 	} {
 		if got := isLoopbackDirect(Path{Transport: "direct", Addr: addr}); got != want {
 			t.Errorf("isLoopbackDirect(%q) = %v, want %v", addr, got, want)
@@ -332,7 +332,7 @@ func TestARoomThatReachesNoRungSaysEveryAddressAndRereadsThem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	asked := make(chan State, 1)
-	r := &Room{Name: "sgg", Dial: l, T: Timings{DialWait: time.Second}}
+	r := &Room{Name: "room-g", Dial: l, T: Timings{DialWait: time.Second}}
 	r.OnUnreachable = func() {
 		asked <- r.State()
 		cancel()
@@ -347,8 +347,8 @@ func TestARoomThatReachesNoRungSaysEveryAddressAndRereadsThem(t *testing.T) {
 	}
 	<-done
 	want := []string{"direct 192.168.1.68:7779", "ziti atrium-hub"}
-	if s.Room != "sgg" || s.Up || strings.Join(s.Unreachable, "|") != strings.Join(want, "|") {
-		t.Fatalf("state %+v, want room sgg down having tried %v", s, want)
+	if s.Room != "room-g" || s.Up || strings.Join(s.Unreachable, "|") != strings.Join(want, "|") {
+		t.Fatalf("state %+v, want room room-g down having tried %v", s, want)
 	}
 	if !strings.Contains(s.Error, "192.168.1.68:7779: 192.168.1.68:7779 refused") {
 		t.Fatalf("the error lost why each rung failed: %q", s.Error)

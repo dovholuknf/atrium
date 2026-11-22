@@ -26,7 +26,6 @@ Series: Cards, not agents. Status: idea. Audience: people designing agent UIs.
 - README.md
 - docs/how-atrium-works.md
 - docs/runtime/seen-design.md
-- docs/rnd/card-urls-design.md
 
 ## Notes for the writer
 

@@ -65,14 +65,14 @@ func TestAMomentIsInTheStepThatHoldsIt(t *testing.T) {
 
 func cardsAndSteps() ([]hubstore.WorkCard, []hubstore.WorkStepRow) {
 	cards := []hubstore.WorkCard{
-		{BacklogID: "f-x", Room: "sg4", Card: "b1", Step: "building", AttachedAt: stamp(-5)},
-		{BacklogID: "f-x", Room: "sg4", Card: "rv", Step: "reviewed", AttachedAt: stamp(-5)},
-		{BacklogID: "f-x", Room: "sg4", Card: "rl", Role: "relay", Step: "building", AttachedAt: stamp(-5)},
+		{BacklogID: "f-x", Room: "room-e", Card: "b1", Step: "building", AttachedAt: stamp(-5)},
+		{BacklogID: "f-x", Room: "room-e", Card: "rv", Step: "reviewed", AttachedAt: stamp(-5)},
+		{BacklogID: "f-x", Room: "room-e", Card: "rl", Role: "relay", Step: "building", AttachedAt: stamp(-5)},
 	}
 	steps := []hubstore.WorkStepRow{
-		{Step: "building", State: "done", StartedAt: stamp(0), EndedAt: stamp(60), Cards: `["sg4/b1"]`},
-		{Step: "tested", State: "done", StartedAt: stamp(60), EndedAt: stamp(90), Cards: `["sg4/b1"]`},
-		{Step: "reviewed", State: "done", StartedAt: stamp(90), EndedAt: stamp(120), Cards: `["sg4/rv"]`},
+		{Step: "building", State: "done", StartedAt: stamp(0), EndedAt: stamp(60), Cards: `["room-e/b1"]`},
+		{Step: "tested", State: "done", StartedAt: stamp(60), EndedAt: stamp(90), Cards: `["room-e/b1"]`},
+		{Step: "reviewed", State: "done", StartedAt: stamp(90), EndedAt: stamp(120), Cards: `["room-e/rv"]`},
 	}
 	return cards, steps
 }
@@ -91,7 +91,7 @@ func TestTheStepsPlusCoordinationEqualTheSumOfTheRowsToTheCent(t *testing.T) {
 			class = hubstore.ClassCoord
 		}
 		start := r.Intn(140) - 10
-		row := hubstore.WorkUsageRow{Room: "sg4", UsageID: "u", BacklogID: "f-x", Card: card, Class: class,
+		row := hubstore.WorkUsageRow{Room: "room-e", UsageID: "u", BacklogID: "f-x", Card: card, Class: class,
 			Model: models[r.Intn(len(models))], StartedAt: stamp(start), EndedAt: stamp(start + r.Intn(9)),
 			Tokens: tokenprice.Tokens{Input: r.Int63n(5000), CacheWrite5m: r.Int63n(90000), CacheWrite1h: r.Int63n(9000),
 				CacheRead: r.Int63n(900000), Output: r.Int63n(7000)}}
@@ -126,8 +126,8 @@ func TestAModelWithNoPriceShowsAQuestionMarkAndAStepWithNoSpendADash(t *testing.
 	tb := tokenprice.Table{Rows: tokenprice.Defaults("2026-09-28T00:00:00Z")}
 	cards, steps := cardsAndSteps()
 	rows := []hubstore.WorkUsageRow{
-		{Room: "sg4", UsageID: "a", BacklogID: "f-x", Card: "b1", Model: "claude-opus-5-5", StartedAt: stamp(5), EndedAt: stamp(6), Tokens: tokenprice.Tokens{Input: 1000}},
-		{Room: "sg4", UsageID: "b", BacklogID: "f-x", Card: "rv", Model: "claude-new-9", StartedAt: stamp(100), EndedAt: stamp(101), Tokens: tokenprice.Tokens{Input: 500}},
+		{Room: "room-e", UsageID: "a", BacklogID: "f-x", Card: "b1", Model: "claude-opus-5-5", StartedAt: stamp(5), EndedAt: stamp(6), Tokens: tokenprice.Tokens{Input: 1000}},
+		{Room: "room-e", UsageID: "b", BacklogID: "f-x", Card: "rv", Model: "claude-new-9", StartedAt: stamp(100), EndedAt: stamp(101), Tokens: tokenprice.Tokens{Input: 500}},
 	}
 	v := ItemCost(tb, cards, steps, rows, at(500))
 	by := map[string]CostLine{}

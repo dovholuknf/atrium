@@ -11,7 +11,6 @@ import (
 )
 
 // A `when: done` message stops waiting for the turn after escalate_held_after.
-// See docs/rnd/held-message-escalation-design.md, section 3.
 
 // heldAfterDefault is the wait when the setting is empty.
 const heldAfterDefault = 15 * time.Minute

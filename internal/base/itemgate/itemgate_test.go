@@ -11,9 +11,9 @@ func TestParseTargetTellsAnItemFromACondition(t *testing.T) {
 		" 91 ":                      {KindItem, "91"},
 		"r-new-item-dependencies":   {KindItem, "r-new-item-dependencies"},
 		"live:u-033":                {KindCond, "live:u-033"},
-		"room:sg3":                  {KindCond, "room:sg3"},
+		"room:room-d":               {KindCond, "room:room-d"},
 		"sha:4815d47":               {KindCond, "sha:4815d47"},
-		"f-006 migration on m1mini": {KindCond, "f-006 migration on m1mini"},
+		"f-006 migration on room-a": {KindCond, "f-006 migration on room-a"},
 	} {
 		got, err := ParseTarget(in)
 		if err != nil || got != want {
