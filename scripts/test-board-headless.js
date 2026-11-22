@@ -26953,11 +26953,11 @@ async function mChangesSection(browser) {
 }
 
 // ── the changes sheet on a real answer ───────────────────────────────────
-// A /changes answer taken from the live room (scripts/board-tests/real-changes.json), with its real `hunks` text:
+// A /changes answer taken from the live room (docs/backlog/ui/img/u-m-code-review/real-changes.json), with its real `hunks` text:
 // diff --git, new file mode, --- and +++ headers, an empty added file named NUL, a modified file. Served as the card-level answer
 // and, with via, cumulative and partial set, as a turn's. REAL_SHOTS=<dir> writes the 412px PNGs of the states.
 async function mChangesRealSection(browser) {
-  const real = JSON.parse(fs.readFileSync(path.join(WEB_ROOT, "..", "..", "..", "scripts", "board-tests", "real-changes.json"), "utf8"));
+  const real = JSON.parse(fs.readFileSync(path.join(WEB_ROOT, "..", "..", "..", "docs", "backlog", "ui", "img", "u-m-code-review", "real-changes.json"), "utf8"));
   const st = mServer({});
   const c1 = mCard("cr-1", { alias: "real", display_title: "real", runner: "claude", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
   st.tasks = [c1];
