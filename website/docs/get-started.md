@@ -61,7 +61,8 @@ The install script already started it. After a source build, or after a reboot, 
 atrium run
 ```
 
-Open `http://127.0.0.1:7778`. `atrium run` is the hub, which serves the board. The first time, it also makes this
+Open `http://127.0.0.1:7778`. When another program holds that port, `atrium run` says so and names the ports it
+moved to, and a second `atrium run` says atrium is already running and where. `atrium run` is the hub, which serves the board. The first time, it also makes this
 machine's room and starts it in the background. The room holds the agents and their terminals, and stopping
 `atrium run` never stops it.
 

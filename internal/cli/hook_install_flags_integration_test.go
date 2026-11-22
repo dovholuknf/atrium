@@ -23,11 +23,11 @@ func runHookCmd(t *testing.T, args ...string) string {
 	return out.String()
 }
 
-func TestInstallReportOnlyWritesNothing(t *testing.T) {
+func TestInstallDryRunWritesNothing(t *testing.T) {
 	user := firstRunHome(t, "")
 	project := t.TempDir()
 	for _, args := range [][]string{
-		{"install", "--report-only"},
+		{"install", "--dry-run"},
 		{"install", "--report-only", "--project", project},
 	} {
 		out := runHookCmd(t, args...)
@@ -36,10 +36,10 @@ func TestInstallReportOnlyWritesNothing(t *testing.T) {
 		}
 	}
 	if _, err := os.Stat(user); !os.IsNotExist(err) {
-		t.Fatalf("report-only created the user settings: %v", err)
+		t.Fatalf("a dry run created the user settings: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(project, ".claude")); !os.IsNotExist(err) {
-		t.Fatalf("report-only created the project directory: %v", err)
+		t.Fatalf("a dry run created the project directory: %v", err)
 	}
 }
 
@@ -69,5 +69,18 @@ func TestInstallProjectTouchesOnlyThatProjectAndUninstallRestoresIt(t *testing.T
 	}
 	if raw, _ := os.ReadFile(user); string(raw) != had {
 		t.Fatalf("user settings were touched:\n%s", raw)
+	}
+}
+
+func TestInstallWatchOnlyLeavesOutTheGate(t *testing.T) {
+	user := firstRunHome(t, "")
+	runHookCmd(t, "install", "--watch-only")
+	raw, err := os.ReadFile(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(raw); !strings.Contains(s, "SessionStart") || !strings.Contains(s, "tool-start") ||
+		strings.Contains(s, "permission") {
+		t.Fatalf("watch-only should write the reporting hooks and not the gate:\n%s", s)
 	}
 }

@@ -7,7 +7,7 @@ param(
     [string]$Dir = (Join-Path $HOME '.atrium/bin'),
     [string]$Version = 'latest',
     [string]$Repo = 'dovholuknf/atrium',
-    [string]$Addr = '127.0.0.1:7778',
+    [string]$Addr = '',
     [string[]]$RunArgs = @(),
     [switch]$NoPath,
     [switch]$NoStart
@@ -68,22 +68,28 @@ if (-not $NoPath) {
     if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$env:Path;$dir" }
 }
 
-$url = "http://$Addr"
-if ($NoStart) { Write-Host "not started. start it with: atrium run"; Write-Host "board: $url"; return }
+if ($NoStart) { Write-Host "not started. start it with: atrium run"; return }
 
-$up = $false
-try { Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch { }
-if ($up) {
-    Write-Host 'something already answers on the board address, so atrium run was not started'
-} else {
-    $log = Join-Path $dir 'run.log'
-    $argv = @('run', '--addr', $Addr) + $RunArgs
-    Start-Process -FilePath $dest -ArgumentList $argv -WindowStyle Hidden `
-        -RedirectStandardOutput $log -RedirectStandardError "$log.err" | Out-Null
-    for ($i = 0; $i -lt 60 -and -not $up; $i++) {
-        Start-Sleep -Milliseconds 500
-        try { Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch { }
-    }
-    if (-not $up) { Write-Warning "the board did not answer in 30s, see $log and $log.err" }
+# atrium run moves to free ports when the default ones are held, and writes the board it bound in hub-addr.json.
+$hub = if ($env:WORKTREE_ROOT) { Join-Path $env:WORKTREE_ROOT 'hub/hub' } else { Join-Path $HOME '.atrium/hub' }
+function Get-Board {
+    try { $b = (Get-Content (Join-Path $hub 'hub-addr.json') -Raw | ConvertFrom-Json).board } catch { return $null }
+    if (-not $b) { return $null }
+    try { Invoke-WebRequest "http://$b" -UseBasicParsing -TimeoutSec 2 | Out-Null; return "http://$b" } catch { return $null }
 }
-Write-Host "board: $url"
+$log = Join-Path $dir 'run.log'
+$argv = @('run') + $(if ($Addr) { @('--addr', $Addr) } else { @() }) + $RunArgs
+$p = Start-Process -FilePath $dest -ArgumentList $argv -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+$null = $p.Handle
+$url = $null
+for ($i = 0; $i -lt 60 -and -not $url; $i++) {
+    Start-Sleep -Milliseconds 500
+    if ($p.HasExited) {
+        Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Write-Host
+        if ($p.ExitCode -ne 0) { throw "atrium run stopped, see $log and $log.err" }
+        return
+    }
+    $url = Get-Board
+}
+if ($url) { Write-Host "board: $url" } else { Write-Warning "atrium is still starting, its log is $log" }

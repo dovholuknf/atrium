@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +68,24 @@ func newRun() *cobra.Command {
 			l.isolated = isolated
 			l.upgrades = acceptUpgrades
 			f.firstRun = &l
+			if !isolated && !anyChanged(cmd, "addr", "link", "http", "agent") {
+				_, roomUp := roomAnswers(roomAddressFile(l))
+				blk, running, note, err := pickRunBlock(recordedBlock(orDefault(f.dir, hubDir())), roomUp || noRoom, machinePorts)
+				if err != nil {
+					return err
+				}
+				if running {
+					fmt.Fprintf(cmd.OutOrStdout(), "atrium is already running. board: http://127.0.0.1:%d\n", blk.board)
+					return nil
+				}
+				if note != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), note)
+				}
+				f.board = net.JoinHostPort("127.0.0.1", strconv.Itoa(blk.board))
+				f.port = net.JoinHostPort("127.0.0.1", strconv.Itoa(blk.link))
+				l.human = net.JoinHostPort("127.0.0.1", strconv.Itoa(blk.human))
+				l.agent = net.JoinHostPort("127.0.0.1", strconv.Itoa(blk.agent))
+			}
 			if noRoom {
 				return serveAtrium(f, nil)
 			}
@@ -134,7 +151,7 @@ func ensureRoom(store *hubstore.Store, side *hubSide, transport string, l roomLa
 				"and `atrium room join` do it by hand", err)
 		}
 	}
-	if note := noCardRootNote(runtime.GOOS, l.db); note != "" {
+	if note := noCardRootNote(cardroot.SystemEnv(), l.db); note != "" {
 		log.Printf("[hub] %s", note)
 	}
 	p, logPath, err := startRoom(l)
@@ -146,16 +163,32 @@ func ensureRoom(store *hubstore.Store, side *hubSide, transport string, l roomLa
 }
 
 // noCardRootNote is the one line for a room that will have no card root, "" when it has one or the database cannot say.
-func noCardRootNote(goos, db string) string {
+func noCardRootNote(env cardroot.Env, db string) string {
 	set, err := store.SettingOfFileReadOnly(db, cardroot.Setting)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return ""
 	}
-	env := cardroot.Env{GOOS: goos, HomeDir: os.UserHomeDir}
 	if _, err := env.Resolve(set, ""); !errors.Is(err, cardroot.ErrNone) {
 		return ""
 	}
 	return "this room has no card root, so a launch from a repo will be refused. " + cardroot.SetHow
+}
+
+// pinCardRoot stores the Windows default card root while card_root is unset, so a drive added later never moves it.
+func pinCardRoot(st *store.Store, env cardroot.Env) error {
+	set, err := st.Setting(cardroot.Setting)
+	if err != nil {
+		return err
+	}
+	root := env.Pin(set)
+	if root == "" {
+		return nil
+	}
+	if err := st.SetSetting(cardroot.Setting, root); err != nil {
+		return err
+	}
+	log.Printf("[atrium] card homes go in %s, kept as card_root", root)
+	return nil
 }
 
 // roomAddressFile is where the room this would start writes its address, which

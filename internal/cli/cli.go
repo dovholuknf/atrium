@@ -129,13 +129,16 @@ func newRoot() *cobra.Command {
 	root.AddCommand(newRun(), roomCmd(), newServiceCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd(), newAdapter())
 	// Set after flags and arguments parse, so a mistyped flag still shows usage and a refusal does not.
 	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) { cmd.SilenceUsage = true }
-	root.AddGroup(&cobra.Group{ID: "start", Title: "Start here:"}, &cobra.Group{ID: "more", Title: "More commands:"})
+	root.AddGroup(&cobra.Group{ID: "start", Title: "Start here:"}, &cobra.Group{ID: "cards", Title: "Cards:"},
+		&cobra.Group{ID: "session", Title: "Inside a session:"}, &cobra.Group{ID: "git", Title: "Git and CI:"},
+		&cobra.Group{ID: "rooms", Title: "Rooms and the hub:"}, &cobra.Group{ID: "runners", Title: "Runners and hooks:"})
 	for _, c := range root.Commands() {
-		switch c.Name() {
-		case "run", "launch", "hook", "stop", "uninstall", "version":
-			c.GroupID = "start"
-		default:
-			c.GroupID = "more"
+		c.GroupID = helpGroup(c.Name())
+		if c.GroupID == "" || c.Hidden {
+			c.GroupID, c.Hidden = "", true
+		}
+		if c.GroupID == "more" && !root.ContainsGroup("more") {
+			root.AddGroup(&cobra.Group{ID: "more", Title: "More commands:"})
 		}
 		switch c.Name() {
 		case "run", "room":
@@ -143,6 +146,30 @@ func newRoot() *cobra.Command {
 		}
 	}
 	return root
+}
+
+// helpGroup is the root help's group for a subcommand, "" for one only a harness runs, which help leaves out.
+func helpGroup(name string) string {
+	switch name {
+	case "run", "launch", "adopt", "stop", "uninstall", "version":
+		return "start"
+	case "new", "open", "tangent", "twig", "close", "exit", "new-context", "task", "cd", "dispatch", "preview",
+		"archive-workers":
+		return "cards"
+	case "join", "leave", "peers", "tell", "ask", "answer", "finish", "ready", "subscribe", "unsubscribe",
+		"subscriptions":
+		return "session"
+	case "worktree", "update", "merge", "land-check", "ci", "ci-hook":
+		return "git"
+	case "room", "rooms", "service", "name", "wait", "resources", "ssh", "restart-pty-host", "capabilities",
+		"backups", "db", "ledger", "usage", "backlog", "reports", "zrok", "daemon":
+		return "rooms"
+	case "hook", "adapter", "requirements", "replay":
+		return "runners"
+	case "session", "turn", "statusline", "control", "mcp-relay", "merged", "ssh-proxy":
+		return ""
+	}
+	return "more"
 }
 
 // quietUsage keeps a long-running command's failure to the one line that says

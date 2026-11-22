@@ -15,24 +15,27 @@ import (
 // Setting is the room setting that names the card root.
 const Setting = "card_root"
 
-// ErrNone is the answer on Windows with neither the setting nor WORKTREE_ROOT: there is no place to put a home, and
-// the home folder is C:, which is the one place agent work must not go.
+// ErrNone is the answer on Windows with no setting, no WORKTREE_ROOT, no data drive, no LOCALAPPDATA and no home folder.
 var ErrNone = errors.New("this room has no place for card homes. " + WindowsWhy + ". " + SetHow)
 
-// WindowsWhy is the one clause for why Windows has no default card root.
-const WindowsWhy = "Windows has no default card root because the home folder is on C: and agent work stays off the system drive"
+// WindowsWhy is the one clause for why Windows found no default card root.
+const WindowsWhy = "Windows found no fixed drive besides C:, no LOCALAPPDATA and no home folder to put them in"
 
-// SetHow names the command and the board setting that set card_root, with a path on a non-system drive.
-const SetHow = "set card_root to a folder of its own on another drive, for example `atrium room set card_root D:/atrium/cards` " +
-	"(run it with the room stopped) or in the board's room settings"
+// SetHow names the command and the board setting that set card_root.
+const SetHow = "set card_root to a folder of its own, best on a drive other than C:, for example " +
+	"`atrium room set card_root D:/atrium/cards` (run it with the room stopped) or in the board's room settings"
 
-// Env is what the functions ask the machine: the home folder and the OS name.
+// Env is what the functions ask the machine: the home folder, the OS name, and on Windows the fixed drives other than
+// the system drive and LOCALAPPDATA. A nil func answers nothing.
 type Env struct {
-	GOOS    string
-	HomeDir func() (string, error)
+	GOOS         string
+	HomeDir      func() (string, error)
+	DataDrives   func() []string
+	LocalAppData func() string
 }
 
-var system = Env{GOOS: runtime.GOOS, HomeDir: os.UserHomeDir}
+var system = Env{GOOS: runtime.GOOS, HomeDir: os.UserHomeDir, DataDrives: dataDrives,
+	LocalAppData: func() string { return os.Getenv("LOCALAPPDATA") }}
 
 // roomDefault is <ATRIUM_ROOT>/<room>/cards for a room started by name, set once before the room opens.
 var roomDefault string
@@ -55,7 +58,9 @@ func (e Env) StateDir() string {
 }
 
 // Resolve is the card root for a stored setting: the setting when set, else the room's own folder when it was started
-// by name, else atrium-cards under WORKTREE_ROOT, else ~/atrium/cards off Windows. It is derived on every read and never written back. scmRoot is the effective
+// by name, else atrium-cards under WORKTREE_ROOT, else ~/atrium/cards off Windows, else on Windows atrium/cards on the
+// first fixed drive that is not the system drive, else under LOCALAPPDATA, else ~/atrium/cards, which a room stores
+// once with Pin. scmRoot is the effective
 // git.scm_root, "" when there is none. The result is refused by Check when it is not safe to remove folders in.
 func Resolve(set, scmRoot string) (string, error) { return system.Resolve(set, scmRoot) }
 
@@ -73,11 +78,40 @@ func (e Env) Resolve(set, scmRoot string) (string, error) {
 				return "", ErrNone
 			}
 			root = filepath.Join(home, "atrium", "cards")
-		} else {
+		} else if root = e.windowsDefault(); root == "" {
 			return "", ErrNone
 		}
 	}
 	return e.Check(root, e.StateDir(), scmRoot)
+}
+
+// Pin is the Windows default a room stores as its setting while the setting is unset, so a drive added later never
+// moves it, "" when the default would not come from a drive.
+func (e Env) Pin(set string) string {
+	if strings.TrimSpace(set) != "" || roomDefault != "" || e.GOOS != "windows" ||
+		strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`) != "" {
+		return ""
+	}
+	return filepath.ToSlash(e.windowsDefault())
+}
+
+func (e Env) windowsDefault() string {
+	if e.DataDrives != nil {
+		if d := e.DataDrives(); len(d) > 0 {
+			return filepath.Join(d[0], "atrium", "cards")
+		}
+	}
+	if e.LocalAppData != nil {
+		if l := strings.TrimSpace(e.LocalAppData()); l != "" {
+			return filepath.Join(l, "atrium", "cards")
+		}
+	}
+	if e.HomeDir != nil {
+		if h, err := e.HomeDir(); err == nil && strings.TrimSpace(h) != "" {
+			return filepath.Join(h, "atrium", "cards")
+		}
+	}
+	return ""
 }
 
 // Check refuses a card root a home's removal could do harm in: a drive root, the home folder or an ancestor of it,
@@ -168,3 +202,6 @@ func within(outer, inner string) bool {
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
+
+// SystemEnv is this machine's Env.
+func SystemEnv() Env { return system }

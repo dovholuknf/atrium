@@ -56,16 +56,19 @@ New room setting `card_root`, an absolute path.
 | set | that path |
 | unset, `WORKTREE_ROOT` set | `$WORKTREE_ROOT/atrium-cards` |
 | unset, no `WORKTREE_ROOT`, not Windows | `~/atrium/cards` |
-| unset, no `WORKTREE_ROOT`, Windows | none. A launch that wants a home is refused with a sentence naming the setting |
+| unset, no `WORKTREE_ROOT`, Windows | `atrium/cards` on the first fixed drive that is not the system drive, else `%LOCALAPPDATA%/atrium/cards` |
+| unset, Windows, neither found | none. A launch that wants a home is refused with a sentence naming the setting |
 
-Windows never falls back to the home folder, because that is `C:`, and keeping agent work off `C:` is half the point.
-The value is derived on each read and never written back, the rule `EffectiveSCMRoot` keeps.
+The point is one folder for all card data, so a room never scatters it over the disk. A drive other than `C:` is
+recommended, not required: Windows picks one when the machine has one, and `C:` is fine when it does not.
+The value is derived on each read and never written back, the rule `EffectiveSCMRoot` keeps, with one exception. The
+Windows default is written to `card_root` when the room starts, so a fixed drive added later never moves it.
 
 A value is refused, when it is set and again when it is read, if it is a drive root, the home folder or an ancestor of
 it, inside the room's state directory (`daemon.StateDir()`), or inside `git.scm_root`. The last one keeps homes and
 clones apart, so removing a home can never reach a clone and a clone walk never finds a home.
 
-The board's room settings show the root, the drive's free space, and a sentence when it is unset on Windows.
+The board's room settings show the root, the drive's free space, and a sentence when Windows found no root.
 
 ## 2. The home
 
