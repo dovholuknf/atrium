@@ -204,18 +204,7 @@ func (rc *Receiver) orchDeletesMerged(ctx context.Context, dir string, p Pusher,
 		return false
 	}
 	for _, into := range []string{MainRef, ClaudeMainRef, ForgeRefPrefix + "main"} {
-		if ok, err := rc.h.Store().isAncestor(ctx, dir, tip, into); err == nil && ok {
-			return true
-		}
-		// A squash or a cherry-pick leaves the tip off main's history, so a branch that adds nothing is also merged:
-		// merging it into main changes no file.
-		s := rc.h.Store()
-		merged, err := s.git(ctx, dir, gitexec.MergeTree{Branch1: into, Branch2: tip})
-		if err != nil {
-			continue
-		}
-		have, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: into + "^{tree}", Quiet: true})
-		if err == nil && strings.TrimSpace(strings.SplitN(merged, "\n", 2)[0]) == strings.TrimSpace(have) {
+		if rc.h.Store().holdsAll(ctx, dir, tip, into) {
 			return true
 		}
 	}

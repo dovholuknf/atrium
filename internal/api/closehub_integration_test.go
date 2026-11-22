@@ -193,3 +193,37 @@ func TestCloseReportsAFailedHubDeleteAndFinishesTheRest(t *testing.T) {
 		t.Error("the rest of the close did not run: the worktree is still there")
 	}
 }
+
+func TestCloseJudgesAHubBranchAgainstTheHubAsItIsNow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, wt, _ := openForClose(t)
+	ctx := context.Background()
+	stream := "reset refs/remotes/hub/claude/main\nfrom HEAD\n\n" +
+		"commit refs/remotes/hub/claude/landed\ncommitter t <t@t> 1 +0000\ndata 4\nwork\nfrom HEAD\n\n"
+	fi := exec.CommandContext(ctx, "git", "fast-import", "--quiet")
+	fi.Dir = filepath.FromSlash(wt)
+	fi.Stdin = strings.NewReader(stream)
+	if out, err := fi.CombinedOutput(); err != nil {
+		t.Fatalf("git fast-import: %v\n%s", err, out)
+	}
+	if _, err := oh.srv.st.AddResource(card, store.ResHubBranch, "claude/landed", "github/o/r"); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.HubRefresh = func(ctx context.Context, _, dir, _, _ string) error {
+		cmd := exec.CommandContext(ctx, "git", "update-ref", "refs/remotes/hub/claude/main", "refs/remotes/hub/claude/landed")
+		cmd.Dir = filepath.FromSlash(dir)
+		return cmd.Run()
+	}
+	var deleted []string
+	oh.srv.HubDelete = func(_ context.Context, _, _, _, branch string) error {
+		deleted = append(deleted, branch)
+		return nil
+	}
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true})
+	if code != 200 || !out.Closed || strings.Join(deleted, ",") != "claude/landed" {
+		t.Fatalf("%d %+v deleted %v", code, out, deleted)
+	}
+}

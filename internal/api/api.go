@@ -116,6 +116,9 @@ type Server struct {
 	// HubDelete deletes a claude/* branch the card pushed from the hub, by a push the hub takes only for a branch that
 	// card pushed. A close calls it for each hub-branch row. Nil is a room with no hub remote. See closehub.go.
 	HubDelete func(ctx context.Context, card, dir, hubRepo, branch string) error
+	// HubRefresh fetches the hub's claude/main and a hub branch into the clone's remote-tracking refs, so a close judges
+	// a branch against the hub as it is now. Best effort: nil, or an error, leaves the refs as last fetched.
+	HubRefresh func(ctx context.Context, card, dir, hubRepo, branch string) error
 	// StashRetentionDays is how long the hub keeps a stash before it removes it, for the expiry date a close names. Nil
 	// is 30, the hub's default. The room does not hear the hub's setting, so a hub set to another number removes it
 	// on its own date and this one is what the close could say. 0 is never.

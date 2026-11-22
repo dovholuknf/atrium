@@ -510,6 +510,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.ScopeHub = d.scopeHubRemote
 	d.ap.Stash = d.StashTo
 	d.ap.HubDelete = d.HubDeleteBranch
+	d.ap.HubRefresh = d.HubRefreshBranch
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling

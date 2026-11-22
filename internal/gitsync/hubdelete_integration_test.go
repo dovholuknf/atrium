@@ -49,3 +49,23 @@ func TestDeleteFromHubTakesABranchTheHubAlreadyDeleted(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchFromHubBringsTheBranchIntoTheHubRemoteRefs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	f := newRemote(t)
+	f.seedMain(hubRepo)
+	f.branch("claude/x", "x.txt")
+	tok, _ := f.cards.Mint("C1")
+	if out, err := PushToHub(bg, Default, f.work, f.base, tok, "claude/x", hubRepo); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	tip := git(t, f.work, "rev-parse", "refs/heads/claude/x")
+	git(t, f.work, "update-ref", "-d", "refs/remotes/hub/claude/x")
+	_ = FetchFromHub(bg, Default, f.work, f.base, tok, "claude/x", hubRepo)
+	if got := git(t, f.work, "rev-parse", "refs/remotes/hub/claude/x"); got != tip {
+		t.Fatalf("hub/claude/x is %s, want %s", got, tip)
+	}
+}

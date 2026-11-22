@@ -288,8 +288,8 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 	if err != nil || !ok || !strings.HasPrefix(tip, sha) {
 		return false, err
 	}
-	if in, err := s.isAncestor(ctx, dir, tip, ClaudeMainRef); err != nil || !in {
-		return false, err
+	if !s.holdsAll(ctx, dir, tip, ClaudeMainRef) {
+		return false, nil
 	}
 	if _, err := s.git(ctx, dir, gitexec.DeleteRef{Ref: headsPrefix + branch, Old: tip}); err != nil {
 		return false, err
