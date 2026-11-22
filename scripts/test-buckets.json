@@ -354,7 +354,7 @@
     "m-compose": {
       "page": "the phone's composer",
       "units": ["mCompose", "mComposeImages", "mSendFree", "mTypeSteady"],
-      "sources": ["internal/api/web/m/js/compose.js"],
+      "sources": ["internal/api/web/m/js/compose.js", "internal/api/web/m/js/voice.js"],
       "tests": [],
       "checks": []
     },
@@ -405,7 +405,9 @@
     "api/skins": {"package": "./internal/api", "sources": ["internal/api/skins.go", "internal/api/termthemes.go", "internal/api/usercss.go"], "tests": ["internal/api/skins_*test.go", "internal/api/termthemes_*test.go", "internal/api/usercss_*test.go"]},
     "api/providers": {"package": "./internal/api", "sources": ["internal/api/providers.go", "internal/api/providerapi.go"], "tests": ["internal/api/providerapi_*test.go", "internal/api/providers_*test.go"]},
     "api/runnersetup": {"package": "./internal/api", "sources": ["internal/api/runnersetup.go", "internal/api/setupreport.go"], "tests": ["internal/api/runnersetup_*test.go", "internal/api/setupreport_*test.go"]},
+    "api/dictate": {"package": "./internal/api", "sources": ["internal/api/dictate.go"], "tests": ["internal/api/dictate_*test.go"]},
     "api/termopen": {"package": "./internal/api", "sources": ["internal/api/termopen.go", "internal/api/termwidth.go", "internal/api/scrollback.go"], "tests": ["internal/api/scrollback_*test.go", "internal/api/termopen_*test.go", "internal/api/termwidth_*test.go"]},
+    "hub/dictate": {"package": "./internal/link", "sources": ["internal/link/hubdictate.go"], "tests": ["internal/link/hubdictate_*test.go"]},
     "hub/rooms": {"package": "./internal/link", "sources": ["internal/link/firstrun.go", "internal/link/roomsevent.go", "internal/link/roomspec.go", "internal/link/roomssh.go", "internal/link/hosts.go", "internal/link/hubtransports.go", "internal/link/link.go", "internal/link/proxy.go", "internal/link/hubroutes.go", "internal/link/setupwatch.go", "internal/link/capabilities.go", "internal/link/capabilities_mcp.go", "internal/link/capabilitylist.go", "internal/link/launchneeds.go", "internal/link/fanout.go", "internal/link/everywhere.go", "internal/link/everywhere_http.go", "internal/link/stream_door.go", "internal/link/preview.go", "internal/link/events.go", "internal/link/cardroute.go", "internal/link/resolve.go", "internal/link/hubask.go", "internal/link/roomevents.go", "internal/link/hubauth.go", "internal/link/hubaccess.go"], "tests": ["internal/link/firstrun_*test.go", "internal/link/hubaccess_*test.go", "internal/link/resolve_*test.go", "internal/link/cardroute_*test.go", "internal/link/events_*test.go", "internal/link/everywhere_*test.go", "internal/link/fanout_*test.go", "internal/link/hosts_*test.go", "internal/link/hubtransports_*test.go", "internal/link/hubask_*test.go", "internal/link/roomevents_*test.go", "internal/link/hubauth_*test.go", "internal/link/link_*test.go", "internal/link/newcontexts_*test.go", "internal/link/overlaytls_*test.go", "internal/link/transport_*test.go", "internal/link/conn_*test.go", "internal/link/relay_*test.go", "internal/link/roomsevent_*test.go", "internal/link/roomspec_*test.go", "internal/link/roomssh_*test.go", "internal/link/setupwatch_*test.go", "internal/link/capabilities_*test.go", "internal/link/capabilitylist_*test.go", "internal/link/stream_*test.go", "internal/link/preview_*test.go"]},
     "hub/merge": {"package": "./internal/link", "sources": ["internal/link/merge_mcp.go", "internal/link/profile.go"], "tests": ["internal/link/merge_*test.go"]},
     "hub/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog.go", "internal/link/docdebt.go", "internal/link/docdebt_landed.go"], "tests": ["internal/link/backlog_*test.go", "internal/link/docdebt_*test.go"]},

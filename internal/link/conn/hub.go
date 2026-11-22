@@ -115,6 +115,12 @@ type Hub struct {
 	// reach the other rooms through. See relay.go.
 	Relay func(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer
 
+	// Dictate turns a clip a room sent up into text on the hub's own whisper, answering ErrDictateOff when the hub has
+	// none. Nil refuses the kind the same way. See dictate.go.
+	Dictate func(ctx context.Context, from string, wav []byte, words []string) (string, error)
+	// DictateOn says whether Dictate would take a clip, so a room is told off in the welcome and never sends one.
+	DictateOn func() bool
+
 	// Git serves the hub's repositories, as plain HTTP, to a room that dialled the `git`
 	// kind. Nil means this hub does not say Git in its welcome and refuses the kind. It is
 	// served on that kind and nowhere else, never on the board listener. See git.go.
@@ -439,6 +445,10 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 		// the room, answered once, closed. See `relay.go`.
 		defer conn.Close()
 		h.serveRelay(ctx, name, conn, br)
+	case dictateKind:
+		// A ROOM SENDING ONE CLIP UP TO THE HUB'S WHISPER, answered once. See `dictate.go`.
+		defer conn.Close()
+		h.serveDictate(ctx, name, conn, br)
 	case gitKind:
 		// A ROOM FETCHING A REPOSITORY, as HTTP on this connection. Dialled by the room
 		// after the hub said Git. See `git.go`.

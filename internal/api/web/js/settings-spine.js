@@ -138,6 +138,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-spinner").value = spinnerKind();
   document.getElementById("s-hoverfocus").checked = hoverFocus;
   paintCleanCopy();
+  if (typeof dictKey === "function") document.getElementById("s-dictkey").value = dictKey();
   document.getElementById("s-termreturn").value = termReturnMode();
   document.getElementById("s-termkeep").value = String(termKeepN());
   document.getElementById("s-termkeeplines").value = String(termKeepLines());

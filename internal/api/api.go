@@ -150,6 +150,10 @@ type Server struct {
 	LoginStatus  http.HandlerFunc
 	// ToolchainMissing is the tools a worker launched here lacked, for `/v1/health`: nil when fine.
 	ToolchainMissing func() map[string]any
+	// Dictate turns a WAV clip into text on this room's whisper-server, primed with words. See internal/daemon/dictate.
+	Dictate func(ctx context.Context, wav []byte, words []string) (string, error)
+	// DictateOff answers why dictation cannot work here, or nil when it can, so the board asks before it records.
+	DictateOff func() error
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -721,6 +725,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/open-terminal", s.openTerminal)
 	mux.HandleFunc("GET /v1/tasks/{id}/files/zip", s.zipFiles)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/files", s.deleteFiles)
+	mux.HandleFunc("POST /v1/tasks/{id}/dictate", s.dictate)
+	mux.HandleFunc("GET /v1/tasks/{id}/dictate", s.dictateReady)
 	mux.HandleFunc("GET /v1/tasks/{id}/icon", s.getIcon)
 	mux.HandleFunc("POST /v1/tasks/{id}/icon", s.putIcon)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/icon", s.deleteIcon)

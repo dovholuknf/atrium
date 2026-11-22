@@ -305,3 +305,22 @@ body.term-phone #t-compose:not([hidden]) { display: block; }
 
 /* a review comment chip: the line of a diff that will go in the message */
 .mc-cmt .mc-fname { padding-left: 10px; font-family: var(--mono, ui-monospace, monospace); }
+
+/* Hold-to-talk, beside send. The same 44px circle, quiet until held. See m/js/voice.js. */
+.mc-mic { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; position: relative; display: grid;
+  place-items: center; background: transparent; color: var(--c-quiet); touch-action: none; user-select: none;
+  -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  transition: background .15s ease, color .15s ease, transform .15s ease; }
+.mc-mic svg { width: 22px; height: 22px; display: block; pointer-events: none; }
+.mc-mic[data-st="listening"] { background: var(--c-danger); color: #fff; transform: scale(1.12); }
+.mc-mic[data-st="listening"]::before { content: ""; position: absolute; inset: -8px; border-radius: 50%;
+  border: 2px solid var(--c-danger); animation: mc-ring 1.1s ease-out infinite; }
+.mc-mic[data-st="transcribing"] { color: var(--c-accent); }
+.mc-mic[data-st="transcribing"]::before { content: ""; position: absolute; inset: 4px; border-radius: 50%;
+  border: 2px solid var(--c-accent); border-right-color: transparent; animation: mc-spin .8s linear infinite; }
+.mc-mic[data-st="refused"] { color: var(--c-dim); opacity: .55; }
+@keyframes mc-ring { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
+@keyframes mc-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .mc-mic::before { animation: none !important; }
+}

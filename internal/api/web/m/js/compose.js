@@ -212,7 +212,14 @@
       row.append(file[0], file[1]);
       row.classList.add("with-attach");
     }
-    row.append(ta, send);
+    const mic = window.atriumVoice ? el("button", "mc-mic") : null;
+    if (mic) {
+      mic.type = "button";
+      mic.setAttribute("aria-label", "hold to talk");
+      mic.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" ' +
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+      row.append(ta, mic, send);
+    } else row.append(ta, send);
     // Quick replies, one row above the box, drawn by js/replies.js from what the card says. Nothing is drawn for a card
     // that offers none, and an open question (no buttons) puts the caret in the box.
     const quick = el("div", "mc-quick-host");
@@ -305,6 +312,85 @@
       commitComposition();
       submit();
     });
+    // HOLD TO TALK. Release appends the words and a newline to the box, and only send sends. Sliding off cancels.
+    if (mic) {
+      const v = window.atriumVoice;
+      const cap = v.capturable();
+      const why = cap ? "" : v.blocked();
+      if (why) mic.dataset.st = "refused";
+      mic.addEventListener("contextmenu", e => e.preventDefault());
+      // An insecure page (http over ziti) has no microphone, so a tap opens the phone's own recorder, and the clip it
+      // makes is transcribed like a held one.
+      const rec = cap ? el("input") : null;
+      if (rec) {
+        mic.setAttribute("aria-label", "tap to record");
+        rec.type = "file";
+        rec.accept = "audio/*";
+        rec.setAttribute("capture", "");
+        rec.hidden = true;
+        row.append(rec);
+        mic.addEventListener("click", () => { if (!mic.dataset.st) rec.click(); });
+        rec.addEventListener("change", async () => {
+          const f = rec.files && rec.files[0];
+          rec.value = "";
+          if (!f) return;
+          mic.dataset.st = "transcribing";
+          say("busy", "transcribing");
+          try {
+            const text = await v.fromFile(cardId, f);
+            if (cur !== state) return;
+            if (!text) { say("", ""); return; }
+            const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
+            ta.value += pre + text + "\n";
+            refresh();
+            hint();
+            const t = v.timing(), s = x => ((x || 0) / 1000).toFixed(1) + "s";
+            say("sent", "added, read it and press send" + (t ? " (convert " + s(t.convert) + ", trip " + s(t.trip) +
+              ", whisper " + s(t.whisper) + ", " + t.kb + " KB)" : ""));
+          } catch (err) {
+            if (cur === state) say("refused", "dictation: " + err.message);
+          } finally {
+            if (mic.dataset.st === "transcribing") mic.dataset.st = "";
+          }
+        });
+      }
+      mic.addEventListener("pointerdown", e => {
+        e.preventDefault();
+        if (cap) return;
+        if (why) { say("refused", why); return; }
+        if (mic.dataset.st) return;
+        mic.setPointerCapture(e.pointerId);
+        mic.dataset.st = "listening";
+        say("busy", "listening, release to add it, slide off to cancel");
+        v.start().catch(err => { if (mic.dataset.st === "listening") { mic.dataset.st = ""; say("refused", err.message); } });
+      });
+      const drop = () => { if (mic.dataset.st !== "listening") return; mic.dataset.st = ""; v.cancel(); say("", ""); };
+      mic.addEventListener("pointercancel", drop);
+      mic.addEventListener("pointermove", e => {
+        if (mic.dataset.st !== "listening") return;
+        const r = mic.getBoundingClientRect();
+        if (Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) > 90) drop();
+      });
+      mic.addEventListener("pointerup", async () => {
+        if (mic.dataset.st !== "listening") return;
+        mic.dataset.st = "transcribing";
+        say("busy", "transcribing");
+        try {
+          const text = await v.stop(cardId);
+          if (cur !== state) return;
+          if (!text) { say("", ""); return; }
+          const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
+          ta.value += pre + text + "\n";
+          refresh();
+          hint();
+          say("sent", "added, read it and press send");
+        } catch (err) {
+          if (cur === state) say("refused", "dictation: " + err.message);
+        } finally {
+          if (mic.dataset.st === "transcribing") mic.dataset.st = why ? "refused" : "";
+        }
+      });
+    }
     // A tap while a word is still being composed ends the composition, so the box holds the final text.
     function commitComposition() {
       if (!state.composing && !ta.matches(":focus")) return;

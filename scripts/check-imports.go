@@ -78,6 +78,7 @@ var table = []row{
 	{1, "internal/base/gitexec", []string{"internal/base/nowindow"}},
 	{1, "internal/link/ctl", []string{"internal/link/wire"}},
 	{1, "internal/link/transport", []string{"internal/base/testwait", "internal/link/wire", "internal/zitictx"}},
+	{1, "internal/daemon/dictate", []string{"internal/base/nowindow"}},
 	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/nowindow", "internal/base/oslog", "internal/base/rolebin"}},
 	{1, "internal/sshwizard", []string{
 		"internal/base/nowindow", "internal/base/remoteaccess", "internal/base/sshcfg", "internal/base/sshkey",
@@ -140,7 +141,7 @@ var table = []row{
 		"internal/base/inputlag", "internal/base/rules", "internal/link/wire",
 	}},
 	{4, "internal/link", []string{
-		"internal/capability",
+		"internal/capability", "internal/daemon/dictate",
 		"internal/base/seenhost",
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
@@ -175,7 +176,7 @@ var table = []row{
 		"internal/base/seenhost",
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
-		"internal/daemon/cycle", "internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
+		"internal/daemon/cycle", "internal/daemon/dictate", "internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
 		"internal/daemon/roomconf", "internal/daemon/screen", "internal/daemon/shared", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/oslog", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",

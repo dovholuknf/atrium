@@ -83,6 +83,9 @@ func globalAutoView(s *Server) map[string]any {
 		// Read the same way and empty means the same thing: the action is not
 		// offered at all.
 		SettingTerminal: "terminal_command",
+		// The whisper.cpp server and the model dictation runs. Both empty means dictation is off on this room.
+		SettingDictateServer: "dictate_server",
+		SettingDictateModel:  "dictate_model",
 		// Where a pasted file lands, and what gets typed in front of its path.
 		// Read as stored, because empty means something for each: the default
 		// in one case, a bare path in the other.
@@ -300,6 +303,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// the machine atrium is on. A pointer for the same reason as the
 		// editor: clearing it is how the action goes away again.
 		Terminal *string `json:"terminal_command"`
+
+		DictateServer *string `json:"dictate_server"`
+		DictateModel  *string `json:"dictate_model"`
 		// Whether a pasted file is kept in the card, and the words that go in
 		// front of the path. Pointers, again because clearing one is a request.
 		PasteKeep     *string `json:"paste_keep"`
@@ -608,6 +614,15 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// directory. A command that is not installed fails when somebody
 		// presses the entry and says which program it could not run.
 		if err := s.st.SetSetting(SettingTerminal, strings.TrimSpace(*body.Terminal)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	for key, v := range map[string]*string{SettingDictateServer: body.DictateServer, SettingDictateModel: body.DictateModel} {
+		if v == nil {
+			continue
+		}
+		if err := s.st.SetSetting(key, strings.TrimSpace(*v)); err != nil {
 			s.fail(w, err)
 			return
 		}

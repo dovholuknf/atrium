@@ -144,3 +144,22 @@ type relayFailure struct {
 
 func (f relayFailure) Error() string { return f.msg }
 func (f relayFailure) Unwrap() error { return f.is }
+
+// Dictate makes linkRelay a daemon hubDictator: one push-to-talk clip, sent up the link to the hub's whisper.
+func (l linkRelay) Dictate(ctx context.Context, wav []byte, words []string) (string, error) {
+	text, err := l.room.Dictate(ctx, wav, words)
+	return text, dictateErr(err)
+}
+
+// DictateReady asks the hub whether it would take a clip, without sending one.
+func (l linkRelay) DictateReady(ctx context.Context) error {
+	return dictateErr(l.room.DictateReady(ctx))
+}
+
+// dictateErr marks the hub being down, old or off as the daemon's sentinel, keeping the link's sentence.
+func dictateErr(err error) error {
+	if errors.Is(err, conn.ErrDictateOff) || errors.Is(err, conn.ErrDictateDown) || errors.Is(err, conn.ErrDictateOld) {
+		return relayFailure{msg: err.Error(), is: daemon.ErrHubDictateUnavailable}
+	}
+	return err
+}

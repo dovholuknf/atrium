@@ -697,6 +697,15 @@ func (p *Proxy) hubSettings(w http.ResponseWriter, r *http.Request) bool {
 		if _, ok := keys["global_auto"]; ok {
 			return p.saveBoardAuto(w, payload, stock)
 		}
+		_, ds := keys["dictate_server"]
+		_, dm := keys["dictate_model"]
+		_, du := keys["dictate_url"]
+		_, de := keys["dictate_enable"]
+		if ds || dm || du || de {
+			var in map[string]any
+			_ = json.Unmarshal(payload, &in)
+			return p.saveHubDictate(w, r, in, stock)
+		}
 		// The card colours are the board's, so the hub holds them like the skin.
 		if _, ok := keys["card_colors"]; ok {
 			return p.saveHubCardColors(w, r, payload, stock)
@@ -850,6 +859,9 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	p.settingsService().ApplyContextLimits(body)
 	// And the default worker model and budget, the hub's the same way. See workerpolicy.go.
 	p.settingsService().ApplyWorkerPolicy(body)
+	for k, v := range p.hubDictateView(stock) {
+		body[k] = v
+	}
 	return body, true
 }
 

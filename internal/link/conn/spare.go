@@ -112,7 +112,12 @@ func (r *Room) takeSpare() net.Conn {
 
 // relayConn is a relay connection past its welcome: the spare when one is on offer, else a fresh dial.
 func (r *Room) relayConn(ctx context.Context, session string) (net.Conn, *bufio.Reader, wire.Welcome, error) {
-	hi := hello{Kind: relayKind, Room: r.Name, Session: session}
+	return r.kindConn(ctx, session, relayKind)
+}
+
+// kindConn is a connection of the named kind past its welcome, the same way.
+func (r *Room) kindConn(ctx context.Context, session, kind string) (net.Conn, *bufio.Reader, wire.Welcome, error) {
+	hi := hello{Kind: kind, Room: r.Name, Session: session}
 	r.waitSpare(ctx)
 	if c := r.takeSpare(); c != nil {
 		br := bufio.NewReader(c)
