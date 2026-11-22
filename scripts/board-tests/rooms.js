@@ -1,13 +1,13 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, apiSlots, recogniserRepo, roomsMenuScroll, roomsThemes.
+// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, apiSlots, apiSlotsReads, apiSlotsPaste, walkYield, recogniserRepo, roomsMenuScroll, roomsThemes.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue, settleStyle } = require("../lib/browser.js");
-const { mock, openStreams, landCard, mockSay, hubStreams, T1 } = require("../lib/mock.js");
+const { mock, openStreams, landCard, mockSay, hubStreams, T1, hungResponses } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { attachRetry, countRequests, landContext, topCounts } = require("../lib/helpers.js");
 
@@ -1124,6 +1124,8 @@ async function hubTransportsSection(browser, base) {
         default_service: "", identity: "", identity_used: "", seeded: ["on"], switchable: true, no_service: true,
         detail: "share abcd..., env zEnv1 at https://api.zrok.io" },
     ] });
+    await ctx.route("**/_hub/rooms", route => route.fulfill(mode === "none" ? { status: 404, body: "" }
+      : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
     await ctx.route("**/_hub/transports", route => {
       const req = route.request();
       if (mode === "none") return route.fulfill({ status: 404, body: "" });
@@ -2106,10 +2108,146 @@ async function apiSlotsSection(browser, base) {
     const answered = await fakeWait(p, () => window.__read !== null, null, 2000, 100).then(() => true, () => false);
     const got = await p.evaluate(() => window.__read);
     if (!answered || got !== true) fail("apiSlots: a read did not answer within 2s while six writes hung: " + got);
-    const freed = await fakeWait(p, () => window.__writes.length === 6, null, 121000, 1000).then(() => true, () => false);
+    const freed = await fakeWait(p, () => window.__writes.length === API_MAX_INFLIGHT, null, 121000, 1000).then(() => true, () => false);
     if (!freed) fail("apiSlots: six held writes were not all timed out after 121s: " + await p.evaluate(() => JSON.stringify(window.__writes)));
   } finally {
     await ctx.close();
+  }
+}
+
+// ── a write goes out at once while six reads hang (b-paste-image-stall-20s) ──
+async function apiSlotsReadsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  let held = 0, wrote = 0;
+  await p.route("**/v1/held-read", () => { held++; });
+  await p.route("**/v1/one-write", route => { wrote++; route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+  try {
+    await p.clock.install();
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await fakePause(p);
+    await fakeTick(p, 1500);
+    await p.evaluate(() => {
+      for (let i = 0; i < API_MAX_INFLIGHT; i++) api("/v1/held-read").catch(() => {});
+    });
+    await untilTrue(async () => held >= 3, 5000, "the held reads were out");
+    await p.evaluate(() => { window.__w = null; api("/v1/one-write", { method: "POST", body: "{}" }).then(() => { window.__w = true; }, e => { window.__w = String(e.message); }); });
+    const answered = await fakeWait(p, () => window.__w !== null, null, 2000, 100).then(() => true, () => false);
+    if (!answered || wrote !== 1) fail("apiSlotsReads: a write waited on six hung reads, sent " + wrote);
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── a pasted image reaches the server while the board's reads hang (b-paste-image-stall-20s) ──
+// Real sockets, not page.route: the browser's per-host socket pool, where the stall was, is only on the wire.
+async function apiSlotsPasteSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  mock.uploadsAt = [];
+  const hung0 = hungResponses.length;
+  const ctx = await landContext(browser);
+  const paste = async (pg, name) => {
+    mock.uploadsAt = [];
+    const t0 = Date.now();
+    await pg.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array(200 * 1024)], "pasted.png", { type: "image/png" }));
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    const up = await untilTrue(() => mock.uploadsAt.length > 0, 3000, "the upload").then(() => true, () => false);
+    console.log("TIMING apiSlotsPaste " + name + ": upload reached the server " + (up ? mock.uploadsAt[0] - t0 + "ms" : "not within 3000ms") +
+      " after the paste, " + (hungResponses.length - hung0) + " reads held");
+    if (!up) fail("apiSlotsPaste: " + name + ": a pasted image did not reach the server within 3s while the board's reads hung");
+    return up;
+  };
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await untilTrue(() => openStreams.length > 0, slow(5000), "the board's event stream opened");
+    await attachRetry(p, { unit: "apiSlotsPaste", id: "land-live", check: () => termTask && termTask.id === "land-live" });
+    await p.evaluate(() => { for (let i = 0; i < API_MAX_INFLIGHT; i++) api("/v1/held-read?" + i).catch(() => {}); });
+    await untilTrue(async () => hungResponses.length - hung0 >= 3 && await p.evaluate(() => apiQueue.length > 0), slow(5000), "the held reads were out");
+    await paste(p, "one window");
+    hungResponses.splice(hung0).forEach(r => { try { r.destroy(); } catch (e) {} });
+
+    // A popped-out terminal beside the board: two event streams, and the board's reads through api and bare fetch.
+    const streams = openStreams.length;
+    const solo = await ctx.newPage();
+    await solo.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await untilTrue(() => openStreams.length > streams, slow(5000), "the popped-out window's event stream opened");
+    await attachRetry(solo, { unit: "apiSlotsPaste", id: "land-live", attach: false, check: () => termTask && termTask.id === "land-live" });
+    await p.evaluate(() => {
+      window.__lost = [];
+      for (let i = 0; i < 2; i++) api("/v1/held-read?a" + i).catch(e => window.__lost.push(String(e.message)));
+      for (let i = 0; i < 2; i++) fetch("/v1/held-read?f" + i).catch(e => window.__lost.push(String(e.message)));
+    });
+    await untilTrue(() => hungResponses.length - hung0 >= 4, slow(5000), "the board's four held reads were out");
+    if (await paste(solo, "popped-out window")) {
+      await untilTrue(() => hungResponses.length - hung0 >= 8, slow(7000), "the board asked its held reads again").catch(e => fail("apiSlotsPaste: " + e.message));
+      const lost = await p.evaluate(() => window.__lost);
+      if (lost.length) fail("apiSlotsPaste: a read that gave way to the upload failed its caller: " + JSON.stringify(lost));
+    }
+  } finally {
+    await ctx.close();
+    hungResponses.splice(hung0).forEach(r => { try { r.destroy(); } catch (e) {} });
+    mock.uploadsAt = null;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
+  }
+}
+
+// ── a pasted image reaches the server while a walk window's reads hang (b-walk-upload-yield) ──
+async function walkYieldSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  mock.uploadsAt = [];
+  const hung0 = hungResponses.length;
+  const ctx = await landContext(browser);
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await untilTrue(() => openStreams.length > 0, slow(5000), "the board's event stream opened");
+    await attachRetry(p, { unit: "walkYield", id: "land-live", check: () => termTask && termTask.id === "land-live" });
+    const streams = openStreams.length;
+    const w = await ctx.newPage();
+    await w.goto(base + "/walk.html#task=land-live", { waitUntil: "domcontentloaded" });
+    await untilTrue(() => openStreams.length > streams, slow(5000), "the walk window's event stream opened");
+    await w.evaluate(() => {
+      window.__lost = [];
+      for (let i = 0; i < 4; i++) fetch("/v1/held-read?w" + i).catch(e => window.__lost.push(String(e.message)));
+    });
+    await untilTrue(() => hungResponses.length - hung0 >= 4, slow(5000), "the walk's four held reads were out");
+    const t0 = Date.now();
+    await p.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array(200 * 1024)], "pasted.png", { type: "image/png" }));
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    const up = await untilTrue(() => mock.uploadsAt.length > 0, 3000, "the upload").then(() => true, () => false);
+    console.log("TIMING walkYield: upload reached the server " + (up ? mock.uploadsAt[0] - t0 + "ms" : "not within 3000ms") + " after the paste");
+    if (!up) fail("walkYield: a pasted image did not reach the server within 3s while the walk window's reads hung");
+    else {
+      await untilTrue(() => hungResponses.length - hung0 >= 8, slow(7000), "the walk asked its held reads again").catch(e => fail("walkYield: " + e.message));
+      const lost = await w.evaluate(() => window.__lost);
+      if (lost.length) fail("walkYield: a walk read that gave way to the upload failed its caller: " + JSON.stringify(lost));
+    }
+  } finally {
+    await ctx.close();
+    hungResponses.splice(hung0).forEach(r => { try { r.destroy(); } catch (e) {} });
+    mock.uploadsAt = null;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
 }
 
@@ -2371,11 +2509,14 @@ const units = [
   { name: "roomsSetup", run: ({ browser, base }) => roomsSetupSection(browser, base) },
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "apiSlots", run: ({ browser, base }) => apiSlotsSection(browser, base) },
+  { name: "apiSlotsReads", run: ({ browser, base }) => apiSlotsReadsSection(browser, base) },
+  { name: "apiSlotsPaste", run: ({ browser, base }) => apiSlotsPasteSection(browser, base) },
+  { name: "walkYield", run: ({ browser, base }) => walkYieldSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
   { name: "roomsMenuScroll", run: ({ browser, base }) => roomsMenuScrollSection(browser, base) },
   { name: "roomsThemes", run: ({ browser, base }) => roomsThemesSection(browser, base) },
 ];
-const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, apiSlots: apiSlotsSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
+const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, apiSlots: apiSlotsSection, apiSlotsReads: apiSlotsReadsSection, apiSlotsPaste: apiSlotsPasteSection, walkYield: walkYieldSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

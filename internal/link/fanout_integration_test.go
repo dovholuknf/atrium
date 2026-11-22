@@ -290,7 +290,7 @@ func TestTheBoardCanStillReadItsSettings(t *testing.T) {
 	front, _, done := two(t, cards("alpha", "card1"), cards("beta", "card2"))
 	defer done()
 
-	for _, path := range []string{"/v1/settings", "/v1/themes", "/v1/rooms"} {
+	for _, path := range []string{"/v1/settings", "/v1/themes", "/v1/rooms", "/user.css"} {
 		res, err := http.Get(front.URL + path)
 		if err != nil {
 			t.Fatal(err)

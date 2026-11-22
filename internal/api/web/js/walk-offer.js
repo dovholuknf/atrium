@@ -19,7 +19,7 @@ function walkOfferRead(t) {
   const have = walkOffers.get(t.id);
   if (have && have.at === t.recap_at) return;
   walkOffers.set(t.id, { at: t.recap_at, n: -1 });
-  api(`/v1/tasks/${t.id}/diff?mode=branch`).then(r => {
+  api(`/v1/tasks/${t.id}/diff?mode=branch&summary=1`).then(r => {
     const n = (r && r.modes && (r.modes.branch || r.modes.unstaged || r.modes.staged)) || 0;
     walkOffers.set(t.id, { at: t.recap_at, n, landed: !!(r && r.landed) });
     if (typeof runPass === "function") runPass(); else if (typeof paintSoon === "function") paintSoon();

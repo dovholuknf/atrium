@@ -1555,6 +1555,7 @@ function hearActivity(d) {
 
 // `task-removed`: with an id, that card goes. Without one it was the sweep,
 // which does not say which, so the list is read again.
+let roomsSeen = null;
 function onTaskRemovedEvent(e) {
   let d = {};
   try { d = JSON.parse(e.data) || {}; } catch (err) {}
@@ -2044,7 +2045,10 @@ function connect() {
   });
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
-    tasksSoon();
+    let d = null;
+    try { d = JSON.parse(e.data); } catch (err) {}
+    // The card's own `task` event follows with its whole row, so only an event naming no card reads the list.
+    if (!d || !d.task_id) tasksSoon();
   });
   // A room's notice for a person: a held notice, or a line it cleared. See docs/changes/r-hold-notices.md.
   es.addEventListener("notice", e => {
@@ -2092,9 +2096,13 @@ function connect() {
     // Before the refresh: a room coming or going churns every id, and a late reseed announces its idle cards as new.
     if (typeof alerting !== "undefined" && alerting.reseed) alerting.reseed();
     paintHubRoomsEvent(d);
-    refreshSoon();
+    // A mark, a join string or a stats change says `rooms` too, and moves no card: only a room coming or going re-reads.
+    const names = d && Array.isArray(d.attached) ? d.attached.map(r => (r && r.name) || String(r)).sort().join(",") : null;
+    const moved = names === null || names !== roomsSeen;
+    if (moved) refreshSoon(); else paintSoon();
+    roomsSeen = names;
     // The hub lends `/v1/themes` from its first attached room, so a board loaded before that room was back lacks its themes.
-    loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); repaintWearers(); });
+    if (moved || themesStale()) loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); repaintWearers(); });
   });
   es.addEventListener("overlays", e => {
     let next;

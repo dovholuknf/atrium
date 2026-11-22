@@ -139,7 +139,6 @@ function tellHeld(id, h) {
   if (heldTold.has(key)) return;
   heldTold.add(key);
   console.info("[atrium link]", { path: h.path, cwd: termTask && termTask.worktree, found: h.folder, result: "held: folder is not an open path" });
-  toast("not a link", h.path + " is in " + h.folder + ", where the session works, but that folder is not an open path. Add it to open_paths to open it.");
 }
 
 // Asks the daemon, and remembers both answers.
@@ -147,10 +146,25 @@ function tellHeld(id, h) {
 // A failure is silent and cached as nothing, so the terminal behaves exactly
 // as it did before any of this existed. A decoration that cannot be drawn is
 // not something to interrupt somebody about.
-async function askProbe(id, paths, row) {
+// Asks made within PROBE_WAIT_MS of each other for one card go out as one request.
+const PROBE_WAIT_MS = 60;
+const probeQueue = new Map();
+function askProbe(id, paths, row) {
+  let q = probeQueue.get(id);
+  if (!q) {
+    q = { items: [] };
+    q.p = new Promise(r => setTimeout(r, PROBE_WAIT_MS)).then(() => { probeQueue.delete(id); return sendProbe(id, q.items); });
+    probeQueue.set(id, q);
+  }
+  paths.forEach(path => q.items.push({ path, row }));
+  return q.p;
+}
+
+async function sendProbe(id, items) {
   // Every path, a request at a time: the room answers for the first probeBatch of a request and no more, and a
   // path left out here is not cached, so it would wait for a second hover.
-  const found = [], asked = [];
+  const found = [], asked = new Set();
+  const paths = [...new Set(items.map(i => i.path))];
   for (let i = 0; i < paths.length; i += probeBatch) {
     const batch = paths.slice(i, i + probeBatch);
     try {
@@ -160,7 +174,7 @@ async function askProbe(id, paths, row) {
       });
       found.push(...(r.found || []));
       for (const h of r.held || []) tellHeld(id, h);
-      asked.push(...batch);
+      batch.forEach(p => asked.add(p));
     } catch (e) {
       break;
     }
@@ -171,9 +185,10 @@ async function askProbe(id, paths, row) {
   // Remembering only the hits means every word that is not a file is asked
   // about again on the next hover, which is most of the words.
   if (known.size > probeMissCap) known.clear();
-  for (const p of asked) {
-    if (hits.has(p)) known.set(p, hits.get(p));
-    else known.set(probeMissKey(p, row), true);
+  for (const { path, row } of items) {
+    if (!asked.has(path)) continue;
+    if (hits.has(path)) known.set(path, hits.get(path));
+    else known.set(probeMissKey(path, row), true);
   }
 }
 
@@ -642,7 +657,22 @@ function hardWrapLinks(t, y) {
 function openTermURL(ev, uri) {
   ev.preventDefault();
   if (openAtriumLink(uri)) return;
-  openLinkReused(uri);
+  const here = boardLinkHere(uri);
+  if (here && !termOnly() && here.pathname === "/" && here.hash.length > 1) { location.hash = here.hash; return; }
+  openLinkReused(here ? here.href : uri);
+}
+
+// A URL that names this board under another spelling (localhost, 127.0.0.1, [::1], atrium.ziti, or the host the
+// board is open on), as the same path, query and hash on `location.origin`. null for any other URL.
+function boardLinkHere(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const loop = h => h === "127.0.0.1" || h === "localhost" || h === "[::1]";
+  const mine = u.host === location.host || (loop(u.hostname) && u.port === location.port) ||
+    (u.hostname === "atrium.ziti" && (u.port === "" || u.port === location.port));
+  if (!mine) return null;
+  return new URL(u.pathname + u.search + u.hash, location.origin);
 }
 
 // ── a link to this board stays in the board ──────────────────────────────
@@ -654,9 +684,7 @@ function openTermURL(ev, uri) {
 
 // Whether `u` (a URL) is served by the same board: this origin, or the same port on another loopback spelling.
 function sameBoardOrigin(u) {
-  if (u.origin === location.origin) return true;
-  const loop = h => h === "127.0.0.1" || h === "localhost" || h === "[::1]";
-  return loop(u.hostname) && loop(location.hostname) && u.port === location.port && u.protocol === location.protocol;
+  return u.origin === location.origin || !!boardLinkHere(u.href);
 }
 
 // What card a board URL names: `{ id }` for `#term=<id>`, `{ path }` for a card's readable address, else null.
@@ -835,7 +863,8 @@ const termLinkHandler = {
     const w = open();
     if (!w) return;
     try { w.opener = null; } catch (e) {}
-    w.location.href = uri;
+    const here = boardLinkHere(uri);
+    w.location.href = here ? here.href : uri;
   }
 };
 
@@ -1464,6 +1493,7 @@ function connectTerm(taskID) {
     resetReattach();
     sendResize();
     sendFocus();
+    sendHeldInput(taskID);
     focusTerm();
     // The replay is landing: back to where it was left once it has gone quiet. See js/lastread.js.
     if (term) lrAfterOpen(term);
@@ -2167,6 +2197,21 @@ function stopFollow() { followScrollUntil = 0; }
 //
 // Input that arrives while a big paste waits to paint is queued behind it. See
 // `sendBigPaste`.
+// Typed while the pane's socket is down, as through a room restart: sent, in order, once that card's socket opens.
+let inputHeld = null;
+
+function holdInput(id, d, pasted) {
+  if (!inputHeld || bareId(inputHeld.id) !== bareId(id)) inputHeld = { id, keys: [] };
+  inputHeld.keys.push([d, pasted]);
+}
+
+function sendHeldInput(id) {
+  const h = inputHeld;
+  inputHeld = null;
+  if (!h || bareId(h.id) !== bareId(id)) return;
+  for (const [d, pasted] of h.keys) sendInput(d, false, pasted);
+}
+
 function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
   if (!quiet && typeof composeGate === "function" && composeGate(d, pasted)) return;
@@ -2175,6 +2220,7 @@ function sendInput(text, quiet, pasted) {
     if (term) term.scrollToBottom();
     followScrollUntil = Infinity;
   }
+  if (!quiet && termTask && (!termSock || termSock.readyState !== WebSocket.OPEN)) { holdInput(termTask.id, d, pasted); return; }
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
   if (pasted && !quiet) { sendPaste(d); return; }
   send({ t: "in", d });

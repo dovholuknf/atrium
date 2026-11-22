@@ -431,3 +431,26 @@ func TestWalkDiffOfAMergedBranchNamesTheMerge(t *testing.T) {
 		t.Errorf("%d %s", code, body)
 	}
 }
+
+func TestWalkDiffProbeAndSummaryLeaveThePatchOut(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	git(t, work, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, work, "add", ".")
+	git(t, work, "commit", "-q", "-m", "a")
+	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	task := cardIn(t, st, work)
+
+	if code, out, body := walkDiffQuery(t, s, task.ID, "?probe=1"); code != http.StatusOK || out.Diff != "" {
+		t.Errorf("probe: %d %s", code, body)
+	}
+	code, out, body := walkDiffQuery(t, s, task.ID, "?summary=1")
+	if code != http.StatusOK || out.Diff != "" || out.Modes["unstaged"] != 1 {
+		t.Errorf("summary: %d %s", code, body)
+	}
+}

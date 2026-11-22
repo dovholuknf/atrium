@@ -391,7 +391,13 @@ function toggleArts() {
 }
 
 // The count on the button follows the card on screen, and the open panel follows it as it works.
-setInterval(() => { if (termTask) artLoad(); else if (arts.open) artSetOpen(false); }, 5000);
+let artsBeat = 0;
+setInterval(() => {
+  if (!termTask) { if (arts.open) artSetOpen(false); return; }
+  if (document.visibilityState !== "visible") return;
+  artsBeat++;
+  if (arts.open || artsBeat % 6 === 0) artLoad();
+}, 5000);
 
 (function wireArts() {
   const $ = id => document.getElementById(id);

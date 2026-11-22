@@ -283,14 +283,14 @@ async function main() {
   // than the cap may ever be on the wire.
   cap.launch(20);
   await drain();
-  if (cap.peak() !== cap.max) {
+  if (cap.peak() !== cap.max - 1) {
     fail("the in-flight cap let " + cap.peak() + " fetches run at once, not " +
-      cap.max + ". soloRefresh and the hub-room poll would drain the pool.");
+      (cap.max - 1) + ". soloRefresh and the hub-room poll would drain the pool.");
   }
   // Draining one lets exactly one queued caller through, never more.
   cap.finishOne(true);
   await drain();
-  if (cap.peak() !== cap.max) {
+  if (cap.peak() !== cap.max - 1) {
     fail("finishing one fetch let the in-flight count climb past the cap.");
   }
   // A rejection climbs the streak the backoff reads; a success clears it.

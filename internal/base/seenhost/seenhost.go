@@ -44,6 +44,9 @@ func Note(r *http.Request) {
 		scheme = f
 	}
 	base := scheme + "://" + host
+	if old := seen.Load(); old != nil && loopback(base) && !loopback(*old) {
+		return
+	}
 	if old := seen.Swap(&base); old == nil || *old != base {
 		line := fmt.Sprintf("the human's host is now %s, from %s on %s %q", base, r.RemoteAddr, r.URL.Path, r.Header.Get("User-Agent"))
 		log.Printf("[atrium] %s", line)
@@ -57,6 +60,9 @@ const HeaderName = "X-Atrium-Human-Base"
 // NoteBase records a base the hub already worked out.
 func NoteBase(base string) {
 	if strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://") {
+		if old := seen.Load(); old != nil && loopback(base) && !loopback(*old) {
+			return
+		}
 		seen.Store(&base)
 	}
 }
@@ -74,7 +80,24 @@ func Base(fallback string) string {
 	if p := seen.Load(); p != nil {
 		return *p
 	}
-	return fallback
+	return Loopback(fallback)
+}
+
+// loopback is a base on this machine, which a tab beside the board's process can reach while the human is elsewhere.
+// It never displaces a remote origin, or two tabs would flip the link between two hosts.
+func loopback(base string) bool {
+	return Loopback(base) != base || strings.HasPrefix(base, "http://127.0.0.1") || strings.HasPrefix(base, "https://127.0.0.1") ||
+		strings.HasPrefix(base, "http://[::1]") || strings.HasPrefix(base, "https://[::1]")
+}
+
+// Loopback spells a localhost base as 127.0.0.1, since a link we choose ourselves never says localhost.
+func Loopback(base string) string {
+	for _, s := range []string{"http://", "https://"} {
+		if rest, ok := strings.CutPrefix(base, s+"localhost"); ok && (rest == "" || rest[0] == ':' || rest[0] == '/') {
+			return s + "127.0.0.1" + rest
+		}
+	}
+	return base
 }
 
 // Reset forgets the host. Tests only.

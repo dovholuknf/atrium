@@ -804,6 +804,8 @@ function keepPark() {
   resizeSettleTimer = 0;
   const old = keptTerms.get(id);
   if (old) keepDrop(old);
+  // The find belongs to this terminal, and the attach's own clearFind runs after the globals are swapped.
+  clearFind();
   const slot = termSlotTake();
   slot.id = id;
   slot.at = Date.now();

@@ -452,6 +452,25 @@ async function launchLinkSection(browser, base) {
       return got;
     });
     if (walked.walks.join() !== "/w/x" || walked.tabs.join() !== "http://127.0.0.1:1/#card=c2&walk=/w/y") fail("launchLink: walk links " + JSON.stringify(walked));
+    // A link to this board under another spelling opens on this origin, and a bare board hash navigates in place.
+    const rew = await p.evaluate(() => {
+      const got = { tabs: [] };
+      window.openLinkReused = u => got.tabs.push(u);
+      const port = location.port;
+      const go = u => openTermURL({ preventDefault() {} }, u);
+      go("http://localhost:" + port + "/room/r1/c1/files/a.html?x=1#h");
+      go("http://atrium.ziti/room/r1/c1/files/b.html");
+      go("http://atrium.ziti:" + port + "/room/r1/c1/files/c.html");
+      go("https://example.com/room/r1/c1/files/d.html");
+      go("http://localhost:" + port + "/#view=cards");
+      got.hash = location.hash;
+      return got;
+    });
+    const o = base;
+    const want = [o + "/room/r1/c1/files/a.html?x=1#h", o + "/room/r1/c1/files/b.html", o + "/room/r1/c1/files/c.html",
+      "https://example.com/room/r1/c1/files/d.html"];
+    if (rew.tabs.join() !== want.join()) fail("launchLink: rewrite " + JSON.stringify(rew.tabs));
+    if (rew.hash !== "#view=cards") fail("launchLink: hash link did not navigate in place: " + rew.hash);
     const man = await p.evaluate(() => document.querySelector('link[rel="manifest"]') && document.querySelector('link[rel="manifest"]').getAttribute("href"));
     if (man !== "/manifest.webmanifest") fail("launchLink: the board links manifest " + man);
     // no launchQueue: boots clean and registers nothing

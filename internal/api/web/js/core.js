@@ -274,13 +274,15 @@ function signInAgain() {
 // then on every fetch failed with ERR_INSUFFICIENT_RESOURCES, which fed still
 // more retries. Past the cap a call waits its turn rather than opening one more
 // socket, so a storm can never exhaust the pool no matter the event rate.
-const API_MAX_INFLIGHT = 6;
+// The browser's six sockets per host less the event stream's: a sixth fetch waits inside the browser, unseen here.
+const API_MAX_INFLIGHT = 5;
 // Writes hold half the slots at most: the browser also spends a socket per event stream, so reads need the rest.
 const API_MAX_WRITES = API_MAX_INFLIGHT / 2;
 let apiInflight = 0;
 let apiWrites = 0;
 const apiQueue = [];
-const apiFits = (write) => apiInflight < API_MAX_INFLIGHT && (!write || apiWrites < API_MAX_WRITES);
+// Reads never take the last slot, so a paste upload is not queued behind reads that each hold one for up to 15s.
+const apiFits = (write) => apiInflight < API_MAX_INFLIGHT && (write ? apiWrites < API_MAX_WRITES : apiInflight - apiWrites < API_MAX_INFLIGHT - 1);
 function apiTake(write) {
   apiInflight++;
   if (write) apiWrites++;

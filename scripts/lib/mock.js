@@ -549,9 +549,23 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // A read held open on a real socket, and the upload's arrival time, for `apiSlotsPaste`.
+  if (url === "/v1/held-read") { hungResponses.push(res); return; }
+  if (req.method === "POST" && /^\/v1\/tasks\/[^/]+\/files$/.test(url) && mock.uploadsAt) {
+    mock.uploadsAt.push(Date.now());
+    req.resume();
+    req.on("end", () => sendJSON(res, { paths: ["/w/.atrium/incoming/pasted.png"] }));
+    return;
+  }
+
   if (url === "/working.gif") {
     res.writeHead(200, { "Content-Type": "image/gif" });
     res.end(fs.readFileSync(path.join(WEB_ROOT, "working.gif")));
+    return;
+  }
+  if (url === "/user.css") {
+    res.writeHead(200, { "Content-Type": "text/css" });
+    res.end("");
     return;
   }
   if (mock.serveSW && (url === "/sw.js" || url === "/down.html")) {
@@ -876,7 +890,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(404); res.end("no such files route"); return;
   }
   if (url === "/_hub/rooms") {
-    if (!mock.hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    // The board answers every /_hub path 404 itself once this probe says it is not a hub.
+    if (!mock.hubMode && !mock.boardDocs) { res.writeHead(404); res.end("not a hub"); return; }
     if (!mock.hubHasRoom) { sendJSON(res, { rooms: [] }); return; }
     sendJSON(res, { rooms: mock.sggAttached ? [mock.ALPHA, mock.SGG] : [mock.ALPHA] });
     return;

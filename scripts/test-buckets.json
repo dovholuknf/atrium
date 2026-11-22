@@ -2,6 +2,7 @@
   "about": "One bucket per board page and per API surface. Read by scripts/test-touched-plan.js and linted by scripts/check-test-buckets.js. See docs/rnd/test-layout-design.md and docs/changes/test-layout-s0.md. A name written in full beats a glob. Every board source file, every internal/api and internal/link Go source file and every headless unit is in exactly one bucket, or the lint fails.",
   "shared": {
     "internal/api/web/js/core.js": "state and helpers every page reads",
+    "internal/api/web/js/fetchyield.js": "every fetch on the board and the walk gives way to an upload",
     "internal/api/web/js/boot.js": "starts the board",
     "internal/api/web/js/cards.js": "the card list every page hangs off",
     "internal/api/web/index.html": "the page every script is loaded by"
@@ -280,7 +281,7 @@
       "file": "scripts/board-tests/rooms.js",
       "page": "rooms, the hub gate, the restart menu, transports, the down page",
       "units": [
-        "atriumDown", "reconnectPill", "hubGate", "apiSlots", "rooms*", "restart*", "relaunchAttach", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
+        "atriumDown", "reconnectPill", "hubGate", "apiSlots", "apiSlotsReads", "apiSlotsPaste", "walkYield", "rooms*", "restart*", "relaunchAttach", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
       ],
       "sources": [
         "internal/api/web/js/rooms.js",

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -919,7 +920,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		if ask(ctx, http.MethodGet, "/v1/human-base", nil, &seen) == nil && seen.Base != "" {
 			base = seen.Base
 		}
-		out.Watch = base + "/#term=" + url.PathEscape(t.ID)
+		out.Watch = seenhost.Loopback(base) + "/#term=" + url.PathEscape(t.ID)
 	}
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
 		"stop at the first gated command unless somebody is watching."

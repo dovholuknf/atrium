@@ -58,8 +58,11 @@ function paintItemsTab() {
   if (!tab) return;
   // The fixtures (`?itemsmock=1`) show the tab on a board with no hub, so the views can be read without one.
   tab.hidden = itemsMockOn() ? false : !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
-  if (!tab.hidden) loadItemsBadge();
+  // Once as the tab appears: after that the `item` event moves the badge, and a paint is not a reason to read.
+  if (tab.hidden) itemsBadgeAsked = false;
+  else if (!itemsBadgeAsked) { itemsBadgeAsked = true; loadItemsBadge(); }
 }
+let itemsBadgeAsked = false;
 
 function itemsVisible() {
   const v = document.getElementById("items");
@@ -678,6 +681,7 @@ function startItems() {
 }
 
 function onItemEvent() {
+  if (typeof yqHub === "object") yqHub.at = 0;
   if (itemsVisible()) loadItems(); else loadItemsBadge();
 }
 
