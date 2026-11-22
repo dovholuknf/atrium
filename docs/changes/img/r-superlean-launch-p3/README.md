@@ -1,1 +1,0 @@
-- `launch-setup.png`: the launch dialog for a claude runner, with the `setup` select (full setup, lean, superlean).
