@@ -1748,6 +1748,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="unit">characters</span>
       </div>
     </div>
+    <h3 class="s-section">dictation</h3>
+    <div class="field">
+      <label class="eyebrow" for="s-dictkey">push-to-talk key
+        <span class="help" tabindex="0" data-tip="Hold it, talk, let go: the text lands in the terminal and is never sent, so you read it and press enter. Space only listens when nothing that takes typing has the focus, so a space in a terminal is still a space. The mic at the bottom of the screen works with any choice. Kept in this browser only.">?</span></label>
+      <div class="picker">
+        <select id="s-dictkey" onchange="setDictKey(this.value)">
+          <option value="right-ctrl">Right Ctrl</option>
+          <option value="space">Space, when nothing is typing</option>
+          <option value="off">off, the mic button only</option>
+        </select>
+      </div>
+    </div>
     <h3 class="s-section">card colours</h3>
     <div class="field">
       <label class="eyebrow" for="rc-default">default colour
@@ -2103,6 +2115,47 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <input id="s-pastepre" spellcheck="false" data-saves="savePastePrefs"
           placeholder="just the path, on its own">
+      </div>
+    </div>
+
+    </section>
+
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">speech to text</div>
+    <div class="field">
+      <label class="eyebrow" for="s-dicturl">shared whisper server
+        <span class="help" tabindex="0" data-tip="The address of a whisper.cpp whisper-server on another machine, for example https://gpu.example:8080. When set it wins over the two paths below, the hub sends the audio there and starts nothing. Plain http to another machine is asked about first. Empty means use the paths below. Set from the machine the hub runs on.">?</span></label>
+      <div class="picker">
+        <input id="s-dicturl" spellcheck="false" data-saves="saveDictURL"
+          placeholder="https://host:port, empty means use the paths below">
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-dictserver">dictation server
+        <span class="help" tabindex="0" data-tip="The whisper.cpp whisper-server program on this machine. With a model below, holding the dictation key in a terminal or the mic on the phone turns speech into text here. Empty means dictation is off.">?</span></label>
+      <div class="picker">
+        <input id="s-dictserver" spellcheck="false" data-saves="saveDictServer"
+          placeholder="path to whisper-server, empty means off">
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-dictmodel">dictation model
+        <span class="help" tabindex="0" data-tip="The ggml model file whisper-server loads, for example ggml-large-v3-turbo-q8_0.bin.">?</span></label>
+      <div class="picker">
+        <input id="s-dictmodel" spellcheck="false" data-saves="saveDictModel"
+          placeholder="path to a ggml model file">
+      </div>
+    </div>
+    <div class="field">
+      <div class="hint" id="s-dictstate"></div>
+    </div>
+    <div class="field" id="s-dictinstall" hidden>
+      <label class="eyebrow">enable speech to text
+        <span class="help" tabindex="0" data-tip="Downloads whisper.cpp's whisper-server and a speech model into the hub's own state folder, checks both against checksums built into atrium, fills in the two paths above and starts it. The hub owns the server, so stopping the hub stops it. It is the CPU build: a machine with a GPU is better served by its own build and the paths. Set from the machine the hub runs on.">?</span></label>
+      <div class="hint" id="s-dictplan"></div>
+      <div class="picker">
+        <button type="button" id="s-dictenable" onclick="enableDictation(true)">download and enable</button>
+        <button type="button" id="s-dictdisable" onclick="enableDictation(false)" hidden>turn off</button>
       </div>
     </div>
 
@@ -3714,6 +3767,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/terminal-links.js"></script>
 <script src="/js/lastread.js"></script>
 <script src="/js/clearline.js"></script>
+<script src="/m/js/voice.js"></script>
 <script src="/m/js/compose.js"></script>
 <script src="/m/js/util.js"></script>
 <script src="/m/js/md.js"></script>

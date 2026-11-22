@@ -533,6 +533,15 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE DURABLE LIST, which is a different question from what is
 	// attached and gets a different endpoint for exactly that reason.
 	proxy.SetInventory(inventory{store: store, hub: h})
+	proxy.SetDictation(link.NewHubDictation(func() (string, string) {
+		bin, _ := store.HubSetting("dictate_server")
+		model, _ := store.HubSetting("dictate_model")
+		return bin, model
+	}, func() string {
+		u, _ := store.HubSetting("dictate_url")
+		return u
+	}))
+	proxy.SetDictateInstall(filepath.Join(daemon.StateDir(), "dictate"))
 	// Input-lag logging as the gear last left it. The variable still wins.
 	proxy.ApplyInputLag()
 	// THE OPERATIONAL AUDIT LOG, over the hub's own store. Wired before

@@ -1335,6 +1335,14 @@ function fillMachineFields(s) {
   if (handoff) handoff.value = s.context_handoff_dir || "";
   const shell = document.getElementById("s-shell");
   if (shell) shell.value = s.shell_command || "";
+  const dictServer = document.getElementById("s-dictserver");
+  const onHub = s.hub_dictate_url !== undefined;
+  if (dictServer) dictServer.value = (onHub ? s.hub_dictate_server : s.dictate_server) || "";
+  const dictModel = document.getElementById("s-dictmodel");
+  if (dictModel) dictModel.value = (onHub ? s.hub_dictate_model : s.dictate_model) || "";
+  const dictURL = document.getElementById("s-dicturl");
+  if (dictURL) { dictURL.closest(".field").hidden = !onHub; dictURL.value = s.hub_dictate_url || ""; }
+  showDictState(s, onHub);
   showForgeSettings(s);
   const exitWake = document.getElementById("s-exitwake");
   if (exitWake) exitWake.checked = s.unexpected_exit_wake !== false;
@@ -2456,6 +2464,91 @@ function setTimerValue(id, value, fallback) {
     sel.appendChild(o);
   }
   sel.value = want;
+}
+
+async function saveDictServer() {
+  const el = document.getElementById("s-dictserver");
+  if (el) await saveHousekeeping("dictate_server", el.value.trim());
+}
+
+// One line of status under the speech to text fields: where audio goes, or why nothing will.
+let dictPoll = 0;
+function showDictState(s, onHub) {
+  const out = document.getElementById("s-dictstate");
+  if (!out) return;
+  showDictInstall(s, onHub);
+  if (!onHub) { out.textContent = s.dictate_server && s.dictate_model ? "transcribed on this room" : "off"; return; }
+  out.textContent = !s.hub_dictate_where ? "off, nothing is transcribed on the hub"
+    : s.hub_dictate_url ? "on, audio is sent to " + s.hub_dictate_where
+    : "on, transcribed on your hub";
+}
+
+// The enable switch: what will be downloaded, from where, and how far along it is.
+function showDictInstall(s, onHub) {
+  const box = document.getElementById("s-dictinstall");
+  const inst = s.hub_dictate_install;
+  if (!box) return;
+  box.hidden = !onHub || !inst;
+  if (box.hidden) return;
+  const mb = n => Math.round(n / 1048576) + " MB";
+  const on = !!(s.hub_dictate_server && s.hub_dictate_model);
+  const st = inst.status || {}, plan = inst.plan || {};
+  const text = document.getElementById("s-dictplan");
+  const enable = document.getElementById("s-dictenable"), disable = document.getElementById("s-dictdisable");
+  enable.disabled = st.state === "working" || !plan.supported;
+  enable.hidden = on && st.state !== "failed";
+  disable.hidden = !on;
+  enable.textContent = "download and enable (" + mb(plan.total) + ")";
+  if (!plan.supported) text.textContent = plan.reason;
+  else if (st.state === "working") text.textContent = (st.note || "working") + ", " + mb(st.got) + " of " + mb(plan.total);
+  else if (st.state === "failed") text.textContent = "failed: " + st.note;
+  else if (on) text.textContent = "running from " + plan.dir;
+  else text.textContent = mb(plan.total) + " from " + plan.source + ", into " + plan.dir;
+  if (on) {
+    const sv = document.getElementById("s-dictserver"), md = document.getElementById("s-dictmodel");
+    if (sv) sv.value = s.hub_dictate_server; if (md) md.value = s.hub_dictate_model;
+  }
+  clearTimeout(dictPoll);
+  if (st.state === "working") dictPoll = setTimeout(async () => {
+    try { const n = await api("/v1/settings"); showDictState(n, n.hub_dictate_url !== undefined); } catch (e) {}
+  }, 1000);
+}
+
+async function enableDictation(on) {
+  const plan = ((await api("/v1/settings")).hub_dictate_install || {}).plan || {};
+  if (on && !window.confirm("Download " + Math.round(plan.total / 1048576) + " MB from " + plan.source + " into " +
+    plan.dir + "?\n\nBoth files are checked against checksums built into atrium.")) return;
+  try {
+    const s = await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dictate_enable: on, confirm_download: on })
+    });
+    if (s) showDictState(s, true);
+  } catch (e) { tellText("that did not stick", e.message); }
+}
+
+async function saveDictURL() {
+  const el = document.getElementById("s-dicturl");
+  if (!el) return;
+  const url = el.value.trim();
+  const post = confirmed => api("/v1/settings", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dictate_url: url, confirm_plain_http: confirmed })
+  });
+  try {
+    let s;
+    try { s = await post(false); }
+    catch (e) {
+      if (!/confirm to use it/.test(e.message) || !window.confirm(e.message + ".\n\nUse it anyway?")) throw e;
+      s = await post(true);
+    }
+    if (s) showDictState(s, true);
+  } catch (e) { tellText("that did not stick", e.message); }
+}
+
+async function saveDictModel() {
+  const el = document.getElementById("s-dictmodel");
+  if (el) await saveHousekeeping("dictate_model", el.value.trim());
 }
 
 async function saveHousekeeping(field, value) {

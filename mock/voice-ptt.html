@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en" data-skin="linen"><meta charset="utf-8">
+<title>Push-to-talk dictation mock</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../internal/api/web/css/tokens.css">
+<link rel="stylesheet" href="../internal/api/web/css/chrome.css">
+<link rel="stylesheet" href="../internal/api/web/css/cards.css">
+<link rel="stylesheet" href="../internal/api/web/css/terminal.css">
+<link rel="stylesheet" href="../internal/api/web/css/phone.css">
+<link rel="stylesheet" href="../internal/api/web/css/themes.css">
+<link rel="stylesheet" href="../internal/api/web/m/compose.css">
+<style>
+/* ── mock scaffolding only ── */
+body { margin: 0; min-height: 100vh; padding-bottom: 64px; box-sizing: border-box; }
+#stage { padding: 16px; display: flex; gap: 24px; justify-content: center; align-items: flex-start; }
+#desk { width: min(1100px, 100%); height: 560px; display: flex; }
+#desk .term-pane { height: 100%; }
+#phone { width: 390px; height: 760px; border: 10px solid #1d1d1f; border-radius: 44px; overflow: hidden; display: none;
+  background: var(--bg-0); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+#phone .term-pane { height: 100%; border-radius: 0; border: 0; }
+body.v-phone #desk { display: none; }
+body.v-phone #phone { display: flex; }
+#phone #t-compose { display: block; }
+.term-pane { --term-bg: #1e1e1e; --term-fg: #d4d4d4; --term-line: #4a4a4a; }
+.fake-term { flex: 1; min-height: 0; overflow: hidden; padding: 10px 14px; background: var(--term-bg, #1e1e1e);
+  color: var(--term-fg, #d4d4d4); font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; position: relative; }
+#phone .fake-term { font-size: 11.5px; padding: 8px 10px; }
+.fake-term .dim { color: #8a8a8a; }
+.fake-term .acc { color: #d7875f; }
+.fake-term .inbox { border: 1px solid #5f5f5f; border-radius: 6px; padding: 4px 8px; margin-top: 8px; }
+.fake-term .cur { display: inline-block; width: .6em; background: #d4d4d4; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.fake-term .pasted { background: rgba(120,160,255,.18); border-radius: 2px; }
+#mockbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; gap: 14px; align-items: center;
+  padding: 10px 16px; background: var(--bg-2); border-top: 1px solid var(--stroke);
+  color: var(--head); font: var(--fs-sm) var(--sans); flex-wrap: wrap; }
+#mockbar b { letter-spacing: .14em; }
+#mockbar select { font: var(--fs-sm) var(--sans); padding: 5px 8px; border-radius: var(--r-md); color: var(--head);
+  background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim); }
+#mockbar .seg button { font: var(--fs-sm) var(--sans); padding: 4px 10px; border: 1px solid var(--stroke-dim); background: transparent;
+  color: var(--body); border-radius: var(--r-md); cursor: pointer; }
+#mockbar .seg button.on { color: var(--chip-accent-text); background: var(--chip-accent); border-color: var(--chip-accent-stroke); }
+#notes { max-width: 1100px; margin: 0 auto 16px; padding: 0 16px; color: var(--body); font: var(--fs-sm)/1.5 var(--sans); }
+#notes code { color: var(--head); }
+#notes kbd, .dict-pill kbd { font: 600 11px var(--mono, monospace); padding: 1px 5px; border: 1px solid var(--stroke-dim);
+  border-bottom-width: 2px; border-radius: 4px; background: var(--card-0); color: var(--head); }
+
+/* ── PROPOSED: what would ship in css/terminal.css ── */
+/* The mic in the terminal bar, beside full screen. Held down it dictates, like the key. */
+#t-mic.icon { position: relative; }
+#t-mic svg { display: block; }
+#t-mic[data-st="listening"] { color: var(--danger); border-color: var(--danger); background: rgba(var(--danger-rgb),.12); }
+#t-mic[data-st="transcribing"] { color: var(--teal); border-color: var(--teal); }
+#t-mic[data-st="refused"] { color: var(--dimmest); }
+#t-mic[data-st="refused"]::after { content: ""; position: absolute; left: 6px; right: 6px; top: 50%; height: 2px;
+  background: currentColor; transform: rotate(-35deg); }
+/* The state, floating over the foot of the terminal at the right so it never covers the input line's start. */
+.dict-pill { position: absolute; right: 14px; bottom: 14px; z-index: 4; display: none; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 10px; border-radius: 999px; font: 600 var(--fs-sm) var(--sans); color: var(--head);
+  background: var(--card-0); border: 1px solid var(--stroke-dim); box-shadow: 0 6px 20px rgba(var(--shadow-rgb),.35); }
+.dict-pill.on { display: inline-flex; }
+.dict-pill .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: dpulse 1.1s ease-in-out infinite; }
+.dict-pill .lvl { display: inline-flex; gap: 2px; align-items: center; height: 14px; }
+.dict-pill .lvl i { display: block; height: 8px; width: 3px; background: var(--danger); border-radius: 2px; animation: dlvl .6s ease-in-out infinite alternate; }
+.dict-pill .lvl i:nth-child(2) { animation-delay: .15s } .dict-pill .lvl i:nth-child(3) { animation-delay: .3s }
+.dict-pill .lvl i:nth-child(4) { animation-delay: .1s } .dict-pill .lvl i:nth-child(5) { animation-delay: .25s }
+.dict-pill .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--teal); border-right-color: transparent;
+  animation: dspin .8s linear infinite; }
+.dict-pill .hint { font-weight: 400; color: var(--dim); }
+@keyframes dpulse { 50% { opacity: .35; } }
+@keyframes dlvl { from { height: 3px; } to { height: 14px; } }
+@keyframes dspin { to { transform: rotate(360deg); } }
+/* A refused mic says why and what to do, once, at the foot of the terminal. */
+.dict-refused { position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 4; display: none; gap: 10px; align-items: flex-start;
+  padding: 10px 12px; border-radius: var(--r-md); font: var(--fs-sm)/1.45 var(--sans); color: var(--head);
+  background: var(--card-0); border: 1px solid var(--warn); box-shadow: 0 6px 20px rgba(var(--shadow-rgb),.35); }
+.dict-refused.on { display: flex; }
+.dict-refused b { color: var(--warn); }
+.dict-refused code { color: var(--head); background: var(--lift-strong); padding: 0 4px; border-radius: 3px; }
+.dict-refused button { margin-left: auto; flex: none; }
+
+/* ── PROPOSED: what would ship in m/compose.css ── */
+/* Hold-to-talk, between the box and send. Same 44px circle as send, quiet until held. */
+.mc-mic { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; position: relative; display: grid; place-items: center;
+  background: transparent; color: var(--c-quiet); touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; transition: background .15s ease, color .15s ease, transform .15s ease; }
+.mc-mic svg { width: 22px; height: 22px; display: block; }
+.mc-mic[data-st="listening"] { background: var(--c-danger); color: #fff; transform: scale(1.12); }
+.mc-mic[data-st="listening"]::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; border: 2px solid var(--c-danger);
+  animation: mring 1.1s ease-out infinite; }
+.mc-mic[data-st="transcribing"] { color: var(--c-accent); }
+.mc-mic[data-st="transcribing"]::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; border: 2px solid var(--c-accent);
+  border-right-color: transparent; animation: dspin .8s linear infinite; }
+.mc-mic[data-st="refused"] { color: var(--c-dim); opacity: .55; }
+.mc-mic[data-st="refused"]::after { content: ""; position: absolute; left: 11px; right: 11px; top: 50%; height: 2px; background: currentColor; transform: rotate(-35deg); }
+@keyframes mring { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
+#t-compose .mc.compact .mc-row { padding-right: 0; }
+#t-compose .mc-note { color: var(--term-fg, var(--c-quiet)); }
+#t-compose .mc-note[data-kind="listen"]::first-letter { color: #ff5a4f; }
+#t-compose .mc-note[data-kind="refused"] { color: #ffb4a8; }
+#t-compose .mc-note[data-kind="sent"] { color: #9fe3b0; }
+</style>
+
+<body class="v-desk">
+<div id="notes">
+  <b>Push-to-talk dictation, mock.</b> Hold <kbd>Right Ctrl</kbd> with the terminal focused (or hold the mic in the bar) to
+  talk, release to transcribe. The words are pasted into the input line followed by a new line that does <b>not</b>
+  submit. You press <kbd>Enter</kbd> when it reads right. <kbd>Esc</kbd> while holding throws the clip away. On the
+  phone, hold the mic beside Send. Release appends the words and a new line to the box, and Send submits. Audio goes
+  only to this room's whisper on sg4's GPU (about 0.4 s for a 5 s clip, 2 s for 35 s). Try it here: the key and both
+  mic buttons are live with canned text.
+</div>
+<div id="stage">
+  <!-- DESK -->
+  <div id="desk" class="term-layout">
+    <section class="term-pane">
+      <div class="term-bar">
+        <span class="term-who"><span id="t-mark"></span><span class="tname"><strong>voice-push-to-talk</strong></span></span>
+        <span class="chips"><span class="chip">claude</span><span class="chip">sg4</span></span>
+        <span class="grow" style="flex:1"></span>
+        <!-- NEW: the mic -->
+        <button id="t-mic" class="icon" data-st="" aria-label="hold to dictate"
+          title="hold to dictate (or hold Right Ctrl in the terminal). Release pastes the words, Enter still submits.">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon" aria-label="full screen">&#x26F6;</button>
+        <button class="icon" aria-label="files">files</button>
+        <button class="icon" aria-label="settings">&#9881;</button>
+      </div>
+      <div class="term-body" style="flex:1;display:flex;min-height:0">
+        <div class="fake-term" id="d-term" tabindex="0"><span class="dim">● Read(internal/api/web/js/tcompose.js)
+  ⎿  Read 66 lines</span>
+
+<span class="acc">●</span> The composer sends on its button only, so a dictated newline there is safe. Which desk key do you
+  want for push-to-talk?
+
+<div class="inbox" id="d-input">&gt; <span id="d-line"></span><span class="cur">&nbsp;</span></div><span class="dim">  ? for shortcuts</span></div>
+        <div class="dict-pill" id="d-pill"></div>
+        <div class="dict-refused" id="d-refused">
+          <span>&#127897;</span>
+          <span><b>The microphone is blocked on this address.</b> Browsers only allow a mic on a secure page, and
+            <code>http://atrium.ziti</code> is not one. Open the board at <code>http://127.0.0.1:7778</code> on this
+            machine, or through an https share, to dictate. Typing and Win+H work as before.</span>
+          <button class="icon" onclick="setState('idle')" aria-label="dismiss">&#10005;</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- PHONE -->
+  <div id="phone">
+    <section class="term-pane" style="display:flex;flex-direction:column">
+      <div class="term-bar" style="min-height:40px">
+        <span class="term-who"><span class="tname"><strong>voice-push-to-talk</strong></span></span>
+        <button class="icon">cards &#9662;</button>
+      </div>
+      <div class="fake-term" id="p-term"><span class="acc">●</span> The composer sends on its button only. Which
+  desk key do you want for push-to-talk?
+
+<div class="inbox">&gt; <span class="cur">&nbsp;</span></div></div>
+      <div id="t-compose" style="position:relative">
+        <div class="mc compact">
+          <div class="mc-note" id="p-note" role="status"></div>
+          <div class="mc-row">
+            <textarea class="mc-box" id="p-box" rows="1" placeholder="Message this session"></textarea>
+            <!-- NEW: hold to talk -->
+            <button type="button" class="mc-mic" id="p-mic" data-st="" aria-label="hold to talk">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="mc-send" id="p-send" disabled aria-label="send">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="term-keys" style="display:flex">
+        <button type="button">Esc</button><button type="button">&larr;</button><button type="button">&darr;</button>
+        <button type="button">&uarr;</button><button type="button">&rarr;</button><button type="button">Tab</button>
+        <button type="button">&crarr;</button><button type="button">^C</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="mockbar">
+  <b>MOCK</b>
+  <div class="seg" id="mock-view"><button class="on" data-v="desk">desk terminal</button><button data-v="phone">phone composer</button></div>
+  <div class="seg" id="mock-state">
+    <button class="on" data-v="idle">idle</button><button data-v="listening">listening</button>
+    <button data-v="transcribing">transcribing</button><button data-v="pasted">pasted</button>
+    <button data-v="refused">refused mic</button>
+  </div>
+  <label>skin <select id="mock-skin"><option value="">harbour</option><option value="graphite">graphite</option><option value="oxide">oxide</option><option value="moss">moss</option><option value="plum">plum</option><option value="ember">ember</option><option value="glacier">glacier</option><option value="noir">noir</option><option value="vapor">vapor</option><option value="sandstone">sandstone</option><option value="abyss">abyss</option><option value="paper">paper</option><option value="daylight">daylight</option><option value="linen" selected>linen</option><option value="frost">frost</option><option value="slate">slate</option><option value="dusk">dusk</option><option value="fern">fern</option><option value="clay">clay</option><option value="cobalt">cobalt</option><option value="mint">mint</option><option value="website">website</option></select></label>
+</div>
+
+<script>
+const SAID = "Use right control for push to talk, and keep the mic in the composer next to send.";
+const $ = id => document.getElementById(id);
+let state = "idle", t0 = 0, tick = 0, timer = 0;
+
+function pill(html) { const p = $("d-pill"); p.innerHTML = html; p.classList.toggle("on", !!html); }
+function secs() { return Math.floor((Date.now() - t0) / 1000); }
+
+function setState(s) {
+  state = s;
+  clearInterval(tick);
+  document.querySelectorAll("#mock-state button").forEach(b => b.classList.toggle("on", b.dataset.v === s));
+  $("t-mic").dataset.st = s === "pasted" || s === "idle" ? "" : s;
+  $("p-mic").dataset.st = $("t-mic").dataset.st;
+  $("d-refused").classList.toggle("on", s === "refused");
+  const note = $("p-note");
+  note.classList.remove("on"); note.textContent = ""; note.dataset.kind = "";
+  pill("");
+  if (s === "listening") {
+    t0 = Date.now();
+    const draw = () => {
+      pill('<span class="dot"></span><span class="lvl"><i></i><i></i><i></i><i></i><i></i></span> listening 0:' +
+        String(secs()).padStart(2, "0") + ' <span class="hint">release to transcribe, <kbd>Esc</kbd> to cancel</span>');
+      note.textContent = "25CF listening 0:" + String(secs()).padStart(2, "0") + ", release to transcribe, slide off to cancel";
+    };
+    draw(); tick = setInterval(draw, 500);
+    note.dataset.kind = "listen"; note.classList.add("on");
+  } else if (s === "transcribing") {
+    pill('<span class="spin"></span> transcribing on sg4 <span class="hint">large-v3-turbo, GPU</span>');
+    note.textContent = "transcribing on sg4"; note.dataset.kind = "busy"; note.classList.add("on");
+  } else if (s === "pasted") {
+    // Desk: bracketed paste of the words plus "\n". Claude Code keeps the newline in its input, nothing submits.
+    $("d-line").innerHTML = '<span class="pasted">' + SAID + '</span>\n  ';
+    const box = $("p-box");
+    box.value = SAID + "\n"; box.rows = 3; $("p-send").disabled = false;
+    note.textContent = "added, review it and press send"; note.dataset.kind = "sent"; note.classList.add("on");
+  } else if (s === "refused") {
+    note.textContent = "The mic is blocked on http://atrium.ziti (not a secure page). Use the keyboard's mic, or open the board over https.";
+    note.dataset.kind = "refused"; note.classList.add("on");
+  } else {
+    $("d-line").textContent = ""; $("p-box").value = ""; $("p-box").rows = 1; $("p-send").disabled = true;
+  }
+}
+
+function setView(v) {
+  document.body.className = "v-" + v;
+  document.querySelectorAll("#mock-view button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+}
+
+function down() { if (state === "refused") return; clearTimeout(timer); setState("idle"); setState("listening"); }
+function up() {
+  if (state !== "listening") return;
+  setState("transcribing");
+  timer = setTimeout(() => setState("pasted"), 700);
+}
+function cancel() { if (state === "listening") setState("idle"); }
+
+document.querySelectorAll("#mock-view button").forEach(b => b.onclick = () => setView(b.dataset.v));
+document.querySelectorAll("#mock-state button").forEach(b => b.onclick = () => setState(b.dataset.v));
+$("mock-skin").onchange = e => { if (e.target.value) document.documentElement.dataset.skin = e.target.value; else delete document.documentElement.dataset.skin; };
+
+// Right Ctrl alone. Any other key while it is down (Ctrl+C, Ctrl+V) cancels, so a chord never records.
+document.addEventListener("keydown", e => {
+  if (e.code === "ControlRight" && !e.repeat) { e.preventDefault(); down(); return; }
+  if (e.key === "Escape" || (state === "listening" && e.code !== "ControlRight")) cancel();
+}, true);
+document.addEventListener("keyup", e => { if (e.code === "ControlRight") up(); }, true);
+
+for (const id of ["t-mic", "p-mic"]) {
+  const b = $(id);
+  b.addEventListener("pointerdown", e => { b.setPointerCapture(e.pointerId); down(); });
+  b.addEventListener("pointerup", up);
+  b.addEventListener("pointercancel", cancel);
+  b.addEventListener("pointermove", e => {
+    if (state !== "listening") return;
+    const r = b.getBoundingClientRect();
+    if (Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) > 90) cancel();
+  });
+}
+$("p-send").onclick = () => setState("idle");
+$("p-box").oninput = () => { $("p-send").disabled = !$("p-box").value.trim(); };
+const q = new URLSearchParams(location.search);
+if (q.get("skin") !== null) $("mock-skin").value = q.get("skin"), $("mock-skin").onchange({ target: $("mock-skin") });
+setView(q.get("view") || "desk");
+setState(q.get("state") || "idle");
+</script>
+</body></html>

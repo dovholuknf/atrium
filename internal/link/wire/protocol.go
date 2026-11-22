@@ -293,10 +293,10 @@ func HearHelloWithin(conn net.Conn, br *bufio.Reader, wait time.Duration) (Hello
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", UpgradeKind, AnnounceKind, RelayKind, GitKind, RoomSpecKind, StreamKind:
+	case "control", "data", "enrol", UpgradeKind, AnnounceKind, RelayKind, GitKind, RoomSpecKind, StreamKind, DictateKind:
 	default:
 		_ = WriteJSON(conn, Welcome{OK: false,
-			Error: "a connection is control, data, enrol, upgrade, announce, relay, git, roomspec or stream"})
+			Error: "a connection is control, data, enrol, upgrade, announce, relay, git, roomspec, stream or dictate"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})
@@ -310,4 +310,5 @@ const (
 	GitKind      = "git"
 	RoomSpecKind = "roomspec"
 	StreamKind   = "stream"
+	DictateKind  = "dictate"
 )

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/dictate"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
@@ -344,6 +345,9 @@ type Daemon struct {
 	// worktreegone.go.
 	gone goneWatch
 
+	// dict is the warm whisper-server push-to-talk asks. See dictate.go.
+	dict dictate.Engine
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -519,6 +523,9 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.DiskFree = d.DiskFree
 	d.ap.HostWatch = d.HostState
 	d.ap.ToolchainMissing = d.toolchainHealth
+	d.dict.Conf = d.dictateConf
+	d.ap.Dictate = d.dictateText
+	d.ap.DictateOff = d.dictateOff
 	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.LoginStatus = d.handleLoginStatus
 	d.ap.DrainAuto = d.drainForAuto
@@ -1283,6 +1290,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
 		go d.diskWatcher(ctx, DiskWatchStart, DiskWatchEvery)
 		go d.hostWatcher(ctx, HostWatchStart, HostWatchEvery)
+		go d.dictateWarm(ctx)
 	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
@@ -1513,6 +1521,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// somebody was reading, and there is nothing in it to lose that ten seconds
 	// of waiting would save.
 	d.stopShells()
+	d.dict.Stop()
 	d.saveDrafts()
 
 	if n := d.blockedAgents(); n > 0 {

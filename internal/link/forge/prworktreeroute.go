@@ -108,7 +108,17 @@ type refusalWriter struct {
 	once    bool
 }
 
+// typed gives an answer that names no type a plain one, so a browser never sniffs a proxied body into HTML.
+func (rw *refusalWriter) typed() {
+	h := rw.ResponseWriter.Header()
+	if h.Get("Content-Type") == "" {
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	h.Set("X-Content-Type-Options", "nosniff")
+}
+
 func (rw *refusalWriter) WriteHeader(code int) {
+	rw.typed()
 	if !rw.once {
 		rw.once = true
 		if code >= 400 {
@@ -119,6 +129,7 @@ func (rw *refusalWriter) WriteHeader(code int) {
 }
 
 func (rw *refusalWriter) Write(b []byte) (int, error) {
+	rw.typed()
 	if !rw.once {
 		rw.once = true
 	}

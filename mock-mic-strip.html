@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>mic in the strip, mock</title>
+<style>
+  body { margin: 0; padding: 40px; background: #efebe4; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+  .term { width: 720px; background: #2f6b3f; color: #cfe8d3; border-radius: 10px; box-shadow: 0 0 0 2px #8fe39b; }
+  .out { height: 120px; padding: 14px; }
+  .foot { position: relative; }
+  .help { display: flex; align-items: center; gap: 12px; padding: 5px 8px 5px 14px; border-top: 1px solid rgba(255,255,255,.18); }
+  .keys { flex: 1; opacity: .55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dock { display: flex; align-items: center; }
+  .mic { width: 26px; height: 26px; margin: -3px 0; border-radius: 50%; display: grid; place-items: center; padding: 0;
+    color: #3a3a3a; background: #fbf9f5; border: 1px solid #d6d0c4; box-shadow: 0 4px 14px rgba(0,0,0,.35); cursor: pointer; }
+  .exp { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 1px solid transparent; border-radius: 99px;
+    background: none; color: inherit; font: inherit; letter-spacing: .06em; opacity: .6; }
+  .pill { position: absolute; right: 10px; bottom: calc(100% + 8px); padding: 7px 12px; border-radius: 99px; background: #fbf9f5;
+    color: #222; border: 1px solid #d6d0c4; font: 600 12px sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  .pill i { color: #777; font-weight: 400; font-style: normal; }
+  .rec .mic { background: #d64545; border-color: #d64545; color: #fff; transform: scale(1.08); }
+</style>
+<div class="term">
+  <div class="out">$ claude</div>
+  <div class="foot rec" id="f">
+    <div class="pill" id="p">&#9679; listening 0:03 <i>release to transcribe, Esc to cancel</i></div>
+    <div class="help">
+      <span class="keys">ctrl-c copies a selection, interrupts otherwise &middot; ctrl-v or shift-insert pastes &middot; ctrl-a selects the buffer</span>
+      <div class="dock"><button class="mic" onclick="document.getElementById('f').classList.toggle('rec');document.getElementById('p').hidden=!document.getElementById('f').classList.contains('rec')">
+        <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <button class="exp">details &#8963;</button>
+    </div>
+  </div>
+</div>
+<p>Click the mic to toggle the listening state.</p>

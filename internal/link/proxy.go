@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/base/seenhost"
+	"github.com/dovholuknf/atrium/internal/daemon/dictate"
 	"io"
 	"io/fs"
 	"log"
@@ -92,6 +93,8 @@ type Proxy struct {
 	clients map[string]*http.Client
 	// stock is every room this hub knows about, attached or not.
 	stock Inventory
+	dict  HubDictation
+	inst  *dictate.Installer
 
 	// feeds is the one upstream event stream per room, and the boards watching
 	// them. See events.go.
@@ -643,6 +646,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.hubRecognise(w, r) {
 		return
 	}
+	// A CLIP FROM THE HUB'S BOARD IS TRANSCRIBED ON THE HUB when it has speech to text, whichever room holds the
+	// card. See hubdictate.go.
+	if p.hubDictate(w, r) {
+		return
+	}
 	// A REQUEST THAT NAMES A CARD GOES WHERE THE CARD IS, whatever the header
 	// says. Ahead of startsNothing so that sees the room the work would land on.
 	// See cardroute.go.
@@ -752,6 +760,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	room, named := p.roomFor(r)
+	if room != "" && !named && p.oneRoomSettings(w, r, room) {
+		return
+	}
 	if room == "" {
 		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
 		if limitsNamed {
