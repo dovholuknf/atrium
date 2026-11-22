@@ -74,8 +74,8 @@ So the card's sequence is: call `atrium_git_url`, then run the `git fetch` the a
 
 ## The hook's rule
 
-Atrium ships the hook as its `PreToolUse` guard (`atrium hook --event pre-tool-use`, `internal/guard`), and it is
-what keeps cards on this path. It refuses every git command that could reach a remote, and allows exactly these:
+Atrium does not ship the hook. It is the recommended guard, a `PreToolUse` hook in your own Claude Code setup, and it
+is what keeps cards on this path. It refuses every git command that could reach a remote, and allows exactly these:
 
 ```bash
 git fetch hub

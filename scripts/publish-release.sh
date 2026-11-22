@@ -121,6 +121,19 @@ for f in $assets; do
 done
 echo
 
+# GitHub refuses a release body over 125000 characters (HTTP 422). Over 120000, publish a copy cut at a line and
+# ending in a link to the full file at the tag.
+max_notes=120000
+if [ -n "$notes_file" ] && [ "$(wc -m <"$notes_file")" -gt "$max_notes" ]; then
+  repo="${GITHUB_REPOSITORY:-dovholuknf/atrium}"
+  trimmed="$(mktemp)"
+  head -c "$max_notes" "$notes_file" | sed '$d' >"$trimmed"
+  printf '\n---\n\nThese notes are cut to fit GitHub'"'"'s release body limit. The full list is [%s](https://github.com/%s/blob/%s/%s).\n' \
+    "$notes_file" "$repo" "$version" "$notes_file" >>"$trimmed"
+  echo "notes: $notes_file is over $max_notes characters, publishing a trimmed copy that links the full file"
+  notes_file="$trimmed"
+fi
+
 if [ "$publish" != "yes" ]; then
   cat <<EOF
 NOTHING WAS PUBLISHED. --publish was not passed.

@@ -64,10 +64,7 @@ If the clone fails with "not found" or an auth error, the repo may need an invit
 
 STEP 3: BUILD
   go build -o build.claude/ ./cmd/atrium
-Build into build.claude/ only. Never build into the repo root. Report any compile error verbatim. AGENTS.md says
-`make build`, which does the same with version stamps. This prompt uses go build so make is not needed. On macOS
-without the Xcode command line tools the build fails at runtime/cgo and opens the xcode-select install dialog. Build
-with `CGO_ENABLED=0 go build -o build.claude/ ./cmd/atrium` instead, or install the tools first. Ask me which.
+Build into build.claude/ only. Never build into the repo root. Report any compile error verbatim.
 
 STEP 4: INSTALL THE BINARY
 Copy it to a stable place and always run it from there, never from build.claude/. Hooks and the self-restart record
@@ -77,9 +74,6 @@ the binary's path, and every build rewrites build.claude/.
                 Copy-Item build.claude\atrium.exe $HOME\.atrium\bin\
 Then run `~/.atrium/bin/atrium version` (or the .exe) and show me the output. It prints the version, commit, board
 hash, platform and Go version. A build from a clone prints a version like `0.0.4+<sha>`.
-Ask me whether to put ~/.atrium/bin on my PATH, as scripts/install.sh does. Without it `atrium stop` and the other
-commands the docs use are not found. On yes, add it to my shell profile (or my user PATH on Windows) and show me the
-line you added.
 
 STEP 5: START IT
 Before you start it, copy ~/.claude/settings.json aside and show me the backup path. When that file has none of
@@ -94,13 +88,11 @@ check:
 - http://127.0.0.1:7778 answers (curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7778).
 - `~/.atrium/bin/atrium --help` lists the subcommands.
 Use 127.0.0.1, not localhost. On some machines localhost costs a 2 second IPv6 timeout per request.
-The first start opens the board in my browser by itself (not over ssh, not with `--no-open`, and on Linux only with a
-display). If it did not, tell me to open http://127.0.0.1:7778.
+Tell me to open http://127.0.0.1:7778 in my browser.
 
 STEP 6: WIRE CLAUDE CODE IN
-When step 5 said it wired the hooks, this step changes nothing: run `atrium hook status` to confirm and go on.
-Otherwise run this after step 5, because the command writes the path of the running atrium into the hooks. Before
-you run it, copy ~/.claude/settings.json aside (show me the backup path) so I can undo it. Then run
+Run this after step 5, because the command writes the path of the running atrium into the hooks. Before you run it,
+copy ~/.claude/settings.json aside (show me the backup path) so I can undo it. Then run
 `~/.atrium/bin/atrium hook install`, or tell me to use the board: the **rooms** tab, the claude row under runners,
 its **hooks** chip, then **wire it** on each row. Both write the same entries. `atrium hook status` lists which hooks
 are wired. The command also keeps its own copy of the old file beside it, named settings.json.atrium-<time>.bak,
@@ -108,11 +100,9 @@ and prints the path when there was a settings.json to copy. On a machine with no
 `wrote <path>`. `hook status` then lists `Stop` as not wired. That is expected: Stop is optional and
 `hook install` leaves it out. When step 5 already wired them it says nothing was written. After it runs, show me the
 diff of settings.json against my backup. `atrium hook uninstall` takes atrium's entries out again.
-From then on every new Claude Code session on this machine reports to the board. Its tool calls pass the gate only
-when atrium launched it or it joined, unless ATRIUM_PERM_GATE=on gates every session. Board-wide auto mode is on in a
-fresh install, so the gate records calls and approves them without asking. Turn it off on the board to be asked.
-A session already running may pick the hooks up at once or only after a restart, depending on the Claude Code
-version. If atrium is not running, the hooks fail open: Claude keeps working as if atrium were not there.
+From then on every new Claude Code session on this machine reports to the board, and every tool call it makes asks
+the gate. Sessions already running keep their old settings until restarted. If atrium is not running, the hooks fail
+open: Claude keeps working as if atrium were not there.
 Then tell me to go to the **perms** tab and press **import rules from claude**. That turns the allow and deny lists I
 already have into standing rules, so the gate does not ask me about things I already trust.
 Optional, and only if I say yes: set statusLine in ~/.claude/settings.json to a command entry whose command is the
@@ -122,15 +112,11 @@ write it. If I already have a statusLine, show it to me and ask before replacing
 
 STEP 7: PROVE IT WORKS
 - Start a new Claude Code session in some scratch directory (not the atrium repo) and ask it to list the files.
-  Confirm a card appears on the board for it. A session I start myself is not gated by default (step 6), so expect
-  no permission request for it.
+  Confirm a card appears on the board for it, and that its tool call either matched a rule or showed up as a
+  permission request on the board.
 - Launch one agent under atrium so atrium owns its terminal: either the board's **+ new agent** button or
   `~/.atrium/bin/atrium launch --cwd <scratch dir>` (`atrium launch --help` for the flags, the runner defaults to
   claude). Confirm I can open its terminal in the browser and type into it.
-- Tell me two defaults of a launched claude session before I rely on one. It starts with `--strict-mcp-config`, so
-  none of my MCP servers, plugins or claude.ai connectors are loaded in it (the claude row under runners on the
-  **rooms** tab holds its arguments). And at 200k tokens of context atrium hands it off, clears it and wakes it
-  again. The limit is `context_limits` in settings, and the model's own window is the real ceiling.
 Report what I should see at each point.
 
 STEP 8: THINGS I MUST KNOW

@@ -651,7 +651,7 @@ function yqPaintAsk(force) {
   const html = `<div class="yq-askbar v-${ask.verb.toLowerCase()}"><span class="yq-verb">${ask.verb}</span><strong>${esc(ask.title)}</strong><span class="sp"></span>
     ${ask.card ? `<span class="yq-seg"><button class="on" data-yq-do="mode-ask">the ask</button><button data-yq-do="mode-term">plain terminal</button></span>` : ""}
     <button class="yq-btn" data-yq-do="close" aria-label="close the ask">&times;</button></div>
-    <div class="yq-askscroll v-${ask.verb.toLowerCase()}">${ask.card ? `<p class="yq-to" role="status">Sends to <b>${esc(yqTarget(ask.card.id))}</b></p>` : ""}${yqView.sent && (yqView.sent.bad || yqView.sent.stay) ? `<p class="yq-sent bad" role="status">${esc(yqView.sent.line)}</p>` : ""}${yqAskBody(ask)}</div>`;
+    <div class="yq-askscroll v-${ask.verb.toLowerCase()}">${ask.card ? `<p class="yq-to" role="status">Sends to <b>${esc(yqTarget(ask.card.id))}</b></p>` : ""}${yqView.sent && yqView.sent.bad ? `<p class="yq-sent bad" role="status">${esc(yqView.sent.line)}</p>` : ""}${yqAskBody(ask)}</div>`;
   if (!force && el.__yq === html) return;
   if (!force && el.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") return;
   el.__yq = html;
@@ -774,7 +774,7 @@ async function yqAskClick(e) {
     if (!got) { toast("no choices on the page", "nothing on it can be read as a choice. type a note instead"); return; }
     const note = yqBoxVal("p:" + id);
     const page = a.pages && a.pages[yqView.page] ? a.pages[yqView.page] : "the page";
-    if (await yqSay(id, "My choices on " + page + ":\n" + got + (note ? "\n" + note : ""), "choices sent")) { yqClearBox("p:" + id); yqView.sent.stay = true; yqPaintAsk(true); }
+    if (await yqSay(id, "My choices on " + page + ":\n" + got + (note ? "\n" + note : ""), "choices sent")) yqClearBox("p:" + id);
     return;
   }
   const it = a.item;
@@ -795,10 +795,7 @@ async function yqAskClick(e) {
     toast("could not " + d.slice(1), err.message);
     return;
   }
-  const to = it.backlog || it.id;
-  const said = d === "iapprove" ? "Approved" : d === "isendback" ? "Sent back" : "Answer sent";
-  yqView.sent = { to, bad: false, line: said + " to " + to + "." };
-  toast("sent to " + to, "");
+  toast("sent to " + (it.backlog || it.id), "");
   yqHub.at = 0;
   yqCloseAsk();
 }
