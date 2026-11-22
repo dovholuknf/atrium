@@ -1137,7 +1137,7 @@ function isViewing(name) {
 // not something that can be caught by watching.
 document.querySelectorAll("dialog").forEach(d => {
   d.addEventListener("close", () => {
-    rlog("dialog closed:", d.id, "\n" + new Error().stack);
+    rlog("dialog closed:", d.id);
   });
 });
 

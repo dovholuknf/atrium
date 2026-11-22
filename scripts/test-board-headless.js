@@ -5405,6 +5405,82 @@ async function crossedPaneSection(browser, base) {
   mock.tasksMode = was;
 }
 
+// ── keys typed while a room restarts reach the session once it is back (b-deploy-clears-typed-input) ──
+async function termHeldKeysSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("held-a", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("held-b", { supervised: true, created_at: "2026-09-19T12:00:01Z" });
+  mock.landList = [mock.LAND["held-a"], mock.LAND["held-b"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.__down = false;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, sent: [],
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { this.sent.push(String(d)); }, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      const tryOpen = () => {
+        if (window.__down) { setTimeout(tryOpen, 50); return; }
+        s.readyState = 1; if (s.onopen) s.onopen({});
+      };
+      setTimeout(tryOpen, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const typedOn = s => s.sent.map(f => { try { return JSON.parse(f); } catch (e) { return {}; } })
+    .filter(m => m.t === "in").map(m => m.d).join("");
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termHeldKeys", id: "held-a", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "held-a" });
+    await p.evaluate(() => {
+      window.__down = true;
+      window.__first = termSock;
+      armRestart("deploy");
+      termSock.readyState = 3;
+      termSock.onclose({ code: 1012, reason: "restarting" });
+      for (const k of "half a reply") sendInput(k, false);
+    });
+    await p.evaluate(() => { window.__down = false; });
+    await p.waitForFunction(() => termSock && termSock !== window.__first && termSock.readyState === 1, null, { timeout: slow(10000) });
+    const got = await p.evaluate(typedOn => {
+      const f = new Function("return " + typedOn)();
+      return { first: f(window.__first), now: f(termSock), card: termTask && termTask.id };
+    }, typedOn.toString());
+    if (got.now !== "half a reply") fail("keys typed while the room restarted did not reach the session after it: " + JSON.stringify(got));
+    // Held keys never follow the pane to another card.
+    await p.evaluate(() => {
+      window.__down = true;
+      termSock.readyState = 3;
+      termSock.onclose({ code: 1012, reason: "restarting" });
+      sendInput("stray", false);
+    });
+    await attachRetry(p, { unit: "termHeldKeys", id: "held-b", check: () => termTask && termTask.id === "held-b" });
+    await p.evaluate(() => { window.__down = false; });
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && /held-b/.test(termSock.url), null, { timeout: slow(10000) });
+    await p.waitForTimeout(slow(200)); // wait: nothing must be typed into held-b, so there is no event to wait on
+    const leaked = await p.evaluate(typedOn => {
+      const f = new Function("return " + typedOn)();
+      return window.__socks.filter(s => /held-b/.test(s.url)).map(f).join("");
+    }, typedOn.toString());
+    if (leaked.includes("stray")) fail("keys held for one card were typed into another: " + JSON.stringify(leaked));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the held keys page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
 // ── a path wrapped in backticks, quotes, parens or bold is still a link, and the wrapper is not in it ──
 // Claude Code puts paths in code spans and prose puts them in quotes and brackets. The link has to cover the path
 // and stop short of every character around it, whatever the path's shape and with or without a :line.
@@ -6224,7 +6300,7 @@ async function fileLinksViewSection(browser, base) {
     await p.evaluate(() => { window.__told = []; window.toast = (t, b) => window.__told.push(t + ": " + b); });
     const got = [await linksOn(1), await linksOn(2), await linksOn(3)];
     const told = await p.evaluate(() => window.__told);
-    if (!told.some(m => /socials\.txt.*not an open path/.test(m)) || new Set(told).size !== told.length) fail("a held path was not explained once: " + JSON.stringify(told));
+    if (told.length) fail("a held path popped a toast: " + JSON.stringify(told));
     if (got[0].length) fail("a path the room did not find was underlined: " + JSON.stringify(got[0]));
     if (!got[1].includes(insideWin)) fail("an inside absolute path was not a link: " + JSON.stringify(got[1]));
     if (!got[2].includes(outsideBash) || !got[2].includes("docs/plan.md")) fail("row 3 linked " + JSON.stringify(got[2]));
@@ -9243,7 +9319,17 @@ async function copySelectSection(browser, base) {
     const find = await p.evaluate(() => ({ sel: term.getSelection(), clip: window.__clip.slice() }));
     if (find.sel !== "alpha") fail("the find bar did not select its match, so this proves nothing: " + JSON.stringify(find));
     if (find.clip.length) fail("copy on select copied from the find bar: " + JSON.stringify(find.clip));
-    await p.evaluate(() => closeFind());
+    await p.evaluate(() => { termSock.onmessage({ data: "alpha late\r\n" }); closeFind(); });
+    const marks = () => p.evaluate(() => ({ sel: term.getSelection(),
+      deco: termSearch._highlightDecorations.length + (termSearch._selectedDecoration.value ? 1 : 0),
+      dom: document.querySelectorAll("#t-screen .xterm-decoration").length, term: termSearch._cachedSearchTerm || "" }));
+    // the addon re-runs a cached search 200ms after output, so a leak shows up late
+    await p.evaluate(() => termSock.onmessage({ data: "alpha again\r\n" }));
+    await termWrite(p, "");
+    await p.waitForFunction(() => !termSearch._highlightTimeout || termSearch._cachedSearchTerm === undefined, null, { timeout: slow(5000) });
+    await frames(p, 20);
+    const shut = await marks();
+    if (shut.sel || shut.deco || shut.dom || shut.term) fail("closing find left its match drawn: " + JSON.stringify(shut));
 
     // 2. A drag across the first row copies what it selected.
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
@@ -11630,6 +11716,8 @@ async function peekLeftoverSection(browser, base) {
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   const filed = [];
+  await ctx.route("**/_hub/rooms", route => route.fulfill(false ? { status: 404, body: "" }
+    : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
   await ctx.route("**/_hub/backlog**", route => {
     const r = route.request();
     if (r.method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "u-9", dept: "ui" }) });
@@ -12608,11 +12696,14 @@ async function idleBudgetSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab",
       { state: "attached", timeout: slow(15000) });
-    await fakeTick(p, 3000);
+    mockSay("rooms", JSON.stringify({ attached: [{ name: "m1" }], inventory: [] }));
+    await fakeTick(p, 8000);
     counts.clear();
     for (let i = 0; i < secs; i++) {
       const c = UNTAGGED_CARDS[i % UNTAGGED_CARDS.length];
       mockSay("task", JSON.stringify(Object.assign({}, c, { row: 1, idle_seconds: i })));
+      if (i % 5 === 0) mockSay("rooms", JSON.stringify({ attached: [{ name: "m1" }], inventory: [] }));
+      if (i % 4 === 0) mockSay("keepalive", JSON.stringify({ task_id: c.id, state: "on" }));
       await new Promise(r => setTimeout(r, 20));
       await fakeTick(p, 1000);
     }
@@ -15975,6 +16066,8 @@ async function hearsSection(browser, base) {
     { id: "s2", kind: "land", repo: "", branch: "", card: "sg4~x", wake: true }];
   const posts = [], gets = [];
   const open = async (ctx, hub) => {
+    await ctx.route("**/_hub/rooms", route => route.fulfill(!hub ? { status: 404, body: "" }
+      : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
     await ctx.route("**/_hub/events/subs**", route => {
       const req = route.request();
       if (!hub) return route.fulfill({ status: 404, body: "not a hub" });
@@ -16029,9 +16122,11 @@ async function hearsSection(browser, base) {
   try {
     const p = await open(ctx2, false);
     const id = "c1";
-    const asked = p.waitForResponse(r => r.url().includes("/_hub/events/subs"), { timeout: slow(10000) });
+    let asked = false;
+    p.on("request", r => { if (r.url().includes("/_hub/events/subs")) asked = true; });
     await p.evaluate(i => openTask(i), id);
-    await asked;
+    await p.evaluate(() => hubProbedP);
+    if (asked) fail("hears: a board with no hub asked for subscriptions");
     if (!(await p.evaluate(() => document.getElementById("d-hears-field").hidden))) fail("hears: a board with no hub drew the line");
   } finally { await ctx2.close(); }
 }// ── the hub's notify command in the gear (u-030) ────────────────────────────
@@ -16044,6 +16139,8 @@ async function notifyCommandSection(browser, base) {
     sent: 7, dropped: 2, suppressed: 5, visible_tabs: 2 };
   const puts = [], tests = [], gets = [];
   const open = async (ctx, hub) => {
+    await ctx.route("**/_hub/rooms", route => route.fulfill(!hub ? { status: 404, body: "" }
+      : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
     await ctx.route("**/_hub/notify**", route => {
       const req = route.request(), u = new URL(req.url());
       if (!hub) return route.fulfill({ status: 404, body: "not a hub" });
@@ -16153,6 +16250,8 @@ async function presenceSection(browser, base) {
     navigator.sendBeacon = (url, data) => { window.__beacons.push({ url, type: data && data.type }); return true; };
   });
   let status = 200;
+  await ctx.route("**/_hub/rooms", route => route.fulfill(status !== 200 ? { status: 404, body: "" }
+    : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
   await ctx.route("**/_hub/presence", route => {
     posts.push(JSON.parse(route.request().postData()));
     route.fulfill({ status, contentType: "application/json", body: status === 200 ? '{"ok":true}' : "not a hub" });
@@ -26751,6 +26850,8 @@ async function gearHostsSection(browser, base) {
   const open = async (mode) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const st = { hosts: ["*.shares.zrok.io", "*.duckdns.org"], puts: [], gets: 0 };
+    await ctx.route("**/_hub/rooms", route => route.fulfill(mode === "none" ? { status: 404, body: "" }
+      : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
     await ctx.route("**/_hub/hosts", route => {
       const req = route.request();
       if (mode === "none") return route.fulfill({ status: 404, body: "" });
@@ -28873,9 +28974,14 @@ async function keepAliveSection(browser, base) {
       await new Promise(r => term.write(Array.from({ length: 150 }, (_, i) => "scroll line " + i).join("\r\n") + "\r\n", r));
     });
     const resizesA = await resizes("ka-a");
+    await wp.evaluate(() => { openFind(); document.getElementById("t-find-q").value = "scroll line"; runFind(false); });
+    const hits = await wp.evaluate(() => termSearch._highlightDecorations.length);
+    if (!hits) fail("keepAlive: the find drew nothing, so the kept terminal check proves nothing.");
     await attach("ka-b");
     const kept = await wp.evaluate(() => { const k = keptTerms.get("ka-a"); return k && { open: k.sock.readyState, hidden: k.el.style.display, live: !!term, task: termTask.id }; });
     if (!kept || kept.open !== 1 || kept.hidden !== "none" || kept.task !== "ka-b") fail("keepAlive: switching away did not keep ka-a hidden and open (" + JSON.stringify(kept) + ").");
+    const keptFind = await wp.evaluate(() => { const k = keptTerms.get("ka-a"); return { deco: k.search._highlightDecorations.length + (k.search._selectedDecoration.value ? 1 : 0), sel: k.term.getSelection() }; });
+    if (keptFind.deco || keptFind.sel) fail("keepAlive: a kept terminal kept its find match drawn: " + JSON.stringify(keptFind));
 
     // A frame for the hidden terminal lands in it and touches nothing of the showing pane.
     // The last attach's socket opens a moment after it, and that open clears the wait line, so let it land before counting.
@@ -29963,7 +30069,7 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, walkLinkFresh: walkLinkFreshSection, walkTour: walkTourSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, relaunchAttach: relaunchAttachSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
-      stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
+      stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection, termHeldKeys: termHeldKeysSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, peekLeftover: peekLeftoverSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
@@ -31923,6 +32029,7 @@ async function main() {
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));
     await unit("crossedPane", () => crossedPaneSection(browser, base));
+    await unit("termHeldKeys", () => termHeldKeysSection(browser, base));
     // ── a second press fires nothing ──────────────────────────────────────
     await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
@@ -32105,6 +32212,9 @@ async function main() {
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
     await unit("apiSlots", bu("apiSlots"));
+    await unit("apiSlotsReads", bu("apiSlotsReads"));
+    await unit("apiSlotsPaste", bu("apiSlotsPaste"));
+    await unit("walkYield", bu("walkYield"));
     await unit("interviewTop", bu("interviewTop"));
     await unit("minionPredicate", () => minionPredicateSection(browser, base));
     await unit("minionNeedsYou", () => minionNeedsYouSection(browser, base));
@@ -32303,6 +32413,8 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("homesDisk", bu("homesDisk"));
     await unit("homesLaunch", bu("homesLaunch"));
     await unit("homesAllRooms", bu("homesAllRooms"));
+    await unit("homesPlainRoom", bu("homesPlainRoom"));
+    await unit("homesProbeSilent", bu("homesProbeSilent"));
     await unit("termRowChips", () => termRowChipsSection(browser, base));
     await unit("termNameClearsChips", () => termNameClearsChipsSection(browser, base));
     await unit("rowTextClearsChips", () => rowTextClearsChipsSection(browser, base));

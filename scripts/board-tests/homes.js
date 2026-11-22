@@ -1,6 +1,6 @@
 // homes: the card's home on the board, the room's card root, the Disk panel, the new-home launch.
 //
-// Units: homesChips, homesRoot, homesDisk, homesLaunch, homesAllRooms.
+// Units: homesChips, homesRoot, homesDisk, homesLaunch, homesAllRooms, homesPlainRoom, homesProbeSilent.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/homes.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -225,14 +225,48 @@ async function homesAllRoomsSection(browser, base) {
   }
 }
 
+async function homesPlainRoomSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+  const p = await ctx.newPage();
+  try {
+    const hub = [];
+    p.on("request", r => { const u = new URL(r.url()).pathname; if (u.startsWith("/_hub/") && u !== "/_hub/rooms") hub.push(u); });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubProbed !== "undefined" && hubProbed, null, { timeout: slow(15000) });
+    const got = await p.evaluate(async () => ({ hub: hubIsHub, status: (await plainFetch("/_hub/notify")).status,
+      bare: (await fetch("/_hub/capabilities")).status, viaApi: await api("/_hub/firstrun").then(() => 0, e => e.status) }));
+    if (got.hub || got.status !== 404 || got.bare !== 404 || got.viaApi !== 404) fail("homesPlainRoom: a room's board did not answer a hub read itself: " + JSON.stringify(got));
+    if (hub.length) fail("homesPlainRoom: a room's board asked the room for hub-only reads: " + hub.join(", "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+async function homesProbeSilentSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+  const p = await ctx.newPage();
+  try {
+    await ctx.route(/\/_hub\/rooms(\?|$)/, () => {});
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof plainFetch === "function", null, { timeout: slow(15000) });
+    const asked = p.waitForRequest(r => new URL(r.url()).pathname === "/_hub/notify", { timeout: slow(15000) });
+    await p.evaluate(() => { plainFetch("/_hub/notify").catch(() => {}); });
+    await asked.catch(() => fail("homesProbeSilent: a hub read waited forever on a probe that never answered"));
+  } finally {
+    await ctx.close();
+  }
+}
+
 const units = [
   { name: "homesChips", run: ({ browser, base }) => homesChipsSection(browser, base) },
   { name: "homesRoot", run: ({ browser, base }) => homesRootSection(browser, base) },
   { name: "homesDisk", run: ({ browser, base }) => homesDiskSection(browser, base) },
   { name: "homesLaunch", run: ({ browser, base }) => homesLaunchSection(browser, base) },
   { name: "homesAllRooms", run: ({ browser, base }) => homesAllRoomsSection(browser, base) },
+  { name: "homesProbeSilent", run: ({ browser, base }) => homesProbeSilentSection(browser, base) },
+  { name: "homesPlainRoom", run: ({ browser, base }) => homesPlainRoomSection(browser, base) },
 ];
-const sections = { homesChips: homesChipsSection, homesRoot: homesRootSection, homesDisk: homesDiskSection, homesLaunch: homesLaunchSection, homesAllRooms: homesAllRoomsSection };
+const sections = { homesChips: homesChipsSection, homesRoot: homesRootSection, homesDisk: homesDiskSection, homesLaunch: homesLaunchSection, homesAllRooms: homesAllRoomsSection, homesPlainRoom: homesPlainRoomSection, homesProbeSilent: homesProbeSilentSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

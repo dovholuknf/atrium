@@ -5,7 +5,7 @@
 // unblock. Asks come from the hub's items, its merge queue, and the card list, and a card an item already covers is
 // not asked twice.
 const YQ_VERBS = ["ANSWER", "APPROVE", "TRY", "SIGN", "UNBLOCK"];
-const YQ_HUB_MS = 15000;
+const YQ_HUB_MS = 60000;
 const yqHub = { items: null, merges: null, at: 0, busy: false };
 const YQ_FOLD_KEY = "atrium.queue.folded";
 

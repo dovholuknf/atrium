@@ -58,6 +58,9 @@ let roomsDemoLive = false;
 // it. Both are read by the header chip and by the launch dialog.
 let hubRooms = [];
 let hubIsHub = false;
+let hubProbed = false;
+let hubProbedDone;
+const hubProbedP = new Promise(r => { hubProbedDone = r; });
 
 // The attached room set as last seen, joined into one string to compare by. Null
 // until the first read, so the first poll seeds it without counting as a change.
@@ -213,7 +216,7 @@ const setupKey = (room, id) => room + "\n" + id;
 function setupWhyNot(r, i) {
   if (i.kind === "hooks") return "settings.json unreadable";
   if (i.id === "git") return "install git there";
-  return "fix it on the machine";
+  return "";
 }
 function setupChecklistHtml(drift, hint) {
   const by = new Map(drift.map(d => [d.name, d.issues]));
@@ -232,7 +235,7 @@ function setupChecklistHtml(drift, hint) {
       if (id) live.add(key);
       const tail = id
         ? `<input type="checkbox" class="setuppick" data-room="${esc(r.name)}" data-id="${esc(id)}"${setupPicked.has(key) ? " checked" : ""}>`
-        : `<span class="why">${esc(setupWhyNot(r, i))}</span>`;
+        : setupWhyNot(r, i) ? `<span class="why">${esc(setupWhyNot(r, i))}</span>` : "";
       return `<div class="it"><span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}</span>${tail}</div>`;
     }).join("");
   }).join("");
@@ -1249,7 +1252,17 @@ function namesACard(url, init) {
   try { return !!(JSON.parse(body) || {}).task_id; } catch (e) { return false; }
 }
 
-const plainFetch = window.fetch.bind(window);
+const wireFetch = window.fetch.bind(window);
+// A room is not a hub: hub-only paths wait for /_hub/rooms and, when it says so, are answered here instead of 404ing on the wire.
+const hubProbeWait = () => Promise.race([hubProbedP, new Promise(r => setTimeout(r, 3000))]);
+const plainFetch = async (input, init) => {
+  const url = (input && input.url) ? input.url : String(input);
+  if (url.startsWith("/_hub/") && !url.startsWith("/_hub/rooms")) {
+    if (!hubProbed) await hubProbeWait();
+    if (hubProbed && !hubIsHub) return new Response('{"error":"not a hub"}', { status: 404 });
+  }
+  return wireFetch(input, init);
+};
 window.fetch = function (input, init) {
   // The room being looked at, or, for a CHANGE made while looking at all of
   // them, the room the open editor is for. See `chooseWriteRoom`.
@@ -1411,7 +1424,7 @@ async function loadHubRooms() {
   if (Date.now() - hubRead < 2000) return hubIsHub;
   hubRead = Date.now();
   // The preview's pretend hub answers from memory and asks nothing.
-  if (roomsDemoLive) return roomsDemoHub();
+  if (roomsDemoLive) { hubProbed = true; hubProbedDone(); return roomsDemoHub(); }
   let got;
   try {
     // Through the shared cap, not a raw plainFetch: a flapping room asks this on
@@ -1422,9 +1435,13 @@ async function loadHubRooms() {
     });
   } catch (e) {
     hubIsHub = false;
+    hubProbed = true;
+    hubProbedDone();
     paintRooms();
     return false;
   }
+  hubProbed = true;
+  hubProbedDone();
   return applyHubRooms(got.rooms || [], null);
 }
 

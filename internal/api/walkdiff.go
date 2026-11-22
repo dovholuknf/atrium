@@ -62,7 +62,7 @@ const walkOwnDir = ".atrium/"
 
 // GET /v1/tasks/{id}/diff is the card's worktree, or the folder ?dir= names, compared the way ?mode= says, for the walk
 // with no findings. No mode opens on unstaged when there is any, else staged, else branch. A git folder with nothing
-// to walk answers 200 with why, so every git card has a walk.
+// to walk answers 200 with why. ?probe=1 answers only whether the folder is git, ?summary=1 leaves the patch out, so every git card has a walk.
 func (s *Server) walkDiff(w http.ResponseWriter, r *http.Request) {
 	task, err := s.st.Get(r.PathValue("id"))
 	if err != nil {
@@ -97,6 +97,10 @@ func (s *Server) walkDiff(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if r.URL.Query().Get("probe") != "" {
+		writeJSON(w, http.StatusOK, walkDiffOut{Branch: "", Modes: map[string]int{}})
+		return
+	}
 	if sha := r.URL.Query().Get("commit"); sha != "" {
 		if !walkSHARe.MatchString(sha) {
 			writeErr(w, http.StatusBadRequest, errors.New("commit is a hex sha"))
@@ -114,6 +118,9 @@ func (s *Server) walkDiff(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, status, err)
 		return
+	}
+	if r.URL.Query().Get("summary") != "" {
+		out.Diff = ""
 	}
 	writeJSON(w, http.StatusOK, out)
 }

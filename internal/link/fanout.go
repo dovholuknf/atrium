@@ -103,6 +103,8 @@ var borrowed = map[string]bool{
 	"/v1/themes":   true,
 	"/v1/rooms":    true,
 	"/v1/hooks":    true,
+	// The board's own stylesheet link is a plain GET with no room, so refusing it was a 409 in every console.
+	"/user.css": true,
 	// Runners this machine has that are not set up yet. Merging would be a
 	// list of one machine's `ollama` beside another's, which is a table of
 	// things to add somewhere unspecified.

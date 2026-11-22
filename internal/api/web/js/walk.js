@@ -808,7 +808,7 @@ const walkTenant = {
     this.findings = (res.entries || []).some(e => !e.dir && walkParseName(e.name));
     if (this.findings) return true;
     // Any answer is a git folder: one with nothing changed still walks. A folder not in git is refused.
-    await api(`/v1/tasks/${task.id}/diff`);
+    await api(`/v1/tasks/${task.id}/diff?probe=1`);
     return true;
   },
 

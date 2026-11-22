@@ -675,7 +675,15 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.Ka.EffortArgs = forkEffortArgs
 	d.Ka.ForkEnvOf = keepaliveForkEnv
 	d.Ka.Replies = &d.replies
-	d.Ka.Broadcast = d.ap.Broadcast
+	d.Ka.Broadcast = func(event string, payload any) {
+		d.ap.Broadcast(event, payload)
+		// The card's row carries its keep-alive, so the board takes it from the task event and not from a list read.
+		if m, ok := payload.(map[string]any); ok && event == "keepalive" {
+			if id, _ := m["task_id"].(string); id != "" {
+				d.publishCard(id)
+			}
+		}
+	}
 	d.Ka.Window = func(taskID string) int {
 		if t := d.act.telemetry(taskID); t != nil {
 			return t.Window

@@ -21,6 +21,13 @@ async function bootCleanSection(browser, base) {
       await p.route(/\/alias\/rnd$/, r => r.fulfill({ status: 200, contentType: "text/html", body: raw }));
       const errors = [];
       p.on("pageerror", e => errors.push(String(e && e.message || e) + (process.env.BOOT_STACK ? " " + e.stack : "")));
+      const noise = [];
+      p.on("console", m => { if (m.type() === "error" && !/Failed to load resource|bad HTTP response/.test(m.text())) noise.push("console: " + m.text()); });
+      // The mock is not a hub, so its API routes legitimately 404. A page asset or stylesheet failing is never legitimate.
+      p.on("response", r => {
+        const at = new URL(r.url()).pathname;
+        if (r.status() >= 400 && !at.startsWith("/v1/") && !at.startsWith("/_hub/")) noise.push(r.status() + " " + at);
+      });
       const tag = "bootClean " + v.w + " " + at + ": ";
       try {
         // Boot's last step either way: the board reads its cards after the stream, a pop-out opens the stream after.
@@ -32,6 +39,13 @@ async function bootCleanSection(browser, base) {
         const missing = await p.evaluate(() => ["alerting", "swReg", "cardUrlIsCard", "growlDraw", "termOnly", "peekChatter", "loadChatter"]
           .filter(n => { try { return typeof eval(n) === "undefined"; } catch (e) { return true; } }));
         if (missing.length) fail(tag + "booted without " + missing.join(", "));
+        if (!v.phone && at === "/raw") {
+          await p.click("#gear");
+          await p.waitForFunction(() => document.getElementById("settings").open, null, { timeout: slow(5000) });
+          await p.evaluate(() => document.getElementById("settings").close());
+          await frames(p, 2);
+          if (noise.length) fail(tag + "left red in the console through boot and settings: " + noise.join(" | "));
+        }
       } finally {
         await ctx.close();
       }

@@ -439,6 +439,11 @@
   /* GREY MEANS NOT RUNNING AND NOTHING ELSE: a card with no runner is grey, whole. */
   .card.s-off { filter: grayscale(1); opacity: .55; }
   .term-list .card.s-off:hover { opacity: 1; }
+  /* A PARKED CARD IS HOLLOW: no runner, so no fill. Only a live runner is filled. */
+  .card.parked { background: rgba(var(--sink-rgb), .55); border: 1px dashed var(--stroke); box-shadow: none; }
+  .card.parked::before { opacity: 0; }
+  .card.parked .rmark { background: transparent; color: var(--dim); border: 1px dashed var(--stroke); }
+  .card.parked .title, .card.parked .title .nm { color: var(--dim); }
   .card.s-unreachable { outline: 1px dashed var(--stroke); outline-offset: -1px; }
   .board .col.fixed { flex: 0 0 300px; min-width: 268px; }
   .board .col.fixed.folded { flex: 0 0 auto; min-width: 0; }

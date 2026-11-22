@@ -186,7 +186,12 @@ async function loadThemes() {
   BROUGHT_THEMES = next;
   THEME_SLOTS = out.slots || [];
   themeTable = null;
+  themesReadAt = Date.now();
 }
+// A theme changes on a save, which reloads them, so a rooms event only reads them again when the last read failed or is old.
+const THEMES_FRESH_MS = 600000;
+let themesReadAt = 0;
+function themesStale() { return Date.now() - themesReadAt > THEMES_FRESH_MS; }
 
 // Which theme a session uses.
 //

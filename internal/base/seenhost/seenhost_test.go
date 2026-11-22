@@ -38,3 +38,46 @@ func TestOnlyARealBrowserSetsTheHostAndTheChangeIsLoggedToAFile(t *testing.T) {
 		t.Fatalf("log file = %q, %v", b, err)
 	}
 }
+
+func TestALinkWeChooseNeverSaysLocalhost(t *testing.T) {
+	Reset()
+	for in, want := range map[string]string{
+		"http://localhost:7778": "http://127.0.0.1:7778",
+		"http://localhost":      "http://127.0.0.1",
+		"http://localhostx:1":   "http://localhostx:1",
+		"http://atrium.ziti":    "http://atrium.ziti",
+	} {
+		if got := Base(in); got != want {
+			t.Errorf("Base(%q) = %q, want %q", in, got, want)
+		}
+	}
+	NoteBase("http://atrium.ziti")
+	if got := Base("http://localhost:7778"); got != "http://atrium.ziti" {
+		t.Errorf("a seen host lost to the fallback: %q", got)
+	}
+	Reset()
+}
+
+func TestALoopbackTabNeverDisplacesTheOperatorsOrigin(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	NoteBase("http://atrium.ziti")
+	for _, host := range []string{"localhost:7778", "127.0.0.1:7778", "[::1]:7778"} {
+		r := httptest.NewRequest("GET", "http://"+host+"/", nil)
+		r.Header.Set("Sec-Fetch-Mode", "navigate")
+		Note(r)
+		NoteBase("http://" + host)
+		if got := Base("x"); got != "http://atrium.ziti" {
+			t.Fatalf("%s displaced the origin: %q", host, got)
+		}
+	}
+	NoteBase("http://other.ziti")
+	if got := Base("x"); got != "http://other.ziti" {
+		t.Fatalf("a remote origin was refused: %q", got)
+	}
+	Reset()
+	NoteBase("http://localhost:7778")
+	if got := Base("x"); got != "http://localhost:7778" {
+		t.Fatalf("a lone loopback origin was refused: %q", got)
+	}
+}
