@@ -347,8 +347,9 @@ func TestTheLimitPromptWording(t *testing.T) {
 	got := cycle.NewContextLimitPrompt("/data/handoffs/c1.md", "/usr/local/bin/atrium", false, 157_400, 150_000)
 	want := "This card is over its configured atrium context limit (157k of 150k). Pause your work now. Write a " +
 		"handoff to /data/handoffs/c1.md that says what is complete, what is in flight, and what's still to be done. " +
-		"Then run /usr/local/bin/atrium ready. Atrium clears your context when this turn ends and starts a new one " +
-		"from your handoff."
+		"It also copies in full every question the human has not answered yet, and every table, list or answer " +
+		"each question points at, never a pointer back to this context. Then run /usr/local/bin/atrium ready. " +
+		"Atrium clears your context when this turn ends and starts a new one from your handoff."
 	if got != want {
 		t.Fatalf("got %q", got)
 	}

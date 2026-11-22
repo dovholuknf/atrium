@@ -96,6 +96,14 @@ func (d *Daemon) RestartPtyHost(ctx context.Context, wait time.Duration, why str
 
 	ended = true
 	rep.Ended = len(d.sup.all())
+	// Reopening a card is not activity, so its time stays put until a hook reports real work.
+	held := []string{}
+	for _, r := range d.sup.all() {
+		held = append(held, r.taskID)
+	}
+	if err := d.st.HoldActivity(held); err != nil {
+		log.Printf("[atrium] could not hold activity across the restart: %v", err)
+	}
 	d.shortGate()
 	d.stopSupervised(10 * time.Second)
 	d.stopShells()

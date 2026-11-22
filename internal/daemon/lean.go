@@ -252,6 +252,12 @@ func leanOptions(req shared.LaunchRequest, task *store.Task, gateway string) (le
 				mcp = append(mcp, name)
 			}
 			if name, ok := strings.CutPrefix(t, leanAgentTagPrefix); ok {
+				// Tags are stored lowercased, and a built-in agent's name is case sensitive.
+				for _, b := range builtinAgents {
+					if strings.EqualFold(name, b) {
+						name = b
+					}
+				}
 				agents = append(agents, name)
 			}
 			if name, ok := strings.CutPrefix(t, leanSkillTagPrefix); ok {

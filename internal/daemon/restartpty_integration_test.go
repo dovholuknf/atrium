@@ -26,6 +26,10 @@ func TestRestartPtyHostReopensOnAHostItReplaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldRun := d.sup.get(task.ID).runID
+	if err := d.st.BackdateActivity(task.ID, 3*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := d.st.Get(task.ID)
 	d.hk.endHost = func(int, string) error {
 		h.Close()
 		nh, err := ptyhost.Listen(dir, ptyhost.Options{})
@@ -48,6 +52,20 @@ func TestRestartPtyHostReopensOnAHostItReplaced(t *testing.T) {
 	}
 	if got, _ := d.st.Get(task.ID); got.Status == store.StatusDead {
 		t.Fatalf("the card was filed dead by the restart")
+	}
+	if err := d.onSession(SessionEvent{Agent: task.WireName, Event: "start", TaskID: task.ID, Runner: "shelltest"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.st.Get(task.ID); !got.LastActivityAt.Equal(before.LastActivityAt) {
+		t.Fatalf("reopening moved the activity time from %v to %v", before.LastActivityAt, got.LastActivityAt)
+	}
+	d.onActivity(ActivityEvent{Agent: task.WireName, TaskID: task.ID, Event: "waiting"})
+	if got, _ := d.st.Get(task.ID); !got.LastActivityAt.Equal(before.LastActivityAt) {
+		t.Fatalf("a resumed runner's waiting hook moved the activity time to %v", got.LastActivityAt)
+	}
+	d.onActivity(ActivityEvent{Agent: task.WireName, TaskID: task.ID, Event: "tool-start", Tool: "Bash"})
+	if got, _ := d.st.Get(task.ID); !got.LastActivityAt.After(before.LastActivityAt) {
+		t.Fatalf("a tool call did not move the activity time")
 	}
 }
 

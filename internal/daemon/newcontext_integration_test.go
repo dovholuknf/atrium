@@ -149,8 +149,10 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 		return strings.Contains(f.written(), want) && strings.HasSuffix(f.written(), "\r")
 	})
 	if want != "Atrium is starting a new context on this card. Pause your work now. Write a handoff to "+path+
-		" that says what is complete, what is in flight, and what's still to be done. Then run /opt/atrium/atrium "+
-		"ready. Atrium clears your context when this turn ends and starts a new one from your handoff." {
+		" that says what is complete, what is in flight, and what's still to be done. It also copies "+
+		"in full every question the human has not answered yet, and every table, list or answer each question "+
+		"points at, never a pointer back to this context. Then run /opt/atrium/atrium ready. Atrium "+
+		"clears your context when this turn ends and starts a new one from your handoff." {
 		t.Fatalf("the prompt reads %q", want)
 	}
 
@@ -197,7 +199,8 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 		strings.Index(got, "/clear") < strings.Index(got, cycle.NewContextWakeText(path))) {
 		t.Fatalf("the steps were not typed in order: %q", got)
 	}
-	if cycle.NewContextWakeText(path) != "read "+path+" and continue." {
+	if cycle.NewContextWakeText(path) != "read "+path+" and continue. Your first reply re-shows the human's open "+
+		"questions from the handoff with the context each one needs." {
 		t.Fatalf("the wake reads %q", cycle.NewContextWakeText(path))
 	}
 	// /clear is a slash command, so nothing goes ahead of it.

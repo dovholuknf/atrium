@@ -304,6 +304,14 @@ func TestLaunchKeepsTheKitOnTheCardForARestartAndWritesNothingInTheWorktree(t *t
 	}
 }
 
+func TestLeanOptionsReadsABuiltinAgentBackFromLowercasedTags(t *testing.T) {
+	tags := store.NormalizeTags([]string{LeanTag, leanAgentTagPrefix + "Explore"})
+	_, _, kit, _ := leanOptions(shared.LaunchRequest{}, &store.Task{Tags: tags}, "")
+	if len(kit.Agents) != 1 || kit.Agents[0] != "Explore" || kit.needsPlugin() {
+		t.Fatalf("a stored Explore is the built-in, got %+v", kit)
+	}
+}
+
 func TestKeepaliveForkOfALeanKitCardKeepsToolsAndPlugin(t *testing.T) {
 	hk, _, _, _ := kitDirs(t)
 	f := newKAFix(t)

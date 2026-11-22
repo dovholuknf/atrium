@@ -895,6 +895,18 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	// because `set` clears it silently.
 	d.looksIdleGone(taskID, in.Agent, "hook "+in.Event)
 
+	wasMidTurn := d.act.midTurn(taskID)
+
+	switch in.Event {
+	case "tool-start", "tool-end", "prompt":
+		d.st.ReleaseActivity(taskID)
+	}
+
+	// A turn's hooks move no status, so without this a card busy for hours reads long idle on the board.
+	if err := d.st.Touch(taskID); err != nil {
+		log.Printf("[atrium] touch %s: %v", taskID, err)
+	}
+
 	switch in.Event {
 	case "tool-start":
 		d.act.set(taskID, ActivityTool, in.Tool)
@@ -1025,8 +1037,12 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	// here. See outputat.go.
 	d.outputSoon(taskID)
 
-	// The card's row has not changed, so there is nothing to publish from the
-	// store. Push the activity itself.
+	// A turn that starts or ends without a status change (a resume with subagents out) is told by the row alone,
+	// and the board draws its spin from the row.
+	if d.act.midTurn(taskID) != wasMidTurn {
+		d.Publish(taskID)
+	}
+	// Push the activity itself.
 	if a := d.act.get(taskID); a != nil {
 		d.ap.Broadcast("activity", map[string]any{"task_id": taskID, "activity": a})
 	}

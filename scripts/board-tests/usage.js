@@ -535,6 +535,7 @@ async function contextCycleSection(browser, base) {
       window.send = m => { frames.push(m); };
       termTask = { id: "ll-cycle", new_context: { step: "wake", n: 3, of: 3, label: "waking it to read x" } };
       termKind = "runner";
+      termSock = { readyState: WebSocket.OPEN, close() {} };
       window.gateFrames = frames; window.gateSend = realSend;
       sendInput("asdf");
       const held = { frames: frames.length };

@@ -202,6 +202,18 @@ func FrameHasInterrupt(tail []byte, cols, rows int) bool {
 	return false
 }
 
+// FrameInterrupted is whether the screen is an idle prompt under the line Claude Code draws when the operator
+// interrupts a turn. An interrupt fires no Stop hook, so this line is the only sign the turn ended.
+func FrameInterrupted(tail []byte, cols, rows int) bool {
+	sc := NewScreenSized(cols, rows)
+	sc.Apply(tail)
+	text := FrameText(sc)
+	if idle, _, _ := classifyScreenPrompt(text); !idle {
+		return false
+	}
+	return strings.Contains(text, "Interrupted \u00b7 What should Claude do instead?")
+}
+
 // FrameText is the live grid as text, one line per row. The second cell of a wide
 // character holds contCh and is skipped, as writeRow does, so the character
 // appears once.
