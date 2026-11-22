@@ -6,6 +6,8 @@ import (
 	"os"
 	"runtime/debug"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 )
 
 // RunOptions start a host in this process. It is what `atrium ptyhost` calls.
@@ -15,6 +17,7 @@ type RunOptions struct {
 	IdleExit time.Duration // DefaultIdleExit when zero
 	Logf     func(format string, args ...any)
 	Log      string // a file the standard logger and a crash append to
+	LogDir   string // the rolling log folder the standard logger also goes to, and the OS log
 }
 
 // Listen starts a host in this process on Address(stateDir) and serves it in the background. It is what a test
@@ -51,12 +54,17 @@ func Run(o RunOptions) error {
 		log.SetOutput(f)
 		_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 	}
+	if o.LogDir != "" {
+		defer oslog.Setup(o.LogDir)()
+	}
 	addr := Address(o.StateDir)
 	ln, err := listenChannel(addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
 	h := NewHost(Options{Build: o.Build, IdleExit: o.IdleExit, Logf: o.Logf})
+	oslog.Event("ptyhost", "start", os.Getpid(), "atrium ptyhost", "")
+	defer func() { oslog.Event("ptyhost", "stop", os.Getpid(), "idle or closed", "") }()
 	h.logf("up pid=%d proto=%d build=%q at %s", os.Getpid(), Proto, o.Build, addr)
 	err = h.Serve(ln)
 	h.Close()

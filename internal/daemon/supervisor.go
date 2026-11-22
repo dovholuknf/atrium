@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"io"
@@ -2433,6 +2434,7 @@ func (d *Daemon) goAwaitExit(r *runner) {
 // awaitExit waits for the runner to end, does what only a live runner can, and
 // hands the rest to `fileExit`.
 func (d *Daemon) awaitExit(r *runner) {
+	pid := r.tm().Pid()
 	code := r.tm().Wait()
 	lived := time.Since(r.started)
 	r.exitOnce.Do(func() { close(r.done) })
@@ -2470,6 +2472,7 @@ func (d *Daemon) awaitExit(r *runner) {
 		d.RevokeHubGit(r.taskID, r.started)
 	}
 	ck, cb := r.endCause()
+	exitEvent(pid, code, ck, cb)
 	_, err := d.fileExitChecked(runExit{
 		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
 		resumed: r.resumed, spec: r.spec, cause: ck, causeBy: cb, leaving: r.leaving.Load(),
@@ -2842,3 +2845,16 @@ func windDown(r *runner, grace time.Duration, keys [][]byte, keyGap time.Duratio
 // no test can start a real runner that bills a model and runs the machine's own
 // hooks (internal/testguard).
 var agentSpawn = func(exe string, args []string) (string, []string) { return exe, args }
+
+// exitEvent is the runner's end in the OS log, a warning when nobody asked for it and it did not exit clean.
+func exitEvent(pid, code int, cause, by string) {
+	reason := fmt.Sprintf("exit code %d", code)
+	if cause != "" {
+		reason = fmt.Sprintf("%s, exit code %d", cause, code)
+	}
+	if cause == "" && code != 0 {
+		oslog.Warn("supervisor", "exit", pid, reason, by)
+		return
+	}
+	oslog.Event("supervisor", "exit", pid, reason, by)
+}

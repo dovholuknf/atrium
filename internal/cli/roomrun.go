@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"log"
 	"net/http"
@@ -294,7 +295,10 @@ func roomCmd() *cobra.Command {
 			if err := redirectLogs(logDir, "room", false); err != nil {
 				return err
 			}
+			defer oslog.Setup(logsDir())()
+			oslog.Event("room", "start", os.Getpid(), "atrium room", startedBy)
 			err = runRoom(keys, db, human, agent, after, isolated, startedBy, lay)
+			oslog.Event("room", "stop", os.Getpid(), fmt.Sprintf("runRoom returned: %v", err), startedBy)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
 			if err != nil && restartAfter > 0 {

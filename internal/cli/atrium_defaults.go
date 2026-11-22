@@ -29,6 +29,11 @@ func hubDir() string {
 	return filepath.Join(daemon.StateDir(), "hub")
 }
 
+// logsDir is the rolling log every atrium process on this machine appends to.
+func logsDir() string {
+	return filepath.Join(daemon.StateDir(), "logs")
+}
+
 // roomDir is where a room keeps its key, its certificate and room.json.
 func roomDir() string {
 	return filepath.Join(daemon.StateDir(), "room")

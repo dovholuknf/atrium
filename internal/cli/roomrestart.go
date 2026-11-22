@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	detachpkg "github.com/dovholuknf/atrium/internal/base/detach"
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 	"log"
 	"net"
 	"net/http"
@@ -121,6 +122,7 @@ func restartLog(dir, format string, args ...any) {
 func onHubRestart(boardURL string, l roomLaunch, stop func()) func(wire.RestartAsk) {
 	return func(ask wire.RestartAsk) {
 		why := strings.TrimSpace(ask.Why)
+		oslog.Event("room", "restart", os.Getpid(), why, "hub")
 		if ask.PtyHost {
 			restartLog(l.dir, "the hub asked this room to restart its pty host, for: %q", why)
 			rep, err := restartPtyHost(boardURL, "", why, time.Duration(ask.WaitSeconds)*time.Second, ask.Immediate)

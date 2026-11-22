@@ -22,7 +22,7 @@ func newPtyHost() *cobra.Command {
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			raisePriority()
-			return ptyhost.Run(ptyhost.RunOptions{StateDir: stateDir, Build: build, IdleExit: idle, Log: logPath})
+			return ptyhost.Run(ptyhost.RunOptions{StateDir: stateDir, Build: build, IdleExit: idle, Log: logPath, LogDir: logsDir()})
 		},
 	}
 	cmd.Flags().StringVar(&stateDir, "state-dir", "", "the state dir this host belongs to, which names its channel")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 	"github.com/dovholuknf/atrium/internal/base/seenhost"
 	"io/fs"
 	"log"
@@ -146,6 +147,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if err := redirectLogs(f.logDir, "hub", true); err != nil {
 		return err
 	}
+	defer oslog.Setup(logsDir())()
+	oslog.Event("hub", "start", os.Getpid(), "atrium run", "")
+	defer func() { oslog.Event("hub", "stop", os.Getpid(), "atrium run returned", "") }()
 	raisePriority()
 	keys := linktransport.Keys{Dir: orDefault(dir, hubDir())}
 	seenhost.LogFile(filepath.Join(keys.Dir, "human-host.log"))
