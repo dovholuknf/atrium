@@ -90,7 +90,7 @@ func InstallStatusLine(home, exe string) (string, error) {
 		cmd = `"` + filepath.ToSlash(exe) + `" statusline`
 	}
 	doc["statusLine"], _ = json.Marshal(map[string]string{"type": "command", "command": cmd})
-	out, err := json.MarshalIndent(doc, "", "  ")
+	out, err := marshalInOrder(raw, doc)
 	if err != nil {
 		return "", err
 	}
