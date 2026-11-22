@@ -372,3 +372,62 @@ func TestWalkDiffBranchLeavesOutAnUntrackedMock(t *testing.T) {
 		t.Errorf("%d %s", code, body)
 	}
 }
+
+// THE WALK AGENT'S OWN FILE IS NOT A CHANGE: it turned a clean branch into an uncommitted one.
+func TestWalkDiffLeavesOutTheWalkAgentFile(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	write := walkRepo(t, work, "feature")
+	if err := os.MkdirAll(filepath.Join(work, ".atrium"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(walkAgentFile, "{}\n")
+	task := cardIn(t, st, work)
+
+	code, out, body := walkDiffGet(t, s, task.ID)
+	if code != http.StatusOK || out.Mode != "branch" || out.Modes["unstaged"] != 0 || strings.Contains(out.Diff, "walk-agent") {
+		t.Errorf("%d %s", code, body)
+	}
+}
+
+// THE BRANCH'S COMMITS AND ITS UNCOMMITTED FILES COME WITH THE DIFF, and one commit can be walked alone.
+func TestWalkDiffNamesCommitsAndUncommittedFiles(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	write := walkRepo(t, work, "feature")
+	write("two.txt", "two\n")
+	git(t, work, "add", ".")
+	git(t, work, "commit", "-q", "-m", "two")
+	write("base.txt", "base\nedited\n")
+	task := cardIn(t, st, work)
+
+	code, out, body := walkDiffQuery(t, s, task.ID, "?mode=branch")
+	if code != http.StatusOK || len(out.Commits) != 2 || out.Commits[1].Subject != "two" || len(out.Dirty) != 1 || out.Dirty[0] != "base.txt" {
+		t.Fatalf("%d %s", code, body)
+	}
+	code, one, body := walkDiffQuery(t, s, task.ID, "?commit="+out.Commits[1].SHA)
+	if code != http.StatusOK || one.Mode != "commit" || !strings.Contains(one.Diff, "b/two.txt") || strings.Contains(one.Diff, "one.txt") {
+		t.Errorf("one commit: %d %s", code, body)
+	}
+	if code, _, body := walkDiffQuery(t, s, task.ID, "?commit=--output"); code != http.StatusBadRequest {
+		t.Errorf("a commit that is not a sha: %d %s", code, body)
+	}
+}
+
+// A BRANCH ALREADY MERGED SAYS WHICH MERGE LANDED IT.
+func TestWalkDiffOfAMergedBranchNamesTheMerge(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	walkRepo(t, work, "claude/main")
+	git(t, work, "switch", "-q", "-c", "claude/done")
+	git(t, work, "commit", "-q", "--allow-empty", "-m", "the work")
+	git(t, work, "switch", "-q", "claude/main")
+	git(t, work, "merge", "-q", "--no-ff", "claude/done", "-m", "Merge claude/done")
+	git(t, work, "switch", "-q", "claude/done")
+	task := cardIn(t, st, work)
+
+	code, out, body := walkDiffGet(t, s, task.ID)
+	if code != http.StatusOK || out.Landed == nil || out.Landed.Subject != "Merge claude/done" || out.Diff != "" {
+		t.Errorf("%d %s", code, body)
+	}
+}

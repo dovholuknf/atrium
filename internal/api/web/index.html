@@ -687,6 +687,7 @@ Exports honor whatever filter is applied.">?</span>
                 <button type="button" data-mode="branch"
                   data-tip="HEAD plus edits against the merge base with the branch's base">branch <span class="n"></span></button>
               </span>
+              <select id="walk-commit" class="wk-commit" aria-label="walk one commit of the branch" hidden></select>
               <span class="by" id="walk-count"></span>
               <span class="walk-pending" id="walk-more" hidden></span>
               <span class="grow"></span>
@@ -699,6 +700,7 @@ Exports honor whatever filter is applied.">?</span>
               <button type="button" class="walk-close go" onclick="walkBackToTerm()"
                 data-tip="close the walk and go back to the terminal (Esc)">back to terminal</button>
             </div>
+            <div class="wk-banner" id="walk-banner" hidden></div>
             <div class="walk-nav" id="walk-nav" hidden>
               <span class="navgrp"><button type="button" data-act="pc" data-tip="previous change (p)">&#8249; previous <kbd>p</kbd></button><span class="by" id="walk-chg"></span><button type="button" data-act="nc" data-tip="next change (n)">next <kbd>n</kbd> &#8250;</button></span>
               <span class="navgrp"><button type="button" data-act="pm" data-tip="previous comment ([)">&#8249; previous <kbd>[</kbd></button><span class="by" id="walk-cmt"></span><button type="button" data-act="nm" data-tip="next comment (])">next <kbd>]</kbd> &#8250;</button></span>
@@ -3702,6 +3704,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/walk-pr.js"></script>
+<script src="/js/walk-offer.js"></script>
 <script src="/js/disk-watch.js"></script>
 <script src="/js/host-watch.js"></script>
 <script src="/js/terminal-debug.js"></script>

@@ -822,6 +822,7 @@ function termMenuItems(id, t) {
         "Ctrl+Alt+N in its terminal does the same.",
       act: () => newContext(id)
     } : null,
+    typeof walkMenuItem === "function" ? walkMenuItem(t) : null,
     typeof groupItem === "function" ? groupItem(id, t, true) : null,
     typeof outOfGroupItem === "function" ? outOfGroupItem(id, t, true) : null,
     { sep: true },
@@ -1419,7 +1420,8 @@ function termRowChips(t, lead) {
   const minion = isMinion(t) ? `<span class="chip" data-tip="a throwaway session an item launched. it is listed because it needs you">minion</span>` : "";
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
-  const inner = (lead || "") + minion + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
+  const wk = typeof walkChip === "function" ? walkChip(t) : "";
+  const inner = (lead || "") + minion + wk + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

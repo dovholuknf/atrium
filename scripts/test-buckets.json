@@ -47,6 +47,7 @@
         "internal/api/web/js/walk.js",
         "internal/api/web/js/walk-view.js",
         "internal/api/web/js/walk-pr.js",
+        "internal/api/web/js/walk-offer.js",
         "internal/api/web/walk.html",
         "internal/api/web/js/switcher.js",
         "internal/api/web/js/resume-opening.js",
