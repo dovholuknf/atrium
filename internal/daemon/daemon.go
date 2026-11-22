@@ -340,6 +340,8 @@ type Daemon struct {
 	// exits counts the awaitExit goroutines still running. A runner leaves the supervisor BEFORE its exit is filed,
 	// so "no runner left" does not mean "nothing is writing"; a test waits on this before it closes the store.
 	exits sync.WaitGroup
+	// activity counts the onActivity goroutines handleActivity detached after its reply, so a test can wait for them.
+	activity sync.WaitGroup
 
 	// gone is what the reaper remembers about worktrees that have vanished. See
 	// worktreegone.go.

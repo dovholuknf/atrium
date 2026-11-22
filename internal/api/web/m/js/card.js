@@ -310,9 +310,8 @@
     if (s.answered !== false) return "";
     const qs = s.open_questions || [];
     if (!qs.length && !s.questions_unparsed) return "";
-    return '<section class="block questions"><h2>Open questions</h2>' + (qs.length
-      ? "<ol>" + qs.map(x => "<li>" + MD.inline(x) + "</li>").join("") + "</ol>"
-      : '<p class="quiet">Its last turn asked questions atrium could not read. Look at the terminal.</p>') + "</section>";
+    const body = qs.length ? window.mAnswers.html(t) : '<p class="quiet">Its last turn asked questions atrium could not read. Look at the terminal.</p>';
+    return body ? '<section class="block questions"><h2>Open questions' + (qs.length ? ' <span class="q-hint">(tap one to answer)</span>' : "") + "</h2>" + body + "</section>" : "";
   }
 
   // The operator's messages from the oldest reply shown on, in time order with the replies.
@@ -584,6 +583,50 @@
     els.scroll.addEventListener("touchcancel", reset);
   }
 
+  // ── pull up at the very end to reload ────────────────────────────────────
+  // The same reload from the other end: a single finger dragged up far enough, from a thread already at its end or from the
+  // strip along its bottom edge. Only the thread listens, so the composer, the mic and attach never start one.
+  const PULLUP_AT = 80, PULLUP_EDGE = 24;
+  function pullUpInit() {
+    const ind = q("m-pullup");
+    if (!ind) return;
+    const label = ind.querySelector(".pu-l");
+    const atEnd = () => els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight <= 2;
+    const show = (d, st) => {
+      ind.hidden = false;
+      ind.style.setProperty("--pull", String(Math.min(100, Math.round(d / PULLUP_AT * 100))));
+      ind.style.setProperty("--pu-y", String(Math.round(Math.min(d, PULLUP_AT + 20) * 0.5)));
+      ind.classList.toggle("go", st === "go");
+      ind.classList.toggle("busy", st === "busy");
+      label.textContent = st === "busy" ? "reloading" : st === "go" ? "release to reload" : "pull to reload";
+    };
+    const hide = () => { ind.hidden = true; ind.classList.remove("go", "busy"); ind.style.removeProperty("--pull"); ind.style.removeProperty("--pu-y"); };
+    let g = null;
+    const reset = () => { g = null; hide(); };
+    els.scroll.addEventListener("touchstart", e => {
+      g = null;
+      if (e.touches.length !== 1 || pullBlocked() || !els.recap.hidden || !els.menu.hidden || typing) return;
+      const t = e.touches[0], edge = t.clientY >= els.scroll.getBoundingClientRect().bottom - PULLUP_EDGE;
+      if (!edge && !atEnd()) return;
+      g = { x: t.clientX, y: t.clientY, d: 0, edge };
+    }, { passive: true });
+    els.scroll.addEventListener("touchmove", e => {
+      if (!g) return;
+      if (e.touches.length !== 1 || pullBlocked() || (!g.edge && !atEnd())) { reset(); return; }
+      const t = e.touches[0], dy = g.y - t.clientY, dx = Math.abs(t.clientX - g.x);
+      if (!g.d && dx > 10 && dx > dy) { reset(); return; }
+      if (dy <= 0) { g.d = 0; hide(); return; }
+      g.d = dy;
+      e.preventDefault();
+      show(dy, dy >= PULLUP_AT ? "go" : "");
+    }, { passive: false });
+    els.scroll.addEventListener("touchend", () => {
+      const go = g && g.d >= PULLUP_AT && !pullBlocked();
+      if (go) { g = null; show(PULLUP_AT, "busy"); setTimeout(() => location.reload(), 120); } else reset();
+    });
+    els.scroll.addEventListener("touchcancel", reset);
+  }
+
   // `touching` follows touch events and a mouse or pen button, never a touch's pointer events: the browser cancels a touch's
   // pointer when it takes the drag over for scrolling (pointercancel), which is exactly when the finger is still down.
   function byHand(e) {
@@ -607,6 +650,7 @@
     // let go of the end. A reader's scroll up does: past LEAVE px from the bottom.
     // On a slow machine the event of our own scroll can arrive after the short window, so it is also known by the place
     // it left the thread at: an event that finds the thread exactly where the page put it is the page's, not the reader's.
+    mmSync();
     const mine = userOrd < progOrd && (Date.now() < progUntil || Math.abs(els.scroll.scrollTop - progTop) < 1);
     const moved = els.scroll.scrollTop - lastTop;
     lastTop = els.scroll.scrollTop;
@@ -700,6 +744,46 @@
     if (!first) els.replies.classList.add("fresh");
     setTimeout(() => els.replies.classList.remove("fresh"), 400);
     settle();
+    mmSync();
+  }
+
+  // ── my messages ──────────────────────────────────────────────────────────
+  // A small icon by the scrollbar opens up and down arrows over the operator's own bubbles (`.reply.mine`: typed here or
+  // on the terminal, never a peer's or a command). A jump is the reader's choice, so it lets go of the end like a scroll.
+  const MM_SLACK = 8;
+  function mmList() {
+    const top = els.scroll.getBoundingClientRect().top - els.scroll.scrollTop;
+    return Array.from(els.replies.querySelectorAll(".reply.mine")).map(e => ({ e, y: e.getBoundingClientRect().top - top - 4 }));
+  }
+  function mmAt(list) {
+    let at = -1;
+    if (gapOf() <= AT_END) return list.length - 1;
+    for (let i = 0; i < list.length; i++) if (list[i].y <= els.scroll.scrollTop + MM_SLACK) at = i;
+    return at;
+  }
+  function mmSync() {
+    const box = q("m-mm");
+    if (!box || !els) return;
+    const list = openId ? mmList() : [];
+    box.hidden = !list.length;
+    if (box.hidden || box.dataset.open !== "1") return;
+    const at = mmAt(list);
+    q("m-mm-n").textContent = at < 0 ? "-" : (at + 1) + " of " + list.length;
+    q("m-mm-up").disabled = at < 0 || (at === 0 && list[0].y >= els.scroll.scrollTop - 2);
+    q("m-mm-down").disabled = at >= list.length - 1;
+  }
+  function mmGo(dir) {
+    const list = mmList(), at = mmAt(list);
+    const to = dir < 0 ? (at >= 0 && list[at].y < els.scroll.scrollTop - 2 ? at : at - 1) : at + 1;
+    if (!list[to]) return;
+    typingOff();
+    stick = false;
+    syncAnchor();
+    setTop(list[to].y);
+    els.jump.hidden = gapOf() <= AT_END;
+    list[to].e.classList.add("mm-hit");
+    setTimeout(() => list[to].e.classList.remove("mm-hit"), 1200);
+    mmSync();
   }
 
   // The last replies. Read on open, when the card's turn ends and when its `output_at` moves, never on a timer. The working line follows the task
@@ -1136,9 +1220,18 @@
     }
     pinchInit();
     pullInit();
+    pullUpInit();
     els.scroll.addEventListener("load", () => { if (openId) settle(); }, true);
     els.jump.addEventListener("click", () => { typingOff(); stick = true; syncAnchor(); toEnd(true); });
     ["touchend", "touchcancel", "pointerup", "pointercancel"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
+    q("m-mm-ico").addEventListener("click", () => {
+      const box = q("m-mm"), on = box.dataset.open !== "1";
+      box.dataset.open = on ? "1" : "0";
+      q("m-mm-ico").setAttribute("aria-expanded", on ? "true" : "false");
+      mmSync();
+    });
+    q("m-mm-up").addEventListener("click", () => mmGo(-1));
+    q("m-mm-down").addEventListener("click", () => mmGo(1));
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
     els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) { if (e.target.value) typingOn(); else { typingOff(); settle(); } } }, true);
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
@@ -1146,6 +1239,7 @@
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
     els.notices.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-force-clear")) forceClear(); });
     els.replies.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-older")) loadOlder(); });
+    window.mAnswers.bind(els.extras, () => { const t = openId && window.mStore.card(openId); return t ? { id: t.id, qs: (t.seen && t.seen.open_questions) || [] } : null; }, () => paint(false));
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
     });

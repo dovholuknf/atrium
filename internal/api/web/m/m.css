@@ -196,8 +196,37 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 
 .block { margin-top: 22px; }
 .block h2 { margin: 0 0 8px; color: var(--dim); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.block.questions ol { margin: 0; padding-left: 22px; }
-.block.questions li { margin: 0 0 8px; color: var(--head); }
+.block.questions ol.q-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.q-item { border-radius: 14px; background: var(--card-0); box-shadow: 0 0 0 1px var(--stroke-dim) inset; overflow: hidden; }
+.q-item.open { box-shadow: 0 0 0 1.5px var(--teal) inset; }
+.q-head { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 48px; padding: 11px 12px; border: 0; background: none; text-align: left; cursor: pointer; color: var(--head); }
+.q-n { flex: none; width: 24px; height: 24px; margin-top: 1px; display: grid; place-items: center; border-radius: 50%; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 700; }
+.q-item.done .q-n { background: rgba(var(--teal-rgb), .16); color: var(--teal); }
+.q-main { flex: 1; min-width: 0; }
+.q-text { display: block; font-size: 15.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.q-ans { display: block; margin-top: 3px; color: var(--teal); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-edit { flex: none; align-self: center; color: var(--dim); font-size: 12px; }
+.q-form { padding: 0 12px 12px 46px; }
+.q-chips { display: flex; gap: 8px; margin-bottom: 8px; }
+.q-chip { min-height: 44px; padding: 0 22px; border: 0; border-radius: 22px; background: var(--lift-strong); color: var(--head); font-size: 15px; font-weight: 600; box-shadow: 0 1px 2px rgba(var(--shadow-rgb), .25); }
+.q-chip:active { transform: scale(.96); }
+.q-chip.on { background: var(--teal); color: var(--bg-0); }
+.q-row { display: flex; align-items: flex-end; gap: 4px; padding: 4px 4px 4px 12px; border-radius: 18px; background: var(--bg-2); box-shadow: 0 0 0 1px var(--stroke-dim) inset; }
+.q-row:focus-within { box-shadow: 0 0 0 1.5px var(--teal) inset; }
+.q-box { flex: 1; min-width: 0; margin: 0; padding: 9px 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--head); font: 400 16px/22px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow-y: hidden; }
+.q-box::placeholder { color: var(--dim); }
+.q-mic { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; display: grid; place-items: center; background: transparent; color: var(--label); }
+.q-mic svg { width: 22px; height: 22px; }
+.q-mic.hot { background: var(--danger); color: var(--bg-0); }
+.q-done { flex: none; min-width: 64px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: var(--teal); color: var(--bg-0); font-size: 15px; font-weight: 700; }
+.q-send { display: block; width: 100%; margin-top: 12px; min-height: 52px; border: 0; border-radius: 16px; background: var(--teal); color: var(--bg-0); font-size: 16px; font-weight: 700; }
+.m .q-send, .m .q-done, .m .q-chip.on { color: var(--bg-0); }
+.m .q-send, .m .q-done { font-weight: 700; }
+.m .q-chip { font-weight: 600; }
+.m .q-send { font-size: 18.7px; }
+.m .q-send:disabled { opacity: 1; background: var(--chip); color: var(--body); box-shadow: 0 0 0 1px var(--stroke-dim) inset; cursor: not-allowed; }
+.block h2 .q-hint { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.q-sendnote { margin: 6px 2px 0; text-align: center; }
 
 /* rendered markdown */
 .md { min-width: 0; overflow-wrap: anywhere; color: var(--body); font-size: 15.5px; line-height: 1.55; }
@@ -255,8 +284,6 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .bl-row i { font-style: normal; color: var(--dim); }
 .bl-row span { grid-column: 1; color: var(--label); font-size: 14px; overflow-wrap: anywhere; }
 .bl-row time { grid-row: 1; grid-column: 2; color: var(--dim); font-size: 12px; }
-#m-sound-hint { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); pointer-events: none; min-height: 36px; padding: 0 14px; border: 1px solid var(--stroke); border-radius: 18px; background: var(--bg-1); color: var(--warn); font-size: 13px; }
-#m-sound-hint[hidden] { display: none; }
 
 /* what can make the home look short: the room it is scoped to, and the filters that hide rows */
 .chips { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0 0 12px; }

@@ -622,7 +622,11 @@ function hubReposPaint() {
   const a = document.activeElement;
   const keep = a && list.contains(a) && a.dataset.act ? { act: a.dataset.act, repo: a.dataset.repo, mode: a.dataset.mode } : null;
   list.dataset.view = view;
-  list.innerHTML = '<div class="hr-root hr-view-' + view + '">' + html + "</div>";
+  const next = '<div class="hr-root hr-view-' + view + '">' + html + "</div>";
+  // Identical markup is not swapped in: a late poll answer would otherwise replace the very button a click is aiming at.
+  if (list._hrHtml === next && list.firstChild) return;
+  list._hrHtml = next;
+  list.innerHTML = next;
   if (keep) {
     const q = [...list.querySelectorAll("[data-act]")].find(x => x.dataset.act === keep.act && x.dataset.repo === keep.repo && x.dataset.mode === keep.mode);
     if (q) q.focus({ preventScroll: true });

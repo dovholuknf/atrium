@@ -7,7 +7,7 @@
 // loads is the baseline and says nothing. Event driven, no timers.
 //
 // WHY A SOUND MAY BE SILENT: a mobile browser starts audio only from inside a touch that ends or a click, not from a
-// touch that begins. So every one of those tries to start it, and "tap to enable sound" shows while it is still locked.
+// touch that begins. So every one of those tries to start it, and the first touch anywhere unlocks it.
 (function () {
   "use strict";
 
@@ -97,7 +97,6 @@
     els.bell.setAttribute("aria-label", n ? n + " unread notifications" : "notifications");
     els.mute.textContent = m ? "sound off" : "sound on";
     els.mute.setAttribute("aria-pressed", String(m));
-    els.hint.hidden = !blocked();
   }
 
   function ago(ms) { return U.ago(Date.now() - ms); }
@@ -172,12 +171,6 @@
       bell: document.getElementById("m-bell"), n: document.getElementById("m-bell-n"), sheet: document.getElementById("m-log"),
       list: document.getElementById("m-log-list"), mute: document.getElementById("m-log-mute"), close: document.getElementById("m-log-close"),
     };
-    els.hint = document.createElement("button");
-    els.hint.type = "button";
-    els.hint.id = "m-sound-hint";
-    els.hint.textContent = "tap to enable sound";
-    els.hint.hidden = true;
-    document.body.appendChild(els.hint);
     ["pointerdown", "pointerup", "touchend", "click", "keydown"].forEach(t => document.addEventListener(t, unlock, { capture: true, passive: true }));
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ctx && ctx.state === "suspended") ctx.resume(); });
     els.bell.addEventListener("click", openLog);

@@ -118,3 +118,8 @@ func (d *Daemon) carriedByHooks(taskID string, waitTurn bool) bool {
 func (d *Daemon) turnHolds(taskID string, waitTurn bool) bool {
 	return waitTurn && d.act.midTurn(taskID)
 }
+
+// idleUnownedNote is the warning on a say queued to an idle card whose terminal atrium does not own: no hook fires
+// until a turn starts, and atrium cannot type one.
+const idleUnownedNote = "queued, but that card is idle and atrium does not own its terminal, so it cannot be typed " +
+	"in. a hook carries it when the card's next turn starts, which something else has to start."

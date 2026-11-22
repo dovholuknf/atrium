@@ -860,8 +860,15 @@ func (d *Daemon) handleActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Everything after the reply is bookkeeping the caller does not wait on.
-	go d.onActivity(in)
+	d.activity.Add(1)
+	go func() {
+		defer d.activity.Done()
+		d.onActivity(in)
+	}()
 }
+
+// WaitActivity returns once every detached onActivity has finished, for a test that closes the store next.
+func (d *Daemon) WaitActivity() { d.activity.Wait() }
 
 // onActivity applies one event. Returns the task it landed on, or "" when
 // there was nothing to land on.
