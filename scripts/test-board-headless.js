@@ -11264,7 +11264,8 @@ async function peekOneHoverSection(browser, base) {
     return { text: norm(el.textContent), b: r.bottom, y: r.top, vh: innerHeight };
     function norm(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
   });
-  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs, wasHub = mock.hubMode;
+  mock.hubMode = true;
   mock.tasksMode = "onehover";
   mock.boardDocs = true;
   try {
@@ -11402,7 +11403,7 @@ async function peekOneHoverSection(browser, base) {
   } finally {
     await ctx.close();
     mock.tasksMode = was;
-    mock.boardDocs = wasDocs;
+    mock.boardDocs = wasDocs; mock.hubMode = wasHub;
   }
   if (errors.length) fail("the one hover page threw: " + errors.join(" | "));
 }
@@ -11931,7 +11932,8 @@ async function peekHoverRestSection(browser, base) {
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
   const wait = ms => p.clock.runFor(ms);
   const isOpen = () => p.evaluate(() => !!document.querySelector(".peek.on"));
-  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs, wasHub = mock.hubMode;
+  mock.hubMode = true;
   mock.tasksMode = "onehover";
   mock.boardDocs = true;
   try {
@@ -11974,7 +11976,7 @@ async function peekHoverRestSection(browser, base) {
   } finally {
     await ctx.close();
     mock.tasksMode = was;
-    mock.boardDocs = wasDocs;
+    mock.boardDocs = wasDocs; mock.hubMode = wasHub;
   }
   if (errors.length) fail("the hover rest page threw: " + errors.join(" | "));
 }
@@ -15740,7 +15742,7 @@ async function termMenuSection(browser, base) {
 
     // a running card: the whole menu, in order.
     let m = await openMenu("land-tm-run");
-    const want = ["restart", "new context", "walk this card's changes", "---", "settings", "---", "duplicate agent", "pause", "terminate and clean up"];
+    const want = ["restart", "new context", "---", "settings", "---", "duplicate agent", "pause", "terminate and clean up"];
     if (JSON.stringify(m.labels) !== JSON.stringify(want)) fail("termMenu: a running card's menu is " + JSON.stringify(m.labels));
     // settings has no (?) in the interview's table, so it is the only item allowed without one.
     if (m.noHelp.some(l => l !== "settings")) fail("termMenu: items without their (?): " + JSON.stringify(m.noHelp));
@@ -19245,6 +19247,108 @@ async function mPullSection(browser) {
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mPull ok");
+}
+
+async function mPullUpSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("pu-1", { alias: "pu-1", display_title: "pu-1", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+  st.replies["pu-1"] = { source: "transcript", replies: Array.from({ length: 8 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words that wrap onto many lines on a phone. ".repeat(14) })) };
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    st.skin = "";
+    const tag = "mPullUp: ";
+    let loads = 0;
+    p.on("load", () => { loads++; });
+    const cdp = await ctx.newCDPSession(p);
+    const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+    const move = async (x0, y0, x1, y1, steps) => {
+      for (let i = 1; i <= steps; i++) {
+        await touch("touchMove", Math.round(x0 + (x1 - x0) * i / steps), Math.round(y0 + (y1 - y0) * i / steps));
+        await p.waitForTimeout(25); // wait: the pace of a finger drag
+      }
+    };
+    const pill = () => p.evaluate(() => { const e = document.getElementById("m-pullup"); return { shown: !e.hidden, go: e.classList.contains("go"), text: e.textContent }; });
+    const kept = () => p.evaluate(() => window.__pullMarker === 1);
+    const toEnd = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 })); e.scrollTop = e.scrollHeight; });
+    const box = () => p.evaluate(() => { const r = document.getElementById("m-card-scroll").getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector('#m-list .row[data-id="pu-1"]', { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="pu-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await frames(p, 3);
+    await p.evaluate(() => { window.__pullMarker = 1; });
+    loads = 0;
+    const r = await box();
+    const mid = Math.round((r.top + r.bottom) / 2);
+    // at the end, a short pull up shows the pill and lets go without a reload
+    await toEnd(); await frames(p, 3);
+    await touch("touchStart", 200, mid);
+    await move(200, mid, 200, mid - 40, 4);
+    const short = await pill();
+    if (!short.shown || short.go || !/pull to reload/.test(short.text)) fail(tag + "a short pull at the end showed " + JSON.stringify(short));
+    await touch("touchEnd");
+    await p.waitForTimeout(500); // wait: absence, a reload would land here
+    if (!(await kept()) || loads) fail(tag + "a short pull up reloaded the page");
+    if ((await pill()).shown) fail(tag + "the pill stayed after a short pull");
+    // sideways at the end is not a pull
+    await touch("touchStart", 100, mid);
+    await move(100, mid, 330, mid - 20, 6);
+    if ((await pill()).shown) fail(tag + "a sideways drag showed the pill");
+    await touch("touchEnd");
+    // from mid-thread the thread scrolls and nothing shows
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 300; });
+    await frames(p, 3);
+    await touch("touchStart", 200, mid);
+    await move(200, mid, 200, mid - 150, 10);
+    if ((await pill()).shown) fail(tag + "a pull up from mid-thread showed the pill");
+    await touch("touchEnd");
+    await p.waitForTimeout(500); // wait: absence, a reload would land here
+    if (!(await kept()) || loads) fail(tag + "a pull up from mid-thread reloaded the page");
+    const top1 = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+    if (top1 <= 300) fail(tag + "a drag up from mid-thread did not scroll the thread: " + top1);
+    // the bottom edge strip counts from mid-thread, and coming back down before letting go does not reload
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 300; });
+    await frames(p, 3);
+    const edgeY = Math.round((await box()).bottom - 8);
+    await touch("touchStart", 200, edgeY);
+    await move(200, edgeY, 200, edgeY - 120, 10);
+    const edge = await pill();
+    if (!edge.shown || !edge.go || !/release to reload/.test(edge.text)) fail(tag + "a pull from the edge strip showed " + JSON.stringify(edge));
+    await move(200, edgeY - 120, 200, edgeY + 4, 10);
+    await touch("touchEnd");
+    await p.waitForTimeout(500); // wait: absence, a reload would land here
+    if (!(await kept()) || loads) fail(tag + "a pull taken back before letting go reloaded the page");
+    // from the composer nothing happens
+    const ta = await p.evaluate(() => { const r = document.querySelector("#m-compose textarea").getBoundingClientRect(); return Math.round(r.top + r.height / 2); });
+    await toEnd(); await frames(p, 3);
+    await touch("touchStart", 200, ta);
+    await move(200, ta, 200, ta - 150, 10);
+    if ((await pill()).shown) fail(tag + "a drag up from the composer showed the pill");
+    await touch("touchEnd");
+    await p.waitForTimeout(500); // wait: absence, a reload would land here
+    if (!(await kept()) || loads) fail(tag + "a drag up from the composer reloaded the page");
+    await p.evaluate(() => { const t = document.querySelector("#m-compose textarea"); if (t) t.blur(); });
+    // at the end, past the threshold, the pill says release and letting go reloads
+    await toEnd(); await frames(p, 3);
+    await touch("touchStart", 200, mid);
+    await move(200, mid, 200, mid - 120, 10);
+    const go = await pill();
+    if (!go.shown || !go.go || !/release to reload/.test(go.text)) fail(tag + "a long pull at the end showed " + JSON.stringify(go));
+    await touch("touchEnd");
+    await until(async () => !(await kept().catch(() => false)), 5000, "the reload").catch(() => {});
+    await p.waitForLoadState("domcontentloaded").catch(() => {});
+    if (await kept().catch(() => false)) fail(tag + "a long pull up at the end did not reload the page");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPullUp ok");
 }
 
 // The in-memory hub documents API the headless server answers with, shaped by docs/backlog/fabric/hub-documents-api.md.
@@ -24774,6 +24878,7 @@ async function termNeedsYouSection(browser, base) {
     const body = sent ? String(sent.body.text) : "";
     if (!sent || !/\/v1\/tasks\/plain\/message/.test(sent.url) || !/\[x\] keep the sort/.test(body) || !/\[ \] drop the tags/.test(body) || !/^lane: later$/m.test(body))
       fail("queue: the page choices did not reach the card: " + JSON.stringify(sent));
+    await p.waitForFunction(() => /Choices sent to plain: queued/.test(document.getElementById("yq-ask").textContent), null, { timeout: slow(5000) });
     await p.route("**/v1/tasks/ivq/replies*", r => r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ replies: [{ at: "2026-01-01T00:00:00Z", text: "Old.\n" }, { at: "2026-01-02T00:00:00Z", text: "**Which area?**\n\n1. Board\n2. Hub\n" }] }) }));
     await p.evaluate(() => {
@@ -24796,8 +24901,23 @@ async function termNeedsYouSection(browser, base) {
     if (await p.evaluate(() => !!document.querySelector("#yq-ask textarea"))) fail("queue: the box is still there after a send: " + await text());
     await open();
     if (await p.evaluate(() => document.querySelector('#yq-ask textarea[data-yq-text^="p:"]').value)) fail("queue: the box kept the sent text");
+    await p.evaluate(() => { itemsData.act = async () => ({}); });
+    const itemOpen = () => p.evaluate(() => yqOpenAsk({ key: "item:b-x", verb: "APPROVE", title: "design",
+      item: { id: "i1", backlog: "b-x", title: "design", state: "blocked", ask: { kind: "approval", text: "ok?" } } }));
+    for (const [btn, line] of [["iapprove", /Approved to b-x\./], ["isendback", /Sent back to b-x\./]]) {
+      await itemOpen();
+      if (btn === "isendback") await p.fill('#yq-ask textarea[data-yq-text^="i:"]', "change it");
+      await p.click(`#yq-ask [data-yq-do="${btn}"]`);
+      await p.waitForFunction(re => new RegExp(re).test(document.getElementById("yq-ask").textContent), line.source, { timeout: slow(5000) });
+    }
+    await p.evaluate(() => yqOpenAsk({ key: "item:b-y", verb: "ANSWER", title: "q",
+      item: { id: "i2", backlog: "b-y", title: "q", state: "blocked", ask: { kind: "question", text: "which?" } } }));
+    await p.fill('#yq-ask textarea[data-yq-text^="i:"]', "the first");
+    await p.click('#yq-ask [data-yq-do="ianswer"]');
+    await p.waitForFunction(() => /Answer sent to b-y\./.test(document.getElementById("yq-ask").textContent), null, { timeout: slow(5000) });
     await p.unroute("**/v1/tasks/*/message");
     await p.route("**/v1/tasks/*/message", r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "room is down" }) }));
+    await open();
     await p.fill('#yq-ask textarea[data-yq-text^="p:"]', "change the title");
     await p.click('#yq-ask [data-yq-do="sendback"]');
     await p.waitForFunction(() => /Not sent to plain/.test(document.getElementById("yq-ask").textContent), null, { timeout: slow(5000) });
@@ -25443,7 +25563,8 @@ async function phoneBoardCompactSection(browser, base) {
 
 // The desktop board's files tab, the hub file drop. Hidden on a board with no /_hub/files.
 async function boardFilesSection(browser, base) {
-  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs, wasHub = mock.hubMode;
+  mock.hubMode = true;
   mock.tasksMode = "land";
   mock.landList = [];
   mock.landPerms = [];
@@ -25521,13 +25642,14 @@ async function boardFilesSection(browser, base) {
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.filesDeleted.length = 0; delete mock.walkDirs.t1; fs.rmSync(folder, { recursive: true, force: true }); }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.hubMode = wasHub; mock.filesDeleted.length = 0; delete mock.walkDirs.t1; fs.rmSync(folder, { recursive: true, force: true }); }
   if (!bad) console.log("boardFiles ok");
 }
 
 // The desktop board's documents tab and panel, shared with /m. Off on a board with no /_hub/docs.
 async function boardDocsSection(browser, base) {
-  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs, wasHub = mock.hubMode;
+  mock.hubMode = true;
   mock.tasksMode = "land";
   mock.landList = [];
   mock.landPerms = [];
@@ -25571,7 +25693,7 @@ async function boardDocsSection(browser, base) {
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.hubMode = wasHub; }
   if (!bad) console.log("boardDocs ok");
 }
 
@@ -26262,7 +26384,8 @@ async function collapsedBridgeSection(browser, base) {
 // upload as the one primary control with its title inside it, deleted as a quiet toggle, roomy rows, a usage meter at the
 // foot. Several documents are mocked at the route. DOCSPAGE_SHOTS and DOCSPAGE_TAG write the pictures.
 async function docsPageSection(browser, base) {
-  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs, wasHub = mock.hubMode;
+  mock.hubMode = true;
   mock.tasksMode = "land";
   mock.landList = [];
   mock.landPerms = [];
@@ -26316,7 +26439,7 @@ async function docsPageSection(browser, base) {
       if (errors.length) fail(t + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.hubMode = wasHub; }
   if (!bad) console.log("docsPage ok");
 }
 
@@ -30089,7 +30212,7 @@ async function main() {
       
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteTwice: pasteTwiceSection, pasteBusyCursor: pasteBusyCursorSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mChatThumbs: mChatThumbsSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mAnswerQ: mAnswerQSection,mChatThumbs: mChatThumbsSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, workerCardColors: workerCardColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mBubbleLinks: mBubbleLinksSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mBubbleLinks: mBubbleLinksSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -30101,11 +30224,11 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
-      mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection, heldStrip: heldStripSection,
+      mPull: mPullSection, mPullUp: mPullUpSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection, heldStrip: heldStripSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, headerFold: headerFoldSection, tabsOrder: tabsOrderSection, emergingSwitch: emergingSwitchSection,
-      groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
+      groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection, docsPage: docsPageSection,
       u002: u002Section, childFold: childFoldSection, childFoldSticks: childFoldSticksSection, childRollupCount: childRollupCountSection, nineAgentCounts: nineAgentCountsSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedFitsLone: selectedFitsLoneSection, termBarNowrap: termBarNowrapSection, childFits: childFitsSection, revealFolds: revealFoldsSection, revealKeepsCollapse: revealKeepsCollapseSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, fileBack: fileBackSection, artifacts: artifactsSection, fileLinkDrawer: fileLinkDrawerSection, draftReload: draftReloadSection, keepAlive: keepAliveSection, keptFileLink: keptFileLinkSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
@@ -32119,6 +32242,7 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("mOpenQ", () => mOpenQSection(browser));
+    await unit("mAnswerQ", () => mAnswerQSection(browser));
     await unit("mChatThumbs", () => mChatThumbsSection(browser));
     await unit("mCleanUpForeign", () => mCleanUpForeignSection(browser));
     await unit("mGrowlStack", () => mGrowlStackSection(browser));
@@ -32335,6 +32459,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mPickerDone", () => mPickerDoneSection(browser));
     await unit("mHomePicker", () => mHomePickerSection(browser));
     await unit("mPull", () => mPullSection(browser));
+    await unit("mPullUp", () => mPullUpSection(browser));
     await unit("mNoSideways", () => mNoSidewaysSection(browser));
     await unit("mPrompts", () => mPromptsSection(browser));
     await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
@@ -35095,6 +35220,53 @@ async function mOpenQSection(browser) {
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mOpenQ ok");
+}
+
+async function mAnswerQSection(browser) {
+  const tag = "mAnswerQ: ", LONG = "Harbour, with the date after it please";
+  const qs = ["Should I publish today?", "Which name goes in the title?", "Is the wording OK?"];
+  const st = mServer({});
+  st.tasks = [mCard("aq-a", { display_title: "asks", runner: "claude", status: "needs-input", waiting_since: mIso(M_MIN),
+    seen: { turn_ended_at: mIso(M_MIN), answered: false, open_questions: qs } })];
+  st.replies["aq-a"] = { source: "transcript", replies: [{ at: mIso(M_MIN), text: "Decide please." }] };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 892 }, "linen");
+    const sent = [];
+    await p.route("**/v1/tasks/aq-a/message", r => { sent.push(r.request().postDataJSON()); r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }); });
+    await p.waitForSelector('#m-list .row[data-id="aq-a"]', { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="aq-a"]');
+    await p.waitForSelector("#m-card-extras .q-item", { timeout: slow(5000) });
+    await p.waitForFunction(() => { const s = document.getElementById("m-card"); return s.classList.contains("on") && !s.getAnimations().length; }, null, { timeout: slow(10000) });
+    const state = () => p.evaluate(() => ({
+      open: [...document.querySelectorAll(".q-item")].findIndex(l => l.classList.contains("open")),
+      chips: [...document.querySelectorAll(".q-item.open .q-chip")].map(c => c.textContent),
+      focus: document.activeElement && document.activeElement.className,
+      ans: [...document.querySelectorAll(".q-item")].map(l => (l.querySelector(".q-ans") || {}).textContent || ""),
+      send: (document.getElementById("q-send") || {}).textContent || "", off: !!(document.getElementById("q-send") || {}).disabled }));
+    let s = await state();
+    if (s.open !== -1 || !s.off) fail(tag + "nothing answered should be closed with Send off: " + JSON.stringify(s));
+    await p.tap('.q-item[data-i="0"] .q-head');
+    s = await state();
+    if (s.open !== 0 || s.chips.join() !== "Yes,No" || s.focus !== "q-box") fail(tag + "a yes or no question opens with its chips and the box focused: " + JSON.stringify(s));
+    await p.tap(".q-item.open .q-chip[data-v=yes]");
+    s = await state();
+    if (s.open !== 1 || s.chips.length || s.focus !== "q-box") fail(tag + "Yes should answer and open the next question with no chips: " + JSON.stringify(s));
+    await p.keyboard.type(LONG);
+    await p.keyboard.press("Enter");
+    s = await state();
+    if (s.open !== 2 || s.ans[0] !== "yes" || s.ans[1] !== LONG.slice(0, 33) + "…") fail(tag + "Enter should answer and move on, short form shown: " + JSON.stringify(s));
+    await p.tap(".q-item.open .q-done");
+    s = await state();
+    if (s.open !== -1 || s.send !== "Send answers (2)" || s.off) fail(tag + "Done with no text on the last one should close, 2 answered: " + JSON.stringify(s));
+    await mShot(p, "answerq");
+    await p.tap("#q-send");
+    await p.waitForFunction(() => !document.querySelector("#m-card-extras .q-item"), null, { timeout: slow(5000) });
+    if (sent.length !== 1 || sent[0].text.replace(/\s+/g, " ") !== "1. yes 2. " + LONG) fail(tag + "one message of numbered lines for the answered ones: " + JSON.stringify(sent));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mAnswerQ ok");
 }
 
 // The phone's terminate and clean up on a card whose folder atrium did not create: the preview names it as foreign, the

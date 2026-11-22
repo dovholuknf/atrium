@@ -86,7 +86,7 @@ function naParse(text) {
 }
 
 const naOpens = () => !!(naS.link && naS.link.num);
-const naFolder = () => (naS.kind === "folder" && !naS.tw ? naEl("na-cwd").value.trim() : "");
+const naFolder = () => (naS.kind === "folder" && !naS.tw ? naEl("na-cwd").value.trim().replace(/(.)[\\/]+$/, "$1") : "");
 function naAutoTitle() {
   const what = naClip(naFirstLine(naS.what), 64);
   if (naFolder()) return what || naShort(naFolder());
@@ -486,6 +486,10 @@ async function openNewAgent(tw, prefill, clone) {
   naEl("na-repo").value = clone ? naShort(naS.ref) : "";
   naEl("na-title").classList.remove("missing");
   naEl("na-cwd").value = "";
+  attachFolderComplete(naEl("na-cwd"));
+  let lf = {};
+  if (!clone && !tw) { try { lf = await api("/v1/settings"); } catch (e) {} }
+  if (lf.launch_folder) naEl("na-cwd").value = lf.launch_folder + "/";
   naEl("na-groups").dataset.open = "";
   naSay("");
   naGrowWhat();
@@ -495,6 +499,7 @@ async function openNewAgent(tw, prefill, clone) {
   const start = clone || tw ? "" : naRead(NA_START_KEY, "");
   const p = prefill || start ? naParse(prefill || start) : null;
   if (p) naSetRepo(p.ref, p.link);
+  else if (lf.launch_mode === "place") { naS.kind = "folder"; naRender(); naEl("na-cwd").focus(); return; }
   if (clone) naEl("na-title").focus();
   else if (p || tw) naEl("na-what").focus();
   else naEl("na-repo").focus();

@@ -100,6 +100,9 @@ func globalAutoView(s *Server) map[string]any {
 		// which is the home directory plus every directory a card names.
 		SettingBrowseRoots: "browse_roots",
 		SettingOpenPaths:   "open_paths",
+		// The new agent dialog's starting folder and in place or in a copy. Empty is no default.
+		SettingLaunchFolder: "launch_folder",
+		SettingLaunchMode:   "launch_mode",
 		// Where atrium_git_clone makes clones, and the credential helper it may use for a
 		// private repository. Empty is a value: no scm folder means the tool refuses and
 		// says how to set it, and no helper means public repositories only.
@@ -306,6 +309,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 
 		DictateServer *string `json:"dictate_server"`
 		DictateModel  *string `json:"dictate_model"`
+		LaunchFolder  *string `json:"launch_folder"`
+		LaunchMode    *string `json:"launch_mode"`
 		// Whether a pasted file is kept in the card, and the words that go in
 		// front of the path. Pointers, again because clearing one is a request.
 		PasteKeep     *string `json:"paste_keep"`
@@ -413,6 +418,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(payload, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
+	}
+	launchMode := ""
+	if body.LaunchMode != nil {
+		if launchMode, err = launchModeOf(*body.LaunchMode); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
 	}
 	raw := map[string]json.RawMessage{}
 	// A body that decoded into the struct but not into a map is not possible,
@@ -614,6 +626,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// directory. A command that is not installed fails when somebody
 		// presses the entry and says which program it could not run.
 		if err := s.st.SetSetting(SettingTerminal, strings.TrimSpace(*body.Terminal)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.LaunchMode != nil {
+		if err := s.st.SetSetting(SettingLaunchMode, launchMode); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.LaunchFolder != nil {
+		if err := s.st.SetSetting(SettingLaunchFolder, launchFolderOf(*body.LaunchFolder)); err != nil {
 			s.fail(w, err)
 			return
 		}

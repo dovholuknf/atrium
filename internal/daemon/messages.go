@@ -881,6 +881,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if _, has := out["warning"]; !has && d.sup.Get(taskID) == nil && !d.act.midTurn(taskID) {
+		out["warning"] = idleUnownedNote
+	}
 	if woke {
 		out["resumed"] = true
 		out["warning"] = wokeNote
