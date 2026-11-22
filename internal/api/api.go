@@ -844,6 +844,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/rules/preview-claude", s.previewClaudeRules)
 	mux.HandleFunc("GET /v1/hooks", s.hookStatus)
 	mux.HandleFunc("POST /v1/hooks/install", s.installHooks)
+	mux.HandleFunc("GET /v1/setup", s.setupReport)
 	mux.HandleFunc("GET /v1/setup-check", s.setupCheck)
 	mux.HandleFunc("POST /v1/setup-check/fix", s.setupFix)
 	mux.HandleFunc("GET /v1/harnesses", s.listHarnesses)
