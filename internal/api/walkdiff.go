@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,7 +44,21 @@ type walkDiffOut struct {
 	Mode      string         `json:"mode"`
 	Modes     map[string]int `json:"modes"`
 	Why       string         `json:"why,omitempty"`
+	Commits   []walkCommit   `json:"commits,omitempty"`
+	Dirty     []string       `json:"dirty,omitempty"`
+	Landed    *walkCommit    `json:"landed,omitempty"`
 }
+
+// walkCommit is one commit of the branch, or the merge that landed it.
+type walkCommit struct {
+	SHA     string `json:"sha"`
+	Subject string `json:"subject"`
+}
+
+var walkSHARe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+
+// walkOwnDir holds the walk agent file, which is never part of the change being walked.
+const walkOwnDir = ".atrium/"
 
 // GET /v1/tasks/{id}/diff is the card's worktree, or the folder ?dir= names, compared the way ?mode= says, for the walk
 // with no findings. No mode opens on unstaged when there is any, else staged, else branch. A git folder with nothing
@@ -82,6 +97,19 @@ func (s *Server) walkDiff(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if sha := r.URL.Query().Get("commit"); sha != "" {
+		if !walkSHARe.MatchString(sha) {
+			writeErr(w, http.StatusBadRequest, errors.New("commit is a hex sha"))
+			return
+		}
+		out, status, err := walkCommitDiff(ctx, dir, sha)
+		if err != nil {
+			writeErr(w, status, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	out, status, err := walkModeDiff(ctx, dir, mode)
 	if err != nil {
 		writeErr(w, status, err)
@@ -114,18 +142,10 @@ func walkOnlyRepo(dir string) string {
 
 // walkModeDiff is the patch for mode, with how many files each mode holds.
 func walkModeDiff(ctx context.Context, dir, mode string) (walkDiffOut, int, error) {
-	untracked := walkNames(ctx, dir, gitexec.LsFiles{Others: true, ExcludeStandard: true, Z: true})
+	untracked := len(walkOthers(ctx, dir))
 	modes := map[string]int{
 		"unstaged": walkNames(ctx, dir, gitexec.Diff{NameOnly: true, Z: true}) + untracked,
 		"staged":   walkNames(ctx, dir, gitexec.Diff{Cached: true, NameOnly: true, Z: true}),
-	}
-	if mode == "" {
-		mode = "branch"
-		if modes["unstaged"] > 0 {
-			mode = "unstaged"
-		} else if modes["staged"] > 0 {
-			mode = "staged"
-		}
 	}
 	var out walkDiffOut
 	status, berr := walkBranchHead(ctx, dir, &out)
@@ -135,7 +155,21 @@ func walkModeDiff(ctx context.Context, dir, mode string) (walkDiffOut, int, erro
 	} else if berr == nil {
 		modes["branch"] = walkNames(ctx, dir, gitexec.Diff{Revs: []string{out.MergeBase}, NameOnly: true, Z: true})
 	}
+	if mode == "" {
+		mode = "branch"
+		if modes["unstaged"] > 0 {
+			mode = "unstaged"
+		} else if modes["staged"] > 0 {
+			mode = "staged"
+		}
+	}
 	out.Mode, out.Modes = mode, modes
+	if berr == nil && !onBase {
+		out.Commits = walkCommits(ctx, dir, out.MergeBase)
+		if modes["unstaged"]+modes["staged"] > 0 {
+			out.Dirty = append(walkLines(ctx, dir, gitexec.Diff{Revs: []string{"HEAD"}, NameOnly: true, Z: true}), walkOthers(ctx, dir)...)
+		}
+	}
 	var patch []byte
 	var err error
 	switch mode {
@@ -177,6 +211,7 @@ func walkModeDiff(ctx context.Context, dir, mode string) (walkDiffOut, int, erro
 		out.Why = "nothing " + mode + " in " + name
 		if mode == "branch" {
 			out.Why = "nothing to walk: " + name + " is at its base " + out.Base + " and nothing is uncommitted"
+			out.Landed = walkLanded(ctx, dir, out.Base)
 		}
 	}
 	return out, http.StatusOK, nil
@@ -221,13 +256,9 @@ func walkBranchHead(ctx context.Context, dir string, out *walkDiffOut) (int, err
 
 // walkUntracked is each new file git does not ignore as a patch from nothing, until room runs out.
 func walkUntracked(ctx context.Context, dir string, room int) []byte {
-	list, err := gitOut(ctx, dir, nil, gitexec.LsFiles{Others: true, ExcludeStandard: true, Z: true})
-	if err != nil {
-		return nil
-	}
 	var out []byte
-	for i, rel := range strings.Split(string(list), "\x00") {
-		if rel == "" || len(out) > room || i >= maxWalkUntracked {
+	for i, rel := range walkOthers(ctx, dir) {
+		if len(out) > room || i >= maxWalkUntracked {
 			break
 		}
 		p, err := gitexec.Run(ctx, gitexec.Opts{Dir: filepath.FromSlash(dir), Env: []string{"GIT_TERMINAL_PROMPT=0"}},
@@ -286,4 +317,76 @@ func walkNearest(ctx context.Context, dir string, refs []string) (base string) {
 		}
 	}
 	return base
+}
+
+// walkLines is a -z listing as names.
+func walkLines(ctx context.Context, dir string, op gitexec.Op) []string {
+	list, err := gitOut(ctx, dir, nil, op)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(string(list), "\x00") {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// walkOthers are the new files git does not ignore, less the walk's own.
+func walkOthers(ctx context.Context, dir string) []string {
+	var out []string
+	for _, p := range walkLines(ctx, dir, gitexec.LsFiles{Others: true, ExcludeStandard: true, Z: true}) {
+		if !strings.HasPrefix(p, walkOwnDir) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// walkCommits are the branch's commits since the merge base, oldest first.
+func walkCommits(ctx context.Context, dir, mergeBase string) []walkCommit {
+	raw, err := gitOut(ctx, dir, nil, gitexec.Log{Revs: []string{mergeBase + "..HEAD"}, Format: "%h%x00%s", Reverse: true, MaxCount: 100})
+	if err != nil {
+		return nil
+	}
+	var out []walkCommit
+	for _, l := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if sha, subj, ok := strings.Cut(l, "\x00"); ok {
+			out = append(out, walkCommit{SHA: sha, Subject: subj})
+		}
+	}
+	return out
+}
+
+// walkLanded is the merge on base that brought HEAD in, nil when HEAD is not behind a merge.
+func walkLanded(ctx context.Context, dir, base string) *walkCommit {
+	raw, err := gitOut(ctx, dir, nil, gitexec.Log{Revs: []string{"HEAD.." + base}, AncestryPath: true, Merges: true,
+		Format: "%h%x00%s", Reverse: true, MaxCount: 1})
+	if err != nil {
+		return nil
+	}
+	if sha, subj, ok := strings.Cut(strings.TrimSpace(string(raw)), "\x00"); ok {
+		return &walkCommit{SHA: sha, Subject: subj}
+	}
+	return nil
+}
+
+// walkCommitDiff is one commit alone, against its first parent.
+func walkCommitDiff(ctx context.Context, dir, sha string) (walkDiffOut, int, error) {
+	out := walkDiffOut{Mode: "commit", Head: sha}
+	if b, err := gitIn(ctx, dir, gitexec.RevParseAbbrevRef{Rev: "HEAD"}); err == nil {
+		out.Branch = strings.TrimSpace(b)
+	}
+	patch, err := gitOut(ctx, dir, nil, gitexec.Diff{Revs: []string{sha + "^", sha}, NoExtDiff: true, NoTextconv: true, NoColor: true,
+		FindRenames: true})
+	if err != nil {
+		return out, http.StatusNotFound, errors.New("no commit " + sha + " to walk")
+	}
+	if len(patch) > maxWalkDiffBytes {
+		patch, out.Truncated = patch[:maxWalkDiffBytes], true
+	}
+	out.Diff = string(patch)
+	return out, http.StatusOK, nil
 }

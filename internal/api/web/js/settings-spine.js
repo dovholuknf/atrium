@@ -1516,7 +1516,12 @@ function onTaskEvent(e) {
   hearActivity(d);
   if (cardRowComplete(d) && typeof composeFollow === "function") composeFollow(d);
   if (termOnly()) { soloTaskEvent(d); return; }
-  if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
+  if (cardRowComplete(d)) {
+    const wentDone = typeof walkOfferEvent === "function" && walkOfferEvent(d, cardRows.get(d.id));
+    upsertCard(d);
+    if (wentDone) runPass(); else paintSoon();
+    return;
+  }
   // A CARD THE BOARD HAS NEVER HEARD OF is read for now, not at the next throttle slot: the alert and the terminals
   // row both come from the list, so waiting out TASKS_EVERY is the gap between the two and the card. Once per id,
   // so an id that never lists (another room's) cannot turn every event into a read.

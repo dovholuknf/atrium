@@ -8,6 +8,7 @@ const walkPr = {
   poll: 0,              // the interval that reads the agent's file while an answer is awaited
   drafts: new Map(),    // textarea key -> text not sent yet, so a repaint keeps it
   editing: null,        // { file, line } of a new comment being written
+  head: "",             // the commit the card's worktree is on, which a new comment records
   sel: "",              // id of the comment the walk stands on
   region: null
 };
@@ -49,16 +50,29 @@ function walkPrBlank() { return { v: 1, comments: [], thread: [], off: [], botto
 
 async function walkPrLoad(taskId) {
   if (walkPr.taskId === taskId && walkPr.s) return;
-  walkPr.taskId = taskId; walkPr.s = null; walkPr.editing = null; walkPr.sel = ""; walkPr.drafts = new Map();
+  walkPr.taskId = taskId; walkPr.s = null; walkPr.editing = null; walkPr.sel = ""; walkPr.drafts = walkPrDraftsRead(taskId);
   let s = null;
   walkPr.prUrl = "";
   try { const r = await api(`/v1/tasks/${taskId}/walk`); s = r.state; walkPr.prUrl = r.pr_url || ""; } catch (e) { s = null; }
   if (walkPr.taskId !== taskId) return;
   walkPr.s = Object.assign(walkPrBlank(), s || {});
+  for (const k of walkPr.drafts.keys()) {
+    const m = /^new:(.+):(\d+)$/.exec(k);
+    if (m && !walkPr.editing) walkPr.editing = { file: m[1], line: Number(m[2]) };
+  }
   walkPrSync().then(walkPrPoll);
 }
 
 // Takes in what the agent wrote to its file. A save still waiting goes first, so the walk it answers with has it.
+// A typed draft is kept in the browser too, so a reload does not lose it.
+const walkPrDraftKey = id => "atrium.walkdrafts." + id;
+function walkPrDraftsRead(id) {
+  try { return new Map(Object.entries(JSON.parse(localStorage.getItem(walkPrDraftKey(id)) || "{}"))); } catch (e) { return new Map(); }
+}
+function walkPrDraftsWrite() {
+  try { localStorage.setItem(walkPrDraftKey(walkPr.taskId), JSON.stringify(Object.fromEntries(walkPr.drafts))); } catch (e) { /* storage full or off */ }
+}
+
 async function walkPrSync() {
   const id = walkPr.taskId;
   if (!id || !walkPr.s) return;
@@ -66,8 +80,10 @@ async function walkPrSync() {
   let out;
   try { out = await api(`/v1/tasks/${id}/walk/agent`, { method: "POST" }); } catch (e) { return; }
   if (walkPr.taskId !== id || !out || !out.state || walkPr.timer) return;
+  walkPr.head = out.head || "";
   const at = (n) => (n.comments || []).reduce((k, c) => k + 1 + (c.turns || []).length, 0) + (n.thread || []).filter(x => x.a).length;
-  if (at(out.state) === at(walkPr.s)) return;
+  const where = (n) => (n.comments || []).map(c => c.id + ":" + c.now).join();
+  if (at(out.state) === at(walkPr.s) && where(out.state) === where(walkPr.s)) return;
   walkPr.s = Object.assign(walkPrBlank(), out.state);
   if (dock.open) dockPaint();
 }
@@ -101,6 +117,11 @@ function walkPrSave(now) {
   };
   if (now) put(); else walkPr.timer = setTimeout(put, 400);
 }
+
+// The line a comment shows at: where it was made, or where the diff since its commit carried it, 0 when that line changed.
+const walkPrLine = c => c.sha && c.now !== undefined ? c.now : c.line;
+const walkPrStaleOf = (path) => walkPr.s && walkPr.taskId === dock.taskId ? walkPr.s.comments.filter(c => c.file === path && walkPrLine(c) === 0) : [];
+function walkPrStale(path) { return walkPrStaleOf(path).map(walkPrBubble).join(""); }
 
 function walkPrComment(id) { return walkPr.s && walkPr.s.comments.find(c => c.id === id) || null; }
 const walkPrWait = 10 * 60 * 1000;
@@ -139,6 +160,8 @@ function walkPrBubble(c) {
   const key = "reply:" + c.id;
   return `<div class="cmt${c.who === "you" ? " you" : ""}${sel ? " sel" : ""}" data-cid="${esc(c.id)}" style="${size}">
     <div class="chead"><b>${c.who === "you" ? "you" : "agent"}</b>${walkPrStamp(c.at)} &middot; ${esc(c.file.split("/").pop())}:${c.line}${
+      walkPrLine(c) === 0 ? ` <span class="st" data-tip="that line has changed since, so the comment stays with the commit it was made on">made on ${esc(c.sha.slice(0, 7))}</span>`
+        : c.sha && walkPrLine(c) !== c.line ? ` <span class="st">now line ${walkPrLine(c)}</span>` : ""}${
       c.post ? ` <span class="st">copied for ${esc(forge ? forge.f.label : "the forge")}</span>` : ""}${
       walkPrHelp("Enter sends it to the walk agent, with the walk's scope in front. Shift+Enter or Ctrl+Enter is a new line.")}</div>
     <div class="wk-said">${walkPrMd(c.text)}</div>${foot}${turns}${walkPrWaiting(c) ? walkPrSpin : ""}${
@@ -177,7 +200,7 @@ function walkPrEditor(file, line) {
 // What follows a line of the diff: the comments anchored there, and the editor for a new one.
 function walkPrAfterLine(path, n) {
   if (!walkPr.s || walkPr.taskId !== dock.taskId) return "";
-  let h = walkPr.s.comments.filter(c => c.file === path && c.line === n).map(walkPrBubble).join("");
+  let h = walkPr.s.comments.filter(c => c.file === path && walkPrLine(c) === n).map(walkPrBubble).join("");
   if (walkPr.editing && walkPr.editing.file === path && walkPr.editing.line === n) h += walkPrEditor(path, n);
   return h;
 }
@@ -246,7 +269,7 @@ function walkPrBottomHtml() {
   const head = `<div class="wb-bar${open ? " open" : ""}"><button type="button" class="wb-toggle" data-wp="toggle" aria-expanded="${open}"
       data-tip="${open ? "collapse the thread" : "open the whole-walk thread with the walk agent"}">${
       mode === "terminal" ? "<b>the agent's terminal</b>"
-        : open ? `<b>chat with the agent about the whole walk</b>` : `<b>Ask the agent about the whole PR</b>`}</button>${tip}<span class="wb-last">${
+        : open ? `<b>chat with the agent about the whole walk</b>` : `<b>Ask the agent about the whole ${walkPrForge() ? "PR" : "change"}</b>`}</button>${tip}<span class="wb-last">${
       open || mode === "terminal" ? "" : esc(last)}</span>${open || mode === "terminal" ? "" : `<span class="by">${s.thread.length} messages &#9652;</span>`}${sw}</div>`;
   if (!open) return head;
   const log = `<div class="wk-turn rv"><div class="wk-av">ag</div><div class="wk-bub"><div class="wk-said">Ask me anything about the whole change here.
@@ -333,16 +356,18 @@ function walkPrSaveNew() {
   const ed = walkPr.editing, t = document.getElementById("walk-new");
   if (!ed || !t) return;
   const text = t.value.trim();
-  walkPr.drafts.delete("new:" + ed.file + ":" + ed.line);
   walkPr.editing = null;
   if (text) {
     const c = { id: "c" + Date.now().toString(36), file: ed.file, line: ed.line, who: "you", text, turns: [], post: null, at: Date.now() };
+    if (walkPr.head) c.sha = walkPr.head;
     walkPr.s.comments.push(c);
     walkPr.sel = c.id;
     if (walkPrSend(text, true, c.id)) walkPrAsk(c);
     walkPrSave();
     walkPrPoll();
   }
+  walkPr.drafts.delete("new:" + ed.file + ":" + ed.line);
+  walkPrDraftsWrite();
   dockPaint();
 }
 
@@ -354,7 +379,7 @@ function walkPrSendReply(t) {
   c.turns = (c.turns || []).concat({ who: "you", text: v, at: Date.now() });
   walkPrAsk(c);
   walkPrPoll();
-  walkPr.drafts.delete(t.dataset.wpk);
+  { walkPr.drafts.delete(t.dataset.wpk); walkPrDraftsWrite(); }
   walkPrSave();
   dockPaint();
 }
@@ -364,7 +389,7 @@ function walkPrSendReview(t) {
   if (!c || !v) return;
   walkPr.sel = c.id;
   c.turns = (c.turns || []).concat({ who: "you", to: "rc", text: v, at: Date.now() });
-  walkPr.drafts.delete(t.dataset.wpk);
+  { walkPr.drafts.delete(t.dataset.wpk); walkPrDraftsWrite(); }
   t.value = "";
   walkPrSave();
   walkPrPoll();
@@ -379,7 +404,7 @@ function walkPrSendWhole() {
   const v = t && t.value.trim();
   if (!v || !walkPrSend(v, true, "whole")) return;
   walkPr.s.thread.push({ q: v, scope: walkPrScopeText(), at: Date.now() });
-  walkPr.drafts.delete("whole");
+  { walkPr.drafts.delete("whole"); walkPrDraftsWrite(); }
   t.value = "";
   walkPrPoll();
   walkPrSave();
@@ -406,7 +431,7 @@ async function walkPrPost(c) {
 
 function walkPrInput(e) {
   const t = e.target;
-  if (t && t.dataset && t.dataset.wpk) walkPr.drafts.set(t.dataset.wpk, t.value);
+  if (t && t.dataset && t.dataset.wpk) { walkPr.drafts.set(t.dataset.wpk, t.value); walkPrDraftsWrite(); }
 }
 
 // Enter sends and Shift+Enter is a new line, which a textarea makes by itself. Ctrl+Enter makes it by hand.
@@ -448,6 +473,7 @@ async function walkPrStepComment(dir) {
 function walkPrCommentAt() {
   const all = (walkPr.s ? walkPr.s.comments.slice() : []).sort((a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
   const i = all.findIndex(c => c.id === walkPr.sel);
+  if (!all.length) return "no comments";
   return "comment " + (i < 0 ? "-" : i + 1) + " of " + all.length;
 }
 

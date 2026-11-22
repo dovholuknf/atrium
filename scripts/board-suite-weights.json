@@ -294,6 +294,7 @@
   "walkBranch": 5000,
   "walkLate": 9000,
   "walkRoomBack": 9000,
+  "walkNoGit": 9000,
   "walkSwitch": 6000,
   "walkHubBranch": 6000,
   "websiteSkin": 2732,

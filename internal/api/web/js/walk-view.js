@@ -70,7 +70,7 @@ addEventListener("DOMContentLoaded", async () => {
   const id = q.get("task") || "";
   const drawer = document.getElementById("walk-drawer");
   if (!id && q.get("repo") && q.get("branch")) { walkViewHub(q.get("repo"), q.get("branch")); return; }
-  if (!id) { setHTML(document.getElementById("walk-item"), `<div class="empty">no card in the address</div>`); return; }
+  if (!id) { drawer.hidden = false; setHTML(document.getElementById("walk-item"), `<div class="empty">no card in the address</div>`); return; }
   let task = { id, worktree: "" };
   try { task = Object.assign(task, await api(`/v1/tasks/${encodeURIComponent(id)}`)); } catch (e) {}
   termTask = task;
@@ -83,11 +83,20 @@ addEventListener("DOMContentLoaded", async () => {
   walkTenant.mode = q.get("mode") || "";
   dock.open = true;
   drawer.hidden = false;
+  if (!walkTenant.prId && !walkTenant.dir && task.worktree) await walkTenant.probe(task).catch(() => {});
   await walkTenant.opened(dock);
   await dockLoad();
   document.title = "walk · " + (task.display_title || task.title || id);
   drawer.focus({ preventScroll: true });
   setInterval(() => dockResync(), WALK_VIEW_EVERY_MS);
+  // The card's own events say a finding or a change landed, so the walk reads on the event and the timer is the net.
+  if (typeof EventSource !== "undefined") {
+    try { new EventSource("/v1/events").addEventListener("task", e => {
+      let d = null;
+      try { d = JSON.parse(e.data); } catch (err) {}
+      dockKick(d && d.id);
+    }); } catch (e) {}
+  }
 });
 
 // A hub branch is read once: it moves only when somebody pushes, and a reload reads it again.

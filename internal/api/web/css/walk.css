@@ -469,3 +469,21 @@
   .walk-share-pop textarea { width: 100%; box-sizing: border-box; resize: vertical; font: var(--fs-xxs) var(--mono); }
   .walk-share-pop button:hover { transform: none; }
   .pulls-pop-walk { margin-right: auto; cursor: pointer; color: var(--dim); font-size: var(--fs-xs); text-decoration: underline; }
+
+  /* The file list's folder and flags, the one line under the switch, the merged state and the commit picker. */
+  .wk-fn .wk-dir { color: var(--dim); font-size: .85em; }
+  .wk-fn .wk-was { color: var(--dim); font-size: .85em; margin-left: 4px; }
+  .wk-bin { color: var(--warn); }
+  .wk-banner {
+    display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto; padding: 6px var(--sp-4);
+    border-bottom: 1px solid var(--stroke-dim); background: rgba(var(--warn-rgb),.10); font-size: var(--fs-sm); color: var(--head);
+  }
+  .wk-banner[hidden] { display: none; }
+  .wk-banner button { margin-left: auto; flex: none; }
+  .wk-commit { max-width: 24em; font-size: var(--fs-xs); }
+  .wk-empty { padding: var(--sp-5); color: var(--body); line-height: 1.6; max-width: 56ch; }
+  .wk-empty h3 { margin: 0 0 6px; color: var(--head); font-size: var(--fs-md); }
+  .wk-empty code { color: var(--head); }
+  .wk-empty .acts { margin-top: 12px; display: flex; gap: 8px; }
+  .chip.walkchip { cursor: pointer; }
+  .chip.walkchip.ready { color: var(--head); border-color: rgba(var(--teal-rgb),.7); background: rgba(var(--teal-rgb),.18); }

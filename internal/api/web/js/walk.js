@@ -38,6 +38,13 @@ const dock = {
 // A card is a tenant's when its probe says so. Called from `openTerm` for every attach.
 // Cards whose probe failed (a 404 for a card this room does not hold). Asked again on its own event, not on every attach.
 const walkProbeFailed = new Set();
+// Cards whose folder answered 409, nothing git can walk: id -> where it said so. Not asked again until that moves.
+const walkNoWalk = new Map();
+function walkWhere(id) {
+  const t = (typeof cardRows !== "undefined" && cardRows.get(id)) || (termTask && termTask.id === id ? termTask : null);
+  return t ? [t.worktree || "", t.repo || "", t.branch || ""].join("\n") : "";
+}
+function walkStill(id) { return walkNoWalk.has(id) && walkNoWalk.get(id) === walkWhere(id); }
 const WALK_LIST_MIN = 320;
 let walkHome = null;
 async function walkProbe(task) {
@@ -47,8 +54,13 @@ async function walkProbe(task) {
   walkHubBranchesLoad(task.repo);
   const gen = dock.gen;
   let yes = false;
-  if (walkProbeFailed.has(task.id)) return;
-  try { yes = await walkTenant.probe(task); } catch (e) { yes = false; if (e && e.status === 404) walkProbeFailed.add(task.id); }
+  if (walkProbeFailed.has(task.id) || walkStill(task.id)) return;
+  const where = walkWhere(task.id);
+  try { yes = await walkTenant.probe(task); walkNoWalk.delete(task.id); } catch (e) {
+    yes = false;
+    if (e && e.status === 404) walkProbeFailed.add(task.id);
+    if (e && e.status === 409) walkNoWalk.set(task.id, where);
+  }
   if (gen !== dock.gen || !termTask || termTask.id !== task.id) return;
   btn.hidden = !yes;
   if (!yes) return;
@@ -96,6 +108,8 @@ async function dockOpen() {
   if (!drawer || !dock.tenant || !termTask) return;
   dock.open = true;
   dock.want = dock.taskId;
+  const done = typeof cardRows !== "undefined" && cardRows.get(dock.taskId);
+  if (done && typeof walkSeenSet === "function") walkSeenSet(dock.taskId, done.recap_at);
   drawer.hidden = false;
   walkApplyWidth();
   walkPlace();
@@ -125,13 +139,20 @@ function walkClose() { dock.want = ""; dockClose(); }
 const DOCK_KICK_MS = 1000;
 function dockKick(id) {
   if (!dock.tenant) { walkReprobe(id); return; }
-  if ((id && id !== dock.taskId) || dock.timer) return;
-  dock.timer = setTimeout(() => { dock.timer = 0; dockResync(); }, DOCK_KICK_MS);
+  if (id && id !== dock.taskId) return;
+  if (walkStill(dock.taskId)) return;
+  // The first event reads at once, so a walk shows on the event. A burst after it is one more read, trailing.
+  if (dock.timer) { dock.kicked = true; return; }
+  dockResync();
+  dock.timer = setTimeout(() => {
+    dock.timer = 0;
+    if (dock.kicked) { dock.kicked = false; dockResync(); }
+  }, DOCK_KICK_MS);
 }
 // A card the probe said no to is asked again on its own events: a working card commits after it was attached.
 const WALK_REPROBE_MS = 5000;
 function walkReprobe(id) {
-  if (dock.timer || !id || typeof termTask === "undefined" || !termTask || termTask.id !== id) return;
+  if (dock.timer || !id || typeof termTask === "undefined" || !termTask || termTask.id !== id || walkStill(id)) return;
   // Its own event says a room holds it: the 404 came from a hub whose room was away.
   walkProbeFailed.delete(id);
   dock.timer = setTimeout(() => {
@@ -165,6 +186,7 @@ async function dockLoad() {
   } catch (e) {
     if (gen !== dock.gen) return;
     dock.loading = false;
+    if (e && e.status === 409 && t === walkTenant && !t.hub && !t.commit && !t.dir && dock.taskId) walkNoWalk.set(dock.taskId, walkWhere(dock.taskId));
     dock.error = (e && e.message) || "the walk could not be read";
     if (!dock.items.length) dockPaint();
     return;
@@ -202,6 +224,17 @@ function dockStep(d) {
 }
 function dockCurrent() { return dock.items.find(i => i.key === dock.cur) || null; }
 
+// What the pane says with nothing to show: the error, or for a branch already merged, which merge landed it and a way in.
+function walkEmptyHtml(d, t) {
+  const b = walkTenant.branch, l = b && b.landed;
+  if (d.tenant === walkTenant && l && !walkTenant.commit) {
+    return `<div class="wk-empty"><h3>Already merged</h3>${esc(b.branch)} was merged into <code>${esc(walkShort(b.base))}</code> by <code>${
+      esc(l.sha)} ${esc(l.subject)}</code>, so nothing is ahead of it and nothing is uncommitted.<div class="acts"><button type="button" class="wk-btn go" data-wk="landed" data-sha="${
+      esc(l.sha)}">walk the merge</button></div></div>`;
+  }
+  return `<div class="empty${d.error ? " err" : ""}">${esc(d.error || t.empty)}</div>`;
+}
+
 function dockPaint() {
   const t = dock.tenant;
   const drawer = document.getElementById("walk-drawer");
@@ -236,6 +269,7 @@ function dockPaint() {
   document.getElementById("walk-note").textContent = head.note;
   document.getElementById("walk-count").textContent = t.summary(dock.items);
   walkModePaint();
+  walkBannerPaint();
   const more = document.getElementById("walk-more");
   more.textContent = head.more || "";
   more.hidden = !head.more;
@@ -244,7 +278,7 @@ function dockPaint() {
   if (!dock.editing) {
     const pane = document.getElementById("walk-item");
     const cur = dockCurrent();
-    if (!cur) setHTML(pane, `<div class="empty${dock.error ? " err" : ""}">${esc(dock.error || t.empty)}</div>`);
+    if (!cur) setHTML(pane, walkEmptyHtml(dock, t));
     else setHTML(pane, t.pane(cur, dock));
   }
   walkPlace();
@@ -562,7 +596,8 @@ function walkChangeIdx(list) {
 
 function walkChangeAt(d) {
   const list = walkChanges(d.items), i = walkChangeIdx(list);
-  return "change " + (i < 0 ? "-" : i + 1) + " of " + list.length;
+  if (i < 0) return list.length + (list.length === 1 ? " change" : " changes");
+  return "change " + (i + 1) + " of " + list.length;
 }
 
 function walkChange(dir) {
@@ -642,6 +677,40 @@ function walkNothing(d) {
     !!b && !!b.modes && !Object.values(b.modes).some(n => n > 0);
 }
 
+// One line under the switch when the shown side leaves out work the card holds: committed changes while the walk is on
+// the uncommitted ones, and the commits of a branch, one at a time.
+function walkBannerPaint() {
+  const bar = document.getElementById("walk-banner"), sel = document.getElementById("walk-commit");
+  const b = walkTenant.branch;
+  const live = !!b && !walkTenant.hub && !walkTenant.prId && dock.tenant === walkTenant;
+  if (sel) {
+    const cs = live && walkTenant.mode !== "unstaged" && walkTenant.mode !== "staged" ? b.commits || [] : [];
+    sel.hidden = cs.length < 2;
+    if (!sel.hidden) {
+      setHTML(sel, `<option value="">all ${cs.length} commits</option>` + cs.map(c => `<option value="${esc(c.sha)}"${
+        c.sha === walkTenant.commit ? " selected" : ""}>${esc(c.sha)} ${esc(c.subject)}</option>`).join(""));
+      if (!sel.onchange) sel.onchange = () => walkCommitSet(sel.value);
+    }
+  }
+  if (!bar) return;
+  let text = "", act = "", mode = "";
+  if (live && walkTenant.mode === "unstaged" && b.modes.branch > 0) {
+    text = `This card also has ${b.modes.branch} committed ${b.modes.branch === 1 ? "file" : "files"}, not shown while you walk the uncommitted changes.`;
+    act = "show the branch"; mode = "branch";
+  } else if (live && walkTenant.mode === "branch" && (b.dirty || []).length) {
+    text = `${b.dirty.length} of these ${b.dirty.length === 1 ? "file is" : "files are"} uncommitted, marked in the list.`;
+    act = "only uncommitted"; mode = "unstaged";
+  }
+  bar.hidden = !text;
+  bar.innerHTML = text ? `<span>${esc(text)}</span><button type="button" class="wk-btn" data-wk="mode" data-mode="${mode}">${act}</button>` : "";
+}
+function walkCommitSet(sha) {
+  walkTenant.commit = sha;
+  if (!sha) walkTenant.mode = "branch";
+  dock.items = []; dock.cur = ""; dock.error = "";
+  dockLoad();
+}
+
 // The switch at the top of the walk: unstaged, staged or branch, each with how many files it holds.
 function walkModePaint() {
   const box = document.getElementById("walk-mode");
@@ -657,8 +726,9 @@ function walkModePaint() {
   if (!box.onclick) box.onclick = e => { const x = e.target.closest("button[data-mode]"); if (x) walkModeSet(x.dataset.mode); };
 }
 function walkModeSet(m) {
-  if (m === walkTenant.mode) return;
+  if (m === walkTenant.mode && !walkTenant.commit) return;
   walkTenant.mode = m;
+  walkTenant.commit = "";
   dock.items = []; dock.cur = ""; dock.error = "";
   dockLoad();
 }
@@ -716,6 +786,7 @@ const walkTenant = {
   folded: new Set(),   // keys of files whose diff is collapsed
   allLines: new Set(), // keys of files shown past walkFileLines
   drafts: new Map(),   // key -> a reply not sent yet, so a repaint or a step away keeps it
+  commit: "",          // one commit of the branch walked alone, "" for the whole branch
   prId: "",            // the pulls row this card walks, "" for a bare findings folder
   hub: null,           // { repo, branch } of a hub branch walked with no card, in walk.html
 
@@ -723,6 +794,7 @@ const walkTenant = {
     this.prId = "";
     this.dir = "";
     this.mode = "";
+    this.commit = "";
     this.branch = null;
     this.diff = null; this.diffNote = ""; this.cache = new Map(); this.head = new Map(); this.at = null;
     this.ctx = { key: "", above: 3, below: 3 };
@@ -733,7 +805,8 @@ const walkTenant = {
     if (row) { this.prId = row.id; return true; }
     if (!task.worktree) return false;
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
-    if ((res.entries || []).some(e => !e.dir && walkParseName(e.name))) return true;
+    this.findings = (res.entries || []).some(e => !e.dir && walkParseName(e.name));
+    if (this.findings) return true;
     // Any answer is a git folder: one with nothing changed still walks. A folder not in git is refused.
     await api(`/v1/tasks/${task.id}/diff`);
     return true;
@@ -741,12 +814,15 @@ const walkTenant = {
 
   // No findings: the branch against its base, a file at a time.
   async loadFiles(task) {
+    const was = this.branch;
     this.branch = null;
     const q = new URLSearchParams();
     if (this.dir) q.set("dir", this.dir);
     if (this.mode && dock.open) q.set("mode", this.mode);
+    if (this.commit) q.set("commit", this.commit);
     const br = this.hub ? await api(walkHubDiffPath(this.hub.repo, this.hub.branch))
       : await api(`/v1/tasks/${task.id}/diff` + (String(q) ? "?" + q : ""));
+    if (br.mode === "commit" && was) Object.assign(br, { modes: was.modes, commits: was.commits, dirty: was.dirty });
     this.branch = br;
     if (!this.hub && br.mode) this.mode = br.mode;
     if (!this.hub && !br.diff) throw new Error(br.why || "nothing to walk");
@@ -756,7 +832,7 @@ const walkTenant = {
   },
 
   async opened(d) {
-    if (this.prId || this.hub) { this.diff = null; this.diffNote = ""; return; }
+    if (this.prId || this.hub || this.findings === false) { this.diff = null; this.diffNote = ""; return; }
     // The diff is read when the drawer opens, and not on the poll: it is the head as reviewed, and does not move.
     this.diff = null; this.diffNote = "";
     try {
@@ -765,7 +841,7 @@ const walkTenant = {
     } catch (e) {
       this.diffNote = e && e.status === 400
         ? "pr.diff is too large to show here, so only the label's line is shown"
-        : "no pr.diff in this folder, so only the label's line is shown. step 7 should copy it here";
+        : "this review has no diff yet, so each finding shows its own line and the code at it";
     }
   },
 
@@ -855,9 +931,17 @@ const walkTenant = {
     if (first && first.kind === "file") {
       const b = this.branch || {};
       const row = walkPrOf(d.taskId);
+      const br = b.branch || "branch", base = walkShort(b.base) || "base";
+      const says = this.hub ? `showing branch ${br} against ${base}`
+        : this.commit ? `showing one commit of ${br}`
+        : b.mode === "unstaged" ? `showing the uncommitted changes in the card's folder on ${br}`
+        : b.mode === "staged" ? `showing the staged changes in the card's folder on ${br}`
+        : row ? `showing the diff of PR #${row.number}: ${br} against ${base}`
+        : `showing this card's changes on ${br} against ${base}`;
+      if (this.commit) return { title: `${b.branch || "branch"} · commit ${esc(walkShort(this.commit))}`, note: says, more: "", url: row && row.url || "" };
       const what = b.mode === "unstaged" ? "uncommitted changes" : b.mode === "staged" ? "staged changes" : "vs " + (walkShort(b.base) || "base");
-      return { title: `${b.branch || "branch"} ${b.mode === "unstaged" || b.mode === "staged" ? "· " : ""}${what}`, note: b.truncated ? "patch cut short" : "", more: "",
-        url: row && row.url || "" };
+      return { title: `${b.branch || "branch"} ${b.mode === "unstaged" || b.mode === "staged" ? "· " : ""}${what}`,
+        note: says + (b.truncated ? " (patch cut short)" : ""), more: "", url: row && row.url || "" };
     }
     if (first) {
       const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(first.prUrl);
@@ -882,15 +966,19 @@ const walkTenant = {
     const row = walkPrOf(d.taskId);
     if (row) return "walk PR #" + row.number;
     if (n && d.items[0].kind === "file") return "walk " + n + (n === 1 ? " changed file" : " changed files");
-    if (!n && d.error) return "walk";
+    if (!n && d.error) return walkTenant.branch && walkTenant.branch.landed ? "walk · merged" : "walk";
     return "walk " + n + (n === 1 ? " finding" : " findings");
   },
 
   railRow(it, i, d) {
     if (it.kind === "file") {
+      const cut = it.path.lastIndexOf("/") + 1, f = it.file;
+      const was = f.from !== f.path ? `<span class="wk-was">&larr; ${esc(f.from.split("/").pop())}</span>` : "";
+      const dirty = this.branch && (this.branch.dirty || []).includes(it.path) && this.mode === "branch" ? `<span class="wk-was">uncommitted</span>` : "";
       return `<button type="button" class="wk-row${it.key === d.cur ? " cur" : ""}" data-i="${i}" role="option"
-        aria-selected="${it.key === d.cur}" data-tip="${esc(it.path)}"><span class="wk-n">${esc(it.num)}</span><span class="wk-fn">${
-        esc(it.path.split("/").pop())}</span>${typeof walkPrCommentCount === "function" && walkPrCommentCount(it.path) ? `<span class="wk-tc">${walkPrCommentCount(it.path)}</span>` : ""}<span class="wk-fc">+${it.file.add} -${it.file.del}</span></button>`;
+        aria-selected="${it.key === d.cur}" data-tip="${esc(it.path)}"><span class="wk-n">${esc(it.num)}</span><span class="wk-fn"><span class="wk-dir">${
+        esc(it.path.slice(0, cut))}</span>${esc(it.path.slice(cut))}${was}${dirty}</span>${typeof walkPrCommentCount === "function" && walkPrCommentCount(it.path) ? `<span class="wk-tc">${walkPrCommentCount(it.path)}</span>` : ""}<span class="wk-fc">${
+        f.status === "binary" ? `<span class="wk-bin">binary</span>` : `+${f.add} -${f.del}`}</span></button>`;
     }
     const glyph = it.state === "posted" ? "✓" : it.state === "accepted" ? "●" : it.state === "dismissed" ? "─" : it.state === "deferred" ? "…" : "";
     const prev = d.items[i - 1];
@@ -958,18 +1046,18 @@ const walkTenant = {
     const askBtn = (li, what) => hook ? `<button type="button" class="wk-ask" data-wp="ask" data-li="${li}" data-tip="ask the agent about this ${what}">ask the agent</button>` : "";
     const big = f.lines.length > walkBigFile && !this.allLines.has(it.key);
     const folded = big || this.folded.has(it.key);
-    const rows = folded ? "" : shown.map((l, li) => `<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : l.t === "@" ? " hk" : ""}${li === at ? " at" : ""}" data-li="${li}"><span class="wk-lo">${
+    const rows = folded ? "" : (hook ? walkPrStale(f.path) : "") + shown.map((l, li) => `<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : l.t === "@" ? " hk" : ""}${li === at ? " at" : ""}" data-li="${li}"><span class="wk-lo">${
       l.o === null || l.o === undefined ? "" : l.o}</span><span class="wk-ln"${l.n !== null && l.t !== "-" ? ` data-ln="${l.n}" data-tip="comment on line ${l.n}"` : ""}>${
       l.n === null ? "" : l.n}</span><span class="wk-mk">${l.t === "@" ? "" : l.t === " " ? "" : l.t}</span><span class="wk-tx">${l.t === "@" ? esc(l.text) + askBtn(li, "hunk") : walkFileText(l.text, words.get(li))}</span></div>${
       hook && l.n !== null && l.t !== "-" ? walkPrAfterLine(f.path, l.n) : ""}`).join("");
     const cut = big ? `<button type="button" class="wk-more" data-all="1">⋯ a large file, ${f.lines.length} lines. Show all of them</button>`
       : f.lines.length > cap ? `<button type="button" class="wk-more" data-all="1">⋯ ${f.lines.length - cap} more lines, show them</button>` : "";
-    const none = f.lines.length ? "" : `<div class="wk-warn">${f.status === "binary" ? "a binary file, no lines to show" : "no line changes (a rename or a mode change)"}</div>`;
+    const none = f.lines.length ? "" : `<div class="wk-warn">${f.status === "binary" ? "a binary file, so there are no lines to show. It changed in the commit, open it from the card's files to look" : f.from !== f.path ? "moved from " + esc(f.from) + ", nothing else changed" : "no line changes (a mode change)"}</div>`;
     const blocks = 5, filled = f.add + f.del ? Math.max(1, Math.round(blocks * f.add / (f.add + f.del))) : 0;
     const bar = Array.from({ length: f.add + f.del ? blocks : 0 }, (_, i) => `<i class="${i < filled ? "a" : "d"}"></i>`).join("");
     return `<div class="wk-file"><div class="wk-fbar"><button type="button" class="wk-fold" data-fold="1" aria-expanded="${!folded}" data-tip="${folded ? "show" : "hide"} this file's diff">${
       folded ? "▸" : "▾"}</button><span class="wk-num">${esc(it.num)}</span><span class="wk-fpath">${
-      esc(f.path)}${f.from !== f.path ? " <span class=\"wk-was\">(was " + esc(f.from) + ")</span>" : ""}</span><span class="wk-fstat"><b class="a">+${f.add}</b><b class="d">-${f.del}</b><span class="wk-sq">${bar}</span></span>${askBtn(Math.max(0, f.lines.findIndex(l => l.t !== "@")), "file")}</div>${
+      esc(f.path)}${f.from !== f.path ? " <span class=\"wk-was\">(was " + esc(f.from) + ")</span>" : ""}</span><span class="wk-fstat">${f.status === "binary" ? `<b class="wk-bin">binary</b>` : `<b class="a">+${f.add}</b><b class="d">-${f.del}</b><span class="wk-sq">${bar}</span>`}</span>${askBtn(Math.max(0, f.lines.findIndex(l => l.t !== "@")), "file")}</div>${
       none}${folded ? "" : `<div class="wk-code">${rows}</div>`}</div>${big || !folded ? cut : ""}`;
   },
 
@@ -1096,6 +1184,8 @@ function walkKeydown(e) {
   const key = k === "Enter" ? "C" : k;
   if (k === "Enter" && t && (t.tagName === "BUTTON" || t.tagName === "A")) return;
   if (k === "Escape" && dock.menu) { e.preventDefault(); walkMenu(false); return; }
+  const pop = document.getElementById("walk-share-pop");
+  if (k === "Escape" && pop && !pop.hidden) { e.preventDefault(); walkShareToggle(false); return; }
   if (k === "Escape" && !dock.editing && !dock.conflict) { e.preventDefault(); walkClose(); return; }
   if (!"aAecCopsdyfujkgmn[]".includes(key) || key.length !== 1) return;
   if (dock.editing || dock.conflict) return;
@@ -1625,6 +1715,8 @@ function walkGripDown(e) {
       dockPaint();
       return;
     }
+    if (el.dataset.wk === "mode") return void walkModeSet(el.dataset.mode);
+    if (el.dataset.wk === "landed") return void walkCommitSet(el.dataset.sha);
     if (el.dataset.all) { walkTenant.allLines.add(dock.cur); dockPaint(); return; }
     if (el.dataset.fold) {
       const cur = dockCurrent();

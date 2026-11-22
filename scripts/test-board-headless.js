@@ -2427,6 +2427,70 @@ async function reselectSection(browser, base) {
   mock.tasksMode = was;
 }
 
+// ── the walk bugs of the 11-21 tour ───────────────────────────────────────
+// The chip's first click on a done card opens the walk, the terminal list menu offers it, one commit of the picker and
+// back to all commits both read, a branch walk asks for no pr.diff, and walk.html with no card says so.
+async function walkTourSection(browser, base) {
+  const id = "land-wtour";
+  const patch = "diff --git a/a.go b/a.go\nnew file mode 100644\nindex 0000000..5626abf\n--- /dev/null\n+++ b/a.go\n@@ -0,0 +1,2 @@\n+one\n+two\n";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/tour", status: "done", recap_at: "2026-11-21T12:00:00Z" })];
+  mock.landPerms = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const cs = [{ sha: "aaaaaaa", subject: "one" }, { sha: "bbbbbbb", subject: "two" }];
+  const asked = [];
+  let texts = 0;
+  await ctx.route("**/v1/tasks/" + id + "/files/text*", route => { texts++; return route.fulfill({ status: 403, body: "{}" }); });
+  await ctx.route("**/v1/tasks/" + id + "/diff*", route => {
+    const q = new URL(route.request().url()).searchParams;
+    asked.push(q.toString());
+    const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (q.get("commit")) return json(200, { mode: "commit", head: q.get("commit"), branch: "claude/t", diff: patch });
+    if (q.get("mode") === "commit") return json(400, { error: "mode is unstaged, staged or branch" });
+    return json(200, { mode: "branch", branch: "claude/t", base: "main", diff: patch, modes: { branch: 1, unstaged: 0, staged: 0 },
+      commits: cs, dirty: [] });
+  });
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => cardRows.has(x) && typeof walkOfferOpen === "function", id, { timeout: slow(15000) });
+    await p.evaluate(x => walkOfferOpen(x), id);
+    await p.waitForFunction(() => dock.open && document.querySelector("#walk-drawer .wk-row"), null, { timeout: slow(10000) })
+      .catch(() => fail("walkTour: the first click on a done card's walk chip did not open the walk"));
+    const labels = await p.evaluate(x => termMenuItems(x, cardRows.get(x)).filter(Boolean).map(i => i.label), id);
+    if (!labels.includes("walk this card's changes")) fail("walkTour: the terminal menu has no walk entry: " + labels.join());
+    await p.evaluate(() => walkCommitSet("aaaaaaa"));
+    await p.waitForFunction(() => walkTenant.branch && walkTenant.branch.mode === "commit" && !dock.loading, null, { timeout: slow(10000) });
+    if (await p.evaluate(() => document.getElementById("walk-commit").hidden)) fail("walkTour: one commit picked hides the picker");
+    await p.evaluate(() => walkCommitSet(""));
+    await p.waitForFunction(() => walkTenant.branch && walkTenant.branch.mode === "branch" && !dock.loading, null, { timeout: slow(10000) })
+      .catch(() => fail("walkTour: all commits again did not read the branch: " + asked.join(" | ")));
+    if (asked.some(q => /mode=commit/.test(q))) fail("walkTour: a diff was asked with mode=commit: " + asked.join(" | "));
+    if (texts) fail("walkTour: a branch walk read pr.diff " + texts + " times");
+    await p.close();
+    const v = await ctx.newPage();
+    await v.goto(base + "/walk.html", { waitUntil: "domcontentloaded" });
+    await v.waitForFunction(() => /no card in the address/.test(document.getElementById("walk-item").textContent) &&
+      !document.getElementById("walk-drawer").hidden, null, { timeout: slow(10000) })
+      .catch(() => fail("walkTour: walk.html with no card shows no message"));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+}
+
 // ── a walk link opened in a fresh page ─────────────────────────────────────
 // `<board>/#card=<card>&walk=<folder>` is what an agent hands over. A fresh tab must select the card and open the
 // walk, and the address must not be rewritten to a route on the way.
@@ -13015,6 +13079,57 @@ async function walkBranchSection(browser, base) {
     const rows = await p.$$eval(S + ".wk-row .wk-fn", els => els.map(e => e.textContent));
     if (rows.join() !== "base.txt,one.txt,two.txt") fail("walkBranch: the files are " + rows.join());
     if (await p.$eval("#walk-title", e => e.textContent) !== "claude/feature vs main") fail("walkBranch: the title is " + await p.$eval("#walk-title", e => e.textContent));
+    const rail = await p.evaluate(() => {
+      const patch = ["diff --git a/pkg/mod1/mod.go b/pkg/mod1/mod.go", "new file mode 100644", "@@ -0,0 +1 @@", "+x",
+        "diff --git a/logo.png b/logo.png", "Binary files a/logo.png and b/logo.png differ",
+        "diff --git a/src/old.go b/src/new.go", "similarity index 100%", "rename from src/old.go", "rename to src/new.go"].join("\n");
+      const items = walkSplitDiff(patch).map(walkFileItem);
+      const was = walkTenant.branch;
+      walkTenant.branch = { dirty: ["pkg/mod1/mod.go"], modes: { branch: 3 } };
+      const prev = walkTenant.mode; walkTenant.mode = "branch";
+      const rows = items.map((it, i) => walkTenant.railRow(it, i, dock));
+      const files = items.map(it => walkTenant.filePane(it));
+      walkTenant.branch = { branch: "claude/done", base: "origin/main", landed: { sha: "abc1234", subject: "Merge claude/done" } };
+      const empty = walkEmptyHtml({ tenant: walkTenant, error: "nothing" }, walkTenant);
+      walkTenant.branch = was; walkTenant.mode = prev;
+      const done = { id: "x1", status: "done", recap_at: "2026-01-01T00:00:00Z", worktree: "/w" };
+      const before = walkOffered(done);
+      walkSeenSet("x1", done.recap_at);
+      const none = { id: "x2", status: "done", recap_at: "2026-01-01T00:00:00Z", worktree: "/w" };
+      walkOffers.set("x2", { at: none.recap_at, n: 0 });
+      const bare = walkChip(none);
+      walkOffers.set("x2", { at: none.recap_at, n: 0, landed: true });
+      const merged = walkChip(none);
+      walkOffers.set("x2", { at: none.recap_at, n: 2 });
+      const some = walkChip(none);
+      return { rows, files, empty, before, after: walkOffered(done), running: walkOffered({ ...done, status: "running" }), bare, merged, some };
+    });
+    if (!/wk-dir">pkg\/mod1\/<\/span>mod\.go/.test(rail.rows[0]) || !/uncommitted/.test(rail.rows[0])) fail("walkBranch: the rail row has no folder or no uncommitted mark: " + rail.rows[0]);
+    if (!/wk-bin">binary/.test(rail.rows[1]) || /\+0 -0/.test(rail.rows[1]) || !/binary file/.test(rail.files[1])) fail("walkBranch: a binary file does not say so: " + rail.rows[1]);
+    if (!/&larr; old\.go/.test(rail.rows[2]) || !/moved from src\/old\.go/.test(rail.files[2])) fail("walkBranch: a rename does not say what it was: " + rail.rows[2]);
+    if (!/Already merged/.test(rail.empty) || !/Merge claude\/done/.test(rail.empty) || !/data-sha="abc1234"/.test(rail.empty)) fail("walkBranch: a merged branch does not name its merge: " + rail.empty);
+    if (!rail.before || rail.after || rail.running) fail("walkBranch: a walk is offered " + JSON.stringify(rail));
+    if (rail.bare !== "" || !/merged/.test(rail.merged) || !/2 files/.test(rail.some)) fail("walkBranch: the walk chip is wrong when empty, merged or full: " + JSON.stringify([rail.bare, rail.merged, rail.some]));
+    const says = await p.$eval("#walk-note", e => e.textContent);
+    if (!/this card's changes on claude\/feature against main/.test(says)) fail("walkBranch: the pane does not say what it shows: " + says);
+    const onEvent = await p.evaluate(() => {
+      const id = "walk-timing";
+      cardRows.set(id, { id, status: "running", worktree: "/w" });
+      onTaskEvent({ data: JSON.stringify({ id, row: 1, status: "done", recap_at: "2026-02-02T00:00:00Z", worktree: "/w" }) });
+      const read = walkOffers.has(id), debounced = !!refreshTimer;
+      let reads = 0;
+      const real = window.dockResync;
+      window.dockResync = () => { reads++; };
+      clearTimeout(dock.timer); dock.timer = 0;
+      dockKick(dock.taskId);
+      const atOnce = reads;
+      clearTimeout(dock.timer); dock.timer = 0;
+      window.dockResync = real;
+      cardRows.delete(id);
+      return { read, debounced, atOnce };
+    });
+    if (!onEvent.read || onEvent.debounced) fail("walkBranch: a done event waited for a later read or paint: " + JSON.stringify(onEvent));
+    if (onEvent.atOnce !== 1) fail("walkBranch: a card event did not read the walk at once: " + JSON.stringify(onEvent));
     await shot(p, "first-file");
     const lay = await p.evaluate(() => {
       const d = document.getElementById("walk-drawer"), f = document.getElementById("walk-files"), r = document.getElementById("walk-rail");
@@ -13029,7 +13144,7 @@ async function walkBranchSection(browser, base) {
     if (lines.join() !== "two,more") fail("walkBranch: two.txt shows " + JSON.stringify(lines));
     await shot(p, "second-file");
     const chg = () => p.$eval("#walk-chg", e => e.textContent);
-    const total = Number(/of (\d+)/.exec(await chg())[1]);
+    const total = Number(/(\d+) changes?|of (\d+)/.exec(await chg()).slice(1).find(Boolean));
     if (!total) fail("walkBranch: no changes counted: " + await chg());
     await p.click('#walk-nav [data-act="nc"]');
     if (!/^change 1 of /.test(await chg()) || !await p.$(S + ".wk-l.at")) fail("walkBranch: next change did not land on the first change: " + await chg());
@@ -13350,6 +13465,71 @@ async function walkRoomBackSection(browser, base) {
   }
   if (errors.length) fail("walkRoomBack: the page threw: " + errors.join(" | "));
   console.log("walkRoomBack: ok");
+}
+
+// A CARD WHOSE FOLDER GIT CANNOT WALK IS ASKED ONCE, NOT ON EVERY EVENT: backlog-sort and audit-cruft logged a 409 per
+// task event. It is asked again when its folder moves.
+async function walkNoGitSection(browser, base) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walknogit-"));
+  const id = "land-wnogit";
+  fs.mkdirSync(path.join(tmp, id, "findings"), { recursive: true });
+  mock.walkDirs[id] = path.join(tmp, id);
+  const no = { code: 409, body: { error: "/walk/nogit is not a git checkout" } };
+  no.then = no;
+  mock.walkBranch[id] = no;
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/nogit" })];
+  mock.landPerms = [];
+  const errors = [];
+  let asked = 0;
+  const ctx = await landContext(browser);
+  await ctx.route("**/v1/tasks/" + id + "/diff*", route => { asked++; return route.fallback(); });
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
+    await attachRetry(p, { unit: "walkNoGit", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+    await p.waitForFunction(x => walkNoWalk.has(x), id, { timeout: slow(5000) })
+      .catch(() => fail("walkNoGit: the 409 was not kept as a folder with nothing to walk"));
+    if (asked !== 1) fail("walkNoGit: the attach asked for the diff " + asked + " times");
+    const kicked = await p.evaluate(x => {
+      for (let i = 0; i < 5; i++) onTaskEvent({ data: JSON.stringify({ id: x }) });
+      return dock.timer;
+    }, id);
+    if (kicked) fail("walkNoGit: a task event for a folder that answered 409 scheduled another probe");
+    await p.evaluate(x => {
+      cardRows.set(x, Object.assign({}, cardRows.get(x), { worktree: "/walk/moved" }));
+      onTaskEvent({ data: JSON.stringify({ id: x }) });
+    }, id);
+    await p.waitForFunction(() => dock.timer, null, { timeout: slow(2000) })
+      .catch(() => fail("walkNoGit: a card whose folder moved was not asked again"));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    delete mock.walkDirs[id]; delete mock.walkBranch[id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkNoGit: the page threw: " + errors.join(" | "));
+  console.log("walkNoGit: ok");
 }
 
 // A HUB BRANCH IS WALKED WITH NO CARD: a right click on a branch name in a terminal on the hub board offers it beside
@@ -15457,7 +15637,7 @@ async function termMenuSection(browser, base) {
 
     // a running card: the whole menu, in order.
     let m = await openMenu("land-tm-run");
-    const want = ["restart", "new context", "---", "settings", "---", "duplicate agent", "pause", "terminate and clean up"];
+    const want = ["restart", "new context", "walk this card's changes", "---", "settings", "---", "duplicate agent", "pause", "terminate and clean up"];
     if (JSON.stringify(m.labels) !== JSON.stringify(want)) fail("termMenu: a running card's menu is " + JSON.stringify(m.labels));
     // settings has no (?) in the interview's table, so it is the only item allowed without one.
     if (m.noHelp.some(l => l !== "settings")) fail("termMenu: items without their (?): " + JSON.stringify(m.noHelp));
@@ -29318,14 +29498,14 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, walkLinkFresh: walkLinkFreshSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, walkLinkFresh: walkLinkFreshSection, walkTour: walkTourSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, relaunchAttach: relaunchAttachSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, peekLeftover: peekLeftoverSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkRoomBack: walkRoomBackSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkReviewBox: walkReviewBoxSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkBranch: walkBranchSection, walkLate: walkLateSection, walkRoomBack: walkRoomBackSection, walkNoGit: walkNoGitSection, walkSwitch: walkSwitchSection, walkHubBranch: walkHubBranchSection, walkView: walkViewSection, walkReply: walkReplySection, walkReviewBox: walkReviewBoxSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, termBarOneLine: termBarOneLineSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -31180,6 +31360,7 @@ async function main() {
     await unit("walkBranch", () => walkBranchSection(browser, base));
     await unit("walkLate", () => walkLateSection(browser, base));
     await unit("walkRoomBack", () => walkRoomBackSection(browser, base));
+    await unit("walkNoGit", () => walkNoGitSection(browser, base));
     await unit("walkSwitch", () => walkSwitchSection(browser, base));
     await unit("walkHubBranch", () => walkHubBranchSection(browser, base));
     await unit("walkView", () => walkViewSection(browser, base));
@@ -31243,6 +31424,7 @@ async function main() {
     await unit("usageHistory", bu("usageHistory"));
     await unit("reselect", () => reselectSection(browser, base));
     await unit("walkLinkFresh", () => walkLinkFreshSection(browser, base));
+    await unit("walkTour", () => walkTourSection(browser, base));
     // ── over a terminal the toasts hang from the top right ─────────────────
     await unit("toastsTop", () => toastsTopSection(browser, base));
     // ── say immediately, or when the turn is done ──────────────────────────
