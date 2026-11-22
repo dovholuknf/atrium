@@ -91,7 +91,7 @@ asserts. `release.sh` builds every platform and hashes the results. The `package
 that.
 
 `make-release.sh prepare <ver> --execute` makes the version commit on the current branch, by hand, and it reaches main
-by a normal merge. The `make-release` workflow (the ci-loop `release <ver>` verb) runs `make-release.sh tag`, which
+by a normal merge. The ci-loop `release <ver>` verb runs `make-release.sh tag`, which
 refuses unless main's head has that VERSION, the tag is new and `ci.yml` succeeded on that sha, then tags it and calls
 `release.yml`. No workflow opens or merges a PR.
 
