@@ -40,14 +40,15 @@ You should now see a card, and its badge change between **thinking** and the too
 ## 3. Add the permission gate (optional)
 
 The gate is one more `PreToolUse` hook. `atrium hook install` and the board's install all write it with the others,
-because a room without it never puts a question on the board. To leave it out, install the hooks one at a time with
-`atrium hook install --event <name>` and skip `permission`, or remove its entry from `settings.json`. It only gates
-sessions you opt in below. [Hooks](./hooks.md#the-permission-gate) has the contract and the settings entry.
+because a room without it never puts a question on the board. To leave it out, run `atrium hook install --watch-only`,
+which writes every hook but the gate, or remove its entry from `settings.json`.
+[Hooks](./hooks.md#the-permission-gate) has the contract and the settings entry.
 
-Then choose which sessions to gate:
+Which sessions it gates:
 
-- `ATRIUM_PERM_GATE=on` in a session's environment gates it from the start. Put it in a runner's environment on
-  the **rooms** tab to gate every session that runner launches.
+- Every session atrium launches is gated from the start. `ATRIUM_PERM_GATE=off` in its runner's environment keeps
+  that runner's sessions ungated.
+- A session you started yourself is gated when `ATRIUM_PERM_GATE=on` is in its environment.
 - `atrium join`, run inside a session, gates that session from its next tool call. `atrium leave` stops.
 
 To see it work, start a new gated session and ask it to run a harmless command, such as listing a directory. The

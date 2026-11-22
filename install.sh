@@ -4,7 +4,7 @@
 # To pass options: ... | sh -s -- --dir /opt/atrium/bin --addr 127.0.0.1:7778
 #   --dir D        install into D (default ~/.atrium/bin)
 #   --version V    a release tag such as v0.0.5 (default: the latest)
-#   --addr A       the board address (default 127.0.0.1:7778)
+#   --addr A       the board address (default 127.0.0.1:7778, or the next free ports when it is held)
 #   --no-path      do not edit a shell profile
 #   --no-start     install only
 #   --             everything after goes to `atrium run`
@@ -12,7 +12,7 @@
 # dir, adds the dir to your shell profile PATH, starts `atrium run` detached, and prints the board URL.
 set -eu
 
-dir="$HOME/.atrium/bin"; version=latest; repo="${ATRIUM_REPO:-dovholuknf/atrium}"; addr=127.0.0.1:7778
+dir="$HOME/.atrium/bin"; version=latest; repo="${ATRIUM_REPO:-dovholuknf/atrium}"; addr=
 no_path=0; no_start=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -87,20 +87,29 @@ if [ "$no_path" = 0 ]; then
   esac
 fi
 
-url="http://$addr"
-if [ "$no_start" = 1 ]; then echo "not started. start it with: atrium run"; echo "board: $url"; exit 0; fi
+if [ "$no_start" = 1 ]; then echo "not started. start it with: atrium run"; exit 0; fi
 
-up() { curl -fsS -o /dev/null --max-time 2 "$url" 2>/dev/null; }
-if up; then
-  echo "something already answers on the board address, so atrium run was not started"
+# atrium run moves to free ports when the default ones are held, and writes the board it bound in hub-addr.json.
+if [ -n "${WORKTREE_ROOT:-}" ]; then hub="$WORKTREE_ROOT/hub/hub"; else hub="$HOME/.atrium/hub"; fi
+board() {
+  b=$(sed -n 's/.*"board":"\([^"]*\)".*/\1/p' "$hub/hub-addr.json" 2>/dev/null)
+  [ -n "$b" ] && curl -fsS -o /dev/null --max-time 2 "http://$b" 2>/dev/null && echo "http://$b"
+}
+if [ -n "$addr" ]; then set -- --addr "$addr" "$@"; fi
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup "$dir/atrium" run "$@" >"$dir/run.log" 2>&1 </dev/null &
 else
-  if command -v setsid >/dev/null 2>&1; then
-    setsid nohup "$dir/atrium" run --addr "$addr" "$@" >"$dir/run.log" 2>&1 </dev/null &
-  else
-    nohup "$dir/atrium" run --addr "$addr" "$@" >"$dir/run.log" 2>&1 </dev/null &
-  fi
-  i=0
-  while [ $i -lt 60 ] && ! up; do sleep 0.5; i=$((i + 1)); done
-  up || echo "warning: the board did not answer in 30s, see $dir/run.log" >&2
+  nohup "$dir/atrium" run "$@" >"$dir/run.log" 2>&1 </dev/null &
 fi
-echo "board: $url"
+pid=$!
+i=0; url=
+while [ $i -lt 60 ] && [ -z "$url" ]; do
+  sleep 0.5; i=$((i + 1))
+  if ! kill -0 "$pid" 2>/dev/null; then
+    cat "$dir/run.log"
+    wait "$pid" || die "atrium run stopped, see $dir/run.log"
+    exit 0
+  fi
+  url=$(board) || url=
+done
+if [ -n "$url" ]; then echo "board: $url"; else echo "warning: atrium is still starting, its log is $dir/run.log" >&2; fi

@@ -51,10 +51,11 @@ func TestResolveDefaults(t *testing.T) {
 	}
 
 	t.Setenv("WORKTREE_ROOT", "")
-	if _, err := envAt(home, "windows").Resolve("", ""); err != ErrNone {
+	homeless := Env{GOOS: "windows", HomeDir: func() (string, error) { return "", os.ErrNotExist }}
+	if _, err := homeless.Resolve("", ""); err != ErrNone {
 		t.Fatalf("windows with nothing set: %v, want ErrNone", err)
 	}
-	_, err = envAt(home, "windows").Resolve("", "")
+	_, err = homeless.Resolve("", "")
 	for _, want := range []string{"atrium room set card_root", "D:/", "C:", "board"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the no-card-root refusal does not say %q: %v", want, err)
@@ -71,6 +72,32 @@ func TestResolveDefaults(t *testing.T) {
 	}
 	if _, err := env.Resolve(home, ""); err == nil || !strings.Contains(err.Error(), "home") {
 		t.Fatalf("the home folder was accepted: %v", err)
+	}
+}
+
+func TestWindowsDefaultsToADataDriveElseLocalAppData(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("WORKTREE_ROOT", "")
+	env := envAt(filepath.Join(base, "home"), "windows")
+	d, e := filepath.Join(base, "D"), filepath.Join(base, "E")
+	local := filepath.Join(base, "home", "AppData", "Local")
+	env.DataDrives = func() []string { return []string{d, e} }
+	env.LocalAppData = func() string { return local }
+
+	if got, err := env.Resolve("", ""); err != nil || got != filepath.Join(d, "atrium", "cards") {
+		t.Fatalf("with data drives: %q, %v, want the first one's atrium/cards", got, err)
+	}
+	env.DataDrives = func() []string { return nil }
+	if got, err := env.Resolve("", ""); err != nil || got != filepath.Join(local, "atrium", "cards") {
+		t.Fatalf("with only the system drive: %q, %v, want LOCALAPPDATA's atrium/cards", got, err)
+	}
+	env.LocalAppData = nil
+	if got, err := env.Resolve("", ""); err != nil || got != filepath.Join(base, "home", "atrium", "cards") {
+		t.Fatalf("with no LOCALAPPDATA: %q, %v, want the home folder's atrium/cards", got, err)
+	}
+	set := filepath.Join(base, "mine")
+	if got, err := env.Resolve(set, ""); err != nil || got != set {
+		t.Fatalf("the setting lost to the windows default: %q, %v", got, err)
 	}
 }
 

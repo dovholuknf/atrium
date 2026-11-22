@@ -1,0 +1,14 @@
+<Configuration>
+  <!-- A clean Windows for scoring atrium's first ten minutes. Maps no host folder. See scoring-sheet.md beside it. -->
+  <Networking>Enable</Networking>
+  <ClipboardRedirection>Enable</ClipboardRedirection>
+  <MemoryInMB>8192</MemoryInMB>
+  <vGPU>Enable</vGPU>
+  <AudioInput>Disable</AudioInput>
+  <VideoInput>Disable</VideoInput>
+  <PrinterRedirection>Disable</PrinterRedirection>
+  <ProtectedClient>Disable</ProtectedClient>
+  <LogonCommand>
+    <Command>cmd.exe /c start "atrium first run" powershell.exe -NoExit -NoProfile -Command "Set-Location $HOME; Write-Host 'Clean sandbox. Paste the install line from the README:' -ForegroundColor Cyan; Write-Host '  irm https://raw.githubusercontent.com/dovholuknf/atrium/main/install.ps1 | iex'; Write-Host 'Then follow scoring-sheet.md on the host, row by row.' -ForegroundColor Cyan"</Command>
+  </LogonCommand>
+</Configuration>

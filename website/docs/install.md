@@ -23,7 +23,7 @@ of them. This is why atrium starts from a user unit, a LaunchAgent or a logon ta
 | --- | --- | --- |
 | `--dir D` | `-Dir D` | Install into D instead of `~/.atrium/bin`. |
 | `--version V` | `-Version V` | A release tag such as `v0.0.5`, instead of the latest. |
-| `--addr A` | `-Addr A` | The board address, `127.0.0.1:7778` by default. |
+| `--addr A` | `-Addr A` | The board address. By default `127.0.0.1:7778`, or the next free ports when it is held. |
 | `--no-path` | `-NoPath` | Leave PATH alone. |
 | `--no-start` | `-NoStart` | Install only. |
 | `-- ARGS` | `-RunArgs ARGS` | Extra arguments for `atrium run`. |

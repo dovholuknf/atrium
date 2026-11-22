@@ -36,9 +36,9 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium worktree new <name>` / `rm <name>` / `list` | Make branch `claude/<name>` off `claude/main` with a worktree, remove it and delete the branch when merged, or list the `claude/` worktrees. |
 | `atrium open <url>` | Fill the launch dialog from an issue or pull request URL. |
 | `atrium twig <name>` | From inside a worktree: a new branch and worktree off its HEAD, its uncommitted work carried, a card in it. |
-| `atrium hook install [--runner codex]` | Install Claude or Codex hooks. |
+| `atrium hook install [--runner codex] [--watch-only] [--dry-run]` | Install Claude or Codex hooks. `--watch-only` leaves out the permission gate, and `--dry-run` writes nothing. |
 | `atrium hook status` | Inspect Claude hooks. |
-| `atrium hook`, `atrium session`, `atrium turn` | The hook entry points. Wired for you. |
+| `atrium hook`, `atrium session`, `atrium turn` | The hook entry points. Wired for you. `atrium --help` leaves out `session` and `turn`. |
 | `atrium replay [file]` | Render a captured terminal stream the way an attach would. |
 | `atrium task <who>` | One card, named by handle, alias, `name@room` or id. |
 | `atrium exit <who>` | Ask a card's runner to leave, as `atrium_exit` does. `--force` for a card that is not yours. |

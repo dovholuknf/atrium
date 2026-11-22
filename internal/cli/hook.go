@@ -224,7 +224,7 @@ func newHook() *cobra.Command {
 	var event, name, hubURL, runner, allow string
 	c := &cobra.Command{
 		Use:   "hook",
-		Short: "Report what this session is doing. Run by a harness, not by hand.",
+		Short: "Install, check or remove atrium's hooks in a runner's settings. Bare, a harness runs it.",
 		Long: "Posts one activity event to the daemon and exits. Meant to be registered in the " +
 			"runner's own hooks file, which the board can do for you from the runners tab.\n\n" +
 			"It never fails a session: whatever goes wrong, it exits 0, and it says so when atrium did not answer.",
@@ -297,14 +297,15 @@ func newHook() *cobra.Command {
 // ping afterwards only removes the wait.
 func newHookInstall() *cobra.Command {
 	var event, runner, project string
-	var reportOnly bool
+	var dryRun, reportOnly, watchOnly bool
 	c := &cobra.Command{
 		Use:   "install",
 		Short: "Register atrium's hooks for a runner.",
 		Long: "Writes the hook entries into your runner configuration, keeping a copy of the old " +
 			"file first and leaving everything else in it alone.\n\n" +
 			"With no --event it writes the non-optional hooks. With one, just that one, so they can be " +
-			"added a few at a time.\n\n" +
+			"added a few at a time. --watch-only writes all of them but the permission gate, so the board " +
+			"shows every session and nothing waits on it.\n\n" +
 			"The board notices on its own: it reads the same file every few seconds.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// The daemon identity prevents a fresh build from installing hooks against its temporary path.
@@ -327,12 +328,22 @@ func newHookInstall() *cobra.Command {
 				return err
 			}
 			if reportOnly {
+				fmt.Fprintln(cmd.ErrOrStderr(), "--report-only is now --dry-run. use that")
+				dryRun = true
+			}
+			if watchOnly {
+				if len(only) > 0 {
+					return errors.New("--watch-only already names its hooks, so it takes no --event")
+				}
+				only = reportingEvents(target)
+			}
+			if dryRun {
 				path, lines, err := claudeconf.PreviewInstallTarget(target, exe, only)
 				if err != nil {
 					return err
 				}
 				out := cmd.OutOrStdout()
-				fmt.Fprintf(out, "report only. nothing was written. file: %s\n", path)
+				fmt.Fprintf(out, "dry run. nothing was written. file: %s\n", path)
 				for _, l := range lines {
 					fmt.Fprintln(out, l)
 				}
@@ -384,7 +395,10 @@ func newHookInstall() *cobra.Command {
 	c.Flags().StringVar(&runner, "runner", "claude", "hook target: claude or codex")
 	c.Flags().StringVar(&event, "event", "",
 		"just this one: "+installableEvents())
-	c.Flags().BoolVar(&reportOnly, "report-only", false, "print what install would change and write nothing")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "print what install would change and write nothing")
+	c.Flags().BoolVar(&reportOnly, "report-only", false, "the old name of --dry-run")
+	_ = c.Flags().MarkHidden("report-only")
+	c.Flags().BoolVar(&watchOnly, "watch-only", false, "every hook that only reports, and not the permission gate, so nothing waits on the board")
 	c.Flags().StringVar(&project, "project", "", "write into <dir>/.claude/settings.local.json instead of the user-wide settings")
 	return c
 }
@@ -641,4 +655,15 @@ func hookClient(total time.Duration) *http.Client {
 			DisableKeepAlives:   true,
 		},
 	}
+}
+
+// reportingEvents is every hook install writes by default but the permission gate, for a watch-only install.
+func reportingEvents(t claudeconf.Target) []string {
+	var out []string
+	for _, w := range t.Wanted {
+		if !w.Optional && w.Event != "permission" {
+			out = append(out, w.Event)
+		}
+	}
+	return out
 }

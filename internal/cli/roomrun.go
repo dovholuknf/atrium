@@ -461,6 +461,9 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	if err != nil {
 		return err
 	}
+	if err := pinCardRoot(d.Store(), cardroot.SystemEnv()); err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
