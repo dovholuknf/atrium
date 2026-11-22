@@ -295,10 +295,8 @@ func AddHomeWorktree(clone string, dd HomeDirs, branch, base, slug string, env [
 		_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, NewBranch: branch, Orphan: true})
 		return branch, "", WrapGit("add the worktree", err)
 	}
-	if fromDefault {
-		if base, err = freshHubBase(clone, base, env); err != nil {
-			return "", "", err
-		}
+	if base, err = freshHubBase(clone, base, env); err != nil {
+		return "", "", err
 	}
 	_, err = shared.GitIn(clone, gitexec.WorktreeAdd{Path: dd.Work, NewBranch: branch, Commitish: base})
 	return branch, base, WrapGit("add the worktree", err)
@@ -538,6 +536,9 @@ func (d *Service) HomeWorkState(row store.CardHome, dd HomeDirs) (why, branch st
 	if _, err := os.Stat(dd.Work); err != nil {
 		return "", "", false
 	}
+	if ents, err := os.ReadDir(dd.Work); err == nil && len(ents) == 0 {
+		return "", "", false
+	}
 	status, err := shared.GitIn(dd.Work, gitexec.Status{V1: true, Untracked: "normal"})
 	if err != nil {
 		return "work/ could not be read: " + small.FirstLine(err.Error()), "", false
@@ -545,11 +546,13 @@ func (d *Service) HomeWorkState(row store.CardHome, dd HomeDirs) (why, branch st
 	if status != "" {
 		lines := 0
 		for _, l := range strings.Split(status, "\n") {
-			if strings.TrimSpace(l) != "" {
+			if l = strings.TrimSpace(l); l != "" && l != "?? BRIEF.md" {
 				lines++
 			}
 		}
-		return "work/ has " + shared.Plural(lines, "uncommitted file"), "", false
+		if lines > 0 {
+			return "work/ has " + shared.Plural(lines, "uncommitted file"), "", false
+		}
 	}
 	branch, _ = shared.GitIn(dd.Work, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 	if branch == "" {

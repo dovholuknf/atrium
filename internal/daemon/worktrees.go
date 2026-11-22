@@ -123,12 +123,14 @@ func (d *Daemon) checkoutOf(slug string) string {
 
 // worktreeJudge is the room's say on a worktree path, read once for the call.
 //
-// A path is atrium's when an inventory row names it, or a card tagged origin:agent and atrium:subagent works in it.
+// A path is atrium's when an inventory row names it, it is in a card home, or a card tagged origin:agent and
+// atrium:subagent works in it.
 // Everything else is not, whoever asks: the operator's worktrees, an orchestrator's, and a worker's whose card the sweep
 // deleted. Then a card in use, and the sentence reclaimBlock gives, follow as reasons.
 func (d *Daemon) worktreeJudge() func(string) worktrees.Judgment {
 	tasks, _ := d.st.List()
 	rows, _ := d.st.LiveResources()
+	homes, _ := d.st.CardHomesOpen()
 	return func(path string) worktrees.Judgment {
 		j := worktrees.Judgment{}
 		var cards []*store.Task
@@ -151,6 +153,14 @@ func (d *Daemon) worktreeJudge() func(string) worktrees.Judgment {
 			if r.Kind == store.ResWorktree && worktrees.SamePath(r.Ref, path) {
 				j.Atriums = true
 				if t, err := d.st.Get(r.Card); err == nil {
+					add(t)
+				}
+			}
+		}
+		for _, h := range homes {
+			if worktrees.SamePath(h.Path, path) || insideRoot(filepath.FromSlash(h.Path), path) {
+				j.Atriums = true
+				if t, err := d.st.Get(h.Card); err == nil {
 					add(t)
 				}
 			}

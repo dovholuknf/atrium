@@ -98,6 +98,9 @@ func TestADoneOrDeadCardKeepsItsHomeForTheGraceThenLosesIt(t *testing.T) {
 	homeStays(t, deadDirs)
 
 	for _, id := range []string{done.ID, dead.ID} {
+		if err := d.st.SetTags(id, []string{api.ClosedTag}); err != nil {
+			t.Fatal(err)
+		}
 		if err := d.st.BackdateActivity(id, EndedFolderGrace+time.Hour); err != nil {
 			t.Fatal(err)
 		}
@@ -482,4 +485,177 @@ func TestASelfEndedCardKeepsAScratchHomeWithFiles(t *testing.T) {
 		t.Fatalf("row %+v", got)
 	}
 	homeGone(t, d, emptyRow, emptyDirs)
+}
+
+func TestAFinishedWorkersHomeGoesAfterTheShortGrace(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	worker, row, dd := worktreeHome(t, d, repo)
+	kept := homeLaunch(t, d, repo, "kept open")
+	for _, c := range []struct {
+		id   string
+		tags []string
+	}{{worker.ID, []string{OriginAgentTag, SubagentTag, api.ClosedTag}}, {kept.task.ID, []string{OriginAgentTag, SubagentTag, KeepOpenTag}}} {
+		if err := d.st.SetTags(c.id, c.tags); err != nil {
+			t.Fatal(err)
+		}
+		task, _ := d.st.Get(c.id)
+		if _, err := d.st.CreateWorkItem(task, store.NewWorkItem{Brief: "do it"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.st.RecordReport(store.ReportWrite{TaskID: c.id, ReportStatus: ReportDone,
+			MoveStatus: true, Status: store.StatusDone}); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.st.BackdateActivity(c.id, FinishedWorkerGrace+time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.sweepEndedFolders(context.Background())
+	homeGone(t, d, row, dd)
+	homeStays(t, kept.dd)
+}
+
+func TestAHomeWhoseWorkIsAnEmptyFolderGoes(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	task, row, dd := worktreeHome(t, d, repo)
+	endCard(t, d, task.ID, store.StatusDone)
+	if err := archiveEnded(d, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	cullGit(t, repo, "worktree", "remove", "--force", dd.Work)
+	if err := os.MkdirAll(dd.Work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d.sweepStash = func(context.Context, string, string, string) (string, string, error) {
+		t.Error("an empty work/ was stashed")
+		return "", "", os.ErrPermission
+	}
+	d.sweepEndedFolders(context.Background())
+	homeGone(t, d, row, dd)
+}
+
+func TestAFinishedUnclosedCardKeepsAnIgnoredMock(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	task, _, dd := worktreeHome(t, d, homeRepo(t))
+	endCard(t, d, task.ID, store.StatusDone)
+	mock := filepath.Join(dd.Work, "build.claude", "bringup-mock", "index.html")
+	if err := os.MkdirAll(filepath.Dir(mock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mock, []byte("<html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dd.Work, ".gitignore"), []byte("build.claude/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.BackdateActivity(task.ID, EndedFolderGrace+time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if out := d.sweepEndedFolders(context.Background()); len(out) != 0 {
+		t.Fatalf("swept %q", sweptPaths(out))
+	}
+	if _, err := os.Stat(mock); err != nil {
+		t.Fatalf("the mock went: %v", err)
+	}
+}
+
+func TestFinishingNeverFreesAPinnedCardOrOneHoldingAnIgnoredFile(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	mock, _, mockDirs := worktreeHome(t, d, repo)
+	pinned := homeLaunch(t, d, repo, "pinned")
+	plain := homeLaunch(t, d, repo, "plain")
+	for _, id := range []string{mock.ID, pinned.task.ID, plain.task.ID} {
+		if err := d.st.SetTags(id, []string{OriginAgentTag, SubagentTag}); err != nil {
+			t.Fatal(err)
+		}
+		task, _ := d.st.Get(id)
+		if _, err := d.st.CreateWorkItem(task, store.NewWorkItem{Brief: "do it"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.st.RecordReport(store.ReportWrite{TaskID: id, ReportStatus: ReportDone,
+			MoveStatus: true, Status: store.StatusDone}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.st.SetPinned(pinned.task.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mockDirs.Work, ".gitignore"), []byte("build.claude/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(mockDirs.Work, "build.claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mockDirs.Work, "build.claude", "mock.html"), []byte("<html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{mock.ID: "ignored", pinned.task.ID: "pinned"} {
+		task, _ := d.st.Get(id)
+		if got := d.reclaimBlockIdle(task); !strings.Contains(got, want) {
+			t.Errorf("reclaimBlockIdle(%s) = %q, want it to say %q", id, got, want)
+		}
+	}
+	task, _ := d.st.Get(plain.task.ID)
+	if got := d.reclaimBlockIdle(task); got != "" {
+		t.Errorf("a plain finished card is blocked: %q", got)
+	}
+}
+
+func TestAClosedCardWithAnEmptyWorkFolderIsFreed(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	task, row, dd := worktreeHome(t, d, repo)
+	endCard(t, d, task.ID, store.StatusDone)
+	if err := d.st.SetTags(task.ID, []string{api.ClosedTag}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.BackdateActivity(task.ID, WokenGuard+time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	cullGit(t, repo, "worktree", "remove", "--force", dd.Work)
+	if err := os.MkdirAll(dd.Work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d.sweepEndedFolders(context.Background())
+	homeGone(t, d, row, dd)
+}
+
+func TestAnUntrackedBriefIsNotWorkToStash(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	task, row, dd := worktreeHome(t, d, homeRepo(t))
+	endCard(t, d, task.ID, store.StatusDone)
+	if err := archiveEnded(d, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dd.Work, "BRIEF.md"), []byte("the job"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d.sweepStash = func(context.Context, string, string, string) (string, string, error) {
+		t.Error("BRIEF.md was stashed as work")
+		return "", "", os.ErrPermission
+	}
+	d.sweepEndedFolders(context.Background())
+	homeGone(t, d, row, dd)
+}
+
+func TestTheAuditCountsACardHomesWorktreeAsAtriums(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	task, _, dd := worktreeHome(t, d, homeRepo(t))
+	endCard(t, d, task.ID, store.StatusDone)
+	if err := archiveEnded(d, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if j := d.worktreeJudge()(filepath.ToSlash(dd.Work)); !j.Atriums {
+		t.Fatalf("judged %+v", j)
+	}
 }

@@ -61,6 +61,39 @@ func Tree(pid int) map[int]string {
 	})
 }
 
+// StopOrphans ends the processes a dead root left behind and what they started, and answers them for WaitGone. A
+// child of a dead pid still names it as its parent, so root's pid finds them. A child counts only when it started after
+// since (a StartTime of root, or a unix nanosecond bound) and root is not running, so a recycled pid never matches.
+func StopOrphans(root int, since string) map[int]string {
+	out := map[int]string{}
+	floor, err := strconv.ParseInt(since, 10, 64)
+	if _, serr := StartTime(root); err != nil || serr == nil {
+		return out
+	}
+	var kids []int
+	if snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0); err == nil {
+		var e windows.ProcessEntry32
+		e.Size = uint32(unsafe.Sizeof(e))
+		for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+			if int(e.ParentProcessID) == root && int(e.ProcessID) != root {
+				kids = append(kids, int(e.ProcessID))
+			}
+		}
+		_ = windows.CloseHandle(snap)
+	}
+	for _, c := range kids {
+		if at, err := StartTime(c); err == nil {
+			if n, perr := strconv.ParseInt(at, 10, 64); perr == nil && n > floor {
+				for p, pat := range Tree(c) {
+					out[p] = pat
+				}
+				_ = terminateTree(c)
+			}
+		}
+	}
+	return out
+}
+
 // OwnGroup starts cmd in a process group of its own, so a Ctrl+C to atrium's console does not reach it. StopTree
 // walks the tree by parent, so nothing more is needed for that.
 func OwnGroup(cmd *exec.Cmd) {

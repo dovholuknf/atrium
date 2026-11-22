@@ -38,7 +38,11 @@ const (
 	ChangesHunksMax = 2 << 20
 	ChangesFileMax  = 256 << 10
 	// untrackedReadMax is the biggest untracked file read to count its lines.
-	untrackedReadMax = 8 << 20
+	untrackedReadMax = ChangesFileMax
+	// untrackedReadTotal and untrackedBodiesMax bound what all untracked files together may read, so a huge
+	// untracked folder cannot outlast the hub's 12 s room timeout.
+	untrackedReadTotal = 4 << 20
+	untrackedBodiesMax = 100
 	// listMax bounds the file lists git prints, which are paths and counts and never hunks.
 	// PatchMax is what is read of one patch: the total hunk bound, a file that would be cut anyway, and slack.
 	PatchMax = ChangesHunksMax + ChangesFileMax + 64<<10
@@ -55,9 +59,11 @@ type ChangeFile struct {
 	Path    string `json:"path"`
 	OldPath string `json:"old_path,omitempty"`
 	// Status is added, modified, deleted, renamed or binary.
-	Status  string `json:"status"`
-	Added   int    `json:"added"`
-	Removed int    `json:"removed"`
+	Status string `json:"status"`
+	// Size is the byte size of an untracked file listed with no body.
+	Size    int64 `json:"size,omitempty"`
+	Added   int   `json:"added"`
+	Removed int   `json:"removed"`
 	// Hunks is the unified diff as text. Empty for a binary file, and for a file whose diff was
 	// over the bound, which HunksCut says.
 	Hunks    string `json:"hunks"`
@@ -577,6 +583,7 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 	}
 	toks := strings.Split(out, "\x00")
 	var files []ChangeFile
+	left := untrackedReadTotal
 	for _, p := range toks {
 		if p == "" {
 			continue
@@ -586,12 +593,15 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 			files = append(files, ChangeFile{Path: p, Status: "added", HunksCut: true})
 			continue
 		}
-		files = append(files, newFile(dir, p))
+		if len(files) >= untrackedBodiesMax {
+			left = 0
+		}
+		files = append(files, newFile(dir, p, &left))
 	}
 	return files
 }
 
-func newFile(dir, rel string) ChangeFile {
+func newFile(dir, rel string, left *int) ChangeFile {
 	f := ChangeFile{Path: rel, Status: "added"}
 	full := filepath.Join(dir, filepath.FromSlash(rel))
 	info, err := os.Lstat(full)
@@ -601,10 +611,11 @@ func newFile(dir, rel string) ChangeFile {
 	if _, err := safepath.Contained(dir, full); err != nil {
 		return f
 	}
-	if info.Size() > untrackedReadMax {
-		f.HunksCut = true
+	if info.Size() > untrackedReadMax || info.Size() > int64(*left) {
+		f.HunksCut, f.Size = true, info.Size()
 		return f
 	}
+	*left -= int(info.Size())
 	b, err := os.ReadFile(full)
 	if err != nil {
 		return f

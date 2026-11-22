@@ -219,7 +219,7 @@ func (d *Daemon) reclaimBlockIdle(t *store.Task) string {
 	if seen, err := d.st.GetSeen(t.ID); err != nil || seen.View().OpenCount() != 0 {
 		return "it has an open question"
 	}
-	return ""
+	return d.homeKeeps(t)
 }
 
 // sweepLandedIdle reads the landing of each candidate worker and reclaims the idle ones. Off the tick: it runs git.

@@ -257,7 +257,7 @@ func (d *Daemon) notFinished(t *store.Task, w *store.WorkItem) string {
 	if seen.View().OpenCount() != 0 {
 		return "it has an open question"
 	}
-	return ""
+	return d.homeKeeps(t)
 }
 
 // launcherOn says whether a worker's launcher is working on branch `into`.

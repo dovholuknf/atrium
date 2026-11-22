@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -374,5 +375,30 @@ func TestCloseSaysALockedWorktreeIsLeftAndRemovesItOnALaterTry(t *testing.T) {
 	}
 	if exists(wt) {
 		t.Error("the worktree is freed but still on disk")
+	}
+}
+func TestAnUntrackedBriefIsNotDirtyAtClose(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.email=t@t", "-c", "user.name=t",
+		"commit", "-q", "--allow-empty", "-m", "first"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "BRIEF.md"), []byte("the job"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, _, _ := worktreeWork(context.Background(), dir); dirty != 0 {
+		t.Fatalf("dirty = %d with only BRIEF.md, want 0", dirty)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wip.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, _, _ := worktreeWork(context.Background(), dir); dirty != 1 {
+		t.Fatalf("dirty = %d with wip.txt, want 1", dirty)
 	}
 }
