@@ -79,6 +79,9 @@ type HelpRequest struct {
 	// nobody was. The refusal carries the handles that would have worked, the
 	// same way `tell` does.
 	Peer string `json:"peer,omitempty"`
+	// Verb and Stage make the ask a gate: the one verb waiting on the human (store.GateVerbs) and the stage it waits at.
+	Verb  string `json:"verb,omitempty"`
+	Stage string `json:"stage,omitempty"`
 }
 
 // handleHelp answers a session asking for help.
@@ -88,6 +91,29 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
+	d.help(w, in)
+}
+
+// handleSetGate is a gate set through the hub's atrium_gate: an ask on the card that stops it and names the verb.
+func (d *Daemon) handleSetGate(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Text  string `json:"text"`
+		Verb  string `json:"verb"`
+		Stage string `json:"stage"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	verb := strings.ToLower(strings.TrimSpace(in.Verb))
+	if verb == "" {
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("a gate names its verb: "+strings.Join(store.GateVerbs, ", ")))
+		return
+	}
+	d.help(w, HelpRequest{TaskID: r.PathValue("id"), Ask: in.Text, Blocked: true, Verb: verb, Stage: in.Stage})
+}
+
+func (d *Daemon) help(w http.ResponseWriter, in HelpRequest) {
 	if strings.TrimSpace(in.Agent) == "" && in.TaskID == "" {
 		small.WriteJSONErr(w, http.StatusBadRequest,
 			small.ErrString("say which session this is, with agent or task_id"))
@@ -97,6 +123,10 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	if ask == "" {
 		small.WriteJSONErr(w, http.StatusBadRequest,
 			small.ErrString("say what you need. an empty ask is what needs-input already means"))
+		return
+	}
+	if why := gateRefusal(in); why != "" {
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString(why))
 		return
 	}
 
@@ -146,12 +176,12 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	// held exactly one question, so a second ask destroyed the first with
 	// nothing recording it had been asked. A row per question, and the oldest
 	// outstanding one is what the card draws.
-	if _, err := d.st.AddAsk(task.ID, ask, peer); err != nil {
+	if _, err := d.st.AddGate(task.ID, ask, peer, in.Verb, in.Stage); err != nil {
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if err := d.st.AppendEvent(task.ID, store.EventSubmitted, map[string]any{
-		"by": "agent", "kind": "asked", "ask": ask, "blocked": in.Blocked, "peer": peer,
+		"by": "agent", "kind": "asked", "ask": ask, "blocked": in.Blocked, "peer": peer, "verb": in.Verb,
 	}); err != nil {
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
@@ -405,4 +435,21 @@ func (d *Daemon) oldestAskTo(taskID, peer string) string {
 		}
 	}
 	return ""
+}
+
+// gateRefusal is why a gate cannot be set, or "" when it can. A gate waits on the human, so it is never routed to a peer.
+func gateRefusal(in HelpRequest) string {
+	verb := strings.ToLower(strings.TrimSpace(in.Verb))
+	if verb == "" {
+		return ""
+	}
+	if strings.TrimSpace(in.Peer) != "" {
+		return "a gate waits on the human, so it names no peer. ask the peer without a verb"
+	}
+	for _, v := range store.GateVerbs {
+		if v == verb {
+			return ""
+		}
+	}
+	return "a gate's verb is one of " + strings.Join(store.GateVerbs, ", ")
 }

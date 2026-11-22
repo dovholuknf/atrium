@@ -72,6 +72,9 @@ const MaxOpenAsks = 10
 // was lost silently.
 const askDropped = "dropped: too many questions outstanding on this card"
 
+// askReplaced is what an open gate says happened to it when the card set a newer one.
+const askReplaced = "replaced by a newer gate"
+
 // An Ask is one question a session put to somebody, and whether it was
 // answered.
 type Ask struct {
@@ -85,6 +88,8 @@ type Ask struct {
 	// card can be waiting on a peer for one thing and on you for another, and
 	// a single answer that settled both would be a lie about one of them.
 	Peer       string     `json:"peer,omitempty"`
+	Verb       string     `json:"verb,omitempty"`
+	Stage      string     `json:"stage,omitempty"`
 	AskedAt    time.Time  `json:"asked_at"`
 	AnsweredAt *time.Time `json:"answered_at,omitempty"`
 	// AnsweredBy is who settled it: a peer's wire name, "the operator", "the
@@ -104,6 +109,16 @@ func (a *Ask) Outstanding() bool { return a.AnsweredAt == nil }
 // An empty peer means the question is on the board for a human, which is what
 // it has always meant.
 func (s *Store) AddAsk(taskID, text, peer string) (*Ask, error) {
+	return s.AddGate(taskID, text, peer, "", "")
+}
+
+// GateVerbs are the verbs a gate may ask the human for.
+var GateVerbs = []string{"answer", "approve", "try", "sign", "unblock"}
+
+// AddGate is AddAsk with the verb waiting on the human and the stage it waits at. A gate replaces the card's earlier
+// open gates, since a card waits on the human for one thing at a time and an earlier one answered in the terminal is
+// invisible to atrium.
+func (s *Store) AddGate(taskID, text, peer, verb, stage string) (*Ask, error) {
 	text = truncateAsk(strings.TrimSpace(text))
 	if text == "" {
 		// Nothing to record. Refusing here would be the store deciding what an
@@ -113,15 +128,23 @@ func (s *Store) AddAsk(taskID, text, peer string) (*Ask, error) {
 	a := &Ask{
 		ID: newID(), TaskID: taskID, Text: text,
 		Peer: strings.TrimSpace(peer), AskedAt: s.now(),
+		Verb: strings.ToLower(strings.TrimSpace(verb)), Stage: truncateStage(strings.TrimSpace(stage)),
 	}
 	err := s.guard(func() error {
+		if a.Verb != "" {
+			if _, err := s.db.Exec(
+				`UPDATE ask SET answered_at = ?, answered_by = ? WHERE task_id = ? AND answered_at = '' AND verb != ''`,
+				ts(a.AskedAt), askReplaced, taskID); err != nil {
+				return err
+			}
+		}
 		if err := s.enforceAskCap(taskID); err != nil {
 			return err
 		}
 		if _, err := s.db.Exec(
-			`INSERT INTO ask (id, task_id, text, peer, asked_at, answered_at, answered_by)
-			 VALUES (?,?,?,?,?,'','')`,
-			a.ID, a.TaskID, a.Text, a.Peer, ts(a.AskedAt)); err != nil {
+			`INSERT INTO ask (id, task_id, text, peer, asked_at, answered_at, answered_by, verb, stage)
+			 VALUES (?,?,?,?,?,'','',?,?)`,
+			a.ID, a.TaskID, a.Text, a.Peer, ts(a.AskedAt), a.Verb, a.Stage); err != nil {
 			return err
 		}
 		if _, err := s.db.Exec(
@@ -186,7 +209,7 @@ func (s *Store) AllAsks(taskID string) ([]*Ask, error) {
 }
 
 func (s *Store) readAsks(taskID string, openOnly bool) ([]*Ask, error) {
-	q := `SELECT id, task_id, text, peer, asked_at, answered_at, answered_by
+	q := `SELECT id, task_id, text, peer, asked_at, answered_at, answered_by, verb, stage
 	      FROM ask WHERE task_id = ?`
 	if openOnly {
 		q += ` AND answered_at = ''`
@@ -208,7 +231,7 @@ func (s *Store) readAsks(taskID string, openOnly bool) ([]*Ask, error) {
 			asked, answered string
 		)
 		if err := rows.Scan(&a.ID, &a.TaskID, &a.Text, &a.Peer, &asked, &answered,
-			&a.AnsweredBy); err != nil {
+			&a.AnsweredBy, &a.Verb, &a.Stage); err != nil {
 			return nil, err
 		}
 		if a.AskedAt, err = parseTS(asked); err != nil {
@@ -340,12 +363,13 @@ func (s *Store) answerMatching(taskID, by string, match func(*Ask) bool) ([]*Ask
 // THIS IS THE ONLY WRITER OF THOSE COLUMNS. That is what stops the row and the
 // columns disagreeing, which would be worse than the defect they were part of:
 // a board drawing a question the table says was answered an hour ago.
+// An open gate is drawn ahead of an older plain ask, since the gate is what the human is waiting on the card for.
 func (s *Store) mirrorAsk(taskID string) error {
-	var text, at, peer string
+	var text, at, peer, verb, stage string
 	err := s.db.QueryRow(
-		`SELECT text, asked_at, peer FROM ask
-		 WHERE task_id = ? AND answered_at = '' ORDER BY asked_at ASC, id ASC LIMIT 1`,
-		taskID).Scan(&text, &at, &peer)
+		`SELECT text, asked_at, peer, verb, stage FROM ask
+		 WHERE task_id = ? AND answered_at = '' ORDER BY verb = '', asked_at ASC, id ASC LIMIT 1`,
+		taskID).Scan(&text, &at, &peer, &verb, &stage)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -353,12 +377,24 @@ func (s *Store) mirrorAsk(taskID string) error {
 		// Nothing outstanding means nobody owes it an answer, so the peer goes
 		// too. Leaving it behind is how a card ends up naming a session that
 		// answered it an hour ago.
-		text, at, peer = "", "", ""
+		text, at, peer, verb, stage = "", "", "", "", ""
 	}
 	_, err = s.db.Exec(
-		`UPDATE task SET ask = ?, ask_at = ?, ask_peer = ? WHERE id = ?`,
-		text, at, peer, taskID)
+		`UPDATE task SET ask = ?, ask_at = ?, ask_peer = ?, ask_verb = ?, ask_stage = ? WHERE id = ?`,
+		text, at, peer, verb, stage, taskID)
 	return err
+}
+
+// truncateStage bounds a gate's stage name, which is a word or two.
+func truncateStage(stage string) string {
+	if len(stage) <= 40 {
+		return stage
+	}
+	cut := 40
+	for cut > 0 && !utf8Start(stage[cut]) {
+		cut--
+	}
+	return stage[:cut]
 }
 
 // truncateAsk cuts on a rune boundary, so truncating never leaves invalid

@@ -6565,7 +6565,8 @@ async function termFitHeightSection(browser, base) {
           // Not the box mark `onTermResize` leaves: the first fit after open does not leave one.
           const d = termFit.proposeDimensions();
           if (!d || term.rows !== rowsInPane(d.rows)) return false;
-          return screen.top + term.rows * cell <= hint.top + 0.5;
+          const bottom = screen.top + term.rows * cell;
+          return bottom <= hint.top + 0.5 && hint.top - bottom < cell + 0.5;
         }, null, { timeout: slow(3000) });
       } catch (e) {
         const c = await gap();
@@ -6579,7 +6580,18 @@ async function termFitHeightSection(browser, base) {
     };
     await fits("attach");
     const rows0 = (await gap()).rows;
-
+    // A pty shorter than this pane leaves blank rows under the last line, so a focused window asks for its own size.
+    const asked = await p.evaluate(() => {
+      const sent = [];
+      termSock.send = (m) => sent.push(m);
+      termSock.onmessage({ data: JSON.stringify({ t: "size", cols: term.cols, rows: termFitRows - 2 }) });
+      const was = sent.length;
+      termSock.onmessage({ data: JSON.stringify({ t: "size", cols: term.cols, rows: termFitRows }) });
+      termSock.onmessage({ data: JSON.stringify({ t: "size", cols: term.cols, rows: 0 }) });
+      return { short: sent.filter(m => /"focus"/.test(m)).length, after: sent.length - was };
+    });
+    if (asked.short !== 1) fail("a pty two rows shorter than the pane did not ask for the pane's size: " + asked.short);
+    if (asked.after) fail("a pty at the pane's rows sent " + asked.after + " frames");
     await p.evaluate(() => { document.querySelector(".term-help").style.minHeight = "120px"; });
     await fits("the hint bar grew");
     const rows1 = (await gap()).rows;
@@ -7778,13 +7790,13 @@ async function tabsOrderSection(browser, base) {
     await p.click(row("usage") + ' button[aria-label^="move up"]');
     await p.click(row("usage") + ' button[aria-label^="move up"]');
     v = await view(p);
-    const want = ["stack", "board", "terms", "chat", "items", "usage", "pulls", "history"];
-    if (v.order.slice(0, 8).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
+    const want = ["stack", "board", "terms", "queue", "chat", "items", "usage", "pulls", "history"];
+    if (v.order.slice(0, 9).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
     if (!/"usage"/.test(v.saved || "")) fail("tabsOrder: the order is not saved: " + v.saved);
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     v = await view(p);
-    if (v.order.slice(0, 8).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
+    if (v.order.slice(0, 9).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
 
     // place: history hidden, rooms in the menu
     await arrange(p);
@@ -22450,7 +22462,7 @@ async function joinedHeldTileSection(browser, base) {
 }
 
 // Every card held on a permission is listed over the Terminals tab, on any room, minus what the pane already shows,
-// and its panel floats over the terminal rather than pushing it down.
+// and its panel never covers the terminal bar.
 async function heldStripSection(browser, base) {
   const tag = "heldStrip: ";
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -22496,7 +22508,7 @@ async function heldStripSection(browser, base) {
     const open = await lay();
     const over = await p.$eval("#held-strip .held-rows", e => ({ pos: getComputedStyle(e).position, bottom: e.getBoundingClientRect().bottom,
       top: document.getElementById("term-layout").getBoundingClientRect().top }));
-    if (over.pos !== "absolute" || over.bottom <= over.top) fail(tag + "the panel does not float over the terminal: " + JSON.stringify(over));
+    if (over.pos === "absolute" || over.bottom > over.top) fail(tag + "the panel covers the terminal: " + JSON.stringify(over));
 
     const req = "#held-strip .held-row[data-id='pa'] .held-req";
     if (!(await p.$eval(req, e => e.scrollWidth > e.clientWidth))) fail(tag + "the long command is not cut to one line");
@@ -22506,7 +22518,7 @@ async function heldStripSection(browser, base) {
 
     await p.click("#held-strip .held-fold");
     if (await p.$("#held-strip .held-rows")) fail(tag + "the fold left the panel open");
-    if ((await lay()) !== open) fail(tag + "the panel pushed the terminal: top " + open + " open, " + (await lay()) + " shut");
+    if ((await lay()) >= open) fail(tag + "the fold did not give the terminal its room back: top " + open + " open, " + (await lay()) + " shut");
     if ((await p.evaluate(() => localStorage.getItem("atrium.heldShut"))) !== "1") fail(tag + "the fold was not kept");
     await p.click("#held-strip .held-fold");
     await p.waitForSelector("#held-strip .held-rows", { timeout: slow(3000) }).catch(() => fail(tag + "the fold did not open again"));
@@ -24583,6 +24595,456 @@ async function cardLabelAliasSection(browser, base) {
     if (errors.length) fail("label: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("cardLabelAlias ok");
+}
+
+// YOUR QUEUE: the Queue tab lists one row per ask, stuck first, newest first, in groups that fold, and the header badge
+// counts them on every tab.
+async function termNeedsYouSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqGo === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      Object.keys(localStorage).filter(k => k.startsWith("atrium.grouping")).forEach(k => localStorage.removeItem(k));
+      const hour = new Date(Date.now() - 3600000).toISOString(), now = new Date().toISOString();
+      const older = new Date(Date.now() - 7200000).toISOString();
+      const card = (id, more) => Object.assign({ id, status: "running", supervised: true, pinned: false, title: id, display_title: id,
+        tags: [], worktree: "/w/" + id, created_at: hour, last_activity_at: now }, more);
+      window.__cards = [
+        card("plain"),
+        card("iv", { status: "needs-input", tags: ["atrium:interview"], ask: "which branch", ask_at: hour }),
+        card("blocked", { status: "needs-input", recap: "needs: a token", reported_at: now }),
+        card("shipped", { status: "done", supervised: false, report_sha: "4f2dc4f0b1", recap: "built it", reported_at: older, spawned_by: "@human" }),
+        card("gated", { status: "needs-input", ask: "approve the mock", ask_at: new Date(Date.now() - 600000).toISOString(), ask_verb: "approve", ask_stage: "design" }),
+        card("gatedAnswered", { status: "needs-input", ask: "which one", ask_at: hour, ask_verb: "answer", prompted_at: now })
+      ];
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      switchView("queue");
+    });
+    await p.evaluate(() => yqPaint());
+    const rows = () => p.evaluate(() => [...document.querySelectorAll("#yq-list .yq-row")].map(r => ({
+      key: r.dataset.yq, verb: r.querySelector(".yq-verb").textContent, nogate: !!r.querySelector(".yq-nogate"), stage: (r.querySelector(".yq-stage") || {}).textContent || "", stuck: r.classList.contains("stuck"), lines: r.querySelectorAll(".tname, .tpath").length })));
+    let got = await rows();
+    if (got.map(r => r.key).join(",") !== "card:blocked,card:gated,card:iv,card:shipped") fail("queue: wrong rows or order: " + JSON.stringify(got));
+    if (got.map(r => r.verb).join(",") !== "UNBLOCK,APPROVE,ANSWER,SIGN") fail("queue: wrong verbs: " + JSON.stringify(got));
+    if (!got[0] || !got[0].stuck) fail("queue: the blocked card is not stuck: " + JSON.stringify(got));
+    if (got.map(r => r.nogate ? "none" : r.stage).join(",") !== "none,design,none,none") fail("queue: a gate and a guess are not told apart: " + JSON.stringify(got));
+    if (got.some(r => r.lines !== 2)) fail("queue: a row is not a title line and a meta line: " + JSON.stringify(got));
+    const tabs = await p.evaluate(() => ({ tab: !!document.querySelector('.tab.on[data-view="queue"]'), count: document.getElementById("c-queue").textContent,
+      pill: !!document.querySelector('#term-drawer-group [data-group="needs"]') }));
+    if (!tabs.tab || tabs.count !== "4" || tabs.pill) fail("queue: the tab, its count or the old grouping pill is wrong: " + JSON.stringify(tabs));
+    await p.evaluate(() => document.querySelector('#yq-list [data-yq-group="waiting"]').click());
+    got = await rows();
+    if (got.map(r => r.key).join(",") !== "card:blocked") fail("queue: folding waiting left rows: " + JSON.stringify(got));
+    await p.evaluate(() => document.querySelector('#yq-list [data-yq-group="waiting"]').click());
+    await p.evaluate(() => { switchView("stack"); yqPaint(); });
+    const badge = await p.evaluate(() => { const b = document.getElementById("yq-badge"); return { hidden: b.hidden, text: b.textContent, stuck: b.classList.contains("stuck") }; });
+    if (badge.hidden || badge.text !== "4 for you" || !badge.stuck) fail("queue: the header badge is wrong off the tab: " + JSON.stringify(badge));
+    await p.evaluate(() => document.getElementById("yq-badge").click());
+    await p.waitForFunction(() => !!document.querySelector('#yq-list .yq-row[data-yq="card:iv"]'), null, { timeout: slow(5000) });
+    await p.evaluate(() => document.querySelector('#yq-list .yq-row[data-yq="card:iv"]').click());
+    const shown = () => p.evaluate(() => {
+      const ask = document.getElementById("yq-ask"), back = document.getElementById("yq-back");
+      return { ask: isViewing("queue") && !!ask.querySelector(".yq-askbar"), back: !!back && !back.hidden, terms: isViewing("terms"),
+        verb: ((ask && ask.querySelector(".yq-askbar .yq-verb")) || {}).textContent || "" };
+    });
+    let view = await shown();
+    if (!view.ask || view.back || view.verb !== "ANSWER") fail("queue: the ask did not open in the pane: " + JSON.stringify(view));
+    await p.evaluate(() => document.querySelector('#yq-ask [data-yq-do="mode-term"]').click());
+    view = await shown();
+    if (view.ask || !view.back || !view.terms) fail("queue: plain terminal did not go to the terminal with a back pill: " + JSON.stringify(view));
+    await p.evaluate(() => document.getElementById("yq-back").click());
+    view = await shown();
+    if (!view.ask || view.back) fail("queue: the back pill did not bring the ask back: " + JSON.stringify(view));
+    let hit;
+    const said = new Promise(res => { hit = res; });
+    await p.route("**/v1/tasks/*/message", r => { hit({ url: r.request().url(), body: r.request().postDataJSON() }); r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.evaluate(() => yqOpenAsk({ key: "page:plain", verb: "APPROVE", title: "review", card: window.__cards[0], pages: ["about:blank"] }));
+    await p.evaluate(() => new Promise(res => {
+      const f = document.getElementById("yq-frame");
+      f.addEventListener("load", res, { once: true });
+      f.srcdoc = '<ul><li><label><input type="checkbox" checked> keep the sort</label></li><li><input type="checkbox" id="c2"><label for="c2">drop the tags</label></li></ul>' +
+        '<select name="lane"><option>now</option><option selected>later</option></select>';
+    }));
+    await p.evaluate(() => document.querySelector('#yq-ask [data-yq-do="choices"]').click());
+    const sent = await Promise.race([said, new Promise(res => setTimeout(() => res(null), slow(5000)))]);
+    const body = sent ? String(sent.body.text) : "";
+    if (!sent || !/\/v1\/tasks\/plain\/message/.test(sent.url) || !/\[x\] keep the sort/.test(body) || !/\[ \] drop the tags/.test(body) || !/^lane: later$/m.test(body))
+      fail("queue: the page choices did not reach the card: " + JSON.stringify(sent));
+    await p.route("**/v1/tasks/ivq/replies*", r => r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ replies: [{ at: "2026-01-01T00:00:00Z", text: "Old.\n" }, { at: "2026-01-02T00:00:00Z", text: "**Which area?**\n\n1. Board\n2. Hub\n" }] }) }));
+    await p.evaluate(() => {
+      const t = Object.assign({}, window.__cards[0], { id: "ivq", status: "needs-input", tags: ["atrium:interview"] });
+      yqOpenAsk({ key: "card:ivq", verb: "ANSWER", title: "interview", card: t, why: "the interview is waiting on its question" });
+    });
+    await p.waitForFunction(() => /Which area\?/.test((document.querySelector("#yq-ask .yq-q") || {}).textContent || ""), null, { timeout: slow(5000) });
+    const qpane = await p.evaluate(() => ({ strong: !!document.querySelector("#yq-ask .yq-q strong"), items: document.querySelectorAll("#yq-ask .yq-q li").length,
+      placeholder: /waiting on its question/.test(document.getElementById("yq-ask").textContent), box: !!document.querySelector("#yq-ask textarea.yq-reply") }));
+    if (!qpane.strong || qpane.items !== 2 || qpane.placeholder || !qpane.box) fail("queue: the ANSWER pane does not show the question: " + JSON.stringify(qpane));
+    const open = () => p.evaluate(() => yqOpenAsk({ key: "page:plain", verb: "APPROVE", title: "review", card: window.__cards[0], pages: ["about:blank"] }));
+    const text = () => p.evaluate(() => document.getElementById("yq-ask").textContent.replace(/\s+/g, " "));
+    await p.unroute("**/v1/tasks/*/message");
+    await p.route("**/v1/tasks/*/message", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "queued" }) }));
+    await open();
+    if (!/Sends to plain/.test(await text())) fail("queue: the pane does not name the card it sends to: " + await text());
+    await p.fill('#yq-ask textarea[data-yq-text^="p:"]', "looks good");
+    await p.click('#yq-ask [data-yq-do="approve"]');
+    await p.waitForFunction(() => /Approved to plain: queued/.test(document.getElementById("yq-ask").textContent), null, { timeout: slow(5000) });
+    if (await p.evaluate(() => !!document.querySelector("#yq-ask textarea"))) fail("queue: the box is still there after a send: " + await text());
+    await open();
+    if (await p.evaluate(() => document.querySelector('#yq-ask textarea[data-yq-text^="p:"]').value)) fail("queue: the box kept the sent text");
+    await p.unroute("**/v1/tasks/*/message");
+    await p.route("**/v1/tasks/*/message", r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "room is down" }) }));
+    await p.fill('#yq-ask textarea[data-yq-text^="p:"]', "change the title");
+    await p.click('#yq-ask [data-yq-do="sendback"]');
+    await p.waitForFunction(() => /Not sent to plain/.test(document.getElementById("yq-ask").textContent), null, { timeout: slow(5000) });
+    if (await p.evaluate(() => document.querySelector('#yq-ask textarea[data-yq-text^="p:"]').value) !== "change the title") fail("queue: a failed send lost the text");
+    if (errors.length) fail("queue: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termNeedsYou ok");
+}
+
+// THE QUEUE'S TERMINAL IS THE ASK'S CARD. A dead card opens only after a read of it, so while that read is out the
+// terminals view must not show the card the pane held before, and a read answered after a later pick must not take
+// the pane back.
+async function yqTermCardSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const gates = {}, cards = {};
+  const hold = n => { let open; gates[n] = { p: new Promise(r => { open = r; }), open }; };
+  const release = n => { const g = gates[n]; delete gates[n]; if (g) g.open(); };
+  try {
+    for (const n of ["slim", "hooks"]) {
+      await p.route("**/v1/tasks/" + n, async r => {
+        if (r.request().method() !== "GET") return r.continue();
+        if (gates[n]) await gates[n].p;
+        r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(cards[n]) });
+      });
+    }
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqGo === "function" && typeof attachTask === "function", null, { timeout: slow(15000) });
+    const list = await p.evaluate(() => {
+      const now = new Date().toISOString(), hour = new Date(Date.now() - 3600000).toISOString();
+      const card = (id, at) => ({ id, status: "needs-input", supervised: false, pinned: false, title: id, display_title: id, tags: [],
+        worktree: "/w/" + id, created_at: hour, last_activity_at: at, recap: "needs: a token", reported_at: at });
+      window.__cards = [card("slim", now), card("hooks", hour)];
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      switchView("queue");
+      yqPaint();
+      return window.__cards;
+    });
+    list.forEach(c => { cards[c.id] = c; });
+    const state = () => p.evaluate(() => ({ terms: isViewing("terms"), card: termTask ? termTask.id : "" }));
+    const pick = async key => {
+      await p.evaluate(() => { if (!isViewing("queue")) switchView("queue"); yqPaint(); });
+      await p.evaluate(k => document.querySelector(`#yq-list .yq-row[data-yq="${k}"]`).click(), key);
+      await p.evaluate(() => document.querySelector('#yq-ask [data-yq-do="mode-term"]').click());
+    };
+    const lands = id => p.waitForFunction(id => isViewing("terms") && termTask && termTask.id === id, id, { timeout: slow(5000) });
+
+    await pick("card:slim");
+    await lands("slim");
+    hold("hooks");
+    await pick("card:hooks");
+    let got = await state();
+    if (got.terms && got.card !== "hooks") fail("yqTermCard: the terminal showed " + got.card + " while the picked card was being read: " + JSON.stringify(got));
+    release("hooks");
+    await lands("hooks");
+
+    hold("slim");
+    await pick("card:slim");
+    await pick("card:hooks");
+    await lands("hooks");
+    const answered = p.waitForResponse(r => r.url().endsWith("/v1/tasks/slim"), { timeout: slow(5000) });
+    release("slim");
+    await answered;
+    await frames(p, 3);
+    got = await state();
+    if (got.card !== "hooks") fail("yqTermCard: a read for an earlier pick took the pane to " + got.card);
+    if (errors.length) fail("yqTermCard: page errors: " + errors.join(" | "));
+  } finally { for (const n of Object.keys(gates)) release(n); await ctx.close(); }
+  if (!bad) console.log("yqTermCard ok");
+}
+
+// YOUR QUEUE, THE 11-21 TOUR: a relative page on a one-room hub, a permission-blocked card, an ask that left the list,
+// the back pill under the held strip, and toasts over the pane.
+async function yqTourFixesSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const now = new Date().toISOString();
+  const held = [{ id: "pa", task_id: "perm", tool: "Bash", command: "go test ./...", requested_at: now }];
+  await p.route(u => u.pathname === "/v1/permissions", r => r.fulfill({ json: { permissions: held } }));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqGo === "function" && typeof renderHeldStrip === "function", null, { timeout: slow(15000) });
+    await p.evaluate(held => {
+      const hour = new Date(Date.now() - 3600000).toISOString(), at = new Date().toISOString();
+      const card = (id, more) => Object.assign({ id, status: "running", supervised: true, pinned: false, title: id, display_title: id,
+        tags: [], worktree: "/w/" + id, created_at: hour, last_activity_at: at }, more);
+      hubRooms = [{ name: "sg3" }];
+      window.__cards = [
+        card("try", { status: "needs-input", ask: "try demo/page.html", ask_at: hour, ask_verb: "try" }),
+        card("perm", { status: "needs-permission", supervised: false, pid: 0 }),
+        card("mark", { status: "needs-input", ask: "review demo/page.html", ask_at: hour, ask_verb: "approve" })
+      ];
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      permsLocal = held;
+      localStorage.removeItem("atrium.heldShut");
+      switchView("queue");
+      yqPaint();
+    }, held);
+    const ask = key => p.evaluate(k => { const a = yqAsks(lastTasks).find(x => x.key === k); return a ? { verb: a.verb, nogate: !!a.nogate, pages: a.pages || null } : null; }, key);
+
+    const tried = await ask("card:try");
+    if (!tried || tried.verb !== "TRY" || tried.pages.join() !== "/room/sg3/try/files/demo/page.html") fail("yqTourFixes: a one-room page was lost: " + JSON.stringify(tried));
+    await p.evaluate(() => document.querySelector('#yq-list .yq-row[data-yq="card:try"]').click());
+    if (await p.evaluate(() => !document.getElementById("yq-frame") || !!document.querySelector('#yq-ask [data-yq-do="sign"]'))) fail("yqTourFixes: a TRY ask on one room did not show its page");
+
+    const permAsk = await ask("card:perm");
+    if (!permAsk || permAsk.verb !== "APPROVE" || permAsk.nogate) fail("yqTourFixes: a permission-blocked card is " + JSON.stringify(permAsk));
+    await p.evaluate(() => document.querySelector('#yq-list .yq-row[data-yq="card:perm"]').click());
+    const pane = await p.evaluate(() => ({ ok: !!document.querySelector('#yq-ask [data-yq-do="permok"]'), box: !!document.querySelector("#yq-ask textarea"),
+      text: document.getElementById("yq-ask").textContent }));
+    if (!pane.ok || pane.box || !/go test/.test(pane.text)) fail("yqTourFixes: the permission pane is wrong: " + JSON.stringify(pane));
+
+    await p.evaluate(() => { yqOpenAsk(yqAsks(lastTasks).find(x => x.key === "card:mark")); });
+    await p.evaluate(() => { window.__cards = window.__cards.map(c => c.id === "mark" ? Object.assign({}, c, { prompted_at: new Date(Date.now() + 1000).toISOString() }) : c); lastTasks = window.__cards; yqPaint(); });
+    if (await p.evaluate(() => yqView.key !== "" || !document.getElementById("yq-ask").textContent.includes("Pick an ask"))) fail("yqTourFixes: the pane stayed on an ask that left the list");
+
+    await p.evaluate(() => { yqOpenAsk(yqAsks(lastTasks).find(x => x.key === "card:try")); yqView.mode = "term"; yqView.at = Date.now(); termTask = lastTasks.find(c => c.id === "try"); switchView("terms"); renderHeldStrip(); yqPaintAsk(true); });
+    await p.waitForFunction(() => !!document.querySelector("#held-strip .held-row") && !document.getElementById("yq-back").hidden, null, { timeout: slow(8000) })
+      .catch(() => fail("yqTourFixes: the held strip or the back pill did not show"));
+    const reach = await p.evaluate(() => {
+      const b = document.getElementById("yq-back"), r = b.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const rows = document.querySelector("#held-strip .held-rows").getBoundingClientRect();
+      const bar = document.querySelector("#term-pane .term-bar").getBoundingClientRect();
+      const list = document.getElementById("term-list").getBoundingClientRect();
+      const cross = (a, c) => a.left < c.right && a.right > c.left && a.top < c.bottom && a.bottom > c.top;
+      return { hit: top === b, overBar: cross(rows, bar), overList: cross(rows, list) };
+    });
+    if (!reach.hit || reach.overBar || reach.overList) fail("yqTourFixes: the held strip covers the back pill, the bar or the list: " + JSON.stringify(reach));
+
+    await p.evaluate(() => { yqView.mode = "ask"; switchView("queue"); yqPaintAsk(true); toast("sent", "to somewhere"); });
+    await p.waitForSelector("#toasts .toast", { timeout: slow(3000) });
+    const cover = await p.evaluate(() => {
+      const t = document.getElementById("toasts").getBoundingClientRect(), pane = document.getElementById("yq-ask").getBoundingClientRect();
+      const bar = document.querySelector("#yq-ask .yq-askbar").getBoundingClientRect();
+      return { belowBar: t.top >= bar.bottom, notAtFloor: t.bottom < pane.bottom - 40 };
+    });
+    if (!cover.belowBar || !cover.notAtFloor) fail("yqTourFixes: toasts cover the bottom right of the Queue pane: " + JSON.stringify(cover));
+    if (errors.length) fail("yqTourFixes: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("yqTourFixes ok");
+}
+
+// YOUR QUEUE, MARK UP: arrows, circles and boxes drawn on the agent's page, a note on each, and one batch that says
+// where every mark points.
+async function yqMarkSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqmCompose === "function" && typeof yqOpenAsk === "function", null, { timeout: slow(15000) });
+    let hit;
+    const said = new Promise(res => { hit = res; });
+    await p.route("**/v1/tasks/*/message", r => { hit({ url: r.request().url(), body: r.request().postDataJSON() }); r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.evaluate(() => {
+      const now = new Date().toISOString();
+      window.__cards = [{ id: "plain", status: "needs-input", supervised: true, pinned: false, title: "plain", display_title: "plain", tags: [], worktree: "/w/plain", created_at: now, last_activity_at: now }];
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      switchView("queue");
+      yqOpenAsk({ key: "page:plain", verb: "TRY", title: "try", card: window.__cards[0], pages: ["about:blank"] });
+    });
+    await p.evaluate(() => new Promise(res => {
+      const f = document.getElementById("yq-frame");
+      f.addEventListener("load", res, { once: true });
+      f.srcdoc = '<body style="margin:0"><h1 id="head" style="margin:0;height:60px">Rooms</h1><p id="intro" style="margin:0;height:100px">Three rooms</p>' +
+        '<table id="t"><tr><td style="width:200px;height:40px">alpha</td><td style="width:200px">beta</td></tr></table><div style="height:900px"></div></body>';
+    }));
+    if (await p.evaluate(() => document.getElementById("yqm-list") || document.querySelector(".yqm-side"))) fail("yqMark: there is a notes sidebar");
+    await p.click('[data-yq-do="mk-toggle"]');
+    const box = await p.evaluate(() => { const r = document.getElementById("yqm-ov").getBoundingClientRect(); return { x: r.left, y: r.top }; });
+    const drag = async (tool, x1, y1, x2, y2) => {
+      await p.click('[data-yq-do="mk-tool"][data-v="' + tool + '"]');
+      await p.mouse.move(box.x + x1, box.y + y1);
+      await p.mouse.down();
+      await p.mouse.move(box.x + (x1 + x2) / 2, box.y + (y1 + y2) / 2);
+      await p.mouse.move(box.x + x2, box.y + y2);
+      await p.mouse.up();
+    };
+    await drag("arrow", 300, 20, 60, 130);
+    await p.waitForFunction(() => { const pop = document.getElementById("yqm-pop"); return !pop.hidden && document.activeElement === pop.querySelector("textarea"); }, null, { timeout: slow(5000) });
+    await p.keyboard.type("make this bigger");
+    await drag("circle", 20, 170, 180, 200);
+    await p.keyboard.type("wrong colour");
+    await drag("box", 210, 170, 380, 205);
+    await p.keyboard.type("align");
+    await p.mouse.click(box.x + 600, box.y + 400);
+    const n = await p.evaluate(() => ({ marks: yqmList().length, shapes: document.querySelectorAll("#yqm-ov .yqm-s").length, send: document.getElementById("yqm-send").textContent }));
+    if (n.marks !== 3 || n.shapes !== 3 || n.send !== "Send 3 marks to the agent") fail("yqMark: three drawn marks did not show: " + JSON.stringify(n));
+    await p.mouse.click(box.x + 600, box.y + 400);
+    await p.click('[data-yq-do="mk-toggle"]');
+    await p.mouse.move(box.x + 700, box.y + 500);
+    await p.waitForFunction(() => document.getElementById("yqm-pop").hidden, null, { timeout: slow(5000) });
+    const tip = await p.evaluate(() => { const r = document.querySelector("#yqm-ov .yqm-s:nth-child(1) line.hit").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    await p.mouse.move(tip.x, tip.y);
+    await p.waitForFunction(() => { const pop = document.getElementById("yqm-pop"); return !pop.hidden && pop.querySelector("textarea").value === "make this bigger"; }, null, { timeout: slow(5000) });
+    await p.click("#yqm-send");
+    const sent = await Promise.race([said, new Promise(res => setTimeout(() => res(null), slow(5000)))]);
+    const text = sent ? String(sent.body.text) : "";
+    if (!sent || !/\/v1\/tasks\/plain\/message/.test(sent.url)) fail("yqMark: nothing reached the card: " + JSON.stringify(sent));
+    if (!/^Marks on about:blank \(3\)\./.test(text)) fail("yqMark: the batch has no header: " + text);
+    if (!/^1\. ARROW from \(300,20\) on `#head` "Rooms" to \(60,130\), pointing at `#intro` "Three rooms"\n   make this bigger$/m.test(text)) fail("yqMark: the arrow does not say where it points: " + text);
+    if (!/^2\. CIRCLE centre \(100,185\) radius 80x15, around .*`[^`]*td[^`]*` "alpha"[\s\S]*\n   wrong colour$/m.test(text)) fail("yqMark: the circle does not say what it circles: " + text);
+    if (!/^3\. BOX at \(210,170\) size 170x36, around .*"beta"[\s\S]*\n   align$/m.test(text)) fail("yqMark: the box does not say what it boxes: " + text);
+    await p.waitForFunction(() => yqmList().length === 0 && !document.querySelector("#yqm-ov .yqm-s"), null, { timeout: slow(5000) });
+    if (errors.length) fail("yqMark: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("yqMark ok");
+}
+
+// The Queue tab carries the terminals tab's drawer (show, sort by, group) and its grip, whose width it shares.
+async function queueBarSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqGo === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      ["atrium.queue.show", "atrium.queue.sort", "atrium.queue.group", "atrium.termlist.w", "atrium.termlist.mode"].forEach(k => localStorage.removeItem(k));
+      const ago = m => new Date(Date.now() - m * 60000).toISOString();
+      const card = (id, more) => Object.assign({ id, status: "needs-input", supervised: true, pinned: false, title: id, display_title: id,
+        tags: [], worktree: "/w/github/o/" + id, created_at: ago(300), last_activity_at: ago(1) }, more);
+      window.__cards = [
+        card("zeta", { recap: "needs: a token", reported_at: ago(5), tags: ["red"] }),
+        card("alpha", { ask: "approve the mock", ask_at: ago(30), ask_verb: "approve", created_at: ago(10) }),
+        card("parked", { status: "done", supervised: false, parked_at: ago(60), report_sha: "4f2dc4f0b1", recap: "built it",
+          reported_at: ago(90), spawned_by: "@human" })
+      ];
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      switchView("queue");
+    });
+    await p.evaluate(() => yqRender());
+    const keys = () => p.evaluate(() => [...document.querySelectorAll("#yq-list .yq-row")].map(r => r.dataset.yq.replace("card:", "")).join(","));
+    const heads = () => p.evaluate(() => [...document.querySelectorAll("#yq-list .tgroup .tgname")].map(h => h.textContent).join(","));
+    const bar = await p.evaluate(() => {
+      const pills = id => [...document.querySelectorAll("#" + id + " button")].map(b => (b.classList.contains("on") ? "*" : "") + b.textContent.trim().split(/\s/)[0]).join(",");
+      return { show: pills("yq-show"), sort: pills("yq-sort"), group: pills("yq-group"), rows: document.querySelectorAll("#fd-queue .frow").length,
+        search: !!document.querySelector("#fd-queue #yq-q") };
+    });
+    if (bar.show !== "*paused,*dead,*subagents,*minions" || bar.sort !== "name,*activity,started" ||
+      bar.group !== "*stuck,by,by,by,off" || bar.rows !== 3 || !bar.search) fail("queueBar: the drawer's rows are wrong: " + JSON.stringify(bar));
+    await p.setViewportSize({ width: 1590, height: 800 });
+    const strip = await p.evaluate(() => {
+      const r = document.querySelector("#fd-queue .fline").getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 1);
+      return { top: r.top, header: document.querySelector("body > header").getBoundingClientRect().bottom, shown: !!(hit && hit.closest("#fd-queue")) };
+    });
+    if (strip.top < strip.header || !strip.shown) fail("queueBar: the toolbar's top is clipped under the header at 1590px: " + JSON.stringify(strip));
+    if (process.env.QUEUE_SHOTS) await p.screenshot({ path: require("path").join(process.env.QUEUE_SHOTS, "queue-toolbar-1590.png"), clip: { x: 0, y: 0, width: 1590, height: 260 } });
+    let got = await keys();
+    if (got !== "zeta,alpha,parked" || await heads() !== "stuck,waiting") fail("queueBar: the default is not stuck first, newest first: " + got + " " + await heads());
+    await p.evaluate(() => document.querySelector('#yq-show button[data-v="paused"]').click());
+    got = await keys();
+    const match = await p.evaluate(() => document.getElementById("yq-match").textContent);
+    if (got !== "zeta,alpha" || match !== "2 of 3") fail("queueBar: the paused chip did not take the parked card's ask out: " + got + " " + match);
+    await p.evaluate(() => document.querySelector('#yq-show button[data-v="paused"]').click());
+    await p.evaluate(() => document.querySelector('#yq-sort button[data-sort="name"]').click());
+    await p.evaluate(() => document.querySelector('#yq-group button[data-group="off"]').click());
+    got = await keys();
+    if (got !== "alpha,parked,zeta" || await heads() !== "") fail("queueBar: name sort, no groups: " + got + " " + await heads());
+    await p.evaluate(() => document.querySelector('#yq-sort button[data-sort="started"]').click());
+    if ((got = await keys()) !== "alpha,zeta,parked") fail("queueBar: started sort: " + got);
+    await p.evaluate(() => document.querySelector('#yq-group button[data-group="tag"]').click());
+    if ((got = await heads()) !== "red,untagged") fail("queueBar: by tag: " + got);
+    await p.evaluate(() => document.querySelector('#yq-group button[data-group="age"]').click());
+    if ((got = await heads()) !== "1h,4h") fail("queueBar: by age: " + got);
+    await p.evaluate(() => document.querySelector('#yq-group button[data-group="project"]').click());
+    if ((got = await heads()) !== "o/alpha,o/parked,o/zeta") fail("queueBar: by project: " + got);
+    await p.fill("#yq-q", "mock");
+    if ((got = await keys()) !== "alpha") fail("queueBar: the search did not narrow the asks: " + got);
+    await p.fill("#yq-q", "");
+    const stored = await p.evaluate(() => [localStorage.getItem("atrium.queue.sort"), localStorage.getItem("atrium.queue.group")].join());
+    if (stored !== "started,project") fail("queueBar: the sort and group are not remembered: " + stored);
+
+    const width = () => p.evaluate(() => document.getElementById("yq-list").getBoundingClientRect().width);
+    const before = await width();
+    const g = await p.locator("#yq-grip").boundingBox();
+    if (!g) fail("queueBar: the grip is not drawn");
+    else {
+      await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+      await p.mouse.down();
+      await p.mouse.move(g.x + g.width / 2 + 80, g.y + g.height / 2, { steps: 4 });
+      await p.mouse.up();
+      const after = await width();
+      const kept = await p.evaluate(() => Number(localStorage.getItem("atrium.termlist.w")));
+      if (Math.abs(after - before - 80) > 3 || Math.abs(kept - after) > 3) fail("queueBar: the grip did not resize and keep the width: " + JSON.stringify({ before, after, kept }));
+      await p.evaluate(() => switchView("terms"));
+      const terms = await p.evaluate(() => getComputedStyle(document.getElementById("term-layout")).getPropertyValue("--termw").trim());
+      if (terms !== Math.round(kept) + "px" && parseFloat(terms) !== kept) fail("queueBar: the terminals tab does not share the width: " + terms + " vs " + kept);
+    }
+    if (errors.length) fail("queueBar: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("queueBar ok");
+}
+
+// The Queue list is patched in place: a tick of the ages mid-scroll replaces no row and moves nothing.
+async function queueScrollKeepsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqGo === "function" && typeof yqRender === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      ["atrium.queue.show", "atrium.queue.sort", "atrium.queue.group"].forEach(k => localStorage.removeItem(k));
+      const ago = m => new Date(Date.now() - m * 60000).toISOString();
+      window.__cards = [];
+      for (let i = 0; i < 58; i++) window.__cards.push(Object.assign({ id: "c" + i, status: "needs-input", supervised: true, pinned: false, title: "c" + i, display_title: "c" + i,
+        tags: [], worktree: "/w/github/o/c" + i, created_at: ago(300), last_activity_at: ago(1) },
+        i % 12 === 0 ? { recap: "needs: a token", reported_at: ago(5 + i) } : { ask: "approve " + i, ask_at: ago(30 + i), ask_verb: "approve" }));
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      switchView("queue");
+    });
+    await p.evaluate(() => yqRender());
+    const before = await p.evaluate(() => {
+      const l = document.getElementById("yq-list");
+      if (l.scrollHeight <= l.clientHeight) return null;
+      l.scrollTop = 600;
+      window.__rows = [...l.querySelectorAll(".yq-row")];
+      window.__age = window.__rows[20].querySelector(".yq-age").textContent;
+      return { top: l.scrollTop, n: window.__rows.length };
+    });
+    if (!before || before.top !== 600) fail("queueScrollKeeps: the list does not scroll: " + JSON.stringify(before));
+    const after = await p.evaluate(() => {
+      window.__cards.forEach(c => { c.ask_at = c.ask_at && new Date(Date.parse(c.ask_at) - 3600000).toISOString(); c.reported_at = c.reported_at && new Date(Date.parse(c.reported_at) - 3600000).toISOString(); });
+      yqRender();
+      const l = document.getElementById("yq-list");
+      const rows = [...l.querySelectorAll(".yq-row")];
+      return { top: l.scrollTop, same: rows.length === window.__rows.length && rows.every((r, i) => r === window.__rows[i]), age: rows[20].querySelector(".yq-age").textContent };
+    });
+    if (after.age === (await p.evaluate(() => window.__age))) fail("queueScrollKeeps: the ages did not tick");
+    if (!after.same) fail("queueScrollKeeps: a tick of the ages replaced a row");
+    if (after.top !== 600) fail("queueScrollKeeps: a tick of the ages moved the scroll to " + after.top);
+  } finally { await ctx.close(); }
+  if (!bad) console.log("queueScrollKeeps ok");
 }
 
 // The list's box after the tray went: the filter drawer's line sits above the list and the pane, so the list holds only
@@ -31667,6 +32129,12 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termsDrawerPush", () => termsDrawerPushSection(browser, base));
     await unit("cardViewBarInline", () => cardViewBarInlineSection(browser, base));
     await unit("cardLabelAlias", () => cardLabelAliasSection(browser, base));
+    await unit("termNeedsYou", () => termNeedsYouSection(browser, base));
+    await unit("yqTermCard", () => yqTermCardSection(browser, base));
+    await unit("yqTourFixes", () => yqTourFixesSection(browser, base));
+    await unit("queueBar", () => queueBarSection(browser, base));
+    await unit("queueScrollKeeps", () => queueScrollKeepsSection(browser, base));
+    await unit("yqMark", () => yqMarkSection(browser, base));
     await unit("newContextSse", () => newContextSseSection(browser, base));
     await unit("composerStaysPut", () => composerStaysPutSection(browser, base));
     await unit("composePasteDefault", () => composePasteDefaultSection(browser, base));

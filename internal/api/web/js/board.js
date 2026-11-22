@@ -396,7 +396,7 @@ function firstSeen(iso) {
 
 const isWaiting = cardWaiting;
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items", "caps"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "queue", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items", "caps"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -1201,7 +1201,7 @@ function groupingPrefs(view) {
   const mine = {};
   GROUP_VIEW_FIELDS.forEach(f => { if (own[f] !== undefined) mine[f] = own[f]; });
   const out = Object.assign({}, GROUPING_DEFAULTS, shared, mine);
-  if (out.mode === "window") out.mode = "project";
+  if (out.mode === "window" || out.mode === "needs") out.mode = "project";
   return out;
 }
 

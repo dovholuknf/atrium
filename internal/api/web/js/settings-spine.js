@@ -966,7 +966,9 @@ async function move(status) {
   detail.close();
 }
 
+let attachSeq = 0;
 async function attachTask(id) {
+  const seq = ++attachSeq;
   swMark("click");
   // Attaching is looking at it, so a new card's mark goes. See js/newcard.js.
   newCardClear(id);
@@ -1022,6 +1024,8 @@ async function attachTask(id) {
   try {
     const warm = takePrewarmed(id);
     const card = await (warm || api(`/v1/tasks/${id}`));
+    // A later attach won while this read was out, and opening this card now would put the pane back on it.
+    if (seq !== attachSeq) return;
     swMark("card", warm ? "prewarm" : "get");
     openTerm(card);
   }
@@ -1367,6 +1371,7 @@ function repaintLists(signal, fromStore) {
     runners: renderRunners, terms: renderTerms,
     // The chat view's list is the terminals' list. The conversation beside it is the phone page, live by its own stream.
     chat: () => renderTermList(),
+    queue: () => Promise.resolve(renderTermList()).then(() => yqPaint()),
     // HISTORY IS A VIEW LIKE THE REST and was missing from this table, so any
     // event arriving while it was open threw "render is not a function" and
     // took the repaint with it: the list stopped updating and the only sign was

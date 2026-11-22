@@ -137,6 +137,8 @@ function takeTermSize(data) {
   termPtyCols = Number(msg.cols) || 0;
   termPtyRows = Number(msg.rows) || 0;
   applyPtySize();
+  // A pty shorter than this pane leaves blank rows under the last line, and a focused window's size is the one it takes.
+  if (termPtyRows > 0 && termFitRows > 0 && termPtyRows < termFitRows) sendFocus();
   return true;
 }
 

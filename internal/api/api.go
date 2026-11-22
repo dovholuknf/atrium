@@ -246,6 +246,8 @@ type Server struct {
 	RestartWake http.HandlerFunc
 	// Need is a lean worker naming what it lacks, which the daemon adds and restarts it with.
 	Need http.HandlerFunc
+	// Gate is a session setting the gate on its own card: the verb waiting on the human and the stage. See daemon/help.go.
+	Gate http.HandlerFunc
 	// GitClone is `atrium_git_clone`: a clone in the scm folder for a card. Owned by the daemon,
 	// which holds the settings and asks the one yes. See internal/daemon/gitclone.go.
 	GitClone http.HandlerFunc
@@ -1014,6 +1016,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Need != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/need", s.Need)
+	}
+	if s.Gate != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/gate", s.Gate)
 	}
 	if s.LoginHandler != nil {
 		mux.HandleFunc("GET /v1/login-needed", s.LoginHandler)

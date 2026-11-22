@@ -415,6 +415,8 @@ function applyTermList() {
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
   const cl = document.getElementById("chat-layout");
   if (cl) cl.style.setProperty("--termw", clampTermW(termListW) + "px");
+  const ql = document.getElementById("yq-layout");
+  if (ql) ql.style.setProperty("--termw", clampTermW(termListW) + "px");
 }
 
 // Puts the bridge across the gutter, level with the attached card.
@@ -667,7 +669,7 @@ function startGrip(e) {
   // control: a phone stacks the terminal on its own and never ties its size to
   // the list, so the grip is hidden there and this never runs. See the phone
   // dropdown, where the list floats OVER the terminal instead of resizing it.
-  if (termListMode === "off") return;
+  if (termListMode === "off" && e.currentTarget.id === "term-grip") return;
   e.preventDefault();
   // THE ELEMENT IS HELD IN A LOCAL, not read off the event inside the
   // closures. `currentTarget` is only set while an event is being dispatched
@@ -713,6 +715,8 @@ function setTermW(px) {
   // The chat tab borrows the list and the grip, so it carries the same width.
   const cl = document.getElementById("chat-layout");
   if (cl) cl.style.setProperty("--termw", termListW + "px");
+  const ql = document.getElementById("yq-layout");
+  if (ql) ql.style.setProperty("--termw", termListW + "px");
   // Live, so the terminal reflows under the handle rather than jumping when
   // it is let go. xterm's fit is cheap next to the repaint it triggers, and
   // this only runs while a pointer is down.

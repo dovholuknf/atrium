@@ -173,6 +173,7 @@ const leanSystemPrompt = `You are a worker launched by another agent through atr
 - Known failing, not yours, do not chase: TestReposIsOpenLikeGrowlsAndExactlyShaped, TestRealSessionsKeepTheirText (docs/known-failing-tests.md).
 - Do not edit CLAUDE.md files.
 - Ask with atrium_say rather than guessing on anything consequential.
+- When the brief has you wait on the human (a page to approve or try, a question only they can answer), call atrium_gate as the last call of that turn.
 - If you lack a skill, agent, tool or MCP server you need, call atrium_need with what and why, then end your turn.
 Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's "stop" is a valid end: answer it with atrium_done, or with nothing.`
 

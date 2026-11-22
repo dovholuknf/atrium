@@ -30,10 +30,13 @@
         "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepaliveMark", "coldHandoff", "keepMemory",
         "idle*", "looksIdle", "joined*", "heldStrip", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
         "bridge", "collapsedBridge", "groupBridge", "selectedFits", "selectedFitsLone", "termBarNowrap", "childFits", "childFoldSticks", "childRollupCount", "nineAgentCounts", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
-        "newContextSse", "composerStaysPut", "composePasteDefault", "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
+        "newContextSse", "composerStaysPut", "composePasteDefault", "queueBar", "queueScrollKeeps", "yqMark", "yqTermCard", "yqTourFixes","replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
       ],
       "sources": [
         "internal/api/web/js/term*.js",
+        "internal/api/web/js/yourqueue.js",
+        "internal/api/web/js/yqmark.js",
+        "internal/api/web/css/yourqueue.css",
         "internal/api/web/js/disk-watch.js",
         "internal/api/web/js/host-watch.js",
         "internal/api/web/js/tcompose.js",
@@ -419,7 +422,7 @@
     "hub/deploypkg": {"package": "./internal/link/deploy", "sources": ["internal/link/deploy/*.go"], "tests": []},
     "hub/docs": {"package": "./internal/link/docs", "sources": ["internal/link/docs/*.go"], "tests": []},
 "hub/cihook": {"package": "./internal/link", "sources": ["internal/link/cihook_deliver.go"], "tests": ["internal/link/cihook_*test.go", "internal/link/eventhook_*test.go"]},
-    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_remind.go", "internal/link/control_relay.go", "internal/link/hand.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go", "internal/link/review.go", "internal/link/review_mcp.go"], "tests": ["internal/link/review_integration_test.go", "internal/link/control_*test.go", "internal/link/ctl_*test.go", "internal/link/ctlaudit_*test.go", "internal/link/ctlclass_*test.go", "internal/link/launch_item_schema_test.go", "internal/link/launch_schema_integration_test.go", "internal/link/need_integration_test.go"]},
+    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_gate.go", "internal/link/control_remind.go", "internal/link/control_relay.go", "internal/link/hand.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go", "internal/link/review.go", "internal/link/review_mcp.go"], "tests": ["internal/link/review_integration_test.go", "internal/link/control_*test.go", "internal/link/ctl_*test.go", "internal/link/ctlaudit_*test.go", "internal/link/ctlclass_*test.go", "internal/link/launch_item_schema_test.go", "internal/link/launch_schema_integration_test.go", "internal/link/need_integration_test.go"]},
     "mcp/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog_mcp.go"], "tests": []},
     "mcp/deploy": {"package": "./internal/link", "sources": ["internal/link/deploy_forward.go"], "tests": ["internal/link/deploy_*test.go"]},
     "mcp/deps": {"package": "./internal/link", "sources": ["internal/link/deps_mcp.go"], "tests": []},

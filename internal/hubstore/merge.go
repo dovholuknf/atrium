@@ -98,6 +98,8 @@ type MergeRequest struct {
 	StartedAt     string   `json:"started_at,omitempty"`
 	TestedAt      string   `json:"tested_at,omitempty"`
 	EndedAt       string   `json:"ended_at,omitempty"`
+	// Stale is why a red request no longer asks anything of anybody. Worked out when listed, never stored.
+	Stale string `json:"stale,omitempty"`
 	// Token is the run's capability, which the merge room's verdict has to carry. Never shown.
 	Token string `json:"-"`
 }

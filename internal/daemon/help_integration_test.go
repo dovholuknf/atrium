@@ -239,3 +239,39 @@ func TestASecondAskDoesNotDestroyTheFirstOnTheCard(t *testing.T) {
 		t.Fatalf("the card is drawing %q rather than the question that has waited longest", got.Ask)
 	}
 }
+
+// A gate lands on the card with its verb and stops it, and a verb atrium does not know or a gate routed to a peer is
+// refused with nothing recorded.
+func TestAGateLandsOnTheCardAndABadOneIsRefused(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task := cardFor(t, d, "gate-one")
+
+	for _, bad := range []HelpRequest{
+		{Agent: "gate-one", Blocked: true, Ask: "x", Verb: "merge"},
+		{Agent: "gate-one", Blocked: true, Ask: "x", Verb: "answer", Peer: "someone"},
+	} {
+		if rec, _ := askOf(t, d, bad); rec.Code != http.StatusBadRequest {
+			t.Fatalf("verb %q peer %q answered %d, want a refusal", bad.Verb, bad.Peer, rec.Code)
+		}
+	}
+	if got, _ := d.st.Get(task.ID); got.Ask != "" {
+		t.Fatalf("a refused gate left an ask: %q", got.Ask)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+task.ID+"/gate",
+		strings.NewReader(`{"verb":"Approve","stage":"design","text":"approve mock.html"}`))
+	req.SetPathValue("id", task.ID)
+	d.handleSetGate(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body)
+	}
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AskVerb != "approve" || got.AskStage != "design" || got.Status != store.StatusNeedsInput {
+		t.Fatalf("the gate is not on the card: verb %q stage %q status %q", got.AskVerb, got.AskStage, got.Status)
+	}
+}

@@ -2612,6 +2612,17 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN origin TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A GATE is an ask that names the verb waiting on the human and the stage it waits at, so Your queue reads the
+		// verb from the agent instead of guessing it from a recap. Mirrored onto the task the way 0042 mirrors the ask.
+		name: "0125_ask_gate",
+		stmts: []string{
+			`ALTER TABLE ask ADD COLUMN verb TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE ask ADD COLUMN stage TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN ask_verb TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN ask_stage TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

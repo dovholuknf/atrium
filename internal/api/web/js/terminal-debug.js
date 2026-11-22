@@ -479,8 +479,8 @@ function renderHeldTiles(host) {
 }
 
 // EVERY CARD HELD ON A PERMISSION, over the Terminals tab, on any room and whether or not atrium holds its terminal.
-// A request already drawn in the pane (the attached card's banner, or a held tile) is left out. The panel floats over
-// the terminal so opening it never reflows the pane, and a request not seen before opens it again.
+// A request already drawn in the pane (the attached card's banner, or a held tile) is left out. The panel is in flow so
+// it never covers the terminal bar, and a request not seen before opens it again.
 const HELD_SHUT_KEY = "atrium.heldShut";
 const heldSeen = new Set();
 const heldOpen = new Set();

@@ -186,6 +186,16 @@ function placeToasts() {
     host.style.setProperty("--toast-right", "14px");
     return;
   }
+  // The Queue's ask has its buttons at the bottom right, so the stack hangs from under the ask's bar there too.
+  const yqBar = document.querySelector("#yq-ask .yq-askbar");
+  if (yqBar && typeof isViewing === "function" && isViewing("queue")) {
+    let below = 0;
+    document.querySelectorAll("#yq-ask .yq-askbar, #yq-ask .yq-pagebar").forEach(el => { below = Math.max(below, el.getBoundingClientRect().bottom); });
+    host.classList.add("top");
+    host.style.setProperty("--toast-top", Math.round(below + 12) + "px");
+    host.style.setProperty("--toast-right", Math.max(8, Math.round(innerWidth - yqBar.getBoundingClientRect().right + 12)) + "px");
+    return;
+  }
   // A resize can land between two script loads, before solo.js and board.js have defined these. Boot places them again.
   if (typeof termOnly !== "function" || typeof isViewing !== "function") return;
   const onTerm = !!pane && (termOnly() || isViewing("terms"));
