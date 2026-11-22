@@ -88,5 +88,5 @@ cannot be handled by an untrusted hook. Forced termination cannot guarantee a Se
 `turnquestions.go` reads Claude transcript conventions. Codex transcript-derived questions and background-task
 summaries are not guaranteed by this work. The shared Stop callback, identity and loop guard are tested. A live
 Codex 0.163.0 escalation verified native allow and deny through scratch-scoped standing rules while auto stayed on.
-The smoke log contains the captured tool results.
+The [smoke log](../changes/img/bug-codex-permissions-and-hooks-parity/smoke.md) contains the captured tool results.
 Interactive board decisions remain a separate manual test.
