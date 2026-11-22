@@ -3,6 +3,7 @@ package dictate
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,12 +15,17 @@ func TestAskSendsPromptAndReadsText(t *testing.T) {
 			http.Error(w, `{"error":"bad request"}`, 400)
 			return
 		}
-		f, _, err := r.FormFile("file")
-		if err != nil {
+		f, h, err := r.FormFile("file")
+		if err != nil || h.Filename != "clip.wav" {
 			http.Error(w, `{"error":"no file"}`, 400)
 			return
 		}
+		clip, _ := io.ReadAll(f)
 		_ = f.Close()
+		if string(clip) != "RIFF....WAVE" || r.FormValue("response_format") != "json" {
+			http.Error(w, `{"error":"clip changed"}`, 400)
+			return
+		}
 		_, _ = w.Write([]byte(`{"text":" merge claude/main\n"}`))
 	}))
 	defer srv.Close()

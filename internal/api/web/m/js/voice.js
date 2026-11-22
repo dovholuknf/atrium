@@ -19,7 +19,7 @@
   function blocked() {
     if (!window.isSecureContext) {
       return "The microphone is blocked on " + location.origin + ", which the browser does not treat as secure. " +
-        "Open the board at http://127.0.0.1 on its own machine, or over https, to dictate.";
+        "Open the board at http://127.0.0.1 on its own machine, or over https, to dictate. Per-browser setting: docs/ui/voice-dictation.md, Microphone on a plain http board.";
     }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       return "This browser cannot record audio.";
