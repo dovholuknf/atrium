@@ -545,7 +545,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 	for _, r := range of(store.ResProc) {
 		if procStillIt(r) {
-			pid, _ := strconv.Atoi(r.Ref)
+			pid, _ := procPID(r.Ref)
 			sub := cardproc.Tree(pid)
 			if err := cardproc.StopTree(pid); err != nil {
 				failed(r, err)
@@ -554,7 +554,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 				continue
 			}
 			maps.Copy(tree, sub)
-		} else if pid, err := strconv.Atoi(r.Ref); err == nil && r.Detail != "" {
+		} else if pid, err := procPID(r.Ref); err == nil && r.Detail != "" {
 			maps.Copy(tree, cardproc.StopOrphans(pid, r.Detail))
 		}
 		freed(r)
@@ -887,7 +887,7 @@ func withoutCleanupTags(tags []string) []string {
 
 // procStillIt is whether a proc row's pid is still the process recorded: running, with the same start time.
 func procStillIt(r *store.CardResource) bool {
-	pid, err := strconv.Atoi(r.Ref)
+	pid, err := procPID(r.Ref)
 	if err != nil {
 		return false
 	}

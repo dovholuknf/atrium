@@ -16,7 +16,7 @@ func TestWorktreeNewListRm(t *testing.T) {
 	main := filepath.Join(dir, "repo")
 	run := func(args ...string) {
 		t.Helper()
-		if out, err := worktreeGit(main, args...); err != nil {
+		if out, err := exec.Command("git", append([]string{"-C", main}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("%v: %s", err, out)
 		}
 	}

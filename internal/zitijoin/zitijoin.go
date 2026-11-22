@@ -64,8 +64,14 @@ func fileBase(name string) string {
 	if len(s) > 40 {
 		s = s[:40]
 	}
+	if !filepath.IsLocal(s) {
+		return "atrium"
+	}
 	return s
 }
+
+// controllerHost is a host name or address, with an optional port.
+var controllerHost = regexp.MustCompile(`^(?:[A-Za-z0-9_.-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$`)
 
 func rootURL(controller string) (*url.URL, error) {
 	c := strings.TrimSpace(controller)
@@ -82,7 +88,11 @@ func rootURL(controller string) (*url.URL, error) {
 	if u.Scheme != "https" {
 		return nil, errors.New("a controller is reached over https")
 	}
-	return &url.URL{Scheme: "https", Host: u.Host}, nil
+	host := u.Host
+	if !controllerHost.MatchString(host) {
+		return nil, fmt.Errorf("%q is not a controller host", host)
+	}
+	return &url.URL{Scheme: "https", Host: host}, nil
 }
 
 func clientAPI(u *url.URL) string { return edge_apis.ClientUrl(u.String()) }

@@ -220,7 +220,7 @@ func (s *Server) postOwn(w http.ResponseWriter, r *http.Request) {
 	ref, detail := strings.TrimSpace(in.Ref), ""
 	switch strings.TrimSpace(in.Kind) {
 	case store.ResProc:
-		pid, err := strconv.Atoi(ref)
+		pid, err := procPID(ref)
 		if err != nil || pid <= 0 {
 			writeErr(w, http.StatusBadRequest, errors.New("a proc's ref is its pid"))
 			return
@@ -302,4 +302,13 @@ func (s *Server) PreviewPort(port int) error {
 		return nil
 	}
 	return fmt.Errorf("port %d is outside this room's card ports %s and the previews' %s", port, rng, previewPorts)
+}
+
+// procPID is a proc row's ref as a pid, parsed as 31 bits so it fits an int and the uint32 a Windows handle takes.
+func procPID(ref string) (int, error) {
+	v, err := strconv.ParseUint(ref, 10, 31)
+	if err != nil {
+		return 0, err
+	}
+	return int(v), nil
 }

@@ -1,17 +1,19 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // `atrium worktree new|rm|list`: scripts/new-worktree.ps1 and the `git worktree add -b claude/<name>` loop as one verb.
@@ -61,12 +63,11 @@ func newWorktree() *cobra.Command {
 	return c
 }
 
-func worktreeGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+func worktreeGit(dir string, op gitexec.Op) (string, error) {
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Dir: dir, Combined: true, Visible: true}, op)
 	s := strings.TrimSpace(string(out))
 	if err != nil {
+		args, _ := gitexec.Argv(gitexec.Opts{}, op)
 		return s, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, s)
 	}
 	return s, nil
@@ -74,7 +75,7 @@ func worktreeGit(dir string, args ...string) (string, error) {
 
 // listWorktrees returns every worktree, the main checkout first.
 func listWorktrees() ([]worktreeEntry, error) {
-	out, err := worktreeGit("", "worktree", "list", "--porcelain")
+	out, err := worktreeGit("", gitexec.WorktreeList{})
 	if err != nil {
 		return nil, err
 	}
@@ -109,16 +110,16 @@ func worktreeNew(w io.Writer, name, base, root string) error {
 	if _, err := os.Lstat(wt); err == nil {
 		return fmt.Errorf("worktree path already exists: %s", wt)
 	}
-	if _, err := worktreeGit(main, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+	if _, err := worktreeGit(main, gitexec.RevParseVerify{Quiet: true, Rev: "refs/heads/" + branch}); err == nil {
 		return fmt.Errorf("branch already exists: %s", branch)
 	}
-	if _, err := worktreeGit(main, "show-ref", "--verify", "--quiet", "refs/heads/"+base); err != nil {
+	if _, err := worktreeGit(main, gitexec.RevParseVerify{Quiet: true, Rev: "refs/heads/" + base}); err != nil {
 		return fmt.Errorf("base branch not found: %s", base)
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	if _, err := worktreeGit(main, "worktree", "add", "-b", branch, wt, base); err != nil {
+	if _, err := worktreeGit(main, gitexec.WorktreeAdd{NewBranch: branch, Path: wt, Commitish: base}); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "worktree %s (branch %s, base %s)\n", wt, branch, base)
@@ -174,7 +175,7 @@ func linkClaudeMD(w io.Writer, main, wt string) (int, error) {
 
 // excludeClaudeMD keeps the untracked links out of `git add -A`. info/exclude is in the common dir, so it covers every worktree.
 func excludeClaudeMD(wt string) error {
-	common, err := worktreeGit(wt, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := worktreeGit(wt, gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if err != nil {
 		return err
 	}
@@ -215,22 +216,22 @@ func worktreeRm(w io.Writer, name, base string) error {
 			continue
 		}
 		// No --force: a worktree with changes is refused by git and left alone.
-		if _, err := worktreeGit(main, "worktree", "remove", e.path); err != nil {
+		if _, err := worktreeGit(main, gitexec.WorktreeRemove{Path: e.path}); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "removed worktree %s\n", e.path)
 	}
-	if _, err := worktreeGit(main, "worktree", "prune"); err != nil {
+	if _, err := worktreeGit(main, gitexec.WorktreePrune{}); err != nil {
 		return err
 	}
-	if _, err := worktreeGit(main, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+	if _, err := worktreeGit(main, gitexec.RevParseVerify{Quiet: true, Rev: "refs/heads/" + branch}); err != nil {
 		return nil
 	}
-	if _, err := worktreeGit(main, "merge-base", "--is-ancestor", branch, base); err != nil {
+	if _, err := worktreeGit(main, gitexec.IsAncestor{Commit: branch, Of: base}); err != nil {
 		fmt.Fprintf(w, "kept branch %s: not merged into %s\n", branch, base)
 		return nil
 	}
-	if _, err := worktreeGit(main, "branch", "-d", branch); err != nil {
+	if _, err := worktreeGit(main, gitexec.BranchDelete{Branch: branch, Merged: true}); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "deleted branch %s\n", branch)
@@ -249,7 +250,7 @@ func worktreeList(w io.Writer, base string) error {
 			continue
 		}
 		ahead, behind := "?", "?"
-		if out, err := worktreeGit(all[0].path, "rev-list", "--left-right", "--count", base+"..."+e.branch); err == nil {
+		if out, err := worktreeGit(all[0].path, gitexec.RevList{LeftRight: true, Count: true, Revs: []string{base + "..." + e.branch}}); err == nil {
 			if f := strings.Fields(out); len(f) == 2 {
 				behind, ahead = f[0], f[1]
 			}

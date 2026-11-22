@@ -229,8 +229,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	obs.PID = in.PID
 	obs.Resume = in.Resume
 	obs.NameSource = in.NameSource
-	if in.Cwd != "" {
-		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
+	if wt := observedCwd(in.Cwd); wt != "" {
+		obs.Worktree = wt
 	}
 
 	// A launched runner already has a card waiting for it.
@@ -599,7 +599,6 @@ func endedAs(task *store.Task) string {
 	}
 	// A stat, and nothing cleverer. The question is "is this still a place",
 	// and a directory that cannot be read is not one.
-	// codeql[go/path-injection] the worktree is the session's own hook cwd, shares refused in messages.go, and this is a Stat by the same user
 	fi, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dir)))
 	if err != nil || !fi.IsDir() {
 		return store.StatusDead

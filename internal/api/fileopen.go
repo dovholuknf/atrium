@@ -96,7 +96,10 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name, args := editorCommand(tmpl, full)
-	// codeql[go/command-injection] the editor template is the board's own setting, and a board caller can already open a shell (attach.go kind=shell)
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("the editor setting names no program before {path}"))
+		return
+	}
 	cmd := exec.Command(safepath.NoNUL(name), args...)
 	// Started from the card's directory, so an editor that opens a workspace
 	// from its working directory opens the right one.
@@ -130,22 +133,23 @@ func (s *Server) openFile(w http.ResponseWriter, r *http.Request) {
 // a program in `C:\Program Files` still works, is the whole grammar.
 func editorCommand(tmpl, path string) (string, []string) {
 	parts := splitArgs(tmpl)
-	if len(parts) == 0 {
+	if len(parts) == 0 || strings.Contains(parts[0], "{path}") {
 		return "", nil
 	}
+	name, args := parts[0], parts[1:]
 	used := false
-	for i, p := range parts {
+	for i, p := range args {
 		if strings.Contains(p, "{path}") {
-			parts[i] = strings.ReplaceAll(p, "{path}", path)
+			args[i] = strings.ReplaceAll(p, "{path}", path)
 			used = true
 		}
 	}
 	// Appended when the placeholder was left out, which is the obvious
 	// spelling: `code -g` and `notepad` both mean "and then the file".
 	if !used {
-		parts = append(parts, path)
+		args = append(args, path)
 	}
-	return parts[0], parts[1:]
+	return name, args
 }
 
 // splitArgs breaks a command line on spaces, keeping quoted runs whole.

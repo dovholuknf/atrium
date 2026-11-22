@@ -322,11 +322,11 @@ func excluded(globs []string, rel string) bool {
 // there for why the other half is durable.
 func fillPresence(repos []*store.ProviderRepo) {
 	for _, r := range repos {
-		if r.Path == "" {
+		path := r.Path
+		if path == "" || strings.Contains(path, "..") {
 			continue
 		}
-		// codeql[go/path-injection] SaveProviderRepo refuses slashes, . and .. in org and repo, so this is a direct child of the provider root
-		info, err := os.Stat(safepath.NoNUL(filepath.FromSlash(r.Path)))
+		info, err := os.Stat(safepath.NoNUL(filepath.FromSlash(path)))
 		r.Present = err == nil && info.IsDir()
 	}
 }

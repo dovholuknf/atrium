@@ -2,16 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // A merge happened. Run by git's `post-merge` hook, so it follows the hook
@@ -52,9 +52,7 @@ func newMerged() *cobra.Command {
 func reportMerged(out io.Writer, boardURL, into string) error {
 	into = strings.TrimSpace(into)
 	if into == "" {
-		git := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD")
-		nowindow.Hide(git)
-		b, err := git.Output()
+		b, err := gitexec.Run(context.Background(), gitexec.Opts{}, gitexec.SymbolicRef{Name: "HEAD", Short: true})
 		if err != nil || strings.TrimSpace(string(b)) == "" {
 			return fmt.Errorf("no branch given and HEAD is not on one")
 		}

@@ -62,7 +62,8 @@ func TestGitStoreRefusesWhatIsNotADirectoryPath(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"relative/path", "git", "./x", "../x", file, "/abs\nnewline", "/", "/abs\x00nul"} {
+	for _, bad := range []string{"relative/path", "git", "./x", "../x", file, "/abs\nnewline", "/", "/abs\x00nul",
+		t.TempDir() + "/a/../b"} {
 		if err := s.SetGitStore(bad); err == nil {
 			t.Errorf("%q was taken", bad)
 		}

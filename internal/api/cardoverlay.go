@@ -232,7 +232,6 @@ func (s *Server) overlayUp(w http.ResponseWriter, ctx context.Context, t *store.
 
 // startOwned starts a process in its own group, its output to logFile, and records it on the card as a proc.
 func (s *Server) startOwned(card, dir, logFile, bin string, args ...string) (pid, seq int, err error) {
-	// codeql[go/path-injection] logFile is home + a name that passed overlayName ^[a-z0-9][a-z0-9-]{0,31}$ + mode "host" or "proxy", so it stays in home
 	lf, err := os.OpenFile(safepath.NoNUL(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return 0, 0, err
@@ -516,7 +515,9 @@ func (s *Server) overlayTunnel(w http.ResponseWriter, t *store.Task, in overlayR
 	var portSeqs []int
 	switch mode {
 	case "host":
+		mode = "host" // a literal in each case, so the log file named by mode holds no request text
 	case "proxy":
+		mode = "proxy"
 		if len(in.Services) == 0 || len(in.Services) > maxPortsAsked {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("proxy mode takes 1 to %d services", maxPortsAsked))
 			return
@@ -604,7 +605,7 @@ func (s *Server) overlayFree(card, home string, st *overlayState, why string) er
 		switch r.Kind {
 		case store.ResProc:
 			if procStillIt(r) {
-				pid, _ := strconv.Atoi(r.Ref)
+				pid, _ := procPID(r.Ref)
 				if err := cardproc.StopTree(pid); err != nil {
 					_ = s.st.ResourceFailed(card, r.Seq, err.Error())
 					return fmt.Errorf("process %s did not stop: %v", r.Ref, err)
@@ -712,7 +713,6 @@ func randomHex(n int) (string, error) {
 
 // tailOf is the last lines of a log file, for an error.
 func tailOf(path string) string {
-	// codeql[go/path-injection] only startOwned's logFile reaches here, home + an overlayName-checked name + "host" or "proxy"
 	raw, err := os.ReadFile(safepath.NoNUL(path))
 	if err != nil {
 		return err.Error()

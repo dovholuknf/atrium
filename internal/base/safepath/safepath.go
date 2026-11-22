@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"unicode"
@@ -202,9 +203,18 @@ func joinRest(real, rest string) string {
 
 const maxLinks = 255
 
+// driveVolume is the volume walkLinks starts from: a drive letter or none, never a share or a device namespace.
+var driveVolume = regexp.MustCompile(`^(?:[A-Za-z]:)?$`)
+
+// componentName is one name walkLinks joins on.
+var componentName = regexp.MustCompile(`^[^\x00]+$`)
+
 // walkLinks resolves path with Lstat and Readlink only, so a component it cannot examine fails closed.
 func walkLinks(path string) (string, error) {
 	vol := filepath.VolumeName(path)
+	if !driveVolume.MatchString(vol) {
+		return "", errors.New("not a path on a local drive")
+	}
 	pending := strings.Split(strings.TrimPrefix(path[len(vol):], string(filepath.Separator)), string(filepath.Separator))
 	cur := vol + string(filepath.Separator)
 	for links := 0; len(pending) > 0; {
@@ -217,8 +227,10 @@ func walkLinks(path string) (string, error) {
 			cur = filepath.Dir(cur)
 			continue
 		}
+		if !componentName.MatchString(name) {
+			return "", errors.New("a path component holds a NUL")
+		}
 		next := filepath.Join(cur, name)
-		// codeql[go/path-injection] the resolver must lstat each component to find links, shares are refused before resolve, and within still checks the result
 		fi, err := os.Lstat(NoNUL(next))
 		if err != nil {
 			return "", err
@@ -231,7 +243,6 @@ func walkLinks(path string) (string, error) {
 		if links++; links > maxLinks {
 			return "", errors.New("too many links")
 		}
-		// codeql[go/path-injection] the resolver must read each link to follow it, shares are refused before resolve, and within still checks the result
 		target, err := os.Readlink(NoNUL(next))
 		if err != nil {
 			return "", err

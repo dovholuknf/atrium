@@ -150,7 +150,7 @@ func TestMissingFilesAreNotAnError(t *testing.T) {
 }
 
 func TestLoadRefusesANetworkOrRelativeDir(t *testing.T) {
-	for _, dir := range []string{`\\evil\s`, `//evil/s`, "rel/dir"} {
+	for _, dir := range []string{`\\evil\s`, `//evil/s`, "rel/dir", t.TempDir() + "/a/../b"} {
 		if _, _, err := Load(dir); err == nil {
 			t.Errorf("Load(%q) was accepted", dir)
 		}

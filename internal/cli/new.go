@@ -2,19 +2,21 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // `atrium new <name>`: gwt's `new` from a checkout. Run it inside any clone or worktree, and the room fetches origin,
@@ -94,7 +96,7 @@ func newNew() *cobra.Command {
 
 // localCheckout is the top of the checkout this directory is in, for a repo with no origin to name it.
 func localCheckout() (string, error) {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, gitexec.RevParseShowToplevel{})
 	if err != nil {
 		return "", fmt.Errorf("this directory is not in a git checkout")
 	}
@@ -110,7 +112,7 @@ func startNewLocal(path, name string, o newOpts) error {
 
 // repoOfCheckout is host/org/repo of the current directory's origin remote.
 func repoOfCheckout() (string, error) {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, gitexec.RemoteGetURL{Name: "origin"})
 	if err != nil {
 		return "", fmt.Errorf("this directory has no origin remote to read the repo from. run it inside a checkout, or pass --repo host/org/repo")
 	}

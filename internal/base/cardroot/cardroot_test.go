@@ -28,6 +28,7 @@ func TestCheckRefusesWhatARemovalCouldHarm(t *testing.T) {
 		"above state":  filepath.Dir(state),
 		"in scm_root":  filepath.Join(scm, "cards"),
 		"relative":     "cards",
+		"climbing":     base + "/cards/../other",
 	}
 	for name, path := range cases {
 		if _, err := env.Check(path, state, scm); err == nil {

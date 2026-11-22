@@ -135,10 +135,13 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 // probeWorkers is how many candidates of one request are resolved at once.
 const probeWorkers = 8
 
-// under reports whether an already-resolved path sits at or below an already-resolved root.
-func under(root, p string) bool {
+// under is an already-resolved path rebuilt from an already-resolved root it sits at or below, else "".
+func under(root, p string) string {
 	rel, err := filepath.Rel(root, p)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	if err != nil || !filepath.IsLocal(rel) {
+		return ""
+	}
+	return filepath.Join(root, rel)
 }
 
 // probeAlias spells a path the way this machine does. An agent in WSL or Git Bash prints `/d/work/x` for
@@ -178,16 +181,15 @@ func probeOne(root, realCard, want string, roots func() []string, near func() []
 			return probeHit{}, false
 		}
 		if rerr == nil {
-			full, resolved = res, true
-			if !under(realCard, res) {
+			full, resolved = under(realCard, res), true
+			if full == "" {
 				outside = true
-				held := false
 				for _, r := range roots() {
-					if held = under(r, res); held {
+					if full = under(r, res); full != "" {
 						break
 					}
 				}
-				if !held {
+				if full == "" {
 					return probeHit{}, false
 				}
 			}

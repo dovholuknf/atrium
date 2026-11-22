@@ -1,20 +1,20 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/addrfile"
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/ptyhost"
 	"github.com/spf13/cobra"
@@ -215,9 +215,7 @@ func dirtyWorktrees(dir string) ([]string, error) {
 		if _, err := os.Stat(filepath.Join(p, ".git")); err != nil {
 			return nil
 		}
-		cmd := exec.Command("git", "-C", p, "status", "--porcelain")
-		nowindow.Hide(cmd)
-		o, err := cmd.Output()
+		o, err := gitexec.Run(context.Background(), gitexec.Opts{Dir: p}, gitexec.Status{})
 		if err != nil || strings.TrimSpace(string(o)) != "" {
 			dirty = append(dirty, p)
 		}

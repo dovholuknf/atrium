@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // worktreeFor reads `git worktree list --porcelain` and returns the path checked out on branch.
@@ -32,6 +35,14 @@ func sshRun(host, command string) (string, error) {
 	return s, nil
 }
 
+// pruneBranch is the only branch prune deletes: claude/ and plain segments, so it is one word to any remote shell.
+var pruneBranch = regexp.MustCompile(`^claude(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)+$`)
+
+// remoteBranchDelete is the room-side delete, the branch quoted for the remote shell as well as checked.
+func remoteBranchDelete(remote, branch string) string {
+	return fmt.Sprintf("git -C %s branch -D \"%s\"", remote, branch)
+}
+
 func cmdPrune(args []string, out io.Writer) error {
 	pos, flags := splitArgs(args, "room", "card", "ssh", "repo", "hub", "remote-repo")
 	fs := flag.NewFlagSet("prune", flag.ContinueOnError)
@@ -48,6 +59,9 @@ func cmdPrune(args []string, out io.Writer) error {
 		return fmt.Errorf("usage: prune <branch> --room <room> [--card <room~id>]")
 	}
 	branch := pos[0]
+	if !pruneBranch.MatchString(branch) || strings.Contains(branch, "..") || strings.HasSuffix(branch, ".lock") {
+		return fmt.Errorf("%q is not a claude/ branch prune will delete", branch)
+	}
 	h := *host
 	if h == "" {
 		h = *room
@@ -72,16 +86,16 @@ func cmdPrune(args []string, out io.Writer) error {
 	} else {
 		step(out, "no worktree on %s for %s", *room, branch)
 	}
-	if _, err := sshRun(h, fmt.Sprintf("git -C %s branch -D %s", *remote, branch)); err != nil {
+	if _, err := sshRun(h, remoteBranchDelete(*remote, branch)); err != nil {
 		return err
 	}
 	step(out, "deleted %s on %s", branch, *room)
 	g := realGit{}
-	if _, err := g.run(*repo, "branch", "-D", branch); err != nil {
+	if _, err := g.run(*repo, gitexec.BranchDelete{Branch: branch}); err != nil {
 		return err
 	}
 	step(out, "deleted local %s", branch)
-	if _, err := g.run(*repo, "push", "hub", "--delete", branch); err != nil {
+	if _, err := g.run(*repo, gitexec.Push{Remote: "hub", Refspecs: []string{":" + branch}}); err != nil {
 		return fmt.Errorf("hub refused the branch delete, not retried: %w", err)
 	}
 	step(out, "deleted hub %s", branch)

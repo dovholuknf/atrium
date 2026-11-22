@@ -1,16 +1,16 @@
 package land
 
 import (
+	"context"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // Duplicates returns one "sha subject" line per commit in upstream..tip whose patch id is already upstream.
 func Duplicates(dir, upstream, tip string) ([]string, error) {
-	cmd := exec.Command("git", "cherry", "-v", upstream, tip)
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Dir: dir}, gitexec.Cherry{Verbose: true, Upstream: upstream, Head: tip})
 	if err != nil {
 		return nil, fmt.Errorf("git cherry %s %s: %w", upstream, tip, err)
 	}

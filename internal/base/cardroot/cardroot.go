@@ -131,6 +131,9 @@ func (e Env) Check(path, stateDir, scmRoot string) (string, error) {
 	if strings.ContainsAny(path, "\x00\n\r") {
 		return "", errors.New("card_root is one path on one line")
 	}
+	if strings.Contains(path, "..") {
+		return "", errors.New("card_root is a path with no ..")
+	}
 	if !filepath.IsAbs(filepath.FromSlash(path)) {
 		return "", fmt.Errorf("card_root is an absolute path on this machine, not %q", path)
 	}
@@ -164,13 +167,11 @@ func examinable(path string) error {
 		cur := pending[0]
 		pending = pending[1:]
 		for p := cur; ; {
-			// codeql[go/path-injection] card_root is the operator's board setting, a board caller has a shell (attach.go kind=shell), and this only lstats it
 			fi, err := os.Lstat(noNUL(p))
 			if errors.Is(err, fs.ErrPermission) {
 				return fmt.Errorf("%s is not readable", p)
 			}
 			if err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
-				// codeql[go/path-injection] card_root is the operator's board setting, a board caller has a shell (attach.go kind=shell), and this only reads a link
 				if to, err := os.Readlink(noNUL(p)); err == nil {
 					if !filepath.IsAbs(to) {
 						to = filepath.Join(filepath.Dir(p), to)

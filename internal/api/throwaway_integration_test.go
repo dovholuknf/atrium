@@ -117,6 +117,12 @@ func TestPromotingToANetworkPathIsRefused(t *testing.T) {
 	}
 }
 
+func TestPromotingToAPathThatClimbsIsRefused(t *testing.T) {
+	if _, err := promoteTarget(t.TempDir() + "/a/../kept"); err == nil {
+		t.Fatal("a destination with .. was accepted")
+	}
+}
+
 // Exercise the copy fallback used when rename cannot cross volumes.
 func TestATreeIsCopiedWhenItCannotBeRenamed(t *testing.T) {
 	from := t.TempDir()

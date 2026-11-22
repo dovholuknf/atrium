@@ -22,7 +22,6 @@ func StartTime(pid int) (string, error) {
 	if pid <= 0 || int64(pid) > math.MaxUint32 {
 		return "", ErrGone
 	}
-	// codeql[go/incorrect-integer-conversion] pid is bounded to 1..MaxUint32 by the check above
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
@@ -127,7 +126,6 @@ func terminateTree(pid int) error {
 		if now, err := StartTime(p); err != nil || now != at {
 			continue
 		}
-		// codeql[go/incorrect-integer-conversion] p came from a process snapshot, so it fits a uint32
 		h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(p))
 		if err != nil {
 			if first == nil {

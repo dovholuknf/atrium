@@ -277,11 +277,13 @@ func (s *Store) SetGitStore(dir string) error {
 	if strings.ContainsAny(dir, "\x00\r\n") || !filepath.IsAbs(filepath.FromSlash(dir)) {
 		return errors.New("git.store has to be an absolute path on the hub's machine")
 	}
+	if strings.Contains(dir, "..") {
+		return errors.New("git.store has to be a path with no ..")
+	}
 	clean := filepath.Clean(filepath.FromSlash(dir))
 	if clean == filepath.Dir(clean) {
 		return errors.New("git.store cannot be the root of a disk")
 	}
-	// codeql[go/path-injection] the only route here is LocalOperator-gated (git_hub.go:137), and this is a Stat to refuse a file
 	if st, err := os.Stat(noNUL(clean)); err == nil && !st.IsDir() {
 		return errors.New("git.store is a file, and it has to be a directory")
 	}

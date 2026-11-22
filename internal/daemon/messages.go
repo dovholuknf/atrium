@@ -283,9 +283,8 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	if in.Runner != "" {
 		obs.Runner = in.Runner
 	}
-	// a share is never a card's worktree: every later Stat of it would open SMB to that host
-	if in.Cwd != "" && !safepath.Network(in.Cwd) {
-		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
+	if wt := observedCwd(in.Cwd); wt != "" {
+		obs.Worktree = wt
 	}
 	// Which conversation this is, so a report with no pid knows whether the pid
 	// on file is its own (r-011).
@@ -1038,4 +1037,16 @@ func (d *Daemon) typePayload(run Runner, taskID, banner, text string, ok func() 
 		payload = screen.BracketedPaste(text)
 	}
 	return run.InjectPeerIf(banner, payload, ok)
+}
+
+// observedCwd is a hook's cwd as a card's worktree, in forward slashes. A share is never one, because every later Stat
+// of it would open SMB to that host, and neither is a path that climbs with "..", which no runner reports.
+func observedCwd(cwd string) string {
+	if cwd == "" || safepath.Network(cwd) {
+		return ""
+	}
+	if strings.Contains(cwd, "..") {
+		return ""
+	}
+	return strings.ReplaceAll(cwd, `\`, "/")
 }

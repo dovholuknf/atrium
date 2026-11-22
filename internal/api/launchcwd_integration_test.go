@@ -92,3 +92,11 @@ func TestLaunchCwdRefusesANetworkPath(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchCwdSaysAPathThatClimbsIsNot(t *testing.T) {
+	t.Parallel()
+	srv, _, work := fileServer(t)
+	if exists, dir := cwdAnswer(t, srv, work+"/../"+filepath.Base(work)); exists || dir {
+		t.Fatalf("a path with .. answered exists=%v dir=%v", exists, dir)
+	}
+}

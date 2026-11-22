@@ -30,13 +30,12 @@ func (s *Server) launchCwd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A relative path is relative to this daemon's own directory, which is not
-	// what the caller meant by it. Not a directory, rather than a guess.
+	// what the caller meant by it. Not a directory, rather than a guess, and so is one that climbs with "..".
 	path := filepath.FromSlash(raw)
-	if raw == "" || !filepath.IsAbs(path) {
+	if raw == "" || !filepath.IsAbs(path) || strings.Contains(path, "..") {
 		writeJSON(w, http.StatusOK, map[string]bool{"exists": false, "dir": false})
 		return
 	}
-	// codeql[go/path-injection] Network refused shares and device paths above, and a boolean is all POST /v1/launch already answers
 	fi, err := os.Stat(safepath.NoNUL(path))
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"exists": err == nil,

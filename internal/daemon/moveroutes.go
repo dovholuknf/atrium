@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -20,7 +20,6 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -162,26 +161,19 @@ func (d *Daemon) moveRenew(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// moveGitArgs keeps atrium's own files out of the clean-tree question, and out of a wip commit.
-var moveGitArgs = []string{"--", ".", ":(exclude)BRIEF.md", ":(glob,exclude)HANDOFF.*.md"}
+// moveExclude keeps atrium's own files out of the clean-tree question, and out of a wip commit.
+var moveExclude = []string{"BRIEF.md", "HANDOFF.*.md"}
 
-func moveGit(dir string, args ...string) (string, error) {
-	iso, err := gitexec.Isolation(gitexec.Opts{Dir: dir})
+func moveGit(dir string, op gitexec.Op) (string, error) {
+	var errb bytes.Buffer
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Dir: dir, Stderr: &errb}, op)
 	if err != nil {
-		return "", err
+		if errb.Len() == 0 {
+			return string(out), fmt.Errorf("git %s: %w", gitexec.Name(op), err)
+		}
+		return string(out), fmt.Errorf("git %s: %s", gitexec.Name(op), strings.TrimSpace(errb.String()))
 	}
-	pre := []string{"-C", dir}
-	for _, kv := range iso {
-		pre = append(pre, "-c", kv)
-	}
-	cmd := exec.Command("git", append(pre, args...)...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	nowindow.Hide(cmd)
-	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(errb.String()))
-	}
-	return out.String(), nil
+	return string(out), nil
 }
 
 // moveCheck is checks 1 and 2 of the design, run again after the freeze: the card is idle and its tree is clean.
@@ -198,7 +190,7 @@ func (d *Daemon) moveCheck(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 	wip := false
 	if t.Worktree != "" {
 		if _, err := os.Stat(filepath.Join(t.Worktree, ".git")); err == nil {
-			out, err := moveGit(t.Worktree, append([]string{"status", "--porcelain"}, moveGitArgs...)...)
+			out, err := moveGit(t.Worktree, gitexec.Status{Exclude: moveExclude})
 			if err != nil {
 				fails = append(fails, "dirty: "+err.Error())
 			} else if strings.TrimSpace(out) != "" {
@@ -208,9 +200,9 @@ func (d *Daemon) moveCheck(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 				} else {
 					room := strings.TrimSpace(in.Room)
 					log.Printf("[atrium] move: the wip commit in %s runs none of the repository's hooks, the card's agent could have written them", t.Worktree)
-					if _, err := moveGit(t.Worktree, append([]string{"add", "-A"}, moveGitArgs...)...); err != nil {
+					if _, err := moveGit(t.Worktree, gitexec.AddAll{Exclude: moveExclude}); err != nil {
 						fails = append(fails, "dirty: "+err.Error())
-					} else if _, err := moveGit(t.Worktree, "commit", "-m", "WIP: move to "+room); err != nil {
+					} else if _, err := moveGit(t.Worktree, gitexec.Commit{Message: "WIP: move to " + room}); err != nil {
 						fails = append(fails, "dirty: "+err.Error())
 					} else {
 						wip = true

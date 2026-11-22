@@ -310,6 +310,29 @@ func TestSetupWorktreeRunsTheHookAndSaysWhatHappened(t *testing.T) {
 	}
 }
 
+// An org or repo that is not one path segment never names a hook, so ".." cannot reach a script outside its folder.
+func TestSetupWorktreeRunsNoHookForAnOrgThatClimbs(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	var said []string
+	ctx := withOpSteps(context.Background(), &opSteps{say: func(step string) { said = append(said, step) }})
+	wt := t.TempDir()
+	dir, _ := nh.srv.st.Setting(SettingWorktreeHooks)
+	hookDir := filepath.Join(filepath.FromSlash(dir), "o")
+	mkDir(t, hookDir)
+	file, body := "worktree.sh", "echo ran > \"$1/hooked.txt\"\n"
+	if runtime.GOOS == "windows" {
+		file = "worktree.ps1"
+		body = "param($WorktreePath)\nSet-Content -Path (Join-Path $WorktreePath 'hooked.txt') -Value ran\n"
+	}
+	if err := os.WriteFile(filepath.Join(hookDir, file), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nh.srv.setupWorktree(ctx, "github.com", "..", "o", wt)
+	if _, err := os.Stat(filepath.Join(wt, "hooked.txt")); err == nil {
+		t.Fatalf("a hook outside the host's folder ran: %q", said)
+	}
+}
+
 // A BOARD THAT LOST ITS RUNNER LIST sends no harness: the card starts on the repo's recipe, else claude, never on "".
 func TestNewWorkWithNoRunnerStartsTheRecipesOrClaude(t *testing.T) {
 	nh := newNewWorkHarness(t)

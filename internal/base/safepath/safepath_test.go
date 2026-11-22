@@ -1,6 +1,7 @@
 package safepath
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,5 +51,14 @@ func TestSafeNameKeepsTheExtensionWhenItTruncates(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, ".png") {
 		t.Fatalf("truncation lost the extension: %q", got)
+	}
+}
+
+func TestWalkLinksRefusesAVolumeThatIsNotADrive(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("a device volume is a Windows spelling")
+	}
+	if got, err := walkLinks(`\\?\C:\Windows`); err == nil {
+		t.Fatalf("a device path walked to %q", got)
 	}
 }

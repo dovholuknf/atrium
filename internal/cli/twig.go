@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // `atrium twig <name>`: gwt's `twig` from inside a worktree. `POST /v1/new` with twig, internal/api/twig.go. It goes
@@ -26,7 +28,7 @@ func newTwig() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+			top, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, gitexec.RevParseShowToplevel{})
 			if err != nil {
 				return fmt.Errorf("this directory is not in a git worktree. run it inside the worktree to twig from")
 			}

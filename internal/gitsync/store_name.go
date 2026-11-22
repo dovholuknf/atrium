@@ -177,15 +177,15 @@ func ParseURL(raw string) (Ref, error) {
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || path.Clean(p) != p {
 		return Ref{}, refuse("the path has to be <owner>/<repo>, nothing more and nothing less")
 	}
-	r := Ref{Host: canonicalHost(host), Owner: parts[0], Repo: parts[1]}
-	if err := checkHost(r.Host); err != nil {
+	host, owner, repo := canonicalHost(host), parts[0], parts[1]
+	if err := checkHost(host); err != nil {
 		return Ref{}, err
 	}
-	if err := checkSegment("owner", r.Owner); err != nil {
+	if err := checkSegment("owner", owner); err != nil {
 		return Ref{}, err
 	}
-	if err := checkSegment("repository name", r.Repo); err != nil {
+	if err := checkSegment("repository name", repo); err != nil {
 		return Ref{}, err
 	}
-	return r, nil
+	return Ref{Host: host, Owner: owner, Repo: repo}, nil
 }

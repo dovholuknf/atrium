@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -8,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // Exit codes of `atrium land-check`: 0 is clean, landConflict a merge conflict, landNotFound no such branch.
@@ -35,20 +36,18 @@ func newLandCheck() *cobra.Command {
 	return c
 }
 
-func gitOut(args ...string) (string, error) {
-	c := exec.Command("git", args...)
-	nowindow.Hide(c)
-	b, err := c.Output()
+func gitOut(op gitexec.Op) (string, error) {
+	b, err := gitexec.Run(context.Background(), gitexec.Opts{}, op)
 	return string(b), err
 }
 
 func landCheck(out io.Writer, remote, base, branch string) error {
-	if _, err := gitOut("fetch", "--quiet", remote, base, branch); err != nil {
+	if _, err := gitOut(gitexec.Fetch{Quiet: true, Remote: remote, Refspecs: []string{base, branch}}); err != nil {
 		fmt.Fprintf(out, "not found: %s on %s (or %s)\n", branch, remote, base)
 		return exitCodeError{landNotFound}
 	}
 	head, baseRef := remote+"/"+branch, remote+"/"+base
-	ahead, err := gitOut("log", "--oneline", baseRef+".."+head)
+	ahead, err := gitOut(gitexec.Log{Oneline: true, Revs: []string{baseRef + ".." + head}})
 	if err != nil {
 		return fmt.Errorf("git log: %w", err)
 	}
@@ -59,7 +58,7 @@ func landCheck(out io.Writer, remote, base, branch string) error {
 	fmt.Fprintf(out, "%d commit(s) ahead of %s:\n%s", n, base, ahead)
 
 	// merge-tree exits 1 on a conflict and 0 when clean, so a failed run is told apart by its output.
-	merged, mergeErr := gitOut("merge-tree", "--write-tree", "--name-only", baseRef, head)
+	merged, mergeErr := gitOut(gitexec.MergeTree{Branch1: baseRef, Branch2: head})
 	conflict := false
 	if mergeErr != nil {
 		ee, ok := mergeErr.(*exec.ExitError)
@@ -80,7 +79,7 @@ func landCheck(out io.Writer, remote, base, branch string) error {
 	} else {
 		fmt.Fprintln(out, "conflict: no")
 	}
-	stat, err := gitOut("diff", "--stat", baseRef+"..."+head)
+	stat, err := gitOut(gitexec.Diff{Stat: true, Revs: []string{baseRef + "..." + head}})
 	if err != nil {
 		return fmt.Errorf("git diff: %w", err)
 	}
