@@ -135,6 +135,82 @@ func TestCloseStopsAProcessTheCardOwns(t *testing.T) {
 	}
 }
 
+// A CLOSE ENDS WHAT A DEAD RECORDED PROCESS LEFT BEHIND, and only that: a bystander in the same folder is not the card's.
+func TestCloseStopsAChildOfARecordedProcessThatDied(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("elsewhere an orphan loses its parent, and StopTree ends the process group")
+	}
+	oh := newOpenHarness(t, &fakeForge{})
+	wt := t.TempDir()
+	card := cardIn(t, oh.srv.st, wt)
+	idFile := filepath.Join(t.TempDir(), "child.pid")
+	parent := exec.Command("powershell", "-NoProfile", "-Command",
+		"(Start-Process ping -ArgumentList '-n','60','127.0.0.1' -WorkingDirectory '"+wt+"' -PassThru -WindowStyle Hidden).Id | Set-Content '"+idFile+"'; Start-Sleep 2")
+	if err := parent.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = parent.Wait() }()
+	at, err := cardproc.StartTime(parent.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oh.srv.st.AddResource(card.ID, store.ResProc, strconv.Itoa(parent.Process.Pid), at); err != nil {
+		t.Fatal(err)
+	}
+	bystander := exec.Command("ping", "-n", "60", "127.0.0.1")
+	bystander.Dir = wt
+	if err := bystander.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = bystander.Wait() }()
+	t.Cleanup(func() { _ = bystander.Process.Kill() })
+	if !gone(parent.Process.Pid) {
+		t.Fatal("the parent did not exit")
+	}
+	raw, err := os.ReadFile(idFile)
+	orphan, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || orphan == 0 {
+		t.Fatalf("no child pid: %v %q", err, raw)
+	}
+	t.Cleanup(func() { _ = cardproc.StopTree(orphan) })
+	closeCall(t, oh, card.ID, map[string]any{"confirm": true})
+	if !gone(orphan) {
+		t.Error("the child of the dead recorded process is still running")
+	}
+	if _, err := cardproc.StartTime(bystander.Process.Pid); err != nil {
+		t.Errorf("a process the card never started was stopped: %v", err)
+	}
+}
+
+// A CLOSE ENDS A PROCESS THAT CARRIES THE CARD'S ID, though nothing recorded is its parent: a background shell of an
+// earlier runner of the card. One carrying another card's id is left alone.
+func TestCloseStopsAProcessWithTheCardsIDInItsEnvironment(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("StopCard reads the environment on Windows only")
+	}
+	oh := newOpenHarness(t, &fakeForge{})
+	card := cardIn(t, oh.srv.st, t.TempDir())
+	withID := func(id string) *exec.Cmd {
+		cmd := exec.Command("ping", "-n", "60", "127.0.0.1")
+		cmd.Env = append(os.Environ(), "ATRIUM_TASK_ID="+id)
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		go func() { _ = cmd.Wait() }()
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
+		return cmd
+	}
+	stray := withID(card.ID)
+	other := withID(card.ID + "-other")
+	closeCall(t, oh, card.ID, map[string]any{"confirm": true})
+	if !gone(stray.Process.Pid) {
+		t.Error("the process with the card's id is still running")
+	}
+	if _, err := cardproc.StartTime(other.Process.Pid); err != nil {
+		t.Errorf("a process of another card was stopped: %v", err)
+	}
+}
+
 // The sweep marks a proc row freed once its process exited.
 func TestSweepFreesAProcessThatExited(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})

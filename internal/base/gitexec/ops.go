@@ -11,6 +11,7 @@ type Status struct {
 	V1        bool
 	Untracked string
 	Exclude   []string
+	Ignored   bool
 }
 
 func (o Status) build(b *builder) {
@@ -20,6 +21,7 @@ func (o Status) build(b *builder) {
 	} else {
 		b.add("--porcelain")
 	}
+	b.flag(o.Ignored, "--ignored")
 	if o.Untracked != "" {
 		b.add("--untracked-files=" + b.oneOf("untracked", o.Untracked, "all", "normal", "no"))
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -81,6 +82,28 @@ func (d *Daemon) reclaimBlock(t *store.Task) string {
 	}
 	if w.LastReport == nil || w.LastReport.Status != ReportDone {
 		return "its last report was not done, so it stays in Terminals"
+	}
+	return ""
+}
+
+// homeKeeps is why a finished card's home is not freed by itself, "" when it may be: the card is pinned, or work/ holds
+// an untracked or ignored file, which git and a stash do not carry.
+func (d *Daemon) homeKeeps(t *store.Task) string {
+	if t.Pinned {
+		return "it is pinned"
+	}
+	row, ok := d.HomeOf(t.ID)
+	if !ok {
+		return ""
+	}
+	status, err := gitIn(home.DirsOf(row.Path).Work, gitexec.Status{V1: true, Untracked: "normal", Ignored: true})
+	if err != nil {
+		return ""
+	}
+	for _, l := range strings.Split(status, "\n") {
+		if (strings.HasPrefix(l, "?? ") || strings.HasPrefix(l, "!! ")) && l != "?? "+briefFile {
+			return "work/ holds untracked or ignored files"
+		}
 	}
 	return ""
 }

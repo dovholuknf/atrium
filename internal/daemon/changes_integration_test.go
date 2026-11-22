@@ -146,6 +146,34 @@ func TestChangesHeadShowsUncommittedAndUntracked(t *testing.T) {
 	}
 }
 
+func TestChangesUntrackedBodiesAreCapped(t *testing.T) {
+	f := newChangesFix(t)
+	for i := 0; i < 300; i++ {
+		writeF(t, filepath.Join(f.repo, "many", fmt.Sprintf("f%03d.txt", i)), strings.Repeat("line\n", 1000))
+	}
+	big := filepath.Join(f.repo, "big.txt")
+	if err := os.WriteFile(big, make([]byte, 40<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	v := f.ok("")
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("the diff took %v", d)
+	}
+	if b := fileOf(v, "big.txt"); b == nil || !b.HunksCut || b.Hunks != "" || b.Size != 40<<20 {
+		t.Fatalf("a large untracked file is listed with a body: %+v", b)
+	}
+	bodies := 0
+	for _, x := range v.Files {
+		if x.Hunks != "" {
+			bodies++
+		}
+	}
+	if bodies == 0 || bodies > 100 || v.Cut == nil || v.Cut.Hunks < 200 {
+		t.Fatalf("bodies %d, cut %+v", bodies, v.Cut)
+	}
+}
+
 func TestChangesBaseIsTheBranchSinceTheMergeBase(t *testing.T) {
 	f := newChangesFix(t)
 	gitT(t, f.repo, time.Time{}, "switch", "-c", "feature")
@@ -252,8 +280,8 @@ func TestChangesBoundsCutTheListAndSayWhat(t *testing.T) {
 	writeF(t, filepath.Join(f2.repo, "small.txt"), "s\n")
 	w := f2.ok("")
 	b := fileOf(w, "big.txt")
-	if b == nil || !b.HunksCut || b.Hunks != "" || b.Added == 0 || w.Cut == nil || w.Cut.Hunks != 1 {
-		t.Fatalf("a file over the bound keeps its counts only: %+v cut %+v", b, w.Cut)
+	if b == nil || !b.HunksCut || b.Hunks != "" || b.Size == 0 || w.Cut == nil || w.Cut.Hunks != 1 {
+		t.Fatalf("a file over the bound is listed by name and size: %+v cut %+v", b, w.Cut)
 	}
 	if s := fileOf(w, "small.txt"); s == nil || s.Hunks == "" {
 		t.Fatalf("a small file lost its hunks: %+v", s)

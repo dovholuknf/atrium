@@ -40,7 +40,8 @@ const (
 	SettingSweepDead  = "sweep_dead_after"
 	SettingPruneAfter = "prune_after"
 	// SettingDiskWarnFree and SettingDiskCriticalFree are the free space, in megabytes, under which a drive the room
-	// uses is warned about and under which the room refuses new launches. Empty means the default. See daemon/diskwatch.go.
+	// uses is warned about and under which the room refuses new launches. An empty warn means the default. An empty or 0
+	// critical means off: the room never refuses a launch for disk space unless this is set. See daemon/diskwatch.go.
 	SettingDiskWarnFree     = "disk_warn_free"
 	SettingDiskCriticalFree = "disk_critical_free"
 	// SettingHostHogPct is the share of one core, in percent, a process must hold for SettingHostHogMinutes before the room

@@ -29,7 +29,7 @@ var (
 
 const (
 	DiskWarnDefault     = 20 << 30
-	DiskCriticalDefault = 10 << 30
+	DiskCriticalDefault = 0
 )
 
 const (
@@ -86,6 +86,7 @@ func DiskLevel(free, warn, critical uint64) string {
 }
 
 // diskLevels holds a critical level above the warning one down to it, so warning always comes first.
+// A critical level of 0 is off, and DiskLevel never reaches it since no free space is under 0.
 func (d *Daemon) diskLevels() (warn, critical uint64) {
 	read := func(key string, def uint64) uint64 {
 		if v, err := d.st.Setting(key); err == nil {

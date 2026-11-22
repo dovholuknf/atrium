@@ -449,7 +449,7 @@ func worktreeWork(ctx context.Context, dir string) (dirty, unpushed int, branch 
 	defer cancel()
 	if out, err := gitIn(ctx, dir, gitexec.Status{}); err == nil {
 		for _, l := range strings.Split(out, "\n") {
-			if strings.TrimSpace(l) != "" {
+			if l = strings.TrimSpace(l); l != "" && l != "?? BRIEF.md" {
 				dirty++
 			}
 		}
@@ -551,11 +551,16 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 				continue
 			}
 			maps.Copy(tree, sub)
+		} else if pid, err := strconv.Atoi(r.Ref); err == nil && r.Detail != "" {
+			maps.Copy(tree, cardproc.StopOrphans(pid, r.Detail))
 		}
 		freed(r)
 	}
-	if !pv.keepAll && strings.TrimSpace(s.cardsRoot()) != "" {
-		maps.Copy(tree, cardproc.StopInDir(filepath.Join(s.cardsRoot(), t.ID)))
+	if !pv.keepAll && t.PID > 0 {
+		maps.Copy(tree, cardproc.StopOrphans(t.PID, strconv.FormatInt(t.CreatedAt.UnixNano(), 10)))
+	}
+	if !pv.keepAll {
+		maps.Copy(tree, cardproc.StopCard(t.ID))
 	}
 	if len(tree) > 0 {
 		steps.begin("exit", "waiting for the card's processes to exit")
@@ -670,6 +675,10 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			res.Log = append(res.Log, r.Ref+": "+err.Error())
 			if line := removeNote(r.Ref, err); line != "" {
 				warn("%s", line)
+			}
+			if held := cardproc.InDir(filepath.FromSlash(r.Ref)); len(held) > 0 {
+				warn("%s is held by process %v, which is not recorded as the card's, so it was left running", r.Ref,
+					slices.Sorted(maps.Keys(held)))
 			}
 			steps.problem("%v", err)
 			continue

@@ -92,6 +92,24 @@ func TestADriveUnderTheCriticalLevelRefusesNewLaunchesAndSaysWhy(t *testing.T) {
 	}
 }
 
+func TestAnUnsetCriticalLevelNeverRefusesAndASetOneDoes(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	setLevels(t, d, hugeMB, 0)
+	d.diskTick(context.Background(), time.Now())
+	if st := d.DiskState().(DiskStatus); st.Level != DiskWarning || st.Critical != 0 {
+		t.Fatalf("state %+v, wanted a warning and no critical level", st)
+	}
+	if err := d.launchDiskFull(shared.LaunchRequest{}); err != nil {
+		t.Fatalf("launch refused with no critical level: %v", err)
+	}
+	setLevels(t, d, hugeMB, hugeMB)
+	d.diskTick(context.Background(), time.Now())
+	if err := d.launchDiskFull(shared.LaunchRequest{}); err == nil {
+		t.Fatal("launch allowed with a critical level set above the free space")
+	}
+}
+
 func TestACriticalLevelAboveTheWarningLevelIsHeldToIt(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
@@ -218,10 +236,10 @@ func TestTheNoticeIsLedByTheRoomNameAndTheLevel(t *testing.T) {
 	}
 }
 
-func TestTheDefaultLevelsAreTwentyAndTenGigabytes(t *testing.T) {
+func TestTheDefaultWarningIsTwentyGigabytesAndCriticalIsOff(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if warn, crit := d.diskLevels(); warn != 20<<30 || crit != 10<<30 {
+	if warn, crit := d.diskLevels(); warn != 20<<30 || crit != 0 {
 		t.Fatalf("warn %d critical %d", warn, crit)
 	}
 }

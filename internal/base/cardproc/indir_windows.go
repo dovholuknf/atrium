@@ -138,3 +138,106 @@ func StopInDir(dir string) map[int]string {
 	}
 	return all
 }
+
+// OfCard is every process, bar this one and atrium's own, whose environment says ATRIUM_TASK_ID=card, each with its
+// start time. A shell the runner started keeps that environment after its parent dies and after it leaves the
+// runner's job, which Claude Code's background shells do.
+func OfCard(card string) map[int]string {
+	out := map[int]string{}
+	if strings.TrimSpace(card) == "" {
+		return out
+	}
+	self, _ := os.Executable()
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return out
+	}
+	defer windows.CloseHandle(snap)
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		pid := int(e.ProcessID)
+		if pid == os.Getpid() || pid <= 4 {
+			continue
+		}
+		image, env := procEnv(pid)
+		if image == "" || sameExe(image, self) || strings.HasPrefix(strings.ToLower(filepath.Base(image)), "atrium") {
+			continue
+		}
+		if envValue(env, "ATRIUM_TASK_ID") != card {
+			continue
+		}
+		if st, err := StartTime(pid); err == nil {
+			out[pid] = st
+		}
+	}
+	return out
+}
+
+// StopCard ends every process OfCard finds, with the processes under it, and returns them for WaitGone.
+func StopCard(card string) map[int]string {
+	all := map[int]string{}
+	for pid := range OfCard(card) {
+		for p, at := range Tree(pid) {
+			all[p] = at
+		}
+	}
+	for pid := range all {
+		if h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid)); err == nil {
+			_ = windows.TerminateProcess(h, 1)
+			_ = windows.CloseHandle(h)
+		}
+	}
+	return all
+}
+
+// procEnv is a process's executable and environment block, each empty when the process will not say.
+func procEnv(pid int) (image string, env []uint16) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, uint32(pid))
+	if err != nil {
+		return "", nil
+	}
+	defer windows.CloseHandle(h)
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n := uint32(len(buf))
+	if windows.QueryFullProcessImageName(h, 0, &buf[0], &n) == nil {
+		image = windows.UTF16ToString(buf[:n])
+	}
+	var pbi windows.PROCESS_BASIC_INFORMATION
+	if windows.NtQueryInformationProcess(h, windows.ProcessBasicInformation, unsafe.Pointer(&pbi), uint32(unsafe.Sizeof(pbi)), nil) != nil || pbi.PebBaseAddress == nil {
+		return image, nil
+	}
+	var peb windows.PEB
+	var params windows.RTL_USER_PROCESS_PARAMETERS
+	if !readMem(h, uintptr(unsafe.Pointer(pbi.PebBaseAddress)), unsafe.Pointer(&peb), unsafe.Sizeof(peb)) || peb.ProcessParameters == nil ||
+		!readMem(h, uintptr(unsafe.Pointer(peb.ProcessParameters)), unsafe.Pointer(&params), unsafe.Sizeof(params)) {
+		return image, nil
+	}
+	size := params.EnvironmentSize / 2
+	if params.Environment == nil || size == 0 || size > 1<<20 {
+		return image, nil
+	}
+	env = make([]uint16, size)
+	if !readMem(h, uintptr(params.Environment), unsafe.Pointer(&env[0]), size*2) {
+		return image, nil
+	}
+	return image, env
+}
+
+// envValue is key's value in a Windows environment block, NUL separated, where names match without regard to case.
+func envValue(env []uint16, key string) string {
+	for start := 0; start < len(env); {
+		end := start
+		for end < len(env) && env[end] != 0 {
+			end++
+		}
+		if end == start {
+			break
+		}
+		if k, v, ok := strings.Cut(windows.UTF16ToString(env[start:end]), "="); ok && k != "" && strings.EqualFold(k, key) {
+			return v
+		}
+		start = end + 1
+	}
+	return ""
+}

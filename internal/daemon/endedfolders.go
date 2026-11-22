@@ -35,6 +35,9 @@ var (
 // a launcher sends the work back. An archived card has none.
 var EndedFolderGrace = ArchiveWorkersDefaultAfter
 
+// FinishedWorkerGrace is EndedFolderGrace for a worker that reported done, so a finish frees its disk the same day.
+var FinishedWorkerGrace = time.Hour
+
 // WokenGuard is how long after a card was woken, resumed or last active its folder is safe from the sweep.
 var WokenGuard = 10 * time.Minute
 
@@ -86,7 +89,11 @@ func (d *Daemon) cardEnded(t *store.Task, fixtures map[string]bool, now time.Tim
 	if t.Pinned || (t.Status != store.StatusDone && t.Status != store.StatusDead) {
 		return false
 	}
-	return now.Sub(t.LastActivityAt) >= EndedFolderGrace
+	grace := EndedFolderGrace
+	if d.finishedWorker(t) {
+		grace = FinishedWorkerGrace
+	}
+	return now.Sub(t.LastActivityAt) >= grace
 }
 
 func (d *Daemon) wokenLately(t *store.Task, now time.Time) bool {
@@ -222,6 +229,10 @@ func (d *Daemon) sweepHome(ctx context.Context, row store.CardHome, users func(s
 		return FolderSwept{}, false
 	}
 	dd := home.DirsOf(row.Path)
+	if why := unseenWork(t, dd.Work); why != "" {
+		d.sweepKeep(row.Path, why)
+		return FolderSwept{}, false
+	}
 	if row.Kind == store.CardHomeScratch && (t == nil || !small.HasTag(t.Tags, api.ClosedTag)) && filesNoGit(dd) {
 		const why = "its card ended by itself and work/ holds files with no git"
 		d.sweepKeep(row.Path, why)
@@ -306,6 +317,28 @@ func (d *Daemon) closeEmptyHome(cardID string) string {
 	}
 	_, kept, _ := d.ReclaimHome(t, row, false)
 	return kept
+}
+
+// unseenWork is why a work folder stays, "" when it may go: its card is neither closed nor archived and it holds more than
+// BRIEF.md, or git lists an ignored file in it, which no stash carries.
+func unseenWork(t *store.Task, work string) string {
+	if t != nil && t.ArchivedAt == nil && !small.HasTag(t.Tags, api.ClosedTag) {
+		if ents, err := os.ReadDir(work); err == nil {
+			for _, e := range ents {
+				if e.Name() != "BRIEF.md" {
+					return "its card is not closed and work/ holds files"
+				}
+			}
+		}
+	}
+	if status, err := shared.GitIn(work, gitexec.Status{V1: true, Ignored: true}); err == nil {
+		for _, l := range strings.Split(status, "\n") {
+			if strings.HasPrefix(l, "!! ") {
+				return "work/ holds ignored files that no stash carries"
+			}
+		}
+	}
+	return ""
 }
 
 // filesNoGit says whether a home has a file under work/ and no .git anywhere.
@@ -529,6 +562,12 @@ func (d *Daemon) sweepWorktree(ctx context.Context, clone, dir, branch string, u
 		return FolderSwept{}, false
 	}
 	defer release()
+	for _, t := range cards {
+		if why := unseenWork(t, dir); why != "" {
+			d.sweepKeep(dir, why)
+			return FolderSwept{}, false
+		}
+	}
 	var last *store.Task
 	for _, t := range cards {
 		if last == nil || t.LastActivityAt.After(last.LastActivityAt) {
@@ -568,4 +607,13 @@ func (d *Daemon) sweepWorktree(ctx context.Context, clone, dir, branch string, u
 		card = last.ID
 	}
 	return d.sweptOne(dir, card, bytes, stashed), true
+}
+
+// finishedWorker says whether a card is a worker an agent launched that reported done and nothing holds.
+func (d *Daemon) finishedWorker(t *store.Task) bool {
+	if !d.isWorker(t) || d.reclaimBlock(t) != "" {
+		return false
+	}
+	w, err := d.st.WorkItem(t.ID)
+	return err != nil || w.HeldBy == ""
 }

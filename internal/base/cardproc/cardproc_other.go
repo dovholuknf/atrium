@@ -88,6 +88,9 @@ func Tree(pid int) map[int]string {
 	return treeOf(pid, kids, nil)
 }
 
+// StopOrphans is nothing here: an orphan is reparented and loses its parent, and StopTree ends the whole group instead.
+func StopOrphans(root int, since string) map[int]string { return map[int]string{} }
+
 // OwnGroup makes cmd lead a process group of its own, so StopTree ends what it starts too.
 func OwnGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -126,3 +129,6 @@ func Ancestors(pid, hops int) []Proc {
 		return en.name, en.parent, ok
 	})
 }
+
+// StopCard is Windows only for now. Elsewhere StopTree ends the runner's process group.
+func StopCard(card string) map[int]string { return map[int]string{} }
