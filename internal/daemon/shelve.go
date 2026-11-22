@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 	"log"
 	"time"
 
@@ -62,6 +63,7 @@ func (d *Daemon) StopRunnerBy(taskID, by string) error {
 	// awaitExit records the exit and moves the card, so nothing to do here but
 	// say it happened.
 	log.Printf("[atrium] %s asked to exit", t.DisplayTitle())
+	oslog.Event("supervisor", "stop", t.PID, "asked to exit", by)
 	return nil
 }
 

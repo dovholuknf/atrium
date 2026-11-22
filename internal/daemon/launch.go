@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
+	"github.com/dovholuknf/atrium/internal/base/oslog"
 	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
@@ -2174,6 +2175,7 @@ func (d *Daemon) Kill(taskID string) error {
 	}
 	d.recordUsage(taskID)
 	d.Publish(taskID)
+	oslog.Warn("supervisor", "kill", t.PID, "killed from the board or cli", detected)
 	return nil
 }
 
