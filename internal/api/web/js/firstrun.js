@@ -6,7 +6,7 @@
   const help = tip => `<span class="help" tabindex="0" data-tip="${esc(tip)}">?</span>`;
   const K = {
     seen: "atrium.fr.seen", joined: "atrium.fr.joined", hidden: "atrium.fr.hidden", launched: "atrium.fr.launched",
-    adopted: "atrium.fr.adopted", hardened: "atrium.fr.hardened", nudged: "atrium.fr.nudged", undo: "atrium.fr.undo",
+    adopted: "atrium.fr.adopted", folder: "atrium.fr.folder", hardened: "atrium.fr.hardened", nudged: "atrium.fr.nudged", undo: "atrium.fr.undo",
   };
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const put = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
@@ -52,7 +52,7 @@
     return "";
   }
   const doneFlags = () => ({
-    hub: true, room: rooms().length > 0, launch: get(K.launched) === "1", adopt: get(K.adopted) === "1", harden: get(K.hardened) === "1",
+    hub: true, room: rooms().length > 0, folder: get(K.folder) === "1", launch: get(K.launched) === "1", adopt: get(K.adopted) === "1", harden: get(K.hardened) === "1",
   });
   function steps() {
     const d = doneFlags(), r = rooms()[0];
@@ -61,6 +61,8 @@
         tip: "atrium run started the hub on this machine. It serves this board and holds nothing else: the agents run on rooms." },
       { id: "room", title: d.room ? "this machine is a room" : "connect this machine as a room", sub: d.room && r ? r.name + " as " + human() : "", done: d.room,
         tip: "A room is a machine that runs your agents and dials the hub. Your own laptop is the usual first one." },
+      { id: "folder", title: "tell atrium where your projects live", sub: d.folder ? "set" : "", done: d.folder, act: "set folder", key: "folder", optional: true,
+        tip: "Where new agents start, and whether they work in place or in a copy. Keeping it in one folder keeps everything your agents use in one place." },
       { id: "launch", title: "start your first agent in your own folder", sub: "", done: d.launch, act: "start an agent", key: "launch",
         tip: "It starts in the folder as it is and edits your files directly: no copy and no branch. Pick in a copy in the dialog if you would rather keep your tree clean." },
       { id: "adopt", title: "bring in a session you already have", sub: d.adopt ? "adopted" : "", done: d.adopt, act: "adopt a session", key: "adopt",
@@ -286,6 +288,7 @@
     else if (a === "launch") { closeList(); openNewAgent(false); }
     else if (a === "adopt") { closeList(); openAdopt(); }
     else if (a === "harden") { closeList(); openHarden(); }
+    else if (a === "folder") { closeList(); openFolderAsk(); }
     else if (a === "hide" || a === "skip-all") {
       put(K.hidden, "1"); closeList(); painted = ""; paint().catch(() => {});
       if (a === "hide") say("list hidden", "reopen it from getting started in the header");
@@ -455,6 +458,51 @@
     try { if (task.supervised) { switchView("terms"); openTerm(task); } } catch (err) {}
     say("adopted", s.title + " is now a card, resumed in " + home(s.cwd));
   }
+
+  // ── where projects live: the room's launch_folder and launch_mode ────────────
+  const fd = document.createElement("dialog");
+  fd.id = "fr-folder";
+  document.body.appendChild(fd);
+  let FM = "place";
+  const MODES = [
+    { v: "place", t: "in place", tip: "The agent works in the same folder as your git, with your git setup. It can act on your behalf: commit, push, open a pull request, with no permission problems. Pick this when you want it to do what you would do." },
+    { v: "copy", t: "in a copy", tip: "The agent gets its own copy of the repo on its own branch, kept apart from yours. It cannot commit to your branch or push as you, and its work reaches you only when you merge it. Pick this to keep the agent isolated, the atrium way." },
+  ];
+  function fdrender(folder) {
+    fd.innerHTML = `<div class="dlg-head"><div class="grow"><div class="dlg-eyebrow">getting started</div><h2>where do your projects live?</h2></div>
+        <button type="button" class="x" data-f="close" aria-label="close">&times;</button></div>
+      <div class="dlg-body">
+        <div class="fr-note">Pick the folder that holds your repos. New agents start there, and you can still pick any other folder when you start one.</div>
+        <div class="fr-note">Why set it: everything your agents read and write stays in one place you already know, not spread over folders atrium made. The new agent dialog opens on that folder and completes the folders under it as you type.</div>
+        <div class="field"><label class="eyebrow" for="fr-lf">projects folder</label>
+          <input type="text" id="fr-lf" spellcheck="false" autocomplete="off" placeholder="empty keeps today's behavior: no default folder" value="${esc(folder || "")}"></div>
+        <div class="field"><label class="eyebrow">how should a new agent work on a repo?</label>
+          <div class="fr-opts" role="radiogroup">${MODES.map(o => `<button type="button" class="fr-opt${FM === o.v ? " on" : ""}" role="radio" aria-checked="${FM === o.v}" data-fm="${o.v}"><span class="fr-radio"></span><span class="fr-ot">${o.t}</span>${help(o.tip)}</button>`).join("")}</div>
+          <div class="fr-note">${esc(MODES.find(o => o.v === FM).tip)}</div></div>
+      </div>
+      <div class="dlg-foot"><button type="button" class="linkbtn" data-f="close">skip for now</button><span class="grow"></span>
+        <button type="button" class="go big" data-f="save">save</button></div>`;
+    attachFolderComplete($("fr-lf"));
+  }
+  window.openFolderAsk = async function () {
+    let s = {};
+    try { s = await api("/v1/settings"); } catch (e) {}
+    FM = s.launch_mode === "copy" ? "copy" : "place";
+    fdrender(s.launch_folder ? s.launch_folder + "/" : "");
+    if (!fd.open) fd.showModal();
+  };
+  fd.addEventListener("click", async e => {
+    const o = e.target.closest("[data-fm]");
+    if (o && !e.target.closest(".help")) { const f = $("fr-lf").value; FM = o.dataset.fm; fdrender(f); return; }
+    const b = e.target.closest("[data-f]"); if (!b) return;
+    if (b.dataset.f === "close") { fd.close(); return; }
+    b.disabled = true;
+    try {
+      await post("/v1/settings", { launch_folder: $("fr-lf").value.trim(), launch_mode: FM });
+    } catch (err) { b.disabled = false; say("that did not stick", err.message); return; }
+    put(K.folder, "1"); fd.close(); painted = ""; paint().catch(() => {});
+    say("projects folder set", "new agents start there and work " + (FM === "place" ? "in place" : "in a copy"));
+  });
 
   // ── the harden wizard: every step writes something the daemon really keeps ───
   const hd = document.createElement("dialog");

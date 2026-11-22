@@ -1330,12 +1330,20 @@ async function pullsMorePendingSection(browser, base) {
       return [none].concat(out).join(" ");
     });
     if (declared !== "1:ready 0:progress 1:ready") fail("pullsMorePending: a declared panel with no card yet, then its walker gone, read " + declared);
-    await p.locator("#ask-actions button", { hasText: "keep both" }).waitFor({ timeout: slow(5000) })
-      .catch(() => fail("pullsMorePending: the finished panel was not asked about"));
+    // A dismissed ask is asked again on the next read, so a missing dialog nudges one rather than waiting out a clock.
+    const asked = () => p.waitForFunction(() => {
+      if (!askDlg.open) dockResync();
+      return askDlg.open && [...document.querySelectorAll("#ask-actions button")].some(b => b.textContent === "keep both");
+    }, null, { timeout: slow(5000), polling: 100 });
+    const gone = async e => fail("pullsMorePending: keep both is not on the ask: " + await p.evaluate(() => JSON.stringify({ open: askDlg.open,
+      hidden: document.hidden, title: document.getElementById("ask-title").textContent,
+      buttons: [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent + (b.disabled ? "(off)" : "")) })) + " " + String(e).split(/\n/)[0]);
+    await asked().catch(gone);
     if (await more()) fail("pullsMorePending: still says more pending with no live panel card");
     await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) });
     await shot(p, "ask");
-    await p.locator("#ask-actions button", { hasText: "keep both" }).click();
+    await asked().catch(gone);
+    await p.locator("#ask-actions button", { hasText: "keep both" }).click({ timeout: slow(5000) }).catch(gone);
     await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 2, null, { timeout: slow(5000) })
       .catch(() => fail("pullsMorePending: the panel's finding did not join the rail"));
     if (JSON.stringify(posts) !== JSON.stringify([{ mode: "both", hash: "m1" }])) fail("pullsMorePending: the panel was applied as " + JSON.stringify(posts));

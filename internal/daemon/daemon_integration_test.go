@@ -50,7 +50,7 @@ func closeAtCleanup(t testing.TB, d *Daemon) {
 		// A runner is out of the supervisor before its exit is filed, so a runner that has left is not a store that
 		// is quiet. Closing under that write holds the file until its fsync returns, which on a slow disk is long.
 		exited := make(chan struct{})
-		go func() { d.exits.Wait(); close(exited) }()
+		go func() { d.exits.Wait(); d.activity.Wait(); close(exited) }()
 		select {
 		case <-exited:
 		case <-time.After(10 * time.Second):

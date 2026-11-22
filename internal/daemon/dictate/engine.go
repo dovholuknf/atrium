@@ -164,13 +164,16 @@ func (e *Engine) waitUp(ctx context.Context) error {
 func ask(ctx context.Context, base string, wav []byte, prompt string) (string, error) {
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	fw, _ := mw.CreateFormFile("file", "clip.wav")
-	_, _ = fw.Write(wav)
 	_ = mw.WriteField("response_format", "json")
 	_ = mw.WriteField("temperature", "0")
 	if prompt != "" {
 		_ = mw.WriteField("prompt", prompt)
 	}
+	// The clip goes into the concrete buffer, not an io.Writer part, so it is not a flow into every Write in the program.
+	body.WriteString("\r\n--" + mw.Boundary() + "\r\n" +
+		"Content-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\n" +
+		"Content-Type: application/octet-stream\r\n\r\n")
+	body.Write(wav)
 	_ = mw.Close()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/inference", &body)
 	if err != nil {

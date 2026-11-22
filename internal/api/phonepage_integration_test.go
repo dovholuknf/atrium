@@ -140,3 +140,16 @@ func TestDesktopManifest(t *testing.T) {
 		t.Error("the board page does not link its manifest")
 	}
 }
+
+func TestPhonePageHasNoSoundPill(t *testing.T) {
+	t.Parallel()
+	for _, f := range []string{"m/js/bell.js", "m/m.css"} {
+		raw, err := os.ReadFile(filepath.Join("web", filepath.FromSlash(f)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "tap to enable sound") || strings.Contains(string(raw), "m-sound-hint") {
+			t.Errorf("%s still has the sound pill", f)
+		}
+	}
+}

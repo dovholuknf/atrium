@@ -614,6 +614,7 @@ func startTestDaemon(t *testing.T) (agentAddr, humanAddr string) {
 		stop := func() {
 			cancel()
 			<-done
+			d.WaitActivity()
 			d.Close()
 		}
 		up, died := false, false

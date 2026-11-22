@@ -571,7 +571,7 @@ func TestAMessageNothingWillDeliverSaysSo(t *testing.T) {
 		{gem.ID, "undeliverable", true},
 		{claude.ID, "queued-unconfirmed", true},
 		{copied.ID, "queued-unconfirmed", true},
-		{hooked.ID, "queued", false},
+		{hooked.ID, "queued", true},
 	} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+c.id+"/message",

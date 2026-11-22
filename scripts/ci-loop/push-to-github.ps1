@@ -27,6 +27,7 @@
                         origin/<name>, open a PR to main with auto-merge unless it edits CI. A branch that mixes CI
                         and other files is split: origin/<name>-ci (CI only, PR without auto-merge) and origin/<name>
     release <version>   gh workflow run make-release.yml --ref main -f version=<version>, such as 0.0.6
+    delete-tag <tag>    delete an orphan release tag on origin: only vMAJOR.MINOR.PATCH, and refused when a GitHub release exists for it
     rerun <run-id>      gh run rerun <run-id> --failed
     dispatch <ref>      gh workflow run ci.yml --ref <ref>
     retrigger <branch>  rerun, in full, each newest not-green finished run on origin <branch>'s tip
@@ -222,9 +223,18 @@ function Show-Run($id) {
 # A branch that edits CI and anything else is split in two. A CI-only one gets a PR but no auto-merge.
 $gatesMain = '^(\.github/|scripts/ci[^/]*$|scripts/flaky-suite\.json$)'
 
+# The pathspec for $files, as the complement of the other touched files once the list would pass the argv limit.
+function Get-Pathspec([string]$srcSha, [string]$onto, [string[]]$files) {
+    if (($files -join ' ').Length -lt 8000) { return $files }
+    $rest = @(G diff --name-only --no-renames "origin/$onto" $srcSha | Where-Object { $_ -notin $files })
+    if (($rest -join ' ').Length -ge 8000) { throw 'too many files on both sides of the split for a git command line' }
+    @('.') + @($rest | ForEach-Object { ":(exclude,literal)$_" })
+}
+
 # One commit on origin/$onto holding only $files as $srcSha has them, with $srcSha's message.
 function Split-Branch([string]$srcSha, [string]$onto, [string[]]$files, [string]$msg = '') {
     $patch = Join-Path $priv 'split.patch'
+    $files = Get-Pathspec $srcSha $onto $files
     G diff --binary --no-renames "--output=$patch" "origin/$onto" $srcSha '--' @files
     G switch --quiet --force -C claude/split "origin/$onto"
     G clean -ffdxq
@@ -237,7 +247,8 @@ function Split-Branch([string]$srcSha, [string]$onto, [string[]]$files, [string]
 
 # The title of a split half comes from the commits that touch its own files, never from the branch tip.
 function Get-SplitMessage([string]$srcSha, [string]$onto, [string[]]$files, [string]$prefix) {
-    $subjects = @(G log --no-merges --format=%s "origin/$onto..$srcSha" '--' @files | Select-Object -Unique -First 3)
+    $spec = @(Get-Pathspec $srcSha $onto $files)
+    $subjects = @(G log --no-merges --format=%s "origin/$onto..$srcSha" '--' @spec | Select-Object -Unique -First 3)
     if (-not $subjects) { $subjects = @("update $(@($files).Count) file(s)") }
     "$prefix$($subjects -join ', ')"
 }
@@ -324,6 +335,17 @@ function Invoke-Request([string]$req, [string]$line) {
             & gh workflow run make-release.yml --repo $GhRepo --ref main -f "version=$($parts[1])"
             if ($LASTEXITCODE -ne 0) { throw "gh workflow run failed ($LASTEXITCODE)" }
             "dispatched make-release for $($parts[1])"
+        }
+        'delete-tag' {
+            if ($parts.Count -ne 2 -or $parts[1] -notmatch '^v\d+\.\d+\.\d+$') { throw "bad tag, want vMAJOR.MINOR.PATCH: $line" }
+            $tag = $parts[1]
+            # Only an orphan tag goes: one with a release is what people download, so it is refused, and so is any answer but "not found".
+            $seen = (& gh release view $tag --repo $GhRepo --json tagName 2>&1 | Out-String)
+            if ($LASTEXITCODE -eq 0) { throw "a GitHub release exists for $tag, not deleting its tag" }
+            if ($seen -notmatch 'release not found') { throw "could not tell whether a release exists for ${tag}: $seen" }
+            & gh api -X DELETE "repos/$GhRepo/git/refs/tags/$tag"
+            if ($LASTEXITCODE -ne 0) { throw "gh api delete of tag $tag failed ($LASTEXITCODE)" }
+            "deleted tag $tag on origin (no release existed for it)"
         }
         'rerun' {
             if ($parts.Count -ne 2 -or $parts[1] -notmatch '^\d+$') { throw "bad run id: $line" }
