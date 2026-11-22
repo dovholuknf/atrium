@@ -223,16 +223,37 @@ function Show-Run($id) {
 $gatesMain = '^(\.github/|scripts/ci[^/]*$|scripts/flaky-suite\.json$)'
 
 # One commit on origin/$onto holding only $files as $srcSha has them, with $srcSha's message.
-function Split-Branch([string]$srcSha, [string]$onto, [string[]]$files) {
+function Split-Branch([string]$srcSha, [string]$onto, [string[]]$files, [string]$msg = '') {
     $patch = Join-Path $priv 'split.patch'
     G diff --binary --no-renames "--output=$patch" "origin/$onto" $srcSha '--' @files
     G switch --quiet --force -C claude/split "origin/$onto"
     G clean -ffdxq
     G apply --index --binary $patch
-    G commit --quiet -m (G log -1 --format=%B $srcSha | Out-String)
+    G commit --quiet -m $(if ($msg) { $msg } else { G log -1 --format=%B $srcSha | Out-String })
     $left = G diff --name-only --no-renames $srcSha HEAD '--' @files
     if ($left) { throw "the split commit differs from $srcSha in: $($left -join ', ')" }
     G rev-parse HEAD
+}
+
+# The title of a split half comes from the commits that touch its own files, never from the branch tip.
+function Get-SplitMessage([string]$srcSha, [string]$onto, [string[]]$files, [string]$prefix) {
+    $subjects = @(G log --no-merges --format=%s "origin/$onto..$srcSha" '--' @files | Select-Object -Unique -First 3)
+    if (-not $subjects) { $subjects = @("update $(@($files).Count) file(s)") }
+    "$prefix$($subjects -join ', ')"
+}
+
+# True when origin/$onto already has these files as $sha has them, or an open PR branch carries them.
+function Test-CiCovered([string]$sha, [string]$onto, [string[]]$files) {
+    G fetch --quiet origin $onto
+    if (-not (G diff --name-only --no-renames "origin/$onto" $sha '--' @files)) { return $true }
+    if ($onto -ne 'main') { return $false }
+    foreach ($head in @(& gh pr list --repo $GhRepo --state open --json headRefName --jq '.[].headRefName')) {
+        if (-not $head) { continue }
+        & git -C $clone fetch --quiet origin $head 2>$null
+        if ($LASTEXITCODE -ne 0) { continue }
+        if (-not (G diff --name-only --no-renames FETCH_HEAD $sha '--' @files)) { return $true }
+    }
+    $false
 }
 
 function Invoke-Request([string]$req, [string]$line) {
@@ -266,13 +287,17 @@ function Invoke-Request([string]$req, [string]$line) {
             if ($ciEdit -and $other) {
                 "mixed branch: splitting into $name-ci (CI files) and $name (the rest)"
                 $sets = @(
-                    @{ name = "$name-ci"; src = (Split-Branch $src $onto $ciEdit); ci = $ciEdit }
-                    @{ name = $name; src = (Split-Branch $src $onto $other); ci = $null }
+                    @{ name = "$name-ci"; src = (Split-Branch $src $onto $ciEdit (Get-SplitMessage $src $onto $ciEdit 'ci: ')); ci = $ciEdit }
+                    @{ name = $name; src = (Split-Branch $src $onto $other (Get-SplitMessage $src $onto $other '')); ci = $null }
                 )
             } else {
                 $sets = @(@{ name = $name; src = (Split-Branch $src $onto $touched); ci = $ciEdit })
             }
             foreach ($s in $sets) {
+                if ($s.ci -and (Test-CiCovered $s.src $onto $s.ci)) {
+                    "  skipped  $($s.name): origin/$onto or an open PR already has these CI files ($($s.ci -join ', '))"
+                    continue
+                }
                 Invoke-Deliver $s.src $onto $s.name
                 Write-Bundle $req "refs/heads/$($s.name)" "refs/remotes/origin/$($s.name)"
                 if ($onto -eq 'main') {

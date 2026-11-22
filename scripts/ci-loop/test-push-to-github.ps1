@@ -6,7 +6,7 @@ New-Item -ItemType Directory $work | Out-Null
 $work = (Resolve-Path $work).Path
 
 $ast = [Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$PSScriptRoot/push-to-github.ps1").Path, [ref]$null, [ref]$null)
-$want = 'G', 'Get-Incoming', 'Write-Bundle', 'Invoke-Deliver', 'Split-Branch', 'Invoke-Request'
+$want = 'G', 'Get-Incoming', 'Write-Bundle', 'Invoke-Deliver', 'Split-Branch', 'Get-SplitMessage', 'Test-CiCovered', 'Invoke-Request'
 foreach ($f in $ast.FindAll({ $args[0] -is [Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -in $want }, $true)) {
     Invoke-Expression $f.Extent.Text
 }
@@ -58,7 +58,8 @@ Set-Content $landExe '$global:LASTEXITCODE = 0'
 $script:landExe = $landExe
 $script:gh = [Collections.Generic.List[string]]::new()
 function Assert-Private {}
-function gh { $script:gh.Add("$args"); $global:LASTEXITCODE = 0 }
+$script:ghOpen = ''
+function gh { $script:gh.Add("$args"); $global:LASTEXITCODE = 0; if ("$args" -like 'pr list*--json headRefName*') { $script:ghOpen } }
 
 function Origin-Files($b) { @(Run-Git -C $origin diff --name-only main $b) }
 
@@ -71,6 +72,19 @@ Assert ((Run-Git -C $origin merge-base main mixed-ci) -eq (Run-Git -C $origin re
 Assert (@($script:gh | Where-Object { $_ -like 'pr create*--head mixed-ci *' }).Count -eq 1) 'mixed: PR for -ci'
 Assert (@($script:gh | Where-Object { $_ -like 'pr create*--head mixed *' }).Count -eq 1) 'mixed: PR for the rest'
 Assert (@($script:gh | Where-Object { $_ -like 'pr merge*' }) -join '|' -eq 'pr merge mixed --repo fake/repo --auto --merge') 'mixed: auto-merge only on the rest'
+Assert ((Run-Git -C $origin log -1 --format=%s mixed-ci) -eq 'ci: work on mixed') 'mixed: -ci title is built from the CI commits'
+
+Run-Git -C $shared switch --quiet -C claude/w-titles claude/seed
+foreach ($t in @(@('src/a.go', 'rest first'), @('scripts/ci.sh', 'tune ci'), @('src/new.go', 'rest last'))) {
+    New-Item -Force -ItemType File (Join-Path $shared $t[0]) -Value "$($t[1])`n" | Out-Null
+    Run-Git -C $shared add -A
+    Run-Git -C $shared commit --quiet -m $t[1]
+}
+Run-Git -C $shared update-ref refs/remotes/hub/claude/titles HEAD
+Run-Git -C $shared switch --quiet claude/seed
+Invoke-Request 'r1b' 'push titles' | Out-Null
+Assert ((Run-Git -C $origin log -1 --format=%s titles-ci) -eq 'ci: tune ci') 'titles: -ci never takes the tip subject'
+Assert ((Run-Git -C $origin log -1 --format=%s titles) -eq 'rest last, rest first') 'titles: the rest never takes a CI subject'
 
 New-Hub 'plain' @{ 'src/a.go' = "plain`n" }
 $script:gh.Clear()
@@ -85,6 +99,14 @@ Invoke-Request 'r3' 'push cionly' | Out-Null
 Assert (-not (Run-Git -C $origin branch --list 'cionly-ci')) 'ci-only: no split'
 Assert (@($script:gh | Where-Object { $_ -like 'pr create*--head cionly *' }).Count -eq 1) 'ci-only: one PR'
 Assert (@($script:gh | Where-Object { $_ -like 'pr merge*' }).Count -eq 0) 'ci-only: no auto-merge'
+
+New-Hub 'cionly2' @{ 'scripts/ci.sh' = "changed`n" }
+$script:gh.Clear()
+$script:ghOpen = 'cionly'
+Invoke-Request 'r3b' 'push cionly2' | Out-Null
+$script:ghOpen = ''
+Assert (-not (Run-Git -C $origin branch --list 'cionly2')) 'ci-only duplicate of an open PR: nothing pushed'
+Assert (@($script:gh | Where-Object { $_ -like 'pr create*' }).Count -eq 0) 'ci-only duplicate of an open PR: no PR'
 
 # origin main takes claude/main as one squash commit, so their merge base stays at the old seed.
 Run-Git -C $shared switch --quiet -C claude/main claude/seed
