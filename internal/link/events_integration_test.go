@@ -517,3 +517,33 @@ func TestAStreamReopenedRightAfterACloseStillStreams(t *testing.T) {
 		shut()
 	}
 }
+
+// A remote card's turn start and end reach the merged board as whole rows, with the activity its spin is drawn from.
+func TestARemoteTurnStartAndEndReachTheHubBoard(t *testing.T) {
+	a, b := make(chan string, 4), make(chan string, 4)
+	front, _, done := two(t, streamer(a), streamer(b))
+	defer done()
+
+	ch, shut := listen(t, front.URL+"/v1/events/hub")
+	defer shut()
+
+	for _, what := range []string{"tool", "idle"} {
+		row := `{"id":"orch","row":1,"status":"running","supervised":true,"activity":{"what":"` + what + `"}}`
+		sayUntil(t, ch, 8*time.Second, "the "+what+" row to reach the hub board", func() {
+			offer(b, sse("task", row))
+		}, func(e wire.Event) bool {
+			if e.Kind != "task" {
+				return false
+			}
+			obj := fields(t, e.Data)
+			act, _ := obj["activity"].(map[string]any)
+			if obj["id"] != "beta~orch" || act == nil || act["what"] != what {
+				return false
+			}
+			if obj["row"] != float64(1) || obj["supervised"] != true {
+				t.Fatalf("the hub dropped what the board needs to draw the turn: %s", e.Data)
+			}
+			return true
+		})
+	}
+}

@@ -3,8 +3,13 @@
 package daemon
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,5 +209,108 @@ func TestLooksIdleClearsOnOutputKeystrokeAndHook(t *testing.T) {
 		if a := d.act.get(task.ID); a != nil && a.LooksIdle {
 			t.Fatalf("%s left the badge up", cause)
 		}
+	}
+}
+
+func TestAnInterruptedTurnEndsWithNoStopHook(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	interrupted := "\x1b[H\x1b[2J  ⎿  Interrupted · What should Claude do instead?\r\n\r\n" + frameRule + "\r\n❯ \r\n" +
+		frameRule + "\r\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents\r\n"
+	task, _ := runningCard(t, d, interrupted, 5*time.Second)
+	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	d.act.setBackground(task.ID, 2)
+
+	if err := d.watchLooksIdle(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.st.Get(task.ID); got.Status != store.StatusNeedsInput {
+		t.Fatalf("status %s, wanted needs-input", got.Status)
+	}
+	if a := d.act.get(task.ID); a == nil || a.What != ActivityIdle {
+		t.Fatalf("activity %+v, wanted idle", a)
+	}
+}
+
+// A turn that starts on a card whose status is already running moves no status, so only the activity says it began.
+func TestATurnStartOnARunningCardReachesTheBoard(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, _ := runningCard(t, d, idleFrame, 0)
+	d.act.set(task.ID, ActivityIdle, "")
+
+	ts := httptest.NewServer(d.ap.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	rows := make(chan map[string]any, 16)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(nil, 1<<20)
+		kind := ""
+		for sc.Scan() {
+			line := sc.Text()
+			if strings.HasPrefix(line, "event: ") {
+				kind = strings.TrimPrefix(line, "event: ")
+			}
+			if strings.HasPrefix(line, "data: ") && kind == "task" {
+				var row map[string]any
+				if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &row) == nil {
+					rows <- row
+				}
+			}
+		}
+	}()
+	testwait.EventuallyHTTP(t, 5*time.Second, "the event stream to subscribe", func() bool {
+		d.Publish(task.ID)
+		select {
+		case <-rows:
+			return true
+		default:
+			return false
+		}
+	})
+	time.Sleep(400 * time.Millisecond) // wait: a settle, the probe publishes still in flight
+	for len(rows) > 0 {
+		<-rows
+	}
+
+	d.onActivity(ActivityEvent{TaskID: task.ID, Event: "tool-start", Tool: "Bash"})
+
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case row := <-rows:
+			if row["id"] == task.ID {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no task event said the turn began")
+		}
+	}
+}
+
+// A busy card's hooks move no status, so its last activity read hours old while it worked.
+func TestAToolEventMovesALiveCardsLastActivity(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, _ := runningCard(t, d, idleFrame, 0)
+	if err := d.st.BackdateActivity(task.ID, 3*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	d.onActivity(ActivityEvent{TaskID: task.ID, Event: "tool-start", Tool: "Bash"})
+
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if age := time.Since(got.LastActivityAt); age > time.Minute {
+		t.Fatalf("last activity is %s old after a tool event", age)
 	}
 }

@@ -135,6 +135,11 @@ func postLaunch(ctx context.Context, cwd string, req map[string]any, t *card) (r
 			return true, nil
 		}
 	}
+	// The room queues a keyed post behind the attempt still starting and answers it with that card.
+	if rerr := askFor(ctx, launchLocalWait(), http.MethodPost, "/v1/launch", req, t); rerr == nil {
+		clearLaunchAttempt(key)
+		return true, nil
+	}
 	launchAttempts.Lock()
 	launchAttempts.known[key] = known
 	launchAttempts.keys[key] = launchKey

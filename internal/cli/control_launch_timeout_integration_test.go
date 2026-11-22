@@ -99,8 +99,8 @@ func TestARetryAfterATimedOutLaunchReturnsTheCardThatAppearedLate(t *testing.T) 
 	if err != nil || out.Card != "c9" {
 		t.Fatalf("retry = %+v, %v", out, err)
 	}
-	if room.posts != 1 {
-		t.Fatalf("the retry posted again: %d posts", room.posts)
+	if room.posts != 2 {
+		t.Fatalf("the retry posted again: %d posts, want the first call's two", room.posts)
 	}
 }
 
@@ -135,8 +135,8 @@ func TestARetryAfterALostAnswerSendsTheKeyAgain(t *testing.T) {
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			keys = append(keys, body.Key)
-			if len(keys) == 1 {
-				time.Sleep(400 * time.Millisecond) // wait: a first answer lost to the launch wait is what is under test
+			if len(keys) <= 2 {
+				time.Sleep(400 * time.Millisecond) // wait: answers lost to the launch wait are what is under test
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "c9", "launch_replay": len(keys) > 1})
 		default:
@@ -159,6 +159,53 @@ func TestARetryAfterALostAnswerSendsTheKeyAgain(t *testing.T) {
 	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: cwd})
 	if err != nil || out.Card != "c9" || !strings.Contains(out.Note, "do NOT launch it again") {
 		t.Fatalf("retry = %+v, %v", out, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(keys) != 3 || keys[0] == "" || keys[0] != keys[1] || keys[1] != keys[2] {
+		t.Fatalf("keys sent = %v, want one key three times", keys)
+	}
+}
+
+// The card is not on the list when the first answer is lost, as a slow clone leaves it. The FIRST call posts once
+// more under its key, and the room answers that with the card the first attempt made.
+func TestTheFirstLaunchPostsAgainUnderItsKeyWhenItsAnswerIsLost(t *testing.T) {
+	shortLaunchWait(t)
+	var mu sync.Mutex
+	var keys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/v1/tasks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []any{}})
+		case "/v1/launch":
+			var body struct {
+				Key string `json:"launch_key"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			keys = append(keys, body.Key)
+			if len(keys) == 1 {
+				time.Sleep(400 * time.Millisecond) // wait: the first answer lost to the launch wait is under test
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "c9", "launch_replay": len(keys) > 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	loc := filepath.Join(t.TempDir(), "daemon.json")
+	raw, _ := json.Marshal(map[string]any{"board": srv.URL, "pid": os.Getpid()})
+	if err := os.WriteFile(loc, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATRIUM_LOCATION", loc)
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+
+	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w/first-call"})
+	if err != nil || out.Card != "c9" || !strings.Contains(out.Note, "do NOT launch it again") {
+		t.Fatalf("first call = %+v, %v", out, err)
 	}
 	mu.Lock()
 	defer mu.Unlock()

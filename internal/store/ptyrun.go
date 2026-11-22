@@ -194,7 +194,7 @@ func (s *Store) FileExit(f ExitFiling) (bool, error) {
 		}
 		if f.Why != "" {
 			if _, err := tx.Exec(`UPDATE task SET why = ?, last_activity_at = ? WHERE id = ?`,
-				f.Why, ts(s.now()), f.TaskID); err != nil {
+				f.Why, ts(s.activityAt(f.TaskID)), f.TaskID); err != nil {
 				return err
 			}
 		}

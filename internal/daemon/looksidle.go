@@ -110,6 +110,9 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 		if run == nil {
 			continue
 		}
+		if d.interruptedTurn(t, run, now) {
+			continue
+		}
 		if _, on := d.act.looksIdleMark(t.ID); on {
 			continue
 		}
@@ -128,6 +131,25 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 		d.flagLooksIdle(t, run, silent, why, now)
 	}
 	return nil
+}
+
+// interruptedAfter is how long a pty must be silent under the interrupt line before the turn is taken as ended.
+const interruptedAfter = 3 * time.Second
+
+// interruptedTurn ends the turn of a card whose screen says the operator interrupted it. An interrupt fires no Stop
+// hook, so without this the card reads mid-turn for good. Subagents the interrupt killed sent no stop either.
+func (d *Daemon) interruptedTurn(t *store.Task, run *runner, now time.Time) bool {
+	if now.Sub(run.lastOutputAt()) < interruptedAfter || d.act.dialogOpen(t.ID) {
+		return false
+	}
+	cols, rows := run.buf.CurrentSize()
+	if !screen.FrameInterrupted(run.buf.Tail(screen.FrameTailBytes), cols, rows) {
+		return false
+	}
+	log.Printf("[atrium] interrupted: %s (%s) shows an interrupted turn, so the turn is taken as ended", t.WireName, t.ID)
+	d.act.setBackground(t.ID, 0)
+	d.turnEnded(t.ID)
+	return true
 }
 
 // reattachQuiet and reattachQuietOther are how long a reattached runner's terminal must have been silent before its

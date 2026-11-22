@@ -358,7 +358,7 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 		}
 		t.Origin = origin
 	}
-	n := s.now()
+	n := s.activityAt(t.ID)
 	_, err := s.db.Exec(`UPDATE task SET worktree = ?, repo = ?, runner = ?, hostname = ?,
 		pid = ?, wire_name = ?, last_activity_at = ? WHERE id = ?`,
 		obs.Worktree, obs.Repo, obs.Runner, obs.Hostname, obs.PID,
@@ -821,7 +821,7 @@ func (s *Store) setStatusOn(q querier, id, status, reason string) error {
 	if _, err := q.Exec(
 		`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?,
 		 waiting_reason = ? WHERE id = ?`,
-		status, waiting, ts(n), archived, why, id); err != nil {
+		status, waiting, ts(s.activityAt(id)), archived, why, id); err != nil {
 		return err
 	}
 	// A new turn on a card marked for the merged cull takes the mark off: the
@@ -1719,7 +1719,7 @@ func (s *Store) GatedByWireName(name string) (bool, error) {
 // Touch marks activity without changing status.
 func (s *Store) Touch(id string) error {
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET last_activity_at = ? WHERE id = ?`, ts(s.now()), id)
+		_, err := s.db.Exec(`UPDATE task SET last_activity_at = ? WHERE id = ?`, ts(s.activityAt(id)), id)
 		return err
 	})
 }

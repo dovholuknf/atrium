@@ -160,8 +160,9 @@ func NewContextLimitPrompt(path, bin string, noShell bool, tokens, limit int64) 
 		write, then = "Write a handoff", "Then call the atrium_ready tool with your handoff as its text."
 	}
 	return why + " Pause your work now. " + write + " that says what is complete, what is in flight, and what's " +
-		"still to be done. " + then + " Atrium clears your context when this turn ends and starts a new one from " +
-		"your handoff."
+		"still to be done. It also copies in full every question the human has not answered yet, and every table, " +
+		"list or answer each question points at, never a pointer back to this context. " + then + " Atrium clears " +
+		"your context when this turn ends and starts a new one from your handoff."
 }
 
 // runnerHasNoShell is whether the card's launch withholds both shells, so the prompt names the tool alone.
@@ -191,7 +192,10 @@ func (d *Service) RunnerHasNoShell(taskID string) bool {
 }
 
 // newContextWake is what the new session is told, and reads the handoff back.
-func NewContextWakeText(path string) string { return "read " + path + " and continue." }
+func NewContextWakeText(path string) string {
+	return "read " + path + " and continue. Your first reply re-shows the human's open questions from the handoff " +
+		"with the context each one needs."
+}
 
 // sentLines is how many already delivered says the wake lists, newest kept, and sentLen how much of each.
 const (
