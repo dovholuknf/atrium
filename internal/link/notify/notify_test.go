@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -88,3 +89,13 @@ func TestNotifyNameIsTheAliasElseTheTitle(t *testing.T) {
 // ── the endpoints ───────────────────────────────────────
 
 // ── /v1/tasks/<id>/replies passes through to the owning room ─
+
+func TestCommandFoundRefusesAPathThatClimbs(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commandFound([]string{exe + "/../" + filepath.Base(exe)}); err == nil {
+		t.Fatal("a command path with .. was accepted")
+	}
+}

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 func TestMoveWipCommitRunsNoProgramTheWorktreeNames(t *testing.T) {
@@ -32,10 +34,10 @@ func TestMoveWipCommitRunsNoProgramTheWorktreeNames(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt, "f"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{append([]string{"status", "--porcelain"}, moveGitArgs...),
-		append([]string{"add", "-A"}, moveGitArgs...), {"commit", "-m", "WIP: move to b"}} {
-		if out, err := moveGit(wt, args...); err != nil {
-			t.Fatalf("%v: %v %s", args, err, out)
+	for _, op := range []gitexec.Op{gitexec.Status{Exclude: moveExclude}, gitexec.AddAll{Exclude: moveExclude},
+		gitexec.Commit{Message: "WIP: move to b"}} {
+		if out, err := moveGit(wt, op); err != nil {
+			t.Fatalf("%v: %v %s", op, err, out)
 		}
 	}
 	if b, err := os.ReadFile(filepath.FromSlash(ran)); err == nil {

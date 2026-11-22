@@ -32,3 +32,9 @@ func TestDirNamesTheCardUnderTheRoot(t *testing.T) {
 		t.Fatal("the wire name is the fallback")
 	}
 }
+
+func TestDirIsEmptyForAnIDThatClimbs(t *testing.T) {
+	if got := Dir(t.TempDir(), "", "", "../../x"); got != "" {
+		t.Fatalf("Dir with a climbing id = %q, want empty", got)
+	}
+}

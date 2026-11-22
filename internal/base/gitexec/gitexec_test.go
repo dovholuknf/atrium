@@ -261,6 +261,21 @@ func opCases() []opCase {
 		{"clean", Clean{Force: 2, Dirs: true, Ignored: true, Quiet: true}, "clean -f -f -d -x -q", nil},
 		{"patch-id", PatchID{Stable: true}, "patch-id --stable", nil},
 		{"add -A", AddAll{}, "add -A", nil},
+		{"cherry -v", Cherry{Upstream: "u", Head: "h", Verbose: true}, "cherry -v --end-of-options u h", nil},
+		{"add -A exclude", AddAll{Exclude: []string{"BRIEF.md"}}, "add -A -- . :(exclude)BRIEF.md", nil},
+		{"reset --hard", ResetHard{Commit: "abc"}, "reset --hard abc",
+			map[string]func(string) Op{"commit": func(v string) Op { return ResetHard{Commit: v} }}},
+		{"branch -d", BranchDelete{Branch: "claude/x", Merged: true}, "branch -d -- claude/x", nil},
+		{"config --show-origin", ConfigGet{Key: "user.email", ShowOrigin: true},
+			"config --show-origin --get --end-of-options user.email", nil},
+		{"rev-list header", RevList{Revs: []string{"a..b"}, Reverse: true, TopoOrder: true, Header: true, Stdin: true},
+			"rev-list --reverse --topo-order --header --stdin --end-of-options a..b", nil},
+		{"rev-list left-right", RevList{Revs: []string{"a...b"}, LeftRight: true, Count: true},
+			"rev-list --count --left-right --end-of-options a...b", nil},
+		{"update-ref create", UpdateRef{Ref: "refs/heads/x", New: "abc", Create: true},
+			"update-ref --end-of-options refs/heads/x abc ", nil},
+		{"commit-tree stdin", CommitTree{Tree: "t", Parents: []string{"p"}, StdinMessage: true, Sign: true},
+			"commit-tree t -S -p p", nil},
 	}
 }
 
@@ -323,6 +338,8 @@ func TestOpsRefuseWhatTheyCannotBuild(t *testing.T) {
 		"no rev-parse":    RevParseRevs{},
 		"no octopus":      MergeBaseOctopus{},
 		"ref format":      Init{RefFormat: "-x"},
+		"create with old": UpdateRef{Ref: "r", New: "n", Old: "o", Create: true},
+		"two messages":    CommitTree{Tree: "t", Message: "m", StdinMessage: true},
 	} {
 		var ae *ArgError
 		if _, err := Argv(Opts{}, op); !errors.As(err, &ae) {

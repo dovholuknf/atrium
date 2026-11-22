@@ -6,7 +6,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
+
+func argv(ops []gitexec.Op) [][]string {
+	var out [][]string
+	for _, op := range ops {
+		a, _ := gitexec.Argv(gitexec.Opts{}, op)
+		out = append(out, a)
+	}
+	return out
+}
 
 func TestSplitArgsAllowsBranchBeforeOrAfterFlags(t *testing.T) {
 	for _, in := range [][]string{{"b", "--item", "t-1"}, {"--item", "t-1", "b"}, {"--item=t-1", "b"}} {
@@ -18,13 +29,13 @@ func TestSplitArgsAllowsBranchBeforeOrAfterFlags(t *testing.T) {
 }
 
 func TestLandPlanFastForwardOrCherryPick(t *testing.T) {
-	if got := landPlan("hub/x", true); !reflect.DeepEqual(got, [][]string{{"merge", "--ff-only", "hub/x"}}) {
+	if got := argv(landPlan("hub/x", true)); !reflect.DeepEqual(got, [][]string{{"merge", "--ff-only", "hub/x"}}) {
 		t.Fatal(got)
 	}
-	if got := landPlan("hub/x", false); !reflect.DeepEqual(got, [][]string{{"cherry-pick", "claude/main..hub/x"}}) {
+	if got := argv(landPlan("hub/x", false)); !reflect.DeepEqual(got, [][]string{{"cherry-pick", "--end-of-options", "claude/main..hub/x"}}) {
 		t.Fatal(got)
 	}
-	rb := landRollback("abc", false)
+	rb := argv(landRollback("abc", false))
 	if len(rb) != 2 || rb[0][1] != "--abort" || rb[1][0] != "reset" {
 		t.Fatal(rb)
 	}
@@ -40,7 +51,11 @@ type fakeGit struct {
 	calls          []string
 }
 
-func (f *fakeGit) run(_ string, args ...string) (string, error) {
+func (f *fakeGit) run(_ string, op gitexec.Op) (string, error) {
+	args, err := gitexec.Argv(gitexec.Opts{}, op)
+	if err != nil {
+		return "", err
+	}
 	c := strings.Join(args, " ")
 	f.calls = append(f.calls, c)
 	if f.failOn != "" && strings.HasPrefix(c, f.failOn) {
@@ -80,7 +95,7 @@ func TestLandRefusesDirtyTreeWithoutTouchingBranch(t *testing.T) {
 }
 
 func TestLandRollsBackOnConflict(t *testing.T) {
-	g := &fakeGit{branch: "claude/main", failOn: "cherry-pick claude"}
+	g := &fakeGit{branch: "claude/main", failOn: "cherry-pick --end-of-options claude"}
 	// merge-base failing means not an ancestor, so a cherry-pick is planned
 	g2 := &mbFail{fakeGit: g}
 	err := cmdLand([]string{"b", "--no-deploy"}, &bytes.Buffer{}, g2)
@@ -95,12 +110,12 @@ func TestLandRollsBackOnConflict(t *testing.T) {
 
 type mbFail struct{ *fakeGit }
 
-func (m *mbFail) run(d string, args ...string) (string, error) {
-	if args[0] == "merge-base" {
+func (m *mbFail) run(d string, op gitexec.Op) (string, error) {
+	if gitexec.Name(op) == "merge-base" {
 		m.calls = append(m.calls, "merge-base")
 		return "", errFake
 	}
-	return m.fakeGit.run(d, args...)
+	return m.fakeGit.run(d, op)
 }
 
 func TestWorktreeFor(t *testing.T) {
@@ -205,5 +220,21 @@ func TestLandRefIsTheLocalBranchElseTheHubs(t *testing.T) {
 func TestDeployRunsUnderPwshOnEveryOS(t *testing.T) {
 	if deployShell != "pwsh" {
 		t.Fatal(deployShell)
+	}
+}
+
+func TestPruneRefusesABranchThatIsNotAPlainClaudeName(t *testing.T) {
+	for _, bad := range []string{"main", "claude/", "claude/x;rm -rf ~", "claude/$(id)", "claude/a..b", "claude/x y",
+		"claude/-x", "claude/x\"", "claude/x.lock"} {
+		if err := cmdPrune([]string{bad, "--room", "nowhere-room"}, &bytes.Buffer{}); err == nil ||
+			!strings.Contains(err.Error(), "not a claude/ branch") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
+func TestRemoteBranchArgIsQuoted(t *testing.T) {
+	if got := remoteBranchDelete(".", "claude/x"); got != `git -C . branch -D "claude/x"` {
+		t.Fatal(got)
 	}
 }

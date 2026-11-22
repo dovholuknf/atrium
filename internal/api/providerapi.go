@@ -375,7 +375,10 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dest := worktreeDest(p.WorktreeRoot, req.Org, req.Repo, branch)
-	// codeql[go/path-injection] org/repo passed gitsync.ValidName (no . or .. segment, backslash or colon), so the path is under the provider root
+	if dest == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("which repository"))
+		return
+	}
 	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		// A directory already standing where the worktree would go, which git
 		// itself would refuse with a less useful sentence. Reported rather than
@@ -390,7 +393,6 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	// because a typo would become a directory and discovery would then report
 	// success over an empty tree. This is somewhere atrium is about to put
 	// something, which is a different act.
-	// codeql[go/path-injection] org/repo passed gitsync.ValidName and the branch checkBranchName, so dest is under the worktree root
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		s.fail(w, err)
 		return
@@ -428,7 +430,11 @@ func worktreeDest(root, org, repo, branch string) string {
 	if base == "" {
 		return ""
 	}
-	return base + "/" + flattenBranch(branch)
+	dest := base + "/" + flattenBranch(branch)
+	if strings.Contains(dest, "..") {
+		return ""
+	}
+	return dest
 }
 
 // climbs is whether a name has a `.` or `..` segment, which would leave the folder it is joined under.

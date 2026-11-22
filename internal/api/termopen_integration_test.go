@@ -139,3 +139,11 @@ func TestTerminalSaysWhichProgramItCouldNotRun(t *testing.T) {
 		t.Errorf("the failure never names the program: %s", w.Body.String())
 	}
 }
+
+// The program is the setting's own, never the path: `{path}` alone would run the file it was asked to open.
+func TestEditorProgramIsNeverThePath(t *testing.T) {
+	t.Parallel()
+	if name, args := editorCommand(`{path} --wait`, `C:\work\x.bat`); name != "" {
+		t.Fatalf("program is %q %q, want none", name, args)
+	}
+}

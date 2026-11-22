@@ -14,14 +14,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/land"
 )
 
@@ -33,19 +34,19 @@ var (
 
 func main() {
 	flag.Parse()
-	id := land.Identity{Name: gitOut("config", "user.name"), Email: gitOut("config", "user.email")}
+	id := land.Identity{Name: gitOut(gitexec.ConfigGet{Key: "user.name"}), Email: gitOut(gitexec.ConfigGet{Key: "user.email"})}
 	if id.Name == "" || id.Email == "" {
 		die("set git config user.name and user.email")
 	}
 	if err := land.CheckGitEmail(id.Email); err != nil {
 		die(err.Error())
 	}
-	oldTip := gitOut("rev-parse", "--verify", "--quiet", "refs/heads/"+*branch)
+	oldTip := gitOut(gitexec.RevParseVerify{Quiet: true, Rev: "refs/heads/" + *branch})
 	if oldTip == "" {
 		die("no local branch " + *branch)
 	}
 	ref := "refs/heads/" + *branch
-	baseSHA := gitOut("rev-parse", "--verify", "--quiet", *base+"^{commit}")
+	baseSHA := gitOut(gitexec.RevParseVerify{Quiet: true, Rev: *base + "^{commit}"})
 	if baseSHA == "" {
 		die("cannot resolve " + *base)
 	}
@@ -59,7 +60,7 @@ func main() {
 	}
 
 	start := time.Now()
-	out, err := exec.Command("git", "rev-list", "--reverse", "--topo-order", "--header", baseSHA+".."+oldTip).Output()
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, revListHeader(baseSHA+".."+oldTip))
 	if err != nil {
 		die("rev-list: " + err.Error())
 	}
@@ -73,13 +74,13 @@ func main() {
 	}
 	var sign land.Signer
 	if !*noSign {
-		if sign, err = land.GitSigner(func(k string) string { return gitOut("config", k) }); err != nil {
+		if sign, err = land.GitSigner(func(k string) string { return gitOut(gitexec.ConfigGet{Key: k}) }); err != nil {
 			die(err.Error())
 		}
 	}
 	fmt.Printf("%d commits on %s over %s, as %s <%s>, signed: %v\n", len(cs), *branch, *base, id.Name, id.Email, sign != nil)
 
-	common := gitOut("rev-parse", "--path-format=absolute", "--git-common-dir")
+	common := gitOut(gitexec.RevParseGitDirs{Absolute: true, Common: true})
 	if common == "" {
 		die("cannot find the git directory")
 	}
@@ -89,11 +90,11 @@ func main() {
 	}
 	newTip := newSHA[cs[len(cs)-1].SHA]
 	backup := *branch + "-before-land-" + time.Now().Format("20060102-150405")
-	git("update-ref", "refs/heads/"+backup, oldTip, "")
-	git("update-ref", ref, newTip, oldTip)
+	git(gitexec.UpdateRef{Ref: "refs/heads/" + backup, New: oldTip, Create: true})
+	git(gitexec.UpdateRef{Ref: ref, New: newTip, Old: oldTip})
 
 	// Read the result back and check it.
-	out, err = exec.Command("git", "rev-list", "--reverse", "--topo-order", "--header", baseSHA+".."+newTip).Output()
+	out, err = gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, revListHeader(baseSHA+".."+newTip))
 	var bad []string
 	if err != nil {
 		bad = append(bad, "rev-list: "+err.Error())
@@ -106,7 +107,7 @@ func main() {
 		}
 	}
 	if len(bad) > 0 {
-		git("update-ref", ref, oldTip, newTip)
+		git(gitexec.UpdateRef{Ref: ref, New: oldTip, Old: newTip})
 		for _, b := range bad {
 			fmt.Fprintln(os.Stderr, "  "+b)
 		}
@@ -121,17 +122,20 @@ func main() {
 	fmt.Printf("push: git push %s %s:main\n", remote, *branch)
 }
 
-func git(args ...string) {
-	cmd := exec.Command("git", args...)
+func revListHeader(rng string) gitexec.Op {
+	return gitexec.RevList{Reverse: true, TopoOrder: true, Header: true, Revs: []string{rng}}
+}
+
+func git(op gitexec.Op) {
 	var errb bytes.Buffer
-	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
+	if _, err := gitexec.Run(context.Background(), gitexec.Opts{Stderr: &errb, Visible: true}, op); err != nil {
+		args, _ := gitexec.Argv(gitexec.Opts{}, op)
 		die(fmt.Sprintf("git %v: %v: %s", args, err, errb.String()))
 	}
 }
 
-func gitOut(args ...string) string {
-	out, err := exec.Command("git", args...).Output()
+func gitOut(op gitexec.Op) string {
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, op)
 	if err != nil {
 		return ""
 	}

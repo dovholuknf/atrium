@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -328,7 +329,6 @@ func (s *Server) worktreeHookFile(host, org, repo string) string {
 	for _, h := range hosts {
 		for _, f := range []string{"worktree.ps1", "worktree.sh"} {
 			p := filepath.Join(dir, h, org, repo, f)
-			// codeql[go/path-injection] joined from RepoSlug or ValidName segments and a checkBranchName branch, so the hooks path is under its root
 			if st, err := os.Stat(safepath.NoNUL(p)); err == nil && !st.IsDir() {
 				return p
 			}
@@ -383,9 +383,19 @@ func (s *Server) setupWorktree(ctx context.Context, host, org, repo, path string
 	}
 }
 
+// hookSegment is one host, org or repo name: never . or .., so the hook path it builds stays in the hooks folder.
+var hookSegment = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
+
+// hookPath is an absolute worktree path, so it never reads as an option to the hook's shell.
+var hookPath = regexp.MustCompile(`^(?:[A-Za-z]:)?[/\\][^\x00\r\n]*$`)
+
 // runWorktreeHook runs the repo's setup hook in the new worktree, and answers which file ran and why it failed. A hook
 // that fails never fails the new work: the worktree is made, and the card says so.
 func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path string) (ran, failed string) {
+	if !hookSegment.MatchString(host) || !hookSegment.MatchString(org) || !hookSegment.MatchString(repo) ||
+		!hookPath.MatchString(path) {
+		return "", ""
+	}
 	file := s.worktreeHookFile(host, org, repo)
 	if file == "" {
 		return "", ""
@@ -402,10 +412,8 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		args := []string{"-NoProfile", "-File", safepath.NoNUL(file),
 			"-WorktreePath:" + safepath.NoNUL(filepath.FromSlash(path)), "-Org:" + safepath.NoNUL(org),
 			"-Repo:" + safepath.NoNUL(repo), "-RemoteHost:" + safepath.NoNUL(host)}
-		// codeql[go/command-injection] argv to pwsh -File, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 		cmd = exec.CommandContext(ctx, shell, args...)
 	} else {
-		// codeql[go/command-injection] argv to pwsh -File or sh, no shell evaluates it, and every value is a RepoSlug or ValidName segment
 		cmd = exec.CommandContext(ctx, "sh", safepath.NoNUL(file), safepath.NoNUL(filepath.FromSlash(path)), safepath.NoNUL(org), safepath.NoNUL(repo), safepath.NoNUL(host))
 	}
 	cmd.Dir = filepath.FromSlash(path)

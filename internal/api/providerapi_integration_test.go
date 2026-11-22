@@ -353,6 +353,9 @@ func TestWorktreeDestinationAndBranchFlattening(t *testing.T) {
 	if got != "d:/worktrees/github/dotfiles/feature-thing" {
 		t.Fatalf("a slashed branch should flatten, got %q", got)
 	}
+	if got = worktreeDest("d:/worktrees/github", "o", "r", ".."); got != "" {
+		t.Fatalf("a branch of .. should name no destination, got %q", got)
+	}
 }
 
 // Presence travels on the read and is never written, so the row can say "not on

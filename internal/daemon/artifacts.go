@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -39,8 +40,10 @@ func (d *Daemon) recordFileArtifact(taskID string, in ActivityEvent) {
 		ref = ref[len(root)+1:]
 	}
 	a := store.Artifact{TaskID: taskID, Kind: artifactKind(ref), Ref: ref, Source: "hook"}
-	if fi, err := os.Stat(in.File); err == nil {
-		a.Bytes = fi.Size()
+	if !safepath.Network(in.File) && !strings.Contains(in.File, "..") {
+		if fi, err := os.Stat(in.File); err == nil {
+			a.Bytes = fi.Size()
+		}
 	}
 	extra, _ := json.Marshal(map[string]any{"change": in.FileChange, "add": in.FileAdd, "del": in.FileDel})
 	a.Extra = string(extra)

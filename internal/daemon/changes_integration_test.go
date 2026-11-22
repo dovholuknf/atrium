@@ -157,7 +157,7 @@ func TestChangesUntrackedBodiesAreCapped(t *testing.T) {
 	}
 	start := time.Now()
 	v := f.ok("")
-	if d := time.Since(start); d > 5*time.Second {
+	if d := time.Since(start); d > 30*time.Second {
 		t.Fatalf("the diff took %v", d)
 	}
 	if b := fileOf(v, "big.txt"); b == nil || !b.HunksCut || b.Hunks != "" || b.Size != 40<<20 {

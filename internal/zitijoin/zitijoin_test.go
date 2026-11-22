@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +140,30 @@ func TestControllerMustBeHTTPS(t *testing.T) {
 	}
 	if u, err := rootURL("ctrl.example.com:1280/edge/client/v1"); err != nil || u.String() != "https://ctrl.example.com:1280" {
 		t.Fatalf("%v %v", u, err)
+	}
+}
+
+func TestControllerHostIsANameOrAnAddress(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{"https://a!b.example.com", "https://a$b:1280"} {
+		if _, err := rootURL(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, good := range []string{"https://127.0.0.1:1280", "https://[::1]:1280", "https://ctrl_1.example.com"} {
+		if _, err := rootURL(good); err != nil {
+			t.Errorf("%q refused: %v", good, err)
+		}
+	}
+}
+
+func TestFileBaseIsNeverADeviceName(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("device names are a Windows rule")
+	}
+	if got := fileBase("CON"); got != "atrium" {
+		t.Fatalf("fileBase(CON) = %q", got)
 	}
 }
 

@@ -19,6 +19,10 @@ type RevList struct {
 	Parents      bool
 	All          bool
 	Count        bool
+	LeftRight    bool
+	TopoOrder    bool
+	Header       bool
+	Stdin        bool
 	MaxCount     int
 	Format       string
 	After        int64
@@ -34,6 +38,10 @@ func (o RevList) build(b *builder) {
 	b.flag(o.Parents, "--parents")
 	b.flag(o.All, "--all")
 	b.flag(o.Count, "--count")
+	b.flag(o.LeftRight, "--left-right")
+	b.flag(o.TopoOrder, "--topo-order")
+	b.flag(o.Header, "--header")
+	b.flag(o.Stdin, "--stdin")
 	if o.MaxCount > 0 {
 		b.add("--max-count=" + strconv.Itoa(o.MaxCount))
 	}
@@ -133,23 +141,27 @@ type CatFileBatch struct{}
 
 func (CatFileBatch) build(b *builder) { b.sub("cat-file", "--batch") }
 
-// Cherry is `git cherry` of Head against Upstream.
+// Cherry is `git cherry` of Head against Upstream, with each subject when Verbose.
 type Cherry struct {
 	Upstream string
 	Head     string
+	Verbose  bool
 }
 
 func (o Cherry) build(b *builder) {
 	b.sub("cherry")
+	b.flag(o.Verbose, "-v")
 	b.add(eoo, b.ref("upstream", o.Upstream), b.ref("head", o.Head))
 }
 
-// UpdateRef is `git update-ref` of Ref to New, only while Ref is at Old when Old is set, logged as Message.
+// UpdateRef is `git update-ref` of Ref to New, only while Ref is at Old when Old is set, or only while Ref does not
+// exist when Create, logged as Message.
 type UpdateRef struct {
 	Message string
 	Ref     string
 	New     string
 	Old     string
+	Create  bool
 }
 
 func (o UpdateRef) build(b *builder) {
@@ -158,7 +170,12 @@ func (o UpdateRef) build(b *builder) {
 		b.add("-m", b.value("message", o.Message))
 	}
 	b.add(eoo, b.ref("ref", o.Ref), b.ref("new", o.New))
-	if o.Old != "" {
+	switch {
+	case o.Create && o.Old != "":
+		b.refuse("old", o.Old, "a create has no old value")
+	case o.Create:
+		b.add("")
+	case o.Old != "":
 		b.add(b.ref("old", o.Old))
 	}
 }
@@ -239,21 +256,30 @@ func (o MergeTree) build(b *builder) {
 	b.add(eoo, b.ref("branch1", o.Branch1), b.ref("branch2", o.Branch2))
 }
 
-// CommitTree is `git commit-tree` of Tree with Parents and Message. It takes no --end-of-options before git 2.25,
-// and ref already refuses a leading '-'.
+// CommitTree is `git commit-tree` of Tree with Parents and Message, or with the message on stdin as it is when
+// StdinMessage, signed when Sign. It takes no --end-of-options before git 2.25, and ref already refuses a leading '-'.
 type CommitTree struct {
-	Tree      string
-	Parents   []string
-	Message   string
-	NoGPGSign bool
+	Tree         string
+	Parents      []string
+	Message      string
+	StdinMessage bool
+	NoGPGSign    bool
+	Sign         bool
 }
 
 func (o CommitTree) build(b *builder) {
 	b.sub("commit-tree")
 	b.flag(o.NoGPGSign, "--no-gpg-sign")
 	b.add(b.ref("tree", o.Tree))
+	b.flag(o.Sign, "-S")
 	for _, p := range b.refs("parent", o.Parents) {
 		b.add("-p", p)
+	}
+	if o.StdinMessage {
+		if o.Message != "" {
+			b.refuse("message", o.Message, "the message is on stdin")
+		}
+		return
 	}
 	b.add("-m", b.value("message", o.Message))
 }
@@ -394,7 +420,27 @@ func (o PatchID) build(b *builder) {
 	b.flag(o.Stable, "--stable")
 }
 
-// AddAll is `git add -A`.
-type AddAll struct{}
+// AddAll is `git add -A`, limited to "." without each of the Exclude paths when there are any.
+type AddAll struct {
+	Exclude []string
+}
 
-func (AddAll) build(b *builder) { b.sub("add", "-A") }
+func (o AddAll) build(b *builder) {
+	b.sub("add", "-A")
+	if len(o.Exclude) > 0 {
+		b.add("--", ".")
+		for _, p := range b.paths("exclude", o.Exclude) {
+			b.add(":(exclude)" + p)
+		}
+	}
+}
+
+// ResetHard is `git reset --hard` to Commit, with no --end-of-options as ResetKeep.
+type ResetHard struct {
+	Commit string
+}
+
+func (o ResetHard) build(b *builder) {
+	b.sub("reset", "--hard")
+	b.add(b.ref("commit", o.Commit))
+}

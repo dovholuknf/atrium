@@ -310,3 +310,14 @@ func TestChangeParentNestsRefusesACycleAndRecordsIt(t *testing.T) {
 		t.Errorf("after the clear: %+v", got)
 	}
 }
+
+func TestProcPIDTakesOnlyAPidThatFitsWindows(t *testing.T) {
+	if pid, err := procPID("4242"); err != nil || pid != 4242 {
+		t.Fatalf("procPID(4242) = %d, %v", pid, err)
+	}
+	for _, bad := range []string{"", "x", "-5", "2147483648"} {
+		if pid, err := procPID(bad); err == nil {
+			t.Errorf("procPID(%q) = %d, want an error", bad, pid)
+		}
+	}
+}

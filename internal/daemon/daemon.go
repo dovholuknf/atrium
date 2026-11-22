@@ -941,8 +941,8 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		}
 	}
 	obs.NameSource = req.NameSource
-	if req.Cwd != "" {
-		obs.Worktree = strings.ReplaceAll(req.Cwd, `\`, "/")
+	if wt := observedCwd(req.Cwd); wt != "" {
+		obs.Worktree = wt
 	}
 	task, created, err := d.st.Register(obs)
 	if errors.Is(err, store.ErrStaleName) {

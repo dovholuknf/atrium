@@ -1,6 +1,6 @@
 // devloop runs the repeat orchestration chores around atrium: landing a branch, pruning a finished one, collecting
 // screenshots and summarizing usage. It is its own program on purpose. It talks to atrium only over the hub HTTP API,
-// git and ssh, and imports nothing from the atrium module, so it can be lifted into its own repo.
+// git and ssh, and imports only internal/base/gitexec from the atrium module, which starts its git.
 package main
 
 import (

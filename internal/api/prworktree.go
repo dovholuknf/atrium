@@ -200,7 +200,6 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		steps.end()
 		return res, http.StatusBadRequest, errors.New("which repository")
 	}
-	// codeql[go/path-injection] prWorktree refused host, org and repo unless rules.RepoSlug, so the path is under the provider or scm root
 	if _, err := os.Stat(safepath.NoNUL(filepath.FromSlash(dest))); err == nil {
 		steps.end()
 		return res, http.StatusConflict, errors.New(
@@ -216,7 +215,6 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			strconv.Itoa(req.Number) + ": " + err.Error())
 	}
 	steps.begin("worktree", "making the worktree")
-	// codeql[go/path-injection] prWorktree refused host, org and repo unless rules.RepoSlug, so the path is under the provider or scm root
 	if err := os.MkdirAll(safepath.NoNUL(filepath.Dir(filepath.FromSlash(dest))), 0o755); err != nil {
 		steps.end()
 		return res, http.StatusInternalServerError, err

@@ -66,13 +66,18 @@ func Short(title, wire, id string) string {
 	return slug + "-" + id
 }
 
-// Dir is the folder for a card under a root, in forward slashes. Empty for an unset root.
+// Dir is the folder for a card under a root, in forward slashes. Empty for an unset root, or a short name that would
+// leave the root.
 func Dir(root, title, wire, id string) string {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return ""
 	}
-	return filepath.ToSlash(filepath.Join(filepath.FromSlash(root), Short(title, wire, id)))
+	short := Short(title, wire, id)
+	if !filepath.IsLocal(short) {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Join(filepath.FromSlash(root), short))
 }
 
 // Line is the sentence the session-start hook carries.

@@ -17,14 +17,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/land"
 )
 
@@ -61,18 +62,18 @@ func main() {
 		return
 	}
 	if *name == "" {
-		*name = gitOut("config", "user.name")
+		*name = gitOut(gitexec.ConfigGet{Key: "user.name"})
 	}
 	if *email == "" {
-		*email = gitOut("config", "user.email")
+		*email = gitOut(gitexec.ConfigGet{Key: "user.email"})
 	}
 	if *name == "" || *email == "" {
 		die("no name or email: set git config user.name and user.email, or pass -name and -email")
 	}
 	if *email != land.AuthorEmail {
 		origin := ""
-		if *email == gitOut("config", "user.email") {
-			origin = gitOut("config", "--show-origin", "user.email")
+		if *email == gitOut(gitexec.ConfigGet{Key: "user.email"}) {
+			origin = gitOut(gitexec.ConfigGet{Key: "user.email", ShowOrigin: true})
 		} else {
 			origin = "the -email flag"
 		}
@@ -80,7 +81,7 @@ func main() {
 			die(err.Error())
 		}
 	}
-	if exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+*to).Run() == nil {
+	if _, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, gitexec.RevParseVerify{Quiet: true, Rev: "refs/heads/" + *to}); err == nil {
 		die("branch " + *to + " already exists")
 	}
 
@@ -99,9 +100,8 @@ func main() {
 			}
 		}
 	}
-	cmd := exec.Command("git", "rev-list", "--reverse", "--topo-order", "--stdin", *from)
-	cmd.Stdin = strings.NewReader(exclude.String())
-	out, err := cmd.Output()
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Stdin: []byte(exclude.String()), Visible: true},
+		gitexec.RevList{Reverse: true, TopoOrder: true, Stdin: true, Revs: []string{*from}})
 	if err != nil {
 		die("rev-list: " + err.Error())
 	}
@@ -114,25 +114,19 @@ func main() {
 
 	start := time.Now()
 	for i, c := range commits {
-		args := []string{"commit-tree", c.tree}
-		if *sign {
-			args = append(args, "-S")
-		}
+		op := gitexec.CommitTree{Tree: c.tree, Sign: *sign, StdinMessage: true}
 		for _, p := range c.parents {
 			np, ok := newSHA[p]
 			if !ok {
 				die("parent " + p + " of " + c.sha + " was not written first")
 			}
-			args = append(args, "-p", np)
+			op.Parents = append(op.Parents, np)
 		}
-		cmd := exec.Command("git", args...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME="+*name, "GIT_AUTHOR_EMAIL="+*email, "GIT_AUTHOR_DATE="+c.authorDate,
-			"GIT_COMMITTER_NAME="+*name, "GIT_COMMITTER_EMAIL="+*email, "GIT_COMMITTER_DATE="+c.comDate)
-		cmd.Stdin = strings.NewReader(scrub(c.msg))
 		var errb bytes.Buffer
-		cmd.Stderr = &errb
-		out, err := cmd.Output()
+		out, err := gitexec.Run(context.Background(), gitexec.Opts{Env: []string{
+			"GIT_AUTHOR_NAME=" + *name, "GIT_AUTHOR_EMAIL=" + *email, "GIT_AUTHOR_DATE=" + c.authorDate,
+			"GIT_COMMITTER_NAME=" + *name, "GIT_COMMITTER_EMAIL=" + *email, "GIT_COMMITTER_DATE=" + c.comDate,
+		}, Stdin: []byte(scrub(c.msg)), Stderr: &errb, Visible: true}, op)
 		if err != nil {
 			die(fmt.Sprintf("commit-tree for %s: %v\n%s", c.sha, err, errb.String()))
 		}
@@ -144,7 +138,7 @@ func main() {
 		}
 	}
 	tip := newSHA[commits[len(commits)-1].sha]
-	git("branch", *to, tip)
+	git(gitexec.UpdateRef{Ref: "refs/heads/" + *to, New: tip, Create: true})
 
 	if *mapFile != "" {
 		var b strings.Builder
@@ -172,7 +166,7 @@ func verify(old []commit, newSHA map[string]string) {
 	for _, s := range newSHA {
 		distinct[s] = true
 	}
-	n := len(strings.Fields(gitOut("rev-list", *to)))
+	n := len(strings.Fields(gitOut(gitexec.RevList{Revs: []string{*to}})))
 	if n != len(distinct) {
 		die(fmt.Sprintf("%s has %d commits, want %d (%d on %s, %d made identical)", *to, n, len(distinct), len(old), *from, len(old)-len(distinct)))
 	}
@@ -217,7 +211,10 @@ func distinctParents(ps []string, newSHA map[string]string) int {
 
 // readAll reads each commit through one cat-file process, in the order given.
 func readAll(shas []string) []commit {
-	cmd := exec.Command("git", "cat-file", "--batch")
+	cmd, err := gitexec.Command(context.Background(), gitexec.Opts{Visible: true}, gitexec.CatFileBatch{})
+	if err != nil {
+		die(err.Error())
+	}
 	in, _ := cmd.StdinPipe()
 	outp, _ := cmd.StdoutPipe()
 	if err := cmd.Start(); err != nil {
@@ -294,16 +291,15 @@ func date(v string) string {
 	return f[len(f)-2] + " " + f[len(f)-1]
 }
 
-func git(args ...string) {
-	cmd := exec.Command("git", args...)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+func git(op gitexec.Op) {
+	if _, err := gitexec.Run(context.Background(), gitexec.Opts{Stderr: os.Stderr, Visible: true}, op); err != nil {
+		args, _ := gitexec.Argv(gitexec.Opts{}, op)
 		die(fmt.Sprintf("git %v: %v", args, err))
 	}
 }
 
-func gitOut(args ...string) string {
-	out, err := exec.Command("git", args...).Output()
+func gitOut(op gitexec.Op) string {
+	out, err := gitexec.Run(context.Background(), gitexec.Opts{Visible: true}, op)
 	if err != nil {
 		return ""
 	}

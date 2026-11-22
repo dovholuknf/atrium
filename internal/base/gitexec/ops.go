@@ -76,13 +76,18 @@ func (o SymbolicRef) build(b *builder) {
 	b.add(eoo, b.ref("name", o.Name))
 }
 
-// BranchDelete is `git branch -D` of one branch.
+// BranchDelete is `git branch -D` of one branch, or `-d`, which refuses an unmerged one, when Merged.
 type BranchDelete struct {
 	Branch string
+	Merged bool
 }
 
 func (o BranchDelete) build(b *builder) {
-	b.sub("branch", "-D")
+	if o.Merged {
+		b.sub("branch", "-d")
+	} else {
+		b.sub("branch", "-D")
+	}
 	b.add("--", b.ref("branch", o.Branch))
 }
 
@@ -264,12 +269,13 @@ type WorktreeList struct{}
 func (WorktreeList) build(b *builder) { b.sub("worktree", "list", "--porcelain") }
 
 // ConfigGet is `git config --get`, of the repository's, the user's or the worktree's own file alone when Local,
-// Global or Worktree.
+// Global or Worktree, with the file it came from first when ShowOrigin.
 type ConfigGet struct {
-	Key      string
-	Local    bool
-	Global   bool
-	Worktree bool
+	Key        string
+	Local      bool
+	Global     bool
+	Worktree   bool
+	ShowOrigin bool
 }
 
 func (o ConfigGet) build(b *builder) {
@@ -277,6 +283,7 @@ func (o ConfigGet) build(b *builder) {
 	b.flag(o.Local, "--local")
 	b.flag(o.Global, "--global")
 	b.flag(o.Worktree, "--worktree")
+	b.flag(o.ShowOrigin, "--show-origin")
 	b.add("--get", eoo, b.ref("key", o.Key))
 }
 

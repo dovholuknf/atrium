@@ -1,9 +1,11 @@
 package land
 
 import (
+	"context"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
 // AuthorEmail is the only address a landed commit may carry. GitHub refuses a push that exposes a private one (GH007).
@@ -27,6 +29,6 @@ func CheckEmailIs(want, email, origin string) error {
 
 // CheckGitEmail checks user.email as git resolves it in the current directory.
 func CheckGitEmail(email string) error {
-	out, _ := exec.Command("git", "config", "--show-origin", "user.email").Output()
+	out, _ := gitexec.Run(context.Background(), gitexec.Opts{}, gitexec.ConfigGet{Key: "user.email", ShowOrigin: true})
 	return CheckEmail(email, strings.TrimSpace(string(out)))
 }

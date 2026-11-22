@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -293,7 +292,7 @@ func (s *Server) sweepGone(ctx context.Context, r *store.CardResource) string {
 			return "gone from disk, found by the sweep"
 		}
 	case store.ResProc:
-		pid, err := strconv.Atoi(r.Ref)
+		pid, err := procPID(r.Ref)
 		if err != nil {
 			return "not a pid, found by the sweep"
 		}

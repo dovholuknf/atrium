@@ -96,6 +96,10 @@ func (s *Server) openTerminal(w http.ResponseWriter, r *http.Request) {
 	// "a program and its arguments" means one place where it could grow into a
 	// shell, and it must not.
 	name, args := editorCommand(tmpl, dir)
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("the terminal setting names no program before {path}"))
+		return
+	}
 	cmd := exec.Command(name, args...)
 	// Started IN the directory as well as pointed at it, so a terminal command
 	// with no placeholder at all still opens in the right place.
