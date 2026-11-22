@@ -15,7 +15,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// THE PTY HOST, FROM THE DAEMON'S SIDE. See docs/rnd/rolling-restart-design.md and
+// THE PTY HOST, FROM THE DAEMON'S SIDE. See
 // docs/terminal/ptyhost-protocol.md.
 //
 // With `pty_host` on, a terminal is asked of a separate process that keeps running when this one does not, and

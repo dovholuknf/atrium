@@ -19,8 +19,7 @@ import (
 const SettingGlobalAuto = "global_auto"
 
 // SettingEscalateTurnAfter is how many minutes one turn may run before its card is
-// flagged `long-turn` and its launcher told once. Empty is 45. See
-// docs/rnd/held-message-escalation-design.md, stage R3.
+// flagged `long-turn` and its launcher told once. Empty is 45.
 const SettingEscalateTurnAfter = "escalate_turn_after"
 
 // SettingSweepDead is how long a dead card stays on the board before it is
@@ -44,6 +43,9 @@ const (
 	// critical means off: the room never refuses a launch for disk space unless this is set. See daemon/diskwatch.go.
 	SettingDiskWarnFree     = "disk_warn_free"
 	SettingDiskCriticalFree = "disk_critical_free"
+	// SettingIncomingKeepDays is how many days a pasted or uploaded file stays in a card's `.atrium/incoming`. Empty means
+	// seven, and `off` means forever. See daemon/incomingsweep.go.
+	SettingIncomingKeepDays = "incoming_keep_days"
 	// SettingHostHogPct is the share of one core, in percent, a process must hold for SettingHostHogMinutes before the room
 	// flags it. Empty means the default. See daemon/hostwatch.go.
 	SettingHostHogPct     = "host_hog_pct"

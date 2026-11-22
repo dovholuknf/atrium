@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// A CARD'S INVENTORY. Design: docs/rnd/card-lifecycle-design.md section 6. Item r-card-inventory.
+// A CARD'S INVENTORY. Item r-card-inventory.
 //
 // One row per thing the room made for a card: a worktree, a branch, a fetched ref, a review row. A row is written
 // BEFORE the thing is made when its name can be chosen up front, so a crash between the two leaves a row a sweep can

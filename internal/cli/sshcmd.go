@@ -9,7 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/sshtarget"
 )
 
-// newSSH is `atrium ssh`. See docs/rnd/ssh-across-rooms.md. It edits the list of addresses this room offers to other
+// newSSH is `atrium ssh`. It edits the list of addresses this room offers to other
 // rooms and holds no credential.
 func newSSH() *cobra.Command {
 	var dir string

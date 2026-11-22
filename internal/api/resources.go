@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/wtfree"
 )
 
-// A CARD'S INVENTORY, READ AND MEASURED. Design: docs/rnd/card-lifecycle-design.md section 6. Item
+// A CARD'S INVENTORY, READ AND MEASURED. Item
 // r-card-inventory. The table is store/resources.go. The open verb writes it (open.go), and finish frees it.
 //
 //	GET  /v1/tasks/{id}/resources          the rows, and the card's disk

@@ -4,7 +4,7 @@
 //   node measure-term-switch.js [boardURL] [--per-host N] [--rounds N] [--ids a,b,c] [--hover]
 //   node measure-term-switch.js [boardURL] --pool [--pool-room HOST] [--pool-k K] [--hover]
 //
-// boardURL defaults to http://127.0.0.1:7781 (the m1mini room). On sg4 the hub's board is
+// boardURL defaults to http://127.0.0.1:7781 (the room-a room). On room-e the hub's board is
 // http://127.0.0.1:7778. Cards are grouped by their hostname field (a hub lists every room's cards) and the first
 // --per-host (default 2) live cards of each group are used, so one run covers the hub-local room and the remote
 // rooms. --ids picks the cards by id instead.

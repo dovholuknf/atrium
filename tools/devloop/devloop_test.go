@@ -129,7 +129,7 @@ func TestWorktreeFor(t *testing.T) {
 }
 
 func TestSplitCard(t *testing.T) {
-	if r, id := splitCard("sg3~abc", "x"); r != "sg3" || id != "abc" {
+	if r, id := splitCard("room-d~abc", "x"); r != "room-d" || id != "abc" {
 		t.Fatal(r, id)
 	}
 	if r, id := splitCard("abc", "x"); r != "x" || id != "abc" {

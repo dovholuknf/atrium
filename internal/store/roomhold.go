@@ -9,8 +9,7 @@ import (
 )
 
 // A room hold: every held card's next gated call is refused until the hold is
-// lifted. See docs/rnd/room-deploy-hold-design.md and section 1 of
-// docs/rnd/freeze-budget-design.md.
+// lifted.
 //
 // ONE SETTING, A LIST OF AT MOST ONE HOLD PER KIND. The daemon reads it from
 // memory on the permission path, and this file is only the durable copy.

@@ -21,7 +21,7 @@ import (
 // what GitHub says now, and that is this table's part.
 //
 // Everything on a row but `why` is OBSERVED: the runner and the fetch step write
-// it and a person never types it. See docs/rnd/pulls-view-design.md and
+// it and a person never types it. See
 // docs/review/pulls-api.md.
 
 // SettingReviewsRoot is where run folders are made. Empty means the default
@@ -660,7 +660,13 @@ const DefaultPRPanel = `[{"agent":"c-systems-reviewer","when":["*.c","*.h"]},` +
 
 // DefaultWalkerBrief is the seeded walker brief. No quote marks, because it is
 // spliced into a SQL literal. The operator edits it in settings.
-const DefaultWalkerBrief = `Walk this pull request review with clint, one finding at a time, in the order of ` +
+const DefaultWalkerBrief = `Walk this pull request review with the operator, one finding at a time, in the order of ` +
+	`walk.txt. Show the severity, file and line of each finding, the code line with its link, and what it says. ` +
+	`Write done, skipped and deferred to walk.txt as the operator decides. Check the PR head first with ` +
+	`gh pr view <n> --json headRefOid.`
+
+// walkerBriefSeeded is the brief migration 0079 seeded, kept so 0079 never changes and 0126 can replace it.
+const walkerBriefSeeded = `Walk this pull request review with clint, one finding at a time, in the order of ` +
 	`walk.txt. Show the severity, file and line header, the code line with its link, and the bullets. ` +
 	`Do not show a file name or an item N of M. Write done, skipped and deferred to walk.txt as clint says. ` +
 	`Suggested fix appears only on a finding whose proven field is code. Check the PR head first with ` +

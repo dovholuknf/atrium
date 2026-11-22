@@ -190,7 +190,7 @@ why, and may name a panel. The director then:
 6. **Hands the walk to the review-manager.** The review-manager stays up as that PR's walker, under the same
    `pr-<repo>-<number>` name, in the PR's worktree or tree. The director tells clint which card to walk on, and hands
    the manager the walk rules (9 to 24, 26 and 27, 31 to 33) and the findings folder it edits in place. For the board's review
-   tab (`docs/rnd/review-tab-design.md`), the brief also says that a `Walk:` line in Evidence is state the board writes
+   tab, the brief also says that a `Walk:` line in Evidence is state the board writes
    and the walker keeps, and that the board may edit a finding, so the walker re-reads a file before every edit.
    `pr.diff` is always in the run folder (skill step 7). The manager held the
    repo at the head, the evidence and the repros, so it can re-check a line, dig in or rewrite a comment on the spot,
@@ -311,7 +311,7 @@ rule stands: a panel reads, and CI builds.
    after (rule 14). Disputes left for clint come first. Then each severity band, and within a band the merge step's
    `rank`: what breaks for a user of this code, and how likely, worst first. A leak ranks as its impact says, never
    last by default. Only ties fall back to diff order: the order files appear in `pr.diff`, then line. File name is
-   never a sort key. (Amended by docs/rnd/pulls-view-design.md 5.6, which replaced severity, then file, then line,
+   never a sort key. (Amended by the pulls view design, which replaced severity, then file, then line,
    after one verify pass flattened 378 into one band sorted by file name.)
 7. Every row has a **Cause** column (PR-introduced, pre-existing, or third-party) and a **Test status** column (which
    existing test covers it, or none, and where a test could be added).

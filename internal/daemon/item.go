@@ -11,7 +11,7 @@ import (
 )
 
 // ItemTag marks a card launched with `item`: a task whose only routing is "tell whoever wanted it when it is done".
-// The same tag as link.ItemTag. See docs/rnd/atrium-items-decisions.md.
+// The same tag as link.ItemTag.
 //
 // STAGE 1 IS CONVENTION, NOT A TABLE. An item launch changes what the worker is told and what it can reach, and
 // stores nothing new: the tag is the whole mark. An ordinary launch is unchanged in every way.
@@ -24,7 +24,7 @@ func isItem(t *store.Task) bool { return t != nil && small.HasTag(t.Tags, ItemTa
 // WorkTagPrefix starts the tag that attaches a card to an item, `atrium:item:<backlog id>`. It is NOT ItemTag: that is
 // whole-string and means isolated, and this one only ever has an id after it. The same prefix as link.WorkTagPrefix.
 // The room tells the hub on launch and on every restart of the card, because the tag is on the card and a restart
-// changes the generation and never the attachment. See docs/rnd/item-lifecycle-design.md, section 8.
+// changes the generation and never the attachment.
 const WorkTagPrefix = "atrium:item:"
 
 // StepTagPrefix starts the tag that says which step of its item a card is for, `atrium:step:<step>`: designed, approved,
@@ -63,6 +63,7 @@ const ItemEndingLine = "Before you end your turn, call either:\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need installed, or a permission you need.\n" +
 	"Then stop. Say nothing more.\n" +
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"A link for the human is ALWAYS a board link from atrium_link, never 127.0.0.1, localhost, a port, file:// or a new server. A mock is static files in your card with relative paths. Render it headless through that link and read the PNG before you report it. atrium_done, atrium_blocked and atrium_say refuse anything else.\n" +
 	"Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. If you are asked to stop, answer with atrium_done and your last sha."
 
 // ItemBriefPrompt is BriefPrompt for an item, which closes on ItemEndingLine.

@@ -11,7 +11,7 @@ func fakeEnv(goos string, answers map[string]Ran, onPath ...string) Env {
 	return Env{
 		GOOS: goos,
 		Getenv: func(k string) string {
-			return map[string]string{"COMPUTERNAME": "SG3", "TEMP": `C:\Users\c\AppData\Local\Temp`}[k]
+			return map[string]string{"COMPUTERNAME": "ROOM-D", "TEMP": `C:\Users\c\AppData\Local\Temp`}[k]
 		},
 		Run: func(_ time.Duration, name string, args ...string) Ran {
 			if r, ok := answers[strings.Join(append([]string{name}, args...), " ")]; ok {
@@ -90,12 +90,12 @@ func TestInspectOnWindowsReadsWhoami(t *testing.T) {
 	groups := `"Everyone","Well-known group","S-1-1-0","x"` + "\n" +
 		`"BUILTIN\Administrators","Alias","S-1-5-32-544","Group used for deny only"` + "\n" +
 		`"Mandatory Label\Medium Mandatory Level","Label","S-1-16-8192",""`
-	env := fakeEnv("windows", map[string]Ran{"whoami": {Out: "SG3\\claude\r\n"}, "whoami /groups /fo csv /nh": {Out: groups}})
+	env := fakeEnv("windows", map[string]Ran{"whoami": {Out: "ROOM-D\\claude\r\n"}, "whoami /groups /fo csv /nh": {Out: groups}})
 	c := byID(Inspect(env), "account.standard")
-	if c.State != Warn || !strings.Contains(c.Detail, `SG3\claude is in Administrators (S-1-5-32-544) with a filtered token`) {
+	if c.State != Warn || !strings.Contains(c.Detail, `ROOM-D\claude is in Administrators (S-1-5-32-544) with a filtered token`) {
 		t.Errorf("%+v", c)
 	}
-	env = fakeEnv("windows", map[string]Ran{"whoami": {Out: "SG3\\claude"}, "whoami /groups /fo csv /nh": {Code: -1, Err: errors.New("boom")}})
+	env = fakeEnv("windows", map[string]Ran{"whoami": {Out: "ROOM-D\\claude"}, "whoami /groups /fo csv /nh": {Code: -1, Err: errors.New("boom")}})
 	if c := byID(Inspect(env), "account.standard"); c.State != Warn || !strings.Contains(c.Detail, "could not tell") {
 		t.Errorf("a probe that fails is a warn: %+v", c)
 	}

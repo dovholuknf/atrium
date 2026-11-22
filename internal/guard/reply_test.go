@@ -9,11 +9,21 @@ const deployFence = "Run this:\n\n```powershell\npwsh scripts/live/atrium-deploy
 
 func replyIn(text string) Input { return Input{ToolName: ReplyTool, LastAssistantMessage: text} }
 
-func TestReplyHandingADeployCommandInAFenceIsDenied(t *testing.T) {
-	rs, err := Builtin()
+const deployRule = `{"rules":[{"id":"reply-hands-deploy-command","check":"reply-pattern","tools":["reply"],"reason":"do not hand over {name}",
+	"params":{"scope":"fence","patterns":["atrium-deploy\\.ps1","deploy-batch\\.ps1","deploy-hub-only\\.ps1","Start-Process\\s+pwsh[^\\n]*deploy"]}},
+	{"id":"drive-root","check":"drive-root","tools":["shell"],"reason":"r"}]}`
+
+func deployRules(t *testing.T) *Rules {
+	t.Helper()
+	rs, err := Load([]byte(deployRule))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return rs
+}
+
+func TestReplyHandingADeployCommandInAFenceIsDenied(t *testing.T) {
+	rs := deployRules(t)
 	for _, text := range []string{
 		deployFence,
 		"```\nscripts/live/deploy-batch.ps1\n```",
@@ -32,7 +42,7 @@ func TestReplyHandingADeployCommandInAFenceIsDenied(t *testing.T) {
 }
 
 func TestReplyQuotingADeployScriptInProseIsLeftAlone(t *testing.T) {
-	rs, _ := Builtin()
+	rs := deployRules(t)
 	for _, text := range []string{
 		"I ran scripts/live/atrium-deploy.ps1 myself and it passed.",
 		"the header of `deploy-batch.ps1` explains it",
@@ -47,7 +57,7 @@ func TestReplyQuotingADeployScriptInProseIsLeftAlone(t *testing.T) {
 
 // A reply rule never answers a tool call, and a tool call rule never a reply.
 func TestReplyRulesAndToolRulesStayApart(t *testing.T) {
-	rs, _ := Builtin()
+	rs := deployRules(t)
 	in := Input{ToolName: "Bash"}
 	in.ToolInput.Command = "echo atrium-deploy.ps1"
 	in.LastAssistantMessage = deployFence
@@ -89,7 +99,7 @@ func TestReplyExceptLetsALineGo(t *testing.T) {
 }
 
 func TestReplyCheckThatPanicsFailsOpen(t *testing.T) {
-	rs, _ := Builtin()
+	rs := deployRules(t)
 	rs.table = map[string]checkFunc{"reply-pattern": func(*evalCtx, *Rule) (bool, string) { panic("boom") }}
 	if d := rs.Evaluate(replyIn(deployFence), env0); d.Action != "" {
 		t.Errorf("a panic denied a reply: %+v", d)

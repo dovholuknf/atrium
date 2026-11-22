@@ -41,7 +41,7 @@ function ucIngestGroups(cur, b) {
 
 function ucGroupLabel(key) {
   if (key === "@before") return "before grouping";
-  if (key === "") return UC.group === "dept" ? "no department" : "clint";
+  if (key === "") return UC.group === "dept" ? "no department" : "you";
   return key;
 }
 

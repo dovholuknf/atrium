@@ -9,11 +9,11 @@ import (
 const std = "S-1-1-0;S-1-5-32-545;S-1-5-14;S-1-5-4;S-1-2-1;S-1-5-11;S-1-5-15;S-1-5-113;S-1-2-0;S-1-5-64-10;S-1-16-8192"
 
 func win(user, sids string) Facts {
-	return Facts{"user": user, "host": "SG3", "elevated": "False", "sids": sids, "docker": "0"}
+	return Facts{"user": user, "host": "ROOM-D", "elevated": "False", "sids": sids, "docker": "0"}
 }
 
 func unx(user, uid, groups, rc string) Facts {
-	return Facts{"user": user, "uid": uid, "groups": groups, "host": "m1mini", "sudo.rc": rc, "sudo.nopasswd": "0", "sudo.all": "0"}
+	return Facts{"user": user, "uid": uid, "groups": groups, "host": "room-a", "sudo.rc": rc, "sudo.nopasswd": "0", "sudo.all": "0"}
 }
 
 func reasons(f Facts, kind string, ops ...string) []string { return Judge(f, kind, ops).Reasons }
@@ -25,27 +25,27 @@ func TestWindowsGroupsAreMatchedBySID(t *testing.T) {
 		facts Facts
 		want  []string
 	}{
-		{"standard user is clean", win(`SG3\claude`, std), nil},
-		{"filtered admin", win(`SG3\claude`, std+";S-1-5-32-544"), []string{admin + " with a filtered token"}},
+		{"standard user is clean", win(`ROOM-D\claude`, std), nil},
+		{"filtered admin", win(`ROOM-D\claude`, std+";S-1-5-32-544"), []string{admin + " with a filtered token"}},
 		{"domain admins by RID", win(`CORP\c`, std+";S-1-5-21-111-222-333-512"), []string{"is in Domain Admins (RID 512)"}},
 		{"enterprise admins by RID", win(`CORP\c`, std+";S-1-5-21-111-222-333-519"), []string{"is in Enterprise Admins (RID 519)"}},
-		{"a RID that only ends in 512", win(`SG3\c`, std+";S-1-5-21-1-2-3-5120;S-1-5-21-1-2-3-1512"), nil},
-		{"a group only named Administrators", win(`SG3\c`, std+";S-1-5-21-1-2-3-1105"), nil},
-		{"backup operators", win(`SG3\c`, std+";S-1-5-32-551"), []string{"is in Backup Operators (S-1-5-32-551, can read every file)"}},
-		{"hyper-v administrators", win(`SG3\c`, std+";S-1-5-32-578"), []string{"is in Hyper-V Administrators (S-1-5-32-578, can mount any disk)"}},
-		{"look-alike SIDs", win(`SG3\c`, std+";S-1-5-32-5510;S-1-5-21-1-2-3-578"), nil},
+		{"a RID that only ends in 512", win(`ROOM-D\c`, std+";S-1-5-21-1-2-3-5120;S-1-5-21-1-2-3-1512"), nil},
+		{"a group only named Administrators", win(`ROOM-D\c`, std+";S-1-5-21-1-2-3-1105"), nil},
+		{"backup operators", win(`ROOM-D\c`, std+";S-1-5-32-551"), []string{"is in Backup Operators (S-1-5-32-551, can read every file)"}},
+		{"hyper-v administrators", win(`ROOM-D\c`, std+";S-1-5-32-578"), []string{"is in Hyper-V Administrators (S-1-5-32-578, can mount any disk)"}},
+		{"look-alike SIDs", win(`ROOM-D\c`, std+";S-1-5-32-5510;S-1-5-21-1-2-3-578"), nil},
 	}
 	for _, c := range cases {
 		if got := reasons(c.facts, "windows"); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
-	f := win(`SG3\claude`, std+";S-1-5-32-544")
+	f := win(`ROOM-D\claude`, std+";S-1-5-32-544")
 	f["elevated"] = "True"
 	if got, want := reasons(f, "windows"), []string{admin, "the token is elevated"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("elevated admin: got %q, want %q", got, want)
 	}
-	f = win(`SG3\claude`, std)
+	f = win(`ROOM-D\claude`, std)
 	f["docker"] = "1"
 	if got := reasons(f, "windows"); len(got) != 1 || !strings.Contains(got[0], "docker-users") {
 		t.Errorf("docker-users: got %q", got)
@@ -56,7 +56,7 @@ func TestNoUserOrNoGroupsIsUnknownNeverClean(t *testing.T) {
 	if Judge(Facts{}, "windows", nil).Known {
 		t.Error("no user must be unknown")
 	}
-	if Judge(win(`SG3\claude`, ""), "windows", nil).Known {
+	if Judge(win(`ROOM-D\claude`, ""), "windows", nil).Known {
 		t.Error("a user with no group list must be unknown")
 	}
 }
@@ -106,10 +106,10 @@ func TestOperatorList(t *testing.T) {
 	if op(unx("owner2", "501", "staff", "1"), "mac", "owner") {
 		t.Error("a listed name does not match a longer one")
 	}
-	if !op(m, "mac", "owner@m1mini") || op(m, "mac", "owner@other") {
+	if !op(m, "mac", "owner@room-a") || op(m, "mac", "owner@other") {
 		t.Error("name@host matches that host only")
 	}
-	if !op(win(`CORP\clint`, std), "windows", `CORP\clint`) || op(win(`OTHER\clint`, std), "windows", `CORP\clint`) {
+	if !op(win(`CORP\operator`, std), "windows", `CORP\operator`) || op(win(`OTHER\operator`, std), "windows", `CORP\operator`) {
 		t.Error(`DOMAIN\name needs the domain too`)
 	}
 	if got := OperatorNames("a, b", "c;d,,e"); !reflect.DeepEqual(got, []string{"a", "b", "c", "d", "e"}) {
@@ -154,10 +154,10 @@ func TestAccountRowsSayWhatWasSeen(t *testing.T) {
 	if ded.State != NA {
 		t.Errorf("no operator named is n/a: %+v", ded)
 	}
-	f := win(`SG3\claude`, std+";S-1-5-32-544")
+	f := win(`ROOM-D\claude`, std+";S-1-5-32-544")
 	f["elevated"] = "True"
 	r, _ := AccountRows(f, "", "windows", nil)
-	if r.State != Warn || r.Fix != FixAdmin || !strings.HasPrefix(r.Detail, `SG3\claude is in Administrators (S-1-5-32-544) and the token is elevated. `) ||
+	if r.State != Warn || r.Fix != FixAdmin || !strings.HasPrefix(r.Detail, `ROOM-D\claude is in Administrators (S-1-5-32-544) and the token is elevated. `) ||
 		!strings.Contains(r.Detail, "docs/room-accounts.md") {
 		t.Errorf("elevated admin: %+v", r)
 	}

@@ -17,7 +17,7 @@ import (
 // A merge happened. Run by git's `post-merge` hook, so it follows the hook
 // posture and then some: it NEVER fails a merge. Every error, from a room that
 // is down to a branch that cannot be read, is written to stderr as one line and
-// the exit code is still 0. See docs/rnd/merged-cull-design.md.
+// the exit code is still 0.
 
 // mergedTimeout is short on purpose. A merge waits on this hook, and a room
 // that does not answer at once is one that will be told next merge.

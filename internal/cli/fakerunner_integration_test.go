@@ -230,7 +230,7 @@ func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
 				status: store.StatusRunning, activity: daemon.ActivityThinking})
 			card, _ := findCard(t, humanAddr, filepath.Base(cwd))
 			resp, err := http.Post("http://"+humanAddr+"/v1/tasks/"+card.ID+"/message", "application/json",
-				strings.NewReader(`{"text":"rebase when you are done","from":"sg4/doer","when":"done"}`))
+				strings.NewReader(`{"text":"rebase when you are done","from":"room-e/doer","when":"done"}`))
 			if err != nil {
 				t.Fatal(err)
 			}

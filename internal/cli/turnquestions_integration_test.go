@@ -217,7 +217,7 @@ func TestOwnTurnReadsTheLastRealPrompt(t *testing.T) {
 		{"human prompt with a reminder beside it", []string{entry("user", []map[string]any{
 			{"type": "text", "text": "<system-reminder>x</system-reminder>"}, {"type": "text", "text": "fix it"}}),
 			entry("assistant", text("done"))}, false},
-		{"peer say", []string{entry("user", "[atrium] sg4/doer: ready"), entry("assistant", text("done"))}, false},
+		{"peer say", []string{entry("user", "[atrium] room-e/doer: ready"), entry("assistant", text("done"))}, false},
 		{"slash command", []string{entry("user", "<command-name>/clear</command-name>"), entry("assistant", text("done"))}, false},
 		{"no prompt at all", []string{entry("assistant", text("done"))}, false},
 	}

@@ -13,7 +13,7 @@ func TestPageChangedSinceNamesTheNewestCommitThatTouchedThePage(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	work := x.branch("fix/x", "x.go")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	git(t, x.work, "switch", "-q", "-C", "cm", "fix/x")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
 	st := x.h.Store()

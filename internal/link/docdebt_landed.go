@@ -9,7 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// THE LANDED CHECK. docs/rnd/doc-debt-from-features.md sections 2.8 and 4 (phase 5). Two things said on an item's detail once
+// THE LANDED CHECK. Two things said on an item's detail once
 // it has landed, both read and neither written:
 //
 //   - a FEATURE (kind code or mixed) whose docs/changes/<item>.md, as the commit it landed as held it, says neither

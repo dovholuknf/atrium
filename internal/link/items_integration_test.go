@@ -35,7 +35,7 @@ func newItemRig(t *testing.T) *itemRig {
 
 func (x *itemRig) push(t *testing.T, rev int, state, ownerKind, owner string) (int, string) {
 	t.Helper()
-	return x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "sg4", "card": "c1",
+	return x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "room-e", "card": "c1",
 		"generation": 1, "state": state, "revision": rev, "owner_kind": ownerKind, "owner": owner,
 		"created_by": owner, "note": "n"}), loopAddr)
 }
@@ -46,7 +46,7 @@ func TestItemSyncIsIdempotentAndQualifiesASessionOwner(t *testing.T) {
 	if code != http.StatusOK || obj(t, body)["applied"] != true {
 		t.Fatalf("first: %d %s", code, body)
 	}
-	if got := str(obj(t, body), "item", "owner"); got != "orch@sg4" {
+	if got := str(obj(t, body), "item", "owner"); got != "orch@room-e" {
 		t.Fatalf("a bare owner handle was not given its room: %q", got)
 	}
 	code, body = x.push(t, 1, "running", "session", "orch")
@@ -81,27 +81,27 @@ func TestOnlyTheOwnerUnblocksAndOnlyABlockedItem(t *testing.T) {
 		return x.send("POST", "/_hub/items/it-1", js(map[string]any{"do": doWhat, "by": by, "answer": answer}), loopAddr)
 	}
 	// running: nothing to unblock
-	if code, _ := do("orch@sg4", "unblock", "use the key"); code != http.StatusConflict {
+	if code, _ := do("orch@room-e", "unblock", "use the key"); code != http.StatusConflict {
 		t.Fatalf("a running item: %d", code)
 	}
 	x.push(t, 2, "blocked", "session", "orch")
-	if code, _ := do("someone@sg4", "unblock", "use the key"); code != http.StatusForbidden {
+	if code, _ := do("someone@room-e", "unblock", "use the key"); code != http.StatusForbidden {
 		t.Fatalf("a stranger: %d", code)
 	}
-	if code, _ := do("orch@sg3", "unblock", "use the key"); code != http.StatusForbidden {
+	if code, _ := do("orch@room-d", "unblock", "use the key"); code != http.StatusForbidden {
 		t.Fatalf("the same name on another room: %d", code)
 	}
-	if code, _ := do("orch@sg4", "unblock", " "); code != http.StatusBadRequest {
+	if code, _ := do("orch@room-e", "unblock", " "); code != http.StatusBadRequest {
 		t.Fatalf("no answer: %d", code)
 	}
 	if len(x.calls) != 0 {
 		t.Fatalf("a refused unblock reached the room: %v", x.calls)
 	}
-	code, body := do("ORCH@sg4", "unblock", "use the key")
+	code, body := do("ORCH@room-e", "unblock", "use the key")
 	if code != http.StatusOK {
 		t.Fatalf("the owner: %d %s", code, body)
 	}
-	if len(x.calls) != 1 || !strings.HasPrefix(x.calls[0], "sg4 /v1/items/it-1/unblock ") ||
+	if len(x.calls) != 1 || !strings.HasPrefix(x.calls[0], "room-e /v1/items/it-1/unblock ") ||
 		!strings.Contains(x.calls[0], "use the key") {
 		t.Fatalf("the room was asked: %v", x.calls)
 	}
@@ -116,7 +116,7 @@ func TestAHumanOwnedItemCannotBeUnblockedThroughTheHub(t *testing.T) {
 	x := newItemRig(t)
 	x.push(t, 1, "running", "human", "")
 	x.push(t, 2, "blocked", "human", "")
-	for _, by := range []string{"", "orch@sg4"} {
+	for _, by := range []string{"", "orch@room-e"} {
 		code, _ := x.send("POST", "/_hub/items/it-1", js(map[string]any{"do": "unblock", "by": by, "answer": "go"}), loopAddr)
 		if code != http.StatusForbidden {
 			t.Fatalf("by %q: %d", by, code)
@@ -149,7 +149,7 @@ func TestGetAnItemCarriesItsHistory(t *testing.T) {
 func TestCancelGoesToTheRoomForTheOwner(t *testing.T) {
 	x := newItemRig(t)
 	x.push(t, 1, "running", "session", "orch")
-	if code, _ := x.send("POST", "/_hub/items/it-1", js(map[string]any{"do": "cancel", "by": "orch@sg4"}), loopAddr); code != 200 {
+	if code, _ := x.send("POST", "/_hub/items/it-1", js(map[string]any{"do": "cancel", "by": "orch@room-e"}), loopAddr); code != 200 {
 		t.Fatalf("cancel: %d", code)
 	}
 	if len(x.calls) != 1 || !strings.Contains(x.calls[0], "/v1/items/it-1/cancel") {
@@ -164,9 +164,9 @@ func TestGetAnItemNamesTheCurrentHolderOfARoleOwner(t *testing.T) {
 	if obj(t, body)["holder"] != nil {
 		t.Fatalf("a holder from nowhere: %s", body)
 	}
-	x.st.RoleSet(hubstore.RoleDirector, "sg4", "c7", "clint")
+	x.st.RoleSet(hubstore.RoleDirector, "room-e", "c7", "operator")
 	_, body = x.send("GET", "/_hub/items/it-1", "", loopAddr)
-	if str(obj(t, body), "holder", "room") != "sg4" || str(obj(t, body), "holder", "card") != "c7" {
+	if str(obj(t, body), "holder", "room") != "room-e" || str(obj(t, body), "holder", "card") != "c7" {
 		t.Fatalf("holder: %s", body)
 	}
 	if code, _ := x.send("GET", "/_hub/items/it-9", "", loopAddr); code != http.StatusNotFound {
@@ -196,20 +196,20 @@ func TestSubmitCarriesAnItemToThePoolsRoom(t *testing.T) {
 		in["do"] = "submit"
 		return x.send("POST", "/_hub/items", js(in), from)
 	}
-	code, _ := submit(map[string]any{"pool": "reviewer", "brief": "review it", "by": "orch@sg4"}, loopAddr)
+	code, _ := submit(map[string]any{"pool": "reviewer", "brief": "review it", "by": "orch@room-e"}, loopAddr)
 	if code != http.StatusOK || len(x.calls) != 1 ||
-		!strings.HasPrefix(x.calls[0], `sg4 /v1/pools/reviewer/items {`) || !strings.Contains(x.calls[0], `"by":"orch"`) {
+		!strings.HasPrefix(x.calls[0], `room-e /v1/pools/reviewer/items {`) || !strings.Contains(x.calls[0], `"by":"orch"`) {
 		t.Fatalf("a submit goes to the pool's room with the bare handle: %d %v", code, x.calls)
 	}
 	// the owner has to be on the pool's room
-	if code, body := submit(map[string]any{"pool": "reviewer", "brief": "x", "room": "sg3", "by": "orch@sg4"}, loopAddr); code != http.StatusBadRequest ||
+	if code, body := submit(map[string]any{"pool": "reviewer", "brief": "x", "room": "room-d", "by": "orch@room-e"}, loopAddr); code != http.StatusBadRequest ||
 		!strings.Contains(body, "pool's room") {
 		t.Fatalf("an owner on another room: %d %s", code, body)
 	}
-	if code, _ := submit(map[string]any{"pool": "reviewer", "by": "orch@sg4"}, loopAddr); code != http.StatusBadRequest {
+	if code, _ := submit(map[string]any{"pool": "reviewer", "by": "orch@room-e"}, loopAddr); code != http.StatusBadRequest {
 		t.Fatalf("no brief: %d", code)
 	}
-	if code, _ := submit(map[string]any{"pool": "reviewer", "brief": "x", "by": "orch@sg4"}, "203.0.113.9:4000"); code != http.StatusForbidden {
+	if code, _ := submit(map[string]any{"pool": "reviewer", "brief": "x", "by": "orch@room-e"}, "203.0.113.9:4000"); code != http.StatusForbidden {
 		t.Fatalf("from elsewhere: %d", code)
 	}
 }
@@ -226,7 +226,7 @@ func TestAFinishedAssignmentFilesItsResultOnTheBacklogItem(t *testing.T) {
 	}
 	sync := func(item, card, work string, rev int, state, note, result string) {
 		t.Helper()
-		if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": item, "room": "sg4", "card": card,
+		if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": item, "room": "room-e", "card": card,
 			"generation": 1, "state": state, "revision": rev, "owner_kind": "human", "created_by": "orch", "note": note,
 			"work_id": work, "result": result}), loopAddr); code != http.StatusOK {
 			t.Fatalf("sync %s r%d: %d %s", item, rev, code, body)
@@ -240,7 +240,7 @@ func TestAFinishedAssignmentFilesItsResultOnTheBacklogItem(t *testing.T) {
 	_, body := x.send("GET", "/_hub/backlog/f-r", "", loopAddr)
 	o := obj(t, body)
 	if str(o, "status") != "built" || str(o, "result") != "done "+sha+": the fix" || str(o, "result_ref") != sha ||
-		str(o, "result_card") != "sg4~c1" {
+		str(o, "result_card") != "room-e~c1" {
 		t.Fatalf("f-r = %s", body)
 	}
 	if _, body = x.send("GET", "/_hub/backlog/f-c", "", loopAddr); str(obj(t, body), "status") != "open" ||

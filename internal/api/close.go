@@ -25,7 +25,7 @@ import (
 )
 
 // CLOSING A CARD: the operator's word that the work on a link is over, which frees what the card's inventory lists.
-// Design: docs/rnd/card-lifecycle-design.md section 7 and Interview Q4. Item r-finish-pr-review.
+// Q4. Item r-finish-pr-review.
 //
 //	GET  /v1/tasks/{id}/close                          what a close would free, keep and ask
 //	POST /v1/tasks/{id}/close {confirm, answers}       the same without confirm, else the close

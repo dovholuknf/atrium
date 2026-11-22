@@ -24,8 +24,8 @@ func TestTheHubServesCardAddresses(t *testing.T) {
 		return rec
 	}
 	for path, want := range map[string]string{
-		"/alias/rnd": "the board", "/room/claude-sg4/rnd": "the board", "/room/claude-sg4": "the board",
-		"/m/alias/rnd": "the phone", "/m/room/claude-sg4/rnd": "the phone",
+		"/alias/rnd": "the board", "/room/claude-room-e/rnd": "the board", "/room/claude-room-e": "the board",
+		"/m/alias/rnd": "the phone", "/m/room/claude-room-e/rnd": "the phone",
 	} {
 		if rec := get(path); rec.Code != http.StatusOK || rec.Body.String() != want {
 			t.Errorf("%s answered %d %q", path, rec.Code, rec.Body.String())

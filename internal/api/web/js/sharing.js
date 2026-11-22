@@ -949,7 +949,7 @@ function setClosing(id, on) {
 //
 // NO "ARE YOU SURE?". A click is the decision. The one exception is a folder holding changes or commits that exist
 // nowhere else: then it asks, per folder, to stash it to the hub or delete it, with a "never show me this again" tick.
-// Ticked, the next one deletes without asking, which is what clint wants when it is stuff he does not care about. The
+// Ticked, the next one deletes without asking, which is what the operator wants when it is stuff they do not care about. The
 // tick is only kept on an answer that deletes, so ticking it and choosing stash does not turn into a standing delete.
 // A cancel changes nothing.
 const CLEANUP_ASK_KEY = "cleanup-unsaved";

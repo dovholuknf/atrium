@@ -23,7 +23,6 @@ Series: The one human. Status: outline. Audience: people writing designs for oth
 ## Sources
 
 - docs/fabric/hub-forge-design.md section 1
-- docs/rnd/interviewer-brief.md section 1
 - commits 1c30e5f7, 018c141e
 
 ## Notes for the writer

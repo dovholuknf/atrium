@@ -25,7 +25,7 @@ type hotRig struct {
 func newHotRig(t *testing.T) *hotRig {
 	r := &hotRig{clk: &stepClock{now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)}, busy: 90}
 	r.s = New(Sources{
-		Room: "m1mini", Clock: r.clk,
+		Room: "room-a", Clock: r.clk,
 		Machine: func() (MachineReading, error) {
 			r.n++
 			return MachineReading{HasCPU: true, CPUIdle: r.n * (100 - r.busy), CPUTotal: r.n * 100, MemTotal: 1}, nil

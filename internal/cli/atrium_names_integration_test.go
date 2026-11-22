@@ -47,8 +47,8 @@ func flag(t *testing.T, cmd *cobra.Command, name string) string {
 	return f.Value.String()
 }
 
-// The one binary's names for the same things, as docs/archive/one-atrium-cutover.md
-// has the new scripts run them.
+// The one binary's names for the same things, as the new scripts
+// run them.
 func TestTheOneBinaryAnswersTheNewNames(t *testing.T) {
 	root := newRoot()
 
@@ -71,12 +71,12 @@ func TestTheOneBinaryAnswersTheNewNames(t *testing.T) {
 	for line, path := range map[string]string{
 		`room --dir C:\Users\claude\.atrium2\room --db C:\Users\claude\.atrium\atrium.db --http 127.0.0.1:7781 --agent 127.0.0.1:7777`: "atrium room",
 		`room join TOKEN --identity C:\s.json --dir C:\r --db C:\r.db`:                                                                 "atrium room join",
-		`rooms add sgg --transport ziti --service atrium-hub --atrium-dir C:\h`:                                                        "atrium rooms add",
+		`rooms add room-g --transport ziti --service atrium-hub --atrium-dir C:\h`:                                                     "atrium rooms add",
 		`rooms ls --atrium-dir C:\h`:        "atrium rooms ls",
-		`rooms token sgg`:                   "atrium rooms token",
-		`rooms mark sgg --undo`:             "atrium rooms mark",
-		`rooms rm sgg --force`:              "atrium rooms rm",
-		`rooms log sgg`:                     "atrium rooms log",
+		`rooms token room-g`:                "atrium rooms token",
+		`rooms mark room-g --undo`:          "atrium rooms mark",
+		`rooms rm room-g --force`:           "atrium rooms rm",
+		`rooms log room-g`:                  "atrium rooms log",
 		`backups --atrium-dir C:\h`:         "atrium backups",
 		`backups restore C:\h\backups\x.db`: "atrium backups restore",
 		`db compact --in a.db --out b.db`:   "atrium db compact",

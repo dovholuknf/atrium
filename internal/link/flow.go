@@ -219,7 +219,7 @@ func (p *Proxy) flowItem(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	crJSON(w, http.StatusOK, f)
 }
 
-// flowEpoch opens or closes an epoch. Opening says clint fetched claude/main at sha, which is claude/main's tip when
+// flowEpoch opens or closes an epoch. Opening says the operator fetched claude/main at sha, which is claude/main's tip when
 // none is given. Closing is the reset: the hub moves claude/main onto the branch the orchestrator replayed on (or onto main
 // when nothing is to be replayed), after the checks in gitsync.EpochMove, and records it.
 func (p *Proxy) flowEpoch(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
@@ -237,7 +237,7 @@ func (p *Proxy) flowEpoch(w http.ResponseWriter, r *http.Request, st *hubstore.S
 		sha := in.SHA
 		if sha == "" {
 			if g == nil {
-				crFail(w, http.StatusBadRequest, "say which sha clint fetched")
+				crFail(w, http.StatusBadRequest, "say which sha the operator fetched")
 				return
 			}
 			plan, err := g.EpochPlan(r.Context())

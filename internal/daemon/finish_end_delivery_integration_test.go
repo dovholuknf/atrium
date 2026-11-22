@@ -40,7 +40,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 			// Held first, so a hub that is down loses nothing.
 			settle(d)
 			rows := owed(t, d)
-			if len(rows) != 1 || rows[0].FromTask != w.ID || rows[0].ToRoom != "claude-sg4" || rows[0].ToCard != "L1" ||
+			if len(rows) != 1 || rows[0].FromTask != w.ID || rows[0].ToRoom != "claude-room-e" || rows[0].ToCard != "L1" ||
 				rows[0].ToName != "orch" || !strings.Contains(rows[0].Text, c.want) {
 				t.Fatalf("outbox = %+v", rows)
 			}
@@ -52,7 +52,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 				t.Fatal("nothing reached the hub")
 			}
 			last := sent[len(sent)-1]
-			if last.To != "L1" || last.Room != "claude-sg4" || last.From != "worker" || !strings.Contains(last.Text, c.want) {
+			if last.To != "L1" || last.Room != "claude-room-e" || last.From != "worker" || !strings.Contains(last.Text, c.want) {
 				t.Fatalf("the hub got %+v", last)
 			}
 			if len(owed(t, d)) != 0 {

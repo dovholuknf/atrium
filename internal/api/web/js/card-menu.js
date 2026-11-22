@@ -411,7 +411,7 @@ async function machineTerminal() {
 //
 // A worker editing the board gets its own copy of it at `<name>.localhost`, with
 // the same API and data, so its change can be tried without touching the board
-// everybody else is on. See docs/rnd/board-views-design.md. Read when the menu
+// everybody else is on. Read when the menu
 // opens, and empty on a room's own board, which has no `/_hub/views`.
 async function cardBoardView(t) {
   if (!t.worktree) return null;

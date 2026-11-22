@@ -64,13 +64,13 @@ The edits, each with its reason:
   has none, so a report lands on its own card and nobody reads it. The #1441 card found this out.
 - **The brief names the run folder, and it is NOT `<worktree>/.review/`.** The run folder stays at
   `D:/worktrees/claude/reviews/<host>-<org>-<repo>/pr-<n>-<sha7>/`. The board's review tab reads runs only under its
-  `reviews_root` setting (`docs/rnd/review-tab-design.md`), and its file endpoints answer 403 outside it, so a run folder
+  `reviews_root` setting, and its file endpoints answer 403 outside it, so a run folder
   in the worktree never reaches the tab. A worktree is also removed when its work is done, and the review goes with
   it: that is how the zrok #1277 run folder disappeared. And item 16 answer 9 fixed the report path already.
 - **`review`, the alias, not a card id.** `atrium_say` takes an alias, and @review's card id changes whenever
   @review is relaunched. The alias does not.
 - **`wake=true`, and a bound on the wait.** r-007 parks an idle director, and a peer's `atrium_say` to a parked card
-  answers `parked` unless it asks to wake it (`docs/rnd/keepalive-policy-design.md` section 7). Without the flag the card
+  answers `parked` unless it asks to wake it. Without the flag the card
   says hello, gets `parked`, and waits forever. With the 10-minute bound, a card nobody answers says so on its own
   card and stops, not sitting silent.
 - **One card per PR, and @review decides which.** When @review already has a `pr-<repo>-<n>` card for the same PR,

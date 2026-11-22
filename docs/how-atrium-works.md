@@ -114,7 +114,6 @@ is the design.
    hears from you. See `docs/runtime/agent-messaging.md`.
 3. **A shelved card.** A standing no.
 4. **A room deploy hold.** Every held card's next call is refused until the deploy is done.
-   `docs/rnd/room-deploy-hold-design.md`.
 5. **A standing rule.** Most specific match wins: prefix, glob, or folder.
 6. **Auto mode**, for the card or for every card at once. Approve and record. Last, so messages, shelving, holds and
    rules all still win. `docs/runtime/auto-mode.md`.
@@ -152,7 +151,7 @@ A card cannot push `claude/main`. It pushes its branch to the hub and runs `atri
 queues the request, merges the branch onto `claude/main`, runs `bash scripts/test-touched.sh` in the room named by the
 `merge_room` setting, else the room on the hub's own machine, and answers merged, red, conflict or refused. The
 operator's **Land now**, or `atrium merge land`, puts `claude/main` on the hub's `main` as one commit. The hub never
-pushes to the forge. `docs/rnd/merge-queue.md`.
+pushes to the forge.
 
 ## State
 
@@ -191,7 +190,7 @@ the name of a credential, never somebody else's credential. `docs/fabric/overlay
 
 v1 had two modes. Mode A was a hub and an agent loop over MCP, and Mode B a read-only aggregator (`atrium serve`,
 `status`, `watch`). Both are removed. The v2 daemon replaced them, and the daemon was then split into the hub and the
-rooms. `docs/story.md` tells it in order, and the designs are in `docs/archive/`.
+rooms. `docs/story.md` tells it in order.
 
 ## Where to go next
 
@@ -206,4 +205,3 @@ rooms. `docs/story.md` tells it in order, and the designs are in `docs/archive/`
 | Wiring a new runner | `docs/runtime/wiring-a-runner.md` |
 | Reaching atrium from another machine | `docs/fabric/overlays.md` |
 | Installing | `website/docs/get-started.md`, `website/docs/install.md`, `docs/release/packaging.md` |
-| Why the daemon is shaped this way | `docs/archive/architecture-v2.md` |

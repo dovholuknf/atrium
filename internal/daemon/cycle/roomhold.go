@@ -21,7 +21,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The room deploy hold. See docs/rnd/room-deploy-hold-design.md.
+// The room deploy hold.
 //
 // A deploy owner sets it, every other card here has its next gated call refused
 // with "end your turn and wait", and messages between agents are held. The room

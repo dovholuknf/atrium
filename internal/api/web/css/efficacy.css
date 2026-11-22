@@ -1,4 +1,4 @@
-/* The efficacy page of the items tab (js/efficacy.js), as docs/rnd/img/item-lifecycle/efficacy-1400.png draws it. Existing tokens only.
+/* The efficacy page of the items tab (js/efficacy.js). Existing tokens only.
    An arrow's colour is better or worse, never up or down: teal better, --wait (the orange) worse, dim for noise. */
   .ef-top { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
   .ef-title { flex: 1 1 320px; }

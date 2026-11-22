@@ -1,5 +1,5 @@
 // Items on the phone (/m): a sheet with two screens, the list and one item's page, the same rows as the board's Items tab (js/items.js) in one
-// column. docs/rnd/item-lifecycle-design.md sections 7.1 to 7.3 and docs/changes/item-lifecycle-l7.md.
+// column. See docs/changes/item-lifecycle-l7.md.
 //
 // THE DATA IS THE BOARD'S: js/items-data.js (`itemsData`) is loaded here too, so one file knows the hub's routes and the fixtures
 // (`?itemsmock=1`) work on the phone as on the board. This file only draws. EVERYTHING FROM THE HUB IS TEXT: titles, questions and

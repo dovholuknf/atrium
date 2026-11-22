@@ -1,7 +1,7 @@
 # internal/ptyhost
 
 The pty host: a small long-lived process that owns the pseudo terminals and the runners under them, so a room can
-restart without ending any of them. The design is `docs/rnd/rolling-restart-design.md` and the wire protocol is
+restart without ending any of them. The wire protocol is
 `docs/terminal/ptyhost-protocol.md`. The daemon's side of it is `internal/daemon/hostterm.go`, used only when the
 `pty_host` setting is on.
 

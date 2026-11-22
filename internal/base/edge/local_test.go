@@ -33,7 +33,7 @@ func TestLocalOperator(t *testing.T) {
 		{"X-Proxy alone", req("127.0.0.1:5555", "127.0.0.1:7778", "X-Proxy", "zrok"), false},
 		{"Forwarded", req("127.0.0.1:5555", "127.0.0.1:7778", "Forwarded", "for=198.51.100.4"), false},
 		{"X-Real-Ip", req("127.0.0.1:5555", "127.0.0.1:7778", "X-Real-Ip", "198.51.100.4"), false},
-		{"a public Host from loopback", req("127.0.0.1:5555", "sg4.lan:7778"), false},
+		{"a public Host from loopback", req("127.0.0.1:5555", "room-e.lan:7778"), false},
 		{"no port on the remote", req("127.0.0.1", "127.0.0.1"), false},
 	} {
 		if got := LocalOperator(c.r); got != c.want {

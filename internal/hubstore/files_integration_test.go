@@ -145,22 +145,22 @@ func TestFilesCapsAndRate(t *testing.T) {
 		t.Fatal(err)
 	}
 	put := func(card, body string) error {
-		_, err := s.FileAdd(FileInput{Name: "p.txt", Data: []byte(body), Origin: "card", By: "r@sg4",
-			Card: card, Room: "sg4", Rate: true})
+		_, err := s.FileAdd(FileInput{Name: "p.txt", Data: []byte(body), Origin: "card", By: "r@room-e",
+			Card: card, Room: "room-e", Rate: true})
 		return err
 	}
 	for i := 0; i < 30; i++ {
-		if err := put("sg4~a", fmt.Sprintf("body %d", i)); err != nil {
+		if err := put("room-e~a", fmt.Sprintf("body %d", i)); err != nil {
 			t.Fatalf("put %d: %v", i, err)
 		}
 	}
-	wantKind(t, put("sg4~a", "the 31st"), DocRate)
-	if err := put("sg4~b", "other card"); err != nil {
+	wantKind(t, put("room-e~a", "the 31st"), DocRate)
+	if err := put("room-e~b", "other card"); err != nil {
 		t.Fatalf("another card is limited too: %v", err)
 	}
 	mustFile(t, s, fileIn("upload.txt", "board upload"))
 	clock = clock.Add(61 * time.Minute)
-	if err := put("sg4~a", "later"); err != nil {
+	if err := put("room-e~a", "later"); err != nil {
 		t.Fatalf("the hour passed: %v", err)
 	}
 
@@ -290,14 +290,14 @@ func TestFilesTTLBounds(t *testing.T) {
 
 func TestFilesListByCardAndNoteCut(t *testing.T) {
 	s := open(t)
-	in := FileInput{Name: "a", Data: []byte("a"), Origin: "card", Card: "sg4~1", Room: "sg4",
+	in := FileInput{Name: "a", Data: []byte("a"), Origin: "card", Card: "room-e~1", Room: "room-e",
 		Note: string(bytes.Repeat([]byte("Ã©"), 600))}
 	r := mustFile(t, s, in)
 	if n := len([]rune(r.Note)); n != fileNoteMax {
 		t.Fatalf("note is %d runes", n)
 	}
 	mustFile(t, s, fileIn("b", "b"))
-	if list, _ := s.FileList("sg4~1"); len(list) != 1 || list[0].Name != "a" {
+	if list, _ := s.FileList("room-e~1"); len(list) != 1 || list[0].Name != "a" {
 		t.Fatalf("list by card = %+v", list)
 	}
 	if list, _ := s.FileList(""); len(list) != 2 {

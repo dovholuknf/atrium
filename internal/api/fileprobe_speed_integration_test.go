@@ -12,7 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// manyCards is a room like claude-sg4: n cards, each in its own directory with a file two folders down.
+// manyCards is a room like claude-room-e: n cards, each in its own directory with a file two folders down.
 func manyCards(t *testing.T, n int) (*Server, []*store.Task) {
 	st := openMigrated(t)
 	base := t.TempDir()

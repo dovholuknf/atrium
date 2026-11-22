@@ -22,7 +22,6 @@ Series: Intake and PR review. Status: idea. Audience: people building agent inta
 
 ## Sources
 
-- docs/rnd/langchain-openwiki-spike.md
 - docs/runtime/intake-design.md
 - docs/backlog/rnd/rnd-new-chat-intake.md
 - the factory log of 2026-10-01 and 10-02 (held, off-repo for now; paraphrase only)

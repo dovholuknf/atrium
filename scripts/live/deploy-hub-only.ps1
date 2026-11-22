@@ -2,9 +2,9 @@
 # wide args. THE ROOM IS NEVER TOUCHED: it keeps running the image it loaded, which the rename leaves in place.
 #
 # -WhatIf prints every process it would stop and every file it would copy or rename, and changes nothing. The gate
-# is skipped under -WhatIf, because asking the board is itself a toast on clint's screen.
+# is skipped under -WhatIf, because asking the board is itself a toast on the operator's screen.
 #
-# -NoGate skips the idle-board gate. clint 2026-10-05: "hub can fucking update whenever".
+# -NoGate skips the idle-board gate. The operator 2026-10-05: "hub can fucking update whenever".
 param([switch]$WhatIf, [switch]$NoGate)
 
 $ErrorActionPreference = 'Continue'
@@ -20,7 +20,7 @@ if (-not $WhatIf) {
   if (-not (Wait-NewContextsDone)) { Say 'a new context is still under way, nothing changed'; exit 0 }
 } else { Say 'WHATIF: wait for every new context under way to finish' }
 
-# Gate: wait for an idle board, count down in a toast clint can click to pause (docs/fabric/hub-restart-gate.md).
+# Gate: wait for an idle board, count down in a toast the operator can click to pause (docs/fabric/hub-restart-gate.md).
 # Exit 0 means go (or a hub too old to ask), anything else means leave the hub alone.
 if ($NoGate) {
   Say 'gate skipped (-NoGate)'

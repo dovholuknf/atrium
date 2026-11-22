@@ -12,7 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// THE EFFICACY COLLECTORS (item lifecycle L9, docs/rnd/item-lifecycle-design.md section 12.6). A tick reads what L2 to L5 already
+// THE EFFICACY COLLECTORS (item lifecycle L9). A tick reads what L2 to L5 already
 // keep (the facts, the steps, the cost) plus two new reads, reverts on the mirror and CI on main, writes the events once each
 // (the event key makes a replay a no-op), and derives every item's outcome again from scratch.
 //

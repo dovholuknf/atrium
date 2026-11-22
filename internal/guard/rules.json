@@ -1,27 +1,17 @@
 {
   "rules": [
     {
-      "id": "reply-hands-deploy-command",
-      "check": "reply-pattern",
-      "tools": ["reply"],
-      "params": {
-        "scope": "fence",
-        "patterns": ["atrium-deploy\\.ps1", "deploy-batch\\.ps1", "deploy-hub-only\\.ps1", "Start-Process\\s+pwsh[^\\n]*deploy"]
-      },
-      "reason": "Do not hand clint a deploy command to run ({name} is in a code block in your last reply). Withdraw it: run the deploy yourself with the deploy tool, or say what is needed and ask. Written from the memory files deploy-rules.md and run-it-yourself-first.md."
-    },
-    {
       "id": "drive-root",
       "check": "drive-root",
       "tools": ["shell", "Write", "Edit", "NotebookEdit"],
-      "reason": "Do not create folders at the root of a drive. Put it under D:\\tmp instead - that directory exists and is the place for scratch, demo and test output that does not belong in the project tree (build.claude/ or similar). This applies to a script's default output path too: running the script is the same act as writing the files directly, so change the default rather than passing an override. The path '{name}' does not exist, so this would create it."
+      "reason": "Do not create folders at the root of a drive. Put scratch, demo and test output under the card's tmp/ folder or another directory that already exists, never in the project tree (build.claude/ or similar). This applies to a script's default output path too: running the script is the same act as writing the files directly, so change the default rather than passing an override. The path '{name}' does not exist, so this would create it."
     },
     {
       "id": "only-atrium-subagents",
       "check": "subagent",
       "tools": ["Task", "Agent"],
       "params": {"env": "ATRIUM_ONLY_SUBAGENTS", "allow": ["explore", "plan", "web-fetch"]},
-      "reason": "Plain Claude subagents are off here (ATRIUM_ONLY_SUBAGENTS). Run substantive agent work as a REAL atrium session instead, so it is watchable on the board and kept in history. HARD RULE, check FIRST: call the atrium-control MCP tool atrium_peers and count the running sessions YOU launched (sessions the user started do not count); if you launched 10 or more (the concurrency cap), do NOT launch another -- wait for one to finish or ask clint, do not spawn past the cap. Otherwise: (1) make/prepare the working directory first -- it must already exist; (2) call atrium_launch with cwd, a short title, a one-line why, and a FULL prompt containing the ENTIRE task (the new session inherits NONE of this conversation's context, so spell it all out); (3) use the returned card id with atrium_task / atrium_say to follow up. If a normal one-shot subagent is genuinely wanted this session, the user can set ATRIUM_ONLY_SUBAGENTS=0 and retry."
+      "reason": "Plain Claude subagents are off here (ATRIUM_ONLY_SUBAGENTS). Run substantive agent work as a REAL atrium session instead, so it is watchable on the board and kept in history. HARD RULE, check FIRST: call the atrium-control MCP tool atrium_peers and count the running sessions YOU launched (sessions the user started do not count); if you launched 10 or more (the concurrency cap), do NOT launch another -- wait for one to finish or ask the operator, do not spawn past the cap. Otherwise: (1) make/prepare the working directory first -- it must already exist; (2) call atrium_launch with cwd, a short title, a one-line why, and a FULL prompt containing the ENTIRE task (the new session inherits NONE of this conversation's context, so spell it all out); (3) use the returned card id with atrium_task / atrium_say to follow up. If a normal one-shot subagent is genuinely wanted this session, the user can set ATRIUM_ONLY_SUBAGENTS=0 and retry."
     },
     {
       "id": "no-coauthor",

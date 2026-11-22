@@ -169,6 +169,13 @@ if (-not $NoBuild) {
   }
 }
 $commit = git -C $Repo rev-parse HEAD
+$live = Get-LiveCommits
+$current = @($want | Where-Object { Test-OnCommit $live[$_] $commit })
+foreach ($n in $current) {
+  $results[$n] = "success (already on $($commit.Substring(0, 8)))"
+  Say "${n}: already runs $($commit.Substring(0, 8)), not restarted"
+}
+$want = @($want | Where-Object { $_ -notin $current })
 $ver = (& "$Repo/scripts/version.ps1")
 $pkg = 'github.com/dovholuknf/atrium/internal/cli'
 $codeId = (& go -C $Repo run ./tools/codeid)

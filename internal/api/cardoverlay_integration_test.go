@@ -125,7 +125,7 @@ func TestOverlayDownStopsOnlyThatOne(t *testing.T) {
 	}
 }
 
-// A TUNNELER IN TUN MODE IS REFUSED with the command to ask clint to run elevated. atrium never elevates.
+// A TUNNELER IN TUN MODE IS REFUSED with the command to ask the operator to run elevated. atrium never elevates.
 func TestATunModeTunnelerIsRefusedWithTheCommand(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
 	withCardsDir(t, oh.srv)

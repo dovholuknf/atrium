@@ -13,8 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// "Land now": the landed requests of a repository since the last land become one commit on the hub's main. See
-// docs/rnd/merge-queue.md, section "Landing main".
+// "Land now": the landed requests of a repository since the last land become one commit on the hub's main.
 //
 //	GET  /_hub/merge/land?repo     what a land would carry, and the last lands with whether each is on main
 //	POST /_hub/merge/land          {repo}: cut the land. The operator's only, never relayed from a room

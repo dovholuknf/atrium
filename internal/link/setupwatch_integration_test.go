@@ -62,16 +62,16 @@ func sweep(b *bench) { b.proxy.setupSweep(context.Background(), time.Now()) }
 func TestARoomMissingHooksIsNamedOnItsRow(t *testing.T) {
 	b := newBench(t)
 	b.proxy.boardID = "aaaaaaaaaaaa"
-	b.attach("m1mini", setupRoom(5, 0, "aaaaaaaaaaaa"))
-	b.attach("sg4", setupRoom(0, 0, "aaaaaaaaaaaa"))
-	if setupOf(t, b, "m1mini") != nil {
+	b.attach("room-a", setupRoom(5, 0, "aaaaaaaaaaaa"))
+	b.attach("room-e", setupRoom(0, 0, "aaaaaaaaaaaa"))
+	if setupOf(t, b, "room-a") != nil {
 		t.Fatal("a room has facts before anything read it")
 	}
 	sweep(b)
 
-	m := setupOf(t, b, "m1mini")
+	m := setupOf(t, b, "room-a")
 	if m == nil || !m.Answering || m.HooksMissing != 5 || len(m.Issues) != 1 || m.Issues[0].Kind != "hooks" {
-		t.Fatalf("m1mini's setup = %+v", m)
+		t.Fatalf("room-a's setup = %+v", m)
 	}
 	if !strings.Contains(m.Issues[0].Text, "5 missing") {
 		t.Fatalf("the issue does not say how many: %q", m.Issues[0].Text)
@@ -82,7 +82,7 @@ func TestARoomMissingHooksIsNamedOnItsRow(t *testing.T) {
 	if m.Go != "go1.99" {
 		t.Fatalf("go = %q", m.Go)
 	}
-	if s := setupOf(t, b, "sg4"); s == nil || len(s.Issues) != 0 {
+	if s := setupOf(t, b, "room-e"); s == nil || len(s.Issues) != 0 {
 		t.Fatalf("a room set up like the hub has issues: %+v", s)
 	}
 }
@@ -96,11 +96,11 @@ func TestTwoGatesIsNamedAsItsOwnIssue(t *testing.T) {
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true,"build":"","go":"go1.99"}`))
 	})
-	b.attach("sg3", mux)
+	b.attach("room-d", mux)
 	sweep(b)
-	s := setupOf(t, b, "sg3")
+	s := setupOf(t, b, "room-d")
 	if s == nil || !s.HooksTwoGates || len(s.Issues) != 1 {
-		t.Fatalf("sg3's setup = %+v", s)
+		t.Fatalf("room-d's setup = %+v", s)
 	}
 	if !strings.Contains(s.Issues[0].Text, "two permission gates") || strings.Contains(s.Issues[0].Text, "missing") {
 		t.Fatalf("the issue is not the two-gates text: %q", s.Issues[0].Text)

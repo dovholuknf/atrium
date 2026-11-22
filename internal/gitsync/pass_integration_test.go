@@ -48,7 +48,7 @@ func ask(p *Pass, method, path, body, reader string) *httptest.ResponseRecorder 
 	return rec
 }
 
-const refsPath = "/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack"
+const refsPath = "/git/room/room-d/github/o/r.git/info/refs?service=git-upload-pack"
 
 func okRT(body string) http.RoundTripper {
 	return rtFunc(func(r *http.Request) (*http.Response, error) {
@@ -65,7 +65,7 @@ func TestAtMostTwoPassThroughsRunAtOncePerRoom(t *testing.T) {
 		<-gate
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("ok"))}, nil
 	})
-	p := passFor([]RoomInfo{{Name: "sg3", Git: true}, {Name: "m1mini", Git: true}}, rt)
+	p := passFor([]RoomInfo{{Name: "room-d", Git: true}, {Name: "room-a", Git: true}}, rt)
 	var wg sync.WaitGroup
 	codes := make(chan int, 8)
 	run := func(path, reader string) {
@@ -81,7 +81,7 @@ func TestAtMostTwoPassThroughsRunAtOncePerRoom(t *testing.T) {
 		t.Fatalf("third = %d %s", rec.Code, rec.Body)
 	}
 	// Another room has its own two.
-	run("/git/room/m1mini/github/o/r.git/info/refs?service=git-upload-pack", "d")
+	run("/git/room/room-a/github/o/r.git/info/refs?service=git-upload-pack", "d")
 	<-started
 	close(gate)
 	wg.Wait()
@@ -99,7 +99,7 @@ func TestAtMostTwoPassThroughsRunAtOncePerRoom(t *testing.T) {
 
 func TestTheRateIsPerReaderAndPerMinute(t *testing.T) {
 	t.Parallel()
-	p := passFor([]RoomInfo{{Name: "sg3", Git: true}}, okRT("ok"))
+	p := passFor([]RoomInfo{{Name: "room-d", Git: true}}, okRT("ok"))
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	p.Now = func() time.Time { return now }
 	for i := 0; i < 6; i++ {
@@ -130,11 +130,11 @@ func TestARefusedRequestIsNotPassedOn(t *testing.T) {
 		mu.Unlock()
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("ok"))}, nil
 	})
-	p := passFor([]RoomInfo{{Name: "sg3", Git: true}}, rt)
+	p := passFor([]RoomInfo{{Name: "room-d", Git: true}}, rt)
 	want := string(pktLine("want "+strings.Repeat("a", 40)+"\n")) + "0000"
 	for _, bad := range []string{"deepen 1\n", "shallow " + strings.Repeat("a", 40) + "\n", "filter blob:none\n"} {
 		for i := 0; i < 5; i++ {
-			rec := ask(p, "POST", "/git/room/sg3/github/o/r.git/git-upload-pack", want+string(pktLine(bad)), "a")
+			rec := ask(p, "POST", "/git/room/room-d/github/o/r.git/git-upload-pack", want+string(pktLine(bad)), "a")
 			if rec.Code != 200 || !strings.Contains(rec.Body.String(), "ERR atrium") {
 				t.Fatalf("%q = %d %q", bad, rec.Code, rec.Body)
 			}
@@ -147,7 +147,7 @@ func TestARefusedRequestIsNotPassedOn(t *testing.T) {
 	}
 	// The capability form of a filter is refused too.
 	capline := string(pktLine("want "+strings.Repeat("a", 40)+" multi_ack filter\n")) + "0000"
-	if rec := ask(p, "POST", "/git/room/sg3/github/o/r.git/git-upload-pack", capline, "a"); !strings.Contains(rec.Body.String(), "ERR atrium") {
+	if rec := ask(p, "POST", "/git/room/room-d/github/o/r.git/git-upload-pack", capline, "a"); !strings.Contains(rec.Body.String(), "ERR atrium") {
 		t.Fatalf("filter capability: %q", rec.Body)
 	}
 }
@@ -159,7 +159,7 @@ func TestThePassThroughSendsNoProtocolHeaderCredentialOrCardAndOnlyTheFetchPaths
 		got = r
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("ok"))}, nil
 	})
-	p := passFor([]RoomInfo{{Name: "SG3", Git: true}}, rt)
+	p := passFor([]RoomInfo{{Name: "ROOM-D", Git: true}}, rt)
 	req := httptest.NewRequest("GET", "http://hub"+refsPath, nil)
 	for k, v := range map[string]string{"Git-Protocol": "version=2", "Authorization": "x", "Cookie": "c", HeaderCard: "s1", HeaderChain: "s1"} {
 		req.Header.Set(k, v)
@@ -182,13 +182,13 @@ func TestThePassThroughSendsNoProtocolHeaderCredentialOrCardAndOnlyTheFetchPaths
 		method, path string
 		want         int
 	}{
-		{"POST", "/git/room/sg3/github/o/r.git/git-receive-pack", 403},
-		{"GET", "/git/room/sg3/github/o/r.git/info/refs", 403},
-		{"GET", "/git/room/sg3/github/o/r.git/HEAD", 404},
-		{"GET", "/git/room/sg3/github/o/r.git/objects/info/packs", 404},
-		{"GET", "/git/room/sg3/github/o/r.git/../x.git/info/refs?service=git-upload-pack", 404},
-		{"GET", "/git/room/sg3/github/o/%2e%2e/r.git/info/refs?service=git-upload-pack", 404},
-		{"GET", "/git/room/sg3/info/refs?service=git-upload-pack", 404},
+		{"POST", "/git/room/room-d/github/o/r.git/git-receive-pack", 403},
+		{"GET", "/git/room/room-d/github/o/r.git/info/refs", 403},
+		{"GET", "/git/room/room-d/github/o/r.git/HEAD", 404},
+		{"GET", "/git/room/room-d/github/o/r.git/objects/info/packs", 404},
+		{"GET", "/git/room/room-d/github/o/r.git/../x.git/info/refs?service=git-upload-pack", 404},
+		{"GET", "/git/room/room-d/github/o/%2e%2e/r.git/info/refs?service=git-upload-pack", 404},
+		{"GET", "/git/room/room-d/info/refs?service=git-upload-pack", 404},
 		{"GET", "/git/room//github/o/r.git/info/refs?service=git-upload-pack", 404},
 	} {
 		if rec := ask(p, c.method, c.path, "", "a"); rec.Code != c.want {
@@ -205,15 +205,15 @@ func TestThePassThroughSendsNoProtocolHeaderCredentialOrCardAndOnlyTheFetchPaths
 
 func TestARoomThatPredatesGitOrDoesNotAnswerIs503(t *testing.T) {
 	t.Parallel()
-	old := passFor([]RoomInfo{{Name: "sg3", Git: false}}, okRT("ok"))
+	old := passFor([]RoomInfo{{Name: "room-d", Git: false}}, okRT("ok"))
 	if rec := ask(old, "GET", refsPath, "", "a"); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("a room that never said git = %d", rec.Code)
 	}
-	dead := passFor([]RoomInfo{{Name: "sg3", Git: true}}, rtFunc(func(*http.Request) (*http.Response, error) {
+	dead := passFor([]RoomInfo{{Name: "room-d", Git: true}}, rtFunc(func(*http.Request) (*http.Response, error) {
 		return nil, context.DeadlineExceeded
 	}))
 	rec := ask(dead, "GET", refsPath, "", "a")
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "sg3 is not connected") {
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "room-d is not connected") {
 		t.Errorf("a room whose link failed = %d %q", rec.Code, rec.Body)
 	}
 	// And the slot it took is given back.
@@ -238,7 +238,7 @@ func servePass(t *testing.T, p *Pass) *httptest.Server {
 func slots(p *Pass) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.running["sg3"]
+	return p.running["room-d"]
 }
 
 // freed waits for the room's slot to be taken, which proves the request got there, and then to be given back.
@@ -269,7 +269,7 @@ func rawConn(t *testing.T, srv *httptest.Server) net.Conn {
 }
 
 func quickPass(rt http.RoundTripper) *Pass {
-	p := passFor([]RoomInfo{{Name: "sg3", Git: true}}, rt)
+	p := passFor([]RoomInfo{{Name: "room-d", Git: true}}, rt)
 	p.PerRoom = 1
 	p.FetchesPerMinute, p.RoundsPerMinute = 1000, 1000
 	p.BodyIdle, p.RoomHeaderWait, p.RoomIdle, p.WriteIdle = 300*time.Millisecond, 300*time.Millisecond, 300*time.Millisecond, 300*time.Millisecond
@@ -320,7 +320,7 @@ func TestARoomThatNeverAnswersGivesTheSlotBackAndTheReaderA504(t *testing.T) {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusGatewayTimeout || !strings.Contains(string(b), "sg3 did not answer in time") {
+	if resp.StatusCode != http.StatusGatewayTimeout || !strings.Contains(string(b), "room-d did not answer in time") {
 		t.Fatalf("%d %q", resp.StatusCode, b)
 	}
 	if time.Since(start) > 3*time.Second {
@@ -351,7 +351,7 @@ func TestABodyThatStopsGivesTheSlotBack(t *testing.T) {
 	srv := servePass(t, p)
 	c := rawConn(t, srv)
 	// A hundred bytes promised, ten sent, and then nothing and the connection stays open.
-	if _, err := c.Write([]byte("POST /git/room/sg3/github/o/r.git/git-upload-pack HTTP/1.1\r\nHost: x\r\n" +
+	if _, err := c.Write([]byte("POST /git/room/room-d/github/o/r.git/git-upload-pack HTTP/1.1\r\nHost: x\r\n" +
 		"Content-Type: application/x-git-upload-pack-request\r\nContent-Length: 100\r\n\r\n0032want aaa")); err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +516,7 @@ func TestTheDeadlinesAreClearedWhenTheRequestEnds(t *testing.T) {
 	defer c.CloseIdleConnections()
 	body := string(pktLine("want "+strings.Repeat("a", 40)+"\n")) + "0000" + string(pktLine("done\n"))
 	for i := 0; i < 3; i++ {
-		req, _ := http.NewRequest("POST", srv.URL+"/git/room/sg3/github/o/r.git/git-upload-pack", strings.NewReader(body))
+		req, _ := http.NewRequest("POST", srv.URL+"/git/room/room-d/github/o/r.git/git-upload-pack", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/x-git-upload-pack-request")
 		resp, err := c.Do(req)
 		if err != nil {

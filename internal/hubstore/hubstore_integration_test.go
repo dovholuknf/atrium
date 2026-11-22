@@ -25,7 +25,7 @@ func TestDefunctLocalRoomsAreDroppedAndRealOnesKept(t *testing.T) {
 		_, err := s.db.Exec(
 			`INSERT INTO room (id, name, name_key, transport, state, created_at, first_seen_at)
 			 VALUES (?, ?, ?, 'local', 'active', ?, ?)`,
-			newID(), "sg4", "sg4", ts(s.now()), ts(s.now()))
+			newID(), "room-e", "room-e", ts(s.now()), ts(s.now()))
 		return err
 	}); err != nil {
 		t.Fatal(err)

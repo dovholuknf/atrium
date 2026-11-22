@@ -38,7 +38,7 @@ func TestTheSeedRecognisesAGitHubPullRequest(t *testing.T) {
 	}
 }
 
-// Every kind clint pastes has a seed row: a Bitbucket PR, a Zendesk ticket, a Discourse topic.
+// Every kind the operator pastes has a seed row: a Bitbucket PR, a Zendesk ticket, a Discourse topic.
 func TestTheSeedCoversEveryKindPasted(t *testing.T) {
 	seed, err := Seed()
 	if err != nil {

@@ -16,7 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/scripts/recognisers"
 )
 
-// THE HUB OWNS THE RECOGNISER TABLE. Design: docs/rnd/card-lifecycle-design.md, section 2.
+// THE HUB OWNS THE RECOGNISER TABLE.
 //
 //	POST   /_forge/recognisers     (a room, on the git kind)  the hub's rows, for the room to match a pasted link against
 //	GET    /v1/recognisers         the board, any view        the hub's rows

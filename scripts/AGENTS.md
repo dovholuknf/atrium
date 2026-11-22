@@ -91,9 +91,16 @@ asserts. `release.sh` builds every platform and hashes the results. The `package
 that.
 
 `make-release.sh prepare <ver> --execute` makes the version commit on the current branch, by hand, and it reaches main
-by a normal merge. The ci-loop `release <ver>` verb runs `make-release.sh tag`, which
-refuses unless main's head has that VERSION, the tag is new and `ci.yml` succeeded on that sha, then tags it and calls
-`release.yml`. No workflow opens or merges a PR.
+by a normal merge. The ci-loop `release <ver>` verb refuses unless origin main's head has that VERSION, the tag is new,
+`ci.yml` succeeded on that sha and no commit message since the last tag, the notes or the tag name an AI vendor or
+attribution, then signs the tag (`git tag -s`) in the loop user's shell and pushes it, which starts `release.yml`. The
+`make-release` workflow only publishes a tag that already exists. No workflow opens or merges a PR.
+
+The ci-loop `push <name>` opens its PR from text the sender writes first: `.uncommitted\ci-loop\inbox\<request>.pr.md`,
+before the `<request>.txt` file. The first line is the PR title and the rest is the description, in plain words: what
+changes for clint and why. The loop refuses, and pushes nothing, when the file is missing, when the title names a file,
+a script, a path or one of the branch's commit subjects, or when there is no description. It adds the list of changed
+files under the description. A branch that already has an open PR needs no file.
 
 ## The layout
 

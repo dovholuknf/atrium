@@ -8,7 +8,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// PAGE CHANGED SINCE. docs/rnd/doc-debt-from-features.md sections 2.7 and 4 (phase 4). For a stale page a doc item names,
+// PAGE CHANGED SINCE. For a stale page a doc item names,
 // whether the page changed on claude/main of the hub's mirror after the feature's `landed` sha, and the newest commit that
 // changed it. Read on demand and remembered in memory by landed sha, path and the head it was read at, so a new head asks
 // again and nothing is stored.

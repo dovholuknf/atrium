@@ -25,7 +25,7 @@ func runRoomHub(t *testing.T, args ...string) (string, error) {
 
 func TestRoomHubChangesTheAddressAndKeepsTheOldFile(t *testing.T) {
 	dir := t.TempDir()
-	old := `{"hub": "192.168.1.68:7779", "room": "sgg"}`
+	old := `{"hub": "192.168.1.68:7779", "room": "room-g"}`
 	if err := os.WriteFile(filepath.Join(dir, "room.json"), []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestRoomHubChangesTheAddressAndKeepsTheOldFile(t *testing.T) {
 		t.Errorf("it did not say to restart the room:\n%s", out)
 	}
 	now, _ := os.ReadFile(filepath.Join(dir, "room.json"))
-	if !strings.Contains(string(now), `"192.168.102.41:7779"`) || !strings.Contains(string(now), `"sgg"`) {
+	if !strings.Contains(string(now), `"192.168.102.41:7779"`) || !strings.Contains(string(now), `"room-g"`) {
 		t.Errorf("room.json is now %s, want the new hub and the same room", now)
 	}
 	baks, _ := filepath.Glob(filepath.Join(dir, "room.json.bak-*"))
@@ -80,7 +80,7 @@ func TestRoomHubRefusesWhatIsNotAnAddressOrNotADirectRoom(t *testing.T) {
 // A running room that reaches no rung takes the address `atrium room hub` wrote at its next attempt, with no restart.
 func TestARoomThatCannotReachItsHubTakesTheNewAddressWithoutARestart(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "room.json"), []byte(`{"hub": "192.168.1.68:7779", "room": "sgg"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "room.json"), []byte(`{"hub": "192.168.1.68:7779", "room": "room-g"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	keys := transport.Keys{Dir: dir}

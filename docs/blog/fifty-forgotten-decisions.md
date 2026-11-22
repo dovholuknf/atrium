@@ -20,10 +20,6 @@ Series: The one human. Status: idea. Audience: people working with many agents a
 
 - the decision list mockup
 
-## Sources
-
-- docs/rnd/operator-focus.md sections 0 to 2
-
 ## Notes for the writer
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.

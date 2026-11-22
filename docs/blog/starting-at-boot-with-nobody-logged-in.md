@@ -24,8 +24,6 @@ Series: The daemon and the halt. Status: idea. Audience: people running agent ma
 ## Sources
 
 - website/docs/story.md
-- docs/rnd/room-autostart-design.md
-- docs/rnd/room-machine-2500-design.md
 - changelog/fabric/2026-10-01-provision-mac-start.md
 
 ## Notes for the writer

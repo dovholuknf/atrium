@@ -183,11 +183,11 @@ func TestAHeldSayClearsALineLeftForFiveMinutesAndGoesIn(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	typedAgo(r, "stray", staleLineAfter+time.Second)
 
-	m, err := d.st.QueueFromPeer(target.ID, "the migration is ready", "sg4/doer")
+	m, err := d.st.QueueFromPeer(target.ID, "the migration is ready", "room-e/doer")
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "the migration is ready", "", false)
+	d.deferPeerInjection(target.ID, m.ID, "room-e/doer", "the migration is ready", "", false)
 	d.pending.attempt(target.ID)
 
 	got := f.written()

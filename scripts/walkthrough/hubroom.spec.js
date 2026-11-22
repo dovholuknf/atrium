@@ -15,9 +15,9 @@
 //   npx playwright test --config scripts/walkthrough/playwright.config.js --headed
 //
 // It starts its own hub and its own room on their own ports, against a
-// throwaway database under D:/tmp, and stops both afterwards. It touches
+// throwaway database under .uncommitted/ in this checkout, and stops both afterwards. It touches
 // nothing belonging to the atrium you have running: the room is --isolated and
-// its address file is under D:/tmp, so no hook on this machine is aimed at it.
+// its address file is under .uncommitted/, so no hook on this machine is aimed at it.
 
 const { test, expect } = require("@playwright/test")
 const { spawn, execFileSync } = require("child_process")
@@ -27,7 +27,7 @@ const path = require("path")
 const SLOW = Number(process.env.ATRIUM_SLOW || 600)
 const EXE = process.env.ATRIUM_EXE ||
   path.resolve(__dirname, "../../build.claude/atrium.exe")
-const TREE = process.env.ATRIUM_TREE || "D:/tmp/atrium-demo"
+const TREE = process.env.ATRIUM_TREE || path.resolve(__dirname, "../../.uncommitted/atrium-demo")
 const BOARD = "127.0.0.1:7900"
 const LINK = "127.0.0.1:7901"
 const ROOM_HTTP = "127.0.0.1:7910"

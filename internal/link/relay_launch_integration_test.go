@@ -33,20 +33,20 @@ func (f *relayRoom) launchBody() map[string]any {
 	return out
 }
 
-// THE FEATURE. m1mini launches on sg4 through the hub. The session lands on sg4 with the
-// lineage `sa1@m1mini` and `m1mini~m1`, so its reports and notices come back across to
-// that card, the brief is in the body for sg4 to write on its own disk, and the card comes
+// THE FEATURE. room-a launches on room-e through the hub. The session lands on room-e with the
+// lineage `sa1@room-a` and `room-a~m1`, so its reports and notices come back across to
+// that card, the brief is in the body for room-e to write on its own disk, and the card comes
 // back named across.
 func TestARelayedLaunchLandsOnTheTargetWithTheLaunchersLineage(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: launchSpec()})
 	if err != nil || !ans.OK {
 		t.Fatalf("launch = %+v, %v", ans, err)
 	}
-	if ans.Card != "sg4~kid" || ans.To != "kid@sg4" || ans.Task == nil || ans.Task.Status != "running" ||
-		ans.Task.Card != "sg4~kid" || ans.Model != "" {
+	if ans.Card != "room-e~kid" || ans.To != "kid@room-e" || ans.Task == nil || ans.Task.Status != "running" ||
+		ans.Task.Card != "room-e~kid" || ans.Model != "" {
 		t.Fatalf("answer = %+v (task %+v)", ans, ans.Task)
 	}
 	if !strings.HasSuffix(ans.Watch, "/#term=kid") || ans.Brief != "/srv/atrium/BRIEF.md" {
@@ -55,13 +55,13 @@ func TestARelayedLaunchLandsOnTheTargetWithTheLaunchersLineage(t *testing.T) {
 	if x.mini.launchBody() != nil {
 		t.Fatal("the launch landed on the launcher's own room")
 	}
-	got := x.sg4.launchBody()
-	if got["spawned_by"] != "sa1@m1mini" || got["spawned_by_id"] != "m1mini~m1" {
+	got := x.roomE.launchBody()
+	if got["spawned_by"] != "sa1@room-a" || got["spawned_by_id"] != "room-a~m1" {
 		t.Fatalf("lineage = %v / %v", got["spawned_by"], got["spawned_by_id"])
 	}
 	if got["brief"] != "the whole brief" || got["cwd"] != "/srv/atrium" || got["model"] != "opus" ||
 		got["lean"] != true || got["harness"] != "" {
-		t.Fatalf("sg4 was sent %+v", got)
+		t.Fatalf("room-e was sent %+v", got)
 	}
 	if p, _ := got["prompt"].(string); !strings.HasPrefix(p, "do the review") || !strings.HasSuffix(p, reportLine) {
 		t.Fatalf("prompt = %q", p)
@@ -91,22 +91,22 @@ func TestARelayedLaunchIsTheHubsOwnLaunchByAnotherDoor(t *testing.T) {
 	defer x.stop()
 
 	spec := launchSpec()
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: spec})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: spec})
 	if err != nil || !ans.OK {
 		t.Fatalf("relay = %+v, %v", ans, err)
 	}
-	viaRelay := x.sg4.launchBody()
-	x.sg4.mu.Lock()
-	x.sg4.launched = nil
-	x.sg4.mu.Unlock()
+	viaRelay := x.roomE.launchBody()
+	x.roomE.mu.Lock()
+	x.roomE.launched = nil
+	x.roomE.mu.Unlock()
 
-	_, out, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{
+	_, out, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "room-a"), launchInput{
 		Cwd: spec.Cwd, Title: spec.Title, Why: spec.Why, Prompt: spec.Prompt, Brief: spec.Brief, Tags: spec.Tags,
-		Model: spec.Model, Env: spec.Env, Room: "sg4"})
+		Model: spec.Model, Env: spec.Env, Room: "room-e"})
 	if err != nil {
 		t.Fatalf("hub launch: %v", err)
 	}
-	direct := x.sg4.launchBody()
+	direct := x.roomE.launchBody()
 	// Each launch makes its own random key.
 	delete(viaRelay, "launch_key")
 	delete(direct, "launch_key")
@@ -118,7 +118,7 @@ func TestARelayedLaunchIsTheHubsOwnLaunchByAnotherDoor(t *testing.T) {
 	}
 }
 
-// A relayed launch keeps repo, home, scratch and every other launch field, and sends sg4 what the hub's own launch
+// A relayed launch keeps repo, home, scratch and every other launch field, and sends room-e what the hub's own launch
 // with `room` sends. A spec with no cwd is fine when it names repo or home.
 func TestARelayedLaunchKeepsRepoHomeScratchAndTheRest(t *testing.T) {
 	x := newRelayPair(t)
@@ -128,61 +128,61 @@ func TestARelayedLaunchKeepsRepoHomeScratchAndTheRest(t *testing.T) {
 	spec := &wire.RelayLaunchSpec{Repo: "github.com/o/r", Branch: "claude/x", Base: "claude/main", Title: "t",
 		Tags: []string{"atrium:item:f-test"}, Resident: true, Scratch: true, Lean: &off, MCP: []string{"m"}, Theme: "dusk",
 		Chat: true, Item: true, ItemOwner: "human"}
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: spec})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: spec})
 	if err != nil || !ans.OK || !ans.Carried {
 		t.Fatalf("relay = %+v, %v", ans, err)
 	}
-	viaRelay := x.sg4.launchBody()
+	viaRelay := x.roomE.launchBody()
 	if viaRelay["repo"] != "github.com/o/r" || viaRelay["branch"] != "claude/x" || viaRelay["base"] != "claude/main" ||
 		viaRelay["scratch"] != true || viaRelay["lean"] != false || viaRelay["theme"] != "dusk" || viaRelay["chat"] != true {
-		t.Fatalf("sg4 was sent %+v", viaRelay)
+		t.Fatalf("room-e was sent %+v", viaRelay)
 	}
 	tags := toStrings(viaRelay["tags"].([]any))
 	if !hasTag(tags, ResidentTag) || !hasTag(tags, ItemOwnerTag+"human") || !hasTag(tags, ItemTag) {
 		t.Fatalf("tags = %v", tags)
 	}
-	x.sg4.mu.Lock()
-	x.sg4.launched = nil
-	x.sg4.mu.Unlock()
-	if _, _, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Repo: spec.Repo,
+	x.roomE.mu.Lock()
+	x.roomE.launched = nil
+	x.roomE.mu.Unlock()
+	if _, _, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "room-a"), launchInput{Repo: spec.Repo,
 		Branch: spec.Branch, Base: spec.Base, Title: spec.Title, Tags: spec.Tags, Resident: true, Scratch: true, Lean: &off,
-		MCP: spec.MCP, Theme: spec.Theme, Chat: true, Isolated: true, ItemOwner: "human", Room: "sg4"}); err != nil {
+		MCP: spec.MCP, Theme: spec.Theme, Chat: true, Isolated: true, ItemOwner: "human", Room: "room-e"}); err != nil {
 		t.Fatalf("hub launch: %v", err)
 	}
-	direct := x.sg4.launchBody()
+	direct := x.roomE.launchBody()
 	delete(viaRelay, "launch_key")
 	delete(direct, "launch_key")
 	if !reflect.DeepEqual(viaRelay, direct) {
 		t.Fatalf("relay sent %+v, the hub's own launch sent %+v", viaRelay, direct)
 	}
 
-	ans, err = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
+	ans, err = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e",
 		Launch: &wire.RelayLaunchSpec{Home: true, Tags: []string{"atrium:item:f-test"}}})
-	if err != nil || !ans.OK || x.sg4.launchBody()["home"] != true {
-		t.Fatalf("home = %+v, %v, sg4 got %+v", ans, err, x.sg4.launchBody())
+	if err != nil || !ans.OK || x.roomE.launchBody()["home"] != true {
+		t.Fatalf("home = %+v, %v, room-e got %+v", ans, err, x.roomE.launchBody())
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e",
 		Launch: &wire.RelayLaunchSpec{Cwd: "/w", Repo: "github.com/o/r"}})
 	if ans.OK || ans.Code != http.StatusBadRequest || !strings.Contains(ans.Error, "not both") {
 		t.Fatalf("cwd and repo = %+v", ans)
 	}
 }
 
-// THE LAUNCHING ROOM COMES FROM THE CONNECTION. sg4 launching on m1mini is `orch@sg4`,
-// found on sg4's own list, whatever the request claims.
+// THE LAUNCHING ROOM COMES FROM THE CONNECTION. room-e launching on room-a is `orch@room-e`,
+// found on room-e's own list, whatever the request claims.
 func TestARelayedLaunchNamesTheLauncherOnTheRoomItCameFrom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.sg4R.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "orch", Room: "M1MINI", Launch: launchSpec()})
-	if err != nil || !ans.OK || ans.Card != "M1MINI~kid" {
+	ans, err := x.roomER.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "orch", Room: "ROOM-A", Launch: launchSpec()})
+	if err != nil || !ans.OK || ans.Card != "ROOM-A~kid" {
 		t.Fatalf("launch = %+v, %v", ans, err)
 	}
 	got := x.mini.launchBody()
-	if got["spawned_by"] != "orch@sg4" || got["spawned_by_id"] != "sg4~s1" {
+	if got["spawned_by"] != "orch@room-e" || got["spawned_by_id"] != "room-e~s1" {
 		t.Fatalf("lineage = %v / %v", got["spawned_by"], got["spawned_by_id"])
 	}
-	if x.sg4.launchBody() != nil {
+	if x.roomE.launchBody() != nil {
 		t.Fatal("the launch landed on the launcher's own room")
 	}
 }
@@ -193,37 +193,37 @@ func TestARelayedLaunchRefusesItsOwnRoomNoDirectoryAndAnUnknownRoom(t *testing.T
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "M1Mini", Launch: launchSpec()})
+	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "Room-a", Launch: launchSpec()})
 	if ans.OK || ans.Code != http.StatusBadRequest {
 		t.Fatalf("own room = %+v", ans)
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e",
 		Launch: &wire.RelayLaunchSpec{Brief: "b"}})
 	if ans.OK || ans.Code != http.StatusBadRequest || !strings.Contains(ans.Error, "where to run it") {
 		t.Fatalf("no cwd = %+v", ans)
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4"})
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e"})
 	if ans.OK || ans.Code != http.StatusBadRequest {
 		t.Fatalf("no launch = %+v", ans)
 	}
 	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "atlantis", Launch: launchSpec()})
 	if ans.OK || ans.Unreachable || ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, `"atlantis"`) ||
-		!strings.Contains(ans.Error, "m1mini") || !strings.Contains(ans.Error, "sg4") {
+		!strings.Contains(ans.Error, "room-a") || !strings.Contains(ans.Error, "room-e") {
 		t.Fatalf("unknown room = %+v, want it to name atlantis and list the rooms", ans)
 	}
-	if x.mini.launchBody() != nil || x.sg4.launchBody() != nil {
+	if x.mini.launchBody() != nil || x.roomE.launchBody() != nil {
 		t.Fatal("a refused launch reached a room")
 	}
 }
 
-// THE CAP APPLIES TO THE TARGET ROOM and to nothing else. sg4 is full and m1mini has room: a
-// launch onto sg4 is refused naming sg4 and never posted, one onto m1mini goes, and the refusal is
+// THE CAP APPLIES TO THE TARGET ROOM and to nothing else. room-e is full and room-a has room: a
+// launch onto room-e is refused naming room-e and never posted, one onto room-a goes, and the refusal is
 // the hub's own sentence.
 func TestARelayedLaunchIsCappedPerTargetRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 	two := func(room string) int {
-		if room == "sg4" {
+		if room == "room-e" {
 			return 2
 		}
 		return 10
@@ -231,23 +231,23 @@ func TestARelayedLaunchIsCappedPerTargetRoom(t *testing.T) {
 	x.proxy.mu.Lock()
 	x.proxy.ctl.capFor = two
 	x.proxy.mu.Unlock()
-	x.sg4.mu.Lock()
+	x.roomE.mu.Lock()
 	for _, id := range []string{"w1", "w2"} {
-		x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": id, "wire_name": id, "status": "running",
+		x.roomE.tasks = append(x.roomE.tasks, map[string]any{"id": id, "wire_name": id, "status": "running",
 			"supervised": true, "tags": []string{OriginTag, SubagentTag}})
 	}
-	x.sg4.mu.Unlock()
+	x.roomE.mu.Unlock()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: launchSpec()})
 	if err != nil || ans.OK || ans.Unreachable || ans.Unconfirmed || ans.Code != http.StatusConflict ||
-		!strings.Contains(ans.Error, "at the launch cap of 2 running workers on room sg4") {
+		!strings.Contains(ans.Error, "at the launch cap of 2 running workers on room room-e") {
 		t.Fatalf("over the cap = %+v, %v", ans, err)
 	}
-	if x.sg4.launchBody() != nil {
+	if x.roomE.launchBody() != nil {
 		t.Fatal("a launch over the cap was posted to the room")
 	}
-	// The other direction, to a room with room to spare: sg4 being full is no matter to it.
-	ans, err = x.sg4R.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "orch", Room: "m1mini", Launch: launchSpec()})
+	// The other direction, to a room with room to spare: room-e being full is no matter to it.
+	ans, err = x.roomER.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "orch", Room: "room-a", Launch: launchSpec()})
 	if err != nil || !ans.OK {
 		t.Fatalf("under the cap = %+v, %v", ans, err)
 	}
@@ -260,18 +260,18 @@ func TestARelayedLaunchThatFailsAfterThePostIsUnconfirmed(t *testing.T) {
 	defer x.stop()
 
 	for _, code := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
-		x.sg4.mu.Lock()
-		x.sg4.launchCode = code
-		x.sg4.mu.Unlock()
-		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+		x.roomE.mu.Lock()
+		x.roomE.launchCode = code
+		x.roomE.mu.Unlock()
+		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: launchSpec()})
 		if err != nil || ans.OK || ans.Unreachable || !ans.Unconfirmed || ans.Code != code {
 			t.Fatalf("%d = %+v, %v", code, ans, err)
 		}
 	}
-	x.sg4.mu.Lock()
-	x.sg4.launchCode = http.StatusBadRequest
-	x.sg4.mu.Unlock()
-	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+	x.roomE.mu.Lock()
+	x.roomE.launchCode = http.StatusBadRequest
+	x.roomE.mu.Unlock()
+	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: launchSpec()})
 	if ans.OK || ans.Unconfirmed || ans.Unreachable || ans.Code != http.StatusBadRequest ||
 		!strings.Contains(ans.Error, "the room fell over") {
 		t.Fatalf("a refusal = %+v", ans)
@@ -288,7 +288,7 @@ func TestARelayedLaunchOnAKnownRoomThatIsDownIsUnreachable(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/_hub/inventory":
-			_, _ = w.Write([]byte(`{"durable":true,"rooms":[{"name":"sg3"},{"name":"sg4"}]}`))
+			_, _ = w.Write([]byte(`{"durable":true,"rooms":[{"name":"room-d"},{"name":"room-e"}]}`))
 		case r.Method == http.MethodPost:
 			posts++
 		}
@@ -297,8 +297,8 @@ func TestARelayedLaunchOnAKnownRoomThatIsDownIsUnreachable(t *testing.T) {
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1})
 	c := newControl(srv.URL, hub, nil)
 
-	ans := c.Relay(relayCtx(t), "m1mini", wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "SG3", Launch: launchSpec()})
-	if ans.OK || !ans.Unreachable || ans.Code != http.StatusServiceUnavailable || !strings.Contains(ans.Error, "SG3") ||
+	ans := c.Relay(relayCtx(t), "room-a", wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "ROOM-D", Launch: launchSpec()})
+	if ans.OK || !ans.Unreachable || ans.Code != http.StatusServiceUnavailable || !strings.Contains(ans.Error, "ROOM-D") ||
 		!strings.Contains(ans.Error, "not attached") {
 		t.Fatalf("down room = %+v", ans)
 	}
@@ -324,13 +324,13 @@ func TestARelayedLaunchIsAuditedOnTheTargetWithNoPayload(t *testing.T) {
 	}
 	x.proxy.mu.Unlock()
 
-	if ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()}); err != nil || !ans.OK {
+	if ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "room-e", Launch: launchSpec()}); err != nil || !ans.OK {
 		t.Fatalf("launch = %+v, %v", ans, err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(details) != 1 || rooms[0] != "sg4" || kinds[0] != "ctl-launch" ||
-		details[0] != "by sa1@m1mini (claimed): launch as sg4~kid, ok" {
+	if len(details) != 1 || rooms[0] != "room-e" || kinds[0] != "ctl-launch" ||
+		details[0] != "by sa1@room-a (claimed): launch as room-e~kid, ok" {
 		t.Fatalf("audit = %v %v %v", rooms, kinds, details)
 	}
 	if strings.Contains(details[0], "whole brief") || strings.Contains(details[0], "do the review") {

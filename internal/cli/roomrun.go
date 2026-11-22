@@ -138,7 +138,7 @@ func joinCmd() *cobra.Command {
 
 			// WHAT THIS MACHINE CALLS ITSELF, WHICH IS NOT WHAT IT IS CALLED.
 			// Sent so the hub can show the two side by side, and it decides
-			// nothing: this is `docs/archive/architecture-v2.md`'s observed-versus-
+			// nothing: this is the v2 architecture's observed-versus-
 			// overrides rule, where the hub's name is the override.
 			self := defaultRoomName()
 			name := j.Name
@@ -386,7 +386,6 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	}
 	// EVERY TRANSPORT THIS ROOM CAN REACH ITS HUB ON, best first. A file that
 	// cannot be read is said and left out: the join alone still makes a ladder.
-	// See docs/rnd/room-transport-order.md.
 	tr, err := keys.Transports()
 	if err != nil {
 		log.Printf("[link] %v. using the join alone", err)
@@ -690,7 +689,7 @@ func selectLive(name string, tasks []*store.Task) []string {
 // defaultRoomName is the machine's name, because that is what somebody would
 // have typed.
 //
-// A hostname is whatever the machine was told it is, and a macOS one can carry a space or an apostrophe ("Clint's Mac")
+// A hostname is whatever the machine was told it is, and a macOS one can carry a space or an apostrophe ("Operator's Mac")
 // that a room name refuses, since the name goes into a certificate and a URL. Every character the hub's name check
 // would turn away becomes a hyphen, and the result is cut to the 64 it allows, so the first run on any machine can
 // make its room.

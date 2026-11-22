@@ -5,7 +5,6 @@
 // merged across rooms, each tagged with its room and with `room~id` on both cards, and a `cursor` that carries where
 // each room is. A plain room sends neither, and `more` falls back to the id of the last row read. A room that did not
 // answer is named in `missing`. Each room keeps 30 days and 2000 says, so this is that much history and no more.
-// See docs/rnd/say-log-view-notes.md.
 
 const chatterState = { rows: [], cursor: "", more: false, missing: [], gen: 0, loaded: false };
 

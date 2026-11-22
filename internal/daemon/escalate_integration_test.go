@@ -138,7 +138,7 @@ func TestTheTypistStopsHoldingAnAgedMessageMidTurn(t *testing.T) {
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
-	id := doneTo(t, d, target.ID, "sg4/doer", "neither matrix exists")
+	id := doneTo(t, d, target.ID, "room-e/doer", "neither matrix exists")
 
 	d.pending.attempt(target.ID)
 	if f.written() != "" {
@@ -184,7 +184,7 @@ func TestARunnerWithoutMidTurnInputGetsAnAgedMessageByTheHookOnly(t *testing.T) 
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
-	id := doneTo(t, d, target.ID, "sg4/doer", "neither matrix exists")
+	id := doneTo(t, d, target.ID, "room-e/doer", "neither matrix exists")
 	age(t, d, id, 20*time.Minute)
 	d.pending.mu.Lock()
 	d.pending.by[target.ID].entries[0].at = time.Now().Add(-20 * time.Minute)
@@ -212,7 +212,7 @@ func TestAnEscalatedDoneMessageLeavesNothingQueued(t *testing.T) {
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
-	id := doneTo(t, d, target.ID, "sg4/doer", "neither matrix exists")
+	id := doneTo(t, d, target.ID, "room-e/doer", "neither matrix exists")
 
 	d.pending.attempt(target.ID)
 	if a := d.act.get(target.ID); a == nil || a.HeldCount != 1 {

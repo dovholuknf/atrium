@@ -36,7 +36,7 @@ const MIN = 60000;
 
 // ── fixtures: every status, a long title, a long path, questions, a permission, a room chip ───────────────────
 const card = (id, over) => Object.assign({
-  id, status: "running", display_title: id, runner: "claude", rank: 1, worktree: "/home/clint/git/github/openziti/" + id,
+  id, status: "running", display_title: id, runner: "claude", rank: 1, worktree: "/home/operator/git/github/openziti/" + id,
   why: "", idle_seconds: 30, wait_seconds: 0, created_at: iso(3 * 3600000), last_activity_at: iso(MIN), tags: [],
   supervised: true, offline: false, pinned: false, auto_approve: false, seen: {}, activity: {}
 }, over || {});
@@ -44,7 +44,7 @@ const CARDS = [
   card("perm1", { status: "needs-permission", display_title: "u-028 composer", alias: "composer", wait_seconds: 240,
     waiting_since: iso(4 * MIN), why: "wants to run go test ./internal/api/...", tags: ["ui", "wave-1"] }),
   card("ask1", { status: "needs-input", display_title: "r-021 resume after clear, the long title that never ends on a phone",
-    wait_seconds: 900, waiting_since: iso(15 * MIN), worktree: "/home/clint/worktrees/claude/atrium/r-021-resume-after-clear",
+    wait_seconds: 900, waiting_since: iso(15 * MIN), worktree: "/home/operator/worktrees/claude/atrium/r-021-resume-after-clear",
     seen: { unseen: true, turn_ended_at: iso(15 * MIN), questions_at: iso(15 * MIN), answered: false,
       open_questions: ["land sa21 first, or wait for the review?", "keep the old flag for one release?"] },
     tags: ["runtime", "origin:agent"], pinned: true }),
@@ -59,7 +59,7 @@ const CARDS = [
 ];
 const PERMS = [
   { id: "p1", perm_id: "p1", task_id: "perm1", agent: "composer", tool: "Bash", requested_at: iso(4 * MIN),
-    command: "cd /home/clint/worktrees/claude/atrium/u-028 && go test ./internal/api/... -run TestCompose -count=1 2>&1 | tail -40" },
+    command: "cd /home/operator/worktrees/claude/atrium/u-028 && go test ./internal/api/... -run TestCompose -count=1 2>&1 | tail -40" },
   { id: "p2", perm_id: "p2", task_id: "ask1", agent: "r-021", tool: "Edit", requested_at: iso(2 * MIN),
     command: "internal/daemon/session.go",
     details: "--- a/internal/daemon/session.go\n+++ b/internal/daemon/session.go\n@@ -40,7 +40,9 @@ func (d *Daemon) sessionOf(t *store.Task) string {\n-\treturn t.ResumeID\n+\tif s := d.ctx.lastStarted(t.ID); s != \"\" {\n+\t\treturn s\n+\t}\n+\treturn t.ResumeID\n }\n" }
@@ -69,23 +69,23 @@ const HARNESSES = [
   { id: "h2", label: "codex", cmd: "codex", args: [], enabled: false, found: "", launch_mode: "pty" }
 ];
 const FIXTURES = [
-  { id: "f1", label: "notes", harness: "claude", cwd: "/home/clint/notes", enabled: true, resume: true, sort: 0 },
+  { id: "f1", label: "notes", harness: "claude", cwd: "/home/operator/notes", enabled: true, resume: true, sort: 0 },
   { id: "f2", label: "scratch", harness: "claude", cwd: "/tmp/scratch", enabled: false, sort: 1 }
 ];
 const SOURCES = [{ id: "s1", label: "my PRs", argv: ["gh", "pr", "list", "--json", "url,title"], interval_seconds: 300, enabled: true,
   last_run_at: iso(3 * MIN), last_ok: true, failures: 0 }];
-const PROVIDERS = [{ id: "pv1", name: "github", kind: "git", root: "/home/clint/git/github", layout: "org/repo", worktrees: true,
-  worktree_root: "/home/clint/worktrees", repos: [{ org: "openziti", repo: "ziti", present: true }] }];
+const PROVIDERS = [{ id: "pv1", name: "github", kind: "git", root: "/home/operator/git/github", layout: "org/repo", worktrees: true,
+  worktree_root: "/home/operator/worktrees", repos: [{ org: "openziti", repo: "ziti", present: true }] }];
 const RECOGNISERS = [{ id: "r1", label: "pull request", pattern: "https://github.com/(?P<org>[^/]+)/(?P<repo>[^/]+)/pull/(?P<num>\\d+)",
-  cwd: "/home/clint/worktrees/{org}/{repo}/pr-{num}", title: "PR {num}", prompt: "review PR {num}", sort: 0 }];
+  cwd: "/home/operator/worktrees/{org}/{repo}/pr-{num}", title: "PR {num}", prompt: "review PR {num}", sort: 0 }];
 const ACTIONS = [{ id: "a1", label: "run the tests", prompt: "run the tests and report", and_exit: false, tags: [], runners: [] }];
 const HISTORY = [0, 1, 2, 3, 4, 5].map(n => ({ id: "h" + n, display_title: "old run " + n, runner: "claude", status: "done",
   created_at: iso((n + 1) * 86400000), why: "did thing " + n, recap: n % 2 ? "" : "Wrote the recap for run " + n, worktree: "/tmp/old" + n,
   archived_at: "" }));
 const AUDIT = [
   { id: "a4", at: iso(4 * MIN), room: "alpha", kind: "permission-requested", detail: "Bash: go test ./internal/api/..." },
-  { id: "a3", at: iso(9 * MIN), room: "sgg", kind: "room-attached", detail: "sgg running v2" },
-  { id: "a2", at: iso(20 * MIN), room: "sgg", kind: "session-start", detail: "second card started on claude" },
+  { id: "a3", at: iso(9 * MIN), room: "room-g", kind: "room-attached", detail: "room-g running v2" },
+  { id: "a2", at: iso(20 * MIN), room: "room-g", kind: "session-start", detail: "second card started on claude" },
   { id: "a1", at: iso(60 * MIN), kind: "hub-started", detail: "the hub came up" }
 ];
 function usageBody() {
@@ -157,7 +157,7 @@ const server = http.createServer(async (req, res) => {
   if (p === "/v1/usage/limits") return json({ limits: [] });
   if (p === "/v1/settings") return json({ global_auto: false, global_auto_seconds: 0, board_skin: "harbour",
     board_skins: ["harbour", "moss", "noir", "ember", "vapor", "sandstone", "website"], scrollback_lines: 5000 });
-  if (p === "/v1/browse") return json({ path: "/home/clint", parent: "/home", entries: [{ name: "git", path: "/home/clint/git", dir: true }, { name: "worktrees", path: "/home/clint/worktrees", dir: true }] });
+  if (p === "/v1/browse") return json({ path: "/home/operator", parent: "/home", entries: [{ name: "git", path: "/home/operator/git", dir: true }, { name: "worktrees", path: "/home/operator/worktrees", dir: true }] });
   let m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
   if (m) return json({ source: "transcript", replies: [
     { at: iso(16 * MIN), text: "I read the resume path. `sessionOf` returns **ResumeID** after a `/clear`, which points at the old conversation.\n\n```\nfunc (d *Daemon) sessionOf(t *store.Task) string { return t.ResumeID }\n```" },
@@ -167,10 +167,10 @@ const server = http.createServer(async (req, res) => {
   if (/^\/v1\/tasks\/[^/]+\/(sessions|messages|events)$/.test(p)) return json({ sessions: [], messages: [], events: [] });
   if (/^\/v1\/tasks\/[^/]+\/files\/list$/.test(p)) return json({ path: "", parent: "", entries: [{ name: "README.md", path: "README.md", dir: false, size: 1200, mtime: iso(MIN) }] });
   if (/^\/v1\/tasks\/[^/]+\/typing$/.test(p)) return json({ line: "", count: 0, since_ms: -1, open: true, reason: "" });
-  if (p === "/_hub/rooms") return hub ? json({ rooms: [{ name: "alpha", host: "alpha-host" }, { name: "sgg", host: "sgg-host" }] }) : json({ error: "not a hub" }, 404);
+  if (p === "/_hub/rooms") return hub ? json({ rooms: [{ name: "alpha", host: "alpha-host" }, { name: "room-g", host: "room-g-host" }] }) : json({ error: "not a hub" }, 404);
   if (p === "/_hub/inventory") return hub ? json({ rooms: [
     { name: "alpha", host: "alpha-host", transport: "direct", attached: true, first_seen: iso(86400000), last_seen: iso(1000) },
-    { name: "sgg", host: "sgg-host", transport: "direct", attached: true, first_seen: iso(86400000), last_seen: iso(1000) }] }) : json({}, 404);
+    { name: "room-g", host: "room-g-host", transport: "direct", attached: true, first_seen: iso(86400000), last_seen: iso(1000) }] }) : json({}, 404);
   if (p === "/_hub/audit") return hub ? json({ events: AUDIT }) : json({}, 404);
   if (p === "/_hub/restart") return hub ? json({ paused: false, waiting: false, countdown_left: 0, boards: 1, boot: "a" }) : json({}, 404);
   if (p.startsWith("/_hub/")) return hub ? json({}) : json({}, 404);

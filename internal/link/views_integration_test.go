@@ -100,7 +100,7 @@ func newViewRig(t *testing.T) viewRig {
 		viewCard("c5", "running", "", plain, me),
 		viewCard("c6", "done", "", ended, me),
 	})
-	hub.IndexEverywhere("m1mini", []CardState{viewCard("c7", "running", "", other, "m1mini-not-"+me)})
+	hub.IndexEverywhere("room-a", []CardState{viewCard("c7", "running", "", other, "room-a-not-"+me)})
 	board := fstest.MapFS{"index.html": {Data: []byte("root")}, "js/x.js": {Data: []byte("// root")}}
 	p := NewProxy(hub, board, viewHash(board), nil)
 	if bad := p.SetBoardViews([]string{root, filepath.Join(root, "missing")}, viewHash); len(bad) != 1 {
@@ -303,5 +303,19 @@ func TestBoardViewsSameFolderName(t *testing.T) {
 	}
 	if strings.Join(names, " ") != "same=one same-2=two" {
 		t.Errorf("names: %v", names)
+	}
+}
+
+func TestLiveBoardFollowsFilesOnDisk(t *testing.T) {
+	m := fstest.MapFS{"a.css": {Data: []byte("1"), ModTime: time.Unix(1, 0)}}
+	hash := func(f fs.FS) string { b, _ := fs.ReadFile(f, "a.css"); return string(b) }
+	l := &liveBoard{hash: hash, parts: func(f fs.FS) (string, string) { return hash(f), "" }}
+	if v := l.get(m); v.Build != "1" || v.CSS != "1" {
+		t.Fatalf("first version %+v", v)
+	}
+	m["a.css"] = &fstest.MapFile{Data: []byte("2"), ModTime: time.Unix(2, 0)}
+	l.at = time.Time{}
+	if v := l.get(m); v.Build != "2" {
+		t.Fatalf("an edited file left the version at %+v", v)
 	}
 }

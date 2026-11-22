@@ -71,7 +71,7 @@ type KeepaliveRefresh struct {
 }
 
 // KeepaliveDefaultOn reports whether a new Claude card starts with keep-alive
-// on. A read failure answers on, the default clint asked for.
+// on. A read failure answers on, the default the operator asked for.
 func (s *Store) KeepaliveDefaultOn() bool {
 	v, err := s.Setting(SettingKeepaliveDefault)
 	if err != nil {

@@ -20,8 +20,7 @@ import (
 )
 
 // atrium_deploy: one call asks for a room deploy, the deploy owner holds the
-// room, waits for it to go quiet, and runs the deploy it runs today. See
-// docs/rnd/room-deploy-hold-design.md, section 5.
+// room, waits for it to go quiet, and runs the deploy it runs today.
 //
 // THE REQUEST IS ON THE HUB, because the hub outlives the room and the owner may
 // be on another one. THE HOLD IS ON THE ROOM (`/v1/hold`, internal/daemon/

@@ -26,7 +26,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// The merge queue's hub half. See docs/rnd/merge-queue.md, internal/hubstore/merge.go for the rows and
+// The merge queue's hub half. See internal/hubstore/merge.go for the rows and
 // internal/gitsync/merge.go and mergerun.go for the git and the room's test run.
 //
 //	POST /_hub/merge               {repo, branch, sha?, by, room}: ask. Answers the open request when there is one
@@ -620,7 +620,7 @@ func (p *Service) mergeCancel(w http.ResponseWriter, r *http.Request, st *hubsto
 }
 
 // mergeRoomPick is the room that runs the tests now, or "" and why none does: the configured room while it is attached,
-// else the room on the hub's own machine. See docs/rnd/merge-queue.md, "Which room runs the tests".
+// else the room on the hub's own machine.
 func (p *Service) mergeRoomPick(st *hubstore.Store) (string, string) {
 	if !p.HubUp() {
 		return "", "this hub has no rooms"

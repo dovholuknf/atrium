@@ -22,7 +22,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// THE SWEEP: what the inventory still lists that no live card holds. Design: docs/rnd/card-lifecycle-design.md
+// THE SWEEP: what the inventory still lists that no live card holds.
 // section 8. Item r-inventory-sweep.
 //
 //	GET  /v1/sweep                              the last sweep, or a fresh one when there is none

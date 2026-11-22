@@ -81,7 +81,7 @@ $WORKTREE_ROOT\watch\state.log                   every hook transition, appended
 The ledger entry is written by `claude-shell.ps1` before the tab spawns, and carries `Id`, `Pid`, `WorktreePath`,
 `Branch`, `Repo`, `WindowName`, `PromptText`, `ClaudeSessionName`, and later `ClaudeSessionId`, `State`,
 `LastStateChange`, `Saved`, `Label`, `RecapPath`. Mode B read this, and Mode B is gone. The daemon deliberately does
-not, and `docs/archive/architecture-v2.md` records why under "Abandoned".
+not.
 
 **gwt has no atrium integration at all.** Zero occurrences of the word in the script, the registry, or the state
 docs. The two systems track the same claude sessions through separate mechanisms that never meet: gwt through the
@@ -309,7 +309,7 @@ as work worth a card, and the gateway solves fetching, which was never hard. `gw
 fetches nothing, hands the URL to the agent, and the resulting session reads the ticket through these same tools
 about four seconds later. Atrium reading it first is a duplicate fetch that produces a nicer card title.
 
-`docs/rnd/ai-platform-fit.md` ranks mcp-gateway second of four and calls it "a spike, not a commitment", for a
+The AI platform fit research ranks mcp-gateway second of four and calls it "a spike, not a commitment", for a
 different reason (it has no caller identity, so gating at the gateway would collapse every agent into one card).
 That objection does not apply to reading. This one does.
 
@@ -543,7 +543,7 @@ Layer 1 makes every one of them a script rather than a feature. Listed with what
   account raise the same card twice, because `source` is per machine. That is correct today: two machines with
   two inboxes SHOULD each see it, since neither knows about the other. When the forum exists it needs a
   cross-machine identity, and `atrium name`'s wire-name qualification is the shape, but that is a decision for
-  `docs/archive/federation-design-v2.md` rather than a hole here.
+  the forum rather than a hole here.
 - **Whether the seed prompt belongs on the card.** gwt stores `PromptText` in the ledger entry and passes it as a
   single argv element, deliberately never interpolated into a command line. If atrium takes a `prompt`, it
   inherits that requirement exactly, and `expandTemplate` in `launch.go` already has a comment about what goes

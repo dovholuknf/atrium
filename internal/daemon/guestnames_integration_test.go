@@ -18,7 +18,7 @@ import (
 func TestAGuestReachesItsCardByNameAndNoOther(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	d.opts.Room = "claude-sg4"
+	d.opts.Room = "claude-room-e"
 	mk := func(name, alias string) *store.Task {
 		t.Helper()
 		task, _, err := d.st.Register(store.Observed{WireName: name, Worktree: t.TempDir(), Runner: "claude"})
@@ -38,19 +38,19 @@ func TestAGuestReachesItsCardByNameAndNoOther(t *testing.T) {
 		guest.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		return rec
 	}
-	for _, path := range []string{"/alias/ui", "/alias/@UI", "/room/claude-sg4/ui-director", "/room/claude-sg4/ui"} {
+	for _, path := range []string{"/alias/ui", "/alias/@UI", "/room/claude-room-e/ui-director", "/room/claude-room-e/ui"} {
 		if rec := get(path); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<") {
 			t.Errorf("%s answered %d, want the page", path, rec.Code)
 		}
 	}
-	for _, path := range []string{"/v1/tasks/ui", "/v1/tasks/ui@claude-sg4", "/v1/tasks/ui-director", "/v1/tasks/" + lent.ID} {
+	for _, path := range []string{"/v1/tasks/ui", "/v1/tasks/ui@claude-room-e", "/v1/tasks/ui-director", "/v1/tasks/" + lent.ID} {
 		rec := get(path)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), lent.ID) {
 			t.Errorf("%s answered %d %q, want this card", path, rec.Code, rec.Body.String())
 		}
 	}
 	refused := get("/alias/rnd").Body.String()
-	for _, path := range []string{"/alias/rnd", "/alias/nobody", "/room/claude-sg4/rnd", "/room/other/ui",
+	for _, path := range []string{"/alias/rnd", "/alias/nobody", "/room/claude-room-e/rnd", "/room/other/ui",
 		"/v1/tasks/rnd", "/v1/tasks/nobody", "/v1/tasks/ui@other"} {
 		rec := get(path)
 		if rec.Code != http.StatusForbidden || rec.Body.String() != refused {
@@ -64,11 +64,11 @@ func TestAGuestReachesItsCardByNameAndNoOther(t *testing.T) {
 	if rec := get("/alias/ui"); rec.Code != http.StatusForbidden {
 		t.Errorf("the old alias still opens the lent card: %d", rec.Code)
 	}
-	if rec := get("/room/claude-sg4/ui-director"); rec.Code != http.StatusOK {
+	if rec := get("/room/claude-room-e/ui-director"); rec.Code != http.StatusOK {
 		t.Errorf("the handle stopped opening the lent card after a rename: %d", rec.Code)
 	}
 	// And the address handed out is the handle.
-	if got := d.GuestPath(lent.ID); got != "/room/claude-sg4/ui-director" {
+	if got := d.GuestPath(lent.ID); got != "/room/claude-room-e/ui-director" {
 		t.Errorf("the lent address is %q, want the handle", got)
 	}
 	d.opts.Room = ""

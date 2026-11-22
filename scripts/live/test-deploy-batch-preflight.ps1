@@ -9,7 +9,7 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-$real = (@('Test-StopWouldRefuse', 'Get-HostInJobLines') | ForEach-Object {
+$real = (@('Test-StopWouldRefuse', 'Get-HostInJobLines', 'Test-OnCommit') | ForEach-Object {
     $n = $_
     ($ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
       Select-Object -First 1).Extent.Text
@@ -24,12 +24,19 @@ try {
   $stub = @"
 `$Base = '$tmp'
 `$AtriumNew = '$tmp'
+`$RoomName = 'claude-sg4'
 `$RoomPreflightUrl = 'http://fake/v1/preflight'
 `$RoomHoldUrl = 'http://fake/v1/hold'
 `$calls = '$calls'
 function Say(`$m) { Add-Content `$calls "SAY `$m" }
 function Rec(`$m) { Add-Content `$calls `$m }
 function Test-NewBuildStamped { `$true }
+function Get-BinLabel { 'abc1234-12345678' }
+function Get-LiveCommits {
+  `$h = @{}
+  (Get-Content '$tmp\live.json' -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { `$h[`$_.Name] = `$_.Value }
+  `$h
+}
 function Wait-NewContextsDone { Rec 'wait-contexts'; `$true }
 function Test-RunnersSurvive { Rec 'runners-survive'; `$false }
 function Set-DeployHold { Rec 'set-hold'; `$true }
@@ -51,6 +58,7 @@ $real
 
   function Run([string]$Preflight, [string[]]$Args2) {
     Set-Content "$tmp\preflight.json" $Preflight
+    if (-not (Test-Path "$tmp\live.json")) { Set-Content "$tmp\live.json" '{}' }
     Remove-Item $calls -ErrorAction SilentlyContinue
     $null = & pwsh -NoProfile -File "$tmp\deploy-batch.ps1" @Args2
     $script:code = $LASTEXITCODE
@@ -77,6 +85,19 @@ $real
 
   Run '{"pty_host":{"on":false,"in_job":false},"runners":{"host":0,"in_process":8}}' @()
   Check 'runners in the room process alone are not refused, the hold is set' ($log -match 'set-hold' -and $log -notmatch 'REFUSED')
+
+  $idle = '{"pty_host":{"on":false,"in_job":false},"runners":{"host":0,"in_process":8}}'
+  Set-Content "$tmp\live.json" '{"hub":"abc1234ffff","claude-sg4":"abc1234ffff"}'
+  Run $idle @()
+  Check 'hub and room already on the build: exit 0, nothing held, stopped or installed' ($code -eq 0 -and $log -match 'nothing to deploy' -and $log -notmatch 'set-hold|stop-room|stop-hub|install|save-revert')
+  Set-Content "$tmp\live.json" '{"hub":"abc1234ffff","claude-sg4":"0000000ffff"}'
+  Run $idle @()
+  Check 'a room on another build still deploys' ($log -match 'set-hold' -and $log -notmatch 'nothing to deploy')
+  Set-Content "$tmp\live.json" '{"claude-sg4":"abc1234ffff"}'
+  Run $idle @('-RoomOnly')
+  Check 'room only with the room current does nothing' ($log -match 'nothing to deploy' -and $log -notmatch 'set-hold')
+  Run $idle @()
+  Check 'a hub that cannot say its commit is deployed' ($log -match 'set-hold')
 } finally {
   Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

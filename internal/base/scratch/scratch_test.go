@@ -20,7 +20,7 @@ func TestCheckRefusesWhatIsNotOneAbsoluteFolder(t *testing.T) {
 
 func TestDirNamesTheCardUnderTheRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "tmp")
-	got := Dir(root, "Fix the OIDC hot loop!", "wire", "sg4~01ABCDEFGHIJ")
+	got := Dir(root, "Fix the OIDC hot loop!", "wire", "room-e~01ABCDEFGHIJ")
 	want := filepath.ToSlash(root) + "/fix-the-oidc-hot-loop-01ABCDEF"
 	if got != want {
 		t.Fatalf("Dir = %q, want %q", got, want)

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// hubRT sends what the forwarder forwards to the fixture's hub as the room sg4, and records the headers it sent.
+// hubRT sends what the forwarder forwards to the fixture's hub as the room room-e, and records the headers it sent.
 type hubRT struct {
 	x *recvFix
 
@@ -28,7 +28,7 @@ func (h *hubRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	u, _ := url.Parse(h.x.srv.URL)
 	out := r.Clone(r.Context())
 	out.URL.Scheme, out.URL.Host, out.Host = u.Scheme, u.Host, u.Host
-	out.Header.Set("X-Test-Caller", "room:sg4")
+	out.Header.Set("X-Test-Caller", "room:room-e")
 	return http.DefaultTransport.RoundTrip(out)
 }
 
@@ -95,8 +95,8 @@ func TestInACardEnvGitPushHubLandsWithTheCardInThePushLog(t *testing.T) {
 	}
 	rows := f.pushRows()
 	r := rows[len(rows)-1]
-	if r.Room != "sg4" || r.Card != "C1" || r.Ref != "refs/heads/fix/x" {
-		t.Fatalf("the push log has %+v, want sg4's C1", r)
+	if r.Room != "room-e" || r.Card != "C1" || r.Ref != "refs/heads/fix/x" {
+		t.Fatalf("the push log has %+v, want room-e's C1", r)
 	}
 	// the token never reached the hub, and the card did, once, as the forwarder set it.
 	for _, h := range f.rt.hdrs {

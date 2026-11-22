@@ -19,7 +19,7 @@ import (
 )
 
 // roomRemoteAccessCmd is `atrium room remote-access`, this room's switch for letting the hub carry an ssh stream to
-// its own sshd. See docs/rnd/ssh-via-hub.md.
+// its own sshd.
 //
 // ONLY THIS COMMAND WRITES THE FILE, on this machine. The hub, the board, the room's api and the agent listener have
 // no route that does, and that is the point: the room decides.

@@ -62,6 +62,7 @@ function walkOfferEvent(d, was) {
   if (!d || !d.id || d.status !== "done" || (was && was.status === "done")) return false;
   walkOfferRead(d);
   if (!was || !walkOffered(d) || typeof toast !== "function") return true;
+  if ((d.spawned_by_id || d.spawned_by) && d.spawned_by !== "@human") return true;
   const name = d.title || d.wire_name || "a card";
   toast(name + " is done", "its changes are ready to walk", "", "", d.id);
   return true;

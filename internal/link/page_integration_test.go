@@ -126,7 +126,7 @@ func TestABrowsersEventStreamOnTheHubRecordsItsHost(t *testing.T) {
 	rg := newRig(t)
 	front := httptest.NewServer(NewProxy(rg.hub, nil, "", nil))
 	t.Cleanup(front.Close)
-	for _, p := range []string{"/v1/events/hub", "/v1/events/room/sgg"} {
+	for _, p := range []string{"/v1/events/hub", "/v1/events/room/room-g"} {
 		seenhost.Reset()
 		req, _ := http.NewRequest("GET", front.URL+p, nil)
 		req.Host = "atrium.ziti"

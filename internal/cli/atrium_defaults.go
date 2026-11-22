@@ -11,7 +11,7 @@ func atriumCmd(sub string) string {
 	return "atrium " + sub
 }
 
-// The defaults are this machine's layout (clint, 2026-09-25): the board on
+// The defaults are this machine's layout (the operator, 2026-09-25): the board on
 // 7778, the link on 7779, the room's own board on 7781 and its agent listener
 // on 7777. Directories
 // sit beside the database atrium has always used.

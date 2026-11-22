@@ -20,11 +20,6 @@ Series: Rooms, the hub and federation. Status: idea. Audience: people mixing cod
 
 - a drawing of the move
 
-## Sources
-
-- docs/rnd/runner-switch-design.md
-- docs/rnd/room-handoff-design.md
-
 ## Notes for the writer
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.

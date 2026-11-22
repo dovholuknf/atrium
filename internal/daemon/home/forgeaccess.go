@@ -17,7 +17,7 @@ import (
 
 // A forge CLI (gh, bb, glab) that is missing, logged out or short of a scope.
 //
-// clint's rule: when forge access is NECESSARY, atrium raises an alert, says what to run in a message, and offers the
+// The operator's rule: when forge access is NECESSARY, atrium raises an alert, says what to run in a message, and offers the
 // configuration. Forges are used only on ask, so nothing here runs ahead of a need and nothing polls. Two things ask:
 // a preflight naming a forge, and RaiseForgeAccess, which the code that hits the missing access calls.
 //

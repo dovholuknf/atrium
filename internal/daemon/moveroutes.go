@@ -25,8 +25,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// THE ROOM'S HALF OF A MOVE. The hub drives a move between rooms by calling these, in the order of
-// docs/rnd/room-handoff-design.md section 3. Every route is a POST with a JSON body and is idempotent by move id:
+// THE ROOM'S HALF OF A MOVE. The hub drives a move between rooms by calling these, in
+// order. Every route is a POST with a JSON body and is idempotent by move id:
 // the hub repeats a step it did not see answered. Room A runs freeze, renew, check, capture, bundle, park, moved,
 // queue, ack, release and undo. Room B runs receive, deliver and adopt. A successor is launched through
 // /v1/launch with moved_from, and ended through /v1/tasks/{id}/exit.

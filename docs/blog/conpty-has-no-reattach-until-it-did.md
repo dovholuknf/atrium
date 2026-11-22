@@ -23,9 +23,7 @@ Series: The daemon and the halt. Status: idea. Audience: Windows and terminal en
 
 ## Sources
 
-- docs/rnd/rolling-restart-design.md
 - docs/terminal/ptyhost-protocol.md
-- docs/rnd/rolling-restart-design.md
 - README.md (Scope)
 - commit 555b85d5
 

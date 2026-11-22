@@ -21,7 +21,7 @@ const profileOut = process.argv.includes("--profile") ? process.argv[process.arg
 const STREAM = process.env.MEASURE_STREAM !== "0";
 
 const STATUSES = ["running", "needs-input", "idle", "working", "done", "blocked"];
-const ROOMS = ["claude-sg4", "sg4-control", "alpha", "beta", "gamma"];
+const ROOMS = ["claude-room-e", "room-e-control", "alpha", "beta", "gamma"];
 function card(i) {
   const room = ROOMS[i % ROOMS.length];
   return {

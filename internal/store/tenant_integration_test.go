@@ -12,7 +12,7 @@ import (
 func TestNormalizeTenant(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"SG4":                    "sg4",
+		"ROOM-E":                 "room-e",
 		"  laptop  ":             "laptop",
 		"my machine":             "mymachine",
 		"build-box_2":            "build-box_2",
@@ -59,23 +59,23 @@ func TestQualifyIsANoOpWithoutAName(t *testing.T) {
 func TestQualifyPrefixes(t *testing.T) {
 	t.Parallel()
 	s := open(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Qualify("atrium"); got != "sg4/atrium" {
-		t.Fatalf("qualified to %q, wanted sg4/atrium", got)
+	if got := s.Qualify("atrium"); got != "room-e/atrium" {
+		t.Fatalf("qualified to %q, wanted room-e/atrium", got)
 	}
 }
 
 // A session that reconnects registers again, and it must not accumulate
-// prefixes into sg4/sg4/atrium.
+// prefixes into room-e/room-e/atrium.
 func TestQualifyIsIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real sqlite database on disk")
 	}
 	t.Parallel()
 	s := open(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
 	once := s.Qualify("atrium")
@@ -92,11 +92,11 @@ func TestTenantCannotChange(t *testing.T) {
 	}
 	t.Parallel()
 	s := open(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
 	// The same name again is not a change.
-	if err := s.SetTenant("SG4"); err != nil {
+	if err := s.SetTenant("ROOM-E"); err != nil {
 		t.Fatalf("setting the same name again was refused: %v", err)
 	}
 	err := s.SetTenant("laptop")
@@ -106,7 +106,7 @@ func TestTenantCannotChange(t *testing.T) {
 	if !strings.Contains(err.Error(), "orphaned") {
 		t.Fatalf("the refusal does not say what would be lost: %v", err)
 	}
-	if got := s.Tenant(); got != "sg4" {
+	if got := s.Tenant(); got != "room-e" {
 		t.Fatalf("a refused change still altered the name to %q", got)
 	}
 }
@@ -134,7 +134,7 @@ func TestRegisterQualifiesTheWireName(t *testing.T) {
 	}
 	t.Parallel()
 	s := open(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
 	task, created, err := s.Register(Observed{
@@ -146,8 +146,8 @@ func TestRegisterQualifiesTheWireName(t *testing.T) {
 	if !created {
 		t.Fatal("the first registration did not create a card")
 	}
-	if task.WireName != "sg4/dotfiles" {
-		t.Fatalf("stored as %q, wanted sg4/dotfiles", task.WireName)
+	if task.WireName != "room-e/dotfiles" {
+		t.Fatalf("stored as %q, wanted room-e/dotfiles", task.WireName)
 	}
 	// The title drops the prefix: on a board with one atrium it is the same on
 	// every row and says nothing.
@@ -163,7 +163,7 @@ func TestLookupsQualifyToo(t *testing.T) {
 	}
 	t.Parallel()
 	s := open(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
 	made, _, err := s.Register(Observed{
@@ -182,7 +182,7 @@ func TestLookupsQualifyToo(t *testing.T) {
 		t.Fatal("an unqualified lookup did not find the card")
 	}
 	// Qualified, the way the board holds it.
-	got, err = s.GetByWireName("sg4/atriumx")
+	got, err = s.GetByWireName("room-e/atriumx")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestTwoTenantsDoNotCollide(t *testing.T) {
 	}
 	t.Parallel()
 	s := open(t)
-	if err := s.SetTenant("sg4"); err != nil {
+	if err := s.SetTenant("room-e"); err != nil {
 		t.Fatal(err)
 	}
 	mine, _, err := s.Register(Observed{
@@ -230,10 +230,10 @@ func TestTwoTenantsDoNotCollide(t *testing.T) {
 func TestLocalName(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"sg4/dotfiles": "dotfiles",
-		"dotfiles":     "dotfiles",
-		"":             "",
-		"sg4/a/b":      "a/b",
+		"room-e/dotfiles": "dotfiles",
+		"dotfiles":        "dotfiles",
+		"":                "",
+		"room-e/a/b":      "a/b",
 	}
 	for in, want := range cases {
 		if got := LocalName(in); got != want {

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// ITEMS: one assignment of work, owned here. See docs/rnd/atrium-items-decisions.md and docs/changes/items-stage2a.md.
+// ITEMS: one assignment of work, owned here. See docs/changes/items-stage2a.md.
 //
 //   - THE HUB OWNS THEM. A room keeps a mirror and an outbox, and pushes a revision here when the hub is reachable. The
 //     key of a push is (item_id, revision, state): item_event holds every key ever applied, so a replay inserts

@@ -10,8 +10,7 @@ import (
 // after its context clears, the arbiter notices and every other word atrium says in its own voice.
 // No card may be called it, or answer to it as an alias, or a worker could pass itself off as
 // atrium to a launcher that trusts what atrium says. A name a hook DERIVED from a folder called
-// `atrium` (this repository's own) is not refused: it is kept, as ReservedDerived. See
-// docs/rnd/long-turn-checkin-design.md section 11 and NameFromDir.
+// `atrium` (this repository's own) is not refused: it is kept, as ReservedDerived.
 const ReservedHandle = "atrium"
 
 // ReservedDerived is what a folder-derived `atrium` becomes. The same every time, so the

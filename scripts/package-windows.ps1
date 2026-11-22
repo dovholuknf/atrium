@@ -164,7 +164,7 @@ Write-Host "in $out"
 Write-Host ""
 if (-not $thumbprint) {
     @'
-NOTHING WAS SIGNED. To ship this without a SmartScreen warning clint must supply:
+NOTHING WAS SIGNED. To ship this without a SmartScreen warning the operator must supply:
 
   A code signing certificate (an OV or EV certificate from a CA, or an Azure
   Trusted Signing subscription). Import it into the machine store, then re-run:

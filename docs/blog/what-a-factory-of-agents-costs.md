@@ -23,12 +23,10 @@ Series: The software company: directors and workers. Status: outline. Audience: 
 
 ## Sources
 
-- docs/rnd/factory-shape.md
-- docs/rnd/operator-focus.md section 4
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)
 
 ## Notes for the writer
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.
 - Screenshots come from a test room, or are drawn mockups, as the website does. Never use the live board with real cards.
-- **Check before drafting.** These figures come only from off-repo sources (the factory status, evaluations or log). Confirm each against those files first: anything not in docs/rnd/factory-shape.md or operator-focus section 4.
+- **Check before drafting.** These figures come only from off-repo sources (the factory status, evaluations or log). Confirm each against those files first.

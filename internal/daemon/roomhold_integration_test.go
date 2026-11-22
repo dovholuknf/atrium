@@ -59,7 +59,7 @@ func TestADeployHoldRefusesAHeldCallAndNotTheDeployers(t *testing.T) {
 }
 
 // A held card removed before the lift (a throwaway that ended) must not keep the room held: on 2026-10-12 one did, and
-// every launch on claude-sg4 was refused until the hold ran out.
+// every launch on claude-room-e was refused until the hold ran out.
 func TestAHoldLiftsWhenAHeldCardWasRemoved(t *testing.T) {
 	t.Parallel()
 	d, worker, _ := heldRoom(t)

@@ -245,7 +245,7 @@ func saveSkinIn(t *testing.T, base, room, skin string) {
 }
 
 // THREE SCOPES, THREE SKINS, HELD AT ONCE AND WITHOUT LEAKING. This is the
-// property clint asked for: the ALL view, and each of two rooms, wear their own
+// property the operator asked for: the ALL view, and each of two rooms, wear their own
 // skin, a save in one reaches only that scope, and switching scope reads each
 // back independently. The ALL skin is the hub's (noir), alpha wears moss, beta
 // wears ember, and no save into one is ever seen by the others.

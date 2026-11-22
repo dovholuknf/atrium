@@ -53,7 +53,7 @@ type Relay interface {
 	Peers(ctx context.Context, all, everywhere bool) ([]RemotePeer, string, error)
 	// Find looks a bare name up among the cards tagged atrium:everywhere on other
 	// rooms. A read: the result's To and Card name the one match, or it is a
-	// refusal. See docs/rnd/everywhere-card-design.md.
+	// refusal.
 	Find(ctx context.Context, name string) (RelayResult, error)
 	// Card reads `to` on `room`, and Exit asks it to leave. The result's Task
 	// is the card, and To and Card name it across.

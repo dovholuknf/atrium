@@ -38,18 +38,18 @@ func TestADeferredMessageIsHeldAndNotTyped(t *testing.T) {
 	// The operator is mid-line, so the gate is shut.
 	r.noteOperatorTyped([]byte("half a command"))
 
-	m, err := d.st.QueueFromPeer(target.ID, "the migration is ready", "sg4/doer")
+	m, err := d.st.QueueFromPeer(target.ID, "the migration is ready", "room-e/doer")
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "the migration is ready", "", false)
+	d.deferPeerInjection(target.ID, m.ID, "room-e/doer", "the migration is ready", "", false)
 	t.Cleanup(func() { d.pending.stopAll() })
 
 	if got := heldCount(d.pending, target.ID); got != 1 {
 		t.Fatalf("the message was not held for retry: %d entries", got)
 	}
 	a := d.act.get(target.ID)
-	if a == nil || a.HeldPeer != "sg4/doer" {
+	if a == nil || a.HeldPeer != "room-e/doer" {
 		t.Fatalf("the held-message board signal is not set: %+v", a)
 	}
 	if f.written() != "" {
@@ -66,8 +66,8 @@ func TestARetryIntoAShutGateWidensTheBackoff(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	r.noteOperatorTyped([]byte("half a command"))
 
-	m, _ := d.st.QueueFromPeer(target.ID, "look at the redo", "sg4/doer")
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "look at the redo", "", false)
+	m, _ := d.st.QueueFromPeer(target.ID, "look at the redo", "room-e/doer")
+	d.deferPeerInjection(target.ID, m.ID, "room-e/doer", "look at the redo", "", false)
 	if heldStep(d.pending, target.ID) != 0 {
 		t.Fatalf("a fresh hold should start at the front of the backoff")
 	}
@@ -167,8 +167,8 @@ func TestARetryDropsAMessageTheHooksAlreadyDelivered(t *testing.T) {
 	r.line = typedLine{}
 	r.typeMu.Unlock()
 
-	m, _ := d.st.QueueFromPeer(target.ID, "handled already", "sg4/doer")
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "handled already", "", false)
+	m, _ := d.st.QueueFromPeer(target.ID, "handled already", "room-e/doer")
+	d.deferPeerInjection(target.ID, m.ID, "room-e/doer", "handled already", "", false)
 	// The Stop hook drains it before the retry fires.
 	if err := d.st.MarkDelivered(target.ID, "stop", []string{m.ID}); err != nil {
 		t.Fatal(err)
@@ -231,8 +231,8 @@ func TestAKeystrokeReArmsTheBackoff(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	r.noteOperatorTyped([]byte("half a command"))
 
-	m, _ := d.st.QueueFromPeer(target.ID, "still waiting", "sg4/doer")
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "still waiting", "", false)
+	m, _ := d.st.QueueFromPeer(target.ID, "still waiting", "room-e/doer")
+	d.deferPeerInjection(target.ID, m.ID, "room-e/doer", "still waiting", "", false)
 
 	// Slide it out to a multi-hour interval.
 	d.pending.mu.Lock()
@@ -257,8 +257,8 @@ func TestACardThatRefusesPeerTypingIsNotHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, _ := d.st.QueueFromPeer(target.ID, "anything", "sg4/doer")
-	d.deferPeerInjection(target.ID, m.ID, "sg4/doer", "anything", "", false)
+	m, _ := d.st.QueueFromPeer(target.ID, "anything", "room-e/doer")
+	d.deferPeerInjection(target.ID, m.ID, "room-e/doer", "anything", "", false)
 
 	if heldCount(d.pending, target.ID) != 0 {
 		t.Fatal("held a message for a card that refuses peer typing")

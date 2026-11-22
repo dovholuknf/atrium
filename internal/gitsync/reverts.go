@@ -9,7 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 )
 
-// REVERTS ON THE MIRROR, for the item lifecycle's efficacy (docs/rnd/item-lifecycle-design.md section 12.1 measure 6): a
+// REVERTS ON THE MIRROR, for the item lifecycle's efficacy: a
 // commit whose message says `This reverts commit <sha>` is a revert of that sha, which is git's own words and so observed.
 // One pass reads them all, and the caller matches the shas of its items, so a hub with many items asks git once.
 

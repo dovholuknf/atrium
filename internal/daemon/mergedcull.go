@@ -13,8 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A merged worker is culled without anybody remembering to. See
-// docs/rnd/merged-cull-design.md, which is the whole argument.
+// A merged worker is culled without anybody remembering to.
 //
 // The one trigger is a git `post-merge` hook running `atrium merged --into X`.
 // This file answers it: find the workers the merge covered, MARK the ones that

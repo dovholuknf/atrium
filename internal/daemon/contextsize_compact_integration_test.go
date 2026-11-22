@@ -10,7 +10,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A card that compacted reads its new size, never the reply before the compaction (public-ip on claude-sg4: 212k
+// A card that compacted reads its new size, never the reply before the compaction (public-ip on claude-room-e: 212k
 // on the board, 55k on its status line).
 func TestAContextReadFollowsACompaction(t *testing.T) {
 	t.Parallel()

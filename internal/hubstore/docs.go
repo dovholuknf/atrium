@@ -23,8 +23,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 )
 
-// Hub documents: a place for what agents and the operator write. The design is
-// docs/rnd/hub-documents-design.md and the API it serves is internal/link/docs_api.go.
+// Hub documents: a place for what agents and the operator write. The API it serves
+// is internal/link/docs_api.go.
 //
 // ── what lives where ────────────────────────────────────
 //

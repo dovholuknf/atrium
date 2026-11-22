@@ -23,7 +23,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The pulls-view runner (docs/rnd/pulls-view-design.md section 5, P1).
+// The pulls-view runner.
 //
 // A review is a row, never a card. The runner fetches the PR into the run
 // folder, primes ONE claude session with the whole bundle, and then every

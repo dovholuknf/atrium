@@ -1,7 +1,7 @@
 // ── quick replies, one renderer ──────────────────────────────────────────────────────────────────────────────────
 //
 // What a card or a growler offers as one-press answers, drawn the same on the board's growler, the phone board's
-// growler, /m's growler and /m's compose. See docs/rnd/reply-suggestions-design.md, section 4.
+// growler, /m's growler and /m's compose.
 //
 // A plain script with no dependencies, loaded by index.html and m/index.html before the growlers. It declares one
 // global, `replies`, and touches nothing else.

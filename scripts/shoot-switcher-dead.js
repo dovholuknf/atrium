@@ -3,7 +3,7 @@
 //   NODE_PATH=<dir with playwright> node scripts/shoot-switcher-dead.js
 //   SHOT=<png> is where it saves. SKIN picks the skin.
 //
-// Every endpoint is mocked. Five cards run, seven on claude-sg4 and one on sg4-control are dead with `revive` set
+// Every endpoint is mocked. Five cards run, seven on claude-room-e and one on room-e-control are dead with `revive` set
 // (a failure killed them), and two are dead without it (closed on purpose). Only the seven and the one belong under
 // Dead.
 
@@ -31,14 +31,14 @@ const card = (room, id, title, more) => Object.assign({
 }, more || {});
 const dead = { status: "dead", supervised: false, revive: true, last_activity_at: "2026-10-27T12:10:00Z" };
 const list = [
-  card("claude-sg4", "a1", "dotfiles"), card("claude-sg4", "a2", "ui-for-config"),
-  card("claude-sg4", "a3", "ziti-hook", { status: "running" }), card("claude-sg4", "a4", "rnd"),
-  card("claude-sg4", "a5", "blog"),
+  card("claude-room-e", "a1", "dotfiles"), card("claude-room-e", "a2", "ui-for-config"),
+  card("claude-room-e", "a3", "ziti-hook", { status: "running" }), card("claude-room-e", "a4", "rnd"),
+  card("claude-room-e", "a5", "blog"),
   ...["card-proc-attribution", "add-by-url-lab", "hook-fail-fast", "pr-394", "pr-395", "enrollment-links",
-    "zab-exploration"].map((n, i) => card("claude-sg4", "d" + i, n, dead)),
-  card("sg4-control", "o1", "ogorch", dead),
-  card("claude-sg4", "x1", "closed-on-purpose", { status: "dead", supervised: false }),
-  card("claude-sg4", "x2", "finished-last-week", { status: "done", supervised: false }),
+    "zab-exploration"].map((n, i) => card("claude-room-e", "d" + i, n, dead)),
+  card("room-e-control", "o1", "ogorch", dead),
+  card("claude-room-e", "x1", "closed-on-purpose", { status: "dead", supervised: false }),
+  card("claude-room-e", "x2", "finished-last-week", { status: "done", supervised: false }),
 ];
 
 const server = http.createServer((req, res) => {
@@ -57,7 +57,7 @@ const server = http.createServer((req, res) => {
   if (p === "/v1/settings") return json({ global_auto: false, board_skin: SKIN, board_skins: [SKIN], scrollback_lines: 5000 });
   if (p === "/v1/permissions") return json({ permissions: [] });
   if (p === "/v1/harnesses") return json({ harnesses: [] });
-  if (p === "/_hub/rooms") return json({ rooms: [{ name: "claude-sg4", online: true }, { name: "sg4-control", online: true }] });
+  if (p === "/_hub/rooms") return json({ rooms: [{ name: "claude-room-e", online: true }, { name: "room-e-control", online: true }] });
   if (p === "/_hub/inventory") return json({ error: "none" }, 404);
   return json({});
 });

@@ -15,7 +15,6 @@ import (
 
 // The everywhere index: the cards that carry the tag, on every room, so a bare
 // name that misses on the caller's own room can be looked for on the others.
-// See docs/rnd/everywhere-card-design.md.
 //
 // IN MEMORY AND NOTHING ELSE. It is derived from what each room last announced,
 // so it is built from the cache when the hub starts and replaced for one room

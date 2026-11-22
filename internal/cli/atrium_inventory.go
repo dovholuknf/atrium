@@ -63,8 +63,7 @@ func (i inventory) Known() ([]link.Known, error) {
 			k.Attached = true
 			since := a.Since
 			k.Since = &since
-			// HOW IT IS ATTACHED RIGHT NOW, beside how it was added. See
-			// docs/rnd/room-transport-order.md.
+			// HOW IT IS ATTACHED RIGHT NOW, beside how it was added.
 			k.Via, k.Fallback, k.Starved = a.Via, a.Fallback, a.Starved
 			k.RemoteAccess = a.RemoteAccess
 			k.LoginNeeded = a.LoginNeeded

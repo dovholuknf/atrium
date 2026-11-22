@@ -22,10 +22,7 @@ Series: Rooms, the hub and federation. Status: idea. Audience: distributed-syste
 
 ## Sources
 
-- docs/archive/federation-design.md
-- docs/archive/federation-design-v2.md
 - docs/fabric/hub-decisions.md 11 and 19
-- docs/archive/hub-room-plan.md
 
 ## Notes for the writer
 

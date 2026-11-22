@@ -22,7 +22,6 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 ## Sources
 
-- docs/rnd/operator-focus.md section 4
 - changelog/runtime/2026-09-30-r-fyi-kind.md
 - changelog/runtime/2026-09-30-r-hold-notices.md
 

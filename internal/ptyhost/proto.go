@@ -1,4 +1,4 @@
-// Package ptyhost is the pty host of docs/rnd/rolling-restart-design.md: a small long-lived process that owns the
+// Package ptyhost is the pty host of the rolling restart design: a small long-lived process that owns the
 // pseudo terminals and the runners under them, so the daemon can restart without ending any of them. The wire
 // protocol is written out in docs/terminal/ptyhost-protocol.md. This file is the frame shapes.
 package ptyhost

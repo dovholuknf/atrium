@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
@@ -165,9 +167,14 @@ func uploadTargetIn(t *store.Task) (string, error) {
 
 // uploadFiles takes bytes and puts them where the card can reach them.
 func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
 	task, err := s.st.Get(r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
+		return
+	}
+	if paths, ok := sameUpload(task.ID, r.Header.Get("X-Atrium-Upload")); ok {
+		writeJSON(w, http.StatusOK, map[string]any{"paths": paths})
 		return
 	}
 	dir, root, err := s.uploadTarget(task)
@@ -176,6 +183,7 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tLookup := time.Since(t0)
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequest)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf(
@@ -204,6 +212,7 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	tRead := time.Since(t0)
 	stamp := time.Now().Format("20060102-150405")
 	written := make([]string, 0, len(headers))
 	for i, h := range headers {
@@ -243,17 +252,77 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		written = append(written, filepath.ToSlash(dest))
 	}
 
+	tWrite := time.Since(t0)
 	if err := s.st.AppendEvent(task.ID, store.EventNotified, map[string]any{
 		"by": "upload", "files": written,
 	}); err != nil {
 		s.fail(w, err)
 		return
 	}
+	rememberUpload(task.ID, r.Header.Get("X-Atrium-Upload"), written)
+	logUpload(w, r, headers, t0, tLookup, tRead, tWrite)
 	// The daemon's own forward-slash form, which is what every path in atrium
 	// looks like and what gets spliced into a prompt. Both pwsh and claude
 	// accept it on Windows, so there is one path convention rather than one
 	// for the API and another for the terminal.
 	writeJSON(w, http.StatusOK, map[string]any{"paths": written})
+}
+
+// recentUploads is what an upload id already saved, so a request the browser or a link sends again answers with the
+// same paths instead of saving the image a second time.
+var recentUploads sync.Map
+
+type savedUpload struct {
+	paths []string
+	at    time.Time
+}
+
+func sameUpload(card, id string) ([]string, bool) {
+	if id == "" {
+		return nil, false
+	}
+	v, ok := recentUploads.Load(card + "/" + id)
+	if !ok || time.Since(v.(savedUpload).at) > 2*time.Minute {
+		return nil, false
+	}
+	return v.(savedUpload).paths, true
+}
+
+func rememberUpload(card, id string, paths []string) {
+	if id == "" {
+		return
+	}
+	recentUploads.Range(func(k, v any) bool {
+		if time.Since(v.(savedUpload).at) > 2*time.Minute {
+			recentUploads.Delete(k)
+		}
+		return true
+	})
+	recentUploads.Store(card+"/"+id, savedUpload{paths: paths, at: time.Now()})
+}
+
+// logUpload is the one line per upload, and the same steps as Server-Timing for the board. The id is the browser's,
+// so the hub's line and this one line up. Each step is measured from the start, so read is the body arriving.
+func logUpload(w http.ResponseWriter, r *http.Request, headers []*multipart.FileHeader, t0 time.Time, lookup, read, write time.Duration) {
+	var n int64
+	for _, h := range headers {
+		n += h.Size
+	}
+	event := time.Since(t0) - write
+	id := strings.Map(func(c rune) rune {
+		if c >= '0' && c <= 'z' && c != '`' {
+			return c
+		}
+		return -1
+	}, r.Header.Get("X-Atrium-Upload"))
+	if len(id) > 24 {
+		id = id[:24]
+	}
+	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+	log.Printf("[atrium upload] id=%s bytes=%d lookup=%.0fms read=%.0fms write=%.0fms event=%.0fms total=%.0fms",
+		id, n, ms(lookup), ms(read-lookup), ms(write-read), ms(event), ms(time.Since(t0)))
+	w.Header().Add("Server-Timing", fmt.Sprintf("room-read;dur=%.1f, room-write;dur=%.1f, room-event;dur=%.1f",
+		ms(read-lookup), ms(write-read), ms(event)))
 }
 
 // saveUpload writes one part to disk.

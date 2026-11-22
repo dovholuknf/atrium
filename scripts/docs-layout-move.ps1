@@ -10,7 +10,7 @@
   2. Report any top-level docs/*.md that is neither in $Map nor in $Keep, so a doc added since is placed by hand.
   3. Rewrite `docs/<old>` to `docs/<new>` in every tracked text file, except the ones in $Skip. The match refuses a
      preceding letter, digit, dot, slash or dash, so `website/docs/x.md` and `../docs/x.md` are never touched.
-  4. Print every line of the dotagents CLAUDE.md files ($ClaudeDir) that names a moved path, for clint to change by
+  4. Print every line of the dotagents CLAUDE.md files ($ClaudeDir) that names a moved path, for the operator to change by
      hand. Every worktree's CLAUDE.md is a symlink to one of those, and none is ever edited from here.
 
   Nothing is committed. Read `git status` and the report, then commit.
@@ -207,7 +207,7 @@ $changed | ForEach-Object { Write-Host "  $_" }
 
 # 4. CLAUDE.md lines naming a moved path, read from dotagents through the links
 Write-Host ""
-Write-Host "CLAUDE.md lines naming a moved path (not edited, for clint):"
+Write-Host "CLAUDE.md lines naming a moved path (not edited, for the operator):"
 $claudes = Get-ChildItem -Path $ClaudeDir -Recurse -Filter CLAUDE.md -ErrorAction SilentlyContinue |
   Where-Object { $_.FullName -notmatch '[\\/]\.mercurius[\\/]' }
 foreach ($c in $claudes) {

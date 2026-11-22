@@ -79,12 +79,12 @@ func TestARoomSessionsBacklogToolReachesTheHubOverTheLink(t *testing.T) {
 
 	// The hub's own board files the row, as the orchestrator on the hub machine would.
 	code, body := (&backlogRig{p: x.proxy}).send("POST", "/_hub/backlog", js(map[string]any{"id": "f-hub-row",
-		"dept": "fabric", "title": "filed on the hub", "body": "the whole spec", "by": "orch@sg4", "room": "sg4"}), loopAddr)
+		"dept": "fabric", "title": "filed on the hub", "body": "the whole spec", "by": "orch@room-e", "room": "room-e"}), loopAddr)
 	if code != http.StatusCreated {
 		t.Fatalf("file on the hub: %d %s", code, body)
 	}
 
-	cs := roomSession(t, x, x.miniR, "sa1", "sg4")
+	cs := roomSession(t, x, x.miniR, "sa1", "room-e")
 	res, text := callTool(t, cs, "atrium_backlog", map[string]any{"action": "get", "id": "f-hub-row"})
 	if res.IsError || !strings.Contains(text, "the whole spec") || !strings.Contains(text, "filed on the hub") {
 		t.Fatalf("get: %v %s", res.IsError, text)
@@ -93,10 +93,10 @@ func TestARoomSessionsBacklogToolReachesTheHubOverTheLink(t *testing.T) {
 		t.Fatalf("list: %s", text)
 	}
 
-	// A write: the room says it is sg4, the hub knows it is m1mini.
+	// A write: the room says it is room-e, the hub knows it is room-a.
 	res, text = callTool(t, cs, "atrium_backlog", map[string]any{"action": "file", "id": "f-from-room", "dept": "fabric",
 		"title": "filed by a room worker"})
-	if res.IsError || !strings.Contains(text, `"filed_room":"m1mini"`) || !strings.Contains(text, "sa1@m1mini") {
+	if res.IsError || !strings.Contains(text, `"filed_room":"room-a"`) || !strings.Contains(text, "sa1@room-a") {
 		t.Fatalf("file: %v %s", res.IsError, text)
 	}
 	if res, text = callTool(t, cs, "atrium_backlog", map[string]any{"action": "status", "id": "f-from-room",

@@ -337,7 +337,7 @@ func TestACardsPushOfANewBranchLandsAndIsLogged(t *testing.T) {
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
-	out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x")
+	out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x")
 	x.must(out, err)
 
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
@@ -352,7 +352,7 @@ func TestACardsPushOfANewBranchLandsAndIsLogged(t *testing.T) {
 	}
 	r := rows[1]
 	if r.Repo != hubRepo || r.Ref != "refs/heads/fix/x" || r.New != sha || r.Old != zeroSHA ||
-		r.Room != "sg4" || r.Card != "C1" || r.At.IsZero() || r.ReleasedBy != "" {
+		r.Room != "room-e" || r.Card != "C1" || r.At.IsZero() || r.ReleasedBy != "" {
 		t.Fatalf("the row: %+v", r)
 	}
 	if rows[0].Room != "" || rows[0].Card != "" || !rows[0].Operator() {
@@ -369,14 +369,14 @@ func TestTheOwnerFastForwardsItsOwnBranch(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/fix/x"))
 	sha2 := x.grow("fix/x", "y.txt")
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/fix/x"))
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha2 {
 		t.Fatalf("fix/x is %s, want %s", got, sha2)
 	}
-	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "sg4" || c != "C1" {
+	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "room-e" || c != "C1" {
 		t.Fatalf("owner %s %s %v", o, c, ok)
 	}
 }
@@ -389,7 +389,7 @@ func TestANonFastForwardIsRefusedAndMovesNothing(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("fix/x", "x.txt")
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/fix/x"))
 
 	// A different history for the same name, pushed with --force: the hub's old matches, the new is not a
@@ -419,7 +419,7 @@ func TestARefusalReachesGitAsRemoteRejectedWithTheSentence(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/main")
+	out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/main")
 	if err == nil {
 		t.Fatalf("a card moved main:\n%s", out)
 	}
@@ -439,7 +439,7 @@ func TestAPushOfMainFromACardIsRefusedAndFromTheOperatorLands(t *testing.T) {
 	main := x.seedMain(hubRepo)
 	for _, ref := range []string{"refs/heads/main", "refs/heads/claude/main"} {
 		x.branch("fix/m", "m.txt")
-		if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/m:"+ref); err == nil {
+		if out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/m:"+ref); err == nil {
 			t.Fatalf("a card pushed %s:\n%s", ref, out)
 		}
 	}
@@ -477,15 +477,15 @@ func TestAnotherCardCannotPushToAnOwnedBranchOnAnyRoom(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	owned := x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	sha2 := x.grow("fix/x", "more.txt")
 
-	for _, w := range []who{roomCard("sg4", "C2"), roomCard("m1mini", "C1"), roomCard("m1mini", "C9")} {
+	for _, w := range []who{roomCard("room-e", "C2"), roomCard("room-a", "C1"), roomCard("room-a", "C9")} {
 		out, err := x.push(w, hubRepo, "fix/x:refs/heads/fix/x")
 		if err == nil {
-			t.Fatalf("%v pushed to a branch sg4's C1 owns:\n%s", w, out)
+			t.Fatalf("%v pushed to a branch room-e's C1 owns:\n%s", w, out)
 		}
-		if !strings.Contains(out, "owned by sg4's C1, fetch it and push under another name") {
+		if !strings.Contains(out, "owned by room-e's C1, fetch it and push under another name") {
 			t.Fatalf("the refusal does not name the owner:\n%s", out)
 		}
 		if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != owned {
@@ -505,17 +505,17 @@ func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	sha2 := x.grow("fix/x", "more.txt")
 
 	// C2 is C1's successor on the same room, and says so.
-	succ := roomCard("sg4", "C2", "C2", "C1")
+	succ := roomCard("room-e", "C2", "C2", "C1")
 	x.must(x.push(succ, hubRepo, "fix/x:refs/heads/fix/x"))
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha2 {
 		t.Fatalf("the successor's push did not land: %s", got)
 	}
-	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "sg4" || c != "C2" {
-		t.Fatalf("the owner is %s %s %v, want sg4 C2", o, c, ok)
+	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "room-e" || c != "C2" {
+		t.Fatalf("the owner is %s %s %v, want room-e C2", o, c, ok)
 	}
 	rows := x.pushRows()
 	if last := rows[len(rows)-1]; last.Card != "C2" || !strings.Contains(last.ReleasedBy, "moved to C2") {
@@ -523,7 +523,7 @@ func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
 	}
 	// The predecessor is no longer the owner: a push by it, with no chain, is another card's.
 	x.grow("fix/x", "again.txt")
-	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
+	if out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("the old owner pushed after it was succeeded:\n%s", out)
 	}
 }
@@ -537,17 +537,17 @@ func TestALaunchedCardTakesItsLaunchBranchFromItsLauncher(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("claude/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "L"), hubRepo, "claude/x:refs/heads/claude/x"))
+	x.must(x.push(roomCard("room-e", "L"), hubRepo, "claude/x:refs/heads/claude/x"))
 	sha2 := x.grow("claude/x", "more.txt")
 
-	w := roomCard("sg4", "W")
+	w := roomCard("room-e", "W")
 	w.branch, w.kin = "claude/x", "L"
 	x.must(x.push(w, hubRepo, "claude/x:refs/heads/claude/x"))
 	if got := x.refOn(hubRepo, "refs/heads/claude/x"); got != sha2 {
 		t.Fatalf("the launched card's push did not land: %s", got)
 	}
-	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/claude/x"); !ok || o != "sg4" || c != "W" {
-		t.Fatalf("the owner is %s %s %v, want sg4 W", o, c, ok)
+	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/claude/x"); !ok || o != "room-e" || c != "W" {
+		t.Fatalf("the owner is %s %s %v, want room-e W", o, c, ok)
 	}
 	rows := x.pushRows()
 	if last := rows[len(rows)-1]; last.Card != "W" || !strings.Contains(last.ReleasedBy, "launched on this branch") {
@@ -564,23 +564,23 @@ func TestKinDoesNotReachAnotherBranchOrRoom(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("claude/y", "y.txt")
-	x.must(x.push(roomCard("sg4", "L"), hubRepo, "claude/y:refs/heads/claude/y"))
+	x.must(x.push(roomCard("room-e", "L"), hubRepo, "claude/y:refs/heads/claude/y"))
 	x.grow("claude/y", "more.txt")
 
 	// Launched on claude/x, pushing claude/y.
-	w := roomCard("sg4", "W")
+	w := roomCard("room-e", "W")
 	w.branch, w.kin = "claude/x", "L"
 	if out, err := x.push(w, hubRepo, "claude/y:refs/heads/claude/y"); err == nil {
 		t.Fatalf("a card launched on claude/x took claude/y:\n%s", out)
 	}
 	// Another room's card with the same id as the owner's launcher.
-	m := roomCard("m1mini", "W")
+	m := roomCard("room-a", "W")
 	m.branch, m.kin = "claude/y", "L"
 	if out, err := x.push(m, hubRepo, "claude/y:refs/heads/claude/y"); err == nil {
-		t.Fatalf("m1mini's card took sg4's L's branch:\n%s", out)
+		t.Fatalf("room-a's card took room-e's L's branch:\n%s", out)
 	}
 	// An owner that is not in the kin.
-	o := roomCard("sg4", "W")
+	o := roomCard("room-e", "W")
 	o.branch, o.kin = "claude/y", "other"
 	if out, err := x.push(o, hubRepo, "claude/y:refs/heads/claude/y"); err == nil {
 		t.Fatalf("a card whose kin does not name the owner took the branch:\n%s", out)
@@ -597,22 +597,22 @@ func TestAChainNamingAnotherRoomsCardDoesNotHelp(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	x.grow("fix/x", "more.txt")
 
-	forged := roomCard("m1mini", "C7", "C7", "C1")
+	forged := roomCard("room-a", "C7", "C7", "C1")
 	out, err := x.push(forged, hubRepo, "fix/x:refs/heads/fix/x")
 	if err == nil {
-		t.Fatalf("a chain naming sg4's C1 let m1mini's C7 in:\n%s", out)
+		t.Fatalf("a chain naming room-e's C1 let room-a's C7 in:\n%s", out)
 	}
-	if !strings.Contains(out, "owned by sg4's C1") {
+	if !strings.Contains(out, "owned by room-e's C1") {
 		t.Fatalf("the refusal: %s", out)
 	}
 	// The chain must start with the card, and is capped.
 	for name, w := range map[string]who{
-		"a chain that does not start with the card": {caller: "room:sg4", card: "C2", chain: "C9,C1"},
-		"a chain that is too long":                  {caller: "room:sg4", card: "C2", chain: "C2,a,b,c,d,e,f,g,h"},
-		"a bad id in the chain":                     {caller: "room:sg4", card: "C2", chain: "C2,C1/../x"},
+		"a chain that does not start with the card": {caller: "room:room-e", card: "C2", chain: "C9,C1"},
+		"a chain that is too long":                  {caller: "room:room-e", card: "C2", chain: "C2,a,b,c,d,e,f,g,h"},
+		"a bad id in the chain":                     {caller: "room:room-e", card: "C2", chain: "C2,C1/../x"},
 	} {
 		if out, err := x.push(w, hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 			t.Fatalf("%s was taken:\n%s", name, out)
@@ -640,21 +640,21 @@ func TestAnOwnerWhoIsGoneDeadOrLongDoneReleasesTheBranch(t *testing.T) {
 			x := newRecv(t)
 			x.seedMain(hubRepo)
 			x.branch("fix/x", "x.txt")
-			x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+			x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 			sha2 := x.grow("fix/x", "more.txt")
-			x.setCard("sg4", "C1", tc.st, tc.err)
+			x.setCard("room-e", "C1", tc.st, tc.err)
 
-			x.must(x.push(roomCard("m1mini", "C5"), hubRepo, "fix/x:refs/heads/fix/x"))
+			x.must(x.push(roomCard("room-a", "C5"), hubRepo, "fix/x:refs/heads/fix/x"))
 			if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha2 {
 				t.Fatalf("the new owner's fast-forward did not land: %s", got)
 			}
-			if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "m1mini" || c != "C5" {
+			if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "room-a" || c != "C5" {
 				t.Fatalf("owner %s %s %v", o, c, ok)
 			}
 			rows := x.rows()
 			var sawRelease bool
 			for _, r := range rows {
-				if r.Release && r.ReleasedBy == tc.want && r.Room == "sg4" && r.Card == "C1" {
+				if r.Release && r.ReleasedBy == tc.want && r.Room == "room-e" && r.Card == "C1" {
 					sawRelease = true
 				}
 			}
@@ -683,10 +683,10 @@ func TestAnOwnerWhoIsLiveOrRecentlyDoneKeepsTheBranch(t *testing.T) {
 			x := newRecv(t)
 			x.seedMain(hubRepo)
 			owned := x.branch("fix/x", "x.txt")
-			x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+			x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 			x.grow("fix/x", "more.txt")
-			x.setCard("sg4", "C1", st, nil)
-			if out, err := x.push(roomCard("m1mini", "C5"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
+			x.setCard("room-e", "C1", st, nil)
+			if out, err := x.push(roomCard("room-a", "C5"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 				t.Fatalf("took a branch whose owner is %+v:\n%s", st, out)
 			}
 			if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != owned {
@@ -704,20 +704,20 @@ func TestAnUnreachableOwnersRoomKeepsTheBranchOwnedAndSaysWhy(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	x.grow("fix/x", "more.txt")
-	x.setCard("sg4", "C1", CardState{}, ErrRoomUnreachable)
+	x.setCard("room-e", "C1", CardState{}, ErrRoomUnreachable)
 
-	out, err := x.push(roomCard("m1mini", "C5"), hubRepo, "fix/x:refs/heads/fix/x")
+	out, err := x.push(roomCard("room-a", "C5"), hubRepo, "fix/x:refs/heads/fix/x")
 	if err == nil {
 		t.Fatalf("took a branch whose room cannot be asked:\n%s", out)
 	}
-	if !strings.Contains(out, "owned by sg4's C1") || !strings.Contains(out, "cannot reach sg4") {
+	if !strings.Contains(out, "owned by room-e's C1") || !strings.Contains(out, "cannot reach room-e") {
 		t.Fatalf("the refusal does not say the room is unreachable:\n%s", out)
 	}
 	// No lookup wired at all behaves the same.
 	x.h.Cards = nil
-	if _, err := x.push(roomCard("m1mini", "C5"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
+	if _, err := x.push(roomCard("room-a", "C5"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatal("took a branch with no way to ask")
 	}
 }
@@ -730,15 +730,15 @@ func TestTheOperatorReleasesABranchAndTheNextCardOwnsIt(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	x.grow("fix/x", "more.txt")
 
 	msg, err := x.h.ReleaseBranch(bg, hubRepo, "fix/x")
-	if err != nil || !strings.Contains(msg, "sg4's C1") {
+	if err != nil || !strings.Contains(msg, "room-e's C1") {
 		t.Fatalf("release: %q %v", msg, err)
 	}
-	x.must(x.push(roomCard("m1mini", "C5"), hubRepo, "fix/x:refs/heads/fix/x"))
-	if o, c, _, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); o != "m1mini" || c != "C5" {
+	x.must(x.push(roomCard("room-a", "C5"), hubRepo, "fix/x:refs/heads/fix/x"))
+	if o, c, _, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); o != "room-a" || c != "C5" {
 		t.Fatalf("owner %s %s", o, c)
 	}
 	if msg, err := x.h.ReleaseBranch(bg, hubRepo, "never/pushed"); err != nil || !strings.Contains(msg, "no owner") {
@@ -762,20 +762,20 @@ func TestTheOperatorMayFastForwardAnyBranchAndOwnershipIsUnchanged(t *testing.T)
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	sha2 := x.grow("fix/x", "more.txt")
 	x.must(x.push(operator, hubRepo, "fix/x:refs/heads/fix/x"))
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha2 {
 		t.Fatalf("the operator's push did not land: %s", got)
 	}
-	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "sg4" || c != "C1" {
+	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || o != "room-e" || c != "C1" {
 		t.Fatalf("an operator push changed the owner to %s %s %v", o, c, ok)
 	}
 	// A branch the operator makes is the operator's: a card cannot push to it.
 	x.branch("integration", "i.txt")
 	x.must(x.push(operator, hubRepo, "integration:refs/heads/integration"))
 	x.grow("integration", "j.txt")
-	out, err := x.push(roomCard("sg4", "C1"), hubRepo, "integration:refs/heads/integration")
+	out, err := x.push(roomCard("room-e", "C1"), hubRepo, "integration:refs/heads/integration")
 	if err == nil || !strings.Contains(out, "owned by the operator") {
 		t.Fatalf("a card pushed to the operator's branch: %v\n%s", err, out)
 	}
@@ -789,10 +789,10 @@ func TestACaseVariantOfAnExistingBranchIsRefused(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	x.branch("Fix/x", "y.txt")
 
-	for _, w := range []who{roomCard("sg4", "C1"), roomCard("m1mini", "C2"), operator} {
+	for _, w := range []who{roomCard("room-e", "C1"), roomCard("room-a", "C2"), operator} {
 		out, err := x.push(w, hubRepo, "Fix/x:refs/heads/Fix/x")
 		if err == nil {
 			t.Fatalf("%v pushed Fix/x beside fix/x:\n%s", w, out)
@@ -805,10 +805,10 @@ func TestACaseVariantOfAnExistingBranchIsRefused(t *testing.T) {
 		t.Fatalf("refs: %s", refs)
 	}
 	// A directory against a file is the same clash, and refused here rather than half way through.
-	if _, out := x.rawPush(roomCard("sg4", "C1"), hubRepo, Update{zeroSHA, first, "refs/heads/fix"}); !strings.Contains(out, "clashes") {
+	if _, out := x.rawPush(roomCard("room-e", "C1"), hubRepo, Update{zeroSHA, first, "refs/heads/fix"}); !strings.Contains(out, "clashes") {
 		t.Fatalf("fix beside fix/x: %q", out)
 	}
-	if _, out := x.rawPush(roomCard("sg4", "C1"), hubRepo, Update{zeroSHA, first, "refs/heads/fix/x/deeper"}); !strings.Contains(out, "clashes") {
+	if _, out := x.rawPush(roomCard("room-e", "C1"), hubRepo, Update{zeroSHA, first, "refs/heads/fix/x/deeper"}); !strings.Contains(out, "clashes") {
 		t.Fatalf("fix/x/deeper beside fix/x: %q", out)
 	}
 	x.noLeftovers(hubRepo)
@@ -822,7 +822,7 @@ func TestTwoNewRefsInOnePushThatDifferOnlyInCaseAreRefused(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	a := x.branch("a/b", "1.txt")
-	_, out := x.rawPush(roomCard("sg4", "C1"), hubRepo,
+	_, out := x.rawPush(roomCard("room-e", "C1"), hubRepo,
 		Update{zeroSHA, a, "refs/heads/a/b"}, Update{zeroSHA, a, "refs/heads/A/B"})
 	if !strings.Contains(out, "ng refs/heads/A/B") || !strings.Contains(out, "only in case") {
 		t.Fatalf("the response: %q", out)
@@ -879,7 +879,7 @@ func TestAHostileRefNameSet(t *testing.T) {
 		"heads without refs": "heads/x",
 		"tags as a branch":   "refs/tag/x",
 	} {
-		code, out := x.rawPush(roomCard("sg4", "C1"), hubRepo, Update{zeroSHA, sha, ref})
+		code, out := x.rawPush(roomCard("room-e", "C1"), hubRepo, Update{zeroSHA, sha, ref})
 		if code != 200 || !strings.Contains(out, "ng ") {
 			t.Errorf("%s: %q was not refused: %d %q", name, ref, code, out)
 		}
@@ -903,9 +903,9 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	before := x.refsOn(hubRepo)
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 
 	git(t, x.work, "tag", "v1", "main")
 	mainSHA := x.refOn(hubRepo, MainRef)
@@ -926,16 +926,16 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 	}
 	// A card deletes a branch it pushed, and no other: not another card's, not main, not claude/main, not a tag.
 	fixX := x.refOn(hubRepo, "refs/heads/fix/x")
-	if _, out := x.rawPush(roomCard("sg4", "C2"), hubRepo, Update{fixX, zeroSHA, "refs/heads/fix/x"}); !strings.Contains(out, "ng ") {
+	if _, out := x.rawPush(roomCard("room-e", "C2"), hubRepo, Update{fixX, zeroSHA, "refs/heads/fix/x"}); !strings.Contains(out, "ng ") {
 		t.Fatalf("a card deleted a branch another card pushed:\n%s", out)
 	}
-	for _, w := range []who{roomCard("sg4", "C1"), operator} {
+	for _, w := range []who{roomCard("room-e", "C1"), operator} {
 		if _, out := x.rawPush(w, hubRepo, Update{mainSHA, zeroSHA, MainRef}); !strings.Contains(out, "ng ") {
 			t.Fatalf("main was deleted by %+v:\n%s", w, out)
 		}
 	}
 	for _, spec := range []string{":refs/heads/claude/main", ":refs/tags/v1"} {
-		for _, w := range []who{roomCard("sg4", "C1"), operator} {
+		for _, w := range []who{roomCard("room-e", "C1"), operator} {
 			if out, err := x.push(w, hubRepo, spec); err == nil {
 				t.Fatalf("%s was deleted by %+v:\n%s", spec, w, out)
 			}
@@ -946,7 +946,7 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 		t.Fatalf("a card deleted a branch outside claude/*:\n%s", out)
 	}
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/claude/x"))
-	if out, err := x.push(roomCard("sg4", "C2"), hubRepo, ":refs/heads/claude/x"); err == nil {
+	if out, err := x.push(roomCard("room-e", "C2"), hubRepo, ":refs/heads/claude/x"); err == nil {
 		t.Fatalf("a card deleted a claude/* branch another card pushed:\n%s", out)
 	}
 	x.must(x.push(card, hubRepo, ":refs/heads/claude/x"))
@@ -957,7 +957,7 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 		t.Fatal("a deleted branch still has an owner")
 	}
 	// The operator deletes a branch any card pushed, and may push a tag.
-	x.must(x.push(roomCard("sg4", "C2"), hubRepo, "fix/x:refs/heads/fix/y"))
+	x.must(x.push(roomCard("room-e", "C2"), hubRepo, "fix/x:refs/heads/fix/y"))
 	x.must(x.push(operator, hubRepo, ":refs/heads/fix/y"))
 	if x.refOn(hubRepo, "refs/heads/fix/y") != "" {
 		t.Fatal("the operator's delete did not land")
@@ -986,7 +986,7 @@ func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
 	before := x.refsOn(hubRepo)
 
 	// One of three is main, which a card may not move: refused by the hub's own rules.
-	out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/a:refs/heads/fix/a", "fix/b:refs/heads/main", "fix/b:refs/heads/fix/b")
+	out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/a:refs/heads/fix/a", "fix/b:refs/heads/main", "fix/b:refs/heads/fix/b")
 	if err == nil {
 		t.Fatalf("a push with main in it was taken:\n%s", out)
 	}
@@ -997,12 +997,12 @@ func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
 
 	// One of two is not a fast-forward, which only the hook can see, with the pack already in quarantine.
 	ok := x.branch("fix/ok", "ok.txt")
-	x.must(x.push(roomCard("sg4", "C2"), hubRepo, "fix/ok:refs/heads/fix/ok"))
+	x.must(x.push(roomCard("room-e", "C2"), hubRepo, "fix/ok:refs/heads/fix/ok"))
 	before = x.refsOn(hubRepo)
 	x.branch("fix/new", "n.txt")
 	// A rewrite of fix/ok with different content, by --force, alongside a new branch that is fine.
 	x.branchOff("fix/ok", main, "rewrite.txt")
-	out, err = x.push(roomCard("sg4", "C2"), hubRepo, "--force", "fix/new:refs/heads/fix/new", "fix/ok:refs/heads/fix/ok")
+	out, err = x.push(roomCard("room-e", "C2"), hubRepo, "--force", "fix/new:refs/heads/fix/new", "fix/ok:refs/heads/fix/ok")
 	if err == nil {
 		t.Fatalf("a push with a rewrite in it was taken:\n%s", out)
 	}
@@ -1026,11 +1026,11 @@ func TestAnOldShaThatIsNotTheRefsCurrentValueIsRefused(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	second := x.grow("fix/x", "more.txt")
 	stale := "1234567890123456789012345678901234567890"
 
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	for name, u := range map[string]Update{
 		"a wrong old":          {stale, second, "refs/heads/fix/x"},
 		"create over existing": {zeroSHA, second, "refs/heads/fix/x"},
@@ -1054,7 +1054,7 @@ func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing
 	none := filepath.Join(t.TempDir(), "none.git")
 	x := newRecv(t, func(h *Hub) { h.Store().Forge = func(Ref) string { return none } })
 	sha := x.branch("fix/x", "x.txt")
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 
 	out, err := x.push(card, "github/new/thing", "fix/x:refs/heads/fix/x")
 	if err == nil {
@@ -1077,7 +1077,7 @@ func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing
 	if !x.h.Store().Exists("github/new/thing") || x.refOn("github/new/thing", "refs/heads/fix/x") != sha {
 		t.Fatal("the repository was not made, or the push is not in it")
 	}
-	if o, c, ok, _ := x.log.Owner(bg, "github/new/thing", "refs/heads/fix/x"); !ok || o != "sg4" || c != "C1" {
+	if o, c, ok, _ := x.log.Owner(bg, "github/new/thing", "refs/heads/fix/x"); !ok || o != "room-e" || c != "C1" {
 		t.Fatalf("owner %s %s %v", o, c, ok)
 	}
 	// Made as init makes it: marked, no hook, no receivepack line in its config.
@@ -1109,7 +1109,7 @@ func TestARepositoryMadeByAPushThatTakesNothingIsTakenAway(t *testing.T) {
 	x := newRecv(t)
 	x.create.Store(true)
 	x.branch("fix/x", "x.txt")
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	// A bad name is caught before anything is made.
 	if code, out := x.rawPush(card, "github/made/late", Update{zeroSHA, "1234567890123456789012345678901234567890", "refs/heads/a..b"}); code != 200 || !strings.Contains(out, "ng ") {
 		t.Fatalf("%d %q", code, out)
@@ -1147,7 +1147,7 @@ func TestAnOversizePushIsRefusedAndNothingIsKept(t *testing.T) {
 	// Declared in the header, and chunked.
 	req, _ := http.NewRequest(http.MethodPost, x.url(hubRepo)+"/git-receive-pack", bytes.NewReader(big))
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
-	x.stamp(req, roomCard("sg4", "C1"))
+	x.stamp(req, roomCard("room-e", "C1"))
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -1158,7 +1158,7 @@ func TestAnOversizePushIsRefusedAndNothingIsKept(t *testing.T) {
 	}
 	req, _ = http.NewRequest(http.MethodPost, x.url(hubRepo)+"/git-receive-pack", io.MultiReader(bytes.NewReader(big)))
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
-	x.stamp(req, roomCard("sg4", "C1"))
+	x.stamp(req, roomCard("room-e", "C1"))
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -1207,19 +1207,19 @@ func TestARoomsPushWithNoCardIsRefusedWithASentence(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	out, err := x.push(who{caller: "room:sg4"}, hubRepo, "fix/x:refs/heads/fix/x")
+	out, err := x.push(who{caller: "room:room-e"}, hubRepo, "fix/x:refs/heads/fix/x")
 	if err == nil || !strings.Contains(out, "named none") {
 		t.Fatalf("a room push with no card: %v\n%s", err, out)
 	}
 	// Past the advertisement too: a request that skips it.
 	sha := x.branch("fix/y", "y.txt")
-	code, body := x.rawPush(who{caller: "room:sg4"}, hubRepo, Update{zeroSHA, sha, "refs/heads/fix/y"})
+	code, body := x.rawPush(who{caller: "room:room-e"}, hubRepo, Update{zeroSHA, sha, "refs/heads/fix/y"})
 	if code != 200 || !strings.Contains(body, "ng refs/heads/fix/y") || !strings.Contains(body, "named none") {
 		t.Fatalf("%d %q", code, body)
 	}
 	// A card id that is not an id.
 	for _, id := range []string{"a b", "../x", strings.Repeat("a", 200), "a;b"} {
-		if out, err := x.push(who{caller: "room:sg4", card: id, chain: id}, hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
+		if out, err := x.push(who{caller: "room:room-e", card: id, chain: id}, hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 			t.Fatalf("card id %q was taken:\n%s", id, out)
 		}
 	}
@@ -1249,7 +1249,7 @@ func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
 		t.Errorf("a fetch POST on a mirror: %d", code)
 	}
 	x.create.Store(true)
-	for _, w := range []who{operator, roomCard("sg4", "C1")} {
+	for _, w := range []who{operator, roomCard("room-e", "C1")} {
 		out, err := x.push(w, "github/m/mirror", "fix/x:refs/heads/fix/x")
 		if err == nil {
 			t.Fatalf("%v pushed into a mirror:\n%s", w, out)
@@ -1279,8 +1279,8 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 	}
 	sha := x.branch("fix/x", "x.txt")
 	for _, spec := range []string{"fix/x:refs/heads/claude/main", "fix/x:refs/heads/main", "fix/x:refs/tags/v1",
-		"fix/x:refs/rooms/sg4/fix/x"} {
-		for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
+		"fix/x:refs/rooms/room-e/fix/x"} {
+		for name, w := range map[string]who{"a card": roomCard("room-e", "C1"), "the operator": operator} {
 			out, err := x.push(w, "github/m/mirror", spec)
 			if err == nil || !strings.Contains(out, "is a mirror the hub keeps in step") {
 				t.Fatalf("%s pushed %s into an adopted mirror: %v\n%s", name, spec, err, out)
@@ -1294,7 +1294,7 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 		}
 	}
 	// The advertisement for a push is offered: what lands is decided ref by ref.
-	if code, adv := x.getRefs(roomCard("sg4", "C1"), "github/m/mirror", "git-receive-pack"); code != 200 || strings.Contains(adv, "ERR atrium: ") {
+	if code, adv := x.getRefs(roomCard("room-e", "C1"), "github/m/mirror", "git-receive-pack"); code != 200 || strings.Contains(adv, "ERR atrium: ") {
 		t.Fatalf("the advertisement for a card: %d %q", code, adv)
 	}
 	// A hand-built push of claude/main that never asked for the advertisement is refused at the push itself.
@@ -1305,7 +1305,7 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 		t.Fatalf("a hand-built claude/main push: %d %q", code, out)
 	}
 	// A card's work branch lands, with its row, and the card owns it.
-	if out, err := x.push(roomCard("sg4", "C1"), "github/m/mirror", "fix/x:refs/heads/fix/x"); err != nil {
+	if out, err := x.push(roomCard("room-e", "C1"), "github/m/mirror", "fix/x:refs/heads/fix/x"); err != nil {
 		t.Fatalf("a card's work branch into an adopted mirror: %v\n%s", err, out)
 	}
 	if got, _ := rawGit(dir, nil, nil, "rev-parse", "refs/heads/fix/x"); strings.TrimSpace(got) != sha {
@@ -1315,7 +1315,7 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 		t.Fatalf("rows: %+v", rows)
 	}
 	// Fetching it works for a room and for the operator.
-	for _, w := range []who{roomCard("sg4", "C1"), operator} {
+	for _, w := range []who{roomCard("room-e", "C1"), operator} {
 		if code, _ := x.getRefs(w, "github/m/mirror", "git-upload-pack"); code != 200 {
 			t.Fatalf("fetching an adopted mirror: %d", code)
 		}
@@ -1330,8 +1330,8 @@ func TestARoomAndTheOperatorCanFetchTheStore(t *testing.T) {
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
-	for _, w := range []who{roomCard("m1mini", "C9"), {caller: "room:m1mini"}, operator} {
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	for _, w := range []who{roomCard("room-a", "C9"), {caller: "room:room-a"}, operator} {
 		dst := filepath.Join(t.TempDir(), "clone")
 		x.must(x.run(t.TempDir(), w, "clone", "-q", x.url(hubRepo), dst))
 		if got := git(t, dst, "rev-parse", "origin/main"); got != main {
@@ -1368,7 +1368,7 @@ func TestShallowDeepenAndFilterFetchesAreRefusedBeforeGit(t *testing.T) {
 		}
 		body = append(append(append([]byte{}, body...), extra...), flushPkt...)
 		body = append(body, pktLine("done\n")...)
-		code, out := x.post(roomCard("sg4", "C1"), hubRepo, "git-upload-pack", "application/x-git-upload-pack-request", body)
+		code, out := x.post(roomCard("room-e", "C1"), hubRepo, "git-upload-pack", "application/x-git-upload-pack-request", body)
 		if code != 200 || !strings.Contains(out, "ERR atrium: ") {
 			t.Errorf("%s: %d %q", name, code, out)
 		}
@@ -1444,7 +1444,7 @@ func TestARepositorysOwnHookAndConfigAreNotUsed(t *testing.T) {
 	git(t, dir, "config", "receive.denyNonFastForwards", "false")
 	git(t, dir, "config", "core.hooksPath", filepath.Join(dir, "hooks"))
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	if _, err := os.Stat(proof); err == nil {
 		t.Fatal("a hook the repository carried ran")
 	}
@@ -1452,7 +1452,7 @@ func TestARepositorysOwnHookAndConfigAreNotUsed(t *testing.T) {
 	git(t, x.work, "switch", "-q", "-C", "fix/x", "main")
 	commit(t, x.work, "rewrite.txt", "rewrite")
 	git(t, x.work, "switch", "-q", "main")
-	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "--force", "fix/x:refs/heads/fix/x"); err == nil {
+	if out, err := x.push(roomCard("room-e", "C1"), hubRepo, "--force", "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("a rewrite landed in a repository whose config says it may:\n%s", out)
 	}
 }
@@ -1467,7 +1467,7 @@ func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
 	x.log.FailBegin = errors.New("disk full")
-	out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x")
+	out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x")
 	if err == nil || !strings.Contains(out, "so it was not taken") {
 		t.Fatalf("a push the hub could not record landed: %v\n%s", err, out)
 	}
@@ -1476,14 +1476,14 @@ func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
 	}
 	// A repository the push would have made is not left behind either.
 	x.create.Store(true)
-	if out, err := x.push(roomCard("sg4", "C1"), "github/o/new", "fix/x:refs/heads/fix/x"); err == nil {
+	if out, err := x.push(roomCard("room-e", "C1"), "github/o/new", "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("a push to a new repository landed with no log:\n%s", out)
 	}
 	if _, err := os.Stat(x.h.Store().dir(Ref{Host: "github", Owner: "o", Repo: "new"})); err == nil {
 		t.Fatal("a repository was left by a push the log refused")
 	}
 	x.log.FailBegin = nil
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 }
 
 // With no log at all, nothing is taken.
@@ -1492,7 +1492,7 @@ func TestAHubWithNoPushLogTakesNoPush(t *testing.T) {
 	x := newRecv(t, func(h *Hub) { h.PushLog = nil })
 	x.makeRepo(hubRepo)
 	x.branch("fix/x", "x.txt")
-	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
+	if out, err := x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("a hub with no log took a push:\n%s", out)
 	}
 	if out, err := x.push(operator, hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
@@ -1511,7 +1511,7 @@ func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
 	x.log.FailSettle = errors.New("disk full")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
 		t.Fatalf("the push did not land: %s", got)
 	}
@@ -1519,14 +1519,14 @@ func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T
 		t.Fatalf("pending = %+v", pend)
 	}
 	// The pending row is the owner, and while the log still cannot settle, no other push to the repository goes in.
-	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "room-e" || card != "C1" {
 		t.Fatalf("a pending push is not the owner: %q %q %v", room, card, ok)
 	}
 	other := filepath.Join(t.TempDir(), "other")
 	x.must(x.run(t.TempDir(), operator, "clone", "-q", x.url(hubRepo), other))
 	git(t, other, "switch", "-q", "fix/x")
 	commit(t, other, "o.txt", "o")
-	if out, err := x.run(other, roomCard("m1mini", "D2"), "push", x.url(hubRepo), "fix/x:refs/heads/fix/x"); err == nil {
+	if out, err := x.run(other, roomCard("room-a", "D2"), "push", x.url(hubRepo), "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("a push went in while the log could not settle:\n%s", out)
 	}
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
@@ -1535,11 +1535,11 @@ func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T
 	// The owner's next push settles the leftovers first.
 	x.log.FailSettle = nil
 	x.grow("fix/x", "x2.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
 		t.Fatalf("still pending: %+v", pend)
 	}
-	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "room-e" || card != "C1" {
 		t.Fatalf("owner %q %q %v", room, card, ok)
 	}
 }
@@ -1562,8 +1562,8 @@ func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *t
 	// The pushed branch moved and the log was left pending, a second branch's row was pending and git never moved it.
 	git(t, dir, "update-ref", "refs/heads/fix/x", sha)
 	git(t, dir, "update-ref", "-d", "refs/heads/tmp")
-	_, err := x.log.Begin(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/fix/x", Old: zero, New: sha, Room: "sg4", Card: "C1"},
-		PushRow{Repo: hubRepo, Ref: "refs/heads/fix/never", Old: zero, New: sha, Room: "sg4", Card: "C1"})
+	_, err := x.log.Begin(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/fix/x", Old: zero, New: sha, Room: "room-e", Card: "C1"},
+		PushRow{Repo: hubRepo, Ref: "refs/heads/fix/never", Old: zero, New: sha, Room: "room-e", Card: "C1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1572,8 +1572,8 @@ func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *t
 	x.must(x.run(t.TempDir(), operator, "clone", "-q", x.url(hubRepo), other))
 	git(t, other, "switch", "-q", "fix/x")
 	commit(t, other, "o.txt", "o")
-	out, err2 := x.run(other, roomCard("m1mini", "D2"), "push", x.url(hubRepo), "fix/x:refs/heads/fix/x")
-	if err2 == nil || !strings.Contains(out, "is owned by sg4's C1") {
+	out, err2 := x.run(other, roomCard("room-a", "D2"), "push", x.url(hubRepo), "fix/x:refs/heads/fix/x")
+	if err2 == nil || !strings.Contains(out, "is owned by room-e's C1") {
 		t.Fatalf("a branch with a pending row was taken: %v\n%s", err2, out)
 	}
 
@@ -1584,7 +1584,7 @@ func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *t
 	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
 		t.Fatalf("still pending: %+v", pend)
 	}
-	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "room-e" || card != "C1" {
 		t.Fatalf("the moved branch: owner %q %q %v", room, card, ok)
 	}
 	if _, _, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/never"); ok {
@@ -1594,7 +1594,7 @@ func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *t
 	if err := x.h.Reconcile(bg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := x.log.Begin(bg, PushRow{Repo: "github/o/gone", Ref: "refs/heads/x", New: sha, Room: "sg4", Card: "C1"}); err != nil {
+	if _, err := x.log.Begin(bg, PushRow{Repo: "github/o/gone", Ref: "refs/heads/x", New: sha, Room: "room-e", Card: "C1"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := x.h.Reconcile(bg); err != nil {
@@ -1618,15 +1618,15 @@ func TestTheNextPushToARepositorySettlesWhatACrashLeftPending(t *testing.T) {
 	dir, _ := x.h.Store().Path(hubRepo)
 	git(t, dir, "update-ref", "refs/heads/fix/x", sha)
 	git(t, dir, "update-ref", "-d", "refs/heads/tmp")
-	if _, err := x.log.Begin(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/fix/x", Old: strings.Repeat("0", 40), New: sha, Room: "sg4", Card: "C1"}); err != nil {
+	if _, err := x.log.Begin(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/fix/x", Old: strings.Repeat("0", 40), New: sha, Room: "room-e", Card: "C1"}); err != nil {
 		t.Fatal(err)
 	}
 	x.branch("fix/y", "y.txt")
-	x.must(x.push(roomCard("m1mini", "D2"), hubRepo, "fix/y:refs/heads/fix/y"))
+	x.must(x.push(roomCard("room-a", "D2"), hubRepo, "fix/y:refs/heads/fix/y"))
 	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
 		t.Fatalf("still pending after a push to the repository: %+v", pend)
 	}
-	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "room-e" || card != "C1" {
 		t.Fatalf("owner of the branch the crash left: %q %q %v", room, card, ok)
 	}
 }
@@ -1640,21 +1640,21 @@ func TestATakeoverGitRefusesReleasesNothing(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
-	x.setCard("sg4", "C1", CardState{}, ErrCardGone)
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.setCard("room-e", "C1", CardState{}, ErrCardGone)
 
-	// m1mini's card pushes a branch that is NOT a descendant of fix/x: the hub's rules let the takeover through (the
+	// room-a's card pushes a branch that is NOT a descendant of fix/x: the hub's rules let the takeover through (the
 	// owner is gone) and the hook refuses the non-fast-forward.
 	diverged := filepath.Join(t.TempDir(), "d")
 	x.must(x.run(t.TempDir(), operator, "clone", "-q", x.url(hubRepo), diverged))
 	git(t, diverged, "switch", "-q", "-c", "fix/x2", "main")
 	commit(t, diverged, "d.txt", "d")
 	git(t, diverged, "branch", "-f", "fix/x", "fix/x2")
-	out, err := x.run(diverged, roomCard("m1mini", "D2"), "push", "--force", x.url(hubRepo), "fix/x:refs/heads/fix/x")
+	out, err := x.run(diverged, roomCard("room-a", "D2"), "push", "--force", x.url(hubRepo), "fix/x:refs/heads/fix/x")
 	if err == nil {
 		t.Fatalf("a non-fast-forward takeover landed:\n%s", out)
 	}
-	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "room-e" || card != "C1" {
 		t.Fatalf("a refused takeover released the branch: owner %q %q %v", room, card, ok)
 	}
 	for _, r := range x.rows() {
@@ -1690,8 +1690,8 @@ func TestTwoPushesToTheSameNewBranchHaveExactlyOneWinner(t *testing.T) {
 		}
 	}
 	wg.Add(2)
-	go run(x.work, roomCard("sg4", "C1"))
-	go run(other, roomCard("m1mini", "C2"))
+	go run(x.work, roomCard("room-e", "C1"))
+	go run(other, roomCard("room-a", "C2"))
 	wg.Wait()
 	if wins.Load() != 1 {
 		t.Fatalf("%d pushes won", wins.Load())
@@ -1716,14 +1716,14 @@ func TestTheListingTakesOwnersAndTimesFromThePushLog(t *testing.T) {
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
 	x.branch("fix/y", "y.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
-	x.must(x.push(roomCard("m1mini", "C2"), hubRepo, "fix/y:refs/heads/fix/y"))
-	x.setCard("m1mini", "C2", CardState{}, ErrCardGone)
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-a", "C2"), hubRepo, "fix/y:refs/heads/fix/y"))
+	x.setCard("room-a", "C2", CardState{}, ErrCardGone)
 	if _, err := x.h.ReleaseBranch(bg, hubRepo, "fix/y"); err != nil {
 		t.Fatal(err)
 	}
 	// A row for a ref that no longer exists is ignored.
-	_ = x.log.Append(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/gone", Old: zeroSHA, New: "abc", Room: "sg4", Card: "C9"})
+	_ = x.log.Append(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/gone", Old: zeroSHA, New: "abc", Room: "room-e", Card: "C9"})
 
 	views, err := x.h.Store().View(bg)
 	if err != nil || len(views) != 1 {
@@ -1737,10 +1737,10 @@ func TestTheListingTakesOwnersAndTimesFromThePushLog(t *testing.T) {
 	if len(by) != 2 || by["gone"].Name != "" {
 		t.Fatalf("branches: %+v", v.Branches)
 	}
-	if b := by["fix/x"]; b.Room != "sg4" || b.Card != "C1" || b.Released || b.SHA != x.refOn(hubRepo, "refs/heads/fix/x") {
+	if b := by["fix/x"]; b.Room != "room-e" || b.Card != "C1" || b.Released || b.SHA != x.refOn(hubRepo, "refs/heads/fix/x") {
 		t.Fatalf("fix/x: %+v", b)
 	}
-	if b := by["fix/y"]; b.Room != "m1mini" || b.Card != "C2" || !b.Released {
+	if b := by["fix/y"]; b.Room != "room-a" || b.Card != "C2" || !b.Released {
 		t.Fatalf("fix/y: %+v", b)
 	}
 	// main.at is the operator's last push to main, and not a card's push or the operator's push of a branch.
@@ -1779,20 +1779,20 @@ func TestDeleteAndTagRefusalsAreTheHubsSentences(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	git(t, x.work, "tag", "v1", "main")
 	for _, c := range []struct {
 		who  who
 		spec string
 		want string
 	}{
-		{roomCard("sg4", "C2"), ":refs/heads/fix/x", "a card deletes only a branch it pushed"},
-		{roomCard("sg4", "C1"), ":refs/heads/fix/x", "a card deletes only a claude/* branch it pushed"},
-		{roomCard("sg4", "C1"), ":refs/heads/main", "is never deleted by a push"},
+		{roomCard("room-e", "C2"), ":refs/heads/fix/x", "a card deletes only a branch it pushed"},
+		{roomCard("room-e", "C1"), ":refs/heads/fix/x", "a card deletes only a claude/* branch it pushed"},
+		{roomCard("room-e", "C1"), ":refs/heads/main", "is never deleted by a push"},
 		{operator, ":refs/heads/main", "is never deleted by a push"},
-		{roomCard("sg4", "C1"), ":refs/tags/v1", "is not done by a push"},
+		{roomCard("room-e", "C1"), ":refs/tags/v1", "is not done by a push"},
 		{operator, ":refs/tags/v1", "is not done by a push"},
-		{roomCard("sg4", "C1"), "refs/tags/v1:refs/tags/v1", "a card cannot push a tag"},
+		{roomCard("room-e", "C1"), "refs/tags/v1:refs/tags/v1", "a card cannot push a tag"},
 	} {
 		out, err := x.push(c.who, hubRepo, c.spec)
 		if err == nil || !strings.Contains(out, "atrium: ") || !strings.Contains(out, c.want) {
@@ -1817,7 +1817,7 @@ func TestHandBuiltPushesAreRefusedBeforeGit(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	caps := "\x00report-status side-band-64k"
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	post := func(w who, repo string, lines ...string) string {
 		code, out := x.post(w, repo, "git-receive-pack", "application/x-git-receive-pack-request", pushBody(lines...))
 		if code != 200 {
@@ -1863,7 +1863,7 @@ func TestADeclaredOversizeBodyIsNotRead(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, StorePrefix+hubRepo+".git/git-receive-pack", body)
 	req.ContentLength = 2 << 20
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
-	req = req.WithContext(WithCaller(req.Context(), Caller{Kind: CallerRoom, Room: "sg4"}))
+	req = req.WithContext(WithCaller(req.Context(), Caller{Kind: CallerRoom, Room: "room-e"}))
 	req.Header.Set(HeaderCard, "C1")
 	req.Header.Set(HeaderChain, "C1")
 	rec := httptest.NewRecorder()
@@ -1946,7 +1946,7 @@ func TestACapabilityOnAnyCommandLineIsHeldToTheSameChecks(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	zero := strings.Repeat("0", 40)
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	for name, c := range map[string]struct{ second, want string }{
 		"push-options on the second line": {"\x00push-options", "push options are not taken"},
 		"sha256 on the second line":       {"\x00object-format=sha256", "sha1"},
@@ -1983,7 +1983,7 @@ func TestARepeatedCardHeaderIsRefused(t *testing.T) {
 		"card, as a casing": {{HeaderCard, "C1"}, {"x-atrium-card", "C2"}, {HeaderChain, "C1"}},
 	} {
 		req, _ := http.NewRequest(http.MethodGet, x.url(hubRepo)+"/info/refs?service=git-receive-pack", nil)
-		req.Header.Set("X-Test-Caller", "room:sg4")
+		req.Header.Set("X-Test-Caller", "room:room-e")
 		for _, h := range hdr {
 			req.Header.Add(h[0], h[1])
 		}
@@ -2001,7 +2001,7 @@ func TestARepeatedCardHeaderIsRefused(t *testing.T) {
 		preq, _ := http.NewRequest(http.MethodPost, x.url(hubRepo)+"/git-receive-pack",
 			bytes.NewReader(pushBody(zero+" "+sha1a+" refs/heads/fix/a\x00report-status side-band-64k")))
 		preq.Header.Set("Content-Type", "application/x-git-receive-pack-request")
-		preq.Header.Set("X-Test-Caller", "room:sg4")
+		preq.Header.Set("X-Test-Caller", "room:room-e")
 		for _, h := range hdr {
 			preq.Header.Add(h[0], h[1])
 		}
@@ -2017,7 +2017,7 @@ func TestARepeatedCardHeaderIsRefused(t *testing.T) {
 	}
 	// One of each is fine.
 	x.branch("fix/x", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1", "C1", "C0"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1", "C1", "C0"), hubRepo, "fix/x:refs/heads/fix/x"))
 }
 
 // A PUSH ASKS AT MOST maxOwnerAsks ROOMS, and the owners it did not ask are treated as unreachable: the branch stays
@@ -2034,19 +2034,19 @@ func TestAPushAsksOnlyAFewOwnersAndTheRestStayOwned(t *testing.T) {
 		ref := fmt.Sprintf("refs/heads/fix/o%d", i)
 		refs = append(refs, ref)
 		specs = append(specs, "main:"+ref)
-		if err := x.log.Append(bg, PushRow{Repo: hubRepo, Ref: ref, Room: "sg4", Card: fmt.Sprintf("O%d", i)}); err != nil {
+		if err := x.log.Append(bg, PushRow{Repo: hubRepo, Ref: ref, Room: "room-e", Card: fmt.Sprintf("O%d", i)}); err != nil {
 			t.Fatal(err)
 		}
-		x.setCard("sg4", fmt.Sprintf("O%d", i), CardState{}, ErrCardGone)
+		x.setCard("room-e", fmt.Sprintf("O%d", i), CardState{}, ErrCardGone)
 	}
-	out, err := x.push(roomCard("m1mini", "D2"), hubRepo, specs...)
+	out, err := x.push(roomCard("room-a", "D2"), hubRepo, specs...)
 	if err == nil {
 		t.Fatalf("a push over owners nobody asked about landed:\n%s", out)
 	}
 	if got := x.asked.Load(); got != int32(maxOwnerAsks) {
 		t.Fatalf("%d owners were asked, at most %d are", got, maxOwnerAsks)
 	}
-	if !strings.Contains(out, "cannot reach sg4") {
+	if !strings.Contains(out, "cannot reach room-e") {
 		t.Fatalf("the refusal does not say why:\n%s", out)
 	}
 	for _, ref := range refs {
@@ -2074,12 +2074,12 @@ func TestAPushAsksOwnersForABoundedTimeInAll(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ref := fmt.Sprintf("refs/heads/fix/o%d", i)
 		specs = append(specs, "main:"+ref)
-		if err := x.log.Append(bg, PushRow{Repo: hubRepo, Ref: ref, Room: "sg4", Card: fmt.Sprintf("O%d", i)}); err != nil {
+		if err := x.log.Append(bg, PushRow{Repo: hubRepo, Ref: ref, Room: "room-e", Card: fmt.Sprintf("O%d", i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	start := time.Now()
-	out, err := x.push(roomCard("m1mini", "D2"), hubRepo, specs...)
+	out, err := x.push(roomCard("room-a", "D2"), hubRepo, specs...)
 	if err == nil {
 		t.Fatalf("a push landed over owners who never answered:\n%s", out)
 	}
@@ -2089,7 +2089,7 @@ func TestAPushAsksOwnersForABoundedTimeInAll(t *testing.T) {
 	if got := asks.Load(); got != 1 {
 		t.Fatalf("%d owners were asked after the time was used up", got)
 	}
-	if !strings.Contains(out, "cannot reach sg4") {
+	if !strings.Contains(out, "cannot reach room-e") {
 		t.Fatalf("the refusal does not say why:\n%s", out)
 	}
 }
@@ -2109,7 +2109,7 @@ func TestRefNamesAreCheckedBeforeTheRepositoryLockIsTaken(t *testing.T) {
 		}
 		l.Unlock()
 	}
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	if calls.Load() == 0 {
 		t.Fatal("no ref name was checked")
 	}
@@ -2154,7 +2154,7 @@ func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
 	req.Header.Set(HeaderCard, "C1")
 	req.Header.Set(HeaderChain, "C1")
-	req = req.WithContext(WithCaller(req.Context(), Caller{Kind: CallerRoom, Room: "sg4"}))
+	req = req.WithContext(WithCaller(req.Context(), Caller{Kind: CallerRoom, Room: "room-e"}))
 	probe := &lockProbe{ResponseWriter: httptest.NewRecorder(), l: l}
 	x.h.StoreHandler().ServeHTTP(probe, req)
 	if probe.n == 0 {
@@ -2171,7 +2171,7 @@ func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
 func TestGitsProbeBeforeALargePushIsAnsweredAndDoesNothing(t *testing.T) {
 	t.Parallel()
 	x := newRecv(t)
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	x.create.Store(true)
 
 	code, body := x.post(card, "github/new/thing", "git-receive-pack", "application/x-git-receive-pack-request", []byte("0000"))
@@ -2201,7 +2201,7 @@ func TestAPushThatMakesGitProbeLandsThroughTheReceiver(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
-	out, err := x.run(x.work, roomCard("sg4", "C1"), "-c", "http.postBuffer=1", "push", x.url(hubRepo), "fix/x:refs/heads/fix/x")
+	out, err := x.run(x.work, roomCard("room-e", "C1"), "-c", "http.postBuffer=1", "push", x.url(hubRepo), "fix/x:refs/heads/fix/x")
 	x.must(out, err)
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
 		t.Fatalf("fix/x is %q on the hub, want %q", got, sha)
@@ -2215,26 +2215,26 @@ func TestOrchestratorDeletesAnotherCardsMergedBranchOnly(t *testing.T) {
 	}
 	t.Parallel()
 	x := newRecv(t, func(h *Hub) {
-		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+		h.IsOrchestrator = func(room, card string) bool { return room == "room-e" && card == "ORCH" }
 	})
 	x.seedMain(hubRepo)
 	x.branch("claude/done", "d.txt")
 	x.branch("claude/open", "o.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/done:refs/heads/claude/done", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/done:refs/heads/claude/done", "claude/open:refs/heads/claude/open"))
 	x.must(x.push(operator, hubRepo, "claude/done:refs/heads/main"))
 	for _, c := range []struct {
 		who  who
 		spec string
 	}{
-		{roomCard("sg4", "C2"), ":refs/heads/claude/done"},
-		{roomCard("sg4", "ORCH"), ":refs/heads/claude/open"},
+		{roomCard("room-e", "C2"), ":refs/heads/claude/done"},
+		{roomCard("room-e", "ORCH"), ":refs/heads/claude/open"},
 	} {
 		out, err := x.push(c.who, hubRepo, c.spec)
 		if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
 			t.Errorf("%s by %+v: %v\n%s", c.spec, c.who, err, out)
 		}
 	}
-	x.must(x.push(roomCard("sg4", "ORCH"), hubRepo, ":refs/heads/claude/done"))
+	x.must(x.push(roomCard("room-e", "ORCH"), hubRepo, ":refs/heads/claude/done"))
 	if got := x.refOn(hubRepo, "refs/heads/claude/done"); got != "" {
 		t.Errorf("claude/done is still there at %s", got)
 	}
@@ -2247,14 +2247,14 @@ func TestOrchestratorDeletesASquashedAndACherryPickedBranch(t *testing.T) {
 	}
 	t.Parallel()
 	x := newRecv(t, func(h *Hub) {
-		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+		h.IsOrchestrator = func(room, card string) bool { return room == "room-e" && card == "ORCH" }
 	})
 	x.seedMain(hubRepo)
 	x.branch("claude/squash", "s.txt")
 	x.branch("claude/pick", "p.txt")
 	x.branch("claude/unlanded", "u.txt")
 	x.grow("claude/unlanded", "u2.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/squash:refs/heads/claude/squash",
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/squash:refs/heads/claude/squash",
 		"claude/pick:refs/heads/claude/pick", "claude/unlanded:refs/heads/claude/unlanded"))
 	ident := []string{"-c", "user.name=t", "-c", "user.email=t@example.com"}
 	git(t, x.work, "checkout", "-q", "main")
@@ -2264,7 +2264,7 @@ func TestOrchestratorDeletesASquashedAndACherryPickedBranch(t *testing.T) {
 	git(t, x.work, append(ident, "cherry-pick", "claude/unlanded~1")...)
 	x.must(x.push(operator, hubRepo, "main:refs/heads/main"))
 
-	orch := roomCard("sg4", "ORCH")
+	orch := roomCard("room-e", "ORCH")
 	x.must(x.push(orch, hubRepo, ":refs/heads/claude/squash"))
 	x.must(x.push(orch, hubRepo, ":refs/heads/claude/pick"))
 	out, err := x.push(orch, hubRepo, ":refs/heads/claude/unlanded")
@@ -2283,7 +2283,7 @@ func TestOrchestratorDeletesABranchSquashedIntoAnAdoptedMirrorsForgeMain(t *test
 	forge := filepath.ToSlash(t.TempDir())
 	ck := filepath.ToSlash(filepath.Join(t.TempDir(), "ck"))
 	x := newRecv(t, func(h *Hub) {
-		h.IsOrchestrator = func(room, card string) bool { return room == "sg4" && card == "ORCH" }
+		h.IsOrchestrator = func(room, card string) bool { return room == "room-e" && card == "ORCH" }
 		h.Repos = func() ([]Repo, error) { return []Repo{{Name: hubRepo, Checkout: ck, Branch: "claude/main"}}, nil }
 	})
 	git(t, forge, "init", "-q", "--bare")
@@ -2298,7 +2298,7 @@ func TestOrchestratorDeletesABranchSquashedIntoAnAdoptedMirrorsForgeMain(t *test
 	}
 	x.branch("claude/sq", "s.txt")
 	x.branch("claude/open", "o.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/sq:refs/heads/claude/sq", "claude/open:refs/heads/claude/open"))
 	ident := []string{"-c", "user.name=t", "-c", "user.email=t@example.com"}
 	git(t, x.work, "checkout", "-q", "main")
 	git(t, x.work, "merge", "--squash", "claude/sq")
@@ -2306,7 +2306,7 @@ func TestOrchestratorDeletesABranchSquashedIntoAnAdoptedMirrorsForgeMain(t *test
 	git(t, x.work, "push", "-q", forge, "main:refs/heads/main")
 	git(t, ck, "fetch", "-q", "origin")
 
-	orch := roomCard("sg4", "ORCH")
+	orch := roomCard("room-e", "ORCH")
 	out, err := x.push(orch, hubRepo, ":refs/heads/claude/open")
 	if err == nil || !strings.Contains(out, "a card deletes only a branch it pushed") {
 		t.Errorf("a branch the forge's main lacks: %v\n%s", err, out)
@@ -2338,7 +2338,7 @@ func TestTheOperatorDeletesABranchOfAnAdoptedMirrorAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	x.branch("claude/gone", "g.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone"))
 	done := make(chan struct{})
 	var out string
 	var err error
@@ -2407,7 +2407,7 @@ func TestTheOperatorDeletesABranchAndTheHubRefusesWhatIsNotHers(t *testing.T) {
 	x.branch("claude/gone", "g.txt")
 	x.branch("claude/open", "o.txt")
 	x.branch("fix/y", "y.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone", "claude/open:refs/heads/claude/open"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/gone:refs/heads/claude/gone", "claude/open:refs/heads/claude/open"))
 	x.must(x.push(operator, hubRepo, "fix/y:refs/heads/fix/y"))
 	open := func(repo, branch string) (bool, error) { return branch == "claude/open", nil }
 	for _, b := range []string{"main", "claude/main", "claude/open", "claude/none", "tags/v1", "claude/../x"} {

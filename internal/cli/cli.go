@@ -123,7 +123,7 @@ func newRoot() *cobra.Command {
 		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
 		newPtyHost(), newLogs(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), capabilitiesCmd(), mergeCmd(), newWorktree(), newUpdate(), newStatusline(), newAdopt(), newUninstall(), newDoctor())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
-	// became one. See docs/archive/one-atrium-plan.md.
+	// became one.
 	backups := hubBackupsCmd("atrium-")
 	backups.AddCommand(hubRestoreCmd("atrium-"))
 	root.AddCommand(newRun(), roomCmd(), newServiceCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd(), newAdapter())

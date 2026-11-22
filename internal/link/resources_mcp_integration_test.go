@@ -39,22 +39,22 @@ func callResources(t *testing.T, h *classHarness, agent string) resourcesOutput 
 
 func TestWorkerReadsTheInventoryAndRooms(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(resources.Path(dir), []byte("## m1mini\nssh m1mini. macOS arm64.\n"), 0o644); err != nil {
+	if err := os.WriteFile(resources.Path(dir), []byte("## room-a\nssh room-a. macOS arm64.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h := newClassHarness(t, classTasks)
 	h.c.resourcesDir = func() string { return dir }
 	h.c.rooms = func() []resourceRoom {
-		return []resourceRoom{{Name: "sg3", Online: true, Tools: map[string]string{"go": "V:/tools/go/bin/go.exe"},
+		return []resourceRoom{{Name: "room-d", Online: true, Tools: map[string]string{"go": "V:/tools/go/bin/go.exe"},
 			Linux: &resourceLinux{SSH: []resourceSSH{{Host: "agentwsl", State: "pass", Docker: "pass"}},
 				WSLC: "pass"}}, {Name: "cdz"}}
 	}
 
 	out := callResources(t, h, "worker1")
-	if !out.Exists || !strings.Contains(out.File, "ssh m1mini") || !strings.Contains(out.Text, "## m1mini") {
+	if !out.Exists || !strings.Contains(out.File, "ssh room-a") || !strings.Contains(out.Text, "## room-a") {
 		t.Fatalf("file not returned: %+v", out)
 	}
-	if len(out.Rooms) != 2 || !strings.Contains(out.Text, "- cdz, offline") || !strings.Contains(out.Text, "- sg3, online") {
+	if len(out.Rooms) != 2 || !strings.Contains(out.Text, "- cdz, offline") || !strings.Contains(out.Text, "- room-d, online") {
 		t.Fatalf("rooms wrong: %+v", out)
 	}
 	if !strings.Contains(out.Text, "  - go: V:/tools/go/bin/go.exe") {

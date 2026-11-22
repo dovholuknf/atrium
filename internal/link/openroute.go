@@ -12,7 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// OPEN A LINK, ON THE HUB. Design: docs/rnd/card-lifecycle-design.md, section 3. Item r-open-verb-pr.
+// OPEN A LINK, ON THE HUB. Item r-open-verb-pr.
 //
 // `POST /v1/open {url}` is one path on a hub and on a room, so every door (the launch dialog, ctrl-alt-r, the pulls
 // tab, `atrium open`) calls the same thing wherever it is pointed. The room does the work (internal/api/open.go). The

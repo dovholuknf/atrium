@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// EFFICACY, THE PURE PART (item lifecycle L9, docs/rnd/item-lifecycle-design.md section 12). This file reads what an item
+// EFFICACY, THE PURE PART (item lifecycle L9). This file reads what an item
 // has (its steps, facts, assignments, events and cost) and answers its outcome, one row of `work_outcome`. It reads no
 // clock, no git and no store, so a changed rule (the 7 days, the 5 items) is a recompute and not a data fix.
 //

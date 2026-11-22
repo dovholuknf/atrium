@@ -15,7 +15,7 @@ import (
 // EVERY LAUNCH NAMES AN ITEM. Item lifecycle L1: work is named in the backlog, and a card launched on it is attached to
 // it, so nothing runs without one. This file is the part every launcher shares (the hub's atrium_launch, a room's
 // stdio one, and `atrium launch`): what the item argument may say, the refusal that names it, and the lookup that makes
-// sure it exists. See docs/rnd/item-lifecycle-design.md, section 8.
+// sure it exists.
 
 // WorkTagPrefix starts the tag that attaches a card to an item, `atrium:item:<backlog id>`. NOT ItemTag, which is
 // whole-string and means isolated. The same prefix as daemon.WorkTagPrefix.

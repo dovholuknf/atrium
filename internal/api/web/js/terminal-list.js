@@ -759,8 +759,8 @@ function shortLabel(task) {
 
 // The list of things worth attaching to, so switching is a click.
 //
-// RIGHT CLICK A SESSION IN THE LIST (or Shift+right click in its terminal). docs/interviews/INTERVIEW-card-menu-2026-10-09.md
-// settled this menu with clint, top to bottom:
+// RIGHT CLICK A SESSION IN THE LIST (or Shift+right click in its terminal). The
+// operator settled this menu, top to bottom:
 //
 //   restart, resume (a stopped card), new context, add to group, remove from group,
 //   ---
@@ -1433,7 +1433,7 @@ function termRowChips(t, lead) {
 // room attached every id is bare, `roomOf` answers "", and this draws nothing: a
 // single room needs no label because every card is in it. The tag appears only
 // when a second room joins, so the badge appears with it, on every card at once,
-// which is exactly when clint could not tell an sg4 card from an sgg one. The
+// which is exactly when the operator could not tell an sg4 card from an sgg one. The
 // room name is the tag itself (e.g. claude-sg4 / claude-sgg). Mirrored in the
 // terminal pane header by `openTerm`, so a card names its room in the list and
 // when it is open.
@@ -1458,7 +1458,7 @@ function termRoomChip(t) {
 // THE `!` IS FOR SOMETHING IN THE WAY. A message sent `when: "done"`, or to a
 // runner that does not take input mid-turn, waits for the turn to end because
 // that is what was asked, and it wore the warn-coloured `!` for as long as a
-// worker's turn ran. clint: "this 'alerta' is super dumb". The room decides
+// worker's turn ran. The operator: "this 'alerta' is super dumb". The room decides
 // which it is (`held_quiet`, see noteHeld in pendinginject.go) and this only
 // draws it: a quiet hold is `✉` or `✉ 2` in the neutral chip, with no pulse.
 // It turns into the `!` if the turn runs past the room's patience, or if an
@@ -2935,7 +2935,7 @@ function resyncCursorAfterFlip() {
 }
 
 // A TAB RETURN CAN REFLOW THE GRID THE SAME WAY A ROOM FLIP DOES, and it leaves
-// the cursor misplaced for the same reason. clint hit this switching browser
+// the cursor misplaced for the same reason. The operator hit this switching browser
 // tabs away from an attached sg4 pane and back: the typed input garbled again,
 // a different trigger from the room flip already fixed above.
 //

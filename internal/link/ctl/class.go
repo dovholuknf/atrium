@@ -16,6 +16,8 @@ var WorkerTools = map[string]bool{
 	// How a worker ends, in one line. See ctl_end.go.
 	"atrium_done":    true,
 	"atrium_blocked": true,
+	// The board link for a file in the worker's own card. See link_mcp.go.
+	"atrium_link": true,
 	// How a worker says what it waits on the human for. See control_gate.go.
 	"atrium_gate": true,
 	// How a worker says what a test found, pinned to its own commit. See record_mcp.go.

@@ -225,7 +225,7 @@ func TestAReportIsNotASilentStop(t *testing.T) {
 	}
 }
 
-// Clint's decision: an atrium_say to the launcher counts as a report.
+// The operator's decision: an atrium_say to the launcher counts as a report.
 func TestSayingSomethingToTheLauncherCountsAsAReport(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
@@ -319,7 +319,7 @@ func TestABlockedReportSaysWhatItNeeds(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked,
-		Recap: "the build is red", Ask: "clint: which go version"})
+		Recap: "the build is red", Ask: "operator: which go version"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("answered %d: %s", rec.Code, rec.Body)
 	}
@@ -328,7 +328,7 @@ func TestABlockedReportSaysWhatItNeeds(t *testing.T) {
 		t.Fatalf("status %s", got.Status)
 	}
 	msgs := pendingFrom(t, d, launcher.ID)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "needs: clint: which go version") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "needs: operator: which go version") {
 		t.Fatalf("launcher has %v", msgs)
 	}
 }

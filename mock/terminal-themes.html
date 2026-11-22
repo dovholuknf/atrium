@@ -1091,7 +1091,7 @@
      js/keepalive.js. */
   .chip.keepalive { border: 1px solid var(--chip-accent-stroke); color: var(--chip-accent-text); }
   .chip.keepalive.watching { border-style: dotted; color: var(--label); }
-  /* The one cache mark: a dot and no words, so it never takes width from a title (clint, u-032 was too loud).
+  /* The one cache mark: a dot and no words, so it never takes width from a title (the operator, u-032 was too loud).
      Kept warm is solid teal, warm is a teal ring, cold is solid blue-grey, off or stopped is a grey ring. The words are in the card's details and the tooltip. */
   .chip.cache {
     flex: none; display: inline-block; box-sizing: border-box; width: 10px; height: 10px; min-width: 0;
@@ -1143,7 +1143,7 @@
   }
   /* Live activity. A running tool breathes, so a moving card reads as moving from across a whole board. */
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
-  /* No motion on the chip: the runner mark is the one running mark (docs/rnd/unified-card.md). */
+  /* No motion on the chip: the runner mark is the one running mark. */
   /* THE ONE ORANGE: --wait is a live runner waiting on the operator and nothing else. */
   .chip.owed { background: var(--wait-bg); color: var(--wait); border-color: var(--wait-stroke); }
   .card.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }
@@ -3678,7 +3678,7 @@
   }
   .rmark svg { width: 26px; height: 26px; display: block; }
   /* NEUTRAL: every runner is --label on the chip tint, told apart by its shape. Orange belongs to waiting alone, so the
-     claude mark no longer wears it (docs/rnd/unified-card.md 2.4). */
+     claude mark no longer wears it. */
 
   /* ── the mark moves while the runner does ────────────────────────────────
      The mark itself says whether a session is working, so a row in the strip carries that without spending
@@ -5167,7 +5167,7 @@
   .abar .fpathpop .ab { height: 22px; min-width: 22px; padding: 0 4px; }
 
 /* css/walk.css */
-/* The walk drawer (js/walk.js, docs/rnd/review-tab-design.md). Colours come from the existing tokens only, so every skin
+/* The walk drawer (js/walk.js). Colours come from the existing tokens only, so every skin
    wears it with no edit. The four severity properties derive from the channel triples, so a skin that moves
    --warn-rgb moves every MED chip with it. */
   :root {
@@ -5588,7 +5588,7 @@
   .pulls-pop-walk { margin-right: auto; cursor: pointer; color: var(--dim); font-size: var(--fs-xs); text-decoration: underline; }
 
 /* css/pulls.css */
-/* The pulls view (js/pulls.js, docs/rnd/pulls-redesign.md). Every colour is an existing token, tints use the -rgb
+/* The pulls view (js/pulls.js). Every colour is an existing token, tints use the -rgb
    triples so a skin follows, and the one new variable is --pull-bar, the colour of a card's left edge. */
   :root {
     --pull-ready: var(--teal);
@@ -6104,7 +6104,7 @@
   }
 
 /* css/items.css */
-/* The items tab (js/items.js): the list, an item's page and a blocked item, as docs/rnd/img/item-lifecycle/ draws them.
+/* The items tab (js/items.js): the list, an item's page and a blocked item.
    Existing tokens only and no colour written here, so a skin repaints the tab. The mockups are the spec for spacing.
    The one orange, --wait, is for a thing waiting on the operator and nothing else here. Teal is progress and done, blue to teal is
    "here". A sha is mono in --path, a card is the mono blue chip, and the four token colours below are the same in every view. */
@@ -6325,7 +6325,7 @@
   }
 
 /* css/efficacy.css */
-/* The efficacy page of the items tab (js/efficacy.js), as docs/rnd/img/item-lifecycle/efficacy-1400.png draws it. Existing tokens only.
+/* The efficacy page of the items tab (js/efficacy.js). Existing tokens only.
    An arrow's colour is better or worse, never up or down: teal better, --wait (the orange) worse, dim for noise. */
   .ef-top { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
   .ef-title { flex: 1 1 320px; }
@@ -7240,7 +7240,7 @@
   }
 
   /* ── card details (#detail) ─────────────────────────────
-     The dialog clint opens most. The head says whose card it is and wears its facts as quiet chips. The left
+     The dialog the operator opens most. The head says whose card it is and wears its facts as quiet chips. The left
      column is the conversation with the card, the right its settings, each on a panel. */
   #detail .dlg-head { padding-bottom: 20px; }
   #detail .dlg-head h2 { font-size: var(--fs-3xl); margin-bottom: 12px; }

@@ -12,7 +12,7 @@ func TestItemFactsSeeThroughACherryPick(t *testing.T) {
 	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	work := x.branch("fix/x", "x.txt")
 	other := x.branch("fix/other", "o.txt")
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/fix/x", "fix/other:refs/heads/fix/other"))
@@ -57,9 +57,9 @@ func TestItemFactsSeeThroughACherryPick(t *testing.T) {
 		t.Fatal("main, which lacks the change, covers the item")
 	}
 
-	// Clint pushes it, re-signed: main now has it.
+	// The operator pushes it, re-signed: main now has it.
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/main"))
 	if f, _ = st.ItemFacts(bg, hubRepo, "fix/x", ""); !f.PushedByClint {
-		t.Fatalf("after clint's push: %+v", f)
+		t.Fatalf("after the operator's push: %+v", f)
 	}
 }

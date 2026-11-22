@@ -15,13 +15,13 @@ import (
 func TestFindAnswersTheOneCardOnAnotherRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 
 	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "@Orchestrator"})
 	if err != nil || !ans.OK {
 		t.Fatalf("find = %+v, %v", ans, err)
 	}
-	if ans.To != "atrium-87300@sg4" || ans.Card != "sg4~s1" {
+	if ans.To != "atrium-87300@room-e" || ans.Card != "room-e~s1" {
 		t.Fatalf("find answered to=%q card=%q", ans.To, ans.Card)
 	}
 }
@@ -30,9 +30,9 @@ func TestFindAnswersTheOneCardOnAnotherRoom(t *testing.T) {
 func TestFindExcludesTheAskingRoomAndNeverMatchesAnId(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 
-	ans, err := x.sg4R.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
+	ans, err := x.roomER.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
 	if err != nil || ans.OK || ans.Code != http.StatusNotFound {
 		t.Fatalf("find from its own room = %+v, %v", ans, err)
 	}
@@ -46,14 +46,14 @@ func TestFindExcludesTheAskingRoomAndNeverMatchesAnId(t *testing.T) {
 func TestFindRefusesWhenTwoRoomsMatchAndNamesBoth(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
-	x.hub.IndexEverywhere("sg3", []CardState{everyRow("t1", "running", "atrium-5120", "orchestrator", EverywhereTag)})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
+	x.hub.IndexEverywhere("room-d", []CardState{everyRow("t1", "running", "atrium-5120", "orchestrator", EverywhereTag)})
 
 	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
 	if err != nil || ans.OK || ans.Code != http.StatusConflict {
 		t.Fatalf("find = %+v, %v", ans, err)
 	}
-	for _, want := range []string{"atrium-87300@sg4 (@orchestrator)", "atrium-5120@sg3 (@orchestrator)"} {
+	for _, want := range []string{"atrium-87300@room-e (@orchestrator)", "atrium-5120@room-d (@orchestrator)"} {
 		if !strings.Contains(ans.Error, want) {
 			t.Errorf("the 409 does not name %q: %s", want, ans.Error)
 		}
@@ -64,20 +64,20 @@ func TestFindRefusesWhenTwoRoomsMatchAndNamesBoth(t *testing.T) {
 func TestFindMissCarriesTheEverywhereList(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 
 	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "nobody"})
 	if err != nil || ans.OK || ans.Code != http.StatusNotFound {
 		t.Fatalf("find = %+v, %v", ans, err)
 	}
-	if !strings.Contains(ans.Error, "atrium-87300@sg4") {
+	if !strings.Contains(ans.Error, "atrium-87300@room-e") {
 		t.Fatalf("the 404 does not list the everywhere cards: %s", ans.Error)
 	}
 }
 
-// indexSG4 tags sg4's orchestrator, which the fake room already holds as s1.
-func indexSG4(x *relayPair) {
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
+// indexRoomE tags room-e's orchestrator, which the fake room already holds as s1.
+func indexRoomE(x *relayPair) {
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator", EverywhereTag)})
 }
 
 // FE1, hub-side entry: a bare name that misses locally goes on as handle@room,
@@ -85,16 +85,16 @@ func indexSG4(x *relayPair) {
 func TestHubSideSayFallsThroughToTheEverywhereCard(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
+	indexRoomE(x)
 
-	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
 		sayInput{To: "orchestrator", Text: "hello"})
 	if err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	said := x.mini.says()
-	if len(said) != 1 || said[0]["to"] != "atrium-87300@sg4" || said[0]["from"] != "sa1" {
-		t.Fatalf("m1mini's /v1/say got %+v", said)
+	if len(said) != 1 || said[0]["to"] != "atrium-87300@room-e" || said[0]["from"] != "sa1" {
+		t.Fatalf("room-a's /v1/say got %+v", said)
 	}
 	if out.Delivered != "queued" {
 		t.Fatalf("out = %+v", out)
@@ -105,9 +105,9 @@ func TestHubSideSayFallsThroughToTheEverywhereCard(t *testing.T) {
 func TestHubSideLocalCardShadowsTheEverywhereOne(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "sa1", EverywhereTag)})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "sa1", EverywhereTag)})
 
-	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "m1mini"),
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "room-a"),
 		sayInput{To: "sa1", Text: "hello"}); err != nil {
 		t.Fatalf("say: %v", err)
 	}
@@ -120,12 +120,12 @@ func TestHubSideLocalCardShadowsTheEverywhereOne(t *testing.T) {
 func TestHubSideSayRefusesTwoEverywhereMatches(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
-	x.hub.IndexEverywhere("sg3", []CardState{everyRow("t1", "running", "atrium-5120", "orchestrator", EverywhereTag)})
+	indexRoomE(x)
+	x.hub.IndexEverywhere("room-d", []CardState{everyRow("t1", "running", "atrium-5120", "orchestrator", EverywhereTag)})
 
-	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"), sayInput{To: "orchestrator", Text: "x"})
-	if err == nil || !strings.Contains(err.Error(), "atrium-87300@sg4 (@orchestrator)") ||
-		!strings.Contains(err.Error(), "atrium-5120@sg3 (@orchestrator)") {
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"), sayInput{To: "orchestrator", Text: "x"})
+	if err == nil || !strings.Contains(err.Error(), "atrium-87300@room-e (@orchestrator)") ||
+		!strings.Contains(err.Error(), "atrium-5120@room-d (@orchestrator)") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(x.mini.says()) != 0 {
@@ -137,11 +137,11 @@ func TestHubSideSayRefusesTwoEverywhereMatches(t *testing.T) {
 func TestHubSideSayMissListsTheEverywhereCards(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
+	indexRoomE(x)
 
-	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"), sayInput{To: "nobody", Text: "x"})
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"), sayInput{To: "nobody", Text: "x"})
 	if err == nil || !strings.Contains(err.Error(), `no session called "nobody"`) ||
-		!strings.Contains(err.Error(), "atrium-87300@sg4") {
+		!strings.Contains(err.Error(), "atrium-87300@room-e") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -150,13 +150,13 @@ func TestHubSideSayMissListsTheEverywhereCards(t *testing.T) {
 func TestHubSideTaskFallsThroughToTheEverywhereCard(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
+	indexRoomE(x)
 
-	_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{Card: "orchestrator"})
+	_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "room-a"), taskInput{Card: "orchestrator"})
 	if err != nil {
 		t.Fatalf("task: %v", err)
 	}
-	if out.Card != "sg4~s1" || out.Handle != "atrium-87300@sg4" || out.Status != "needs-input" {
+	if out.Card != "room-e~s1" || out.Handle != "atrium-87300@room-e" || out.Status != "needs-input" {
 		t.Fatalf("out = %+v", out)
 	}
 }
@@ -165,17 +165,17 @@ func TestHubSideTaskFallsThroughToTheEverywhereCard(t *testing.T) {
 func TestHubSideExitDoesNotFallThrough(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
+	indexRoomE(x)
 
-	_, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: "orchestrator"})
+	_, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"), exitInput{Card: "orchestrator"})
 	if err == nil {
 		t.Fatal("a bare name reached another room's card to end it")
 	}
-	if len(x.sg4.exits()) != 0 {
-		t.Fatalf("sg4 was asked to exit: %v", x.sg4.exits())
+	if len(x.roomE.exits()) != 0 {
+		t.Fatalf("room-e was asked to exit: %v", x.roomE.exits())
 	}
-	if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		exitInput{Card: "atrium-87300@sg4"}); err != nil {
+	if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		exitInput{Card: "atrium-87300@room-e"}); err != nil {
 		t.Fatalf("name@room stopped working: %v", err)
 	}
 }
@@ -184,15 +184,15 @@ func TestHubSideExitDoesNotFallThrough(t *testing.T) {
 func TestHubSidePeersAppendTheEverywhereCards(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
+	indexRoomE(x)
 
-	_, out, err := x.control.peersHandler(relayCtx(t), ctlReq("other", "m1mini"), peersInput{})
+	_, out, err := x.control.peersHandler(relayCtx(t), ctlReq("other", "room-a"), peersInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	last := out.Peers[len(out.Peers)-1]
-	if last.Handle != "atrium-87300@sg4" || last.Alias != "orchestrator" || last.Card != "sg4~s1" ||
-		last.Room != "sg4" || !last.Everywhere {
+	if last.Handle != "atrium-87300@room-e" || last.Alias != "orchestrator" || last.Card != "room-e~s1" ||
+		last.Room != "room-e" || !last.Everywhere {
 		t.Fatalf("peers = %+v", out.Peers)
 	}
 	for _, p := range out.Peers[:len(out.Peers)-1] {
@@ -206,12 +206,12 @@ func TestHubSidePeersAppendTheEverywhereCards(t *testing.T) {
 func TestRelayPeersEverywhereAnswersOnlyTheTaggedCards(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
+	indexRoomE(x)
 
 	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayPeers, Everywhere: true})
 	if err != nil || !ans.OK || len(ans.Peers) != 1 || !ans.Peers[0].Everywhere ||
-		ans.Peers[0].Handle != "atrium-87300@sg4" || ans.Peers[0].Alias != "orchestrator" ||
-		ans.Peers[0].Card != "sg4~s1" {
+		ans.Peers[0].Handle != "atrium-87300@room-e" || ans.Peers[0].Alias != "orchestrator" ||
+		ans.Peers[0].Card != "room-e~s1" {
 		t.Fatalf("peers = %+v, %v", ans, err)
 	}
 }
@@ -222,15 +222,15 @@ func TestRelayPeersEverywhereAnswersOnlyTheTaggedCards(t *testing.T) {
 func TestARoomTheStoreNoLongerHoldsLeavesTheIndex(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	indexSG4(x)
-	stock := &remembering{cards: map[string][]CardState{"sg4": {card("s1", "work", "running")}}}
+	indexRoomE(x)
+	stock := &remembering{cards: map[string][]CardState{"room-e": {card("s1", "work", "running")}}}
 	x.proxy.SetInventory(stock)
 
-	if got := everyOf(x.hub).find("m1mini", "orchestrator"); len(got) != 1 {
+	if got := everyOf(x.hub).find("room-a", "orchestrator"); len(got) != 1 {
 		t.Fatalf("while held: %+v", got)
 	}
-	delete(stock.cards, "sg4") // what store.Remove or Force cascades
-	if got := everyOf(x.hub).find("m1mini", "orchestrator"); len(got) != 0 {
+	delete(stock.cards, "room-e") // what store.Remove or Force cascades
+	if got := everyOf(x.hub).find("room-a", "orchestrator"); len(got) != 0 {
 		t.Fatalf("after the store dropped the room: %+v", got)
 	}
 	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayFind, To: "orchestrator"})
@@ -266,18 +266,18 @@ func TestForgettingARoomDropsItFromTheIndex(t *testing.T) {
 func TestHubSideSayRoutesToTheOneUntaggedCardOnAnotherRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator")})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator")})
 
-	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
 		sayInput{To: "orchestrator", Text: "hello"}); err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	said := x.mini.says()
-	if len(said) != 1 || said[0]["to"] != "atrium-87300@sg4" {
-		t.Fatalf("m1mini's /v1/say got %+v", said)
+	if len(said) != 1 || said[0]["to"] != "atrium-87300@room-e" {
+		t.Fatalf("room-a's /v1/say got %+v", said)
 	}
-	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"), sayInput{To: "nobody", Text: "x"})
-	if err == nil || !strings.Contains(err.Error(), "atrium-87300@sg4") {
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"), sayInput{To: "nobody", Text: "x"})
+	if err == nil || !strings.Contains(err.Error(), "atrium-87300@room-e") {
 		t.Fatalf("the miss does not list the card on the other room: %v", err)
 	}
 }
@@ -286,12 +286,12 @@ func TestHubSideSayRoutesToTheOneUntaggedCardOnAnotherRoom(t *testing.T) {
 func TestHubSideSayRefusesTwoUntaggedMatches(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "review")})
-	x.hub.IndexEverywhere("sg3", []CardState{everyRow("t1", "running", "atrium-5120", "review")})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "review")})
+	x.hub.IndexEverywhere("room-d", []CardState{everyRow("t1", "running", "atrium-5120", "review")})
 
-	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"), sayInput{To: "review", Text: "x"})
-	if err == nil || !strings.Contains(err.Error(), "atrium-87300@sg4") ||
-		!strings.Contains(err.Error(), "atrium-5120@sg3") {
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"), sayInput{To: "review", Text: "x"})
+	if err == nil || !strings.Contains(err.Error(), "atrium-87300@room-e") ||
+		!strings.Contains(err.Error(), "atrium-5120@room-d") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(x.mini.says()) != 0 {
@@ -303,9 +303,9 @@ func TestHubSideSayRefusesTwoUntaggedMatches(t *testing.T) {
 func TestHubSideLocalCardShadowsAnUntaggedOneElsewhere(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "sa1")})
+	x.hub.IndexEverywhere("room-e", []CardState{everyRow("s1", "running", "atrium-87300", "sa1")})
 
-	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "m1mini"),
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "room-a"),
 		sayInput{To: "sa1", Text: "hello"}); err != nil {
 		t.Fatalf("say: %v", err)
 	}

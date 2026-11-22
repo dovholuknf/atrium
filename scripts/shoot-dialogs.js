@@ -22,7 +22,7 @@ fs.mkdirSync(out, { recursive: true });
 
 const CARD = {
   id: "t1", status: "needs-input", display_title: "sa56 every dialog sleek", runner: "claude",
-  rank: 1, worktree: "D:/worktrees/claude/atrium/sleek-dialogs", why: "clint wants every dialog to look designed",
+  rank: 1, worktree: "D:/worktrees/claude/atrium/sleek-dialogs", why: "the operator wants every dialog to look designed",
   idle_seconds: 340, wait_seconds: 120, pid: 48064, supervised: true, resume_id: "sess-1",
   created_at: "2026-09-28T09:12:00Z", last_activity_at: "2026-09-28T12:00:00Z",
   tags: ["design", "board"], offline: false, pinned: true, auto_approve: false,

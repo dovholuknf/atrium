@@ -24,7 +24,7 @@ func fakeItemTools(calls *[]itemCall, answer string) ownerItemTools {
 			}
 			return nil
 		},
-		by: func(*mcp.CallToolRequest) string { return "orch@sg4" },
+		by: func(*mcp.CallToolRequest) string { return "orch@room-e" },
 	}
 }
 
@@ -37,7 +37,7 @@ func TestItemToolActionsAskTheHub(t *testing.T) {
 	if err != nil || len(out.Items) != 1 {
 		t.Fatalf("list: %+v %v", out, err)
 	}
-	if c := calls[0]; c.method != http.MethodGet || !strings.Contains(c.path, "owner=orch%40sg4") {
+	if c := calls[0]; c.method != http.MethodGet || !strings.Contains(c.path, "owner=orch%40room-e") {
 		t.Fatalf("a list is what the caller owns: %+v", c)
 	}
 	it.itemHandler(ctx, nil, itemInput{Action: "list", All: true, State: "blocked"})
@@ -52,7 +52,7 @@ func TestItemToolActionsAskTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c := calls[3]; c.method != http.MethodPost || c.path != "/_hub/items/it-1" ||
-		!strings.Contains(c.body, `"do":"unblock"`) || !strings.Contains(c.body, `"by":"orch@sg4"`) ||
+		!strings.Contains(c.body, `"do":"unblock"`) || !strings.Contains(c.body, `"by":"orch@room-e"`) ||
 		!strings.Contains(c.body, "use the key") {
 		t.Fatalf("unblock: %+v", c)
 	}
@@ -93,7 +93,7 @@ func TestItemToolSubmitQueuesOnAPool(t *testing.T) {
 		t.Fatalf("submit: %+v %v", out, err)
 	}
 	if c := calls[0]; c.method != http.MethodPost || c.path != "/_hub/items" || !strings.Contains(c.body, `"do":"submit"`) ||
-		!strings.Contains(c.body, `"pool":"reviewer"`) || !strings.Contains(c.body, `"by":"orch@sg4"`) {
+		!strings.Contains(c.body, `"pool":"reviewer"`) || !strings.Contains(c.body, `"by":"orch@room-e"`) {
 		t.Fatalf("submit: %+v", c)
 	}
 	if _, _, err := it.itemHandler(context.Background(), nil, itemInput{Action: "submit", Pool: "reviewer"}); err == nil {

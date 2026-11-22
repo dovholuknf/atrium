@@ -9,8 +9,7 @@ that reads it, checks a room, fixes what it can, and lists what needs a human. A
 DESIGN ONLY. Nothing here is built. Item f-005 (`docs/backlog/fabric/f-005.md`) is the step log it is written from,
 and every requirement below traces to a row there. The three scripts it builds on are `scripts/provision-room.ps1`,
 `scripts/room-toolchain.ps1` and `scripts/room-git.ps1`, whose headers are their spec. The reboot survival half is
-@rnd's `docs/rnd/room-autostart-design.md` (claude/rnd d10992c), and this design points at its section 4 rather
-than copying it.
+@rnd's room autostart design (claude/rnd d10992c), and this design points at it rather than copying it.
 
 ## 1. Why a file
 

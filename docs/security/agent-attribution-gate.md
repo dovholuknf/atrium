@@ -16,7 +16,7 @@ owns them (dotfiles c4f97c8), not re-read for this page.
 | Trailer wall | dotfiles `githooks/lib/attribution.sh`, `githooks/agent/commit-msg` | refuses a commit whose author, committer or trailer names claude or anthropic | `--no-verify` skips it, so `githooks/agent/pre-push` re-scans the pushed commits |
 | Push wall | dotfiles `claude/hooks/pre-tool-use-hook.ps1` | blocks every git push, pull, fetch and git lfs remote op, except `git push [-u] hub\|atrium-hub <branch>` and `git fetch hub\|atrium-hub`, and checks the remote URL against atrium's `daemon.json` | the hub's pre-receive is the wall behind it |
 | Drive-root guard | same ps1; reason in dotfiles `claude/hooks/docs/gate-decisions.md` ("2026-10-10: drive-root guard kept") | refuses creating a folder at a drive root and points at `D:\tmp` | it is a path rule, not a permission: icacls gives Authenticated Users Modify on `D:\` and AD on `C:\`, so it is the only enforcement |
-| Atrium port | `internal/guard/rules.json`, wired by `internal/cli/hook_guard.go` (`atrium hook`) | the same three rules (trailer, `git-remote`, `drive-root`) | see `docs/rnd/gate-exe-vs-atrium-hook.md`; a hook that cannot start is non-blocking, so it fails open |
+| Atrium port | `internal/guard/rules.json`, wired by `internal/cli/hook_guard.go` (`atrium hook`) | the same three rules (trailer, `git-remote`, `drive-root`) | a hook that cannot start is non-blocking, so it fails open |
 
 Which layer is live on a machine, and that the two do not drift, is the thing to check when a rule changes in one.
 

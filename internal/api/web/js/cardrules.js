@@ -289,7 +289,7 @@ function workingNow(t) {
   return !!(a && a.what && a.what !== "idle" && !a.looks_idle &&
     !cardWaiting(t) && t.status !== "paused" && !staleActivity(t));
 }
-// ONE WORD FOR HOW A CARD IS DRAWN, EVERYWHERE (docs/rnd/unified-card.md). Grey is "off" and nothing else.
+// ONE WORD FOR HOW A CARD IS DRAWN, EVERYWHERE. Grey is "off" and nothing else.
 //   unreachable  its room is not answering, so nothing says it stopped
 //   waiting      a live runner is waiting on the operator, whoever launched it
 //   working      a live runner is mid-turn
@@ -303,7 +303,7 @@ function cardState(t) {
   return "off";
 }
 
-// WHICH BOARD COLUMN A CARD IS IN (docs/rnd/unified-card-decisions.md). The board's columns follow the state, not the stored
+// WHICH BOARD COLUMN A CARD IS IN. The board's columns follow the state, not the stored
 // status: `needs you` holds a live runner waiting on the operator, `working` a live runner doing or ready to do something,
 // and `done` every card with no agent running (finished, dead, runner gone, parked, paused). A ready card whose runner is
 // gone is done, never needs you. The inbox is the stored status `backlog`. A card on a room that is not answering is

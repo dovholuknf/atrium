@@ -33,7 +33,7 @@ func TestAHubPushesChangedPathsToAnAttachedRoom(t *testing.T) {
 	var hm sync.Mutex
 	var heard [][]Path
 	room := &Room{
-		Name: "sg3", Dial: &switchable{addr: ln.Addr().String()},
+		Name: "room-d", Dial: &switchable{addr: ln.Addr().String()},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }),
 		T:       Timings{Beat: 100 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond},
 		OnPaths: func(ps []Path) {
@@ -43,7 +43,7 @@ func TestAHubPushesChangedPathsToAnAttachedRoom(t *testing.T) {
 		},
 	}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("sg3") })
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("room-d") })
 
 	mu.Lock()
 	paths = []Path{{Transport: "direct", Addr: "192.168.1.68:7779"}, {Transport: "direct", Addr: "hub.example:7779"}}

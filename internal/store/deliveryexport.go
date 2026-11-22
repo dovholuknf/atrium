@@ -3,7 +3,7 @@ package store
 import "time"
 
 // A COSTED DELIVERY AS THE HUB READS IT, to put what the orchestrator spent answering an item's cards on the item
-// (item lifecycle L5, docs/rnd/item-lifecycle-design.md section 6.5). Read only.
+// (item lifecycle L5). Read only.
 
 // DeliveryExport is one costed delivery. A turn that answered several deliveries costs the first and marks the rest as
 // sharing it, so Group is the id of the one that carries the tokens ("" on the carrier itself, whose Input and the

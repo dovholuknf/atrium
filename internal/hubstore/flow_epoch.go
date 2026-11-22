@@ -6,9 +6,9 @@ import (
 	"fmt"
 )
 
-// An epoch is one round of clint fetching claude/main, re-signing and pushing. See migration 0016.
+// An epoch is one round of the operator fetching claude/main, re-signing and pushing. See migration 0016.
 //
-//   - ONE EPOCH IS OPEN AT A TIME. Opening records the sha clint fetched. claude/main keeps moving while it is open:
+//   - ONE EPOCH IS OPEN AT A TIME. Opening records the sha the operator fetched. claude/main keeps moving while it is open:
 //     nothing is frozen, and nothing that lands is lost, because closing replays what is not in main.
 //   - CLOSING RECORDS WHAT CLAUDE/MAIN WAS AND IS. The hub's repository keeps refs/atrium/epochs/<n> at the old tip.
 

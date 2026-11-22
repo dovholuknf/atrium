@@ -254,9 +254,9 @@ func TestSharedNamesAreQualifiedWithTheirRoom(t *testing.T) {
 	}
 	script := string(src) + `
 const L = [
-  { room: "m1mini", alias: "push-to-agent", display_title: "push" },
-  { room: "claude-sg4", alias: "push-to-agent", display_title: "push" },
-  { room: "sg3", alias: "solo", display_title: "other" },
+  { room: "room-a", alias: "push-to-agent", display_title: "push" },
+  { room: "claude-room-e", alias: "push-to-agent", display_title: "push" },
+  { room: "room-d", alias: "solo", display_title: "other" },
 ];
 const out = [
   shownName(L[0], "alias", L), shownName(L[1], "alias", L), shownName(L[2], "alias", L),
@@ -270,7 +270,7 @@ console.log(out.join("|"));
 	if err != nil {
 		t.Fatalf("node: %v\n%s", err, out)
 	}
-	want := "push-to-agent@m1mini|push-to-agent@claude-sg4|solo|push@m1mini|other|push-to-agent|solo@sg3|@x"
+	want := "push-to-agent@room-a|push-to-agent@claude-room-e|solo|push@room-a|other|push-to-agent|solo@room-d|@x"
 	if got := strings.TrimSpace(string(out)); got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}

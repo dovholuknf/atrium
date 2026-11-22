@@ -9,6 +9,7 @@ document.getElementById("gear").onclick = () => {
   if (typeof loadGrowlLadder === "function") loadGrowlLadder();
   if (typeof loadHubPush === "function") loadHubPush();
   if (typeof loadHubHosts === "function") loadHubHosts();
+  if (typeof loadHubProfile === "function") loadHubProfile();
   if (typeof loadHubTransports === "function") loadHubTransports();
   // Every field that saves itself, wired once. Here rather than at load
   // because the panes are cut up at runtime and this is the moment they are
@@ -101,6 +102,9 @@ document.getElementById("s-prune").addEventListener("change", async e => {
     }
   }
   saveHousekeeping("prune_after", value);
+});
+document.getElementById("s-incoming").addEventListener("change", e => {
+  saveHousekeeping("incoming_keep_days", e.target.value);
 });
 document.getElementById("s-cardsize").addEventListener("change", e => {
   localStorage.setItem(UI_SCALE_KEY, e.target.value);

@@ -109,7 +109,7 @@ async function setTaskAlias(id, current) {
 
 // ── the terminal bar ──
 //
-// clint: "it needs to show up on the terminal title bar in place of the
+// The operator: "it needs to show up on the terminal title bar in place of the
 // current `github/dovholuknf/atrium:claude/main` stuff (far left) and it needs
 // to be clear that it's an alias / handle". So a card with an alias wears
 // `@saorch` in the name's slot, drawn as a handle (see `.as-alias` in

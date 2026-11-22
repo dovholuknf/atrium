@@ -38,7 +38,8 @@ text is pasted, then Enter follows 250 ms later. Transcription is whisper.cpp's 
 | Esc while listening | cancel |
 
 The send word is `localStorage` `atrium.dictate.sendword`, default "send it", and empty turns it off.
-
+The Shift that adds without sending is `localStorage` `atrium.dictate.shift`: `any` (default), `ShiftLeft` or
+`ShiftRight`, matched by `e.code`.
 The board records 16 kHz mono 16-bit WAV, since whisper-server cannot read the browser's webm without ffmpeg. It posts
 the clip to `POST /v1/tasks/<id>/dictate` on whatever it was opened on, and pastes the `text` that comes back.
 

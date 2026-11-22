@@ -1,6 +1,6 @@
 # Claude Code's queued-message box: what was measured (r-say-typed-sits-in-claude-queue, S-0)
 
-Measured 2026-10-15 for stage S-0 of `docs/rnd/say-typed-queue-design.md`. Nothing here is atrium code. The
+Measured 2026-10-15 for stage S-0 of the say typed queue design. Nothing here is atrium code. The
 design's every "unverified" claim about Claude Code is answered below, for the one version that was available.
 
 ## What was driven

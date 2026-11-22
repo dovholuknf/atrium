@@ -129,16 +129,16 @@ func TestExitGuardForeignLauncherMayExitItsChild(t *testing.T) {
 	t.Parallel()
 	srv, st, stopped := exitGuardRoom(t)
 	kid := exitCard(t, st, "kid")
-	if err := st.SetLineage(kid.ID, "boss@claude-sg4", "claude-sg4~01ABC"); err != nil {
+	if err := st.SetLineage(kid.ID, "boss@claude-room-e", "claude-room-e~01ABC"); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
 		body string
 		want int
 	}{
-		{`{"from":"other@claude-sg4","foreign":true}`, 403},
+		{`{"from":"other@claude-room-e","foreign":true}`, 403},
 		{`{"from":"boss@claude-mini","foreign":true}`, 403},
-		{`{"from":"BOSS@claude-sg4","foreign":true}`, 200},
+		{`{"from":"BOSS@claude-room-e","foreign":true}`, 200},
 	} {
 		if rec := postExit(srv, kid.ID, c.body); rec.Code != c.want {
 			t.Fatalf("%s answered %d %s, want %d", c.body, rec.Code, rec.Body.String(), c.want)

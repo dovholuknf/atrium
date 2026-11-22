@@ -179,7 +179,7 @@ func TestUploadOriginIsRecordedByTheHub(t *testing.T) {
 		}
 	}
 	// A page cannot claim local, or card, or a name, by saying so in the form.
-	body, ct := form(map[string]string{"title": "claims", "origin": "local", "by": "clint", "card": "sg4~1"}, "claims", "c.md")
+	body, ct := form(map[string]string{"title": "claims", "origin": "local", "by": "operator", "card": "room-e~1"}, "claims", "c.md")
 	w := h.do(req{method: "POST", path: "/_hub/docs", body: body, ctype: ct, header: map[string]string{"X-Forwarded-For": "1.2.3.4"}})
 	m := wantCode(t, w, 201)
 	v := h.latest(m["slug"].(string))

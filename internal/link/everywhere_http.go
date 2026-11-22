@@ -12,7 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// The scoped board's list of everywhere cards. See docs/rnd/everywhere-card-design.md.
+// The scoped board's list of everywhere cards.
 //
 // A HUB ENDPOINT AND NOT A CHANGE TO THE PIPE. A scoped `/v1/tasks` stays the
 // room's own answer, byte for byte, and a board that wants the cards tagged

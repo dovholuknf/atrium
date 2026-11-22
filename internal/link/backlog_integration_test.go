@@ -64,12 +64,12 @@ func (x *backlogRig) send(method, target, body, remote string) (int, string) {
 func TestBacklogFiledOnOneRoomIsListedAndReadFromAnother(t *testing.T) {
 	x := newBacklogRig(t)
 	code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-new-x", "dept": "fabric",
-		"title": "do x", "body": "the whole item", "by": "orch@sg4", "room": "sg4"}), loopAddr)
+		"title": "do x", "body": "the whole item", "by": "orch@room-e", "room": "room-e"}), loopAddr)
 	if code != http.StatusCreated || str(obj(t, body), "status") != "open" {
 		t.Fatalf("file: %d %s", code, body)
 	}
 	x.sawEvent(t, "backlog")
-	// A read needs no machine: the board and the m1mini director's room both read.
+	// A read needs no machine: the board and the room-a director's room both read.
 	code, body = x.send("GET", "/_hub/backlog?dept=fabric&open=1", "", "203.0.113.9:4000")
 	if code != 200 || !strings.Contains(body, `"f-new-x"`) || strings.Contains(body, "the whole item") {
 		t.Fatalf("list: %d %s", code, body)
@@ -79,7 +79,7 @@ func TestBacklogFiledOnOneRoomIsListedAndReadFromAnother(t *testing.T) {
 		t.Fatalf("list with bodies: %d %s", code, body)
 	}
 	if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-long", "dept": "rnd", "title": "long",
-		"body": strings.Repeat("é", backlogExcerptMax), "by": "orch@sg4"}), loopAddr); code != http.StatusCreated {
+		"body": strings.Repeat("é", backlogExcerptMax), "by": "orch@room-e"}), loopAddr); code != http.StatusCreated {
 		t.Fatalf("file long: %d %s", code, body)
 	}
 	_, body = x.send("GET", "/_hub/backlog?dept=rnd&bodies=1", "", loopAddr)
@@ -87,7 +87,7 @@ func TestBacklogFiledOnOneRoomIsListedAndReadFromAnother(t *testing.T) {
 		t.Fatalf("a long body is not cut to an excerpt: %d runes", got)
 	}
 	code, body = x.send("GET", "/_hub/backlog/f-new-x", "", loopAddr)
-	if code != 200 || str(obj(t, body), "body") != "the whole item" || str(obj(t, body), "filed_room") != "sg4" {
+	if code != 200 || str(obj(t, body), "body") != "the whole item" || str(obj(t, body), "filed_room") != "room-e" {
 		t.Fatalf("get: %d %s", code, body)
 	}
 }
@@ -120,7 +120,7 @@ func TestBacklogRefusals(t *testing.T) {
 	if code, _ := x.send("POST", "/_hub/backlog/a", `{"status":"bogus"}`, loopAddr); code != http.StatusBadRequest {
 		t.Fatalf("bogus status: %d", code)
 	}
-	if code, body := x.send("POST", "/_hub/backlog/a", `{"status":"done","by":"fabric@m1mini"}`, loopAddr); code != 200 ||
+	if code, body := x.send("POST", "/_hub/backlog/a", `{"status":"done","by":"fabric@room-a"}`, loopAddr); code != 200 ||
 		str(obj(t, body), "status") != "done" {
 		t.Fatalf("status: %d %s", code, body)
 	}
@@ -145,7 +145,7 @@ func TestBacklogIsAbsentUntilWired(t *testing.T) {
 func TestReportsFlowFromAnotherRoomToTheOrchestrator(t *testing.T) {
 	x := newBacklogRig(t)
 	code, body := x.send("POST", "/_hub/reports", js(map[string]any{"subject": "landed", "body": "sha abc",
-		"by": "fabric@m1mini", "room": "m1mini"}), loopAddr)
+		"by": "fabric@room-a", "room": "room-a"}), loopAddr)
 	if code != http.StatusCreated || str(obj(t, body), "id") != "rp_1" {
 		t.Fatalf("add: %d %s", code, body)
 	}
@@ -154,8 +154,8 @@ func TestReportsFlowFromAnotherRoomToTheOrchestrator(t *testing.T) {
 	if code != 200 || !strings.Contains(body, "sha abc") {
 		t.Fatalf("list: %d %s", code, body)
 	}
-	if code, body = x.send("POST", "/_hub/reports/rp_1", `{"do":"read","by":"orch@sg4"}`, loopAddr); code != 200 ||
-		str(obj(t, body), "read_by") != "orch@sg4" {
+	if code, body = x.send("POST", "/_hub/reports/rp_1", `{"do":"read","by":"orch@room-e"}`, loopAddr); code != 200 ||
+		str(obj(t, body), "read_by") != "orch@room-e" {
 		t.Fatalf("read: %d %s", code, body)
 	}
 	if _, body = x.send("GET", "/_hub/reports?unread=1", "", loopAddr); strings.Contains(body, "rp_1") {
@@ -177,7 +177,7 @@ func TestBacklogAndReportsToolsReachTheHub(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	ctx := context.Background()
 
-	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "m-1", Dept: "fabric", Title: "from m1mini"})
+	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "m-1", Dept: "fabric", Title: "from room-a"})
 	if err != nil || out.Item == nil || out.Item.Status != "open" {
 		t.Fatalf("file: %+v %v", out, err)
 	}
@@ -236,15 +236,15 @@ func TestBacklogIDsImportAndFollowOverHTTP(t *testing.T) {
 		loopAddr); code != http.StatusBadRequest {
 		t.Errorf("a status on a plain filing: %d", code)
 	}
-	if code, body = x.send("POST", "/_hub/backlog/f-008", js(map[string]any{"card": "sg4~c1"}), loopAddr); code != 200 ||
+	if code, body = x.send("POST", "/_hub/backlog/f-008", js(map[string]any{"card": "room-e~c1"}), loopAddr); code != 200 ||
 		str(obj(t, body), "status") != "in-progress" {
 		t.Fatalf("link: %d %s", code, body)
 	}
-	code, body = x.send("POST", "/_hub/backlog/follow", js(map[string]any{"card": "sg4~c1", "status": "done"}), loopAddr)
+	code, body = x.send("POST", "/_hub/backlog/follow", js(map[string]any{"card": "room-e~c1", "status": "done"}), loopAddr)
 	if code != 200 || !strings.Contains(body, `"followed":true`) || !strings.Contains(body, `"status":"built"`) {
 		t.Fatalf("follow: %d %s", code, body)
 	}
-	if code, _ = x.send("POST", "/_hub/backlog/follow", js(map[string]any{"card": "sg4~c1", "status": "done"}),
+	if code, _ = x.send("POST", "/_hub/backlog/follow", js(map[string]any{"card": "room-e~c1", "status": "done"}),
 		"203.0.113.9:4000"); code != http.StatusForbidden {
 		t.Errorf("follow from another machine: %d", code)
 	}
@@ -259,20 +259,20 @@ func TestALaunchTagLinksTheItemAndTheReportFollowsIt(t *testing.T) {
 	if _, _, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "f-new-y", Dept: "fabric", Title: "y"}); err != nil {
 		t.Fatal(err)
 	}
-	if note := c.linkItemToCard(ctx, []string{"x", "item:f-new-y"}, "sg4", "c7", "orch"); note != "" {
+	if note := c.linkItemToCard(ctx, []string{"x", "item:f-new-y"}, "room-e", "c7", "orch"); note != "" {
 		t.Fatal(note)
 	}
-	if note := c.linkItemToCard(ctx, []string{"item:nope"}, "sg4", "c8", "orch"); !strings.Contains(note, "nope") {
+	if note := c.linkItemToCard(ctx, []string{"item:nope"}, "room-e", "c8", "orch"); !strings.Contains(note, "nope") {
 		t.Errorf("an unknown item said nothing: %q", note)
 	}
-	if note := c.linkItemToCard(ctx, []string{"plain"}, "sg4", "c9", "orch"); note != "" {
+	if note := c.linkItemToCard(ctx, []string{"plain"}, "room-e", "c9", "orch"); note != "" {
 		t.Errorf("a launch with no item tag said %q", note)
 	}
 	_, out, _ := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
-	if out.Item == nil || out.Item.Status != "in-progress" || out.Item.Card != "sg4~c7" {
+	if out.Item == nil || out.Item.Status != "in-progress" || out.Item.Card != "room-e~c7" {
 		t.Fatalf("after launch: %+v", out.Item)
 	}
-	c.followItem(ctx, "sg4", "c7", "done", "w")
+	c.followItem(ctx, "room-e", "c7", "done", "w")
 	_, out, _ = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
 	if out.Item.Status != "built" {
 		t.Errorf("after the done report: %+v", out.Item)
@@ -296,7 +296,7 @@ func TestBacklogPriorityOverHTTPAndTool(t *testing.T) {
 		t.Fatalf("file urgent: %d %s", code, body)
 	}
 	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "b", "dept": "fabric", "title": "t"}), loopAddr)
-	if code, body = x.send("POST", "/_hub/backlog/b", `{"priority":"Low","by":"o@sg4"}`, loopAddr); code != 200 ||
+	if code, body = x.send("POST", "/_hub/backlog/b", `{"priority":"Low","by":"o@room-e"}`, loopAddr); code != 200 ||
 		str(obj(t, body), "priority") != "low" {
 		t.Fatalf("set: %d %s", code, body)
 	}
@@ -343,9 +343,9 @@ func TestBacklogEditOverHTTPAndTool(t *testing.T) {
 
 	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "a", "dept": "fabric", "title": "old", "body": "b0",
 		"priority": "high"}), loopAddr)
-	code, body := x.send("POST", "/_hub/backlog/a", `{"body":"b1","by":"o@sg4"}`, loopAddr)
+	code, body := x.send("POST", "/_hub/backlog/a", `{"body":"b1","by":"o@room-e"}`, loopAddr)
 	if m := obj(t, body); code != 200 || str(m, "body") != "b1" || str(m, "title") != "old" ||
-		str(m, "priority") != "high" || str(m, "status") != "open" || str(m, "changed_by") != "o@sg4" {
+		str(m, "priority") != "high" || str(m, "status") != "open" || str(m, "changed_by") != "o@room-e" {
 		t.Fatalf("edit body: %d %s", code, body)
 	}
 	x.sawEvent(t, "backlog")
@@ -372,9 +372,9 @@ func TestBacklogEditOverHTTPAndTool(t *testing.T) {
 		t.Fatalf("tool edit with nothing: %v", err)
 	}
 
-	code, body = x.send("POST", "/_hub/backlog/a", `{"append":"more","by":"qa@sg4"}`, loopAddr)
-	if m := obj(t, body); code != 200 || !strings.HasPrefix(str(m, "body"), "b2\n\nqa@sg4 ") ||
-		!strings.HasSuffix(str(m, "body"), ": more") || str(m, "title") != "t2" || str(m, "changed_by") != "qa@sg4" {
+	code, body = x.send("POST", "/_hub/backlog/a", `{"append":"more","by":"qa@room-e"}`, loopAddr)
+	if m := obj(t, body); code != 200 || !strings.HasPrefix(str(m, "body"), "b2\n\nqa@room-e ") ||
+		!strings.HasSuffix(str(m, "body"), ": more") || str(m, "title") != "t2" || str(m, "changed_by") != "qa@room-e" {
 		t.Fatalf("append: %d %s", code, body)
 	}
 	if code, _ = x.send("POST", "/_hub/backlog/nope", `{"append":"t"}`, loopAddr); code != http.StatusNotFound {

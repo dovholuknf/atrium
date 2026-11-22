@@ -260,7 +260,7 @@ func TestABlockedWorkWorkerKeepsRunning(t *testing.T) {
 
 func TestACardShortIDDropsTheRoomTag(t *testing.T) {
 	t.Parallel()
-	for in, want := range map[string]string{"sg4~01a115fe-47b9": "01a115fe", "01a115fe-47b9": "01a115fe", "abc": "abc"} {
+	for in, want := range map[string]string{"room-e~01a115fe-47b9": "01a115fe", "01a115fe-47b9": "01a115fe", "abc": "abc"} {
 		if got := cardShortID(in); got != want {
 			t.Errorf("%s: %s, want %s", in, got, want)
 		}

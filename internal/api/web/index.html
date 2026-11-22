@@ -903,7 +903,7 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
        refused by the cap, the board put on a share. Read-only, newest first,
        filterable by room and by kind. Hub only, drawn by js/audit.js. See
        docs/fabric/audit-design.md. -->
-  <!-- The PRs atrium is reviewing, newest first, drawn by js/pulls.js. See docs/rnd/pulls-view-design.md. -->
+  <!-- The PRs atrium is reviewing, newest first, drawn by js/pulls.js. -->
   <div id="pulls" hidden>
     <div class="pulls-head">
       <h2>Pull requests</h2>
@@ -1749,16 +1749,53 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
     </div>
     <h3 class="s-section">dictation</h3>
-    <div class="field">
-      <label class="eyebrow" for="s-dictkey">push-to-talk key
-        <span class="help" tabindex="0" data-tip="Hold it, talk, let go: the text lands in the terminal and is never sent, so you read it and press enter. Space only listens when nothing that takes typing has the focus, so a space in a terminal is still a space. The mic at the bottom of the screen works with any choice. Kept in this browser only.">?</span></label>
+    <div class="dk-map" id="dk-map"></div>
+    <div class="dk-table">
+      <label class="eyebrow">push-to-talk key
+        <span class="help" tabindex="0" data-tip="Hold it, talk, let go. Space only listens when nothing that takes typing has the focus, so a space in a terminal is still a space. The mic at the bottom of the screen works with any choice. Kept in this browser only.">?</span></label>
+      <div class="dk-seg" id="dk-ptt">
+        <button type="button" data-v="right-ctrl" onclick="setDictKey('right-ctrl')"><span class="key">Right Ctrl</span></button>
+        <button type="button" data-v="space" onclick="setDictKey('space')"><span class="key">Space</span></button>
+        <button type="button" data-v="off" onclick="setDictKey('off')"><span class="key">mic only</span></button>
+      </div>
+      <label class="eyebrow">type, don't send key
+        <span class="help" tabindex="0" data-tip="Hold this with the push-to-talk key or the mic and the text is typed on the input line without sending, so you read it and press Enter. Esc cancels while you talk.">?</span></label>
+      <div class="dk-seg" id="dk-shift">
+        <button type="button" data-v="any" onclick="setDictShift('any')"><span class="key">Shift</span></button>
+        <button type="button" data-v="ShiftLeft" onclick="setDictShift('ShiftLeft')"><span class="key">Left Shift</span></button>
+        <button type="button" data-v="ShiftRight" onclick="setDictShift('ShiftRight')"><span class="key">Right Shift</span></button>
+      </div>
+      <label class="eyebrow" for="s-dictsend">send phrase
+        <span class="help" tabindex="0" data-tip="End a clip with these words and they are cut off and the text is sent, even with the type, don't send key held. One or more words. Empty turns it off.">?</span></label>
       <div class="picker">
-        <select id="s-dictkey" onchange="setDictKey(this.value)">
-          <option value="right-ctrl">Right Ctrl</option>
-          <option value="space">Space, when nothing is typing</option>
-          <option value="off">off, the mic button only</option>
+        <input id="s-dictsend" type="text" style="max-width:220px" onchange="setDictSendWord(this.value)">
+      </div>
+      <label class="eyebrow">ready tone
+        <span class="help" tabindex="0" data-tip="A short soft sound when the microphone is live: a synthesized blip, a recorded boop, or none, so you know you can start talking. Kept in this browser only.">?</span></label>
+      <div class="picker">
+        <select id="dk-boop" onchange="setDictBoop(this.value)">
+          <option value="voice">recorded boop</option>
+          <option value="blip">blip</option>
+          <option value="off">off</option>
         </select>
       </div>
+      <label class="eyebrow" for="dk-boopvol">ready tone volume
+        <span class="help" tabindex="0" data-tip="How loud the ready sound is. 100% is the normal level, up to double. Release the slider to hear it. Kept in this browser only.">?</span></label>
+      <div class="picker">
+        <input id="dk-boopvol" type="range" min="0" max="200" step="5" style="max-width:220px"
+          oninput="setDictBoopVol(this.value)" onchange="window.atriumVoice.boop()">
+        <span id="dk-boopvol-n" class="unit">100%</span>
+      </div>
+    </div>
+    <div class="dk-test" id="dk-test">
+      <label class="eyebrow">try it
+        <span class="help" tabindex="0" data-tip="Hold the key or the mic, talk, let go. The words show here and are never sent to a terminal. It uses the same transcriber the board does, on the card you have open or the first card.">?</span></label>
+      <div class="dk-testrow">
+        <button type="button" id="dk-testmic" class="dk-testmic" aria-label="hold to test dictation">hold to talk</button>
+        <span id="dk-status" class="dk-status">ready</span>
+      </div>
+      <div id="dk-box" class="dk-box" aria-live="polite"></div>
+      <div id="dk-result" class="dk-result"></div>
     </div>
     <h3 class="s-section">card colours</h3>
     <div class="field">
@@ -1805,6 +1842,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <span class="hintline" id="s-hh-ro" hidden>Set on the hub's machine.</span>
       <span class="hintline" id="s-hh-msg"></span>
+    </div>
+
+    <!-- Who the hub's lands and workers commit as. Hidden until the hub answers. See js/hubprofile.js. -->
+    <div class="field" id="s-hc-row" hidden>
+      <span class="eyebrow">commits as
+        <span class="help" tabindex="0" data-tip="The git author of every land and worker commit on this hub. Empty means the hub machine's git config --global user.name and user.email.">?</span></span>
+      <div class="picker">
+        <input type="text" id="s-hc-name" placeholder="your name" spellcheck="false">
+        <input type="email" id="s-hc-email" placeholder="your email" spellcheck="false">
+        <button type="button" id="s-hc-save" onclick="saveHubProfile()">save</button>
+      </div>
+      <span class="hintline" id="s-hc-msg"></span>
     </div>
 
     <!-- `notifications`, not `alerts`. Everything under it is a notification:
@@ -2006,6 +2055,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <option value="2592000">after a month</option>
           <option value="7776000">after three months</option>
           <option value="31536000">after a year</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-incoming">delete pasted and uploaded files
+        <span class="help" tabindex="0" data-tip="Files atrium saved in a card's .atrium/incoming folder, deleted once they are older than this. Only files atrium wrote there, never anything you put in the folder yourself. Checked when the room starts and about every hour.">?</span></label>
+      <div class="picker">
+        <select id="s-incoming">
+          <option value="off">never</option>
+          <option value="1">after a day</option>
+          <option value="3">after three days</option>
+          <option value="7">after a week</option>
+          <option value="14">after two weeks</option>
+          <option value="30">after a month</option>
         </select>
       </div>
     </div>
@@ -2340,7 +2403,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="help" tabindex="0" data-tip="Where this room's cards put throwaway files: patches, logs, downloads and notes. Each card gets a folder of its own here, named in ATRIUM_SCRATCH and in the line a session starts with. An absolute path on this machine, never a drive root. Cards already running are told at their next start.">?</span></label>
       <div class="picker">
         <input id="s-scratchroot" spellcheck="false" data-saves="saveScratchRoot"
-          placeholder="empty means each card's own folder, for example D:\tmp">
+          placeholder="empty means each card's own folder">
       </div>
     </div>
     <div class="field" id="rc-disk"></div>
@@ -3777,6 +3840,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/hubnotify.js"></script>
 <script src="/js/hubpush.js"></script>
 <script src="/js/hubhosts.js"></script>
+<script src="/js/hubprofile.js"></script>
 <script src="/js/hubtransports.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/homes.js"></script>

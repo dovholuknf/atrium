@@ -48,7 +48,7 @@ func offerSpare(r *Room, c net.Conn) {
 
 func TestARelaySaysItsHelloOnTheSpare(t *testing.T) {
 	a, b := net.Pipe()
-	r := &Room{Name: "sgg", up: true, Dial: noDialer{t}, T: DefaultTimings()}
+	r := &Room{Name: "room-g", up: true, Dial: noDialer{t}, T: DefaultTimings()}
 	offerSpare(r, a)
 	got := make(chan string, 1)
 	go answerRelay(b, got)
@@ -67,7 +67,7 @@ func TestASpareTheHubHungUpOnFallsBackToAFreshDial(t *testing.T) {
 	dead, hub := net.Pipe()
 	hub.Close()
 	a, b := net.Pipe()
-	r := &Room{Name: "sgg", up: true, Dial: pipeDialer{a}, T: DefaultTimings()}
+	r := &Room{Name: "room-g", up: true, Dial: pipeDialer{a}, T: DefaultTimings()}
 	offerSpare(r, dead)
 	got := make(chan string, 1)
 	go answerRelay(b, got)
@@ -158,7 +158,7 @@ func hubWaitFor(t *testing.T, clientCerts []tls.Certificate) time.Duration {
 }
 
 func TestTheHubWaitsLongerForAHelloOnlyFromAProvenRoom(t *testing.T) {
-	if w := hubWaitFor(t, []tls.Certificate{selfSigned(t, "sgg")}); w != wire.SpareWait {
+	if w := hubWaitFor(t, []tls.Certificate{selfSigned(t, "room-g")}); w != wire.SpareWait {
 		t.Fatalf("a connection with a room certificate waits %v for its hello, want %v", w, wire.SpareWait)
 	}
 	if w := hubWaitFor(t, nil); w != handshakeWait {

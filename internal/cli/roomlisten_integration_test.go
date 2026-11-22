@@ -104,7 +104,7 @@ func TestTheMintedTokenCarriesTheAdvertiseAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("advertiseFor: %v", err)
 	}
-	line, err := keys.MintToken(adv, "sgg", "a-secret")
+	line, err := keys.MintToken(adv, "room-g", "a-secret")
 	if err != nil {
 		t.Fatalf("MintToken: %v", err)
 	}
@@ -115,8 +115,8 @@ func TestTheMintedTokenCarriesTheAdvertiseAddress(t *testing.T) {
 	if j.Addr != "10.1.2.3:7801" {
 		t.Errorf("token carries addr %q, want the advertise address 10.1.2.3:7801", j.Addr)
 	}
-	if j.Name != "sgg" {
-		t.Errorf("token carries name %q, want sgg", j.Name)
+	if j.Name != "room-g" {
+		t.Errorf("token carries name %q, want room-g", j.Name)
 	}
 }
 

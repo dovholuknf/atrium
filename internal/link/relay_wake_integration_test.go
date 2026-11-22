@@ -16,18 +16,18 @@ import (
 func TestAWakeSayResumesAParkedCardOnAnotherRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.parked = map[string]bool{"s1": true}
+	x.roomE.parked = map[string]bool{"s1": true}
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 		To: "atrium-87300", Text: "wake up", Wake: true})
-	if err != nil || !ans.OK || ans.Delivered != "queued" || ans.Card != "sg4~s1" {
+	if err != nil || !ans.OK || ans.Delivered != "queued" || ans.Card != "room-e~s1" {
 		t.Fatalf("answer = %+v, %v, want delivered", ans, err)
 	}
-	if got := x.sg4.resumes(); len(got) != 1 || got[0] != "s1" {
+	if got := x.roomE.resumes(); len(got) != 1 || got[0] != "s1" {
 		t.Fatalf("resumed = %v, want s1 resumed once", got)
 	}
-	if got := x.sg4.messages(); len(got) != 1 || got[0]["text"] != "wake up" || got[0]["from"] != "sa1@m1mini" {
-		t.Fatalf("sg4 got %+v, want the message from sa1@m1mini", got)
+	if got := x.roomE.messages(); len(got) != 1 || got[0]["text"] != "wake up" || got[0]["from"] != "sa1@room-a" {
+		t.Fatalf("room-e got %+v, want the message from sa1@room-a", got)
 	}
 }
 
@@ -35,11 +35,11 @@ func TestAWakeSayResumesAParkedCardOnAnotherRoom(t *testing.T) {
 func TestASayWithoutWakeToAParkedCardOnAnotherRoomIsStillParked(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.parked = map[string]bool{"s1": true}
+	x.roomE.parked = map[string]bool{"s1": true}
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4", To: "atrium-87300", Text: "x"})
-	if err != nil || ans.Delivered != "parked" || len(x.sg4.resumes()) != 0 || len(x.sg4.messages()) != 0 {
-		t.Fatalf("answer = %+v, %v, resumed %v, got %v", ans, err, x.sg4.resumes(), x.sg4.messages())
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e", To: "atrium-87300", Text: "x"})
+	if err != nil || ans.Delivered != "parked" || len(x.roomE.resumes()) != 0 || len(x.roomE.messages()) != 0 {
+		t.Fatalf("answer = %+v, %v, resumed %v, got %v", ans, err, x.roomE.resumes(), x.roomE.messages())
 	}
 }
 
@@ -48,12 +48,12 @@ func TestAWakeSayToACardThatIsNotParkedDoesNotResume(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 		To: "atrium-87300", Text: "x", Wake: true})
 	if err != nil || !ans.OK || ans.Delivered != "queued" {
 		t.Fatalf("answer = %+v, %v", ans, err)
 	}
-	if got := x.sg4.resumes(); len(got) != 0 {
+	if got := x.roomE.resumes(); len(got) != 0 {
 		t.Fatalf("resumed = %v, want none", got)
 	}
 }
@@ -62,13 +62,13 @@ func TestAWakeSayToACardThatIsNotParkedDoesNotResume(t *testing.T) {
 func TestAWakeSayToAnUnattachedRoomIsRefused(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.parked = map[string]bool{"s1": true}
+	x.roomE.parked = map[string]bool{"s1": true}
 
 	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "nowhere", To: "orch", Text: "x", Wake: true})
 	if err != nil || ans.OK || ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, "nowhere") {
 		t.Fatalf("answer = %+v, %v, want the refusal every cross-room verb gives", ans, err)
 	}
-	if len(x.sg4.resumes()) != 0 || len(x.sg4.messages()) != 0 {
+	if len(x.roomE.resumes()) != 0 || len(x.roomE.messages()) != 0 {
 		t.Fatal("nothing should have been resumed or delivered")
 	}
 }
@@ -77,15 +77,15 @@ func TestAWakeSayToAnUnattachedRoomIsRefused(t *testing.T) {
 func TestAWakeSayToACardThatFailsToResumeIsReportedNotDelivered(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.parked = map[string]bool{"s1": true}
-	x.sg4.wakeCode = http.StatusInternalServerError
+	x.roomE.parked = map[string]bool{"s1": true}
+	x.roomE.wakeCode = http.StatusInternalServerError
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 		To: "atrium-87300", Text: "x", Wake: true})
 	if err != nil || ans.OK || ans.Code != http.StatusInternalServerError || ans.Unconfirmed || ans.Unreachable {
 		t.Fatalf("answer = %+v, %v, want a refusal", ans, err)
 	}
-	if len(x.sg4.messages()) != 0 {
+	if len(x.roomE.messages()) != 0 {
 		t.Fatal("nothing should have been delivered")
 	}
 }
@@ -95,10 +95,10 @@ func TestAWakeSayToACardThatFailsToResumeIsReportedNotDelivered(t *testing.T) {
 func TestAWakeSayWhoseResumeIsNotAnsweredIsUnconfirmed(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
-	x.sg4.parked = map[string]bool{"s1": true}
-	x.sg4.wakeCode = http.StatusGatewayTimeout
+	x.roomE.parked = map[string]bool{"s1": true}
+	x.roomE.wakeCode = http.StatusGatewayTimeout
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 		To: "atrium-87300", Text: "x", Wake: true})
 	if err != nil || ans.OK || ans.Unreachable || !ans.Unconfirmed {
 		t.Fatalf("answer = %+v, %v, want unconfirmed", ans, err)
@@ -110,15 +110,15 @@ func TestAHubSideWakeSayPassesWakeToTheSendersRoom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "hello", Wake: true}); err != nil {
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "hello", Wake: true}); err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	if said := x.mini.says(); len(said) != 1 || said[0]["wake"] != "true" {
-		t.Fatalf("m1mini's /v1/say got %+v, want wake=true", said)
+		t.Fatalf("room-a's /v1/say got %+v, want wake=true", said)
 	}
-	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "again"}); err != nil {
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "again"}); err != nil {
 		t.Fatalf("say: %v", err)
 	}
 	if said := x.mini.says(); len(said) != 2 || said[1]["wake"] != "" {
@@ -133,12 +133,12 @@ func TestAHubSideWakeSayFromAnOldRoomStillResumes(t *testing.T) {
 	x.mini.mu.Lock()
 	x.mini.noSay = true
 	x.mini.mu.Unlock()
-	x.sg4.parked = map[string]bool{"s1": true}
+	x.roomE.parked = map[string]bool{"s1": true}
 
-	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "hello", Wake: true})
-	if err != nil || out.Delivered != "queued" || len(x.sg4.resumes()) != 1 {
-		t.Fatalf("out = %+v, %v, resumed %v", out, err, x.sg4.resumes())
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "hello", Wake: true})
+	if err != nil || out.Delivered != "queued" || len(x.roomE.resumes()) != 1 {
+		t.Fatalf("out = %+v, %v, resumed %v", out, err, x.roomE.resumes())
 	}
 }
 
@@ -161,12 +161,12 @@ func TestAHubSideWakeSayTheSendersRoomRefusesIsAnErrorNotUnconfirmed(t *testing.
 	defer x.stop()
 	x.mini.mu.Lock()
 	x.mini.sayCode = http.StatusFailedDependency
-	x.mini.sayAnswer = map[string]any{"error": "could not reach sg4 (not attached). nothing was sent or held, " +
+	x.mini.sayAnswer = map[string]any{"error": "could not reach room-e (not attached). nothing was sent or held, " +
 		"since a held message cannot wake a card. send it again with wake=true when the room is back"}
 	x.mini.mu.Unlock()
 
-	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "hello", Wake: true})
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "hello", Wake: true})
 	if err == nil || out.Delivered == "unconfirmed" || strings.Contains(err.Error(), "ask whether it arrived") {
 		t.Fatalf("out = %+v, err = %v, want an error that says nothing was sent", out, err)
 	}
@@ -185,8 +185,8 @@ func TestAHubSideSayReadsA503FromTheSendersRoomAsUnconfirmed(t *testing.T) {
 	x.mini.sayAnswer = map[string]any{"error": "x"}
 	x.mini.mu.Unlock()
 
-	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
-		sayInput{To: "atrium-87300@sg4", Text: "hello", Wake: true})
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "room-a"),
+		sayInput{To: "atrium-87300@room-e", Text: "hello", Wake: true})
 	if err != nil || out.Delivered != "unconfirmed" {
 		t.Fatalf("out = %+v, err = %v", out, err)
 	}
@@ -196,12 +196,12 @@ func TestAForcedSayCarriesForceToTheRoomItIsFor(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "room-e",
 		To: "atrium-87300", Text: "carry on", Force: true})
 	if err != nil || !ans.OK {
 		t.Fatalf("answer = %+v, %v", ans, err)
 	}
-	if got := x.sg4.messages(); len(got) != 1 || got[0]["force"] != "true" {
-		t.Fatalf("sg4 got %+v, want force true", got)
+	if got := x.roomE.messages(); len(got) != 1 || got[0]["force"] != "true" {
+		t.Fatalf("room-e got %+v, want force true", got)
 	}
 }

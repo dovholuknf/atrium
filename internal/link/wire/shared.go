@@ -35,7 +35,7 @@ type Attached struct {
 	Setup *RoomSetup `json:"setup,omitempty"`
 	// Via is the transport this room is attached over, from the listener that took
 	// it. Empty from a hub serving one unnamed listener. Fallback is the room saying
-	// it is not on its first choice. See docs/rnd/room-transport-order.md.
+	// it is not on its first choice.
 	Via      string `json:"via,omitempty"`
 	Fallback bool   `json:"fallback,omitempty"`
 	// Starved is a room whose control connection is up while no data connection

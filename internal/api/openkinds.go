@@ -23,7 +23,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// OPEN A LINK THAT IS NOT A PULL REQUEST. Design: docs/rnd/card-lifecycle-design.md, sections 4, 5 and 11, and
+// OPEN A LINK THAT IS NOT A PULL REQUEST.
 // Interview Q6. Item r-open-support-kinds.
 //
 // The kind comes from what the recogniser captured, never from the link's text:

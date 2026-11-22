@@ -1,7 +1,7 @@
 // Package store is atrium's durable state: tasks, their event history, and
 // pending permission requests.
 //
-// The failure posture documented in docs/archive/architecture-v2.md lives here. There
+// The failure posture of the v2 architecture lives here. There
 // is no degraded mode. Failures sort into three tiers:
 //
 //  1. Open or migration failure. Open returns an error and the daemon refuses
@@ -306,7 +306,7 @@ type Task struct {
 	// SpawnedBy is the handle of the session that launched this card, `@human`
 	// for the board's own launch dialog, and empty for a session nobody
 	// launched. SpawnedByID is that session's card id when it was known at
-	// launch. Written once, by `SetLineage`. See docs/rnd/agent-lineage-design.md.
+	// launch. Written once, by `SetLineage`.
 	SpawnedBy   string `json:"spawned_by,omitempty"`
 	SpawnedByID string `json:"spawned_by_id,omitempty"`
 	// SpawnedByDir is where a launcher on ANOTHER room works, as the hub read it from that card. Never a path to
@@ -357,7 +357,7 @@ type Task struct {
 	ParkedAt *time.Time `json:"parked_at,omitempty"`
 	// MovedTo is `room~id` of the card this one became, when it moved to another
 	// room, and MovedFrom is the card a moved one came from. A card moved twice
-	// is a chain. See docs/rnd/room-handoff-design.md.
+	// is a chain.
 	MovedTo   string `json:"moved_to,omitempty"`
 	MovedFrom string `json:"moved_from,omitempty"`
 	// Theme names the terminal palette this session uses. Held on the card so
@@ -477,7 +477,7 @@ func (t *Task) DisplayTitle() string { return t.Display("title", t.Title) }
 // THE GUESS IS NOT STORED AND NOT OBSERVED DATA. It is computed on the way out
 // and nothing writes it back, so a launcher that starts sending the real answer
 // tomorrow wins immediately and a wrong guess costs one override to correct.
-// `docs/archive/architecture-v2.md` says atrium is not learning git, and this does not:
+// The v2 architecture says atrium is not learning git, and this does not:
 // it reads a directory name out of a string it already has, the same way the
 // board's own default grouping rule has always done.
 func (t *Task) DisplayRepo() string {

@@ -14,8 +14,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// See docs/rnd/room-transport-order.md.
-
 func runHubTransports(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 	c := roomTransportsCmd("")
@@ -56,7 +54,7 @@ func TestRoomsTransportsSetsTheHubOrder(t *testing.T) {
 // The hub tells rooms only what it listens on, in its order, and never a credential.
 func TestHubPathsFollowTheOrderAndSayNoSecret(t *testing.T) {
 	set := hubSet{sides: []*hubSide{
-		{kind: "direct", path: wire.Path{Transport: "direct", Addr: "sg4:7779"}},
+		{kind: "direct", path: wire.Path{Transport: "direct", Addr: "room-e:7779"}},
 		{kind: "ziti", path: wire.Path{Transport: "ziti", Service: "atrium-hub"}},
 		{kind: "zrok", path: wire.Path{Transport: "zrok", Share: "secret-share"}},
 	}}
@@ -77,8 +75,8 @@ func TestHubPathsFollowTheOrderAndSayNoSecret(t *testing.T) {
 func TestRoomLadderWrapsTheZitiFallbackInTheRoomCertificate(t *testing.T) {
 	keys := transport.Keys{Dir: t.TempDir()}
 	writeStrayRoomCert(t, keys)
-	saved := transport.Saved{Transport: "direct", Hub: "sg4:7779", Room: "m1mini"}
-	tr := transport.RoomTransports{Paths: []wire.Path{{Transport: "ziti", Identity: "m1mini.json"}}}
+	saved := transport.Saved{Transport: "direct", Hub: "room-e:7779", Room: "room-a"}
+	tr := transport.RoomTransports{Paths: []wire.Path{{Transport: "ziti", Identity: "room-a.json"}}}
 	l, skipped, err := roomLadder(keys, saved, tr)
 	if err != nil || len(skipped) != 0 {
 		t.Fatalf("%v %v", err, skipped)
@@ -145,10 +143,10 @@ func TestRoomTransportsVerbWritesTheLocalSettings(t *testing.T) {
 	dir := t.TempDir()
 	keys := transport.Keys{Dir: dir}
 	if err := os.WriteFile(filepath.Join(dir, "room.json"),
-		[]byte(`{"hub":"sg4:7779","room":"m1mini"}`), 0o600); err != nil {
+		[]byte(`{"hub":"room-e:7779","room":"room-a"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	id := filepath.Join(dir, "m1mini.json")
+	id := filepath.Join(dir, "room-a.json")
 	if err := os.WriteFile(id, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -173,8 +171,8 @@ func TestRoomTransportsVerbWritesTheLocalSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	zi, di := strings.Index(out, "ziti"), strings.Index(out, "direct")
-	if zi < 0 || di < 0 || zi > di || !strings.Contains(out, "sg4:7779") {
-		t.Fatalf("the ladder should list ziti then direct at sg4:7779:\n%s", out)
+	if zi < 0 || di < 0 || zi > di || !strings.Contains(out, "room-e:7779") {
+		t.Fatalf("the ladder should list ziti then direct at room-e:7779:\n%s", out)
 	}
 	if _, err := runRoomTransports(t, dir, "order", "--clear"); err != nil {
 		t.Fatal(err)

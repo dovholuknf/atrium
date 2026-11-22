@@ -154,7 +154,7 @@ linux_install() {
 
     systemctl --user daemon-reload
 
-    # LINGER IS OFF UNLESS ASKED FOR, clint's call (2026-09-28): a daemon that
+    # LINGER IS OFF UNLESS ASKED FOR, the operator's call (2026-09-28): a daemon that
     # keeps running after you log out is a decision about your machine, so
     # ATRIUM_LINGER=1 opts in and nothing else does. When asked for it goes
     # first, because it starts the user manager if it is not up and

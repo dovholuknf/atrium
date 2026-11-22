@@ -22,7 +22,6 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 ## Sources
 
-- docs/rnd/factory-refactor.md (held on claude/rnd)
 - docs/backlog/rnd/rnd-new-clint-inbox.md
 - the factory log of 2026-10-01 and 10-02 (held, off-repo for now; paraphrase only)
 

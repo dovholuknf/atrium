@@ -22,7 +22,7 @@ func flaggedStop(t *testing.T, d *Daemon, agent string) string {
 	return strings.TrimSpace(rec.Body.String())
 }
 
-// The card clint saw: a message delivered at turn end sets the card running,
+// The card the operator saw: a message delivered at turn end sets the card running,
 // the worker acts on it, and its next Stop is flagged. That Stop moves the card
 // to needs-input, notes the turn for seen, nudges the worker about the silent
 // stop rather than telling the launcher, never blocks, and leaves anything

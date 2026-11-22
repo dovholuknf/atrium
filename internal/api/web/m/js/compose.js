@@ -216,8 +216,9 @@
     if (mic) {
       mic.type = "button";
       mic.setAttribute("aria-label", "hold to talk");
-      mic.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" ' +
-        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+      mic.innerHTML = '<span class="mc-busy">transcribing</span><span class="mc-ic">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" ' +
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>';
       row.append(ta, mic, send);
     } else row.append(ta, send);
     // Quick replies, one row above the box, drawn by js/replies.js from what the card says. Nothing is drawn for a card
@@ -263,7 +264,7 @@
     };
 
     // The runner's paste capability, for the line-break note and for the send.
-    const capability = async () => {
+    const capabilityRead = async () => {
       if (opts.canPaste) { state.pasteOK = !!opts.canPaste(); return state.pasteOK; }
       const card = cardOf(cardId);
       const net = window.mNet;
@@ -272,6 +273,8 @@
       state.pasteOK = !!(card && map[card.runner]);
       return state.pasteOK;
     };
+    // A send never waits on the runner list for more than a moment: a read that has not answered is read as "cannot".
+    const capability = () => Promise.race([capabilityRead(), new Promise(r => setTimeout(() => r(false), 2000))]);
     capability().then(hint);
 
     ta.addEventListener("input", () => { follow(state, ta.value); refresh(); hint(); });
@@ -339,7 +342,7 @@
           rec.value = "";
           if (!f) return;
           mic.dataset.st = "transcribing";
-          say("busy", "transcribing");
+          say("", "");
           try {
             const text = await v.fromFile(cardId, f);
             if (cur !== state) return;
@@ -362,11 +365,18 @@
         if (why) { say("refused", why); return; }
         if (mic.dataset.st) return;
         mic.setPointerCapture(e.pointerId);
-        mic.dataset.st = "listening";
-        say("busy", "listening, release to add it, slide off to cancel");
-        v.start().catch(err => { if (mic.dataset.st === "listening") { mic.dataset.st = ""; say("refused", err.message); } });
+        // A phone takes about two seconds to open the mic, so "listening" waits for the recorder, and comes with the boop.
+        mic.dataset.st = "starting";
+        v.start().then(() => {
+          if (mic.dataset.st !== "starting" || !v.active()) return;
+          mic.dataset.st = "listening";
+          say("busy", "listening, release to add it, slide off to cancel");
+        }, err => { if (mic.dataset.st === "starting") { mic.dataset.st = ""; say("refused", err.message); } });
       });
-      const drop = () => { if (mic.dataset.st !== "listening") return; mic.dataset.st = ""; v.cancel(); say("", ""); };
+      const drop = () => {
+        if (mic.dataset.st !== "listening" && mic.dataset.st !== "starting") return;
+        mic.dataset.st = ""; v.cancel(); say("", "");
+      };
       mic.addEventListener("pointercancel", drop);
       mic.addEventListener("pointermove", e => {
         if (mic.dataset.st !== "listening") return;
@@ -374,9 +384,10 @@
         if (Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) > 90) drop();
       });
       mic.addEventListener("pointerup", async () => {
+        if (mic.dataset.st === "starting") { drop(); return; }
         if (mic.dataset.st !== "listening") return;
         mic.dataset.st = "transcribing";
-        say("busy", "transcribing");
+        say("", "");
         try {
           const text = await v.stop(cardId);
           if (cur !== state) return;
@@ -441,6 +452,8 @@
       const names = (state.hide ? all.filter(a => a.status !== "err") : held).map(a => a.name).join(" ");
       tell("m-send", { id: cardId, key, text: typed || (cm.length ? cm.length + " review comment" + (cm.length > 1 ? "s" : "") : names), state: "pending" });
       let ok = false, why = "";
+      const tSend = performance.now(), marks = [];
+      const mark = n => marks.push(n + " " + Math.round(performance.now() - tSend));
       try {
         if (held.length || (state.hide && all.length)) {
           await Promise.all(held.map(a => a.batch));
@@ -453,7 +466,9 @@
         if (cm.length) text = quoteAll(cm) + (text ? "\n" + text : "");
         // An unknown capability is read as "cannot", so a send never guesses a paste into a runner that
         // submits on a raw newline.
+        mark("uploaded");
         const paste = state.pasteOK == null ? await capability() : state.pasteOK;
+        mark("capability");
         const joined = !paste && /\n/.test(text);
         if (joined) text = text.split(/\s*\n\s*/).filter(Boolean).join(" ");
         let o;
@@ -469,15 +484,18 @@
           if (!r.ok) throw new Error((body && body.error) || raw.trim() || r.statusText || "failed");
           o = outcome(body);
         }
+        mark("sent");
         if (!o || !o.kind) o = { kind: "sent", text: "sent" };
         ok = o.kind !== "refused";
         say(o.kind, o.text + (ok && joined ? " (line breaks joined)" : ""));
         if (ok) tell("m-sent", { id: cardId, text, kind: o.kind });
         tell("m-send", { id: cardId, key, text, state: ok ? o.kind : "failed" });
       } catch (e) {
+        mark("failed");
         say("refused", "not sent: " + (e && e.message ? e.message : e));
         tell("m-send", { id: cardId, key, text: typed || held.map(a => a.name).join(" "), state: "failed" });
       } finally {
+        console.info("[atrium send] " + cardId + " " + Math.round(performance.now() - tSend) + "ms: " + marks.join(", "));
         // The comments are not lost with a message that did not go: their chips come back.
         if (!ok) cm.slice().reverse().forEach(c => { state.cmts.unshift(c); state.files.insertBefore(c.el, state.files.firstChild); });
         state.files.classList.toggle("on", state.atts.length > 0 || state.cmts.length > 0);
@@ -746,6 +764,21 @@
     state.refresh();
   }
 
+  // One console line per upload, always on: the browser's wait for a connection, the bytes and the reply, with the hub's
+  // and the room's steps from Server-Timing. The same id is in the hub's and the room's log lines.
+  function uploadLine(id, upId, list, bytes, t0) {
+    const path = "/v1/tasks/" + encodeURIComponent(id) + "/files";
+    const ent = guard(() => performance.getEntriesByType("resource").filter(e => e.name.endsWith(path)).pop());
+    const steps = [];
+    if (ent) {
+      steps.push("queue " + Math.round(ent.requestStart - ent.startTime), "upload+room " + Math.round(ent.responseStart - ent.requestStart),
+        "reply " + Math.round(ent.responseEnd - ent.responseStart));
+      for (const s of ent.serverTiming || []) steps.push(s.name + " " + Math.round(s.duration));
+    }
+    console.info("[atrium upload] " + upId + " " + (list.length === 1 ? list[0].name : list.length + " files") + " " + bytes + "B " +
+      Math.round(performance.now() - t0) + "ms: " + steps.join(", "));
+  }
+
   // One request for the batch. XHR rather than fetch, because only it reports how much has gone up.
   function defaultUpload(id, list, progress) {
     const form = new FormData();
@@ -753,11 +786,16 @@
     const room = guard(() => localStorage.getItem("atrium.room"));
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
+      const upId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t0 = performance.now();
+      let bytes = 0;
+      for (const f of list) bytes += f.size;
       x.open("POST", "/v1/tasks/" + encodeURIComponent(id) + "/files");
+      x.setRequestHeader("X-Atrium-Upload", upId);
       if (room) x.setRequestHeader("X-Atrium-Room", room);
       if (progress && x.upload) x.upload.onprogress = e => { if (e.lengthComputable && e.total) progress(Math.min(100, Math.round(e.loaded * 100 / e.total))); };
       x.onerror = () => reject(new Error("the upload could not reach the room"));
       x.onload = () => {
+        uploadLine(id, upId, list, bytes, t0);
         let body = null;
         try { body = JSON.parse(x.responseText); } catch (e) {}
         if (x.status < 200 || x.status >= 300) return reject(new Error((body && body.error) || String(x.responseText || "").trim() || x.statusText || "failed"));

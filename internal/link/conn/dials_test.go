@@ -114,7 +114,7 @@ func TestReattachingNeverExceedsTheCap(t *testing.T) {
 	}
 }
 
-// nilTLSDialer fails after release with a typed nil *tls.Conn, the shape that crashed the sgg room.
+// nilTLSDialer fails after release with a typed nil *tls.Conn, the shape that crashed the room-g room.
 type nilTLSDialer struct{ release chan struct{} }
 
 func (d nilTLSDialer) Dial(context.Context) (net.Conn, error) {

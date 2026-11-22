@@ -30,7 +30,7 @@ import (
 //
 // WHAT IS NEVER RECLAIMED, whoever asks and whatever the tags say:
 //
-//   - A card clint started. Only a card an agent launched, `origin:agent`, is in scope.
+//   - A card the operator started. Only a card an agent launched, `origin:agent`, is in scope.
 //   - A card whose work is not done: ended, dead, blocked, waiting on a question or never reported. Those stay in
 //     Terminals for the operator, for good (H4).
 //   - A card tagged to stay open or an investigation. See staysOpen.
@@ -62,7 +62,7 @@ func (d *Daemon) doneBySay(sender *store.Task, text string) {
 	}
 }
 
-// reclaimBlock is why a card is not reclaimed, or "". The one place H4 and the clint-started rule are enforced, read
+// reclaimBlock is why a card is not reclaimed, or "". The one place H4 and the operator-started rule are enforced, read
 // by the explicit cull and by the sweep alike.
 func (d *Daemon) reclaimBlock(t *store.Task) string {
 	switch {

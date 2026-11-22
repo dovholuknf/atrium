@@ -20,7 +20,7 @@ func TestLandFactsFollowABranchFromPushedToLandedToPushed(t *testing.T) {
 	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	work := x.branch("fix/x", "x.go")
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/fix/x"))
 	st := x.h.Store()
@@ -59,7 +59,7 @@ func TestLandFactsFollowABranchFromPushedToLandedToPushed(t *testing.T) {
 		t.Fatalf("a later commit moved the landed sha: %+v", f)
 	}
 
-	// Clint pushes: the forge's main holds it.
+	// The operator pushes: the forge's main holds it.
 	git(t, x.work, "push", "-q", forge, "cm:refs/heads/main")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/main"))
 	f, err = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st))
@@ -100,7 +100,7 @@ func TestLandFactsSeeThroughACherryPickAndAResign(t *testing.T) {
 	x.seedMain(hubRepo)
 	work := x.branch("fix/x", "x.go")
 	other := x.branch("fix/other", "o.go")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x", "fix/other:refs/heads/fix/other"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/x:refs/heads/fix/x", "fix/other:refs/heads/fix/other"))
 	st := x.h.Store()
 	forge := t.TempDir()
 	git(t, forge, "init", "-q", "--bare", "-b", "main")
@@ -120,7 +120,7 @@ func TestLandFactsSeeThroughACherryPickAndAResign(t *testing.T) {
 		t.Fatalf("an unrelated branch landed: %+v", o)
 	}
 
-	// Clint re-signs it onto origin's main: the same patch, a new sha, and the message differs.
+	// The operator re-signs it onto origin's main: the same patch, a new sha, and the message differs.
 	git(t, x.work, "switch", "-q", "-C", "resigned", "main")
 	git(t, x.work, "cherry-pick", work)
 	git(t, x.work, "commit", "-q", "--amend", "-m", "re-signed", "--date", "2020-01-01T00:00:00Z")
@@ -305,7 +305,7 @@ func TestLandFactsComparePatchesOncePerTip(t *testing.T) {
 		work[n] = x.branch(n, strings.TrimPrefix(n, "fix/")+".go")
 		refspecs = append(refspecs, n+":refs/heads/"+n)
 	}
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, refspecs...))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, refspecs...))
 	git(t, x.work, "switch", "-q", "-C", "cm", "main")
 	picked := map[string]string{}
 	for _, n := range names {
@@ -349,7 +349,7 @@ func TestLandFactsComparePatchesOncePerTip(t *testing.T) {
 	}
 
 	late := x.branch("fix/e", "e.go")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/e:refs/heads/fix/e"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "fix/e:refs/heads/fix/e"))
 	if f, _ := st.LandFacts(bg, hubRepo, "fix/e", "", "f-e", nil); f.SHA != late || f.Landed {
 		t.Fatalf("not picked yet: %+v", f)
 	}

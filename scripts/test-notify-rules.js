@@ -1,7 +1,7 @@
 // The turn-end notification rules, RUN against stubs for the board globals.
 //
 // (1) A card's turn that is fully over, with the agent idle, is a ready alert for a card the operator is not on. That
-//     includes an agent-launched card that ended its turn with no question (issue-20674@claude-sg4, 2026-10-13: the tray
+//     includes an agent-launched card that ended its turn with no question (issue-20674@claude-room-e, 2026-10-13: the tray
 //     stayed empty because `waitingRow` drops those). A card with a child still running is not over.
 // (2) A card the operator is typing in or watching never alerts, even in the instant its pane is rebuilt under them.
 const fs = require("fs");
@@ -55,33 +55,33 @@ const make = new Function(`
 `);
 
 const b = make();
-const row = o => Object.assign({ id: "sg4~c", status: "needs-input", wire_name: "w", tags: [] }, o);
+const row = o => Object.assign({ id: "room-e~c", status: "needs-input", wire_name: "w", tags: [] }, o);
 
 // (1) the worker that finished
 {
-  const worker = row({ id: "sg4~issue-20674", tags: ["origin:agent", "atrium:subagent"], waiting_since: "T1" });
-  const mine = row({ id: "sg4~mine", waiting_since: "T0" });
+  const worker = row({ id: "room-e~issue-20674", tags: ["origin:agent", "atrium:subagent"], waiting_since: "T1" });
+  const mine = row({ id: "room-e~mine", waiting_since: "T0" });
   b.setCards([worker, mine]);
   if (!b.waitingRow(worker)) fail("a running agent-launched card waiting on the operator is not waiting: grey means not running, nothing else");
-  const gone = row({ id: "sg4~gone", tags: ["origin:agent"], supervised: false });
+  const gone = row({ id: "room-e~gone", tags: ["origin:agent"], supervised: false });
   if (b.waitingRow(gone)) fail("a card whose runner is gone (supervised false, no pid) counts as waiting");
   if (!b.waitingRow(row({ supervised: false, pid: 42 }))) fail("a joined terminal with a pid is not waiting");
   const ids = b.cardsReady().map(t => t.id);
-  if (!ids.includes("sg4~issue-20674")) fail("an agent-launched card that ended its turn is not in the ready set: " + ids);
-  if (ids.join() !== "sg4~mine,sg4~issue-20674") fail("the ready set is not oldest wait first: " + ids);
+  if (!ids.includes("room-e~issue-20674")) fail("an agent-launched card that ended its turn is not in the ready set: " + ids);
+  if (ids.join() !== "room-e~mine,room-e~issue-20674") fail("the ready set is not oldest wait first: " + ids);
   if (b.cardsWaiting().length !== 2) fail("cardsWaiting must count the agent-launched card waiting on the operator");
   for (const gone of [{ status: "running" }, { archived_at: "x" }, { offline: true }, { wire_name: "" }]) {
     if (b.cardsReady([row(gone)]).length) fail("a card that is not at rest is ready: " + JSON.stringify(gone));
   }
   // a parent whose child still runs is not done: the alert filter reads hasRunningChild over the whole list
-  const child = row({ id: "sg4~kid", status: "running", spawned_by_id: "sg4~mine" });
+  const child = row({ id: "room-e~kid", status: "running", spawned_by_id: "room-e~mine" });
   if (!b.hasRunningChild(mine, [mine, child])) fail("a card with a running child is not held back");
-  if (b.hasRunningChild(mine, [mine, row({ id: "sg4~kid", status: "needs-input", spawned_by_id: "sg4~mine" })])) {
+  if (b.hasRunningChild(mine, [mine, row({ id: "room-e~kid", status: "needs-input", spawned_by_id: "room-e~mine" })])) {
     fail("a card whose child has ended is still held back");
   }
 }
 
-// (1b) cardState: one word per card, grey is "off" and nothing else (docs/rnd/unified-card.md)
+// (1b) cardState: one word per card, grey is "off" and nothing else
 {
   const st = o => b.cardState(row(o));
   const want = (what, got, exp) => { if (got !== exp) fail("cardState: " + what + " is " + got + ", want " + exp); };
@@ -100,16 +100,16 @@ const row = o => Object.assign({ id: "sg4~c", status: "needs-input", wire_name: 
 // (2) the card you are typing in
 {
   const T = 1000000;
-  if (b.engagedWith("sg4~c", T)) fail("a card never typed in reads engaged");
-  b.noteEngaged("sg4~c", T);
+  if (b.engagedWith("room-e~c", T)) fail("a card never typed in reads engaged");
+  b.noteEngaged("room-e~c", T);
   b.set({ term: null, termTask: null });
   if (!b.engagedWith("room~c", T + 5000)) fail("a card typed in 5s ago, with its pane being rebuilt, does not read engaged");
-  if (b.engagedWith("sg4~c", T + 21000)) fail("the engagement did not expire");
-  if (b.engagedWith("sg4~other", T + 1000)) fail("another card reads engaged");
-  b.set({ term: {}, termTask: { id: "sg4~other" } });
-  if (b.engagedWith("sg4~c", T + 1000)) fail("a card reads engaged while another card's terminal is attached");
-  b.set({ term: {}, termTask: { id: "sg4~c" } });
-  if (!b.engagedWith("sg4~c", T + 1000)) fail("its own terminal attached does not read engaged");
+  if (b.engagedWith("room-e~c", T + 21000)) fail("the engagement did not expire");
+  if (b.engagedWith("room-e~other", T + 1000)) fail("another card reads engaged");
+  b.set({ term: {}, termTask: { id: "room-e~other" } });
+  if (b.engagedWith("room-e~c", T + 1000)) fail("a card reads engaged while another card's terminal is attached");
+  b.set({ term: {}, termTask: { id: "room-e~c" } });
+  if (!b.engagedWith("room-e~c", T + 1000)) fail("its own terminal attached does not read engaged");
 }
 
 // The wiring, since these two are only worth anything if the page calls them.

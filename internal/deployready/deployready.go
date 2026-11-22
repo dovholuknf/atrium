@@ -1,5 +1,5 @@
 // Package deployready answers one question for the hub: is the tip of the integration branch safe to deploy, and if
-// not, which commits are in the way. See docs/rnd/factory-shape.md, "(a) The hub deploys itself", and @review's five
+// not, which commits are in the way. See @review's five
 // required changes in docs/backlog/rnd/rd-new-review-ed68cd81.md, which this follows point by point.
 //
 // It reads git and writes nothing. It never deploys, and nothing here is on a timer that does.

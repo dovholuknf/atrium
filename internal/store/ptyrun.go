@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// One row per terminal start, so an exit can be filed exactly once. See
-// docs/rnd/rolling-restart-design.md, section 3.2.
+// One row per terminal start, so an exit can be filed exactly once.
 //
 // The key is the START, not the card: a card that is started again gets a new
 // run_id, so the exit of a later start is never taken for an earlier one. A pid

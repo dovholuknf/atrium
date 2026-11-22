@@ -1,13 +1,16 @@
 package hubstore
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // SettingOperatorProfile names the operator's identity in the setting table, a JSON OperatorProfile. Unset reads as
-// DefaultOperatorProfile, so this hub keeps today's author until a profile is written.
+// DefaultOperatorProfile, the hub machine's git identity, until the operator writes a profile.
 const SettingOperatorProfile = "operator_profile"
 
 // OperatorProfile is who the hub's work is by: the git author a land and a worker commit as, the name rules speak of,
@@ -20,9 +23,10 @@ type OperatorProfile struct {
 	Seeds     []string `json:"seeds,omitempty"`
 }
 
-// DefaultOperatorProfile is atrium's own operator, what every hub did before the profile was a setting.
-func DefaultOperatorProfile() OperatorProfile {
-	return OperatorProfile{Name: "Clint Dovholuk", Email: "46322585+dovholuknf@users.noreply.github.com"}
+// DefaultOperatorProfile is the hub machine's git config --global user.name and user.email, never a baked-in person.
+func DefaultOperatorProfile() (OperatorProfile, error) {
+	a, err := gitsync.OperatorAuthor(context.Background())
+	return OperatorProfile{Name: a.Name, Email: a.Email}, err
 }
 
 // Shown is the name rules and briefs use for the operator.
@@ -36,12 +40,12 @@ func (p OperatorProfile) Shown() string {
 // OperatorProfile reads the profile, the default when none is written.
 func (s *Store) OperatorProfile() (OperatorProfile, error) {
 	v, err := s.HubSetting(SettingOperatorProfile)
-	if err != nil || v == "" {
-		return DefaultOperatorProfile(), err
+	if err != nil {
+		return OperatorProfile{}, err
 	}
 	var p OperatorProfile
-	if err := json.Unmarshal([]byte(v), &p); err != nil || p.Name == "" || p.Email == "" {
-		return DefaultOperatorProfile(), nil
+	if err := json.Unmarshal([]byte(v), &p); v == "" || err != nil || p.Name == "" || p.Email == "" {
+		return DefaultOperatorProfile()
 	}
 	return p, nil
 }

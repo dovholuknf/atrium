@@ -29,7 +29,7 @@ func fakeDictateHub(b net.Conn, refuse string, ans DictateAnswer, got chan<- []b
 }
 
 func dictateRoom(a net.Conn) *Room {
-	return &Room{Name: "sg1", up: true, Dial: pipeDialer{a}, T: DefaultTimings()}
+	return &Room{Name: "room-c", up: true, Dial: pipeDialer{a}, T: DefaultTimings()}
 }
 
 // A room's clip reaches the hub whole and the text comes back.
@@ -66,7 +66,7 @@ func TestRoomDictateSaysWhyNot(t *testing.T) {
 func TestHubWithoutDictateRefuses(t *testing.T) {
 	a, b := net.Pipe()
 	defer a.Close()
-	go (&Hub{}).serveDictate(context.Background(), "sg1", b, bufio.NewReader(b))
+	go (&Hub{}).serveDictate(context.Background(), "room-c", b, bufio.NewReader(b))
 	var w welcome
 	_ = readJSON(bufio.NewReader(a), &w)
 	if w.OK || w.Error != ErrDictateOff.Error() {
@@ -79,7 +79,7 @@ func TestHubTakeAnswersADictateHello(t *testing.T) {
 	a, b := net.Pipe()
 	defer a.Close()
 	go (&Hub{}).take(context.Background(), b, "test")
-	if err := writeJSON(a, hello{V: Version, Kind: dictateKind, Room: "sg1"}); err != nil {
+	if err := writeJSON(a, hello{V: Version, Kind: dictateKind, Room: "room-c"}); err != nil {
 		t.Fatal(err)
 	}
 	var w welcome

@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// A PROCESS THE ROOM STARTS FOR A CARD. Design: docs/rnd/card-lifecycle-design.md section 9. Item r-card-procs-ports.
+// A PROCESS THE ROOM STARTS FOR A CARD. Item r-card-procs-ports.
 //
 //	POST /v1/tasks/{id}/proc {argv, cwd, name}   run argv in the background, held on the card as a proc
 //

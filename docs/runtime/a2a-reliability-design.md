@@ -9,7 +9,7 @@ Clint approved stage 1 with changes on 2026-09-23 (see "Decisions"), and stage 1
 design only.
 
 Read `docs/runtime/agent-messaging.md` first. It is the reference for the queue and the two delivery paths this design
-builds on. `docs/rnd/agent-lineage-design.md` is the design for recording who launched whom. Stage 1 ships its two
+builds on. Stage 1 ships the two lineage
 columns and the write-once setter.
 
 ## What went wrong on 2026-09-23

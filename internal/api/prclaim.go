@@ -12,7 +12,7 @@ import (
 )
 
 // A room asks the hub to claim a PR's key before it makes a row, so two rooms that are given one PR make one row and
-// one run. See docs/rnd/scm-forge-design.md section 6 and internal/link/prclaim.go for the hub's side.
+// one run. See internal/link/prclaim.go for the hub's side.
 
 // PRClaimAsk is what a room says to the hub. Held says this room already has a live row for the key, so the hub
 // records it as the owner and does not place the key elsewhere.

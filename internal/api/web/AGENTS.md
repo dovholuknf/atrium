@@ -5,7 +5,7 @@ The board is `index.html` (the markup), the stylesheets in `css/`, plain scripts
 `internal/api/web.go` embeds the whole directory with `go:embed web`.
 
 There is no build step and there is not going to be one. That constraint is why xterm.js is vendored as UMD
-rather than as ES modules, and it is why CodeMirror was evaluated and refused (`docs/rnd/charon.md`, section 4).
+rather than as ES modules, and it is why CodeMirror was evaluated and refused.
 
 ## Nothing here is checked by a compiler, so run the checks
 

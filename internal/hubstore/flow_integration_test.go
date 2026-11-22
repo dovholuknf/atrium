@@ -9,25 +9,25 @@ import (
 
 func TestRoleSetReplacesTheHolderButNotTesters(t *testing.T) {
 	s := open(t)
-	if _, rep, err := s.RoleSet(RoleOrchestrator, "SG4", "c1", "clint"); err != nil || len(rep) != 0 {
+	if _, rep, err := s.RoleSet(RoleOrchestrator, "ROOM-E", "c1", "operator"); err != nil || len(rep) != 0 {
 		t.Fatalf("first: %v %v", rep, err)
 	}
-	h, rep, err := s.RoleSet(RoleOrchestrator, "sg4", "c2", "clint")
-	if err != nil || len(rep) != 1 || rep[0].Card != "c1" || h.Card != "c2" || h.Room != "sg4" {
+	h, rep, err := s.RoleSet(RoleOrchestrator, "room-e", "c2", "operator")
+	if err != nil || len(rep) != 1 || rep[0].Card != "c1" || h.Card != "c2" || h.Room != "room-e" {
 		t.Fatalf("replace: %+v %+v %v", h, rep, err)
 	}
-	if ok, _ := s.IsHolder(RoleOrchestrator, "sg4", "c1"); ok {
+	if ok, _ := s.IsHolder(RoleOrchestrator, "room-e", "c1"); ok {
 		t.Fatal("the replaced holder still holds it")
 	}
-	if ok, _ := s.IsHolder(RoleOrchestrator, "SG4", "c2"); !ok {
+	if ok, _ := s.IsHolder(RoleOrchestrator, "ROOM-E", "c2"); !ok {
 		t.Fatal("the new holder does not hold it")
 	}
-	s.RoleSet(RoleTester, "sg3", "t1", "orch")
-	s.RoleSet(RoleTester, "m1mini", "t2", "orch")
+	s.RoleSet(RoleTester, "room-d", "t1", "orch")
+	s.RoleSet(RoleTester, "room-a", "t2", "orch")
 	if got, _ := s.Roles(RoleTester); len(got) != 2 {
 		t.Fatalf("testers: %+v", got)
 	}
-	if err := s.RoleClear(RoleOrchestrator, "sg4", "c2"); err != nil {
+	if err := s.RoleClear(RoleOrchestrator, "room-e", "c2"); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.Roles(""); len(got) != 2 {
@@ -37,13 +37,13 @@ func TestRoleSetReplacesTheHolderButNotTesters(t *testing.T) {
 
 func TestRoleSetRefusesWhatIsNotARole(t *testing.T) {
 	s := open(t)
-	if _, _, err := s.RoleSet("boss", "sg4", "c1", ""); !IsRefusal(err) {
+	if _, _, err := s.RoleSet("boss", "room-e", "c1", ""); !IsRefusal(err) {
 		t.Fatalf("role: %v", err)
 	}
 	if _, _, err := s.RoleSet(RoleOrchestrator, "", "c1", ""); !IsRefusal(err) {
 		t.Fatalf("room: %v", err)
 	}
-	if _, _, err := s.RoleSet(RoleMerger, "sg4", "c1", "clint"); !errors.Is(err, ErrMergerRetired) {
+	if _, _, err := s.RoleSet(RoleMerger, "room-e", "c1", "operator"); !errors.Is(err, ErrMergerRetired) {
 		t.Fatalf("merger: %v", err)
 	}
 }
@@ -99,8 +99,8 @@ func TestChecksAndDeploysAreKeyedBySha(t *testing.T) {
 	if _, err := s.CheckAdd("abc1234", "sanity", "maybe", ""); !IsRefusal(err) {
 		t.Fatalf("result: %v", err)
 	}
-	s.DeploySet("SG4", "abc1234", "merger")
-	d, err := s.DeploySet("sg4", "def5678", "merger")
+	s.DeploySet("ROOM-E", "abc1234", "merger")
+	d, err := s.DeploySet("room-e", "def5678", "merger")
 	if err != nil || d.SHA != "def5678" {
 		t.Fatalf("deploy: %+v %v", d, err)
 	}
@@ -133,14 +133,14 @@ func TestEpochOpensOnceAndClosesWithTheTips(t *testing.T) {
 	if _, err := s.EpochOpenNow(); !errors.Is(err, ErrNoEpoch) {
 		t.Fatalf("none open: %v", err)
 	}
-	e, err := s.EpochOpen("abc1234", "clint")
+	e, err := s.EpochOpen("abc1234", "operator")
 	if err != nil || e.N != 1 || e.State != "open" {
 		t.Fatalf("open: %+v %v", e, err)
 	}
-	if _, err := s.EpochOpen("def5678", "clint"); !errors.Is(err, ErrEpochOpen) || !IsRefusal(err) {
+	if _, err := s.EpochOpen("def5678", "operator"); !errors.Is(err, ErrEpochOpen) || !IsRefusal(err) {
 		t.Fatalf("second open: %v", err)
 	}
-	if _, err := s.EpochOpen("zz", "clint"); !IsRefusal(err) {
+	if _, err := s.EpochOpen("zz", "operator"); !IsRefusal(err) {
 		t.Fatalf("bad sha: %v", err)
 	}
 	c, err := s.EpochClose(1, "abc1234", "def5678", "merger")
@@ -150,7 +150,7 @@ func TestEpochOpensOnceAndClosesWithTheTips(t *testing.T) {
 	if _, err := s.EpochClose(1, "abc1234", "def5678", "merger"); !errors.Is(err, ErrNoEpoch) {
 		t.Fatalf("close twice: %v", err)
 	}
-	if e, err = s.EpochOpen("def5678", "clint"); err != nil || e.N != 2 {
+	if e, err = s.EpochOpen("def5678", "operator"); err != nil || e.N != 2 {
 		t.Fatalf("next round: %+v %v", e, err)
 	}
 	if got, _ := s.Epochs(0); len(got) != 2 || got[0].N != 2 {

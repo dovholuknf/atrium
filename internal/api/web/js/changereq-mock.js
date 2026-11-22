@@ -11,36 +11,36 @@
   const ago = m => new Date(now - m * 60000).toISOString();
   const REPO = "github/netfoundry/atrium";
   const seed = () => [
-    { id: "cr_7", repo: REPO, source: { room: "sg3", branch: "claude/fabric-hub-push", sha: "9c41d07aa11" }, target: { branch: "main" },
-      title: "Hub receives pushes: store, pre-receive, push log", why: "Finished and reviewed at hub-ok. The hub holds main, so this goes there: the receive path and the push log are the whole of stage 1.\n\nTests ran on sg3 at this head.",
-      change: "chg_41", state: "open", created_by: { room: "sg3", card: "c-4471" }, created_at: ago(95), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: "sg3", card: "c-4471" },
-      _pushed: { state: "matches", hub_sha: "9c41d07aa11", room: "sg3", card: "c-4471", at: ago(98), released: false } },
-    { id: "cr_6", repo: REPO, source: { room: "m1mini", branch: "claude/u-scm5", sha: "5be20a1cc02" }, target: { branch: "claude/landing" },
+    { id: "cr_7", repo: REPO, source: { room: "room-d", branch: "claude/fabric-hub-push", sha: "9c41d07aa11" }, target: { branch: "main" },
+      title: "Hub receives pushes: store, pre-receive, push log", why: "Finished and reviewed at hub-ok. The hub holds main, so this goes there: the receive path and the push log are the whole of stage 1.\n\nTests ran on room-d at this head.",
+      change: "chg_41", state: "open", created_by: { room: "room-d", card: "c-4471" }, created_at: ago(95), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: "room-d", card: "c-4471" },
+      _pushed: { state: "matches", hub_sha: "9c41d07aa11", room: "room-d", card: "c-4471", at: ago(98), released: false } },
+    { id: "cr_6", repo: REPO, source: { room: "room-a", branch: "claude/u-scm5", sha: "5be20a1cc02" }, target: { branch: "claude/landing" },
       title: "Board: pushed line and change requests", why: "The board half of stage 5. Built on a mock layer until the hub's answer shape lands.",
-      change: "chg_44", state: "open", created_by: { room: "m1mini", card: "c-5120" }, created_at: ago(310), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: "m1mini", card: "c-5120" },
-      _pushed: { state: "behind", hub_sha: "29efa25bb90", room: "m1mini", card: "c-5120", at: ago(420), released: false } },
-    { id: "cr_5", repo: REPO, source: { room: "sg4", branch: "claude/runtime-forwarder", sha: "7d03e5c9f00" }, target: { branch: "main" },
+      change: "chg_44", state: "open", created_by: { room: "room-a", card: "c-5120" }, created_at: ago(310), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: "room-a", card: "c-5120" },
+      _pushed: { state: "behind", hub_sha: "29efa25bb90", room: "room-a", card: "c-5120", at: ago(420), released: false } },
+    { id: "cr_5", repo: REPO, source: { room: "room-e", branch: "claude/runtime-forwarder", sha: "7d03e5c9f00" }, target: { branch: "main" },
       title: "Room forwarder with card tokens", why: "r-new-hub-remote: the stable hub remote on the agent listener and the card tokens in the environment.",
-      change: "chg_39", state: "open", created_by: { room: "sg4", card: "c-4302" }, created_at: ago(1500), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: "sg4", card: "c-4302" },
-      _pushed: { state: "diverged", hub_sha: "6a11f90ee21", room: "sg4", card: "c-4302", at: ago(1600), released: false } },
-    { id: "cr_4", repo: REPO, source: { room: "sg3", branch: "claude/fabric-git-store", sha: "e40a3c2d001" }, target: { branch: "main" },
+      change: "chg_39", state: "open", created_by: { room: "room-e", card: "c-4302" }, created_at: ago(1500), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: "room-e", card: "c-4302" },
+      _pushed: { state: "diverged", hub_sha: "6a11f90ee21", room: "room-e", card: "c-4302", at: ago(1600), released: false } },
+    { id: "cr_4", repo: REPO, source: { room: "room-d", branch: "claude/fabric-git-store", sha: "e40a3c2d001" }, target: { branch: "main" },
       title: "Hub git store and the one seed of main", why: "f-new-hub-git-store: the hub's store and the one seed of main.",
-      change: "chg_36", state: "merged", created_by: { room: "sg3", card: "c-4290" }, created_at: ago(4300), closed_at: ago(3900), closed_by: { room: "sg3", card: "operator" }, note: "merged on the hub, re-signed, pushed", merged_sha: "e40a3c2d001", owner: { room: "sg3", card: "c-4290" },
-      _pushed: { state: "ahead", hub_sha: "e40a3c2d001", room: "sg3", card: "c-4290", at: ago(4200), released: true } },
-    { id: "cr_3", repo: REPO, source: { room: "m1mini", branch: "claude/u-mobile-pass" }, target: { branch: "claude/landing" },
+      change: "chg_36", state: "merged", created_by: { room: "room-d", card: "c-4290" }, created_at: ago(4300), closed_at: ago(3900), closed_by: { room: "room-d", card: "operator" }, note: "merged on the hub, re-signed, pushed", merged_sha: "e40a3c2d001", owner: { room: "room-d", card: "c-4290" },
+      _pushed: { state: "ahead", hub_sha: "e40a3c2d001", room: "room-d", card: "c-4290", at: ago(4200), released: true } },
+    { id: "cr_3", repo: REPO, source: { room: "room-a", branch: "claude/u-mobile-pass" }, target: { branch: "claude/landing" },
       title: "Mobile pass: ledger strip and chart lows", why: "Landed on claude/landing another way.",
-      change: "chg_33", state: "closed", created_by: { room: "m1mini", card: "c-5001" }, created_at: ago(2900), closed_at: ago(2700), closed_by: { room: "m1mini", card: "operator" }, note: "landed another way", merged_sha: null, owner: { room: "m1mini", card: "c-5001" },
-      _pushed: { state: "matches", hub_sha: "147e7c7a001", room: "m1mini", card: "c-5001", at: ago(2950), released: false } },
-    { id: "cr_2", repo: REPO, source: { room: "sg4", branch: "claude/scratch-spike" }, target: { branch: "main" },
+      change: "chg_33", state: "closed", created_by: { room: "room-a", card: "c-5001" }, created_at: ago(2900), closed_at: ago(2700), closed_by: { room: "room-a", card: "operator" }, note: "landed another way", merged_sha: null, owner: { room: "room-a", card: "c-5001" },
+      _pushed: { state: "matches", hub_sha: "147e7c7a001", room: "room-a", card: "c-5001", at: ago(2950), released: false } },
+    { id: "cr_2", repo: REPO, source: { room: "room-e", branch: "claude/scratch-spike" }, target: { branch: "main" },
       title: "Spike: sparse clone of the scm folder", why: "Not needed after the stage 2 decision.", change: "",
-      state: "withdrawn", created_by: { room: "sg4", card: "c-4210" }, created_at: ago(6200), closed_at: ago(6000), closed_by: { room: "sg4", card: "c-4210" }, note: "", merged_sha: null, owner: { room: "sg4", card: "c-4210" },
+      state: "withdrawn", created_by: { room: "room-e", card: "c-4210" }, created_at: ago(6200), closed_at: ago(6000), closed_by: { room: "room-e", card: "c-4210" }, note: "", merged_sha: null, owner: { room: "room-e", card: "c-4210" },
       _pushed: { state: "not-pushed" } },
   ];
   let rows = seed();
   let n = 7;
 
   const RECORD = {
-    chg_41: { Tested: "yes at 9c41d07 (go test ./internal/..., sg3, pass) . 0 commits since", Reviewed: "hub-ok by @review, covers 3 of 3 commits . room-ok: none yet", Open: "0" },
+    chg_41: { Tested: "yes at 9c41d07 (go test ./internal/..., room-d, pass) . 0 commits since", Reviewed: "hub-ok by @review, covers 3 of 3 commits . room-ok: none yet", Open: "0" },
     chg_44: { Tested: "yes at 29efa25 . 2 commits since", Reviewed: "doc-ok by @review, covers 1 of 3 commits", Open: "1: swap the mock" },
     chg_39: { Tested: "yes at 6a11f90 . 4 commits since", Reviewed: "none yet", Open: "2: the replay, the token scope" },
     chg_36: { Tested: "yes at e40a3c2", Reviewed: "hub-ok by @review, covers 2 of 2 commits", Open: "0" },
@@ -93,7 +93,7 @@
       if (!r) return Promise.resolve(res(404, { error: "no change request " + id }));
       if (r.state !== "open") return Promise.resolve(res(409, { error: id + " is already " + r.state }));
       const d = body && body.do;
-      const stamp = (state, extra) => Object.assign(r, { state, closed_at: new Date().toISOString(), closed_by: { room: "m1mini", card: "operator" } }, extra || {});
+      const stamp = (state, extra) => Object.assign(r, { state, closed_at: new Date().toISOString(), closed_by: { room: "room-a", card: "operator" } }, extra || {});
       if (d === "close") stamp("closed", { note: (body.note || "").slice(0, 300) });
       else if (d === "withdraw") stamp("withdrawn");
       else if (d === "merged") {

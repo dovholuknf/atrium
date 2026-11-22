@@ -213,8 +213,9 @@ func (d *Daemon) walkLinkLine(t *store.Task) string {
 	}
 	board = seenhost.Base(board)
 	return "Links for the human come from atrium with the host they reach the board on. When they ask for a rendering, mock, " +
-		"preview or example, or to see a file, hand a clickable http link, never file:///, a zrok share, a new ziti " +
-		"service or a new server: " + board + "/room/" + d.opts.Room + "/" + t.ID + "/files/<path of the html file in your card>\n" +
+		"preview or example, or to see a file, hand a clickable http link, never 127.0.0.1, localhost, a port, file:///, a zrok share, a new ziti " +
+		"service or a new server. Call atrium_link with the path of the file in your card and send the url it answers: " +
+		board + "/room/" + d.opts.Room + "/" + t.ID + "/files/<path of the html file in your card>\n" +
 		"When you finish changes someone should read or sign, print the walk link on its own line: " +
 		board + "/#card=" + t.ID + "&walk=<absolute path of the checkout, forward slashes, spaces as %20>"
 }

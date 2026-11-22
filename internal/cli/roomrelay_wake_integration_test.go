@@ -46,7 +46,7 @@ func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = hub.Serve(ctx, ln) }()
-	room := &conn.Room{Name: "m1mini", Version: "b", Dial: tcpDial{ln.Addr().String()},
+	room := &conn.Room{Name: "room-a", Version: "b", Dial: tcpDial{ln.Addr().String()},
 		Handler: http.NotFoundHandler(), T: tm}
 	go func() { _ = room.Run(ctx) }()
 	testwait.EventuallyEvery(t, 20*time.Millisecond, 5*time.Second, "the room to attach", func() bool { return room.State().Up })
@@ -54,7 +54,7 @@ func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	rctx, rcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer rcancel()
 	for _, wake := range []bool{true, false} {
-		res, err := linkRelay{room}.Say(rctx, daemon.RelaySay{From: "sa1", Room: "sg4", To: "orch", Text: "x", Wake: wake})
+		res, err := linkRelay{room}.Say(rctx, daemon.RelaySay{From: "sa1", Room: "room-e", To: "orch", Text: "x", Wake: wake})
 		if err != nil || !res.OK {
 			t.Fatalf("say: %+v, %v", res, err)
 		}

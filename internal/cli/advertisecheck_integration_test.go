@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// sg4 moved from 192.168.1.68 to 192.168.102.41 and the hub went on telling rooms the old one.
+// room-e moved from 192.168.1.68 to 192.168.102.41 and the hub went on telling rooms the old one.
 func TestAnAdvertisedAddressThatIsNotThisMachineIsFlagged(t *testing.T) {
 	local := func() ([]net.IP, error) { return []net.IP{net.ParseIP("192.168.102.41")}, nil }
 	none := func(string) ([]string, error) { return nil, errors.New("no such host") }
@@ -30,13 +30,13 @@ func TestAnAdvertisedNameIsFlaggedUnlessItResolvesHere(t *testing.T) {
 	fresh := func(string) ([]string, error) { return []string{"192.168.1.68", "192.168.102.41"}, nil }
 	gone := func(string) ([]string, error) { return nil, errors.New("no such host") }
 
-	if why := advertiseProblem("sg4:7779", local, stale); !strings.Contains(why, "192.168.1.68") {
+	if why := advertiseProblem("room-e:7779", local, stale); !strings.Contains(why, "192.168.1.68") {
 		t.Errorf("a name resolving elsewhere said %q, want the address it resolved to", why)
 	}
-	if why := advertiseProblem("sg4:7779", local, fresh); why != "" {
+	if why := advertiseProblem("room-e:7779", local, fresh); why != "" {
 		t.Errorf("a name resolving here was flagged: %s", why)
 	}
-	if why := advertiseProblem("sg4:7779", local, gone); why == "" {
+	if why := advertiseProblem("room-e:7779", local, gone); why == "" {
 		t.Error("a name that does not resolve was not flagged")
 	}
 }

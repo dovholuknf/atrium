@@ -90,7 +90,7 @@ func DefaultTimings() Timings {
 		BackoffMax: 5 * time.Second,
 		// TWO MINUTES, and two in a row before moving. A move is a reattach and
 		// costs what a hub restart costs, so a path that flaps must not drag a
-		// room back and forth. See docs/rnd/room-transport-order.md.
+		// room back and forth.
 		ProbeEvery: 2 * time.Minute,
 		// Three of the hub's own DialWait, so a room on a slow overlay that is
 		// still bringing its warm pool up is not called starved.

@@ -58,15 +58,15 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 
 	a, fa := roomDaemon(t)
-	a.opts.Room = "sg3"
-	b, _, cancel, errCh := startDaemonWith(t, func(o *Options) { o.Room = "m1mini" })
+	a.opts.Room = "room-d"
+	b, _, cancel, errCh := startDaemonWith(t, func(o *Options) { o.Room = "room-a" })
 	defer func() {
 		cancel()
 		<-errCh
 	}()
 	// A's relay is room B: a say lands on B as it would from the hub.
 	fa.set(func(s hublink.RelaySay) (hublink.RelayResult, error) {
-		code, out := say(t, b, map[string]string{"from": s.From + "@sg3", "to": s.To, "text": s.Text})
+		code, out := say(t, b, map[string]string{"from": s.From + "@room-d", "to": s.To, "text": s.Text})
 		return hublink.RelayResult{OK: code < 400, Delivered: "queued", To: s.To + "@" + s.Room, Card: s.Room + "~" + s.To,
 			Code: code, Error: strings.TrimSpace(strings.Join([]string{asString(out["error"])}, ""))}, nil
 	})
@@ -102,7 +102,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 	// PREPARE. Freeze, check, bundle.
 	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv1", "lease_seconds": 600})
 	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv1"}) // repeat is the same freeze
-	if out := mvOK(t, a, "check", map[string]any{"id": old.ID, "room": "m1mini"}); out["ok"] != true {
+	if out := mvOK(t, a, "check", map[string]any{"id": old.ID, "room": "room-a"}); out["ok"] != true {
 		t.Fatalf("check %+v", out)
 	}
 	// Typing is refused while it is frozen. Its says and notices wait, once each.
@@ -135,7 +135,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 	}
 	h := slowHarness(t, b)
 	req := shared.LaunchRequest{Harness: h, Cwd: newWt, Title: "old", Repo: "dovholuknf/atrium",
-		MovedFrom: "sg3~" + old.ID, Pinned: true, PinOrder: 2, SpawnedBy: "boss@sg3", SpawnedByID: "sg3~BOSS"}
+		MovedFrom: "room-d~" + old.ID, Pinned: true, PinOrder: 2, SpawnedBy: "boss@room-d", SpawnedByID: "room-d~BOSS"}
 	nc, err := b.Launch(req)
 	if err != nil {
 		t.Skipf("could not spawn a slow test runner on this machine: %v", err)
@@ -145,7 +145,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		t.Fatalf("a repeat launch made another card: %v %v", again, err)
 	}
 	nc = mustGet(t, b, nc.ID)
-	if nc.MovedFrom != "sg3~"+old.ID || !nc.Pinned || nc.PinOrder != 2 {
+	if nc.MovedFrom != "room-d~"+old.ID || !nc.Pinned || nc.PinOrder != 2 {
 		t.Fatalf("successor %+v", nc)
 	}
 	if nc.DisplayRepo() != "dovholuknf/atrium" {
@@ -153,7 +153,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 	}
 
 	// CUT OVER. moved_to, then the queue forwarded by id (twice, delivered once), then the close.
-	mvOK(t, a, "moved", map[string]any{"id": old.ID, "move_id": "mv1", "to": "m1mini~" + nc.ID})
+	mvOK(t, a, "moved", map[string]any{"id": old.ID, "move_id": "mv1", "to": "room-a~" + nc.ID})
 	q := mvOK(t, a, "queue", map[string]any{"id": old.ID})["queue"].([]any)
 	if len(q) != 1 {
 		t.Fatalf("queue %+v", q)
@@ -178,10 +178,10 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 
 	// A say to the old card now arrives, once, on the new one, and the sender is told where it went.
 	code, out := say(t, a, map[string]string{"from": "sender", "to": old.ID, "text": "after the move"})
-	if code != 200 || out["forwarded"] != "moved to m1mini~"+nc.ID {
+	if code != 200 || out["forwarded"] != "moved to room-a~"+nc.ID {
 		t.Fatalf("%d %+v", code, out)
 	}
-	if got := fa.says(); len(got) != 1 || got[0].Room != "m1mini" || got[0].To != nc.ID || got[0].Text != "after the move" {
+	if got := fa.says(); len(got) != 1 || got[0].Room != "room-a" || got[0].To != nc.ID || got[0].Text != "after the move" {
 		t.Fatalf("relay got %+v", got)
 	}
 
@@ -191,7 +191,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		t.Fatalf("launcher is still local: %+v", l)
 	}
 	child = mustGet(t, a, child.ID)
-	if child.SpawnedByID != "m1mini~"+nc.ID {
+	if child.SpawnedByID != "room-a~"+nc.ID {
 		t.Fatalf("child launcher %q", child.SpawnedByID)
 	}
 	if got := mustGet(t, a, old.ID); got.Status != store.StatusDone || got.Alias != "" || !a.st.MovedHandleHeld("old") {
@@ -208,7 +208,7 @@ func asString(v any) string {
 func TestAnUndoLeavesTheOldCardAsItWas(t *testing.T) {
 	t.Parallel()
 	a, _ := roomDaemon(t)
-	a.opts.Room = "sg3"
+	a.opts.Room = "room-d"
 	peerCard(t, a, "sender")
 	old := peerCard(t, a, "old")
 	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv9", "lease_seconds": 600})

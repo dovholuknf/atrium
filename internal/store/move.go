@@ -9,8 +9,7 @@ import (
 )
 
 // What the room does for a move to another room: hold a card still, keep everything said to it meanwhile, and
-// remember where it went. The hub drives the sequence and the rooms run these pieces, each safe to run twice. See
-// docs/rnd/room-handoff-design.md, sections 3 and 5.
+// remember where it went. The hub drives the sequence and the rooms run these pieces, each safe to run twice.
 
 // DefaultFreezeLease is how long a freeze holds with no word from the hub.
 const DefaultFreezeLease = 30 * time.Minute

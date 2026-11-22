@@ -22,8 +22,6 @@ Series: Intake and PR review. Status: idea. Audience: people contributing to ope
 
 ## Sources
 
-- docs/rnd/change-lifecycle-design.md section 5
-- docs/rnd/factory-refactor.md section 3 (held on claude/rnd)
 - the factory log of 2026-10-01 and 10-02 (held, off-repo for now; paraphrase only)
 
 ## Notes for the writer

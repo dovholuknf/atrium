@@ -31,7 +31,7 @@ const docsLandedSHA = "8888888888888888888888888888888888888888"
 func landWork(t *testing.T, x *itemRig, id, kind string, done bool) {
 	t.Helper()
 	st := x.st
-	if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-" + id, "room": "sg4", "card": "c-" + id,
+	if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-" + id, "room": "room-e", "card": "c-" + id,
 		"generation": 1, "state": "finished", "revision": 1, "owner_kind": "session", "owner": "orch", "created_by": "orch",
 		"note": "n", "work_id": id}), loopAddr); code != 200 {
 		t.Fatalf("sync: %d %s", code, body)

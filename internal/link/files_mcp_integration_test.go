@@ -116,8 +116,8 @@ func newFilesHarness(t *testing.T) *filesHarness {
 	t.Cleanup(board.Close)
 	h.c = &controlMCP{board: board.URL, client: board.Client(), docs: func() *hubstore.Store { return st },
 		rooms: func() []resourceRoom {
-			return []resourceRoom{{Name: "sg4", Online: true}, {Name: "m1mini", Online: true},
-				{Name: "sg3", Online: false}, {Name: "old", Online: true}}
+			return []resourceRoom{{Name: "room-e", Online: true}, {Name: "room-a", Online: true},
+				{Name: "room-d", Online: false}, {Name: "old", Online: true}}
 		},
 		audit: func(room, kind, detail string) {
 			h.mu.Lock()
@@ -128,23 +128,23 @@ func newFilesHarness(t *testing.T) *filesHarness {
 }
 
 func (h *filesHarness) put(agent string, in putInput) (putOutput, error) {
-	_, out, err := h.c.docsMCP().PutHandler(context.Background(), ctlReq(agent, "sg4"), in)
+	_, out, err := h.c.docsMCP().PutHandler(context.Background(), ctlReq(agent, "room-e"), in)
 	return out, err
 }
 
 func (h *filesHarness) get(agent string, in getInput) (getOutput, error) {
-	_, out, err := h.c.docsMCP().GetHandler(context.Background(), ctlReq(agent, "sg4"), in)
+	_, out, err := h.c.docsMCP().GetHandler(context.Background(), ctlReq(agent, "room-e"), in)
 	return out, err
 }
 
 func (h *filesHarness) export(in exportInput) (exportOutput, error) {
-	_, out, err := h.c.docsMCP().ExportHandler(context.Background(), ctlReq("r-031", "sg4"), in)
+	_, out, err := h.c.docsMCP().ExportHandler(context.Background(), ctlReq("r-031", "room-e"), in)
 	return out, err
 }
 
 func (h *filesHarness) list(agent string, mine bool) filesOutput {
 	h.t.Helper()
-	_, out, err := h.c.docsMCP().FilesHandler(context.Background(), ctlReq(agent, "sg4"), filesInput{Mine: mine})
+	_, out, err := h.c.docsMCP().FilesHandler(context.Background(), ctlReq(agent, "room-e"), filesInput{Mine: mine})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func (h *filesHarness) list(agent string, mine bool) filesOutput {
 
 func TestFilesToolPutByContentAndList(t *testing.T) {
 	h := newFilesHarness(t)
-	out, err := h.put("r-031", putInput{Content: "a,b\n1,2\n", Name: "table.csv", Note: "for sg4"})
+	out, err := h.put("r-031", putInput{Content: "a,b\n1,2\n", Name: "table.csv", Note: "for room-e"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestFilesToolPutByContentAndList(t *testing.T) {
 		t.Fatalf("list %+v", all)
 	}
 	f := all.Files[0]
-	if f.Origin != "card" || f.Card != "sg4~card1" || f.By != "r-031@sg4" || f.Room != "sg4" || f.Note != "for sg4" {
+	if f.Origin != "card" || f.Card != "room-e~card1" || f.By != "r-031@room-e" || f.Room != "room-e" || f.Note != "for room-e" {
 		t.Fatalf("row %+v", f)
 	}
 	if all.Usage.Bytes != 8 || all.Usage.Cap != hubstore.DefaultFileTotalCap {
@@ -274,7 +274,7 @@ func TestFilesToolGetSendsToTheCallersOwnCard(t *testing.T) {
 		t.Fatalf("the room saw %d drops", len(h.drops))
 	}
 	d := h.drops[0]
-	if d.card != "card2" || d.name != "p.txt" || d.body != "payload" || d.room != "sg4" {
+	if d.card != "card2" || d.name != "p.txt" || d.body != "payload" || d.room != "room-e" {
 		t.Fatalf("the room saw %+v", d)
 	}
 	if out.Size != 7 || !strings.HasSuffix(out.Rel, "-p.txt") || out.Path == "" {
@@ -370,7 +370,7 @@ func TestFilesToolExportStoresOneFilePerRoom(t *testing.T) {
 			t.Fatalf("name %q", f.Name)
 		}
 	}
-	if got["sg4"] == "" || got["m1mini"] == "" {
+	if got["room-e"] == "" || got["room-a"] == "" {
 		t.Fatalf("files %+v", out.Files)
 	}
 	skipped := map[string]string{}
@@ -380,34 +380,34 @@ func TestFilesToolExportStoresOneFilePerRoom(t *testing.T) {
 	if len(skipped) != 1 || !strings.Contains(skipped["old"], "older than the file drop") {
 		t.Fatalf("skipped %+v", out.Skipped)
 	}
-	f, row, err := h.st.FileOpen(got["sg4"])
+	f, row, err := h.st.FileOpen(got["room-e"])
 	if err != nil {
 		t.Fatal(err)
 	}
 	b, _ := io.ReadAll(f)
 	f.Close()
-	if !strings.Contains(string(b), `"room":"sg4"`) || !strings.Contains(string(b), "2026-10-01T00:00:00Z") {
+	if !strings.Contains(string(b), `"room":"room-e"`) || !strings.Contains(string(b), "2026-10-01T00:00:00Z") {
 		t.Fatalf("bytes %q", b)
 	}
-	if row.Origin != "card" || row.Card != "sg4~card1" || row.Room != "sg4" || !strings.HasPrefix(row.Note, "export of usage from sg4 since") {
+	if row.Origin != "card" || row.Card != "room-e~card1" || row.Room != "room-e" || !strings.HasPrefix(row.Note, "export of usage from room-e since") {
 		t.Fatalf("row %+v", row)
 	}
 
 	// A room that is named and offline is skipped, and the others still land.
-	out, err = h.export(exportInput{What: "usage", Rooms: []string{"sg3", "sg4"}})
+	out, err = h.export(exportInput{What: "usage", Rooms: []string{"room-d", "room-e"}})
 	if err != nil || len(out.Files) != 1 || len(out.Skipped) != 1 || !strings.Contains(out.Skipped[0].Why, "offline") {
 		t.Fatalf("%+v, %v", out, err)
 	}
 
 	// Named rooms only, and an unknown one is skipped. Tasks are stored as they came.
-	out, err = h.export(exportInput{What: "tasks", Rooms: []string{"m1mini", "nowhere"}})
-	if err != nil || len(out.Files) != 1 || out.Files[0].Room != "m1mini" ||
+	out, err = h.export(exportInput{What: "tasks", Rooms: []string{"room-a", "nowhere"}})
+	if err != nil || len(out.Files) != 1 || out.Files[0].Room != "room-a" ||
 		!strings.HasSuffix(out.Files[0].Name, ".json") || len(out.Skipped) != 1 {
 		t.Fatalf("%+v, %v", out, err)
 	}
 	// Exports are not counted against a card's hourly puts.
 	for i := 0; i < 3; i++ {
-		if _, err := h.export(exportInput{What: "usage", Rooms: []string{"sg4"}}); err != nil {
+		if _, err := h.export(exportInput{What: "usage", Rooms: []string{"room-e"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -428,18 +428,18 @@ func TestFilesToolsAreAudited(t *testing.T) {
 	ctx := context.Background()
 	run := func() {
 		// Through the same wrapper the server registers, which is what writes the line.
-		_, _, _ = audited(h.c, "ctl-put", docs.DescribePut, h.c.docsMCP().PutHandler)(ctx, ctlReq("r-031", "sg4"),
+		_, _, _ = audited(h.c, "ctl-put", docs.DescribePut, h.c.docsMCP().PutHandler)(ctx, ctlReq("r-031", "room-e"),
 			putInput{Content: "x", Name: "a.txt"})
-		_, _, _ = audited(h.c, "ctl-put", docs.DescribePut, h.c.docsMCP().PutHandler)(ctx, ctlReq("r-031", "sg4"),
+		_, _, _ = audited(h.c, "ctl-put", docs.DescribePut, h.c.docsMCP().PutHandler)(ctx, ctlReq("r-031", "room-e"),
 			putInput{Content: "x", Name: ".env"})
-		_, _, _ = audited(h.c, "ctl-get", docs.DescribeGet, h.c.docsMCP().GetHandler)(ctx, ctlReq("r-032", "sg4"), getInput{Name: "a.txt"})
-		_, _, _ = audited(h.c, "ctl-export", docs.DescribeExport, h.c.docsMCP().ExportHandler)(ctx, ctlReq("r-031", "sg4"),
-			exportInput{What: "tasks", Rooms: []string{"sg4"}})
+		_, _, _ = audited(h.c, "ctl-get", docs.DescribeGet, h.c.docsMCP().GetHandler)(ctx, ctlReq("r-032", "room-e"), getInput{Name: "a.txt"})
+		_, _, _ = audited(h.c, "ctl-export", docs.DescribeExport, h.c.docsMCP().ExportHandler)(ctx, ctlReq("r-031", "room-e"),
+			exportInput{What: "tasks", Rooms: []string{"room-e"}})
 	}
 	run()
 	joined := strings.Join(h.audits, "\n")
-	for _, want := range []string{"ctl-put by r-031@sg4 (claimed): put a.txt, ok", "ctl-get by r-032@sg4 (claimed): get a.txt",
-		"ctl-export by r-031@sg4 (claimed): export tasks, 1 stored, 0 skipped"} {
+	for _, want := range []string{"ctl-put by r-031@room-e (claimed): put a.txt, ok", "ctl-get by r-032@room-e (claimed): get a.txt",
+		"ctl-export by r-031@room-e (claimed): export tasks, 1 stored, 0 skipped"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("no audit line %q in\n%s", want, joined)
 		}
@@ -479,25 +479,25 @@ func TestFilesToolGetAndListRelayedThroughHubAsk(t *testing.T) {
 			t.Fatalf("%s is not relayable", p)
 		}
 	}
-	ans := h.c.hubAsk(context.Background(), "sg3", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
+	ans := h.c.hubAsk(context.Background(), "room-d", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
 		Path: docs.DropFilesPath, Body: json.RawMessage(`{}`)})
 	var list filesOutput
 	if !ans.OK || json.Unmarshal(ans.Data, &list) != nil || len(list.Files) != 1 || list.Files[0].Name != "p.txt" {
 		t.Fatalf("files answer = %+v", ans)
 	}
-	ans = h.c.hubAsk(context.Background(), "sg3", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
-		Path: docs.DropGetPath, Body: json.RawMessage(`{"name":"p.txt","room":"sg4"}`)})
+	ans = h.c.hubAsk(context.Background(), "room-d", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
+		Path: docs.DropGetPath, Body: json.RawMessage(`{"name":"p.txt","room":"room-e"}`)})
 	var got getOutput
 	if !ans.OK || json.Unmarshal(ans.Data, &got) != nil || got.Size != 7 {
 		t.Fatalf("get answer = %+v", ans)
 	}
-	if len(h.drops) != 1 || h.drops[0].room != "sg3" || h.drops[0].card != "card2" {
+	if len(h.drops) != 1 || h.drops[0].room != "room-d" || h.drops[0].card != "card2" {
 		t.Fatalf("the room saw %+v", h.drops)
 	}
 	if len(h.audits) == 0 || !strings.Contains(h.audits[len(h.audits)-1], "ctl-get") {
 		t.Fatalf("audits %v", h.audits)
 	}
-	if miss := h.c.hubAsk(context.Background(), "sg3", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
+	if miss := h.c.hubAsk(context.Background(), "room-d", wire.RelayRequest{Op: "hub", From: "r-032", Method: "POST",
 		Path: docs.DropGetPath, Body: json.RawMessage(`{"name":"nope"}`)}); miss.OK || miss.Code != 404 {
 		t.Fatalf("missing answer = %+v", miss)
 	}

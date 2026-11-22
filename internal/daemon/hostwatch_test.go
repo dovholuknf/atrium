@@ -153,7 +153,7 @@ func TestHostStopAndLimits(t *testing.T) {
 	if len(lim) != 3 {
 		t.Fatalf("owner, start time and IO are each a stated limit: %v", lim)
 	}
-	if !sameUser(`SGG\localai`, "localai") || sameUser(`NT AUTHORITY\SYSTEM`, "localai") {
+	if !sameUser(`ROOM-G\localai`, "localai") || sameUser(`NT AUTHORITY\SYSTEM`, "localai") {
 		t.Fatal("sameUser compares the account part")
 	}
 }

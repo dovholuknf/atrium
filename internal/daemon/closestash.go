@@ -14,8 +14,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A CLOSE'S STASH: the work in a worktree a close was told to stash, held on the hub instead of on any room. Design:
-// docs/rnd/card-lifecycle-design.md Interview Q4 and Q5. The close itself is internal/api/close.go.
+// A CLOSE'S STASH: the work in a worktree a close was told to stash, held on the hub instead of on any room. The
+// close itself is internal/api/close.go.
 //
 // A stash is atrium's word, not `git stash`. The dirty files go into one WIP commit on top of the branch, the branch
 // is pushed to the hub as `stash/<card short id>/<branch>`, and the local name for it is dropped again. The push is

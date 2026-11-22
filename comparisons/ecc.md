@@ -223,7 +223,7 @@ Ranked by value.
 4. **Live overlap warning between cards.** When two live cards in the same repo edit the same path, say so on both and
    to the director. Atrium would take the path list from PostToolUse inputs it already receives. ECC:
    `ecc2/src/session/manager.rs` (`enforce_conflict_resolution`) and the `conflict_incidents` table. Atrium:
-   the activity path in `internal/daemon` and the review tab (`docs/rnd/review-tab-design.md`). Take the warning only.
+   the activity path in `internal/daemon` and the review tab. Take the warning only.
    Do not take the automatic pause. Medium.
 5. **Install ownership by stable id and fingerprint.** Mark each hook entry atrium writes with an id and a fingerprint of
    its command, so a board repair rewrites only atrium's entries and a hand edit is reported. ECC:

@@ -264,7 +264,7 @@ func boolp(b bool) *bool { return &b }
 
 func TestTurningOffTheRoomLinksZitiIsRefusedWhileARoomIsOnlyOnIt(t *testing.T) {
 	var mu sync.Mutex
-	only := []string{"m1mini"}
+	only := []string{"room-a"}
 
 	f := &fakeBinds{}
 	tr := &HubTransports{Store: &fakeSettings{m: map[string]string{}}, Hub: NewHub(Timings{}), IdentityFallback: "C:/ids/hub.json",
@@ -288,7 +288,7 @@ func TestTurningOffTheRoomLinksZitiIsRefusedWhileARoomIsOnlyOnIt(t *testing.T) {
 	}
 	waitUntil(t, "bound", func() bool { return f.binds() == 1 })
 	_, err := tr.Set(TransportRoomZiti, boolp(false), nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "m1mini") || !strings.HasPrefix(err.Error(), "refused") {
+	if err == nil || !strings.Contains(err.Error(), "room-a") || !strings.HasPrefix(err.Error(), "refused") {
 		t.Fatalf("turning off answered %v", err)
 	}
 	if !accepts(f.last()) {

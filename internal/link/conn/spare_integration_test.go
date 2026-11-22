@@ -29,7 +29,7 @@ func (gatedDialer) Describe() string { return "gated" }
 
 func TestARelayWaitsForASpareBeingDialled(t *testing.T) {
 	d := gatedDialer{calls: make(chan struct{}, 4), conns: make(chan net.Conn)}
-	r := &Room{Name: "sgg", up: true, Dial: d, T: DefaultTimings()}
+	r := &Room{Name: "room-g", up: true, Dial: d, T: DefaultTimings()}
 	r.gitMoved.Store(time.Now().UnixNano())
 	r.keepSpare()
 	<-d.calls

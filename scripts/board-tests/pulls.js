@@ -430,7 +430,7 @@ async function pullsPanelStageSection(browser, base) {
 }
 
 // ── the pulls page: verdict, groups, one primary, phone ───────────────
-// The redesign of docs/rnd/pulls-redesign.md over rows shaped like the live /v1/prs. The walker's card is stood in for by
+// The pulls redesign over rows shaped like the live /v1/prs. The walker's card is stood in for by
 // replacing pullCard in the page, so a task poll cannot move it. PGSHOT=/dir writes the pictures
 // (loaded, empty, loading and menu, at 1280 and 390).
 async function pullsPageSection(browser, base) {

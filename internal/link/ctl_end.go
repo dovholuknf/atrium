@@ -170,6 +170,27 @@ func CheckBlockedReason(reason string) string {
 	return ""
 }
 
+// humanLinkShapes are addresses that open on the worker's machine only, which the human cannot reach from the board.
+var humanLinkShapes = []string{"127.0.0.1:", "localhost:", "file://"}
+
+// HumanLinkRule is what a worker is told when its text holds a link the human cannot open.
+const HumanLinkRule = "a link for the human is ALWAYS a board link, never 127.0.0.1, localhost, a port or file://, " +
+	"because those open on your machine and not on theirs. call atrium_link with the path of the file in your card " +
+	"and send the url it answers. a mock is static files in your card, not a server"
+
+// CheckHumanLinks is why text is refused, or "": it holds an address only the worker's own machine can open.
+func CheckHumanLinks(texts ...string) string {
+	for _, t := range texts {
+		low := strings.ToLower(t)
+		for _, shape := range humanLinkShapes {
+			if strings.Contains(low, shape) {
+				return fmt.Sprintf("refused: the text holds %q. %s", shape, HumanLinkRule)
+			}
+		}
+	}
+	return ""
+}
+
 // EndDoor is the two tools for a server, given how each reaches the room's report endpoint.
 type EndDoor struct {
 	// Report files the body as the caller's report and answers what the room recorded.
@@ -199,6 +220,9 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	}
 	if len(unverified) > UnverifiedMax {
 		return nil, EndOutput{}, fmt.Errorf("unverified is %d bytes, over %d. shorten it, details go in REPORT.md", len(unverified), UnverifiedMax)
+	}
+	if why := CheckHumanLinks(line, why, skipped, unverified, artifact); why != "" {
+		return nil, EndOutput{}, fmt.Errorf("%s", why)
 	}
 	tail := ""
 	if line != "" {
@@ -231,6 +255,9 @@ func (d EndDoor) Blocked(ctx context.Context, req *mcp.CallToolRequest, in block
 	*mcp.CallToolResult, EndOutput, error) {
 
 	if why := CheckBlockedReason(in.Reason); why != "" {
+		return nil, EndOutput{}, fmt.Errorf("%s", why)
+	}
+	if why := CheckHumanLinks(in.Reason); why != "" {
 		return nil, EndOutput{}, fmt.Errorf("%s", why)
 	}
 	out, err := d.Report(ctx, req, map[string]any{

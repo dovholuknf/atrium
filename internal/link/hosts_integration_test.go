@@ -36,11 +36,11 @@ func TestTheHostsSettingAppliesWithoutARestart(t *testing.T) {
 	}
 
 	code, got := do(t, http.MethodPut, front.URL+"/_hub/hosts", "application/json",
-		`{"hosts":["*.shares.zrok.io"," sg4.lan ","*.duckdns.org",""]}`)
+		`{"hosts":["*.shares.zrok.io"," room-e.lan ","*.duckdns.org",""]}`)
 	if code != http.StatusOK {
 		t.Fatalf("PUT answered %d %v", code, got)
 	}
-	if status("abc123.shares.zrok.io") != http.StatusOK || status("sg4.lan:7778") != http.StatusOK {
+	if status("abc123.shares.zrok.io") != http.StatusOK || status("room-e.lan:7778") != http.StatusOK {
 		t.Fatal("a name just set is not answered")
 	}
 	if status("evil.duckdns.org") != http.StatusForbidden {
@@ -50,7 +50,7 @@ func TestTheHostsSettingAppliesWithoutARestart(t *testing.T) {
 	if len(ignored) != 1 || !strings.Contains(ignored[0].(map[string]any)["name"].(string), "duckdns") {
 		t.Fatalf("the ignored entries are %v", got["ignored"])
 	}
-	if st.m[SettingExtraHosts] != `["*.shares.zrok.io","sg4.lan","*.duckdns.org"]` {
+	if st.m[SettingExtraHosts] != `["*.shares.zrok.io","room-e.lan","*.duckdns.org"]` {
 		t.Fatalf("stored %q", st.m[SettingExtraHosts])
 	}
 

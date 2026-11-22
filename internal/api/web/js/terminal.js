@@ -1546,7 +1546,7 @@ function hideCleanCopy() {
   if (ccBtn) { ccBtn.remove(); ccBtn = null; }
 }
 
-// clint's rule: a clean copy drops only the `claude ❯` prompt and each line's edge spaces. Every other character and
+// The operator's rule: a clean copy drops only the `claude ❯` prompt and each line's edge spaces. Every other character and
 // every line feed stays, so a `# ` comment in a copied command block is still a comment.
 function ccDerender(sel) {
   return String(sel).replace(/[^\r\n]+/g, line => line.trim().replace(/^(claude\s*)?❯\s*/, ""));
@@ -1641,6 +1641,7 @@ function wireTerminalPaste(screen) {
     e.preventDefault();
     e.stopPropagation();
     lagPasteStart("paste event");
+    upT0 = performance.now();
     pasteVia("ctrl+v");
     // A delay-rendered clipboard image can arrive here with no bytes, while
     // the async clipboard API still has them.
@@ -1763,8 +1764,10 @@ async function pasteIntoTerm() {
     if (!pasteFlight) pasteEnd("nothing to paste");
     return;
   }
-  pasteEnd("the paste box");
-  openPasteBox(got.why);
+  pasteEnd(answered ? "the clipboard failing" : "the paste box");
+  // A clipboard that answered and then failed is an error to say, never the box: the box is for a read nobody answered.
+  if (answered) toast("could not paste", got.why);
+  else openPasteBox(got.why);
 }
 
 // How long to wait on the clipboard API before offering the box instead.
@@ -1934,6 +1937,7 @@ function wirePasteBox() {
 // that gives nothing either is answered with a toast rather than silence.
 async function pasteFilesIntoTerm(fromEmpty, onRead, task) {
   task = task || termTask;
+  if (!fromEmpty) upT0 = performance.now();
   const emptyToast = () => { if (fromEmpty) { pasteEnd("the pasted image being empty"); toast("the pasted image was empty", "paste it again"); } return fromEmpty === true; };
   if (!task || !navigator.clipboard || !navigator.clipboard.read) return emptyToast();
   // A guest has no file endpoint, so this hands the paste back and the text
@@ -1959,8 +1963,50 @@ async function pasteFilesIntoTerm(fromEmpty, onRead, task) {
   if (!files.length) return emptyToast();
   if (onRead && !onRead()) return true;
 
-  await uploadIntoTerm(files, task);
+  // Whatever goes wrong once the bytes are on their way is said here and never rethrown: the caller reads a throw as a
+  // clipboard that would not read, and tries again, which saves the image twice.
+  try { await uploadIntoTerm(files, task); } catch (e) { pasteEnd("an error"); toast("could not paste", String(e && e.message || e)); }
   return true;
+}
+
+let upT0 = 0;
+
+function uploadTimerStart(files) {
+  const now = performance.now();
+  const fresh = upT0 && now - upT0 < 60000;
+  const t0 = fresh ? upT0 : now;
+  upT0 = 0;
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const n = Array.from(files).reduce((a, f) => a + f.size, 0);
+  return { id, t0, readAt: now, n, name: files.length === 1 ? files[0].name : files.length + " files", settingsAt: 0, doneAt: 0 };
+}
+
+// One console line per upload, always on. Server-Timing carries the hub's and the room's steps for the same id.
+function uploadTimerEnd(up, task) {
+  const end = performance.now();
+  const ms = {};
+  ms.clipboard = up.readAt - up.t0;
+  if (up.settingsAt > up.doneAt) ms.settings = up.settingsAt - up.doneAt;
+  const path = `/v1/tasks/${task.id}/files`;
+  const ent = performance.getEntriesByType("resource").filter(e => e.name.endsWith(path)).pop();
+  const st = {};
+  if (ent) {
+    ms.queue = ent.requestStart - ent.startTime;
+    ms.reply = ent.responseEnd - ent.responseStart;
+    for (const s of ent.serverTiming || []) st[s.name] = s.duration;
+  }
+  const hub = "hub-body" in st;
+  if (ent && !hub) ms.upload = ent.responseStart - ent.requestStart;
+  const names = { "hub-route": "hub route", "hub-conn": "hub->room connect", "hub-body": "browser->hub", "hub-sent": "hub->room send", "hub-room": "room" };
+  for (const k in names) if (k in st) ms[names[k]] = st[k];
+  let slow = "", big = 0;
+  for (const k in ms) if (ms[k] > big) { big = ms[k]; slow = k; }
+  const total = end - up.t0;
+  const f = v => (v / 1000).toFixed(1) + "s";
+  const room = ["room-read", "room-write", "room-event"].filter(k => k in st).map(k => `${k} ${Math.round(st[k])}`).join(", ");
+  console.info(`[atrium upload] ${up.id} ${up.name} ${up.n}B ${Math.round(total)}ms: ` +
+    Object.keys(ms).map(k => `${k} ${Math.round(ms[k])}`).join(", ") + (room ? ` | ${room}` : ""));
+  toast(`${up.name} ${pasteSize(up.n)} in ${f(total)}`, big ? `slowest: ${slow} ${f(big)}` : "");
 }
 
 // The one pipeline for paste, drop and picker.
@@ -1985,15 +2031,22 @@ async function uploadIntoTerm(files, task) {
   // paste, which takes the box over without a gap.
   pasteWaiting("uploading " + (files.length === 1 ? files[0].name : files.length + " files"), "upload");
   lagPasteMark("upload start");
+  const up = uploadTimerStart(files);
+  // Asked while the bytes go up, so nothing is left to wait for once they are there.
+  const prefs = pasteSettings();
+  prefs.then(() => { up.settingsAt = performance.now(); });
   let res;
   try {
-    res = await api(`/v1/tasks/${task.id}/files`, { method: "POST", body: form });
+    res = await api(`/v1/tasks/${task.id}/files`, { method: "POST", body: form, headers: { "X-Atrium-Upload": up.id } });
   } catch (e) {
     pasteEnd("the upload failing");
     toast("that did not go up", e.message);
     return;
   }
+  up.doneAt = performance.now();
   lagPasteMark("upload end");
+  // The file is up. What waits from here is the typing of its path, and the bar says so.
+  if (pasteFlights.size === 0 && document.getElementById("t-pasting")) showPasting("uploaded, typing the path");
 
   // Spliced into the stream and NOT submitted.
   //
@@ -2003,10 +2056,11 @@ async function uploadIntoTerm(files, task) {
   // between a helpful paste and a runner that starts working on half a
   // sentence. docs/terminal/supervision-design.md is why this matters: atrium owns a
   // real terminal that a person may be mid-command in.
-  const paths = (res.paths || []).join(" ");
+  const paths = ((res && res.paths) || []).join(" ");
   // The preamble says what the path is for. A bare path is what a person types
   // when they mean "look at this", and it is not what they say.
-  const pre = preambleForFiles(await pasteSettings(), files);
+  const pre = preambleForFiles(await prefs, files);
+  uploadTimerEnd(up, task);
   if (paths && !pasteSameTerm(task)) {
     pasteEnd("the terminal changed");
     toast("not pasted: the terminal changed", "it went up to " + (task.title || task.id) + " as " + paths);

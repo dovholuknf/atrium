@@ -20,8 +20,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// OPEN A LINK: one call from a pasted link to a live card in its own worktree. Design:
-// docs/rnd/card-lifecycle-design.md, section 3. Item r-open-verb-pr.
+// OPEN A LINK: one call from a pasted link to a live card in its own worktree. Item
+// r-open-verb-pr.
 //
 //	POST /v1/open {url, why?, harness?}
 //

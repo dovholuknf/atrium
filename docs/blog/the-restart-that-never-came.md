@@ -23,10 +23,8 @@ Series: The daemon and the halt. Status: idea. Audience: people running agents u
 
 ## Sources
 
-- docs/rnd/room-deploy-hold-design.md
 - changelog/runtime/2026-09-30-r-deploy-hold.md
 - docs/fabric/hub-restart-gate.md
-- docs/rnd/rolling-restart-design.md
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)
 
 ## Notes for the writer

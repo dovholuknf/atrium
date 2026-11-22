@@ -52,7 +52,7 @@ const overlayToolDesc = "Run a throwaway ziti overlay of your own for a test, he
 	"services and policies yourself with the admin login, as `ziti edge login <controller> -u admin -p <password> " +
 	"--cli-identity <name>` keeps the operator's default login untouched.\n" +
 	"- `tunnel` {overlay, identity, mode, services}: `ziti tunnel host`, or `proxy` with a port per service from your " +
-	"card. `tun` needs admin or root and atrium never elevates: you get the command back, so stop and ask clint to " +
+	"card. `tun` needs admin or root and atrium never elevates: you get the command back, so stop and ask the operator to " +
 	"run it in an elevated shell, saying what it is for and how to stop it.\n" +
 	"- `down` {overlay}: stop its tunnelers and controller and delete its folder.\n\n" +
 	"`overlay` may be left out when the card has one."

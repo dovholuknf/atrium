@@ -38,7 +38,7 @@ func TestPinOrderAcceptsRoomTaggedIDs(t *testing.T) {
 		ids = append(ids, task.ID)
 	}
 
-	body := `{"ids":["sg4~` + ids[2] + `","sg4~` + ids[0] + `","` + ids[1] + `"]}`
+	body := `{"ids":["room-e~` + ids[2] + `","room-e~` + ids[0] + `","` + ids[1] + `"]}`
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/pin-order",
 		strings.NewReader(body)))

@@ -21,7 +21,7 @@ import (
 )
 
 // `atrium ssh-proxy <room>` is ssh's ProxyCommand: stdin and stdout are the ssh protocol, carried through the hub to
-// that room's own sshd. See docs/rnd/ssh-via-hub.md.
+// that room's own sshd.
 //
 // IT WRITES NOTHING TO STDOUT BUT STREAM BYTES. ssh reads stdout as the protocol, so every refusal is one sentence on
 // stderr and exit 255, which ssh prints above its own `Connection closed`. Atrium carries bytes only: it holds no key,

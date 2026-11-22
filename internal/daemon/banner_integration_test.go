@@ -23,10 +23,10 @@ func TestAMessageFromYouReadsAsFromYou(t *testing.T) {
 func TestAMessageFromAPeerSaysWhichAndSaysItWasNotYou(t *testing.T) {
 	t.Parallel()
 	got := messageBanner([]*store.Message{
-		{Text: "have you got the lock", FromPeer: "sg4/ziti-acme"},
+		{Text: "have you got the lock", FromPeer: "room-e/ziti-acme"},
 	}, false)
 
-	if !strings.Contains(got, "sg4/ziti-acme") {
+	if !strings.Contains(got, "room-e/ziti-acme") {
 		t.Fatalf("the banner does not say which session: %q", got)
 	}
 	// The load-bearing half. Without it a peer's request reads as yours.
@@ -41,14 +41,14 @@ func TestAMixedBatchIsDescribedAsMixed(t *testing.T) {
 	t.Parallel()
 	got := messageBanner([]*store.Message{
 		{Text: "mine"},
-		{Text: "theirs", FromPeer: "sg4/other"},
+		{Text: "theirs", FromPeer: "room-e/other"},
 	}, false)
 
 	if !strings.Contains(got, "some from the human") {
 		t.Fatalf("a mixed batch claimed one author: %q", got)
 	}
 	// And each is labeled, or "some of these are from a peer" is unusable.
-	if !strings.Contains(got, "@sg4/other says:") {
+	if !strings.Contains(got, "@room-e/other says:") {
 		t.Fatalf("a mixed batch does not say which is which: %q", got)
 	}
 }
@@ -58,8 +58,8 @@ func TestAMixedBatchIsDescribedAsMixed(t *testing.T) {
 func TestTwoPeersInOneBatchIsMixed(t *testing.T) {
 	t.Parallel()
 	got := messageBanner([]*store.Message{
-		{Text: "a", FromPeer: "sg4/one"},
-		{Text: "b", FromPeer: "sg4/two"},
+		{Text: "a", FromPeer: "room-e/one"},
+		{Text: "b", FromPeer: "room-e/two"},
 	}, false)
 	if !strings.Contains(got, "some from the human") {
 		t.Fatalf("two peers were reported as one: %q", got)
@@ -71,7 +71,7 @@ func TestTwoPeersInOneBatchIsMixed(t *testing.T) {
 func TestTheBlockedExplanationSurvivesAPeerMessage(t *testing.T) {
 	t.Parallel()
 	got := messageBanner([]*store.Message{
-		{Text: "x", FromPeer: "sg4/other"},
+		{Text: "x", FromPeer: "room-e/other"},
 	}, true)
 	if !strings.Contains(got, "not refused on its merits") {
 		t.Fatalf("a blocked peer message reads as a policy refusal: %q", got)
@@ -93,7 +93,7 @@ func TestAPeerMessageMustNameItsSender(t *testing.T) {
 		t.Fatal("a whitespace sender was accepted")
 	}
 
-	m, err := d.st.QueueFromPeer(task.ID, "hello", "sg4/other")
+	m, err := d.st.QueueFromPeer(task.ID, "hello", "room-e/other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestAPeerMessageMustNameItsSender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pending) != 1 || pending[0].FromPeer != "sg4/other" {
+	if len(pending) != 1 || pending[0].FromPeer != "room-e/other" {
 		t.Fatalf("the sender was lost: %+v", pending)
 	}
 }

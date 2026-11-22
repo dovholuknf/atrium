@@ -25,7 +25,7 @@ import (
 // The API is shared and only the static files differ, so two workers editing the
 // board never collide and the operator opens the view of the change being tested.
 // A view is derived from the cards the rooms announce and never stored, so it goes
-// when its card or its directory does. See docs/rnd/board-views-design.md.
+// when its card or its directory does.
 
 // viewBoardDir is where a worktree keeps its board.
 const viewBoardDir = "internal/api/web"
@@ -148,6 +148,9 @@ func viewFrom(ctx context.Context) *boardView {
 func (p *Proxy) buildFor(ctx context.Context) string {
 	if v := viewFrom(ctx); v != nil {
 		return v.build()
+	}
+	if p.live != nil && p.board != nil {
+		return p.live.get(p.board).Build
 	}
 	return p.boardID
 }

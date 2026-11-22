@@ -183,7 +183,7 @@ echo "in $out"
 echo
 if [ -z "$identity" ]; then
   cat <<'EOF'
-NOTHING WAS SIGNED. To ship this without a Gatekeeper warning clint must supply:
+NOTHING WAS SIGNED. To ship this without a Gatekeeper warning the operator must supply:
 
   1. A "Developer ID Installer" certificate, from an Apple Developer account
      ($99/year). Then re-run with:

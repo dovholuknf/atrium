@@ -1,5 +1,5 @@
 // Package sshtarget is the list of TCP addresses this room offers to other rooms, the file `ssh_targets.json` beside
-// the room's key. See docs/rnd/ssh-across-rooms.md.
+// the room's key.
 //
 // ATRIUM HOLDS THE NAME OF A TARGET AND WHICH ROOMS MAY REACH IT, NEVER A KEY, PASSWORD OR AGENT SOCKET. The login is
 // sshd's own. Nothing here writes the file except Add, Remove and Save, which `atrium ssh` calls.

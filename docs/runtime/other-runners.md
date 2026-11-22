@@ -163,7 +163,7 @@ that grows would be a watcher, not a hook, and that is a different mechanism to 
 ## What the board says now
 
 Fixed rows, and each one says what it can report, which is the same argument
-`docs/rnd/hook-coverage-spike.md` makes about lanes: report what was observed, not what a config file claims.
+the hook coverage spike made about lanes: report what was observed, not what a config file claims.
 
 - A row whose command is `claude` or `codex` carries its own hooks button, with its own count, over its own
   file. Wiring one says nothing about the other and the dialog has always kept them in separate panels.

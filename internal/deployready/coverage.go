@@ -11,8 +11,7 @@ import (
 // WHAT THE VERDICTS SAY OF ONE RANGE (item lifecycle L4). `Check` answers for the integration branch against an installed
 // build. The item lifecycle's `reviewed` step asks the same question of an item's own commits, and it must be the SAME
 // answer: a verdict trailer is trusted under the same rules (a verdict commit touches review files alone), matched to a
-// commit by the same patch id, and a hold wins the same way. Nothing here is a second matcher. See
-// docs/rnd/item-lifecycle-design.md section 3, `reviewed`.
+// commit by the same patch id, and a hold wins the same way. Nothing here is a second matcher.
 
 // Coverage is how much of a range the verdicts cover.
 type Coverage struct {

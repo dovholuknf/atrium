@@ -18,7 +18,7 @@ func TestRoomStatsServesTheLastPushedSnapshotOnly(t *testing.T) {
 	if rec := get(); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("before a sample: %d", rec.Code)
 	}
-	last := []byte(`{"v":1,"room":"sg3"}`)
+	last := []byte(`{"v":1,"room":"room-d"}`)
 	srv.RoomStats = func() []byte { return last }
 	rec := get()
 	if rec.Code != http.StatusOK || rec.Body.String() != string(last) {

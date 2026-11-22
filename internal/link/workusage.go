@@ -16,7 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// THE USAGE PULL (item lifecycle L5, docs/rnd/item-lifecycle-design.md section 6.2). On a tick the hub reads each room's
+// THE USAGE PULL (item lifecycle L5). On a tick the hub reads each room's
 // usage export (a card's own turns) and delivery export (what the orchestrator spent answering) through the proxy it
 // already has, and keeps the rows that belong to an item's cards in `work_usage`.
 //

@@ -55,7 +55,7 @@ func TestBacklogListAllAsksForNoOpenFilter(t *testing.T) {
 
 func TestBacklogFileSendsTheItemAndReadsBodyFromStdin(t *testing.T) {
 	t.Setenv("ATRIUM_AGENT_NAME", "dir-fabric")
-	t.Setenv("ATRIUM_ROOM", "m1mini")
+	t.Setenv("ATRIUM_ROOM", "room-a")
 	out, method, path, body, err := runBacklog(t, 201, `{"id":"f-new-y","status":"open","title":"why"}`, "the words",
 		"backlog", "file", "f-new-y", "--dept", "fabric", "--title", "why", "--body", "-")
 	if err != nil {
@@ -66,7 +66,7 @@ func TestBacklogFileSendsTheItemAndReadsBodyFromStdin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if method != "POST" || path != "/_hub/backlog" || got["id"] != "f-new-y" || got["body"] != "the words" ||
-		got["by"] != "dir-fabric" || got["room"] != "m1mini" {
+		got["by"] != "dir-fabric" || got["room"] != "room-a" {
 		t.Fatalf("sent %s %s %v", method, path, got)
 	}
 	if !strings.Contains(out, "filed f-new-y") {

@@ -161,7 +161,7 @@ func overlayDirect(keys linktransport.Keys, spend func(string) (string, error)) 
 
 // hubSet is a hub on every transport `--transport` named, at once. The first is
 // the primary: join strings are minted for it, and a hub on one transport is a
-// set of one. See docs/rnd/room-transport-order.md.
+// set of one.
 type hubSet struct {
 	sides []*hubSide
 }
@@ -475,7 +475,7 @@ func rawRoomDialer(j linktransport.Join, keys linktransport.Keys, identity strin
 //
 // Built from the join, the hub's list as last heard and what was told to this
 // room on its own machine (`atrium room transports`). `skipped` names what could
-// not be a rung and why, for the log. See docs/rnd/room-transport-order.md.
+// not be a rung and why, for the log.
 func roomLadder(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports) (*conn.Ladder, []string, error) {
 	rungs, skipped := roomRungs(keys, saved, tr, nil)
 	if len(rungs) == 0 {

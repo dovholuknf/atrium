@@ -3,7 +3,7 @@
 // The percentages are the ones cards' statuslines report (telemetry.five_hour and .weekly). The room keeps
 // them (GET /v1/usage/limits?since=, internal/api/limits.go) so a reload draws the same picture; after that
 // they arrive on the card updates the board already gets. NOTHING here polls, and nothing here notifies: the
-// flameout shows on the tab and nowhere else. See docs/rnd/usage-tab-design.md, sections 3.3 and 3.3.1.
+// flameout shows on the tab and nowhere else.
 //
 // Atrium does not know which account a card runs under. A row is "highest seen in the last hour", never a
 // sum, and two distinct reset times are two accounts and so two rows.

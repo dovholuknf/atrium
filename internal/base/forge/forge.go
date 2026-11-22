@@ -1,5 +1,5 @@
 // Package forge is the small interface between atrium and a code forge's command
-// line tool. See docs/rnd/scm-forge-design.md.
+// line tool.
 //
 // A forge holds nothing. An implementation builds an argv for a named CLI, runs it
 // through the bounded Runner it is given, and parses what the CLI prints into

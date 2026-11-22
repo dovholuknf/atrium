@@ -369,10 +369,10 @@ missing. The filesystem root is never touched. A check (`-Check`, room-check) wr
 
 ## The agent pack
 
-A room is only as useful as the agents it can name. A new provision installs the operator's agents and skills, the
-`claude/agents/*.md` files and every `claude/skills/<name>/` folder that has a `SKILL.md` in the `dovholuknf/dotfiles`
-repository (`-AgentPackRepo` and `-AgentPackBranch` change it, `-NoAgentPack` skips it), into the account's `~/.claude`
-as real files. The commit they came from is recorded in `~/.claude/atrium-agent-pack.json` beside a SHA-256 for each file.
+A room is only as useful as the agents it can name. A provision given `-AgentPackRepo` installs the operator's agents and
+skills, the `claude/agents/*.md` files and every `claude/skills/<name>/` folder that has a `SKILL.md` in that repository
+(`-AgentPackBranch` picks the branch, `-NoAgentPack` skips it), into the account's `~/.claude` as real files. There is no
+default pack: atrium ships everything it needs itself. The commit they came from is recorded in `~/.claude/atrium-agent-pack.json` beside a SHA-256 for each file.
 A rerun at the same commit changes nothing, a file edited on the room is put back, and an agent that is not in the repo is
 left alone. A skill that is a link into another repository (two on sg3, `debug-ziti-desktop-edge-win` and
 `debug-ziti-edge-tunnel-log`) is not fetched and is named in a `skip` line.

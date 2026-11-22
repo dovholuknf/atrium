@@ -10,7 +10,7 @@ import (
 
 // WHAT THE ITEM LIFECYCLE'S DESIGN STEPS READ OF THE HUB'S STORE (L2). Four reads, each a git command in a bare repository
 // the hub holds, with no shell, a bound, and nothing taken from a caller that was not checked first: a sha is hex and a path
-// has no `..` and no leading dash. Nothing here writes. See docs/rnd/item-lifecycle-design.md, section 3.
+// has no `..` and no leading dash. Nothing here writes.
 
 // FindCommit names the repository in the store that holds the commit, and its full id. A sha that is not hex, or that no
 // repository holds, is not found. The store holds a handful of repositories, so this is one cheap call each.

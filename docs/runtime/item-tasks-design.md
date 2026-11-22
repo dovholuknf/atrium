@@ -10,7 +10,7 @@ done but first capture any durable artifacts necessary on that item."
 
 ## What exists, and is reused
 
-- **The item** (`docs/rnd/item-lifecycle-design.md`): one `work` row per backlog id on the hub, the cards attached in
+- **The item**: one `work` row per backlog id on the hub, the cards attached in
   `work_card`, append-only `work_fact`, derived `work_step`, usage and cost in `work_usage`. Every launch names an item
   (`--item`, `atrium:item:<id>`).
 - **The assignment** (items stage 2a, the hub `item` table): one card's run, `running`, `blocked`, `finished`, with an

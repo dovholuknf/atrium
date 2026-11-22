@@ -18,10 +18,10 @@ import (
 // it heard down, because a room that cannot reach its hub on the first transport
 // is exactly the room that needs to know the second one on its next start. A
 // person on the room's machine can add a path the hub cannot know (the room's own
-// ziti identity) and can reorder the lot. See docs/rnd/room-transport-order.md.
+// ziti identity) and can reorder the lot.
 
 // DefaultOrder is the order with nothing said: openziti, then direct, then zrok.
-// clint 2026-10-14: ziti first, direct second.
+// The operator 2026-10-14: ziti first, direct second.
 var DefaultOrder = []string{"ziti", "direct", "zrok"}
 
 // DefaultZitiService is the service a ziti rung dials when nothing names one. The

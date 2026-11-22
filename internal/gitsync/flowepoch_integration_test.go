@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// NO MERGE IS EVER LOST: work the merger landed after clint fetched is replayed onto the re-signed history, and the
+// NO MERGE IS EVER LOST: work the merger landed after the operator fetched is replayed onto the re-signed history, and the
 // hub moves claude/main only when everything is on the branch it is moved to.
 func TestEpochMoveKeepsWhatLandedAfterClintFetched(t *testing.T) {
 	if testing.Short() {
@@ -15,16 +15,16 @@ func TestEpochMoveKeepsWhatLandedAfterClintFetched(t *testing.T) {
 	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	st := x.h.Store()
 
-	// claude/main: main, then A (clint fetches here), then B (lands while clint re-signs).
+	// claude/main: main, then A (the operator fetches here), then B (lands while the operator re-signs).
 	git(t, x.work, "switch", "-q", "-C", "cm", "main")
 	a := commit(t, x.work, "a.txt", "a")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
 	b := commit(t, x.work, "b.txt", "b")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
-	// clint re-signs A, which is the same change under a new sha, and pushes it to main.
+	// The operator re-signs A, which is the same change under a new sha, and pushes it to main.
 	git(t, x.work, "switch", "-q", "-C", "resigned", "main")
 	git(t, x.work, "cherry-pick", a)
 	aResigned := git(t, x.work, "rev-parse", "HEAD")
@@ -68,7 +68,7 @@ func TestEpochMoveKeepsWhatLandedAfterClintFetched(t *testing.T) {
 	if kept := x.refOn(hubRepo, EpochRefPrefix+"1"); kept != b {
 		t.Fatalf("the epoch ref is %q, want the old tip %s", kept, b)
 	}
-	// claude/main is now the re-signed history plus B, which clint has not pushed yet and which is carried over again
+	// claude/main is now the re-signed history plus B, which the operator has not pushed yet and which is carried over again
 	// at the next round. A is not: it is under main.
 	if plan, _ = st.EpochPlan(bg, hubRepo); plan.OldTip != next || len(plan.Replay) != 1 || plan.Replay[0] != next {
 		t.Fatalf("after the move: %+v", plan)

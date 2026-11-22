@@ -30,14 +30,14 @@ func TestMergeRefusedSaysToTheOrchestrator(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	if _, _, err := st.RoleSet(hubstore.RoleOrchestrator, "sg1", "orch-card", "test"); err != nil {
+	if _, _, err := st.RoleSet(hubstore.RoleOrchestrator, "room-c", "orch-card", "test"); err != nil {
 		t.Fatal(err)
 	}
 	c := sayCaller{said: make(chan [4]string, 8)}
 	p := New(Calls{Ctl: func() ctl.Caller { return c }, BacklogStore: func() *hubstore.Store { return st },
 		BacklogEvent: func(string, any) {}})
 	m, _, err := st.MergeAsked(hubstore.MergeAsk{Repo: "github.com/o/r", Branch: "claude/foo", SHA: strings.Repeat("a", 40),
-		Requester: "w1", RequesterRoom: "sg4"})
+		Requester: "w1", RequesterRoom: "room-e"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,16 +55,16 @@ func TestMergeRefusedSaysToTheOrchestrator(t *testing.T) {
 			t.Fatalf("said only %v", got)
 		}
 	}
-	o, ok := got["sg1 orch-card"]
+	o, ok := got["room-c orch-card"]
 	if !ok || o[2] != "needs" {
 		t.Fatalf("the orchestrator was not told as needs: %v", got)
 	}
-	for _, want := range []string{"claude/foo", "w1@sg4", "refused", "the branch moved"} {
+	for _, want := range []string{"claude/foo", "w1@room-e", "refused", "the branch moved"} {
 		if !strings.Contains(o[3], want) {
 			t.Fatalf("the say %q does not name %q", o[3], want)
 		}
 	}
-	if _, ok := got["sg4 w1"]; !ok {
+	if _, ok := got["room-e w1"]; !ok {
 		t.Fatalf("the requester no longer hears: %v", got)
 	}
 }
@@ -78,11 +78,11 @@ func TestALandedRequestSetsItsCardsItemDone(t *testing.T) {
 	if _, err := st.ItemFile(hubstore.ItemNew{ID: "f-x", Dept: "docs", Title: "t"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.PutItem(hubstore.Item{ID: "i1", Room: "sg4", Card: "w1", State: "running", Revision: 1,
+	if _, _, err := st.PutItem(hubstore.Item{ID: "i1", Room: "room-e", Card: "w1", State: "running", Revision: 1,
 		OwnerKind: hubstore.OwnerHuman, CreatedBy: "t", WorkID: "f-x"}); err != nil {
 		t.Fatal(err)
 	}
-	mergeItemDone(st, hubstore.MergeRequest{N: 1, Requester: "w1", RequesterRoom: "sg4"})
+	mergeItemDone(st, hubstore.MergeRequest{N: 1, Requester: "w1", RequesterRoom: "room-e"})
 	it, err := st.ItemGet("f-x")
 	if err != nil || it.Status != hubstore.ItemDone {
 		t.Fatalf("the item is %q: %v", it.Status, err)

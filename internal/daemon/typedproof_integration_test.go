@@ -28,7 +28,7 @@ func TestATypedSayIsDeliveredOnlyWhenTheTranscriptShowsItRead(t *testing.T) {
 	}
 	d.ctx.transcript = func(string, string) string { return path }
 	rec := func(text string) string {
-		id, err := d.st.RecordSay(store.Say{FromWire: "sg4/boss", ToTask: target.ID, State: store.SayTyped}, text)
+		id, err := d.st.RecordSay(store.Say{FromWire: "room-e/boss", ToTask: target.ID, State: store.SayTyped}, text)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -749,7 +749,7 @@ const repeatWindow = 30 * time.Second
 // asked for again while that runner is still up.
 //
 // A SECOND PRESS IS NOT A SECOND LAUNCH. The resume dialog showed nothing for
-// the settle window, so clint pressed `launch` again. The first press started
+// the settle window, so the operator pressed `launch` again. The first press started
 // the runner, and the second waited on the card lock above, then met
 // `ontoRefusal` ("already has a runner on it") and raised an error over a
 // launch that had worked. What the second press asked for is already true, so
@@ -1609,7 +1609,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	// launcher, and a work state only a report, a verdict or the session
 	// ending moves. A fresh start only, so a resume or a reopen of an older
 	// card does not put it on the ledger after the fact. The board's own
-	// dialog gets none: clint did not ask for a queue of verdicts. See
+	// dialog gets none: the operator did not ask for a queue of verdicts. See
 	// internal/store/ledger.go.
 	madeItem := false
 	if req.Resume == "" && (small.HasTag(req.Tags, OriginAgentTag) || reportTo != "") {
@@ -1993,12 +1993,14 @@ const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need installed, or a permission you need.\n" +
 	"Then stop. Say nothing more.\n" +
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"A link for the human is ALWAYS a board link from atrium_link, never 127.0.0.1, localhost, a port, file:// or a new server. A mock is static files in your card with relative paths. Render it headless through that link and read the PNG before you report it. atrium_done, atrium_blocked and atrium_say refuse anything else.\n" +
 	"Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's \"stop\" is a valid end: answer it with atrium_done and your last sha."
 
 // ResidentEndingLine is how a resident card is told to end a task, kept equal to link.residentReportLine by a test in
 // internal/link.
 const ResidentEndingLine = "You are resident: your card stays open between tasks. When a task is finished, call atrium_done <sha or artifact> [one line]. When something stops you, call atrium_blocked <up to 50 words>. Either one tells your launcher and leaves your card open. Then wait for the next message. Never call atrium_exit on yourself.\n" +
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"A link for the human is ALWAYS a board link from atrium_link, never 127.0.0.1, localhost, a port, file:// or a new server. A mock is static files in your card with relative paths. Render it headless through that link and read the PNG before you report it. atrium_done, atrium_blocked and atrium_say refuse anything else.\n" +
 	"Report to your launcher, never to the operator, unless your launcher is the operator. Never ask where to push."
 
 // BriefPrompt is the launch text of a session with a brief file: read it, do what it describes, and how to end.

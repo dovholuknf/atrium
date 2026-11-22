@@ -10,7 +10,7 @@ import (
 
 // The operator's profile over /_hub/profile.
 //
-//	GET  /_hub/profile   the profile, atrium's own operator until one is written
+//	GET  /_hub/profile   the profile, the hub machine's git identity until one is written
 //	POST /_hub/profile   the profile whole
 //
 // WRITES ARE THE MACHINE THE HUB RUNS ON, like the shepherd's row: the profile names who every land is by.

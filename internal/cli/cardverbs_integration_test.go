@@ -30,7 +30,7 @@ func cardBoard(t *testing.T) (*httptest.Server, func() []string, func() map[stri
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(r.URL.Path, "nobody") {
 			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"error":"no card called \"nobody\"","would_work":["rnd-director@claude-sg4 (@rnd)"]}`))
+			_, _ = w.Write([]byte(`{"error":"no card called \"nobody\"","would_work":["rnd-director@claude-room-e (@rnd)"]}`))
 			return
 		}
 		if strings.Contains(r.URL.Path, "twice") {
@@ -38,8 +38,8 @@ func cardBoard(t *testing.T) (*httptest.Server, func() []string, func() map[stri
 			_, _ = w.Write([]byte(`{"error":"\"twice\" is on more than one room","candidates":["twice@a (a~1)","twice@b (b~2)"]}`))
 			return
 		}
-		w.Header().Set("X-Atrium-Card", "claude-sg4~01a0")
-		w.Header().Set("X-Atrium-Handle", "rnd-director@claude-sg4")
+		w.Header().Set("X-Atrium-Card", "claude-room-e~01a0")
+		w.Header().Set("X-Atrium-Handle", "rnd-director@claude-room-e")
 		_, _ = w.Write([]byte(`{"id":"01a0","display_title":"rnd director","wire_name":"rnd-director","alias":"rnd","status":"needs-input","worktree":"/w/rnd","wait_seconds":90}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -60,22 +60,22 @@ func runCmd(t *testing.T, args ...string) (string, error) {
 
 func TestTheCardVerbs(t *testing.T) {
 	srv, seen, _ := cardBoard(t)
-	out, err := runCmd(t, "task", "rnd@claude-sg4", "--url", srv.URL)
-	if err != nil || !strings.Contains(out, "handle  rnd-director@claude-sg4") || !strings.Contains(out, "status  needs-input") {
+	out, err := runCmd(t, "task", "rnd@claude-room-e", "--url", srv.URL)
+	if err != nil || !strings.Contains(out, "handle  rnd-director@claude-room-e") || !strings.Contains(out, "status  needs-input") {
 		t.Fatalf("task printed %q (%v)", out, err)
 	}
 	if out, err = runCmd(t, "cd", "rnd", "--url", srv.URL); err != nil || out != "/w/rnd\n" {
 		t.Fatalf("cd printed %q (%v)", out, err)
 	}
 	if out, err = runCmd(t, "exit", "@rnd", "--url", srv.URL); err != nil ||
-		!strings.Contains(out, "asked rnd-director@claude-sg4 (claude-sg4~01a0) to exit") {
+		!strings.Contains(out, "asked rnd-director@claude-room-e (claude-room-e~01a0) to exit") {
 		t.Fatalf("exit printed %q (%v)", out, err)
 	}
 	if out, err = runCmd(t, "new-context", "sparta/rnd", "--url", srv.URL); err != nil ||
 		!strings.Contains(out, "for a new context") {
 		t.Fatalf("new-context printed %q (%v)", out, err)
 	}
-	want := []string{"GET /v1/tasks/rnd@claude-sg4", "GET /v1/tasks/rnd", "POST /v1/tasks/@rnd/exit", "POST /v1/tasks/sparta%2Frnd/new-context"}
+	want := []string{"GET /v1/tasks/rnd@claude-room-e", "GET /v1/tasks/rnd", "POST /v1/tasks/@rnd/exit", "POST /v1/tasks/sparta%2Frnd/new-context"}
 	if got := seen(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("asked %v, want %v", got, want)
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// EFFICACY, THE ROLL-UPS (item lifecycle L9, docs/rnd/item-lifecycle-design.md sections 12.3 to 12.5). Queries over the derived
+// EFFICACY, THE ROLL-UPS (item lifecycle L9). Queries over the derived
 // outcomes, so a changed rule is a recompute and never a data fix. Pure: the clock and the zone come in with the query.
 //
 //   - THE UNIT IS A LANDED ITEM, counted in the period it landed (a day, or a week from Monday, in the hub's zone). Items still

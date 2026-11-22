@@ -25,7 +25,7 @@ import (
 const resourcesToolDesc = "List the machines and environments you may use: build machines reachable by ssh, what is " +
 	"installed on them and where, OpenZiti networks and which identity to use, test servers. CALL THIS before you " +
 	"look for a machine on your own or ask for one.\n\n" +
-	"Answers `file`, the inventory clint keeps by hand in resources.md (one `## <name>` entry each, free prose), " +
+	"Answers `file`, the inventory the operator keeps by hand in resources.md (one `## <name>` entry each, free prose), " +
 	"and `rooms`, the machines running atrium that the hub knows, with their OS and arch and whether they are " +
 	"online, and where each toolchain (go, node, python, git, gh) is on an online room. A room is itself an entry.\n\n" +
 	"Each room's `linux` is how it reaches Linux, from its own probes: the ssh hosts that answer and whether they " +
@@ -213,7 +213,7 @@ func (c *controlMCP) resourcesHandler(ctx context.Context, req *mcp.CallToolRequ
 		out.File, out.Exists = text, exists
 		switch {
 		case !exists:
-			note = "there is no resources.md. clint writes one with `atrium resources init`."
+			note = "there is no resources.md. the operator writes one with `atrium resources init`."
 		case cut:
 			note = "resources.md is longer than " + fmt.Sprint(resources.MaxBytes) + " bytes and was cut."
 		}

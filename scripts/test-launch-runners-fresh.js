@@ -20,7 +20,7 @@ function is(got, want, what) {
 }
 
 async function main() {
-  let reads = 0, rows = [{ id: "claude", room: "sg3", enabled: true }];
+  let reads = 0, rows = [{ id: "claude", room: "room-d", enabled: true }];
   const api = async () => { reads++; return { harnesses: rows }; };
   const state = new Function("api", `let allHarnesses = [], modelsSeen = [], modelPicker = [];\n${liftFn("loadHarnesses")}\n` +
     "return { load: loadHarnesses, rows: () => allHarnesses };")(api);
@@ -28,7 +28,7 @@ async function main() {
   await state.load();
   await state.load();
   is(reads, 1, "a plain load reads once and keeps the answer");
-  rows = rows.concat([{ id: "codex", room: "claude-sg4", enabled: true }]);
+  rows = rows.concat([{ id: "codex", room: "claude-room-e", enabled: true }]);
   await state.load(true);
   is(reads, 2, "a fresh load reads again");
   is(state.rows().length, 2, "a fresh load takes the new rows");

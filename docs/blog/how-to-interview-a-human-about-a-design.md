@@ -20,11 +20,6 @@ Series: The one human. Status: idea. Audience: anyone who asks people questions 
 
 - the interview screen mockup
 
-## Sources
-
-- docs/rnd/interviewer-brief.md
-- docs/rnd/operator-focus.md 2.9
-
 ## Notes for the writer
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.

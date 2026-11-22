@@ -1,6 +1,6 @@
 # The pty host protocol, as built
 
-Package `internal/ptyhost`. Design: `docs/rnd/rolling-restart-design.md` section 3, with the G1 to G7 answers.
+Package `internal/ptyhost`.
 Protocol version `Proto = 1`. The frame shapes are in `internal/ptyhost/proto.go` and the Go client is in `client.go`.
 
 ## The channel

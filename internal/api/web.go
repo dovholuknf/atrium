@@ -85,7 +85,16 @@ func board(dir string) fs.FS {
 	return os.DirFS(dir)
 }
 
-func buildID(fsys fs.FS) string {
+func buildID(fsys fs.FS) string { return hashTree(fsys, nil) }
+
+// BoardParts splits the board's version in two: the stylesheets alone, and everything else. A change to the first can
+// be swapped into an open page, a change to the second needs the page reloaded.
+func BoardParts(fsys fs.FS) (css, rest string) {
+	isCSS := func(p string) bool { return strings.HasSuffix(p, ".css") }
+	return hashTree(fsys, isCSS), hashTree(fsys, func(p string) bool { return !isCSS(p) })
+}
+
+func hashTree(fsys fs.FS, keep func(string) bool) string {
 	sum := sha256.New()
 	// WalkDir visits in lexical order, so the same tree always hashes the
 	// same way. The path goes in as well as the bytes: a file renamed and
@@ -107,6 +116,9 @@ func buildID(fsys fs.FS) string {
 			return nil
 		}
 		if base := pathpkg.Base(path); strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_") {
+			return nil
+		}
+		if keep != nil && !keep(path) {
 			return nil
 		}
 		raw, err := fs.ReadFile(fsys, path)

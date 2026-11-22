@@ -52,6 +52,12 @@ function Finish([int]$Code, [string]$Text) {
 
 if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit 1 }
 if (-not (Test-NewBuildStamped)) { exit 1 }
+$newCommit = (Get-BinLabel $AtriumNew).Split('-')[0]
+$live = Get-LiveCommits
+$targets = @(if (-not $RoomOnly) { 'hub' }) + $RoomName
+if (-not @($targets | Where-Object { -not (Test-OnCommit $live[$_] $newCommit) }).Count) {
+  Finish 0 "nothing to deploy: $($targets -join ' and ') already run $newCommit"
+}
 if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 
 # A stop the room is going to refuse is found out here, before any hold is set: a hold set and then called off has

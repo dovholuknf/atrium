@@ -38,7 +38,7 @@ func streamReq(t *testing.T, srv *httptest.Server, room string) (net.Conn, *bufi
 	}
 	t.Cleanup(func() { c.Close() })
 	fmt.Fprintf(c, "POST /stream HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: atrium-stream\r\n"+
-		"X-Atrium-Room: %s\r\nX-Atrium-Claim: claude@sg4\r\n\r\n", room)
+		"X-Atrium-Room: %s\r\nX-Atrium-Claim: claude@room-e\r\n\r\n", room)
 	br := bufio.NewReader(c)
 	resp, err := http.ReadResponse(br, &http.Request{Method: "POST"})
 	if err != nil {
@@ -64,11 +64,11 @@ func TestTheRoomDoorJoinsTheCallerToTheHubStream(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(d.HandleStream))
 	defer srv.Close()
 
-	c, br, resp := streamReq(t, srv, "sg3")
+	c, br, resp := streamReq(t, srv, "room-d")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
-	if f.target != "sg3" || f.claim != "claude@sg4" {
+	if f.target != "room-d" || f.claim != "claude@room-e" {
 		t.Fatalf("asked for %q claiming %q", f.target, f.claim)
 	}
 	line, _ := br.ReadString('\n')
@@ -103,12 +103,12 @@ func tcpPairT(t *testing.T) (a, b net.Conn) {
 func TestTheRoomDoorSaysTheRefusalAsASentence(t *testing.T) {
 	d := &Daemon{}
 	d.initServices()
-	d.SetStreamer(&fakeStreamer{err: errors.New("sg3 does not offer ssh to m1mini")})
+	d.SetStreamer(&fakeStreamer{err: errors.New("room-d does not offer ssh to room-a")})
 	srv := httptest.NewServer(http.HandlerFunc(d.HandleStream))
 	defer srv.Close()
-	_, _, resp := streamReq(t, srv, "sg3")
+	_, _, resp := streamReq(t, srv, "room-d")
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), "sg3 does not offer ssh to m1mini") {
+	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), "room-d does not offer ssh to room-a") {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
 }
@@ -118,7 +118,7 @@ func TestTheRoomDoorWithNoLinkSaysItIsNotAttached(t *testing.T) {
 	d.initServices()
 	srv := httptest.NewServer(http.HandlerFunc(d.HandleStream))
 	defer srv.Close()
-	_, _, resp := streamReq(t, srv, "sg3")
+	_, _, resp := streamReq(t, srv, "room-d")
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(string(body), "not attached to a hub") {
 		t.Fatalf("%d %s", resp.StatusCode, body)

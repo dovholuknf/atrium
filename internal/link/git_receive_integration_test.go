@@ -240,7 +240,7 @@ func TestTheReleaseRouteIsTheLoopbackOperatorsAndLetsGoOfABranch(t *testing.T) {
 	if out, err := gitAs(t, x.work, nil, "push", url, "fix/x:refs/heads/fix/x"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	_ = x.log.Append(context.Background(), gitsync.PushRow{Repo: boardRepo, Ref: "refs/heads/card", Old: strings.Repeat("0", 40), New: "a", Room: "sg4", Card: "C1"})
+	_ = x.log.Append(context.Background(), gitsync.PushRow{Repo: boardRepo, Ref: "refs/heads/card", Old: strings.Repeat("0", 40), New: "a", Room: "room-e", Card: "C1"})
 	gitRun(t, filepath.Join(x.g.Store().Root(), "github", "o", "r.git"), "update-ref", "refs/heads/card", x.refOn(t, "refs/heads/main"))
 
 	call := func(method, body, remote string) (int, string) {
@@ -266,7 +266,7 @@ func TestTheReleaseRouteIsTheLoopbackOperatorsAndLetsGoOfABranch(t *testing.T) {
 		t.Errorf("a bad repo = %d", code)
 	}
 	code, out := call("POST", `{"repo":"o/r","branch":"card"}`, "127.0.0.1:1")
-	if code != 200 || !strings.Contains(out, `"note":"card was owned by sg4's C1 and is released`) {
+	if code != 200 || !strings.Contains(out, `"note":"card was owned by room-e's C1 and is released`) {
 		t.Fatalf("release = %d %s", code, out)
 	}
 	if _, _, ok, _ := x.log.Owner(context.Background(), boardRepo, "refs/heads/card"); ok {
@@ -338,7 +338,7 @@ func TestARoomPushesToTheHubStoreOverTheLinkAsItselfWithItsCard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	x := newRoomPush(t, "SG4")
+	x := newRoomPush(t, "ROOM-E")
 	x.repo(t, boardRepo)
 	// The operator seeds main, directly through the handler's other door: the board.
 	srv := httptest.NewServer(x.p)
@@ -351,7 +351,7 @@ func TestARoomPushesToTheHubStoreOverTheLinkAsItselfWithItsCard(t *testing.T) {
 
 	card := []string{"X-Atrium-Card: C1", "X-Atrium-Card-Chain: C1,C0",
 		// What a room cannot do is say it is another room: the hub reads the room off the link.
-		"X-Atrium-Room: m1mini", "X-Atrium-Operator: yes"}
+		"X-Atrium-Room: room-a", "X-Atrium-Operator: yes"}
 	if out, err := gitAs(t, x.work, card, "push", x.url, "fix/x:refs/heads/fix/x"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -360,7 +360,7 @@ func TestARoomPushesToTheHubStoreOverTheLinkAsItselfWithItsCard(t *testing.T) {
 	}
 	rows := x.log.Rows()
 	last := rows[len(rows)-1]
-	if !strings.EqualFold(last.Room, "SG4") || last.Room == "m1mini" || last.Card != "C1" || last.Ref != "refs/heads/fix/x" || last.Operator() {
+	if !strings.EqualFold(last.Room, "ROOM-E") || last.Room == "room-a" || last.Card != "C1" || last.Ref != "refs/heads/fix/x" || last.Operator() {
 		t.Fatalf("the row: %+v", last)
 	}
 	// A room cannot move main, which only the operator does.
@@ -396,7 +396,7 @@ func TestARoomPushesToTheHubStoreOverTheLinkAsItselfWithItsCard(t *testing.T) {
 }
 
 func TestTheLinkStillServesTheMirrorsAndNotThroughTheStoreRoute(t *testing.T) {
-	x := newRoomPush(t, "SG4")
+	x := newRoomPush(t, "ROOM-E")
 	// A mirror on the old route; it is not in the store, so the store route never serves it.
 	x.g.Repos = func() ([]gitsync.Repo, error) {
 		return []gitsync.Repo{{Name: "github/o/m", Checkout: filepath.ToSlash(x.work), Branch: "main"}}, nil
@@ -424,21 +424,21 @@ func TestTheOwnersCardIsAskedThroughTheRelay(t *testing.T) {
 	x.proxy.ctl = x.control
 	x.proxy.mu.Unlock()
 
-	st, err := x.proxy.GitCards(ctx, "sg4", "s1")
+	st, err := x.proxy.GitCards(ctx, "room-e", "s1")
 	if err != nil || st.Status != "needs-input" {
 		t.Fatalf("s1: %+v %v", st, err)
 	}
-	if st, err := x.proxy.GitCards(ctx, "sg4", "s2"); err != nil || st.Status != "done" {
+	if st, err := x.proxy.GitCards(ctx, "room-e", "s2"); err != nil || st.Status != "done" {
 		t.Fatalf("s2: %+v %v", st, err)
 	}
-	if _, err := x.proxy.GitCards(ctx, "sg4", "culled"); !errors.Is(err, gitsync.ErrCardGone) {
+	if _, err := x.proxy.GitCards(ctx, "room-e", "culled"); !errors.Is(err, gitsync.ErrCardGone) {
 		t.Fatalf("a card the room does not have: %v", err)
 	}
 	if _, err := x.proxy.GitCards(ctx, "atlantis", "s1"); !errors.Is(err, gitsync.ErrRoomUnreachable) {
 		t.Fatalf("a room that is not attached: %v", err)
 	}
 	var none Proxy
-	if _, err := none.GitCards(ctx, "sg4", "s1"); !errors.Is(err, gitsync.ErrRoomUnreachable) {
+	if _, err := none.GitCards(ctx, "room-e", "s1"); !errors.Is(err, gitsync.ErrRoomUnreachable) {
 		t.Fatalf("no control: %v", err)
 	}
 }
@@ -448,7 +448,7 @@ func TestOnlyTheOperatorMovesClaudeMain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	x := newRoomPush(t, "SG4")
+	x := newRoomPush(t, "ROOM-E")
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)
 	defer srv.Close()

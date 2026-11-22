@@ -14,7 +14,7 @@ const usageText = `devloop <command> [flags]
 
   land <branch> [--item <id>]          fetch hub, put the branch on claude/main, deploy the hub, mark the item done
   prune <branch> --room <room>         exit the card, remove the worktree and branches on the room, local and hub
-  shots --room <room> <remote dir>     copy PNGs from a room's directory to D:\tmp\shots\<room>
+  shots --room <room> <remote dir>     copy PNGs from a room's directory to build.claude/shots/<room>
   usage --since <RFC3339> [--until]    says, tokens and cards CSVs plus a summary
 
 Each step prints one line. Any failure exits non-zero.`

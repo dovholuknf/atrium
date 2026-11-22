@@ -7,9 +7,9 @@ import (
 )
 
 const winSpec = `version: 1
-name: sg3
+name: room-d
 os: windows
-account: SG3\localai
+account: ROOM-D\localai
 work_root: V:/localai
 `
 

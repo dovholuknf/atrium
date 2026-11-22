@@ -19,7 +19,7 @@ func TestBranchWalkIsAHubBranchAgainstMain(t *testing.T) {
 	x.seedMain(hubRepo)
 	x.branch("claude/secfix-v0.5.2", "fix.go")
 	x.grow("claude/secfix-v0.5.2", "more.go")
-	x.must(x.push(roomCard("claude-sg4", "C1"), hubRepo, "claude/secfix-v0.5.2:refs/heads/claude/secfix-v0.5.2"))
+	x.must(x.push(roomCard("claude-room-e", "C1"), hubRepo, "claude/secfix-v0.5.2:refs/heads/claude/secfix-v0.5.2"))
 	st := x.h.Store()
 
 	w, err := st.BranchWalk(bg, hubRepo, "claude/secfix-v0.5.2")

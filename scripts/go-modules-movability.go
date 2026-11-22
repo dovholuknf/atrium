@@ -1,7 +1,7 @@
 //go:build ignore
 
 // go-modules-movability measures, for every package under internal/daemon and internal/link, what stops it from
-// leaving the root module. It prints the markdown tables that docs/rnd/go-modules-movability.md quotes.
+// leaving the root module. It prints markdown tables.
 //
 // Usage: go run scripts/go-modules-movability.go
 //

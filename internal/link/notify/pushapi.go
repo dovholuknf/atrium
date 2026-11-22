@@ -26,7 +26,7 @@ import (
 //	POST   /_hub/push/subscriptions         {endpoint, keys, label, origin}                  the share, while push is on
 //	DELETE /_hub/push/subscriptions         {endpoint}                                       the share, its own browser
 //
-// WHO MAY DO WHAT is docs/rnd/web-push-design.md "LP1 and the overlay rule". Turning push on, rotating the key,
+// WHO MAY DO WHAT, the overlay rule. Turning push on, rotating the key,
 // changing the contact, the test push to everybody, listing and removing by id are the OPERATOR's: edge.LocalOperator,
 // the same test the notify command's PUT uses, so a request that came through zrok or any proxy is a 403. The share
 // may subscribe and unsubscribe its own browser. A subscription is far less power than approving a permission, which

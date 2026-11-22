@@ -45,7 +45,7 @@ func mergeRoomRig(t *testing.T) (*recvFix, *MergeRunner, string) {
 	}
 	git(t, "", "clone", "-q", x.work, clone)
 	m := &MergeRunner{Root: func() string { return root }, Dir: filepath.Join(t.TempDir(), "merge"),
-		Hub: func() (http.RoundTripper, error) { return asRoom{x, "sg4"}, nil }, Runner: x.h.Runner}
+		Hub: func() (http.RoundTripper, error) { return asRoom{x, "room-e"}, nil }, Runner: x.h.Runner}
 	return x, m, clone
 }
 

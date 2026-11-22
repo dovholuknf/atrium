@@ -33,9 +33,9 @@ $bin = if ($env:ATRIUM_TEST_BIN -and (Test-Path -LiteralPath $env:ATRIUM_TEST_BI
 
 # ── New-RoomSpecYaml ────────────────────────────────────────────────────────
 
-$y = New-RoomSpecYaml -Name 'sg3' -Os 'windows' -WorkRoot 'V:\localai' -PackRepo 'dovholuknf/dotfiles'
+$y = New-RoomSpecYaml -Name 'room-d' -Os 'windows' -WorkRoot 'V:\localai' -PackRepo 'dovholuknf/dotfiles'
 Check 'yaml: the fields, in the contract names' ($y -split "`n" | Where-Object { $_ }) @(
-    'version: 1', "name: 'sg3'", "os: 'windows'", "account: '@@ACCOUNT@@'", "work_root: 'V:\localai'",
+    'version: 1', "name: 'room-d'", "os: 'windows'", "account: '@@ACCOUNT@@'", "work_root: 'V:\localai'",
     'packs:', '  - runner: claude', "    repo: 'dovholuknf/dotfiles'", "    branch: 'main'")
 $ym = New-RoomSpecYaml -Name 'r' -Os 'linux' -PackRepo 'o/r' -PackRunners 'claude', 'codex', 'gemini', 'codex'
 Check 'yaml: one pack entry for each runner, none twice' @(($ym -split "`n") | Where-Object { $_ -like '  - runner: *' }) @('  - runner: claude', '  - runner: codex', '  - runner: gemini')
@@ -290,7 +290,7 @@ foreach ($c in @(
         @('-NoAgentPack with -Remove', @('-NoAgentPack', '-Remove'), 'belong to a provision run'),
         @('-NoSharedFolder', @('-WorkRoot', 'V:\localai', '-NoSharedFolder'), 'takes the place of the shared folder'),
         @('an empty folder', @('-WorkRoot', ''), 'empty or holds a control character'),
-        @('a bad pack branch', @('-AgentPackBranch', '--upload-pack=x'), 'not a branch name'),
+        @('a bad pack branch', @('-AgentPackRepo', 'o/r', '-AgentPackBranch', '--upload-pack=x'), 'not a branch name'),
         @('a bad pack repo', @('-AgentPackRepo', 'nope'), 'not owner/name'))) {
     $r = Run-Pr $c[1]
     Check "provision: $($c[0]) is exit 1 and says why" @($r.Code, [bool](@($r.Out | Where-Object { $_ -like "provision args fail*$($c[2])*" }).Count)) @(1, $true)

@@ -38,8 +38,8 @@ func postForceClear(d *Daemon, id string) *httptest.ResponseRecorder {
 
 func TestForceClearThrowsTheLineAwayAndEmptiesTheModel(t *testing.T) {
 	t.Parallel()
-	d, task, r, f := forceClearCard(t, string(idleFrameWithText("stop sgg both processes")))
-	r.noteOperatorTyped([]byte("stop sgg both processes"))
+	d, task, r, f := forceClearCard(t, string(idleFrameWithText("stop room-g both processes")))
+	r.noteOperatorTyped([]byte("stop room-g both processes"))
 	r.typeMu.Lock()
 	r.lastTyped = time.Now().Add(-letThroughQuiet - time.Second)
 	r.typeMu.Unlock()

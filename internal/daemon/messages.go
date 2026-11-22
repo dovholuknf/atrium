@@ -731,7 +731,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// was the operator's own line. It is not only the operator who posts here: a
 	// script, a session using the API, and `atrium_say` from something that is not
 	// a session all arrive with no `from`, and one of them typed a slash command
-	// into the middle of a line clint was writing. `typeThroughGate` types only into
+	// into the middle of a line the operator was writing. `typeThroughGate` types only into
 	// an empty, idle line under the input lock, and a closed gate falls to the
 	// queue below, which retries on screen until the line clears.
 	//

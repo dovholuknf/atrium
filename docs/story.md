@@ -1,9 +1,10 @@
 # How atrium got here
 
-Status: maintained. Add a section when the shape of atrium changes, and archive the design it replaces.
+Status: maintained. Add a section when the shape of atrium changes.
 
 Atrium has been rebuilt three times in four months, each time because the last shape broke on something real. This
-is the order it happened in, what broke at each step, and the archived doc that holds the detail. The published
+is the order it happened in and what broke at each step. The designs behind each step are on the
+`claude/history-docs` branch. The published
 version, told for users, is `website/docs/story.md`. Read this one if you are about to change how atrium is shaped
 and want to know which ideas were already tried.
 
@@ -23,7 +24,6 @@ idles for free, and the permission hook fails open.
 
 **What broke.** It answered "let me talk to many sessions from one terminal". The question that cost time every day
 was "what do I have running, which one needs me, and what was I doing in it?" An amnesiac hub cannot answer that.
-`docs/archive/state-of-the-art.md` describes v1 as it stood.
 
 ## 09-01: the daemon, a board with live agents
 
@@ -43,25 +43,24 @@ up to say why.
 - It was one machine. A second machine meant a second board in another tab.
 - An agent under its own operating system account fell off the desktop, and so off the board.
 
-`docs/archive/architecture-v2.md` is the design. Its staged migration planned a TUI rewrite against the new API. That
+The v2 architecture's staged migration planned a TUI rewrite against the new API. That
 stage was abandoned and the TUI was deleted instead.
 
 ## 09-02 to 09-08: federation, then the forum
 
-The first answer to many machines was federation (`docs/archive/federation-design.md`, 09-02). It ruled out a central
+The first answer to many machines was federation (09-02). It ruled out a central
 atrium that mirrors other atriums, because a second durable copy of a card is wrong for the same reason a stored
 activity badge is wrong, and it recommended federating in the client: one browser page opening several daemons.
 
-A day later the second design reversed the recommendation and kept the ban (`docs/archive/federation-design-v2.md`,
-09-03). Federating in the client still needed every machine reachable. A forum that holds nothing, which the machines
+A day later the second design reversed the recommendation and kept the ban (09-03). Federating in the client still needed every machine reachable. A forum that holds nothing, which the machines
 dial instead of being dialled, solves reachability too, and the daemon's board was already one `http.Handler` that
-could be served on a dialled-out connection. `docs/archive/forum-implementation.md` is how it was to be built.
+could be served on a dialled-out connection.
 
 **What broke.** The forum's own rules. On 09-08 clint asked for rooms to be transparent: an agent on another
 machine is just an agent on the board, attached the same way, with the room an attribute you notice only when you
 care. The forum had said terminals stay where they are, attach redirects to the room's own board, and nothing is
 proxied. Transparency meant the hub relays a terminal, so those rules went, and the room keeps its own board only
-for when the hub is gone. `docs/archive/transparent-rooms.md` holds that reasoning.
+for when the hub is gone.
 
 ## 09-17 to 09-21: the hub and the rooms, as atrium2
 
@@ -71,10 +70,9 @@ mutual TLS after a one-time join string that pins the hub's certificate authorit
 session. The split followed lifetimes, and it answered all three of the daemon's problems at once: a second machine is
 another room, and an agent account is a room of its own.
 
-clint looked at the first build on 09-17 and it was not what he wanted. `docs/archive/hub-room-requirements.md` is his
-list: every screen is driven from the hub, the room's own board is a fallback nobody uses, the room counter scopes
+clint looked at the first build on 09-17 and it was not what he wanted. His list of
+requirements: every screen is driven from the hub, the room's own board is a fallback nobody uses, the room counter scopes
 the whole board to one room, no selection means all rooms, and the transport is a badge at most.
-`docs/archive/hub-room-plan.md` is how it was built.
 
 **What broke.** "Holds nothing" did not survive the first week. Rooms, names, join secrets and deletion state have to
 be written somewhere, so the hub got its own SQLite store (decision 11, 09-17, in `docs/fabric/hub-decisions.md`).
@@ -83,9 +81,9 @@ only so the control MCP would not lock the hook binary, and every doc explaining
 
 ## 09-24 to 09-26: one binary
 
-clint decided three things on 09-24 (`docs/archive/one-atrium-plan.md`): Mode A goes, Mode B goes, and there is one
+clint decided three things on 09-24: Mode A goes, Mode B goes, and there is one
 binary. `cmd/atrium2` moved into `internal/cli` as `atrium run`, `atrium room` and `atrium rooms` (09-25), the live
-machine was cut over (`docs/archive/one-atrium-cutover.md`), and the `atrium2` shim went on 09-26. Nothing had called
+machine was cut over, and the `atrium2` shim went on 09-26. Nothing had called
 Mode B since 09-02, and the board showed everything it did.
 
 The ports settled where they are now: the hub's board on 127.0.0.1:7778 and its room link on 7779, a room's agents on
@@ -104,17 +102,15 @@ down.
   room took a person or an agent spending tokens on git plumbing. The hub now holds a bare repository per project
   and moves code between rooms by fetch (`internal/gitsync`, `docs/fabric/git-sync-design.md`), and later serves it as
   a forge (`docs/fabric/hub-forge-design.md`).
-- **The backlog, reports and documents** live on the hub, so every room reaches them
-  (`docs/rnd/reports-channel-design.md`, `docs/rnd/hub-documents-design.md`).
+- **The backlog, reports and documents** live on the hub, so every room reaches them.
 - **Cross-room messages.** A peer on another room is `name@room` (`docs/fabric/cross-room-say-design.md`).
 
 The room got two things it lacked:
 
 - **A pty host.** "ConPTY has no reattach" was written into four docs as fact, until the stage 0 spike showed
-  otherwise. With the `pty_host` setting on, runners outlive a room restart (`docs/rnd/rolling-restart-design.md`).
+  otherwise. With the `pty_host` setting on, runners outlive a room restart.
 - **A context cycle.** Long-lived agents ran at three or four times their context threshold. The room now captures a
-  handoff, clears and wakes the session itself (`docs/runtime/context-cycle-design.md`). Three earlier designs for
-  it are in `docs/archive/`.
+  handoff, clears and wakes the session itself (`docs/runtime/context-cycle-design.md`).
 
 ## Where it stands
 
@@ -123,4 +119,4 @@ One `atrium` binary. `atrium run` is the hub, `atrium room` is a room on each ma
 detail.
 
 The pattern across all of it is the same. A shape was built, used every day, and broke on something that cost
-somebody time. The fix went in, and the reasoning went into a doc that is now in `docs/archive/`.
+somebody time. The fix went in, and the reasoning went into a design doc.

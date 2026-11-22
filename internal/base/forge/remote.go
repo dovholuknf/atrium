@@ -10,7 +10,7 @@ import (
 )
 
 // A room attached to a hub never runs a forge CLI and never fetches from a forge host. It asks the hub, which runs
-// the forge, fetches the head into its own store, and answers in the shapes below. See docs/rnd/scm-forge-design.md.
+// the forge, fetches the head into its own store, and answers in the shapes below.
 
 // The hub's forge routes, on the link's git kind.
 const (

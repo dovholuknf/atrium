@@ -70,9 +70,9 @@ add("changeReqList", withPage("changeReqList", REQ + "open", {}, async (p, tag) 
   if (r.count !== "3") fail(tag + ": the count is the open requests, want 3, got " + r.count);
   if (r.strip.join("|") !== "Fix the router link flap|Edge router policies v2") fail(tag + ": the strip is not the open requests into main " + JSON.stringify(r.strip));
   if (r.items.join() !== "cr_9,cr_8,cr_7" || r.groups.join() !== "into main,into release/1.x" || r.needs !== 2 || r.cur.join() !== "cr_9") fail(tag + ": the list is wrong " + JSON.stringify(r));
-  if (r.title !== "Fix the router link flap" || !/^from sg4?\s*fix\/router-link-flap.*into main$/i.test(r.lane.replace(/\n/g, " "))) fail(tag + ": the page head is wrong " + JSON.stringify([r.title, r.lane]));
+  if (r.title !== "Fix the router link flap" || !/^from ro(om-e)?\s*fix\/router-link-flap.*into main$/i.test(r.lane.replace(/\n/g, " "))) fail(tag + ": the page head is wrong " + JSON.stringify([r.title, r.lane]));
   if (r.pills.join() !== "Open,pushed, hub head matches") fail(tag + ": the state and Pushed pills are wrong " + r.pills);
-  if (!/Needs the orchestrator or clint/.test(r.gate) || !/Nothing on the board does it/.test(r.gate)) fail(tag + ": a request into main does not say it needs the orchestrator or clint " + r.gate);
+  if (!/Needs the orchestrator or you/.test(r.gate) || !/Nothing on the board does it/.test(r.gate)) fail(tag + ": a request into main does not say it needs the orchestrator or you " + r.gate);
   if (r.panels.join() !== "Why,On the hub,Change record,History" || r.tl < 2) fail(tag + ": the page does not fill " + JSON.stringify([r.panels, r.tl]));
   if (r.pushedLine !== "Pushedpushed at abcdef0, hub head matches") fail(tag + ": the Pushed line is wrong " + JSON.stringify(r.pushedLine));
   if (!/Finished and reviewed\.\nTests ran/.test(r.why)) fail(tag + ": the why lost its line break " + JSON.stringify(r.why));

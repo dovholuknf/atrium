@@ -10,8 +10,7 @@ import (
 )
 
 // A ROOM ATTACHED TO A HUB NEVER RUNS gh OR bb AND NEVER FETCHES FROM A FORGE HOST. Its pull requests, issues and
-// clones come from the hub, which runs the forge and holds the repository in its store. See
-// docs/rnd/scm-forge-design.md, Built.
+// clones come from the hub, which runs the forge and holds the repository in its store.
 //
 // The room has a hub when it was started with a link, attached right now or not. A room with a link whose hub is down
 // fails with the sentence the link gives and never falls back to a forge of its own: that would break the rule. A

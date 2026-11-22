@@ -152,7 +152,7 @@ async function cacheChipSection(browser, base) {
     };
     await p.waitForFunction(() => document.querySelectorAll("#stack-list .stackrow .chip.cache").length >= 6, null, { timeout: slow(10000) });
     check("stack", await texts("#stack-list .stackrow"));
-    // A dot, never words: clint saw the chip squeeze a title to one letter. The words are in the tooltip.
+    // A dot, never words: the operator saw the chip squeeze a title to one letter. The words are in the tooltip.
     const dot = await p.evaluate(() => [...document.querySelectorAll("#stack-list .chip.cache")].map(e => {
       const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, text: e.innerText.trim() };
     }).filter(d => d.w > 16 || d.h > 16 || d.text));
@@ -875,7 +875,7 @@ async function ctxLineSection(browser, base) {
       const list = (Array.isArray(d) ? d : d.tasks).filter(t => t.context_size).slice(0, 14);
       const themes = ["active-work", "electric-purple", "crimson-cave", "deep-ocean", "garnet", "forest-night", "", "cocoa"];
       const keep = mock.wornTasks;
-      const roomOfRow = i => i % 3 === 0 ? "sg4-control" : i % 3 === 1 ? "claude-sg4" : "";
+      const roomOfRow = i => i % 3 === 0 ? "room-e-control" : i % 3 === 1 ? "claude-room-e" : "";
       const tagged = (i, id) => roomOfRow(i) ? roomOfRow(i) + "~" + id : id;
       mock.wornTasks = list.map((t, i) => Object.assign({}, t, {
         id: tagged(i, t.id), supervised: true, pinned: i < 5, theme: themes[i % themes.length], room: roomOfRow(i),
@@ -1726,12 +1726,12 @@ async function usageGroupsSection(browser, base) {
     await pick(sp, "launcher");
     if (!reads.some(r => r.group === "launcher")) fail("usageGroups: director sent no group=launcher.");
     const l = await tiles(sp);
-    if (l.join("|") !== "atlas|clint") fail("usageGroups: director tiles are " + l.join("|"));
+    if (l.join("|") !== "atlas|you") fail("usageGroups: director tiles are " + l.join("|"));
     await sp.click('#uc-body .ucmini[data-group="atlas"]');
     const c2 = await sp.evaluate(() => [...document.querySelectorAll("#uc-body .ucmini[data-id]")].map(m => m.dataset.id));
     if (c2.join() !== "uc-b") fail("usageGroups: a click on atlas left cards " + c2);
     await sp.evaluate(() => { UC.cacheReads = true; UC.groupKey = null; ucPaint(); });
-    if ((await tiles(sp)).join("|") !== "atlas|clint") fail("usageGroups: tiles lost their order with cache reads on.");
+    if ((await tiles(sp)).join("|") !== "atlas|you") fail("usageGroups: tiles lost their order with cache reads on.");
     await sp.evaluate(() => { UC.cacheReads = false; });
     await pick(sp, "card");
     if (reads[reads.length - 1].group !== "") fail("usageGroups: back on card still sends a group.");
@@ -1968,15 +1968,15 @@ async function usagePolishSection(browser, base) {
     if (bare.length) fail("usagePolish: numbers with no data-tip: " + bare);
     // The too-old line, with a build and without.
     const old = await sp.evaluate(() => {
-      UC.sub = "charts"; hubRooms = [{ name: "sg3", version: "2f715b5a9c1d" }]; hubInventory = [];
-      UC.rooms = { sg3: { state: "old", why: "too old to keep usage", buckets: new Map() },
-        sg4: { state: "old", why: "too old to keep usage", buckets: new Map() } };
+      UC.sub = "charts"; hubRooms = [{ name: "room-d", version: "2f715b5a9c1d" }]; hubInventory = [];
+      UC.rooms = { "room-d": { state: "old", why: "too old to keep usage", buckets: new Map() },
+        "room-e": { state: "old", why: "too old to keep usage", buckets: new Map() } };
       ucPaint();
       return [...document.querySelectorAll("#uc-body .ucmissing")].map(e => e.textContent);
     });
-    if (!old.includes("sg3 build 2f715b5 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+    if (!old.includes("room-d build 2f715b5 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
       fail("usagePolish: the too-old line with a build reads " + JSON.stringify(old));
-    if (!old.includes("sg4 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+    if (!old.includes("room-e predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
       fail("usagePolish: the too-old line without a build reads " + JSON.stringify(old));
     // A live row fades the number that changed and grows a new bar.
     await reloaded(sp);

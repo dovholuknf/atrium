@@ -153,7 +153,7 @@ A path is atrium's when either holds:
 A worktree with neither is `not atrium's`, whoever asks and whatever the audit says of it. That covers the operator's
 own worktrees, an orchestrator's, a director's like this one, and a worker worktree whose card was deleted by the
 sweep. The last case is the one that costs: the audit lists it as `landed` and `keep: not atrium's`, and somebody
-removes it by hand. Deleting by path because it looks finished is the thing `docs/rnd/close-workflow.md` rules out.
+removes it by hand. Deleting by path because it looks finished is the thing the close workflow rules out.
 
 ## Phases
 

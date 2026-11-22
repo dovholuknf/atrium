@@ -313,7 +313,7 @@ func TestAnOrphanKeepsItsItemOnTheOrchestratorOrOnItsOwnRow(t *testing.T) {
 func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "sg4-control", Tags: []string{OrchestratorTag}}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "room-e-control", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
 	worker := orphanWorker(t, d, "worker", "ghost")
 	endWorker(t, d, worker)
@@ -327,7 +327,7 @@ func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 	})
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	if len(rl.got) != 1 || rl.got[0].To != "chief" || rl.got[0].Room != "sg4-control" ||
+	if len(rl.got) != 1 || rl.got[0].To != "chief" || rl.got[0].Room != "room-e-control" ||
 		!strings.Contains(rl.got[0].Text, "has no launcher") {
 		t.Fatalf("the hub's orchestrator was told %+v", rl.got)
 	}
@@ -545,13 +545,13 @@ func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testin
 func TestTheRememberedOrchestratorIsUsedOnlyWhenTheHubIsAway(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "room-e", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
-	if n, r := d.remoteOrchestrator(); n != "chief" || r != "sg4" {
+	if n, r := d.remoteOrchestrator(); n != "chief" || r != "room-e" {
 		t.Fatalf("found %s@%s", n, r)
 	}
 	d.SetRelay(peersDown{rl})
-	if n, r := d.remoteOrchestrator(); n != "chief" || r != "sg4" {
+	if n, r := d.remoteOrchestrator(); n != "chief" || r != "room-e" {
 		t.Fatalf("away: %s@%s, want the remembered one", n, r)
 	}
 	// The hub answers and lists none: what was remembered is stale.
@@ -652,13 +652,13 @@ func TestAWorkerWhoseLauncherIsOnAnotherRoomIsNamedNotCalledLauncherless(t *test
 	t.Parallel()
 	d := testDaemon(t)
 	orch := orchCard(t, d, "chief")
-	w := orphanWorker(t, d, "worker", "boss@sg4")
+	w := orphanWorker(t, d, "worker", "boss@room-e")
 	endWorker(t, d, w)
 	now := time.Now()
 	d.owedPass(now)
 	d.owedPass(now.Add(owedPushAfter + time.Second))
 	for _, h := range heldOn(t, d, orch.ID) {
-		if strings.Contains(h["text"].(string), "boss@sg4 has not answered") {
+		if strings.Contains(h["text"].(string), "boss@room-e has not answered") {
 			return
 		}
 	}

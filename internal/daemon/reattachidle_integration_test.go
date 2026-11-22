@@ -166,7 +166,7 @@ func TestAForcedSayToAnotherRoomCarriesTheForce(t *testing.T) {
 	peerCard(t, d, "boss")
 	rl := &fakeRelay{}
 	d.SetRelay(rl)
-	raw, _ := json.Marshal(map[string]any{"from": "boss", "to": "worker@sg4", "text": "carry on", "force": true})
+	raw, _ := json.Marshal(map[string]any{"from": "boss", "to": "worker@room-e", "text": "carry on", "force": true})
 	w := httptest.NewRecorder()
 	d.HandleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
 	if w.Code != http.StatusOK {

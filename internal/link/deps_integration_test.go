@@ -55,7 +55,7 @@ type depsFix struct {
 	audit *depsAudit
 }
 
-// newDepsFix is a hub with two attached rooms (m1mini and sg4), a checkout on claude/main
+// newDepsFix is a hub with two attached rooms (room-a and room-e), a checkout on claude/main
 // holding r-037's changelog entry and three backlog files, and the gates wired with the
 // first commit as the hub's build.
 func newDepsFix(t *testing.T) *depsFix {
@@ -135,7 +135,7 @@ func (f *depsFix) do(t *testing.T, method, path string, body any, hdr map[string
 func (f *depsFix) add(t *testing.T, item string, on ...string) []map[string]any {
 	t.Helper()
 	code, out := f.do(t, http.MethodPost, "/_hub/deps", map[string]any{"item": item, "waits_on": on,
-		"why": "test", "added_by": "atrium-87300@sg4"}, nil)
+		"why": "test", "added_by": "atrium-87300@room-e"}, nil)
 	if code != 200 {
 		t.Fatalf("add %s on %v = %d %v", item, on, code, out)
 	}
@@ -231,11 +231,11 @@ func TestShaLiveAndRoomConditions(t *testing.T) {
 	}
 	f := newDepsFix(t)
 	c2 := f.commit(t, "changelog/runtime/2026-09-30-r-050.md", "after the build")
-	gs := f.add(t, "r-038", "sha:"+f.c1[:8], "sha:deadbeef", "live:r-037", "live:r-050", "room:sg4", "room:sg3",
-		"f-006 migration on m1mini")
+	gs := f.add(t, "r-038", "sha:"+f.c1[:8], "sha:deadbeef", "live:r-037", "live:r-050", "room:room-e", "room:room-d",
+		"f-006 migration on room-a")
 	for target, want := range map[string]string{
 		"sha:" + f.c1[:8]: "met", "sha:deadbeef": "open", "live:r-037": "met", "live:r-050": "open",
-		"room:sg4": "met", "room:sg3": "open", "f-006 migration on m1mini": "open",
+		"room:room-e": "met", "room:room-d": "open", "f-006 migration on room-a": "open",
 	} {
 		if s, why := stateOf(gs, target); s != want {
 			t.Errorf("%s = %s (%s), want %s", target, s, why, want)
@@ -244,7 +244,7 @@ func TestShaLiveAndRoomConditions(t *testing.T) {
 	if _, why := stateOf(gs, "live:r-050"); !strings.Contains(why, "not in the hub build "+f.c1[:7]) {
 		t.Errorf("live after the build says %q", why)
 	}
-	if _, why := stateOf(gs, "f-006 migration on m1mini"); !strings.Contains(why, "cleared by a human only") {
+	if _, why := stateOf(gs, "f-006 migration on room-a"); !strings.Contains(why, "cleared by a human only") {
 		t.Errorf("free text says %q", why)
 	}
 	// A hub built from the later commit has r-050 live.
@@ -281,7 +281,7 @@ func TestALoopIsRefusedOverTheRoute(t *testing.T) {
 
 func TestOnlyAHumanWithAReasonClearsAGate(t *testing.T) {
 	f := newDepsFix(t)
-	id := f.add(t, "r-038", "f-006 migration on m1mini")[0]["id"].(string)
+	id := f.add(t, "r-038", "f-006 migration on room-a")[0]["id"].(string)
 	if code, _ := f.do(t, http.MethodPost, "/_hub/deps/clear", map[string]any{"id": id, "why": "done by hand"},
 		map[string]string{ctl.AgentHeader: "sa1"}); code != 403 {
 		t.Fatalf("an agent cleared a gate: %d", code)
@@ -335,28 +335,28 @@ func TestALaunchForAGatedItemIsRefused(t *testing.T) {
 
 func TestTheWaiterIsToldOnceWhenTheLastGateClears(t *testing.T) {
 	f := newDepsFix(t)
-	gs := f.add(t, "r-039", "r-050", "room:sg3")
+	gs := f.add(t, "r-039", "r-050", "room:room-d")
 	ctx := context.Background()
 	f.commit(t, "changelog/runtime/2026-09-30-r-050.md", "r-050")
 	f.x.proxy.depsTick(ctx)
-	if got := f.x.sg4.messages(); len(got) != 0 {
-		t.Fatalf("told while room:sg3 is open: %+v", got)
+	if got := f.x.roomE.messages(); len(got) != 0 {
+		t.Fatalf("told while room:room-d is open: %+v", got)
 	}
 	var roomGate string
 	for _, g := range gs {
-		if g["target"] == "room:sg3" {
+		if g["target"] == "room:room-d" {
 			roomGate = g["id"].(string)
 		}
 	}
-	if code, _ := f.do(t, http.MethodPost, "/_hub/deps/clear", map[string]any{"id": roomGate, "why": "sg3 is retired"}, nil); code != 200 {
+	if code, _ := f.do(t, http.MethodPost, "/_hub/deps/clear", map[string]any{"id": roomGate, "why": "room-d is retired"}, nil); code != 200 {
 		t.Fatal(code)
 	}
 	f.x.proxy.depsTick(ctx)
 	f.x.proxy.depsTick(ctx)
-	got := f.x.sg4.messages()
+	got := f.x.roomE.messages()
 	if len(got) != 1 || got[0]["id"] != "s1" || got[0]["from"] != depsTellFrom ||
 		!strings.HasPrefix(got[0]["text"], "r-039 is ready: r-050 landed") ||
-		!strings.Contains(got[0]["text"], "sg3 is retired") {
+		!strings.Contains(got[0]["text"], "room-d is retired") {
 		t.Fatalf("messages = %+v", got)
 	}
 }
@@ -372,7 +372,7 @@ func TestASecondRoundSaysOnlyItsOwnReasons(t *testing.T) {
 	f.add(t, "r-039", "r-051")
 	f.commit(t, "changelog/runtime/2026-09-30-r-051.md", "r-051")
 	f.x.proxy.depsTick(ctx)
-	got := f.x.sg4.messages()
+	got := f.x.roomE.messages()
 	if len(got) != 2 || !strings.HasPrefix(got[1]["text"], "r-039 is ready: r-051 landed") ||
 		strings.Contains(got[1]["text"], "r-050") {
 		t.Fatalf("messages = %+v", got)

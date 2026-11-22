@@ -6,8 +6,8 @@ import (
 )
 
 func TestScopeNameKeepsOnlyWhatSystemdTakes(t *testing.T) {
-	got := scopeName("atrium fix the bug@sg3 shell", "01ABC")
-	if want := "atrium-fix-the-bug-sg3-shell-01ABC.scope"; got != want {
+	got := scopeName("atrium fix the bug@room-d shell", "01ABC")
+	if want := "atrium-fix-the-bug-room-d-shell-01ABC.scope"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }

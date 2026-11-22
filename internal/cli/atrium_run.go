@@ -204,7 +204,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	//
 	// EVERY TRANSPORT `--transport` NAMES, AT ONCE, so a room that cannot reach
 	// this hub on one comes in on the next. The first is the primary: join
-	// strings are minted for it. See docs/rnd/room-transport-order.md.
+	// strings are minted for it.
 	set, err := openHubs(transport, keys, port, advertise, service,
 		func(secret string) (string, error) {
 			r, err := store.Spend(secret)
@@ -515,6 +515,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	proxy = link.NewProxy(h, assets, id, nil)
+	if strings.TrimSpace(files) != "" {
+		proxy.SetLiveBoard(api.BoardID, api.BoardParts)
+	}
 	defer proxy.WaitWork(15 * time.Second)
 	// The sign-in in front of every exposure of this board, the room's guard over the hub's store.
 	var publicBoard atomic.Bool

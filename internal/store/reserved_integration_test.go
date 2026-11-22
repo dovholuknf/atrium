@@ -60,7 +60,7 @@ func TestTheReservedHandleCannotBeSpelledAround(t *testing.T) {
 	}
 	t.Parallel()
 	s := openTestStore(t)
-	for _, name := range []string{"atrium@x", "аtrium", "atrium​", "ATRIUM", " atrium", "ａｔｒｉｕｍ", "átrium", "sg4/atrium@x"} {
+	for _, name := range []string{"atrium@x", "аtrium", "atrium​", "ATRIUM", " atrium", "ａｔｒｉｕｍ", "átrium", "room-e/atrium@x"} {
 		if _, _, err := s.Register(Observed{WireName: name, Runner: "claude"}); !errors.Is(err, ErrReservedName) {
 			t.Errorf("%q registered: %v", name, err)
 		}

@@ -12,7 +12,7 @@ import (
 )
 
 // r-011: a card atrium supervises is alive while the supervisor holds its
-// runner, whatever its pid says and however long it has been silent. m1mini
+// runner, whatever its pid says and however long it has been silent. room-a
 // filed one dead for "15m silent and no pid", and the next tick revived it.
 func TestASupervisedCardIsNeverAssumedGoneForSilence(t *testing.T) {
 	if testing.Short() {

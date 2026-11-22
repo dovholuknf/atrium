@@ -62,7 +62,7 @@ func TestHubGitReleaseAsksTheHubAndPrintsTheNote(t *testing.T) {
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path, method = r.URL.Path, r.Method
 		_ = json.NewDecoder(r.Body).Decode(&got)
-		_ = json.NewEncoder(w).Encode(map[string]string{"note": "fix/x was owned by sg4's C1 and is released"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"note": "fix/x was owned by room-e's C1 and is released"})
 	}))
 	defer hub.Close()
 	addr := strings.TrimPrefix(hub.URL, "http://")

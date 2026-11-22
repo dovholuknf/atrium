@@ -16,8 +16,7 @@ type ChangesError struct {
 
 func (e *ChangesError) Error() string { return e.Msg }
 
-// cardChanges is what a card's worktree has changed (docs/rnd/changes-view-design.md,
-// section 1). `?against=head|base` picks the comparison and `?turn=<at>` asks for one
+// cardChanges is what a card's worktree has changed. `?against=head|base` picks the comparison and `?turn=<at>` asks for one
 // reply's edits instead, and the two together are refused.
 //
 // IT TAKES NO PATH. Any query parameter but those two is a 400, so the endpoint cannot be

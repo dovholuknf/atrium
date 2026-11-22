@@ -42,7 +42,7 @@ func cmdShots(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("shots", flag.ContinueOnError)
 	room := fs.String("room", "", "the room to copy from")
 	host := fs.String("ssh", "", "ssh host, default the room name")
-	dest := fs.String("out", "", `destination, default D:\tmp\shots\<room>`)
+	dest := fs.String("out", "", "destination, default build.claude/shots/<room>")
 	shell := fs.String("shell", "ps", "the room's default shell: ps or sh")
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -56,7 +56,7 @@ func cmdShots(args []string, out io.Writer) error {
 	}
 	d := *dest
 	if d == "" {
-		d = filepath.Join(`D:\tmp\shots`, *room)
+		d = filepath.Join("build.claude", "shots", *room)
 	}
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err

@@ -20,7 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A CARD'S PROCESSES AND PORTS, AS INVENTORY. Design: docs/rnd/card-lifecycle-design.md section 9. Item
+// A CARD'S PROCESSES AND PORTS, AS INVENTORY. Item
 // r-card-procs-ports. The process registry (a process atrium runs in a pty) is its own item: this is the half that
 // lets a card own what its agent started, so closing the card stops it.
 //

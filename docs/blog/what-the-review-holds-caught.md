@@ -25,7 +25,6 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 - git log claude/main (Review of ... HOLD)
 - docs/backlog/rnd/rd-new-review-45687063.md
-- docs/rnd/factory-shape.md (Defects caught)
 - internal/deployready
 
 ## Notes for the writer

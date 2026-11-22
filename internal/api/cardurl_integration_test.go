@@ -24,8 +24,8 @@ func TestCardAddressesServeThePage(t *testing.T) {
 		t.Fatal("the test needs the board and the phone page to differ")
 	}
 	for path, want := range map[string]string{
-		"/alias/rnd": board, "/room/claude-sg4": board, "/room/claude-sg4/rnd-director": board,
-		"/m/alias/rnd": phone, "/m/room/claude-sg4/rnd": phone,
+		"/alias/rnd": board, "/room/claude-room-e": board, "/room/claude-room-e/rnd-director": board,
+		"/m/alias/rnd": phone, "/m/room/claude-room-e/rnd": phone,
 	} {
 		rec := get(path)
 		if rec.Code != http.StatusOK || rec.Body.String() != want {

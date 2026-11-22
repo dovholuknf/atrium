@@ -380,7 +380,7 @@
      js/keepalive.js. */
   .chip.keepalive { border: 1px solid var(--chip-accent-stroke); color: var(--chip-accent-text); }
   .chip.keepalive.watching { border-style: dotted; color: var(--label); }
-  /* The one cache mark: a dot and no words, so it never takes width from a title (clint, u-032 was too loud).
+  /* The one cache mark: a dot and no words, so it never takes width from a title (the operator, u-032 was too loud).
      Kept warm is solid teal, warm is a teal ring, cold is solid blue-grey, off or stopped is a grey ring. The words are in the card's details and the tooltip. */
   .chip.cache {
     flex: none; display: inline-block; box-sizing: border-box; width: 10px; height: 10px; min-width: 0;
@@ -432,7 +432,7 @@
   }
   /* Live activity. A running tool breathes, so a moving card reads as moving from across a whole board. */
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
-  /* No motion on the chip: the runner mark is the one running mark (docs/rnd/unified-card.md). */
+  /* No motion on the chip: the runner mark is the one running mark. */
   /* THE ONE ORANGE: --wait is a live runner waiting on the operator and nothing else. */
   .chip.owed { background: var(--wait-bg); color: var(--wait); border-color: var(--wait-stroke); }
   .card.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }

@@ -1233,7 +1233,7 @@ func (r *runner) writeOperatorInput(p []byte) error {
 // empty line AND `peerGateIdle` of quiet. When it is open there is exactly one
 // outcome, the message is typed and submitted. There is no "leave it unsent in
 // the prompt" any more, because unsent peer text sitting in the operator's
-// prompt is the thing clint wanted gone. If the gate is not open the message is
+// prompt is the thing the operator wanted gone. If the gate is not open the message is
 // not touched, and the caller defers it.
 //
 // THE INPUT LOCK closes the tangle race without ever blocking the keystroke
@@ -1331,16 +1331,16 @@ func (r *runner) inject(banner, body string, ok func() bool, force bool) (bool, 
 	}
 	// A banner is a peer's or atrium's own, like the after-restart wake. The
 	// operator's own channel types with none.
+	r.typeMu.Lock()
 	if banner != "" {
-		r.typeMu.Lock()
 		r.peerSent = time.Now()
 		r.peerKeySeq = r.keySeq
 		r.peerCause = causeOfBanner(banner)
 		r.peerBanner = banner
-		seq := r.keySeq
-		r.typeMu.Unlock()
-		go r.resubmitIfStuck(seq)
 	}
+	seq := r.keySeq
+	r.typeMu.Unlock()
+	go r.resubmitIfStuck(seq)
 	return true, nil
 }
 

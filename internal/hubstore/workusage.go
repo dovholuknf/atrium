@@ -6,7 +6,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/tokenprice"
 )
 
-// WHAT AN ITEM'S CARDS SPENT, AS THE HUB INGESTED IT (item lifecycle L5, docs/rnd/item-lifecycle-design.md section 6).
+// WHAT AN ITEM'S CARDS SPENT, AS THE HUB INGESTED IT (item lifecycle L5).
 //
 //   - A ROW IS KEPT ONCE. The key is the room, the room's own usage id and the item, so a pull that is repeated, or one
 //     that overlaps the last, inserts nothing. The item is in the key because a card may be on two items and an

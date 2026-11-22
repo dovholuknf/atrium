@@ -14,7 +14,7 @@ func TestACommitIsFoundOnAnyHubBranchWithNoRepositoryNamed(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("claude/item-w", "x.txt")
-	card := roomCard("sg4", "C1")
+	card := roomCard("room-e", "C1")
 	x.must(x.push(card, hubRepo, "claude/item-w:refs/heads/claude/item-w"))
 	tip := x.grow("claude/item-w", "y.txt")
 	x.must(x.push(card, hubRepo, "claude/item-w:refs/heads/claude/item-w"))
@@ -36,9 +36,9 @@ func TestARepositoryWithoutTheCommitIsSkippedAndNotSearched(t *testing.T) {
 	other := x.makeRepo("github/a/other")
 	x.seedMain(hubRepo)
 	first := x.branch("claude/item-w", "x.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
 	x.grow("claude/item-w", "y.txt")
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
+	x.must(x.push(roomCard("room-e", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
 
 	var searched []string
 	x.h.hk.onContains = func(dir string) { searched = append(searched, dir) }

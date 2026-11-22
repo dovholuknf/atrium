@@ -104,8 +104,8 @@ const landFrom, landTo = "3f1c0de0123456789abcdef0123456789abcdef", "9a0b1c20123
 
 func TestAGoodLandEventIs202WithTheSubscriberCount(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "o/r", "main", false)
-	x.subscribe(t, "sg4~s2", "", "", false)
+	x.subscribe(t, "room-e~s1", "o/r", "main", false)
+	x.subscribe(t, "room-e~s2", "", "", false)
 	w := x.post(landBodyJSON("pushed", landFrom, landTo, 14, ""))
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("got %d %s", w.Code, w.Body)
@@ -118,7 +118,7 @@ func TestAGoodLandEventIs202WithTheSubscriberCount(t *testing.T) {
 	if got.Event == "" || got.Subscribers != 2 {
 		t.Fatalf("answer %s", w.Body)
 	}
-	if lines := x.audited("event"); len(lines) != 1 || !strings.Contains(lines[0], "sg4~s1") {
+	if lines := x.audited("event"); len(lines) != 1 || !strings.Contains(lines[0], "room-e~s1") {
 		t.Fatalf("audit %v", lines)
 	}
 }
@@ -180,7 +180,7 @@ func TestEventsOverTheRateAre429WithRetryAfter(t *testing.T) {
 
 func TestARepeatIs200DuplicateAndDeliversNothing(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "", false)
 	body := landBodyJSON("pushed", landFrom, landTo, 3, "")
 	if w := x.post(body); w.Code != http.StatusAccepted {
 		t.Fatalf("first: %d", w.Code)
@@ -213,56 +213,56 @@ func TestEachOutcomesLineIsBuiltFromFields(t *testing.T) {
 
 func TestSubscribingTwiceIsOneRowAndAnswersAlready(t *testing.T) {
 	x := newEventRig(t)
-	body := `{"action":"subscribe","kind":"land","repo":"o/r","branch":"main","card":"sg4~s1"}`
+	body := `{"action":"subscribe","kind":"land","repo":"o/r","branch":"main","card":"room-e~s1"}`
 	if c, b := x.subs(t, body); c != http.StatusOK || !strings.Contains(b, `"already":false`) {
 		t.Fatalf("first: %d %s", c, b)
 	}
 	if c, b := x.subs(t, body); c != http.StatusOK || !strings.Contains(b, `"already":true`) {
 		t.Fatalf("second: %d %s", c, b)
 	}
-	if rows, _ := x.st.EventSubsOf("sg4~s1"); len(rows) != 1 || rows[0].CreatedBy != "board" {
+	if rows, _ := x.st.EventSubsOf("room-e~s1"); len(rows) != 1 || rows[0].CreatedBy != "board" {
 		t.Fatalf("rows %+v", rows)
 	}
 }
 
 func TestARoomWritesOnlyItsOwnCardsAndTheBoardAny(t *testing.T) {
 	x := newEventRig(t)
-	if c, b := x.subs(t, `{"action":"subscribe","kind":"land","card":"s1","room":"sg4","by":"orch@sg4"}`); c != http.StatusOK {
+	if c, b := x.subs(t, `{"action":"subscribe","kind":"land","card":"s1","room":"room-e","by":"orch@room-e"}`); c != http.StatusOK {
 		t.Fatalf("own bare card: %d %s", c, b)
 	}
-	rows, _ := x.st.EventSubsOf("sg4~s1")
-	if len(rows) != 1 || rows[0].CreatedBy != "orch@sg4" {
+	rows, _ := x.st.EventSubsOf("room-e~s1")
+	if len(rows) != 1 || rows[0].CreatedBy != "orch@room-e" {
 		t.Fatalf("rows %+v", rows)
 	}
-	if c, _ := x.subs(t, `{"action":"subscribe","kind":"land","card":"m1mini~m1","room":"sg4"}`); c != http.StatusForbidden {
+	if c, _ := x.subs(t, `{"action":"subscribe","kind":"land","card":"room-a~m1","room":"room-e"}`); c != http.StatusForbidden {
 		t.Fatalf("another room's card: %d", c)
 	}
-	if c, _ := x.subs(t, `{"action":"subscribe","kind":"land","card":"sg4~s1~x","room":"sg4"}`); c != http.StatusUnprocessableEntity {
+	if c, _ := x.subs(t, `{"action":"subscribe","kind":"land","card":"room-e~s1~x","room":"room-e"}`); c != http.StatusUnprocessableEntity {
 		t.Fatalf("a malformed card: %d", c)
 	}
-	x.subscribe(t, "m1mini~m1", "", "", false)
-	rows, _ = x.st.EventSubsOf("m1mini~m1")
+	x.subscribe(t, "room-a~m1", "", "", false)
+	rows, _ = x.st.EventSubsOf("room-a~m1")
 	if len(rows) != 1 || rows[0].CreatedBy != "board" {
 		t.Fatalf("the board writes any: %+v", rows)
 	}
-	if c, _ := x.subs(t, fmt.Sprintf(`{"action":"unsubscribe","id":%q,"room":"sg4"}`, rows[0].ID)); c != http.StatusForbidden {
+	if c, _ := x.subs(t, fmt.Sprintf(`{"action":"unsubscribe","id":%q,"room":"room-e"}`, rows[0].ID)); c != http.StatusForbidden {
 		t.Fatalf("removing another room's: %d", c)
 	}
 	if c, b := x.subs(t, fmt.Sprintf(`{"action":"unsubscribe","id":%q}`, rows[0].ID)); c != http.StatusOK || !strings.Contains(b, `"removed":1`) {
 		t.Fatalf("the board removes any: %d %s", c, b)
 	}
-	if c, b := x.subs(t, `{"action":"unsubscribe","kind":"land","card":"s1","room":"sg4"}`); c != http.StatusOK || !strings.Contains(b, `"removed":1`) {
+	if c, b := x.subs(t, `{"action":"unsubscribe","kind":"land","card":"s1","room":"room-e"}`); c != http.StatusOK || !strings.Contains(b, `"removed":1`) {
 		t.Fatalf("a room removes its own by filter: %d %s", c, b)
 	}
 }
 
 func TestALiveCardGetsOneFyiFromLandAtTheHub(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "o/r", "main", true)
+	x.subscribe(t, "room-e~s1", "o/r", "main", true)
 	x.post(landBodyJSON("pushed", landFrom, landTo, 14, ""))
 	x.hook.Pass(context.Background())
 	got := x.fake.sends()
-	if len(got) != 1 || got[0].Card != "sg4~s1" || got[0].From != "land@testhub" || got[0].Kind != "fyi" || !got[0].Wake ||
+	if len(got) != 1 || got[0].Card != "room-e~s1" || got[0].From != "land@testhub" || got[0].Kind != "fyi" || !got[0].Wake ||
 		!strings.HasPrefix(got[0].Text, "Landed: o/r main 3f1c0de..9a0b1c2, 14 commits.") {
 		t.Fatalf("sent %+v", got)
 	}
@@ -274,8 +274,8 @@ func TestALiveCardGetsOneFyiFromLandAtTheHub(t *testing.T) {
 
 func TestAFilterOnAnotherBranchOrRepoDeliversNothing(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "o/r", "develop", false)
-	x.subscribe(t, "sg4~s2", "o/other", "", false)
+	x.subscribe(t, "room-e~s1", "o/r", "develop", false)
+	x.subscribe(t, "room-e~s2", "o/other", "", false)
 	w := x.post(landBodyJSON("pushed", landFrom, landTo, 2, ""))
 	if !strings.Contains(w.Body.String(), `"subscribers":0`) {
 		t.Fatalf("answer %s", w.Body)
@@ -284,7 +284,7 @@ func TestAFilterOnAnotherBranchOrRepoDeliversNothing(t *testing.T) {
 	if n := len(x.fake.sends()); n != 0 {
 		t.Fatalf("%d sent", n)
 	}
-	x.subscribe(t, "sg4~s3", "O/R", "main", false)
+	x.subscribe(t, "room-e~s3", "O/R", "main", false)
 	if w := x.post(landBodyJSON("pushed", landTo, landFrom, 1, "")); !strings.Contains(w.Body.String(), `"subscribers":1`) {
 		t.Fatalf("a repo in another case: %s", w.Body)
 	}
@@ -292,7 +292,7 @@ func TestAFilterOnAnotherBranchOrRepoDeliversNothing(t *testing.T) {
 
 func TestAParkedCardWithoutWakeIsPendingThenExpiresAt24Hours(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "", false)
 	x.fake.send = func(CITarget) CIAnswer {
 		return CIAnswer{State: hubstore.CIPending, Detail: "the session is parked and the route does not wake it"}
 	}
@@ -318,7 +318,7 @@ func TestAParkedCardWithoutWakeIsPendingThenExpiresAt24Hours(t *testing.T) {
 
 func TestThreeLandsWhileParkedDeliverOnlyTheNewest(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "", false)
 	parked := true
 	x.fake.send = func(CITarget) CIAnswer {
 		if parked {
@@ -357,31 +357,31 @@ func TestThreeLandsWhileParkedDeliverOnlyTheNewest(t *testing.T) {
 
 func TestARoomAnsweringNoSuchCardDeletesTheSubscriptionWithOneAuditLine(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "main", false)
-	x.subscribe(t, "sg4~s1", "", "develop", false)
-	x.subscribe(t, "sg4~s2", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "main", false)
+	x.subscribe(t, "room-e~s1", "", "develop", false)
+	x.subscribe(t, "room-e~s2", "", "", false)
 	x.fake.send = func(t CITarget) CIAnswer {
-		if t.Card == "sg4~s1" {
+		if t.Card == "room-e~s1" {
 			return CIAnswer{State: hubstore.CIRefused, Detail: "no such task", Gone: true}
 		}
 		return CIAnswer{State: hubstore.CIDelivered, Detail: "queued"}
 	}
 	x.post(landBodyJSON("pushed", landFrom, landTo, 2, ""))
 	x.hook.Pass(context.Background())
-	if rows, _ := x.st.EventSubsOf("sg4~s1"); len(rows) != 0 {
+	if rows, _ := x.st.EventSubsOf("room-e~s1"); len(rows) != 0 {
 		t.Fatalf("the gone card still subscribes: %+v", rows)
 	}
-	if rows, _ := x.st.EventSubsOf("sg4~s2"); len(rows) != 1 {
+	if rows, _ := x.st.EventSubsOf("room-e~s2"); len(rows) != 1 {
 		t.Fatalf("a live card lost its subscription: %+v", rows)
 	}
-	if l := x.audited("event-sub-gone"); len(l) != 1 || !strings.Contains(l[0], "sg4~s1") {
+	if l := x.audited("event-sub-gone"); len(l) != 1 || !strings.Contains(l[0], "room-e~s1") {
 		t.Fatalf("audit %v", l)
 	}
 }
 
 func TestAnUnconfirmedEventDeliveryIsNeverSentAgain(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "", false)
 	x.fake.send = func(CITarget) CIAnswer {
 		return CIAnswer{State: hubstore.CIUnconfirmed, Detail: "the room did not answer"}
 	}
@@ -397,25 +397,25 @@ func TestAnUnconfirmedEventDeliveryIsNeverSentAgain(t *testing.T) {
 
 func TestARefusedDeliveryIsOneAuditLine(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "", false)
 	x.fake.send = func(CITarget) CIAnswer { return CIAnswer{State: hubstore.CIRefused, Detail: "not allowed"} }
 	x.post(landBodyJSON("pushed", landFrom, landTo, 2, ""))
 	x.hook.Pass(context.Background())
 	if l := x.audited("event-delivery"); len(l) != 1 || !strings.Contains(l[0], "not allowed") {
 		t.Fatalf("audit %v", l)
 	}
-	if rows, _ := x.st.EventSubsOf("sg4~s1"); len(rows) != 1 {
+	if rows, _ := x.st.EventSubsOf("room-e~s1"); len(rows) != 1 {
 		t.Fatal("a refusal that is not 'no such card' removed the subscription")
 	}
 }
 
 func TestTheDailyCheckDeletesGoneCardsAndLeavesADetachedRoomAlone(t *testing.T) {
 	x := newEventRig(t)
-	for _, c := range []string{"sg4~live", "sg4~dead", "away~a1", "bad~b1"} {
+	for _, c := range []string{"room-e~live", "room-e~dead", "away~a1", "bad~b1"} {
 		x.subscribe(t, c, "", "", false)
 	}
 	var asked []string
-	x.hook.Rooms = func() []string { return []string{"sg4", "bad"} }
+	x.hook.Rooms = func() []string { return []string{"room-e", "bad"} }
 	x.hook.Exist = func(_ context.Context, room string, ids []string) ([]string, error) {
 		asked = append(asked, room)
 		if room == "bad" {
@@ -430,7 +430,7 @@ func TestTheDailyCheckDeletesGoneCardsAndLeavesADetachedRoomAlone(t *testing.T) 
 		left = append(left, s.Card)
 	}
 	sort.Strings(left)
-	if strings.Join(left, ",") != "away~a1,bad~b1,sg4~live" {
+	if strings.Join(left, ",") != "away~a1,bad~b1,room-e~live" {
 		t.Fatalf("left %v", left)
 	}
 	if len(x.audited("event-sub-gone")) != 1 {
@@ -449,7 +449,7 @@ func TestTheDailyCheckDeletesGoneCardsAndLeavesADetachedRoomAlone(t *testing.T) 
 
 func TestAnEventSweepDropsOldRowsWithTheCISweep(t *testing.T) {
 	x := newEventRig(t)
-	x.subscribe(t, "sg4~s1", "", "", false)
+	x.subscribe(t, "room-e~s1", "", "", false)
 	x.post(landBodyJSON("pushed", landFrom, landTo, 2, ""))
 	*x.clock = x.clock.Add(hubstore.CIKeep + time.Hour)
 	x.hook.Pass(context.Background())
@@ -468,7 +468,7 @@ func TestTheSharedLoopWorksBothTablesAndWakesOnAnEvent(t *testing.T) {
 	x.hook.SetEvents(ev)
 	x.routes(t, qaRoute)
 	x.fake.card("qa", "r~1")
-	if _, _, err := x.st.EventSubAdd(hubstore.EventSub{Kind: "land", Card: "sg4~s1"}); err != nil {
+	if _, _, err := x.st.EventSubAdd(hubstore.EventSub{Kind: "land", Card: "room-e~s1"}); err != nil {
 		t.Fatal(err)
 	}
 	if w := x.send(ciBody("o/r", 1, 1, "CI", "main", "failure")); w.Code != http.StatusAccepted {

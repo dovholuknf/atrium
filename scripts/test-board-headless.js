@@ -145,7 +145,7 @@ function measureWorn() {
     const room = document.createElement("span");
     room.className = "chip room";
     room.style.setProperty("--rhue", "205");
-    room.textContent = "sg4";
+    room.textContent = "room-e";
     chips.appendChild(room);
     score("room chip", room, 4.5);
     room.remove();
@@ -1640,7 +1640,7 @@ async function tooltipSection(browser, base) {
 // card `room~id` while more than one room is attached and serves it bare with
 // one, and a restart re-attaches rooms one at a time. A popped-out window keeps
 // the spelling in its hash while the board re-resolves to the current one, so
-// the board held `sgg~s1` while the window claimed `s1`. The ownership ledger
+// the board held `room-g~s1` while the window claimed `s1`. The ownership ledger
 // compared raw ids, so the board read the card as free and attached it, and the
 // window's claim never matched the board's pane, so neither let go.
 async function popoutTagFlipSection(browser, base) {
@@ -1668,16 +1668,16 @@ async function popoutTagFlipSection(browser, base) {
 
     // Claimed bare, asked tagged, and the other way round.
     await standIn("s1");
-    await bp.waitForFunction(() => poppedOut("sgg~s1"), null, { timeout: slow(5000) }).catch(() => {});
-    if (!(await bp.evaluate(() => poppedOut("sgg~s1")))) {
-      fail("a card popped out as `s1` read as free once the board spelled it `sgg~s1`.");
+    await bp.waitForFunction(() => poppedOut("room-g~s1"), null, { timeout: slow(5000) }).catch(() => {});
+    if (!(await bp.evaluate(() => poppedOut("room-g~s1")))) {
+      fail("a card popped out as `s1` read as free once the board spelled it `room-g~s1`.");
     }
-    await standIn("sgg~s1");
+    await standIn("room-g~s1");
     await bp.evaluate(() => soloHeld.clear());
     await bp.evaluate(() => runRefresh());
     await bp.waitForFunction(() => poppedOut("s1"), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await bp.evaluate(() => poppedOut("s1")))) {
-      fail("a card popped out as `sgg~s1` read as free once the board spelled it `s1`.");
+      fail("a card popped out as `room-g~s1` read as free once the board spelled it `s1`.");
     }
 
     // The restore after a restart: the board comes back waiting for its card
@@ -1685,7 +1685,7 @@ async function popoutTagFlipSection(browser, base) {
     // attach.
     await bp.evaluate(() => soloHeld.clear());
     await standIn("s1");
-    await bp.waitForFunction(() => poppedOut("sgg~s1"), null, { timeout: slow(5000) }).catch(() => {});
+    await bp.waitForFunction(() => poppedOut("room-g~s1"), null, { timeout: slow(5000) }).catch(() => {});
     // Counted at `openTerm`, because the list render tears a pane down again
     // when the mocked list does not carry the card, which would hide the attach.
     await bp.evaluate(() => {
@@ -1693,7 +1693,7 @@ async function popoutTagFlipSection(browser, base) {
       const real = openTerm;
       window.__flipRealOpen = real;
       openTerm = t => { window.__flipOpened.push(t.id); return real(t); };
-      waitAndAttach("sgg~s1").finally(() => { window.__flipWaited = true; });
+      waitAndAttach("room-g~s1").finally(() => { window.__flipWaited = true; });
     });
     await bp.waitForFunction(() => window.__flipWaited, null, { timeout: slow(5000) }).catch(() => {});
     const restored = await bp.evaluate(() => {
@@ -1706,8 +1706,8 @@ async function popoutTagFlipSection(browser, base) {
     // claims it bare. The popped-out window wins: the board lets go.
     await bp.evaluate(() => { if (window.__flipSolo) window.__flipSolo.close(); window.__flipSolo = null; });
     await bp.evaluate(() => soloHeld.clear());
-    await bp.evaluate(async () => openTerm(await api("/v1/tasks/sgg~s1")));
-    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", null, { timeout: slow(5000) });
+    await bp.evaluate(async () => openTerm(await api("/v1/tasks/room-g~s1")));
+    await bp.waitForFunction(() => termTask && termTask.id === "room-g~s1", null, { timeout: slow(5000) });
     await standIn("s1");
     let yielded = false;
     try {
@@ -1715,7 +1715,7 @@ async function popoutTagFlipSection(browser, base) {
       yielded = true;
     } catch (e) {}
     if (!yielded) {
-      fail("the board kept its pane on `sgg~s1` after a window claimed `s1`: two views on one terminal.");
+      fail("the board kept its pane on `room-g~s1` after a window claimed `s1`: two views on one terminal.");
     }
     if (errors.length) fail("the tag-flip page threw: " + errors.join(" | "));
   } finally {
@@ -1725,7 +1725,7 @@ async function popoutTagFlipSection(browser, base) {
 
 // A BOARD SCOPED TO A ROOM THAT IS NOT THERE keeps a control back to every room.
 async function roomsBackSection(browser, base) {
-  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
   const shots = process.env.BACK_SHOTS;
   const cases = [
     { name: "disconnected", hub: true },
@@ -1734,13 +1734,13 @@ async function roomsBackSection(browser, base) {
   try {
     for (const c of cases) {
       mock.hubMode = c.hub;
-      mock.sggAttached = false;
+      mock.roomGAttached = false;
       const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
       await ctx.addInitScript(() => {
         try {
           if (sessionStorage.getItem("seeded")) return;
           sessionStorage.setItem("seeded", "1");
-          localStorage.setItem("atrium.room", "sgg");
+          localStorage.setItem("atrium.room", "room-g");
         } catch (e) {}
       });
       const p = await ctx.newPage();
@@ -1777,7 +1777,7 @@ async function roomsBackSection(browser, base) {
     }
   } finally {
     mock.hubMode = wasHub;
-    mock.sggAttached = wasSgg;
+    mock.roomGAttached = wasRoomG;
   }
 }
 
@@ -1790,9 +1790,9 @@ async function roomsBackSection(browser, base) {
 // with a write) shows up as a rate many times that, and the browser's six
 // connections per host saturate behind it. Then the room goes silent: see below.
 async function idleRateSection(browser, base) {
-  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
   mock.hubMode = true;
-  mock.sggAttached = true;
+  mock.roomGAttached = true;
   mock.soloMode = "ok";
   mock.tasksMode = "first";
   const secs = +(process.env.IDLE_RATE_SECONDS || 12);
@@ -1826,17 +1826,17 @@ async function idleRateSection(browser, base) {
     const board = await open("board");
     await fakeTick(board, 1500);
     await board.click('.tab[data-view="terms"]').catch(() => {});
-    const solo = await open("solo", "#term=sgg~s1");
+    const solo = await open("solo", "#term=room-g~s1");
     const tab2 = await open("tab2");
     await fakeTick(board, 3000);
-    // The spelling flip: sgg drops and comes back, so the board re-resolves
-    // `sgg~s1` to `s1` and back while the window keeps the spelling it opened on.
+    // The spelling flip: room-g drops and comes back, so the board re-resolves
+    // `room-g~s1` to `s1` and back while the window keeps the spelling it opened on.
     counts.clear();
     const pages = [board, solo, tab2];
     const mut0 = await Promise.all(pages.map(p => p.evaluate(() => window.__atriumMut)));
     for (let i = 0; i < secs; i++) {
       if (i === 2 || i === 6) {
-        mock.sggAttached = !mock.sggAttached;
+        mock.roomGAttached = !mock.roomGAttached;
         hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
         await new Promise(r => setTimeout(r, 20));
       }
@@ -1896,7 +1896,7 @@ async function idleRateSection(browser, base) {
     stallHeld.splice(0).forEach(answer => answer());
     await ctx.close();
     mock.hubMode = wasHub;
-    mock.sggAttached = wasSgg;
+    mock.roomGAttached = wasRoomG;
   }
 }
 
@@ -2053,7 +2053,7 @@ async function laneFoldSection(browser, base) {
     if (await grp(p, "working") !== false) fail("laneFold: clicking the running lane's alpha did not fold it.");
     if (await grp(p, "needs-you") !== true) fail("laneFold: folding alpha in running folded it in the ready lane too.");
     if (!(await folds(p)).includes("proj:working|alpha")) fail("laneFold: the fold was not stored per lane: " + JSON.stringify(await folds(p)));
-    // A pin is a star and a sort key now, not a group (docs/rnd/unified-card-decisions.md).
+    // A pin is a star and a sort key now, not a group.
     if (await pin(p, "working") !== "missing" || await pin(p, "needs-you") !== "missing") fail("laneFold: the board still draws a pinned group.");
     // Collapse all reaches every lane, expand all undoes it.
     await p.click("#board-collapse-all");
@@ -2293,7 +2293,7 @@ async function newCardSection(browser, base) {
     mock.untaggedDown = false; mock.untaggedEmpty = true;
     poke();
     await run(p, 2000);
-    mock.untaggedEmpty = false; mock.untaggedTag = "sgg";
+    mock.untaggedEmpty = false; mock.untaggedTag = "room-g";
     poke();
     await run(p, 3000);
     m = await marks(p);
@@ -2786,7 +2786,7 @@ async function clearLineSection(browser, base) {
 
 // ── over a terminal the toasts hang from the top right ─────────────────────
 // Backlog-2 item 18. A toast in the bottom right sat on the terminal's input
-// line and status bar, where clint was typing. On the terminals view (and in a
+// line and status bar, where the operator was typing. On the terminals view (and in a
 // popped-out window) the stack anchors below the pane's bar, clear of the
 // paste indicator, and every other view keeps bottom right. A switch with
 // toasts up moves the same elements and does not replay their entrance.
@@ -3002,7 +3002,7 @@ async function sayWhenSection(browser, base) {
     const chips = await p.evaluate(() => {
       const one = (act) => {
         const d = document.createElement("div");
-        d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
+        d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "room-e/doer", held_seconds: 90 }, act) });
         const s = d.querySelector(".chip.held");
         return s ? { text: (s.querySelector("svg") ? "✉︎" : "") + (s.textContent.trim() ? " " + s.textContent.trim() : ""), tip: s.dataset.tip } : null;
       };
@@ -3049,7 +3049,7 @@ async function sayWhenSection(browser, base) {
     const quiet = await p.evaluate(() => {
       const one = (act) => {
         const d = document.createElement("div");
-        d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
+        d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "room-e/doer", held_seconds: 90 }, act) });
         const s = d.querySelector(".chip");
         return s ? { cls: s.className, text: (s.querySelector("svg") ? "✉︎" : "") + (s.textContent.trim() ? " " + s.textContent.trim() : ""), tip: s.dataset.tip } : null;
       };
@@ -3096,7 +3096,7 @@ async function sayWhenSection(browser, base) {
         return s ? s.dataset.tip : "";
       };
       return {
-        thirty: draw({ held_peer: "sg4/doer", held_seconds: 90, held_for: "turn", held_turn: "asked",
+        thirty: draw({ held_peer: "room-e/doer", held_seconds: 90, held_for: "turn", held_turn: "asked",
           held_quiet: true, held_escalate_min: 30 }),
         delivered: draw({ what: "tool" }),
         nothing: draw(undefined),
@@ -3133,7 +3133,7 @@ async function sayWhenSection(browser, base) {
               document.body.appendChild(box);
             }
             box.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "atrium-87300",
-              held_seconds: 245 }, act) }) + `<span class="chip room" style="--rhue:160">claude-sg4</span>`;
+              held_seconds: 245 }, act) }) + `<span class="chip room" style="--rhue:160">claude-room-e</span>`;
           }, act);
           await p.mouse.move(0, 0);
           await p.hover("#held-shot .chip");
@@ -5558,7 +5558,7 @@ async function backtickPathLinksSection(browser, base) {
     const want = "live-stream/2026/10-16/stack/ep1-classifier/README.md";
     await p.evaluate(r => { term.reset(); termSock.onmessage({ data: "\x1b[1m" + r + "\x1b[0m\r\n" }); }, reply);
     await p.waitForTimeout(300);
-    for (const spelling of ["land-live", "sg4~land-live"]) {
+    for (const spelling of ["land-live", "room-e~land-live"]) {
       await p.evaluate(s => { termTask.id = s; }, spelling);
       const got = await p.evaluate(() => new Promise(res => {
         provideFileLinks(term, "land-live", 1, links => {
@@ -5595,7 +5595,7 @@ async function backtickPathLinksSection(browser, base) {
 async function fileMenuSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -5622,7 +5622,7 @@ async function fileMenuSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
+    await p.evaluate(() => { termTask = { id: "land-live", room: "room-e" }; });
     const menuState = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
       { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
     const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
@@ -5644,7 +5644,7 @@ async function fileMenuSection(browser, base) {
     if (!same(got, want)) fail("the file menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
     await shot(p, "menu-md");
-    if (!settingsRooms.includes("sg4")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
+    if (!settingsRooms.includes("room-e")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
     await choose("open in your editor");
     await until(() => opened.length > 0);
     if (!same(opened, ["docs/plan.md"])) fail("open in your editor sent " + JSON.stringify(opened));
@@ -5665,14 +5665,14 @@ async function fileMenuSection(browser, base) {
     if (opens[1] !== "/read.html#land-live/src%2Fbeta.go") fail("a .go tab opened " + opens[1]);
 
     // A card on another machine never offers its editor: the window would open where nobody is sitting.
-    got = await p.evaluate(() => { termTask = { id: "sgg~land-live", room: "sgg" }; return 0; });
-    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, "sgg~land-live", { rel: "docs/plan.md", dir: false }); });
+    got = await p.evaluate(() => { termTask = { id: "room-g~land-live", room: "room-g" }; return 0; });
+    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, "room-g~land-live", { rel: "docs/plan.md", dir: false }); });
     if (!await menuState(true)) fail("fileLinkMenu for a remote card did not open the menu");
     got = await items();
     if (!same(got, want.slice(0, 2))) fail("a card on another room offered " + JSON.stringify(got));
     await p.keyboard.press("Escape");
     await menuState(false);
-    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
+    await p.evaluate(() => { termTask = { id: "land-live", room: "room-e" }; });
 
     editorCommand = "";
     got = await ask("docs/plan.md");
@@ -5690,7 +5690,7 @@ async function fileMenuSection(browser, base) {
 async function fileMenuHTMLSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -5707,7 +5707,7 @@ async function fileMenuHTMLSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
+    await p.evaluate(() => { termTask = { id: "land-live", room: "room-e" }; });
     const menuState = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
       { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
     const ask = async rel => {
@@ -5762,7 +5762,7 @@ async function fileMenuHTMLSection(browser, base) {
 async function htmlTabSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -5837,7 +5837,7 @@ async function htmlTabSection(browser, base) {
 async function markdownTabSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -5896,7 +5896,7 @@ async function markdownTabSection(browser, base) {
 async function readerRawSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -5951,7 +5951,7 @@ async function readerRawSection(browser, base) {
 async function docShareSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -6062,7 +6062,7 @@ async function docShareSection(browser, base) {
 async function termLinkLateSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -6161,7 +6161,7 @@ async function termLinkLateSection(browser, base) {
 async function termLinkFirstHoverSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -6232,7 +6232,7 @@ async function fileLinksViewSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   const root = "D:/worktrees/github/openziti/ziti-doc/blog-add-by-url";
-  landCard("land-live", { supervised: true, room: "sg4", worktree: root, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", worktree: root, created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -6364,7 +6364,7 @@ async function fileLinksViewSection(browser, base) {
     const view = async (rel, ready) => {
       const v = await ctx.newPage();
       v.on("pageerror", e => errors.push(rel + ": " + String(e)));
-      await v.goto(base + "/read.html#sg4~land-live/" + encodeURIComponent(rel), { waitUntil: "domcontentloaded" });
+      await v.goto(base + "/read.html#room-e~land-live/" + encodeURIComponent(rel), { waitUntil: "domcontentloaded" });
       const ok = await v.waitForFunction(ready, null, { timeout: slow(8000), polling: 20 }).then(() => true, () => false);
       if (!ok) fail("the viewer did not show " + rel + ": " + await v.evaluate(() => document.body.innerText.slice(0, 300)));
       return v;
@@ -6401,7 +6401,7 @@ async function termFolderLinkSection(browser, base) {
   mock.tasksMode = "land";
   const cwd = "D:/git/worktrees/github.com/netfoundry/mcp-connect/claude-exploring-mcp-connect";
   const open = "D:/open/shared";
-  landCard("land-live", { supervised: true, room: "sg4", worktree: cwd, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", worktree: cwd, created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -6498,7 +6498,7 @@ async function termFolderLinkSection(browser, base) {
 async function termProbeStormSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, room: "room-e", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
@@ -7362,7 +7362,7 @@ async function heldEnvelopeSection(browser, base) {
         await p.waitForSelector(".card .chip.queued, .stackrow .chip.queued", { state: "attached", timeout: slow(15000) });
         await p.evaluate(() => {
           const c = document.querySelector(".card .chip.queued, .stackrow .chip.queued").parentElement;
-          if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-sg4</span>');
+          if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-room-e</span>');
           c.insertAdjacentHTML("afterbegin", '<span class="chip unseen">&#9679;</span><span class="chip unseen">&#9679;</span>');
         });
         check(name + " x" + count, await measure(p), count > 1);
@@ -10178,11 +10178,11 @@ async function idleParkSection(browser, base) {
 // own sshd (with the open count when it is not zero), none when it is off, a facts row in words for each state, and a
 // copy button that puts the ssh config block for the machine VIEWING the board on the clipboard: the quoted `.exe` form on
 // Windows and the plain command elsewhere. There is no toggle anywhere. Set SSH_SHOTS to a directory for a picture, named
-// by SSH_NAME (default ssh-badge-after). See js/rooms.js and docs/rnd/ssh-via-hub.md.
+// by SSH_NAME (default ssh-badge-after). See js/rooms.js.
 async function sshBadgeSection(browser, base) {
   const wasHub = mock.hubMode, was = mock.ALPHA.remote_access;
   mock.hubMode = true;
-  mock.ALPHA.remote_access = { on: true, from: ["hub", "m1mini"], port: 22, open: 1 };
+  mock.ALPHA.remote_access = { on: true, from: ["hub", "room-a"], port: 22, open: 1 };
   const shots = process.env.SSH_SHOTS || "", name = process.env.SSH_NAME || "ssh-badge-after";
   const errors = [];
   const look = async platform => {
@@ -10217,12 +10217,12 @@ async function sshBadgeSection(browser, base) {
     // On a Windows machine.
     let { ctx, p } = await look("Win32");
     let b = await badge(p);
-    if (!b || b.text !== "ssh 1" || !/from hub, m1mini/.test(b.tip)) fail("the on badge is wrong: " + JSON.stringify(b));
+    if (!b || b.text !== "ssh 1" || !/from hub, room-a/.test(b.tip)) fail("the on badge is wrong: " + JSON.stringify(b));
     if (shots) await p.locator("#room-list").screenshot({ path: path.join(shots, name + "-row.png") }).catch(() => {});
     await p.evaluate(() => openRoomCog("alpha"));
     await p.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
     let f = await facts(p);
-    if (f["remote access"] !== "on, port 22, from hub and m1mini. 1 stream open") {
+    if (f["remote access"] !== "on, port 22, from hub and room-a. 1 stream open") {
       fail("the on facts row is wrong: " + JSON.stringify(f["remote access"]));
     }
     if (shots) await p.locator("#rc-facts-field").screenshot({ path: path.join(shots, name + "-facts.png") });
@@ -10435,7 +10435,7 @@ async function keepaliveSection(browser, base) {
       row.innerHTML = termStateSlot(t) + termRowChips(t);
       return { slot: row.querySelector(".tstate").textContent.trim(),
         chips: [...row.querySelectorAll(".chips .chip")].map(c => c.className) };
-    }, Object.assign({}, T1, { id: "claude-sg4~ka-cold-idle", seen: { unseen: true },
+    }, Object.assign({}, T1, { id: "claude-room-e~ka-cold-idle", seen: { unseen: true },
       keepalive: { state: "on", refreshes: 0, warm_until: soon(-60 * 60000) } }));
     if (coldRow.slot !== "❄") fail("a cold idle row's state slot is not the snowflake: " + JSON.stringify(coldRow));
     if (coldRow.chips.join("|") !== "chip room") fail("a cold idle row draws a chip besides the room's: " + JSON.stringify(coldRow));
@@ -11214,10 +11214,10 @@ async function peekEverywhereSection(browser, base) {
 // of what a row can. Hovering each of its badges (and the name, and the bare row) opens the same popover with the
 // same text, and that text says every one of those states. ONEHOVER_SHOTS=<dir> writes the picture.
 const ONE_HOVER_CARD = Object.assign({}, T1, {
-  id: "sg4-control~oh1", status: "running", display_title: "orchestrator", resume_id: "sess-oh1", runner: "claude",
+  id: "room-e-control~oh1", status: "running", display_title: "orchestrator", resume_id: "sess-oh1", runner: "claude",
   supervised: true, pinned: true, worktree: "/src/atrium/oh", repo: "atrium", branch: "claude/oh", model: "claude-opus-5-5",
-  tags: ["sg4"], auto_approve: true, auto_until: new Date(Date.now() + 40 * 60000).toISOString(),
-  spawned_by: "boss@sg4", launcher_id: "boss", owed: 2, owed_since: new Date(Date.now() - 600000).toISOString(),
+  tags: ["room-e"], auto_approve: true, auto_until: new Date(Date.now() + 40 * 60000).toISOString(),
+  spawned_by: "boss@room-e", launcher_id: "boss", owed: 2, owed_since: new Date(Date.now() - 600000).toISOString(),
   held_notices: 3, replies_owed: 1,
   context_size: { tokens: 172000, warn: true, cycle: true, threshold_k: 160, source: "hub" },
   autocompact: { limit_k: 160, window_k: 209, compacts_k: 176 },
@@ -11234,13 +11234,13 @@ const OH_RECAP = "Moved the peek's size rules into one place and cut the card bl
   "that it has to be clamped: it keeps going for a while, past four lines at the popover's width, so the rest sits " +
   "behind a click. Tests pass for the board's own sections and the remaining work is only the changelog.";
 const OH_ASKED = Object.assign({}, T1, {
-  id: "sg4-control~oh2", status: "needs-input", display_title: "asked one", resume_id: "sess-oh2", runner: "claude",
+  id: "room-e-control~oh2", status: "needs-input", display_title: "asked one", resume_id: "sess-oh2", runner: "claude",
   supervised: true, pinned: true, worktree: "/src/atrium/oh2", repo: "atrium", branch: "claude/oh2", model: "claude-opus-5-5",
   context_size: { tokens: 172000, threshold_k: 160, source: "hub" }, recap: OH_RECAP,
   seen: { answered: false, open_questions: ["land sa21 first?"] },
 });
 const OH_IDLE = Object.assign({}, T1, {
-  id: "sg4-control~oh3", status: "idle", display_title: "plain idle", resume_id: "sess-oh3", runner: "claude",
+  id: "room-e-control~oh3", status: "idle", display_title: "plain idle", resume_id: "sess-oh3", runner: "claude",
   supervised: true, pinned: true, worktree: "/src/atrium/oh3", repo: "atrium", branch: "claude/oh3", model: "claude-opus-5-5",
   context_size: { tokens: 90000, threshold_k: 160, source: "hub" },
 });
@@ -11271,7 +11271,7 @@ async function peekOneHoverSection(browser, base) {
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
-    const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
+    const row = '#term-list .card.tab[data-id="room-e-control~oh1"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
     await p.waitForFunction(r => ["held", "questions", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
     await settleStyle(p);
@@ -11301,6 +11301,11 @@ async function peekOneHoverSection(browser, base) {
       if (pk.y < 7 || pk.b > pk.vh - 7) fail("onehover: the details leave the viewport over " + sel + ": " + JSON.stringify(pk));
       if (shots && sel === badges[0]) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + ".png" });
     }
+    // Park the real pointer off every card: left over the last row, a layout change or redraw fires a late pointerover on it
+    // that arms that card's own hover and replaces (or closes) the peek this test opens by hand.
+    await p.mouse.move(W / 2, 3);
+    await p.evaluate(() => closePeek());
+    await settleStyle(p);
     // THE SIZE: a card with one open question and a recap fits in 420px at the default --uiscale, and a popover taller
     // than the viewport scrolls inside. A plain idle card is smaller still. ONEHOVER_SHOTS writes both pictures.
     const measure = async (id, name, all) => {
@@ -11326,23 +11331,23 @@ async function peekOneHoverSection(browser, base) {
       }
       return m;
     };
-    const asked = await measure("sg4-control~oh2", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-asked" : "peek-asked");
+    const asked = await measure("room-e-control~oh2", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-asked" : "peek-asked");
     if (asked.w > 420) fail("onehover: the details are " + asked.w + "px wide, past 420px");
     if (!/published 1 document/.test(asked.text)) fail("onehover: the published documents line is gone: " + asked.text);
     if (asked.h > 420) fail("onehover: a card with one question and a recap is " + asked.h + "px tall, past 420px");
     if (!/land sa21 first\?/.test(asked.text) || !/Moved the peek/.test(asked.text)) fail("onehover: the question or the recap is missing: " + asked.text);
-    const askedOpen = await measure("sg4-control~oh2", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-open" : "peek-open", true);
+    const askedOpen = await measure("room-e-control~oh2", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-open" : "peek-open", true);
     if (!askedOpen.more) fail("onehover: a long recap has no way to read the rest");
     if (asked.actions.join(",") !== "open,say,exit,restart") fail("onehover: the actions are " + asked.actions.join(",") + ", want open,say,exit,restart");
     if (asked.cut) fail("onehover: the usage grid, footer, cache paragraph or card block is still drawn");
     if (/launched with|launched by|prompts|cache read|idle \d/.test(asked.text)) fail("onehover: cut text is still there: " + asked.text);
-    const idle = await measure("sg4-control~oh3", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-idle" : "peek-idle");
+    const idle = await measure("room-e-control~oh3", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-idle" : "peek-idle");
     if (idle.h > asked.h) fail("onehover: a plain idle card (" + idle.h + "px) is taller than the asked one (" + asked.h + "px)");
     // Short window: it never grows past the viewport, and scrolls inside.
     await p.evaluate(() => closePeek());
     await p.setViewportSize({ width: W, height: 260 });
     await p.waitForFunction(() => innerHeight === 260, null, { timeout: slow(5000) });
-    await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
+    await p.evaluate(() => openPeek("room-e-control~oh2", document.querySelector('#term-list .card.tab[data-id="room-e-control~oh2"]'), "hover"));
     await p.waitForSelector(".peek.on .peek-body", { timeout: slow(5000) });
     await settleStyle(p);
     const short = await p.evaluate(() => { const b = document.querySelector(".peek.on .peek-body"); const r = b.getBoundingClientRect();
@@ -11354,10 +11359,10 @@ async function peekOneHoverSection(browser, base) {
     // A long question shows three lines and "click to expand". Opening it grows the popup, which stays on screen,
     // and nothing in the popup scrolls.
     await p.evaluate(() => {
-      const t = peekCard("sg4-control~oh2");
+      const t = peekCard("room-e-control~oh2");
       t.seen = Object.assign({}, t.seen, { open_questions: ["Where should the Config builder link go in the ziti-doc sidebar? ".repeat(8).trim()] });
     });
-    await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
+    await p.evaluate(() => openPeek("room-e-control~oh2", document.querySelector('#term-list .card.tab[data-id="room-e-control~oh2"]'), "hover"));
     await p.waitForSelector(".peek.on .qa-qx", { timeout: slow(5000) });
     await settleStyle(p);
     const lq = () => p.evaluate(() => {
@@ -11369,7 +11374,7 @@ async function peekOneHoverSection(browser, base) {
     if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq.png" });
     // The usage reply redraws the body and qaClamp re-measures after it, so click only once that is done and the button shows.
     await p.waitForFunction(() => { const b = document.querySelector(".peek.on .peek-body"), e = document.querySelector(".peek.on .qa-exp");
-      return b && !b.classList.contains("loading") && e && !e.hidden; }, null, { timeout: slow(5000) })
+      return b && !b.classList.contains("loading") && e && !e.hidden && document.querySelector(".peek.on").dataset.id === "room-e-control~oh2"; }, null, { timeout: slow(5000) })
       .catch(async () => fail("onehover: the expand button never showed: " + JSON.stringify(await lq())));
     const lq1 = await lq();
     if (lq1.lines > 3 || lq1.exp !== "click to expand" || lq1.scrolling) fail("onehover: a long question is not cut to 3 lines with a way to expand: " + JSON.stringify(lq1));
@@ -11422,7 +11427,7 @@ async function peekDrawersSection(browser, base) {
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
-  const says = [0, 1, 2].map(i => ({ id: "say" + (9 - i), from_task: "sg4-control~oh2", from: "oh2", to_task: "other-2", to: "other", to_input: "other",
+  const says = [0, 1, 2].map(i => ({ id: "say" + (9 - i), from_task: "room-e-control~oh2", from: "oh2", to_task: "other-2", to: "other", to_input: "other",
     sent_at: new Date(Date.now() - i * 60000).toISOString(), state: "delivered", channel: "terminal", preview: "say " + i, chars: 5, text: "say " + i }));
   await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ json: { says, more: false } }));
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
@@ -11432,7 +11437,7 @@ async function peekDrawersSection(browser, base) {
     await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
-    await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~oh2"]', { state: "visible", timeout: slow(15000) });
+    await p.waitForSelector('#term-list .card.tab[data-id="room-e-control~oh2"]', { state: "visible", timeout: slow(15000) });
     await fakePause(p);
     await fakeTick(p, 1000);
     const show = async id => {
@@ -11455,7 +11460,7 @@ async function peekDrawersSection(browser, base) {
     const head = key => '.peek.on .peek-drawer[data-key="' + key + '"] > .peek-dh';
 
     await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
-    await show("sg4-control~oh2");
+    await show("room-e-control~oh2");
     let d = await drawers();
     if (!d.need || !d.recap || !d.ctx) fail("peekDrawers: want need, recap and ctx drawers, got " + Object.keys(d).join(","));
     else {
@@ -11494,25 +11499,25 @@ async function peekDrawersSection(browser, base) {
     if (d.need.open) fail("peekDrawers: a click did not shut NEEDS YOU: " + JSON.stringify(d.need));
 
     // The state is kept for NEEDS YOU only: the other card, and the first card again, open with chatter folded.
-    await show("sg4-control~oh1");
+    await show("room-e-control~oh1");
     d = await drawers();
     if (d.need && d.need.open) fail("peekDrawers: NEEDS YOU is open on the second card after it was shut: " + JSON.stringify(d.need));
     if (!d.ctx || !d.ctx.open) fail("peekDrawers: the context is shut on the second card: " + JSON.stringify(d.ctx));
     if (d.chatter && d.chatter.open) fail("peekDrawers: chatter was open on the second card after a click on another: " + JSON.stringify(d.chatter));
     const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.peekDrawers") || "{}"));
     if (JSON.stringify(saved) !== '{"need":false}') fail("peekDrawers: the kept state is " + JSON.stringify(saved) + ", want only need");
-    await show("sg4-control~oh2");
+    await show("room-e-control~oh2");
     d = await drawers();
     if (d.need.open || !d.recap.open || !d.ctx.open || d.chatter.open) fail("peekDrawers: back on the first card the drawers moved: " + JSON.stringify(d));
     // Old stored state cannot fold the recap or open chatter.
     await p.evaluate(() => localStorage.setItem("atrium.peekDrawers", JSON.stringify({ recap: false, ctx: false, chatter: true })));
-    await show("sg4-control~oh2");
+    await show("room-e-control~oh2");
     d = await drawers();
     if (!d.recap.open || !d.ctx.open || d.chatter.open) fail("peekDrawers: old stored state moved the drawers: " + JSON.stringify(d));
 
     // A drag that selects text in a header toggles nothing, and a click after it does.
     await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
-    await show("sg4-control~oh2");
+    await show("room-e-control~oh2");
     const sb = await p.locator(head("chatter") + " .peek-dsum").boundingBox();
     await p.mouse.move(sb.x + 1, sb.y + sb.height / 2);
     await p.mouse.down();
@@ -11547,18 +11552,18 @@ const PS_BASE = Object.assign({}, T1, { resume_id: "sess-ps", runner: "claude", 
   worktree: "/src/atrium/ps", repo: "atrium", branch: "claude/ps", model: "claude-opus-5-5",
   context_size: { tokens: 120000, threshold_k: 160, source: "hub" } });
 const PS_AGO = ms => new Date(Date.now() - ms).toISOString();
-const PS_YOURMOVE = Object.assign({}, PS_BASE, { id: "sg4-control~ps1", status: "needs-input", display_title: "turn over",
+const PS_YOURMOVE = Object.assign({}, PS_BASE, { id: "room-e-control~ps1", status: "needs-input", display_title: "turn over",
   waiting_since: PS_AGO(300000), seen: { answered: true, open_questions: [] } });
-const PS_ASKS = Object.assign({}, PS_BASE, { id: "sg4-control~ps2", status: "needs-input", display_title: "asks two",
+const PS_ASKS = Object.assign({}, PS_BASE, { id: "room-e-control~ps2", status: "needs-input", display_title: "asks two",
   waiting_since: PS_AGO(300000), seen: { answered: false, open_questions: ["first?", "second?"] } });
-const PS_RUNNING = Object.assign({}, PS_BASE, { id: "sg4-control~ps3", status: "needs-input", display_title: "mid turn",
+const PS_RUNNING = Object.assign({}, PS_BASE, { id: "room-e-control~ps3", status: "needs-input", display_title: "mid turn",
   activity: { what: "thinking", seconds: 3 }, seen: { answered: true, open_questions: [] } });
-const PS_STALE = Object.assign({}, PS_BASE, { id: "sg4-control~ps4", status: "idle", display_title: "old recap",
+const PS_STALE = Object.assign({}, PS_BASE, { id: "room-e-control~ps4", status: "idle", display_title: "old recap",
   recap: "Handoff written.", recap_at: PS_AGO(9 * 86400000), prompted_at: PS_AGO(3600000) });
-const PS_FRESH = Object.assign({}, PS_BASE, { id: "sg4-control~ps5", status: "idle", display_title: "new recap",
+const PS_FRESH = Object.assign({}, PS_BASE, { id: "room-e-control~ps5", status: "idle", display_title: "new recap",
   recap: "Handoff written.", recap_at: PS_AGO(60000), prompted_at: PS_AGO(3600000) });
 const PS_LONGWORD = "x".repeat(260);
-const PS_LONG = Object.assign({}, PS_BASE, { id: "sg4-control~ps6", status: "needs-input", display_title: "long question",
+const PS_LONG = Object.assign({}, PS_BASE, { id: "room-e-control~ps6", status: "needs-input", display_title: "long question",
   waiting_since: PS_AGO(300000), recap: "Short recap.",
   seen: { answered: false, open_questions: ["Do you want `" + PS_LONGWORD + "` or /docs/" + PS_LONGWORD + "/config-builder in the unified config? Tell me where."] } });
 
@@ -11623,7 +11628,7 @@ async function peekKidsSection(browser, base) {
         needText: q.textContent.replace(/\s+/g, " "), needLabels: [...q.querySelectorAll(".peek-sec.need b")].map(b => b.textContent),
         none: peekKidsHtml(null),
         leftHuman: peekRows({ id: "l1", status: "done", report_dirty: 1 }).includes("not committed"),
-        leftLaunched: peekRows({ id: "l2", status: "done", report_dirty: 1, spawned_by: "orch@sg3" }).includes("NEEDS") || peekRows({ id: "l2", status: "done", report_dirty: 1, spawned_by: "orch@sg3" }).includes("not committed"),
+        leftLaunched: peekRows({ id: "l2", status: "done", report_dirty: 1, spawned_by: "orch@room-d" }).includes("NEEDS") || peekRows({ id: "l2", status: "done", report_dirty: 1, spawned_by: "orch@room-d" }).includes("not committed"),
         leftResumed: peekRows({ id: "l3", status: "running", report_dirty: 1 }).includes("not committed")
       };
       d.querySelector(".peek-dh").click();
@@ -11676,11 +11681,11 @@ async function peekScratchSection(browser, base) {
       root.style.cssText = "position:fixed;left:20px;top:20px;width:520px;z-index:99999;display:block";
       root.innerHTML = '<div class="peek-body"></div>';
       document.body.appendChild(root);
-      root.firstChild.innerHTML = peekRows({ id: "sg4~c1", status: "needs-input", recap: "Fixing the OIDC hot loop." });
+      root.firstChild.innerHTML = peekRows({ id: "room-e~c1", status: "needs-input", recap: "Fixing the OIDC hot loop." });
     });
     if (process.env.PEEKSCRATCH_SHOTS) await p.locator("#shot-root").screenshot({ path: process.env.PEEKSCRATCH_SHOTS + "/before.png" });
     await p.evaluate(() => {
-      document.querySelector("#shot-root .peek-body").innerHTML = peekRows({ id: "sg4~c1", status: "needs-input",
+      document.querySelector("#shot-root .peek-body").innerHTML = peekRows({ id: "room-e~c1", status: "needs-input",
         recap: "Fixing the OIDC hot loop.", scratch: "D:/tmp/hot-loop-01ABCDEF" });
     });
     if (process.env.PEEKSCRATCH_SHOTS) await p.locator("#shot-root").screenshot({ path: process.env.PEEKSCRATCH_SHOTS + "/scratch-row.png" });
@@ -11692,14 +11697,14 @@ async function peekScratchSection(browser, base) {
     if (row && row.none) fail("peekScratch: a card with no scratch folder draws a row.");
     const idRow = await p.evaluate(() => {
       const b = document.querySelector("#shot-root .peek-copyid");
-      return b ? { id: b.dataset.id, text: document.querySelector("#shot-root").textContent.includes("sg4~c1") } : null;
+      return b ? { id: b.dataset.id, text: document.querySelector("#shot-root").textContent.includes("room-e~c1") } : null;
     });
-    if (!idRow || idRow.id !== "sg4~c1" || !idRow.text) fail("peekScratch: the card id is not shown with a copy button: " + JSON.stringify(idRow));
+    if (!idRow || idRow.id !== "room-e~c1" || !idRow.text) fail("peekScratch: the card id is not shown with a copy button: " + JSON.stringify(idRow));
     await p.click("#shot-root .peek-scratch");
     await p.waitForSelector("#shot-root .peek-sfile a", { timeout: slow(10000) });
     if (!listed.length || !/root=scratch/.test(listed[0])) fail("peekScratch: the listing was not read with root=scratch: " + JSON.stringify(listed));
     const href = await p.getAttribute("#shot-root .peek-sfile a", "href");
-    if (!/^\/v1\/tasks\/sg4~c1\/files\?root=scratch&path=/.test(href || "")) fail("peekScratch: the download link is " + href);
+    if (!/^\/v1\/tasks\/room-e~c1\/files\?root=scratch&path=/.test(href || "")) fail("peekScratch: the download link is " + href);
     if (process.env.PEEKSCRATCH_SHOTS) await p.locator("#shot-root").screenshot({ path: process.env.PEEKSCRATCH_SHOTS + "/scratch-files.png" });
     const box = await p.evaluate(() => {
       fillCardRoot({ scratch_root: "D:\\tmp" });
@@ -11737,7 +11742,7 @@ async function peekLeftoverSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof peekRows === "function" && typeof peekFileSkipped === "function", null, { timeout: slow(15000) });
     await p.evaluate(() => {
-      const t = { id: "sg4~c1", status: "done", display_title: "the card", title: "the card", room: "sg4", wire_name: "c1", tags: ["atrium:item:u-9"],
+      const t = { id: "room-e~c1", status: "done", display_title: "the card", title: "the card", room: "room-e", wire_name: "c1", tags: ["atrium:item:u-9"],
         recap: "done abc1234", done_skipped: "the retry path, add it with the rework", done_unverified: "windows, run the suite there" };
       termTask = t;
       const root = document.createElement("div");
@@ -11750,7 +11755,7 @@ async function peekLeftoverSection(browser, base) {
       peekRecap(root);
     });
     const mark = await p.evaluate(() => [termLeftoverChip({ status: "done", done_skipped: "x", done_unverified: "y" }), termLeftoverChip({ status: "done", done_skipped: "x" }), termLeftoverChip({ status: "done" }), termLeftoverChip({ status: "done", report_dirty: 3, done_skipped: "x" }),
-      termLeftoverChip({ status: "done", report_dirty: 1, spawned_by: "orch@sg3" }), termLeftoverChip({ status: "done", report_dirty: 1, spawned_by_id: "sg3~o1" }), termLeftoverChip({ status: "running", report_dirty: 1 })]);
+      termLeftoverChip({ status: "done", report_dirty: 1, spawned_by: "orch@room-d" }), termLeftoverChip({ status: "done", report_dirty: 1, spawned_by_id: "room-d~o1" }), termLeftoverChip({ status: "running", report_dirty: 1 })]);
     if (!/&#9888;<\/span> 2/.test(mark[0]) || !/1 skipped, 1 unverified/.test(mark[0]) || !/&#9888;<\/span> 1/.test(mark[1]) || mark[2] !== "" || !/&#9888;<\/span> 2/.test(mark[3]) || !/3 files not committed, 1 skipped/.test(mark[3]) || mark[4] !== "" || mark[5] !== "" || mark[6] !== "") fail("peekLeftover: the row marker is " + JSON.stringify(mark));
     const text = await p.locator("#shot-root .peek-left").innerText();
     if (!/skipped\s+the retry path/.test(text) || !/unverified\s+windows/.test(text)) fail("peekLeftover: both notes are not under the recap: " + text);
@@ -11758,7 +11763,7 @@ async function peekLeftoverSection(browser, base) {
     await p.click("#shot-root .peek-file");
     await kept;
     const post = filed.find(f => f.dept);
-    if (!post || post.dept !== "ui" || !/the retry path/.test(post.body) || !post.body.includes("/room/sg4/c1")) fail("peekLeftover: the filed item is " + JSON.stringify(post));
+    if (!post || post.dept !== "ui" || !/the retry path/.test(post.body) || !post.body.includes("/room/room-e/c1")) fail("peekLeftover: the filed item is " + JSON.stringify(post));
     if (!filed.some(f => f.kept && f.kept.item === "u-141")) fail("peekLeftover: the card was not told the id: " + JSON.stringify(filed));
     await p.evaluate(() => {
       termTask.skipped_filed = "u-141";
@@ -11796,7 +11801,7 @@ async function detailsOneSection(browser, base) {
     await p.evaluate(async () => {
       const kid = (id, st) => ({ id, title: id, display_title: id, status: st, supervised: true, pid: 9 });
       const card = { id: "one-1", title: "one", display_title: "own the style-model experiment", wire_name: "one", status: "needs-input",
-        waiting_since: new Date(Date.now() - 300000).toISOString(), recap: "Re-explained the blind test.\nneeds: clint: mark it",
+        waiting_since: new Date(Date.now() - 300000).toISOString(), recap: "Re-explained the blind test.\nneeds: operator: mark it",
         seen: { answered: false, open_questions: ["Point 3: keep, retype, or cut?"] }, supervised: true, pid: 9 };
       const list = [kid("kid-a", "needs-permission"), kid("kid-b", "running")];
       lastTasks = [card, { id: "other-2", title: "other", wire_name: "other", status: "running" }].concat(list);
@@ -11852,7 +11857,7 @@ async function peekStatusTruthSection(browser, base) {
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
-    await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~ps1"]', { state: "visible", timeout: slow(15000) });
+    await p.waitForSelector('#term-list .card.tab[data-id="room-e-control~ps1"]', { state: "visible", timeout: slow(15000) });
     await settleStyle(p);
     const show = async id => {
       await p.evaluate(() => closePeek());
@@ -11873,25 +11878,25 @@ async function peekStatusTruthSection(browser, base) {
       await p.screenshot({ path: shots + "/" + name + ".png", clip: { x: Math.max(0, box.x - 10), y: Math.max(0, box.y - 10), width: box.width + 20, height: box.height + 20 } });
     };
 
-    const mv = await show("sg4-control~ps1");
+    const mv = await show("room-e-control~ps1");
     if (mv.needs || /needs you/i.test(mv.text) || /needs-input/.test(mv.text)) fail("peekStatus: a turn with no open questions still says needs you: " + mv.text);
     if (!/^your move/.test(mv.status) || !/ ps-turn$/.test(mv.statusCls)) fail("peekStatus: a turn with nothing asked is not 'your move': " + JSON.stringify(mv));
     await shot("your-move");
-    const as = await show("sg4-control~ps2");
+    const as = await show("room-e-control~ps2");
     if (!/^needs you2 questions/.test(as.status) || !/ ps-ask$/.test(as.statusCls) || !as.needs) fail("peekStatus: a card with questions does not need you: " + JSON.stringify(as));
     if (as.sech) fail("peekStatus: the needs-you block repeats a NEEDS YOU heading the status line already says");
-    const run = await show("sg4-control~ps3");
+    const run = await show("room-e-control~ps3");
     if (!/^workingthinking/.test(run.status) || !/ ps-work$/.test(run.statusCls) || /needs/i.test(run.status)) fail("peekStatus: a running turn does not show its activity: " + JSON.stringify(run));
 
-    const stale = await show("sg4-control~ps4");
+    const stale = await show("room-e-control~ps4");
     if (!/said 9d\d* ago, before its latest prompt/.test(stale.rage) && !/said \d+d.* ago, before its latest prompt/.test(stale.rage)) fail("peekStatus: a recap from before the latest prompt is not labelled: " + JSON.stringify(stale.rage));
     await shot("stale-recap");
-    const fresh = await show("sg4-control~ps5");
+    const fresh = await show("room-e-control~ps5");
     if (fresh.rage) fail("peekStatus: a current recap is labelled stale: " + fresh.rage);
     if (!/warns at 160k from hub, lands 200k/.test(fresh.text)) fail("peekStatus: the limit line is not 'warns at 160k from hub, lands 200k': " + fresh.text);
 
     // HOVER CHANGES NOTHING. Both boxes measured, before the pointer is on the question and after.
-    await show("sg4-control~ps6");
+    await show("room-e-control~ps6");
     const size = () => p.evaluate(() => {
       const r = x => { const b = x.getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map(n => Math.round(n * 100) / 100).join(","); };
       const el = document.querySelector(".peek.on"), body = el.querySelector(".peek-body"), sec = el.querySelector(".peek-sec");
@@ -11943,7 +11948,7 @@ async function peekHoverRestSection(browser, base) {
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
-    const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
+    const row = '#term-list .card.tab[data-id="room-e-control~oh1"]';
     await fakeWait(p, sel => { const e = document.querySelector(sel); return !!e && e.getClientRects().length > 0; }, row, 15000);
     await fakePause(p);
     await wait(1500);
@@ -12031,7 +12036,7 @@ async function looksIdleSection(browser, base) {
 // docs/fabric/card-room-routing.md. A write that names no card still carries it.
 async function cardRouteSection(browser, base) {
   mock.hubMode = true;
-  mock.sggAttached = true;
+  mock.roomGAttached = true;
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   const errors = [];
@@ -12047,7 +12052,7 @@ async function cardRouteSection(browser, base) {
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof namesACard === "function", null, { timeout: slow(15000) });
     await page.evaluate(async () => {
-      writeRoom = "sgg";
+      writeRoom = "room-g";
       const post = (u, method, body) => fetch(u, { method, headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body) });
       await post("/v1/tasks/alpha~c1", "PATCH", { group: "g" });
@@ -12058,7 +12063,7 @@ async function cardRouteSection(browser, base) {
     });
     const want = [
       ["/v1/tasks/alpha~c1", ""], ["/v1/tasks/alpha~c1/message", ""], ["/v1/launch", ""],
-      ["/v1/launch", "sgg"], ["/v1/tasks/prune", "sgg"]
+      ["/v1/launch", "room-g"], ["/v1/tasks/prune", "room-g"]
     ];
     if (seen.length !== want.length) fail("the card-route writes were not all sent: " + JSON.stringify(seen));
     want.forEach(([path, room], i) => {
@@ -12075,7 +12080,7 @@ async function cardRouteSection(browser, base) {
   } finally {
     await ctx.close();
     mock.hubMode = false;
-    mock.sggAttached = false;
+    mock.roomGAttached = false;
   }
   if (errors.length) fail("the card-route page threw: " + errors.join(" | "));
 }
@@ -12322,7 +12327,7 @@ async function notifyOffSection(browser, base) {
       const badge = await p.evaluate(() => document.querySelector("#toastlog-open .count").textContent);
       if (!(Number(badge) >= 1)) fail(where + ": the badge did not count a held alert: '" + badge + "'.");
 
-      // A permission request is held too (clint, 2026-09-29), and still recorded.
+      // A permission request is held too (the operator, 2026-09-29), and still recorded.
       mock.landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
         requested_at: new Date().toISOString().replace("Z", "") }];
       poke();
@@ -12732,7 +12737,7 @@ async function idleBudgetSection(browser, base) {
 //
 // Drives the drawer over a TEMPORARY COPY of two real review folders (the mock above serves the copy, and nothing
 // here writes to the originals, which may have a walker in them). Skipped with a message when they are absent.
-// See js/walk.js and docs/rnd/review-tab-design.md.
+// See js/walk.js.
 const WALK_SAMPLES = [
   { id: "land-walka", dir: "D:/worktrees/claude/reviews/github-openziti-zrok/pr-1277-4f332b8", n: 15 },
   { id: "land-walkb", dir: "D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c", n: 11 }
@@ -13224,6 +13229,7 @@ async function walkBranchSection(browser, base) {
     const onEvent = await p.evaluate(() => {
       const id = "walk-timing";
       cardRows.set(id, { id, status: "running", worktree: "/w" });
+      clearTimeout(refreshTimer); refreshTimer = 0;
       onTaskEvent({ data: JSON.stringify({ id, row: 1, status: "done", recap_at: "2026-02-02T00:00:00Z", worktree: "/w" }) });
       const read = walkOffers.has(id), debounced = !!refreshTimer;
       let reads = 0;
@@ -13239,6 +13245,17 @@ async function walkBranchSection(browser, base) {
     });
     if (!onEvent.read || onEvent.debounced) fail("walkBranch: a done event waited for a later read or paint: " + JSON.stringify(onEvent));
     if (onEvent.atOnce !== 1) fail("walkBranch: a card event did not read the walk at once: " + JSON.stringify(onEvent));
+    const doneToasts = await p.evaluate(() => {
+      const said = [], real = window.toast;
+      window.toast = (title, body, goTo, key, taskFor) => { said.push(taskFor); };
+      for (const [id, by, byId] of [["wt-human", "@human", ""], ["wt-agent", "boss", "01boss"], ["wt-bare", "", ""]]) {
+        walkOfferEvent({ id, status: "done", recap_at: "2026-03-03T00:00:00Z", worktree: "/w", spawned_by: by, spawned_by_id: byId },
+          { id, status: "running" });
+      }
+      window.toast = real;
+      return said;
+    });
+    if (doneToasts.join() !== "wt-human,wt-bare") fail("walkBranch: the done toast went to " + JSON.stringify(doneToasts) + ", want the human cards only");
     await shot(p, "first-file");
     const lay = await p.evaluate(() => {
       const d = document.getElementById("walk-drawer"), f = document.getElementById("walk-files"), r = document.getElementById("walk-rail");
@@ -13521,7 +13538,7 @@ async function walkLateSection(browser, base) {
 }
 
 // A CARD THE HUB ANSWERED 404 FOR WHILE ITS ROOM WAS AWAY GETS THE BUTTON ON ITS OWN NEXT EVENT: secfix-v0.5.2 on
-// claude-sg4, working with commits and edits and no walk.
+// claude-room-e, working with commits and edits and no walk.
 async function walkRoomBackSection(browser, base) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkback-"));
   const id = "land-wback";
@@ -14687,6 +14704,14 @@ async function mComposeImagesSection(browser) {
   if (await p.evaluate(() => document.querySelectorAll("#m-compose .mc-file").length)) fail(tag + "chips after a send");
   if (calls.message.length !== 1) fail(tag + "sends " + calls.message.length);
   if (!/\/w\/b\.txt/.test(calls.message[0].body.text) || !/\/w\/pasted\.png/.test(calls.message[0].body.text)) fail(tag + "the paths did not leave with the message: " + JSON.stringify(calls.message[0].body));
+  // A runner list that never answers does not hold a send back: it goes within a few seconds, as a runner that cannot paste.
+  await ctx.route(M_ORIGIN + "/v1/harnesses", route => route.request().headers()["x-atrium-room"] === "hung" ? null : route.fallback());
+  await p.evaluate(() => { window.__cards.push({ id: "hung~x", runner: "claude", status: "working", title: "Hung" }); });
+  await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "hung~x"));
+  await p.fill(box, "hello");
+  await p.tap("#m-compose .mc-send");
+  await until(() => calls.message.length > 1, 6000, "the send past a hung runner list").catch(() => {});
+  if (calls.message.length < 2) fail(tag + "a send waited on a runner list that never answered");
   await ctx.close();
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
@@ -15012,11 +15037,11 @@ async function phoneListFitSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   const long = [
-    ["claude-sg4~fit-1", "fabric: director of rooms, hub, cross-room review and a very long title that keeps going", "/home/clint/git/github/dovholuknf/atrium-worktrees/claude/fabric/some/deep/path/r-023", 2],
-    ["claude-sg4~fit-2", "ghsa-rg2j-wgmp-vxr5", "/home/clint/git/github/openziti/tlsuv-ghsa-rg2j-wgmp-vxr5-with-a-long-name", 0],
-    ["rg2~fit-3", "discourse-6101", "/home/clint/git/github/openziti/ziti/discourse-6101", 1],
-    ["m1mini~fit-4", "smoke: m1mini", "/Users/clint/git/smoke", 0],
-    ["fit-5", "nf-self-hosted", "/home/clint/git/github/openziti/ziti/nf-self-hosted-deployment-checks", 0]
+    ["claude-room-e~fit-1", "fabric: director of rooms, hub, cross-room review and a very long title that keeps going", "/home/operator/git/github/dovholuknf/atrium-worktrees/claude/fabric/some/deep/path/r-023", 2],
+    ["claude-room-e~fit-2", "ghsa-rg2j-wgmp-vxr5", "/home/operator/git/github/openziti/tlsuv-ghsa-rg2j-wgmp-vxr5-with-a-long-name", 0],
+    ["room-b~fit-3", "discourse-6101", "/home/operator/git/github/openziti/ziti/discourse-6101", 1],
+    ["room-a~fit-4", "smoke: room-a", "/Users/operator/git/smoke", 0],
+    ["fit-5", "nf-self-hosted", "/home/operator/git/github/openziti/ziti/nf-self-hosted-deployment-checks", 0]
   ];
   mock.landList = long.map(([id, title, wt, q], i) => landCard(id, {
     display_title: title, worktree: wt, repo: wt.split("/").pop(), branch: "b" + i, 
@@ -15675,7 +15700,7 @@ async function mGroupMenusSection(browser) {
 }
 
 // ── the terminals tab menu (card-menu) ────────────────────────────────────
-// Right click a row. The menu is what clint settled in docs/interviews/INTERVIEW-card-menu-2026-10-09.md: restart,
+// Right click a row. The menu is what the operator settled: restart,
 // resume (stopped only), new context, then settings, then stop and terminate and clean up. Every item has its (?), none
 // has a grey line, and nothing asks "are you sure?" but a clean up of work that exists nowhere else, which has a
 // "never show me this again" tick. Stopped cards stay out of the list until the paused filter is on.
@@ -16068,8 +16093,8 @@ async function closeOneDialogSection(browser, base) {
 // The mock server answers 404 to /_hub/events/subs, so each case routes it in the browser context.
 async function hearsSection(browser, base) {
   const errors = [];
-  let subs = [{ id: "s1", kind: "land", repo: "dovholuknf/atrium", branch: "main", card: "sg4~x", wake: false },
-    { id: "s2", kind: "land", repo: "", branch: "", card: "sg4~x", wake: true }];
+  let subs = [{ id: "s1", kind: "land", repo: "dovholuknf/atrium", branch: "main", card: "room-e~x", wake: false },
+    { id: "s2", kind: "land", repo: "", branch: "", card: "room-e~x", wake: true }];
   const posts = [], gets = [];
   const open = async (ctx, hub) => {
     await ctx.route("**/_hub/rooms", route => route.fulfill(!hub ? { status: 404, body: "" }
@@ -16091,7 +16116,7 @@ async function hearsSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
-    await p.evaluate(() => { window.roomNow = () => "sg4"; });
+    await p.evaluate(() => { window.roomNow = () => "room-e"; });
     return p;
   };
   const chips = p => p.evaluate(() => [...document.querySelectorAll("#d-hears .hears-chip")].map(c => c.textContent.replace("×", "").trim()));
@@ -16104,7 +16129,7 @@ async function hearsSection(browser, base) {
     await p.waitForFunction(() => !document.getElementById("d-hears-field").hidden, null, { timeout: slow(10000) });
     const shown = await chips(p);
     if (JSON.stringify(shown) !== JSON.stringify(["land dovholuknf/atrium main", "land any any (wakes)"])) fail("hears: chips " + JSON.stringify(shown));
-    if (gets[gets.length - 1] !== "sg4~" + id) fail("hears: asked the hub for " + gets[gets.length - 1]);
+    if (gets[gets.length - 1] !== "room-e~" + id) fail("hears: asked the hub for " + gets[gets.length - 1]);
 
     await p.click('#d-hears .hears-x[data-id="s1"]');
     await p.waitForFunction(() => document.querySelectorAll("#d-hears .hears-chip").length === 1, null, { timeout: slow(10000) });
@@ -16118,7 +16143,7 @@ async function hearsSection(browser, base) {
     await p.click('#d-hears-form [data-hears="add"]');
     await p.waitForFunction(() => document.querySelectorAll("#d-hears .hears-chip").length === 2, null, { timeout: slow(10000) });
     const add = posts[posts.length - 1];
-    if (add.action !== "subscribe" || add.kind !== "land" || add.repo !== "dovholuknf/atrium" || add.branch !== "release" || add.card !== "sg4~" + id) {
+    if (add.action !== "subscribe" || add.kind !== "land" || add.repo !== "dovholuknf/atrium" || add.branch !== "release" || add.card !== "room-e~" + id) {
       fail("hears: add posted " + JSON.stringify(add));
     }
     if (errors.length) fail("hears threw: " + errors.join(" | "));
@@ -16924,11 +16949,11 @@ async function cardUrlTableSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   mock.landList = [];
-  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
+  landCard("land-a", { alias: "rnd", room: "claude-room-e", wire_name: "sparta/rnd-director" });
   landCard("land-old", { alias: "rnd", status: "done" });
   landCard("land-d", { alias: "rnd", status: "done", recap: "first line\nthe last line" });
   const found = id => ({ body: mock.LAND[id] });
-  const miss = { status: 404, body: { error: "no card called \"rnd\"", would_work: ["rnd-director@claude-sg4 (@rnd2)", "plain@claude-sg4"] } };
+  const miss = { status: 404, body: { error: "no card called \"rnd\"", would_work: ["rnd-director@claude-room-e (@rnd2)", "plain@claude-room-e"] } };
   const row = async (name, pathname, lookups, setup, check, expectCard) => {
     const r = await cuOpen(browser, base, pathname, lookups, setup);
     try {
@@ -16939,24 +16964,24 @@ async function cardUrlTableSection(browser, base) {
       if (r.errors.length) fail("cardUrlTable " + name + ": the page threw: " + r.errors.join(" | "));
     } finally { await r.ctx.close(); }
   };
-  const key = "atrium.cardurl.claude-sg4/rnd";
+  const key = "atrium.cardurl.claude-room-e/rnd";
   try {
     // a card, nothing remembered: opens it and says nothing. The path stays and the id is kept for next time.
-    await row("fresh", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, null, async r => {
+    await row("fresh", "/room/claude-room-e/rnd", { "rnd@claude-room-e": found("land-a") }, null, async r => {
       if (await cuText(r.page, "#cardurl-note")) fail("cardUrlTable fresh: a first open said something");
       const got = await r.page.evaluate(k => ({ path: location.pathname, last: localStorage.getItem(k), solo: document.body.classList.contains("solo") }), key);
-      if (got.path !== "/room/claude-sg4/rnd") fail("cardUrlTable fresh: the path was rewritten to " + got.path);
+      if (got.path !== "/room/claude-room-e/rnd") fail("cardUrlTable fresh: the path was rewritten to " + got.path);
       if (got.last !== "land-a") fail("cardUrlTable fresh: the last id is " + got.last);
       if (!got.solo) fail("cardUrlTable fresh: the page is not a terminal window");
     }, "land-a");
 
     // a card, the same id as last time: nothing said
-    await row("same", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, k => localStorage.setItem("atrium.cardurl.claude-sg4/rnd", "land-a"), async r => {
+    await row("same", "/room/claude-room-e/rnd", { "rnd@claude-room-e": found("land-a") }, k => localStorage.setItem("atrium.cardurl.claude-room-e/rnd", "land-a"), async r => {
       if (await cuText(r.page, "#cardurl-note")) fail("cardUrlTable same: the same card said something: " + await cuText(r.page, "#cardurl-note"));
     }, "land-a");
 
     // a card, a different id, and the old one is done: one line, and a link to it by fragment
-    await row("different", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, () => localStorage.setItem("atrium.cardurl.claude-sg4/rnd", "land-old"), async r => {
+    await row("different", "/room/claude-room-e/rnd", { "rnd@claude-room-e": found("land-a") }, () => localStorage.setItem("atrium.cardurl.claude-room-e/rnd", "land-old"), async r => {
       const t = await cuText(r.page, "#cardurl-note");
       if (!/@rnd is a different card now/.test(t) || !/is done/.test(t)) fail("cardUrlTable different: the line says: " + t);
       const links = await cuLinks(r.page, "#cardurl-note");
@@ -16964,7 +16989,7 @@ async function cardUrlTableSection(browser, base) {
     }, "land-a");
 
     // the old card is gone: the line says so and offers no link
-    await row("gone", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, () => localStorage.setItem("atrium.cardurl.claude-sg4/rnd", "land-gone"), async r => {
+    await row("gone", "/room/claude-room-e/rnd", { "rnd@claude-room-e": found("land-a") }, () => localStorage.setItem("atrium.cardurl.claude-room-e/rnd", "land-gone"), async r => {
       const t = await cuText(r.page, "#cardurl-note");
       if (!/different card now/.test(t) || !/is gone/.test(t)) fail("cardUrlTable gone: the line says: " + t);
       if ((await cuLinks(r.page, "#cardurl-note")).length) fail("cardUrlTable gone: a link to a card that is gone");
@@ -16977,11 +17002,11 @@ async function cardUrlTableSection(browser, base) {
     }, "land-d");
 
     // 404: no terminal, a sentence, and what would have worked as readable links
-    await row("miss", "/room/claude-sg4/rnd", { "rnd@claude-sg4": miss }, null, async r => {
+    await row("miss", "/room/claude-room-e/rnd", { "rnd@claude-room-e": miss }, null, async r => {
       const t = await cuText(r.page, "#cardurl");
-      if (!/no card called rnd on room claude-sg4/.test(t)) fail("cardUrlTable miss: it says: " + t);
+      if (!/no card called rnd on room claude-room-e/.test(t)) fail("cardUrlTable miss: it says: " + t);
       const links = await cuLinks(r.page, "#cardurl");
-      if (links.join() !== "/alias/rnd2,/room/claude-sg4/plain") fail("cardUrlTable miss: the links are " + links.join());
+      if (links.join() !== "/alias/rnd2,/room/claude-room-e/plain") fail("cardUrlTable miss: the links are " + links.join());
       if (await r.page.evaluate(() => soloID)) fail("cardUrlTable miss: a terminal opened on a miss");
     });
 
@@ -16992,7 +17017,7 @@ async function cardUrlTableSection(browser, base) {
     });
 
     // 409 on /room/: cannot happen, and is shown as the chooser
-    await row("roomClash", "/room/claude-sg4/rnd", { "rnd@claude-sg4": { status: 409, body: { error: "two", candidates: ["rnd@claude-sg4 (claude-sg4~land-a)", "rnd@claude-sg4 (claude-sg4~land-old)"] } } }, null, async r => {
+    await row("roomClash", "/room/claude-room-e/rnd", { "rnd@claude-room-e": { status: 409, body: { error: "two", candidates: ["rnd@claude-room-e (claude-room-e~land-a)", "rnd@claude-room-e (claude-room-e~land-old)"] } } }, null, async r => {
       const n = (await cuLinks(r.page, "#cardurl")).length;
       if (n !== 2) fail("cardUrlTable roomClash: " + n + " choices");
     });
@@ -17008,7 +17033,7 @@ async function cardUrlTableSection(browser, base) {
     mock.hubMode = false;
 
     // a board scoped to a room is not a terminal, and looks nothing up
-    const scoped = await cuOpen(browser, base, "/room/claude-sg4", {});
+    const scoped = await cuOpen(browser, base, "/room/claude-room-e", {});
     try {
       await scoped.page.waitForFunction(() => typeof cardUrlShape === "function" && typeof roomNow === "function", null, { timeout: slow(15000) });
       const s = await scoped.page.evaluate(() => ({ only: termOnly(), solo: document.body.classList.contains("solo") }));
@@ -17028,12 +17053,12 @@ async function cardUrlClashSection(browser, base) {
   mock.landList = [];
   landCard("land-x", { alias: "rnd", status: "needs-input", created_at: "2026-09-30T10:00:00Z" });
   landCard("land-y", { alias: "rnd", status: "done", created_at: "2026-09-30T11:00:00Z" });
-  const clash = { status: 409, body: { error: "\"rnd\" is on more than one room", candidates: ["rnd@sg4 (sg4~land-x)", "rnd@m1 (m1~land-y)"] } };
+  const clash = { status: 409, body: { error: "\"rnd\" is on more than one room", candidates: ["rnd@room-e (room-e~land-x)", "rnd@m1 (m1~land-y)"] } };
   const lookups = {
     rnd: clash,
-    "sg4~land-x": { body: Object.assign({}, mock.LAND["land-x"], { id: "sg4~land-x" }) },
+    "room-e~land-x": { body: Object.assign({}, mock.LAND["land-x"], { id: "room-e~land-x" }) },
     "m1~land-y": { body: Object.assign({}, mock.LAND["land-y"], { id: "m1~land-y" }) },
-    "rnd@sg4": { body: Object.assign({}, mock.LAND["land-x"], { id: "sg4~land-x" }) }
+    "rnd@room-e": { body: Object.assign({}, mock.LAND["land-x"], { id: "room-e~land-x" }) }
   };
   try {
     // nothing remembered: the chooser, live before done, each one its qualified link. Picking remembers it for the path.
@@ -17041,7 +17066,7 @@ async function cardUrlClashSection(browser, base) {
     try {
       await r.page.waitForSelector("#cardurl:not([hidden]) .cu-row", { timeout: slow(15000) });
       const links = await cuLinks(r.page, "#cardurl");
-      if (links.join() !== "/room/sg4/rnd,/room/m1/rnd") fail("cardUrlClash: the chooser links are " + links.join());
+      if (links.join() !== "/room/room-e/rnd,/room/m1/rnd") fail("cardUrlClash: the chooser links are " + links.join());
       const t = await cuText(r.page, "#cardurl");
       if (!/more than one room/.test(t) || !/m1 {2}rnd {2}done/.test(t)) fail("cardUrlClash: the chooser says: " + t);
       if (await r.page.evaluate(() => soloID)) fail("cardUrlClash: a terminal opened with two candidates");
@@ -17053,7 +17078,7 @@ async function cardUrlClashSection(browser, base) {
     // the card this browser opened last time is one of them: it opens, with a line naming the other
     r = await cuOpen(browser, base, "/alias/rnd", lookups, () => localStorage.setItem("atrium.cardurl.alias:rnd", "land-x"));
     try {
-      await cuSolo(r.page, "sg4~land-x");
+      await cuSolo(r.page, "room-e~land-x");
       const t = await cuText(r.page, "#cardurl-note");
       if (!/@rnd is also on m1/.test(t)) fail("cardUrlClash: the remembered card's line says: " + t);
       const links = await cuLinks(r.page, "#cardurl-note");
@@ -17148,16 +17173,16 @@ async function cardUrlRoomSection(browser, base) {
   mock.hubMode = true;
   try {
     const seen = [];
-    const r = await cuOpen(browser, base, "/room/sgg", {}, () => { localStorage.setItem("atrium.room", "alpha"); localStorage.setItem("atrium.term", "alpha~t1"); });
+    const r = await cuOpen(browser, base, "/room/room-g", {}, () => { localStorage.setItem("atrium.room", "alpha"); localStorage.setItem("atrium.term", "alpha~t1"); });
     try {
       r.page.on("request", q => { if (new URL(q.url()).pathname === "/v1/tasks") seen.push(q.headers()["x-atrium-room"] || ""); });
-      await r.page.waitForFunction(() => typeof roomNow === "function" && roomNow() === "sgg", null, { timeout: slow(15000) });
+      await r.page.waitForFunction(() => typeof roomNow === "function" && roomNow() === "room-g", null, { timeout: slow(15000) });
       const got = await r.page.evaluate(() => ({ solo: document.body.classList.contains("solo"), term: localStorage.getItem("atrium.term"), room: localStorage.getItem("atrium.room") }));
-      if (got.solo || got.room !== "sgg") fail("cardUrlRoom: /room/sgg did not scope the board: " + JSON.stringify(got));
+      if (got.solo || got.room !== "room-g") fail("cardUrlRoom: /room/room-g did not scope the board: " + JSON.stringify(got));
       if (got.term) fail("cardUrlRoom: the card remembered from the other room stayed: " + got.term);
       await r.page.evaluate(() => runRefresh());
       await r.page.waitForTimeout(500);
-      if (!seen.length || seen.some(h => h !== "sgg")) fail("cardUrlRoom: board requests did not carry the room: " + JSON.stringify(seen));
+      if (!seen.length || seen.some(h => h !== "room-g")) fail("cardUrlRoom: board requests did not carry the room: " + JSON.stringify(seen));
       if (r.errors.length) fail("cardUrlRoom: the page threw: " + r.errors.join(" | "));
     } finally { await r.ctx.close(); }
   } finally {
@@ -17173,10 +17198,10 @@ async function cardUrlRoomSection(browser, base) {
 // what would have worked, and opening a card from the list puts its readable path in the bar. The lookups are mocked.
 async function mCardUrlSection(browser) {
   const st = mServer({});
-  const ta = mCard("card-a", { alias: "builder", room: "claude-sg4", wire_name: "sparta/builder-1", display_title: "the builder", status: "needs-input", waiting_since: mIso(5 * M_MIN) });
-  const tb = mCard("card-b", { room: "claude-sg4", wire_name: "sparta/handled", display_title: "only a handle", status: "needs-input", waiting_since: mIso(6 * M_MIN) });
+  const ta = mCard("card-a", { alias: "builder", room: "claude-room-e", wire_name: "sparta/builder-1", display_title: "the builder", status: "needs-input", waiting_since: mIso(5 * M_MIN) });
+  const tb = mCard("card-b", { room: "claude-room-e", wire_name: "sparta/handled", display_title: "only a handle", status: "needs-input", waiting_since: mIso(6 * M_MIN) });
   const tc = mCard("card-c", { alias: "builder", room: "r2", display_title: "the other builder", status: "running" });
-  const td = mCard("card-d", { alias: "solo", room: "claude-sg4", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
+  const td = mCard("card-d", { alias: "solo", room: "claude-room-e", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
   st.tasks = [ta, tb, tc, td];
   await st.open();
   const open = async (pathname, lookups, setup) => {
@@ -17223,7 +17248,7 @@ async function mCardUrlSection(browser) {
     } finally { await r.ctx.close(); }
 
     // the qualified address, by handle
-    r = await open("/m/room/claude-sg4/handled", { "handled@claude-sg4": { body: tb } });
+    r = await open("/m/room/claude-room-e/handled", { "handled@claude-room-e": { body: tb } });
     try {
       await r.p.waitForSelector("#m-card.on", { timeout: slow(10000) });
       if (!/only a handle/.test(await r.p.textContent("#m-card-head"))) fail("mCardUrl: /m/room/<room>/<name> opened the wrong card");
@@ -17243,25 +17268,25 @@ async function mCardUrlSection(browser) {
         return at;
       };
       const got = [await pushed("card-d"), await pushed("card-a"), await pushed("card-b")];
-      if (got.join() !== "/m/alias/solo,/m/room/claude-sg4/builder-1,/m/room/claude-sg4/handled") fail("mCardUrl: the pushed paths are " + got.join());
+      if (got.join() !== "/m/alias/solo,/m/room/claude-room-e/builder-1,/m/room/claude-room-e/handled") fail("mCardUrl: the pushed paths are " + got.join());
     } finally { await r.ctx.close(); }
 
     // a miss says what would have worked, as links to this page
-    r = await open("/m/alias/ghost", { ghost: { status: 404, body: { error: "no card called \"ghost\"", would_work: ["builder-1@claude-sg4 (@builder)", "plain@claude-sg4"] } } });
+    r = await open("/m/alias/ghost", { ghost: { status: 404, body: { error: "no card called \"ghost\"", would_work: ["builder-1@claude-room-e (@builder)", "plain@claude-room-e"] } } });
     try {
       await r.p.waitForFunction(() => { const e = document.getElementById("m-cardurl"); return e && !e.hidden; }, null, { timeout: slow(10000) });
       if (!/no card called ghost/.test(await said(r.p))) fail("mCardUrl: a miss says: " + await said(r.p));
-      if ((await links(r.p)).join() !== "/m/alias/builder,/m/room/claude-sg4/plain") fail("mCardUrl: the miss links are " + (await links(r.p)).join());
+      if ((await links(r.p)).join() !== "/m/alias/builder,/m/room/claude-room-e/plain") fail("mCardUrl: the miss links are " + (await links(r.p)).join());
       if (await r.p.evaluate(() => !document.getElementById("m-card").hidden)) fail("mCardUrl: a sheet opened on a miss");
     } finally { await r.ctx.close(); }
 
     // a clash: the list, then a remembered card opens
-    const clash = { status: 409, body: { error: "two", candidates: ["builder@claude-sg4 (claude-sg4~card-a)", "builder@r2 (r2~card-c)"] } };
-    const lookups = { builder: clash, "claude-sg4~card-a": { body: ta }, "r2~card-c": { body: tc } };
+    const clash = { status: 409, body: { error: "two", candidates: ["builder@claude-room-e (claude-room-e~card-a)", "builder@r2 (r2~card-c)"] } };
+    const lookups = { builder: clash, "claude-room-e~card-a": { body: ta }, "r2~card-c": { body: tc } };
     r = await open("/m/alias/builder", lookups);
     try {
       await r.p.waitForFunction(() => document.querySelectorAll("#m-cardurl a.cu-row").length === 2, null, { timeout: slow(10000) });
-      if ((await links(r.p)).join() !== "/m/room/r2/builder,/m/room/claude-sg4/builder" && (await links(r.p)).join() !== "/m/room/claude-sg4/builder,/m/room/r2/builder") fail("mCardUrl: the clash links are " + (await links(r.p)).join());
+      if ((await links(r.p)).join() !== "/m/room/r2/builder,/m/room/claude-room-e/builder" && (await links(r.p)).join() !== "/m/room/claude-room-e/builder,/m/room/r2/builder") fail("mCardUrl: the clash links are " + (await links(r.p)).join());
       if (await r.p.evaluate(() => !document.getElementById("m-card").hidden)) fail("mCardUrl: a sheet opened with two candidates");
     } finally { await r.ctx.close(); }
     r = await open("/m/alias/builder", lookups, () => localStorage.setItem("atrium.cardurl.alias:builder", "card-a"));
@@ -17788,11 +17813,11 @@ async function pasteImageSlowSection(browser, base) {
   const errors = [];
   const { ctx, p } = await pasteMockPage(browser, base, errors);
   const posts = [];
-  let uploadMs = 0;
+  let uploadMs = 0, emptyAnswer = false;
   await ctx.route("**/v1/tasks/*/files", async route => {
     if (route.request().method() === "POST") posts.push(route.request().url());
     if (uploadMs) await new Promise(r => setTimeout(r, uploadMs)); // wait: simulated upload latency
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/x/pasted.png"] }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: emptyAnswer ? "" : JSON.stringify({ paths: ["/x/pasted.png"] }) });
   });
   try {
     const run = how => p.evaluate(async how => {
@@ -17813,14 +17838,15 @@ async function pasteImageSlowSection(browser, base) {
       await new Promise(r => setTimeout(r, 2600)); // wait: longer than the paste wait, so the box has opened
       return !document.getElementById("t-paste").hidden;
     }, how);
-    for (const how of ["slow read", "slow upload", "empty first"]) {
+    for (const how of ["slow read", "slow upload", "empty first", "empty answer"]) {
       posts.length = 0;
       uploadMs = how === "slow upload" ? 1800 : 0;
+      emptyAnswer = how === "empty answer";
       const box = await run(how);
       if (box) fail("pasteImageSlow " + how + ": the paste box popped");
       if (posts.length !== 1) fail("pasteImageSlow " + how + ": " + posts.length + " uploads, want 1");
     }
-    uploadMs = 0;
+    uploadMs = 0; emptyAnswer = false;
     if (!await run("prompt")) fail("pasteImageSlow: an unanswered prompt did not open the paste box");
     posts.length = 0;
     if (!await run("late read")) fail("pasteImageSlow: a read still unanswered at the wait did not open the paste box");
@@ -19161,7 +19187,7 @@ async function mHomePickerSection(browser) {
 async function mNoSidewaysSection(browser) {
   const tag = "mNoSideways: ";
   const st = mServer({});
-  const long = "/home/clint/git/github/dovholuknf/atrium-worktrees/claude/bug-phone-page-scrolls-sideways/internal/api/web/m/js/home.js";
+  const long = "/home/operator/git/github/dovholuknf/atrium-worktrees/claude/bug-phone-page-scrolls-sideways/internal/api/web/m/js/home.js";
   st.tasks = mNeedsCards().concat([mCard("wide-1", { alias: long, display_title: "x".repeat(90), worktree: long, status: "needs-input", waiting_since: mIso(3 * M_MIN), tags: ["a-very-long-unbroken-group-tag-name-that-keeps-going-and-going"] })]);
   await st.open();
   const shots = process.env.NOSIDEWAYS_SHOTS, shotTag = process.env.NOSIDEWAYS_TAG || "after";
@@ -19540,7 +19566,7 @@ async function mDocsSection(browser) {
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   hub.add("usage-md", "Usage <b>report</b>", [
     { bytes: "# Usage\n\nfirst version\n\n- one\n- two\n", origin: "local", by: "operator" },
-    { bytes: "# Usage\n\nsecond version <script>window.__pwn = 1</script>\n\n[x](javascript:window.__pwn=2)\n\n- one\n- three\n", origin: "card", by: "r-031@sg4", card: "dc-1", room: "sg4" }]);
+    { bytes: "# Usage\n\nsecond version <script>window.__pwn = 1</script>\n\n[x](javascript:window.__pwn=2)\n\n- one\n- three\n", origin: "card", by: "r-031@room-e", card: "dc-1", room: "room-e" }]);
   hub.add("shot", "Screenshot", [{ bytes: png, kind: "image", mime: "image/png", name: "shot.png", origin: "share", by: "share" }]);
   hub.add("vector", "A vector", [{ bytes: "<svg xmlns='http://www.w3.org/2000/svg'><script>window.__pwn=3</script></svg>", kind: "other", mime: "image/svg+xml", name: "v.svg" }]);
   hub.add("patch", "A patch", [{ bytes: "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n context\n-old line\n+new line\n+++not a header but an addition\n---not a header but a removal\n", kind: "diff", name: "p.diff" }]);
@@ -19572,9 +19598,9 @@ async function mDocsSection(browser) {
       if (titles.some(t => t === "An old one")) fail(tag + "a deleted document is in the main list");
       if (await p.$("#m-docs .d-t b")) fail(tag + "a title was set as markup");
       const meta = await p.$$eval("#m-docs .d-m", e => e.map(x => x.textContent).join(" || "));
-      if (!/you, at the machine/.test(meta) || !/uploaded over the share/.test(meta) || !/r-031@sg4/.test(meta)) fail(tag + "origins are not shown: " + meta);
+      if (!/you, at the machine/.test(meta) || !/uploaded over the share/.test(meta) || !/r-031@room-e/.test(meta)) fail(tag + "origins are not shown: " + meta);
       const rooms = await p.$$eval("#m-docs .d-room", e => e.map(x => x.textContent));
-      if (!rooms.includes("sg4") || !rooms.includes("hub")) fail(tag + "a row does not say which room it is from: " + rooms.join("|"));
+      if (!rooms.includes("room-e") || !rooms.includes("hub")) fail(tag + "a row does not say which room it is from: " + rooms.join("|"));
       await mShot(p, "docs-list-" + vp.width);
       // the title filter goes to the hub as q
       await p.fill("#m-docs .d-q", "usage");
@@ -19612,7 +19638,7 @@ async function mDocsSection(browser) {
       if (await p.evaluate(() => window.__pwn)) fail(tag + "a script from a document ran");
       if (await p.$('#m-docs .d-content a[href^="javascript:"]')) fail(tag + "a javascript: link survived");
       if ((await p.textContent("#m-docs .d-h1")) !== "Usage <b>report</b>") fail(tag + "the title is not plain text");
-      if (!/r-031@sg4/.test(await p.textContent("#m-docs .d-info"))) fail(tag + "the origin is not shown");
+      if (!/r-031@room-e/.test(await p.textContent("#m-docs .d-info"))) fail(tag + "the origin is not shown");
       await mShot(p, "docs-doc-" + vp.width);
       // versions: the control, the history, a compare with colours, and the address of one version
       await p.selectOption("#m-docs .d-vrow select", "1");
@@ -20735,9 +20761,9 @@ async function nestCrossRoomSection(browser, base) {
     await p.waitForFunction(() => typeof termNest === "function" && typeof subagentRollup === "function", null, { timeout: slow(15000) });
     const got = await p.evaluate(() => {
       const mk = (id, wire, extra) => Object.assign({ id, wire_name: wire, tags: [], status: "running", display_title: id }, extra || {});
-      const boss = mk("sg4~b1", "sg4/boss", { tags: ["origin:agent"] });
+      const boss = mk("room-e~b1", "room-e/boss", { tags: ["origin:agent"] });
       const decoy = mk("kc~b2", "kc/boss", { tags: ["origin:agent"] });
-      const kid = mk("kc~k1", "kc/kid", { tags: ["atrium:subagent"], spawned_by: "boss@sg4" });
+      const kid = mk("kc~k1", "kc/kid", { tags: ["atrium:subagent"], spawned_by: "boss@room-e" });
       const all = [decoy, kid, boss];
       const nest = termNest(all);
       const roll = subagentRollup(all, false);
@@ -20747,10 +20773,10 @@ async function nestCrossRoomSection(browser, base) {
         chain: revealChain(kid).map(x => x.id).join(">"), running: hasRunningChild(boss, all)
       };
     });
-    const k = got.kids.find(e => e[0] === "sg4~b1");
+    const k = got.kids.find(e => e[0] === "room-e~b1");
     if (!k || k[1].join() !== "kc~k1") fail("nestCrossRoom: the child did not nest under its launcher on the other room: " + JSON.stringify(got.kids));
     if (got.kids.some(e => e[0] === "kc~b2")) fail("nestCrossRoom: the child nested under a same-named card on the wrong room");
-    if (!got.rolled.includes("kc~k1") || !got.badge.some(e => e[0] === "sg4~b1" && e[1] === 1)) fail("nestCrossRoom: stack/board did not roll the child up under its launcher: " + JSON.stringify(got));
+    if (!got.rolled.includes("kc~k1") || !got.badge.some(e => e[0] === "room-e~b1" && e[1] === 1)) fail("nestCrossRoom: stack/board did not roll the child up under its launcher: " + JSON.stringify(got));
     if (got.running !== true) fail("nestCrossRoom: hasRunningChild missed the cross-room child");
     if (errors.length) fail("nestCrossRoom: page errors: " + errors.join("; "));
     else console.log("nestCrossRoom ok");
@@ -20801,10 +20827,10 @@ async function termtermTileMatchesPaneSection(browser, base) {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof termRow === "function" && typeof termInheritedTheme === "function", null, { timeout: slow(15000) });
     const got = await p.evaluate(() => {
-      const boss = { id: "claude-sg4~01a149df-3435-784b-8e8f-5fb18223f63f", tags: ["origin:agent"], status: "running", supervised: true,
+      const boss = { id: "claude-room-e~01a149df-3435-784b-8e8f-5fb18223f63f", tags: ["origin:agent"], status: "running", supervised: true,
         theme: "teal-dusk", display_title: "boss" };
-      const hook = { id: "claude-sg4~01a14a03-4243-732c-85d4-fe2d633cdc9d", tags: ["atrium:subagent"], status: "running", supervised: true,
-        theme: "", alias: "zero-trust-webhook", repo: "ziti-hook", hostname: "sg4", launcher_id: "01a149df-3435-784b-8e8f-5fb18223f63f",
+      const hook = { id: "claude-room-e~01a14a03-4243-732c-85d4-fe2d633cdc9d", tags: ["atrium:subagent"], status: "running", supervised: true,
+        theme: "", alias: "zero-trust-webhook", repo: "ziti-hook", hostname: "room-e", launcher_id: "01a149df-3435-784b-8e8f-5fb18223f63f",
         spawned_by_id: "01a149df-3435-784b-8e8f-5fb18223f63f", worktree: "D:/worktrees/github/dovholuknf/ziti-hook-minion",
         display_title: "zero-trust-webhook" };
       lastTasks = [boss, hook];
@@ -20941,7 +20967,7 @@ async function terminalsOneLineSection(browser, base) {
           mk("p2", Object.assign({ display_title: "short" }, parked)),
         ];
         termKidsPool = new Map([["r3", [{ id: "kid" }]]]);
-        try { window.roomOf = () => "claude-sg4"; } catch (e) {}
+        try { window.roomOf = () => "claude-room-e"; } catch (e) {}
         const old = document.getElementById("oneline-host");
         if (old) old.remove();
         const host = document.createElement("div");
@@ -21248,13 +21274,13 @@ async function termHeaderSizeSection(browser, base) {
 // A LINK ANOTHER ROOM HOLDS: the dialog says who holds it before go, a room picked by name is sent as a pick, and a
 // live card at the holder is brought up (here, or raised in its window) with nothing launched.
 async function heldLinkSection(browser, base) {
-  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
   mock.hubMode = true;
-  mock.sggAttached = true;
+  mock.roomGAttached = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(body) });
   const calls = [];
-  const holder = { owner: "sgg", card: "live-1" };
+  const holder = { owner: "room-g", card: "live-1" };
   const link = "https://github.com/openziti/zrok/issues/5";
   try {
     const p = await ctx.newPage();
@@ -21268,7 +21294,7 @@ async function heldLinkSection(browser, base) {
         cwd: "/wt/issue-5", title: "issue 5", prompt: "investigate", tags: ["issue"], branch: "issue-5", org: "openziti", repo: "zrok",
         vars: { org: "openziti", repo: "zrok", num: "5", host: "github.com" } });
       if (u.pathname === "/v1/open") return json(r, { key: "github.com/openziti/zrok/i5", kind: "issue", card: "live-1", live: true,
-        held_by: "sgg", created: false, title: "issue 5" });
+        held_by: "room-g", created: false, title: "issue 5" });
       return json(r, { id: "live-1", status: "running", title: "issue 5" });
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
@@ -21278,13 +21304,13 @@ async function heldLinkSection(browser, base) {
     await p.waitForFunction(() => /already working on this/.test(document.getElementById("l-link-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("heldLink: the dialog did not say who holds the link: " + calls.join(" | ")));
     const note = await p.textContent("#l-link-note");
-    if (!/sgg is already working on this, go brings its card up/.test(note)) fail("heldLink: the note read " + note);
+    if (!/room-g is already working on this, go brings its card up/.test(note)) fail("heldLink: the note read " + note);
     // picking the holder's own room says nothing
-    await p.selectOption("#l-room", "sgg");
+    await p.selectOption("#l-room", "room-g");
     await p.evaluate(() => { document.getElementById("l-link-note").textContent = "clear"; return noteHolder(); });
     if (await p.textContent("#l-link-note") !== "clear") fail("heldLink: the holder's own room was told it was held by itself");
     // the other room is sent as a pick, and the live card comes up with nothing launched
-    const other = await p.evaluate(() => [...document.querySelectorAll("#l-room option")].map(o => o.value).find(v => v && v !== "sgg"));
+    const other = await p.evaluate(() => [...document.querySelectorAll("#l-room option")].map(o => o.value).find(v => v && v !== "room-g"));
     await p.selectOption("#l-room", other);
     calls.length = 0;
     await p.evaluate(() => doLaunch());
@@ -21299,7 +21325,7 @@ async function heldLinkSection(browser, base) {
     if (errors.length) fail("heldLink: page errors: " + errors.join(" | "));
   } finally {
     mock.hubMode = wasHub;
-    mock.sggAttached = wasSgg;
+    mock.roomGAttached = wasRoomG;
     await ctx.close();
   }
   if (!bad) console.log("heldLink ok");
@@ -21385,7 +21411,7 @@ async function discreteGroupSection(browser, base) {
     if (!/js\/cardrules\.js/.test(fs.readFileSync(path.join(WEB_ROOT, "m", "index.html"), "utf8"))) fail("discreteGroup: the phone page no longer loads cardrules.js");
     if ((await p.evaluate(() => cardProjectOf({ worktree: "/w/github/o/r" }))) !== "o/r") fail("discreteGroup: the default project rule broke");
     if ((await p.evaluate(() => [cardProjectOf({ worktree: "D:/worktrees/claude/cards/a-b12345/work", org: "openziti", repo: "ziti-sdk-csharp" }), cardProjectOf({ worktree: "D:/worktrees/claude/cards/a-b12345/work" })].join("|"))) !== "openziti/ziti-sdk-csharp|") fail("discreteGroup: a card home did not group under its origin or none");
-    if ((await p.evaluate(() => [["csharp-ci-gqi9x0", "openziti", "ziti-sdk-csharp"], ["interview-nfpreview-backward-compat-exce-mntw4i", "openziti-test-kitchen", "docpreview"], ["mcp-gateway-transport-mtls-zrok-private-ilua7r", "openziti", "mcp-gateway"]].map(([d, org, repo]) => terminalLabel({ worktree: "D:/worktrees/claude/cards/" + d + "/work", host: "github", org, repo, branch: "claude/x" }) + "=" + cardProjectOf({ worktree: "D:/worktrees/claude/cards/" + d + "/work", host: "github", org, repo })).join("|"))) !== "github/openziti/ziti-sdk-csharp:claude/x=openziti/ziti-sdk-csharp|github/openziti-test-kitchen/docpreview:claude/x=openziti-test-kitchen/docpreview|github/openziti/mcp-gateway:claude/x=openziti/mcp-gateway") fail("discreteGroup: the sg4 card homes did not group under their repos");
+    if ((await p.evaluate(() => [["csharp-ci-gqi9x0", "openziti", "ziti-sdk-csharp"], ["interview-nfpreview-backward-compat-exce-mntw4i", "openziti-test-kitchen", "docpreview"], ["mcp-gateway-transport-mtls-zrok-private-ilua7r", "openziti", "mcp-gateway"]].map(([d, org, repo]) => terminalLabel({ worktree: "D:/worktrees/claude/cards/" + d + "/work", host: "github", org, repo, branch: "claude/x" }) + "=" + cardProjectOf({ worktree: "D:/worktrees/claude/cards/" + d + "/work", host: "github", org, repo })).join("|"))) !== "github/openziti/ziti-sdk-csharp:claude/x=openziti/ziti-sdk-csharp|github/openziti-test-kitchen/docpreview:claude/x=openziti-test-kitchen/docpreview|github/openziti/mcp-gateway:claude/x=openziti/mcp-gateway") fail("discreteGroup: the room-e card homes did not group under their repos");
     if ((await p.evaluate(() => { localStorage.setItem("atrium.grouping.terms", JSON.stringify({ mode: "window" })); return groupingPrefs("terms").mode; })) !== "project") fail("discreteGroup: a saved window mode did not fall back to project");
 
     // The repos tab.
@@ -21580,13 +21606,13 @@ async function repoColorsSection(browser, base) {
 
     const r = await p.evaluate(() => {
       const put = (d, repos) => repoColorsHave({ card_colors: { default: d, repos } });
-      const plain = { id: "x", worktree: "/Users/me/git/github/temp/clintify/b1" };
+      const plain = { id: "x", worktree: "/Users/me/git/github/temp/themed/b1" };
       const ziti = { id: "z", worktree: "/Users/me/git/github/someone/ziti/b" };
       put("", {});
       const out = { plain: wearFor(plain) };
-      put("", { "github/temp/clintify": "dracula" });
+      put("", { "github/temp/themed": "dracula" });
       out.keyed = themeSource(plain) === themeNamed("dracula");
-      out.otherProvider = themeSource({ id: "y", worktree: "/Users/me/git/gitlab/temp/clintify/b1" });
+      out.otherProvider = themeSource({ id: "y", worktree: "/Users/me/git/gitlab/temp/themed/b1" });
       out.noLeaf = themeSource(ziti) === null;
       put("pumpkin", {});
       out.def = themeSource({ id: "q", worktree: "/tmp/q" }) === themeNamed("pumpkin");
@@ -21723,14 +21749,14 @@ async function workerCardColorsSection(browser, base) {
       { timeout: slow(15000) });
     const themes = await p.evaluate(() => Object.keys(TERM_THEMES));
     mock.wornTasks = [
-      row("sg4-control~ogorch", { display_title: "ogorch", theme: "nord", tags: ["atrium:orchestrator"] }),
-      row("sg4-control~wk-here", { display_title: "install-services-design", launcher_id: "ogorch", tags: worker }),
-      row("claude-sg4~wk-there", { display_title: "file-menu-html", launcher_id: "ogorch", tags: worker })
-    ].concat(themes.map(n => row("claude-sg4~th-" + n, { display_title: "themed " + n, theme: n })));
+      row("room-e-control~ogorch", { display_title: "ogorch", theme: "nord", tags: ["atrium:orchestrator"] }),
+      row("room-e-control~wk-here", { display_title: "install-services-design", launcher_id: "ogorch", tags: worker }),
+      row("claude-room-e~wk-there", { display_title: "file-menu-html", launcher_id: "ogorch", tags: worker })
+    ].concat(themes.map(n => row("claude-room-e~th-" + n, { display_title: "themed " + n, theme: n })));
     mock.tasksMode = "worn";
     await p.click('.tab[data-view="terms"]');
     await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
-    await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~wk-here"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForSelector('#term-list .card.tab[data-id="room-e-control~wk-here"]', { state: "attached", timeout: slow(15000) });
     if (process.env.WORKER_COLORS_SHOT) {
       await p.evaluate(() => document.querySelectorAll("#term-list .card.tab").forEach(c => {
         const chips = c.querySelector(".chips") || c.querySelector(".card-line");
@@ -21740,7 +21766,7 @@ async function workerCardColorsSection(browser, base) {
       }));
       await p.evaluate(() => document.documentElement.setAttribute("data-skin", "paper"));
       const clip = await p.evaluate(() => {
-        const els = ["sg4-control~ogorch", "sg4-control~wk-here", "claude-sg4~wk-there"]
+        const els = ["room-e-control~ogorch", "room-e-control~wk-here", "claude-room-e~wk-there"]
           .map(id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]'));
         els[0].scrollIntoView({ block: "start" });
         const rs = els.map(el => el.getBoundingClientRect());
@@ -21756,8 +21782,8 @@ async function workerCardColorsSection(browser, base) {
         const el = document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
         return el ? { worn: el.classList.contains("worn"), bg: getComputedStyle(el).backgroundColor } : null;
       };
-      return { orch: one("sg4-control~ogorch"), here: one("sg4-control~wk-here"), there: one("claude-sg4~wk-there"),
-        source: themeSource(lastTasks.find(t => t.id === "sg4-control~wk-here")) };
+      return { orch: one("room-e-control~ogorch"), here: one("room-e-control~wk-here"), there: one("claude-room-e~wk-there"),
+        source: themeSource(lastTasks.find(t => t.id === "room-e-control~wk-here")) };
     });
     if (!look.orch || !look.here || !look.there) fail(tag + "a row is missing " + JSON.stringify(look));
     else {
@@ -21783,7 +21809,7 @@ async function workerCardColorsSection(browser, base) {
     if (!inherit.doer) fail(tag + "a card that is no worker lost its launcher's theme");
 
     await p.click('.tab[data-view="board"]');
-    await p.waitForSelector('.card:not(.tab)[data-id="sg4-control~wk-here"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForSelector('.card:not(.tab)[data-id="room-e-control~wk-here"]', { state: "attached", timeout: slow(15000) });
     const skins = [""].concat(await p.evaluate(async () => {
       const css = await (await fetch("/css/themes.css")).text();
       return [...new Set([...css.matchAll(/data-skin="([^"]+)"/g)].map(m => m[1]))];
@@ -21995,7 +22021,7 @@ async function cardUrlWayOutSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   mock.landList = [];
-  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
+  landCard("land-a", { alias: "rnd", room: "claude-room-e", wire_name: "sparta/rnd-director" });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   try {
     for (const v of [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }]) {
@@ -22049,8 +22075,8 @@ async function cardUrlWayOutSection(browser, base) {
 
   // the phone page
   const st = mServer({});
-  const ta = mCard("card-a", { alias: "solo", room: "claude-sg4", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
-  const tb = mCard("card-b", { alias: "other", room: "claude-sg4", display_title: "the other one", status: "running" });
+  const ta = mCard("card-a", { alias: "solo", room: "claude-room-e", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
+  const tb = mCard("card-b", { alias: "other", room: "claude-room-e", display_title: "the other one", status: "running" });
   st.tasks = [ta, tb];
   await st.open();
   try {
@@ -22100,8 +22126,8 @@ async function phoneBootSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   mock.landList = [];
-  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
-  landCard("land-b", { alias: "second", room: "claude-sg4", wire_name: "sparta/second", supervised: true });
+  landCard("land-a", { alias: "rnd", room: "claude-room-e", wire_name: "sparta/rnd-director", supervised: true });
+  landCard("land-b", { alias: "second", room: "claude-room-e", wire_name: "sparta/second", supervised: true });
   mock.landList = [mock.LAND["land-a"], mock.LAND["land-b"]];
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   try {
@@ -22748,13 +22774,13 @@ async function heldStripSection(browser, base) {
     { id: "jn", status: "needs-permission", supervised: false, title: "jn", display_title: "resumed outside atrium", tags: [] }];
   const decided = [];
   await p.route(u => u.pathname === "/v1/permissions", async r => { const snap = held; await new Promise(f => setTimeout(f, 250)); r.fulfill({ json: { permissions: snap } }); }); // a slow read is what left the room cache stale
-  await p.route(u => u.pathname === "/v1/rooms", r => r.fulfill({ json: { rooms: [{ name: "sg3", requests: remote }] } }));
+  await p.route(u => u.pathname === "/v1/rooms", r => r.fulfill({ json: { rooms: [{ name: "room-d", requests: remote }] } }));
   await p.route(u => u.pathname === "/v1/tasks", r => r.fulfill({ json: { tasks: cards } }));
   await p.route(u => /\/decide$/.test(u.pathname), r => {
     const at = new URL(r.request().url()).pathname;
     decided.push(at + " " + JSON.parse(r.request().postData()).decision);
     held = held.filter(h => !at.endsWith("/" + h.id + "/decide") || at.includes("/rooms/"));
-    if (at.includes("/rooms/sg3/")) remote = [];
+    if (at.includes("/rooms/room-d/")) remote = [];
     r.fulfill({ json: { ok: true } });
   });
   const rows = () => p.$$eval("#held-strip .held-row", rs => rs.map(r => ({ id: r.dataset.id, text: r.innerText.replace(/\s+/g, " "),
@@ -22766,8 +22792,8 @@ async function heldStripSection(browser, base) {
     await p.waitForFunction(() => document.querySelectorAll("#held-strip .held-row").length === 2, null, { timeout: slow(8000) })
       .catch(() => fail(tag + "the strip did not list the owned card and the other room's"));
     let got = await rows();
-    if (got.map(r => r.id).join() !== "sg3/r9,pa") fail(tag + "with nothing attached the strip lists " + JSON.stringify(got));
-    if (!/hub-push-log/.test(got[0].text) || !/on sg3/.test(got[0].text) || !/Edit internal\/hubstore\/push\.go/.test(got[0].text)) {
+    if (got.map(r => r.id).join() !== "room-d/r9,pa") fail(tag + "with nothing attached the strip lists " + JSON.stringify(got));
+    if (!/hub-push-log/.test(got[0].text) || !/on room-d/.test(got[0].text) || !/Edit internal\/hubstore\/push\.go/.test(got[0].text)) {
       fail(tag + "the other room's row reads " + JSON.stringify(got[0].text));
     }
     if (got[1].btns.join() !== "approve once,block once,open in perms") fail(tag + "the owned row's buttons are " + got[1].btns.join());
@@ -22794,18 +22820,18 @@ async function heldStripSection(browser, base) {
 
     await p.evaluate(() => { termTask = cardList().find(c => c.id === "ow"); renderTermPerm(); });
     got = await rows();
-    if (got.map(r => r.id).join() !== "sg3/r9,pj") fail(tag + "with the owned card attached the strip lists " + JSON.stringify(got.map(r => r.id)));
+    if (got.map(r => r.id).join() !== "room-d/r9,pj") fail(tag + "with the owned card attached the strip lists " + JSON.stringify(got.map(r => r.id)));
     const jn = got.find(r => r.id === "pj") || { text: "", btns: [] };
     if (!/resumed outside atrium/.test(jn.text) || !/no terminal here/.test(jn.text)) fail(tag + "the joined row reads " + JSON.stringify(jn.text));
     if (jn.btns.join() !== "approve once,block once,open in perms,adopt into atrium") fail(tag + "the joined row's buttons are " + jn.btns.join());
 
-    await p.click("#held-strip .held-row[data-id='sg3/r9'] button.go");
+    await p.click("#held-strip .held-row[data-id='room-d/r9'] button.go");
     await until(() => decided.length === 1, 5000, "the room's decide POST").catch(() => {});
-    if (decided.join() !== "/v1/rooms/sg3/permissions/r9/decide approve") fail(tag + "the room's approve posted " + JSON.stringify(decided));
+    if (decided.join() !== "/v1/rooms/room-d/permissions/r9/decide approve") fail(tag + "the room's approve posted " + JSON.stringify(decided));
     await p.click("#held-strip .held-row[data-id='pj'] button.go");
     await until(() => decided.length === 2, 5000, "the local decide POST").catch(() => {});
     if (decided[1] !== "/v1/permissions/pj/decide approve") fail(tag + "the local approve posted " + JSON.stringify(decided));
-    await p.waitForFunction(() => !document.querySelector("#held-strip .held-row[data-id='pj'], #held-strip .held-row[data-id='sg3/r9']"),
+    await p.waitForFunction(() => !document.querySelector("#held-strip .held-row[data-id='pj'], #held-strip .held-row[data-id='room-d/r9']"),
       null, { timeout: slow(5000) }).catch(async () => {
       // Which queue still holds the row tells a stale in-flight read from a repaint that never ran.
       const now = await p.evaluate(() => ({ perms: permsLocal.map(x => x.id), remote: remoteLocal.map(x => x.id),
@@ -22838,7 +22864,7 @@ async function termEndedSection(browser, base) {
       const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id, display_title: id, tags: [], ...extra });
       window.__cards = [card("lv", "running", { supervised: true, display_title: "live one" }),
         card("dn", "done", { display_title: "ship the thing", report_sha: "7062cc11aabbccdd", last_activity_at: h(2) }),
-        card("bl", "done", { display_title: "needs a key", recap: "tried\n\nneeds: the signing key, from clint", last_activity_at: h(5) }),
+        card("bl", "done", { display_title: "needs a key", recap: "tried\n\nneeds: the signing key, from operator", last_activity_at: h(5) }),
         card("cr", "dead", { display_title: "crashed worker", last_activity_at: h(30) }),
         card("ex", "done", { display_title: "plain exit", last_activity_at: h(50) }),
         card("r2~rm", "done", { room: "r2", display_title: "remote ended", report_sha: "abcdef0123456789", last_activity_at: h(1) })];
@@ -22875,7 +22901,7 @@ async function termEndedSection(browser, base) {
       stored: localStorage.getItem("atrium.termended")
     }));
     if (open.rows.length !== 4) fail("termEnded: opening shows the room's four rows: " + JSON.stringify(open));
-    const want = [/ship the thing.*done 7062cc11.*2h.* ago/, /needs a key.*blocked: the signing key, from clint.*5h/, /crashed worker.*crashed.*1d/, /plain exit.*exited/];
+    const want = [/ship the thing.*done 7062cc11.*2h.* ago/, /needs a key.*blocked: the signing key, from operator.*5h/, /crashed worker.*crashed.*1d/, /plain exit.*exited/];
     want.forEach((re, i) => { if (!re.test(open.rows[i])) fail("termEnded: row " + i + " reads '" + open.rows[i] + "', wanted " + re); });
     if (open.stored !== '[""]') fail("termEnded: the open state is not kept: " + open.stored);
     await p.reload({ waitUntil: "domcontentloaded" });
@@ -23244,8 +23270,8 @@ async function u002Section(browser, base) {
 }
 
 async function childFoldSticksSection(browser, base) {
-  for (const [name, par, kid] of [["bare ids", "", ""], ["hub ids, one room", "m1mini~", "m1mini~"],
-    ["hub ids, child on another room", "m1mini~", "sg3~"]]) await childFoldSticksWith(browser, base, name, par, kid);
+  for (const [name, par, kid] of [["bare ids", "", ""], ["hub ids, one room", "room-a~", "room-a~"],
+    ["hub ids, child on another room", "room-a~", "room-d~"]]) await childFoldSticksWith(browser, base, name, par, kid);
 }
 async function childFoldSticksWith(browser, base, name, PP, KP) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -23262,7 +23288,7 @@ async function childFoldSticksWith(browser, base, name, PP, KP) {
     const card = (id, at, more) => ({ id: PP + id, status: "running", supervised: true, pinned: false, title: id,
       display_title: id, tags: [], created_at: at, worktree: "/r/" + id, ...more });
     const sub = (id, at, by) => ({ ...card(id, at, { tags: ["atrium:subagent", "origin:agent"], spawned_by_id: PP + by,
-      wire_name: undefined }), id: KP + id, spawned_by: PP === KP ? undefined : by + "@m1mini" });
+      wire_name: undefined }), id: KP + id, spawned_by: PP === KP ? undefined : by + "@room-a" });
     const cards = [card("opened", "2026-09-01T10:00:00Z"), sub("o-kid", "2026-09-02T10:00:00Z", "opened"),
       card("never", "2026-09-03T10:00:00Z"), sub("n-kid", "2026-09-04T10:00:00Z", "never")];
     extra.forEach(id => cards.push(sub(id, "2026-09-05T10:00:00Z", "opened")));
@@ -23566,7 +23592,7 @@ async function termRowChipsSection(browser, base) {
         <div class="title"><span class="pin">&#9734;</span><span class="tstack"
           ><span class="tname">ziti-hook minion: builds what ziti-edge-tunnel needs before it can run</span
           ><span class="tpath">github/dovholuknf/atrium:claude/ziti-hook-minion-builds-things</span></span></div>
-        <div class="chips"><span class="chip warn">? 1</span><span class="chip arrived">new</span><span class="chip room" style="--rhue:200">claude-sg4</span></div>
+        <div class="chips"><span class="chip warn">? 1</span><span class="chip arrived">new</span><span class="chip room" style="--rhue:200">claude-room-e</span></div>
       </div></div></div>`;
       document.body.appendChild(list);
       const fit = el => ({ scroll: el.scrollWidth, client: el.clientWidth });
@@ -23618,7 +23644,7 @@ async function termNameClearsChipsSection(browser, base) {
         setGrouping({ label: "alias" }, "terms");
         termKidsPool = new Map();
         termKids = new Map(rows.map(r => [r.id, [{ id: r.id + "a" }, { id: r.id + "b" }]]));
-        try { window.roomOf = () => "claude-sg4"; } catch (e) {}
+        try { window.roomOf = () => "claude-room-e"; } catch (e) {}
         rows.forEach(r => { if (!termKidsShut(r)) foldedColumns().push(termKidsKey(r)); });
         const old = document.getElementById("nameclear-host");
         if (old) old.remove();
@@ -23665,9 +23691,9 @@ async function rowTextClearsChipsSection(browser, base) {
         const got = await p.evaluate((scale) => {
           document.documentElement.style.setProperty("--uiscale", String(scale));
           hubIsHub = true;
-          window.roomOf = () => "claude-sg4";
+          window.roomOf = () => "claude-room-e";
           const long = "netfoundry/mcp-connect-with-a-very-long-repository-name-that-cannot-fit";
-          const mk = (id, extra) => Object.assign({ id, tags: ["origin:agent"], status: "running", supervised: true, room: "claude-sg4",
+          const mk = (id, extra) => Object.assign({ id, tags: ["origin:agent"], status: "running", supervised: true, room: "claude-room-e",
             runner: "claude", display_title: "github/" + long + ":claude/exploring-mcp-connect",
             worktree: "C:/Users/someone/github/" + long + ":claude/exploring-mcp-connect",
             cwd: "github/" + long, seen: { answered: false, open_questions: ["a", "b"], questions_at: "2026-11-10T10:00:00Z" } }, extra || {});
@@ -25075,7 +25101,7 @@ async function yqTourFixesSection(browser, base) {
       const hour = new Date(Date.now() - 3600000).toISOString(), at = new Date().toISOString();
       const card = (id, more) => Object.assign({ id, status: "running", supervised: true, pinned: false, title: id, display_title: id,
         tags: [], worktree: "/w/" + id, created_at: hour, last_activity_at: at }, more);
-      hubRooms = [{ name: "sg3" }];
+      hubRooms = [{ name: "room-d" }];
       window.__cards = [
         card("try", { status: "needs-input", ask: "try demo/page.html", ask_at: hour, ask_verb: "try" }),
         card("perm", { status: "needs-permission", supervised: false, pid: 0 }),
@@ -25091,7 +25117,7 @@ async function yqTourFixesSection(browser, base) {
     const ask = key => p.evaluate(k => { const a = yqAsks(lastTasks).find(x => x.key === k); return a ? { verb: a.verb, nogate: !!a.nogate, pages: a.pages || null } : null; }, key);
 
     const tried = await ask("card:try");
-    if (!tried || tried.verb !== "TRY" || tried.pages.join() !== "/room/sg3/try/files/demo/page.html") fail("yqTourFixes: a one-room page was lost: " + JSON.stringify(tried));
+    if (!tried || tried.verb !== "TRY" || tried.pages.join() !== "/room/room-d/try/files/demo/page.html") fail("yqTourFixes: a one-room page was lost: " + JSON.stringify(tried));
     await p.evaluate(() => document.querySelector('#yq-list .yq-row[data-yq="card:try"]').click());
     if (await p.evaluate(() => !document.getElementById("yq-frame") || !!document.querySelector('#yq-ask [data-yq-do="sign"]'))) fail("yqTourFixes: a TRY ask on one room did not show its page");
 
@@ -25492,7 +25518,7 @@ const SOUND_POLICY = () => {
 async function phoneBoardCompactSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  const mk = (n, over) => landCard(n + "~land-" + n, Object.assign({ supervised: true, created_at: "2026-09-19T12:00:00Z", worktree: "/home/clint/git/github/openziti/ziti-sdk-c-" + n,
+  const mk = (n, over) => landCard(n + "~land-" + n, Object.assign({ supervised: true, created_at: "2026-09-19T12:00:00Z", worktree: "/home/operator/git/github/openziti/ziti-sdk-c-" + n,
     tags: ["gwt", "orchestrators", "ziti-sdk-c", "needs-review", "backlog-grooming"] }, over || {}));
   mock.landList = [mk("aa"), mk("bb"), mk("cc"), mk("dd")];
   mock.landPerms = [];
@@ -26209,7 +26235,7 @@ async function selectedFitsLoneSection(browser, base) {
     await p.evaluate(() => {
       const cards = [{ id: "first", status: "running", supervised: true, starting: true, pinned: false, title: "first card",
         display_title: "first card", tags: [], created_at: "2026-11-18T10:00:00Z", repo: "work", branch: "main",
-        worktree: "/Users/claude/atrium/cards/m1mini-try-hub-xan8i1/work" }];
+        worktree: "/Users/claude/atrium/cards/room-a-try-hub-xan8i1/work" }];
       boardCards = async () => cards;
       lastTasks = cards;
       term = term || { options: {}, dispose() {} };
@@ -26460,10 +26486,10 @@ async function docsPageSection(browser, base) {
   const mk = (slug, title, kind, versions, by) => ({ slug, title, created: at, updated: at, versions, deleted: null,
     latest: { n: versions, kind, name: slug + ".md", size: 1200, at, by, origin: "card" } });
   const docs = [
-    mk("a", "Interview: forge access, paste-open, private repos (2026-10-09)", "markdown", 1, "orchestrator-sg4-control@sg4-control"),
-    mk("b", "Usage report for the week", "markdown", 4, "r-031@sg4"),
-    mk("c", "Trace of the stuck terminal", "text", 2, "u-docs-peek-switcher@sg4"),
-    mk("d", "Board screenshot", "image", 1, "r-typing-fixes@sg4"),
+    mk("a", "Interview: forge access, paste-open, private repos (2026-10-09)", "markdown", 1, "orchestrator-room-e-control@room-e-control"),
+    mk("b", "Usage report for the week", "markdown", 4, "r-031@room-e"),
+    mk("c", "Trace of the stuck terminal", "text", 2, "u-docs-peek-switcher@room-e"),
+    mk("d", "Board screenshot", "image", 1, "r-typing-fixes@room-e"),
   ];
   const shots = process.env.DOCSPAGE_SHOTS || "", tag = process.env.DOCSPAGE_TAG || "after";
   try {
@@ -26561,7 +26587,7 @@ async function phoneRedirectSection(browser, base) {
   mock.tasksMode = "land";
   mock.landList = [];
   mock.landPerms = [];
-  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  landCard("land-a", { alias: "rnd", room: "claude-room-e", wire_name: "sparta/rnd-director", supervised: true });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   try {
     for (const at of ["/raw", "/raw#term=land-a", "/alias/rnd"]) {
@@ -27131,6 +27157,70 @@ async function gearHostsSection(browser, base) {
   if (!bad) console.log("gearHosts ok");
 }
 
+// The gear's commits-as row: filled from /_hub/profile, a save POSTs the profile whole, a 403 makes it read-only, and
+// a board with no /_hub/profile draws no row.
+async function hubProfileSection(browser, base) {
+  const tag = "hubProfile: ";
+  const open = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const st = { posts: [] };
+    await ctx.route("**/_hub/rooms", route => route.fulfill(mode === "none" ? { status: 404, body: "" }
+      : { contentType: "application/json", body: JSON.stringify({ rooms: [{ name: "m1" }] }) }));
+    await ctx.route("**/_hub/profile", route => {
+      const req = route.request();
+      if (mode === "none") return route.fulfill({ status: 404, body: "" });
+      if (req.method() === "POST") {
+        if (mode === "remote") return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "only from the hub's machine" }) });
+        st.posts.push(JSON.parse(req.postData()));
+        return route.fulfill({ contentType: "application/json", body: req.postData() });
+      }
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ name: "Ann Op", email: "ann@example.com", reviewers: ["r1"] }) });
+    });
+    const errors = [];
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    await p.waitForFunction(() => new Promise(r => requestAnimationFrame(() => r(!!document.getElementById("gear").onclick))),
+      null, { timeout: slow(20000), polling: 10 });
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("accessing atrium"));
+    return { ctx, p, st, errors };
+  };
+  let h = await open("hub");
+  try {
+    const { p, st } = h;
+    await p.waitForFunction(() => !document.getElementById("s-hc-row").hidden && document.getElementById("s-hc-name").value, null, { timeout: slow(10000) });
+    const got = await p.evaluate(() => [document.getElementById("s-hc-name").value, document.getElementById("s-hc-email").value]);
+    if (got.join("|") !== "Ann Op|ann@example.com") fail(tag + "the row shows " + JSON.stringify(got));
+    await p.fill("#s-hc-name", "Bea Op");
+    await p.click("#s-hc-save");
+    await until(() => st.posts.length > 0, 5000, "the profile save").catch(() => {});
+    const b = st.posts[0] || {};
+    if (b.name !== "Bea Op" || b.email !== "ann@example.com" || JSON.stringify(b.reviewers) !== '["r1"]') fail(tag + "save POST " + JSON.stringify(st.posts));
+    if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+  } finally { await h.ctx.close(); }
+
+  h = await open("remote");
+  try {
+    const { p } = h;
+    await p.waitForFunction(() => !document.getElementById("s-hc-row").hidden && document.getElementById("s-hc-name").value, null, { timeout: slow(10000) });
+    await p.click("#s-hc-save");
+    await p.waitForFunction(() => document.getElementById("s-hc-save").disabled, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a 403 did not make the row read-only."));
+    if (!/hub's machine/.test(await p.textContent("#s-hc-msg"))) fail(tag + "the read-only row does not say where to set it.");
+  } finally { await h.ctx.close(); }
+
+  h = await open("none");
+  try {
+    const { p } = h;
+    await p.waitForResponse(r => r.url().endsWith("/_hub/profile"), { timeout: slow(5000) }).catch(() => {});
+    await frames(p, 2);
+    if (!(await p.evaluate(() => document.getElementById("s-hc-row").hidden))) fail(tag + "a board with no hub draws the row.");
+  } finally { await h.ctx.close(); }
+  if (!bad) console.log("hubProfile ok");
+}
+
 // ── a phone's board root lands on /m ─────────────────────────────────────
 // A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
 // out are left alone, and the card paths map to their /m twins.
@@ -27139,7 +27229,7 @@ async function phoneRedirectSection(browser, base) {
   mock.tasksMode = "land";
   mock.landList = [];
   mock.landPerms = [];
-  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  landCard("land-a", { alias: "rnd", room: "claude-room-e", wire_name: "sparta/rnd-director", supervised: true });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const open = async (view, at, setup, fakeClock) => {
     const ctx = await browser.newContext(view, { redirect: true });
@@ -27165,13 +27255,13 @@ async function phoneRedirectSection(browser, base) {
   const phone = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
   try {
     const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
-      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
+      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-room-e/rnd", "/m/room/claude-room-e/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-room-e", "/m/"]];
     // Each case is its own context and only reads the mock, so they load at once.
     const opened = await Promise.all(cases.map(([from]) => open(phone, from)));
     for (const [i, [from, to]] of cases.entries()) {
       const r = opened[i];
       if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
-      if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
+      if (from === "/room/claude-room-e" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-room-e") fail("phoneRedirect: the room scope was lost");
       if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
       await r.ctx.close();
     }
@@ -27312,11 +27402,11 @@ async function phoneRedirectSection(browser, base) {
 async function mHiddenSection(browser) {
   const st = mServer({});
   st.tasks = [
-    mCard("orch-1", { alias: "orchestrator", display_title: "orchestrator", status: "running", room: "sg4-control", tags: ["atrium:hold-notices", "atrium:subagent", "orchestrators", "origin:agent"] }),
-    mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent", "atrium:subagent"] }),
-    mCard("done-1", { display_title: "finished", status: "done", room: "sg4-control" }),
+    mCard("orch-1", { alias: "orchestrator", display_title: "orchestrator", status: "running", room: "room-e-control", tags: ["atrium:hold-notices", "atrium:subagent", "orchestrators", "origin:agent"] }),
+    mCard("help-1", { display_title: "helper", status: "running", room: "room-e-control", tags: ["origin:agent", "atrium:subagent"] }),
+    mCard("done-1", { display_title: "finished", status: "done", room: "room-e-control" }),
     mCard("far-1", { alias: "far", display_title: "far", status: "running", room: "other" }),
-    mCard("res-1", { display_title: "launched", status: "running", room: "sg4-control", tags: ["origin:agent", "atrium:resident"] }),
+    mCard("res-1", { display_title: "launched", status: "running", room: "room-e-control", tags: ["origin:agent", "atrium:resident"] }),
   ];
   await st.open();
   try {
@@ -27640,7 +27730,7 @@ async function mHomeLiveSection(browser) {
       if (!counts[0].includes(String(needSet.length)) || !counts[1].includes(String(live.length))) fail(tag + "the counts say " + counts.slice(0, 2).join(" / ") + ", wanted " + needSet.length + " / " + live.length);
       if (exp.hidden && !new RegExp("^" + exp.hidden + " hidden by filters").test(counts[2])) fail(tag + "the hidden line says '" + counts[2] + "', wanted " + exp.hidden);
       if (!exp.hidden && counts[2]) fail(tag + "a hidden line shows with nothing hidden: " + counts[2]);
-      if (state.mode === "all" && state.hideSubs && !state.needsMe && !gotIds.includes("sg4-control~01a0f2da-2455-7345-a4f5-629b06f7c109")) fail(tag + "the orchestrator is hidden by hide subagents");
+      if (state.mode === "all" && state.hideSubs && !state.needsMe && !gotIds.includes("room-e-control~01a0f2da-2455-7345-a4f5-629b06f7c109")) fail(tag + "the orchestrator is hidden by hide subagents");
       if (state.mode === "all" && state.hideSubs && gotIds.some(id => isSub(live.find(t => t.id === id)))) fail(tag + "a subagent is listed with hide subagents on");
       if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
       if (shots) {
@@ -28995,6 +29085,52 @@ async function draftReloadSection(browser, base) {
   } finally { mock.healthBuild = wasBuild; mock.tasksMode = was; await ctx.close(); }
 }
 
+// AN OPEN BOARD FOLLOWS THE FILES THE HUB SERVES, with no reload for a stylesheet. A script change reloads it only when
+// nothing is in progress, and under an open dialog it says so in a toast with a reload link instead.
+async function boardLiveSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = mock.tasksMode;
+  const wasBuild = mock.healthBuild;
+  // The real hub answers health with the build its events name.
+  const say = v => (mock.healthBuild = v.build, openStreams).forEach(r => { try { if (!r.destroyed) r.write("event: board\ndata: " + JSON.stringify(v) + "\n\n"); } catch (e) {} });
+  try {
+    mock.wornTasks = [T1];
+    mock.tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await until(async () => openStreams.some(r => !r.destroyed), 10000, "boardLive: the stream opened");
+    await wp.evaluate(() => { window.__kept = 1; boardBuild = ""; });
+    say({ build: "b1", css: "c1", rest: "r1" });
+    await until(() => wp.evaluate(() => boardBuild === "b1"), 5000, "boardLive: the first event was taken as what the page is");
+    const links = () => wp.evaluate(() => [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => l.href));
+    const before = (await links()).length;
+
+    say({ build: "b2", css: "c2", rest: "r1" });
+    await until(async () => (await links()).some(h => h.includes("/m/compose.css?v=c2")), 5000, "boardLive: the stylesheet was swapped")
+      .catch(e => fail(String(e)));
+    await until(async () => (await links()).length === before, 5000, "boardLive: the old stylesheet went").catch(e => fail(String(e)));
+    if (await wp.evaluate(() => window.__kept) !== 1) fail("boardLive: a stylesheet change reloaded the page");
+
+    await wp.evaluate(id => openTask(id), T1.id);
+    await until(() => wp.evaluate(() => document.getElementById("detail").open), 5000, "boardLive: the card dialog opened");
+    say({ build: "b3", css: "c2", rest: "r2" });
+    await until(() => wp.evaluate(() => [...document.querySelectorAll(".toast")].some(t => /board updated/.test(t.textContent) && t.querySelector("a"))),
+      5000, "boardLive: no reload link under an open dialog").catch(e => fail(String(e)));
+    await wp.waitForTimeout(1500); // wait: absence, a reload would land here
+    if (await wp.evaluate(() => window.__kept) !== 1) fail("boardLive: a script change reloaded the page under an open dialog");
+
+    await wp.evaluate(() => document.getElementById("detail").close());
+    const reloaded = wp.waitForEvent("load", { timeout: slow(10000) });
+    say({ build: "b4", css: "c2", rest: "r3" });
+    await reloaded.catch(() => fail("boardLive: a script change did not reload an idle board"));
+    if (errors.length) fail("boardLive: page errors " + errors.join("; "));
+    if (!bad) console.log("boardLive ok");
+  } finally { mock.healthBuild = wasBuild; mock.tasksMode = was; await ctx.close(); }
+}
+
 // TERMINALS ARE KEPT ALIVE when you switch away. Switching back shows the same terminal with no new socket and no
 // replay; a hidden terminal takes frames into its own screen and touches nothing of the pane showing (title, focus,
 // size, the ready/seen/scroll helpers); a hidden terminal never sends a resize; the least recently used unpinned ones
@@ -29631,7 +29767,7 @@ async function mChangeReqSection(browser) {
         await p.waitForFunction(() => document.querySelector(".crm-title").textContent === "cr_9" && /hub head matches/.test(document.querySelector(".crm-badges").textContent));
         const pg = await p.evaluate(() => ({ ttl: document.querySelector(".crm-ttl").textContent, gate: document.querySelector(".crm-gate").textContent, panels: [...document.querySelectorAll(".crm-panel h3")].map(x => x.textContent).join(),
           line: document.querySelector(".crm-line").textContent, hist: history.length, btns: [...document.querySelectorAll("#m-requests button")].map(b => b.textContent.trim()).filter(x => /merge/i.test(x)).join(), page: document.documentElement.scrollWidth - innerWidth }));
-        if (pg.ttl !== "Fix the router link flap" || !/Needs the orchestrator or clint/.test(pg.gate) || !/Nothing on the board does it/.test(pg.gate) || pg.panels !== "Why,On the hub,Change record,History" || pg.line !== "pushed at abcdef0, hub head matches") fail(tag + "the page is wrong " + JSON.stringify(pg));
+        if (pg.ttl !== "Fix the router link flap" || !/Needs the orchestrator or you/.test(pg.gate) || !/Nothing on the board does it/.test(pg.gate) || pg.panels !== "Why,On the hub,Change record,History" || pg.line !== "pushed at abcdef0, hub head matches") fail(tag + "the page is wrong " + JSON.stringify(pg));
         if (pg.hist !== h0 + 1) fail(tag + "opening a request did not push one history entry " + JSON.stringify([h0, pg.hist]));
         if (pg.btns !== "Record that it was merged") fail(tag + "merge wording on a button: " + pg.btns);
         // the sha check, the server's 409, a record
@@ -29806,7 +29942,7 @@ async function mChangeReqSection(browser) {
       st.changesFor = (card, q) => card !== "cr-1" ? { status: 404, body: { error: "not a worktree" } } : { status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e6f", dirty: false, total: 1, repo: "github/o/r", branch: "feat/x", files: [{ path: "a.js", status: "modified", added: 1, removed: 1, hunks: "@@ -1 +1 @@\n-a\n+b\n" }] } };
       const asked = [];
       const { ctx, p } = await mChangeReqPage(browser, st, vp, { pushed: r => { asked.push(new URL(r.request().url()).search); if (mode === "offline") return r.abort("failed");
-        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: mode, hub_sha: "abcdef0123456789", room: "sg4", card: "c-1", at: new Date().toISOString(), released: false }) }); } });
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: mode, hub_sha: "abcdef0123456789", room: "room-e", card: "c-1", at: new Date().toISOString(), released: false }) }); } });
       try {
         await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
         await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
@@ -29843,7 +29979,7 @@ async function mCrShots(browser, st) {
   st.changesFor = () => ({ status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e6f", dirty: false, total: 2, repo: "github/o/r", branch: "feat/x",
     files: [{ path: "internal/hub/receive.go", status: "modified", added: 40, removed: 6, hunks: "@@ -1 +1 @@\n-a\n+b\n" }, { path: "docs/notes.md", status: "added", added: 12, removed: 0, hunks: "@@ -0,0 +1 @@\n+x\n" }] } });
   for (const skin of ["paper", "dark"]) for (const view of ["list", "page", "closed", "readonly", "empty", "form", "changes"]) {
-    const { ctx, p } = await mChangeReqPage(browser, st, { width: 390, height: 844 }, { mode: view === "empty" ? "empty" : view === "readonly" ? "readonly" : "ok", pushed: view === "changes" ? (r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "behind", hub_sha: "abcdef0123456789", room: "sg4", card: "c-101", at: new Date(Date.now() - 3600e3).toISOString() }) })) : undefined });
+    const { ctx, p } = await mChangeReqPage(browser, st, { width: 390, height: 844 }, { mode: view === "empty" ? "empty" : view === "readonly" ? "readonly" : "ok", pushed: view === "changes" ? (r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "behind", hub_sha: "abcdef0123456789", room: "room-e", card: "c-101", at: new Date(Date.now() - 3600e3).toISOString() }) })) : undefined });
     try {
       await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (view === "changes") {
@@ -30285,7 +30421,7 @@ async function main() {
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection, ciGrowl: ciGrowlSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection, mMyMessages: mMyMessagesSection,
       cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
-      gearHosts: gearHostsSection,
+      gearHosts: gearHostsSection, hubProfile: hubProfileSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
       mPull: mPullSection, mPullUp: mPullUpSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection, joinedHeldTile: joinedHeldTileSection, heldStrip: heldStripSection,
@@ -31332,7 +31468,7 @@ async function main() {
     // THE BUG THIS SECTION EXISTS FOR. When no atrium window has focus, notify
     // fires ONE desktop notification and no toast. The log was fed only by the
     // toast, so an alert that rang and popped while the board was unfocused left
-    // no trace: clint saw and heard two and could find neither. This drives the
+    // no trace: the operator saw and heard two and could find neither. This drives the
     // nobody-looking branch and asserts the alert is recorded even though no
     // toast is shown, and that a toast is NOT also shown (either/or, not both).
     const toastRecord = await page.evaluate(() => {
@@ -31350,7 +31486,7 @@ async function main() {
       window.showNotification = () => { window.__notified++; return null; };
       document.getElementById("toasts").innerHTML = "";
       alerting.set({ muted: false, desktop: true });
-      alerting.notify("clint: a held message", "a peer is waiting on this session",
+      alerting.notify("operator: a held message", "a peer is waiting on this session",
         "stack", "", "held-1", null, "", "", {});
       return {
         notified: window.__notified,
@@ -31367,7 +31503,7 @@ async function main() {
         "behavior was broken, they must never both fire.");
     }
     if (toastRecord.log.length !== 1 ||
-        toastRecord.log[0].title !== "clint: a held message") {
+        toastRecord.log[0].title !== "operator: a held message") {
       fail("a desktop-only notification was not recorded in the toast log: " +
         JSON.stringify(toastRecord.log) + ". A desktop alert fired while the board " +
         "is unfocused must still be findable afterward.");
@@ -31487,47 +31623,47 @@ async function main() {
         return m && !m.hidden;
       }, null, { timeout: slow(15000) });
 
-      // sgg starts disconnected in the open menu, and its placement is recorded
+      // room-g starts disconnected in the open menu, and its placement is recorded
       // so the live update can be proven not to move it. The row is found by its
       // name in the `<strong>`, not the whole button text: the host runs on right
       // after the name with no separator, so a word-boundary match on the text
-      // would miss the live row once sgg carries a host.
+      // would miss the live row once room-g carries a host.
       const before = await hub.evaluate(() => {
         const btns = [...document.querySelectorAll("#rooms-menu button, #rooms-menu .rtile")];
-        const sgg = btns.find(b => {
+        const roomG = btns.find(b => {
           const s = b.querySelector("strong");
-          return s && s.textContent === "sgg";
+          return s && s.textContent === "room-g";
         });
         const menu = document.getElementById("rooms-menu");
         return {
-          found: !!sgg,
-          disconnected: !!sgg && /disconnect/i.test(sgg.textContent),
-          live: !!(sgg && sgg.querySelector(".dot.live")),
+          found: !!roomG,
+          disconnected: !!roomG && /disconnect/i.test(roomG.textContent),
+          live: !!(roomG && roomG.querySelector(".dot.live")),
           top: menu.style.top, left: menu.style.left
         };
       });
       if (!before.found || !before.disconnected || before.live) {
-        fail("the open picker did not list sgg as disconnected to begin with: " +
+        fail("the open picker did not list room-g as disconnected to begin with: " +
           JSON.stringify(before));
       }
 
-      // Attach sgg, clear the loadHubRooms throttle, then push the `rooms` event
+      // Attach room-g, clear the loadHubRooms throttle, then push the `rooms` event
       // the hub sends on a membership change. Nothing reopens the menu.
-      mock.sggAttached = true;
+      mock.roomGAttached = true;
       await hub.evaluate(() => { hubRead = 0; });
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
 
-      // The open menu repaints in place: sgg is now live, not disconnected, and
+      // The open menu repaints in place: room-g is now live, not disconnected, and
       // the menu never closed to do it.
       await hub.waitForFunction(() => {
         const menu = document.getElementById("rooms-menu");
         if (!menu || menu.hidden) return false;
-        const sgg = [...menu.querySelectorAll("button, .rtile")].find(b => {
+        const roomG = [...menu.querySelectorAll("button, .rtile")].find(b => {
           const s = b.querySelector("strong");
-          return s && s.textContent === "sgg";
+          return s && s.textContent === "room-g";
         });
-        return !!(sgg && sgg.querySelector(".dot.live") &&
-          !/disconnect/i.test(sgg.textContent));
+        return !!(roomG && roomG.querySelector(".dot.live") &&
+          !/disconnect/i.test(roomG.textContent));
       }, null, { timeout: slow(15000) });
 
       // The menu held its placement: only the rows changed under the user.
@@ -31628,7 +31764,7 @@ async function main() {
       await hub.evaluate(() => { fdSetSearch("backlog", ""); toggleBacklogShow(""); toggleBacklogShow("open"); toggleBacklogShow("in-progress"); toggleBacklogShow("built"); switchView("audit"); });
 
       // ── the audit pane filters by room ────────────────────────────────────
-      // Picking a room narrows the feed to that machine. The two sgg lines stay
+      // Picking a room narrows the feed to that machine. The two room-g lines stay
       // and the alpha and hub lines go, and the request carries the filter, so
       // this is the hub filtering rather than the pane hiding rows.
       await hub.evaluate(() => {
@@ -31636,21 +31772,21 @@ async function main() {
         // The option is normally seeded from the hub's room list; add it if the
         // probe has not filled the dropdown yet, so this tests the filter and not
         // the timing of when the list arrived.
-        if (![...sel.options].some(o => o.value === "sgg")) {
+        if (![...sel.options].some(o => o.value === "room-g")) {
           const o = document.createElement("option");
-          o.value = "sgg"; o.textContent = "sgg"; sel.appendChild(o);
+          o.value = "room-g"; o.textContent = "room-g"; sel.appendChild(o);
         }
-        sel.value = "sgg";
+        sel.value = "room-g";
         sel.dispatchEvent(new Event("change"));
       });
       await hub.waitForFunction(() => {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 2 && rows.every(r => {
           const rm = r.querySelector(".aud-room");
-          return rm && rm.textContent === "sgg";
+          return rm && rm.textContent === "room-g";
         });
       }, null, { timeout: slow(15000) }).catch(() => fail(
-        "the audit pane did not filter to the sgg room."));
+        "the audit pane did not filter to the room-g room."));
 
       // ── the audit pane filters by kind ────────────────────────────────────
       // Clear the room, then pick a kind: only the hub-started line remains. Done
@@ -31770,7 +31906,7 @@ async function main() {
       resetAudit();
       await hub.close();
       mock.hubMode = false;
-      mock.sggAttached = false;
+      mock.roomGAttached = false;
     }
     });
 
@@ -31825,7 +31961,7 @@ async function main() {
     // (1) the read fails at load: the hub has no room to borrow settings from.
     mock.hubMode = true;
     mock.hubHasRoom = false;
-    mock.sggAttached = false;
+    mock.roomGAttached = false;
     const ga1Ctx = await browser.newContext();
     const ga1 = await ga1Ctx.newPage();
     const ga1Errors = [];
@@ -32208,6 +32344,8 @@ async function main() {
     await unit("cleanCopyTwo", () => cleanCopyTwoSection(browser, base));
     await unit("chatTab", bu("chatTab"));
     await unit("chatBridge", bu("chatBridge"));
+    await unit("chatColours", bu("chatColours"));
+    await unit("chatDarkCard", bu("chatDarkCard"));
     await unit("chatPaste", bu("chatPaste"));
     await unit("chatKeep", bu("chatKeep"));
     await unit("chatCap", bu("chatCap"));
@@ -32440,6 +32578,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", bu("dropdownsInstant"));
+    await unit("dictBoop", bu("dictBoop"));
     await unit("helpTip", bu("helpTip"));
     await unit("helpRoomPane", bu("helpRoomPane"));
     await unit("helpGearBoard", bu("helpGearBoard"));
@@ -32530,6 +32669,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
     await unit("popoutRaise", () => popoutRaiseSection(browser, base));
     await unit("gearHosts", () => gearHostsSection(browser, base));
+    await unit("hubProfile", () => hubProfileSection(browser, base));
     await unit("joinedLive", () => joinedLiveSection(browser, base));
     await unit("unifiedCard", bu("unifiedCard"));
     await unit("termEnded", () => termEndedSection(browser, base));
@@ -32583,6 +32723,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("artifacts", () => artifactsSection(browser, base));
     await unit("fileLinkDrawer", () => fileLinkDrawerSection(browser, base));
     await unit("draftReload", () => draftReloadSection(browser, base));
+    await unit("boardLive", () => boardLiveSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("keptFileLink", () => keptFileLinkSection(browser, base));
     await unit("pinNow", () => pinNowSection(browser, base));
@@ -32713,13 +32854,13 @@ function mIso(msAgo) { return new Date(Date.now() - msAgo).toISOString(); }
 async function liveHomeSection(browser, base) {
   const st = mServer({});
   st.tasks = [
-    mCard("lh-dir", { alias: "ui", display_title: "ui", status: "needs-input", waiting_since: mIso(2 * M_MIN), room: "sg4", tags: ["atrium:context-ceiling", "atrium:subagent", "origin:agent"], seen: { turn_ended_at: mIso(20 * M_MIN) } }),
-    mCard("lh-help", { display_title: "helper", status: "running", room: "sg4", tags: ["atrium:subagent", "origin:agent"] }),
+    mCard("lh-dir", { alias: "ui", display_title: "ui", status: "needs-input", waiting_since: mIso(2 * M_MIN), room: "room-e", tags: ["atrium:context-ceiling", "atrium:subagent", "origin:agent"], seen: { turn_ended_at: mIso(20 * M_MIN) } }),
+    mCard("lh-help", { display_title: "helper", status: "running", room: "room-e", tags: ["atrium:subagent", "origin:agent"] }),
   ];
   st.replies["lh-dir"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "A reply." }] };
   const hub = mDocsHub();
   st.docsApi = hub.api;
-  hub.add("lh-doc", "Published", [{ bytes: "# hi\n", origin: "card", by: "ui@sg4", card: "sg4~lh-dir" }]);
+  hub.add("lh-doc", "Published", [{ bytes: "# hi\n", origin: "card", by: "ui@room-e", card: "room-e~lh-dir" }]);
   await st.open();
   try {
     const tag = "liveHome: ";
@@ -33817,13 +33958,13 @@ async function growlActionsSection(browser, base) {
     // the permission's room is named, so the merged view reaches it
     if (h.decides[0].room !== "alpha" || h.decides[1].room !== "alpha") fail("growlActions: decide carried room " + JSON.stringify(h.decides.map(d => d.room)));
     // lift asks first, then posts the room's own hold call with the row's room
-    await h.say([GR("hold1", "deploy-hold", 1, { room: "sgg" })]);
+    await h.say([GR("hold1", "deploy-hold", 1, { room: "room-g" })]);
     await p.click('#growl .gr-full button[data-do="lift"]');
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     if (h.holds.length) fail("growlActions: lift posted before it asked.");
     await p.click('#ask-actions button:has-text("lift it")');
     await until(() => h.holds.length, 5000, "the lift hold").catch(() => {});
-    if (h.holds.length !== 1 || h.holds[0].body.action !== "lift" || h.holds[0].room !== "sgg") fail("growlActions: lift posted " + JSON.stringify(h.holds));
+    if (h.holds.length !== 1 || h.holds[0].body.action !== "lift" || h.holds[0].room !== "room-g") fail("growlActions: lift posted " + JSON.stringify(h.holds));
     if (h.posts.length) fail("growlActions: lift posted to /_hub/growls.");
     // a permission row with no subject yet cannot be answered
     await h.say([GR("e", "permission", 1, { subject: "", body: "" })]);
@@ -33939,8 +34080,8 @@ async function growlRoomAlertSection(browser, base) {
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
   try {
-    const hot = GR("hot", "room-cpu", 1, { room: "sgg", card_id: "", card: "", subject: "42,43",
-      title: "sgg is at high cpu with no agents running", urgency: 7,
+    const hot = GR("hot", "room-cpu", 1, { room: "room-g", card_id: "", card: "", subject: "42,43",
+      title: "room-g is at high cpu with no agents running", urgency: 7,
       body: "- 99% pid 42 ppid 1 up 02:01:00, orphan of closed card c-old: node server.js (in /homes/old)\n" +
         "- 40% pid 7 ppid 1 up 5-00:00:00, foreign: audiomxd" });
     await h.say([hot]);
@@ -33957,16 +34098,16 @@ async function growlRoomAlertSection(browser, base) {
     if (kills.length) fail("growlRoomAlert: kill posted before it asked.");
     await p.click('#ask-actions button:has-text("kill")');
     await until(() => kills.length >= 2, 5000, "the kill posts").catch(() => {});
-    if (kills.map(k => k.body.pid + "@" + k.room).join() !== "42@sgg,43@sgg") fail("growlRoomAlert: kill posted " + JSON.stringify(kills));
+    if (kills.map(k => k.body.pid + "@" + k.room).join() !== "42@room-g,43@room-g") fail("growlRoomAlert: kill posted " + JSON.stringify(kills));
     if (h.posts.length) fail("growlRoomAlert: kill posted to /_hub/growls.");
     await h.say([Object.assign({}, hot, { subject: "" })]);
     if (await p.$('#growl .gr-full button[data-do="kill"]')) fail("growlRoomAlert: a growler with no orphan offered a kill.");
     const badge = await p.evaluate(() => {
       const el = document.createElement("div");
-      el.innerHTML = roomTileHTML({ name: "sgg" }, { alert: { hot_since: "2026-10-26T12:00:00Z", cpu_pct: 93.4, runners_missing: ["codex"] } }, false);
+      el.innerHTML = roomTileHTML({ name: "room-g" }, { alert: { hot_since: "2026-10-26T12:00:00Z", cpu_pct: 93.4, runners_missing: ["codex"] } }, false);
       const b = el.querySelector(".rt-head .chip.bad.rd-alert");
       const none = document.createElement("div");
-      none.innerHTML = roomTileHTML({ name: "sgg" }, {}, false);
+      none.innerHTML = roomTileHTML({ name: "room-g" }, {}, false);
       return { text: b && b.textContent, tip: b && b.dataset.tip, none: !!none.querySelector(".rd-alert") };
     });
     if (badge.text !== "hot, runner missing" || !/cpu at 93% since/.test(badge.tip || "") || !/codex/.test(badge.tip || "") || badge.none) {
@@ -34977,7 +35118,7 @@ async function growlChoicesSection(browser, base) {
   if (!bad) console.log("growlChoices ok");
 }
 
-// ── reply suggestions, RS1 (docs/rnd/reply-suggestions-design.md) ───────────────────────────────────────────────
+// ── reply suggestions, RS1 ───────────────────────────────────────────────
 // One renderer, js/replies.js, for the board growler, the phone board's growler, /m's growler and /m's compose.
 const RS_LONG = "rebuild everything from scratch and then rerun every single test in the suite";
 const RS_BODY = "What next?\n\n{choices}\nbuild the worktrees\n" + RS_LONG + "\n{/choices}";

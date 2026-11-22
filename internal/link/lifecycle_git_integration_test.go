@@ -38,7 +38,7 @@ func (f *fakeLandGit) Contains(context.Context, string, string) (bool, bool, err
 // stored, so a reader that cannot reach git still has them.
 func TestAnItemShowsLandedOnTheNextRefresh(t *testing.T) {
 	x := newItemRig(t)
-	if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "sg4", "card": "c1",
+	if code, body := x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "room-e", "card": "c1",
 		"generation": 1, "state": "running", "revision": 1, "owner_kind": "session", "owner": "orch", "created_by": "orch",
 		"note": "n", "work_id": "f-thing"}), loopAddr); code != http.StatusOK {
 		t.Fatalf("attach: %d %s", code, body)
@@ -83,7 +83,7 @@ func TestAnItemShowsLandedOnTheNextRefresh(t *testing.T) {
 // AN ITEM NOBODY NAMED A BRANCH FOR IS READ BY ITS BUILDER'S SHA, and shows landed and pushed with rows that carry its id.
 func TestAnItemWithNoBranchLandsByItsBuilderSha(t *testing.T) {
 	x := newItemRig(t)
-	x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "sg4", "card": "c1",
+	x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "room-e", "card": "c1",
 		"generation": 1, "state": "finished", "revision": 2, "owner_kind": "session", "owner": "orch", "created_by": "orch",
 		"note": landedSHA, "work_id": "f-nb"}), loopAddr)
 	g := &fakeLandGit{facts: gitsync.LandFacts{SHA: landedSHA, Landed: true, LandedSHA: "8888888888888888888888888888888888888888",
@@ -109,7 +109,7 @@ func TestAnItemWithNoBranchLandsByItsBuilderSha(t *testing.T) {
 func TestAPassAsksTheForgeOnceForEveryItem(t *testing.T) {
 	x := newItemRig(t)
 	for _, id := range []string{"f-a", "f-b", "f-c"} {
-		x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-" + id, "room": "sg4", "card": "c-" + id,
+		x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-" + id, "room": "room-e", "card": "c-" + id,
 			"generation": 1, "state": "running", "revision": 1, "owner_kind": "session", "owner": "orch", "created_by": "orch",
 			"note": "n", "work_id": id}), loopAddr)
 		x.send("POST", "/_hub/work/"+id, `{"branch":"claude/`+id+`"}`, loopAddr)
@@ -133,7 +133,7 @@ func TestAPassAsksTheForgeOnceForEveryItem(t *testing.T) {
 // claude/main: the live hub left such items pending because nothing asked git about them.
 func TestAnUnbuiltItemWithNoBranchLandsByItsChangelogEntry(t *testing.T) {
 	x := newItemRig(t)
-	x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "sg4", "card": "c1",
+	x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "room-e", "card": "c1",
 		"generation": 1, "state": "running", "revision": 1, "owner_kind": "session", "owner": "orch", "created_by": "orch",
 		"note": "n", "work_id": "f-ub"}), loopAddr)
 	g := &fakeLandGit{facts: gitsync.LandFacts{Landed: true, LandedSHA: "8888888888888888888888888888888888888888",

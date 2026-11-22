@@ -86,7 +86,7 @@ func TestSpliceStopEndsBothAtOnce(t *testing.T) {
 }
 
 func TestCleanClaimIsOneBoundedLine(t *testing.T) {
-	if got := CleanClaim("claude@sg4\r\nssh-open fake line"); strings.ContainsAny(got, "\r\n") {
+	if got := CleanClaim("claude@room-e\r\nssh-open fake line"); strings.ContainsAny(got, "\r\n") {
 		t.Fatalf("a claim carried a line break: %q", got)
 	}
 	if got := CleanClaim(strings.Repeat("x", 500)); len(got) != 100 {

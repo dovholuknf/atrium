@@ -24,7 +24,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// THE HUB RUNS THE FORGE FOR ITS ROOMS. Design: docs/rnd/scm-forge-design.md, Built.
+// THE HUB RUNS THE FORGE FOR ITS ROOMS.
 //
 //	POST /_forge/pr     (a room, on the git kind)  forge.HubAsk   a pull request: view, diff, head, and its head fetched
 //	POST /_forge/issue  (a room, on the git kind)  forge.HubAsk   an issue
@@ -34,7 +34,7 @@ import (
 //	PUT  /_hub/forge                               {entries: [{host, forge, cmd}]}
 //	POST /_hub/forge/check                         {forges: [{tool, host, scopes}]}   the hub's CLI logins
 //
-// clint's rule: rooms use only the hub, and only the hub talks to GitHub or Bitbucket. A room never runs gh or bb and
+// The operator's rule: rooms use only the hub, and only the hub talks to GitHub or Bitbucket. A room never runs gh or bb and
 // never fetches from a forge host. The hub only reads: it views, diffs and fetches, and never pushes to a forge. The
 // gh and bb logins live on the hub alone, so a missing one is the hub's alert, a growler on the board, and the
 // sentence names the hub.

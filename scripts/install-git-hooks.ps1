@@ -10,7 +10,7 @@
 
   The hook runs `atrium merged --into <the branch HEAD is on>` and nothing else. It is best effort and never fails
   a merge: no atrium on PATH, a daemon that is down, a detached HEAD and any error all exit 0. Fast-forwards fire
-  post-merge too. See docs/rnd/merged-cull-design.md.
+  post-merge too.
 
   It refuses to overwrite a `post-merge` it did not write, and says so. Re-running over its own hook is harmless.
 

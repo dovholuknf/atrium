@@ -14,7 +14,7 @@ func sayHeld(t *testing.T, d *Daemon, id string, texts ...string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		typed, mid, err := d.deliverPeerWhenID(target, "sg4/orchestrator", text, "", false)
+		typed, mid, err := d.deliverPeerWhenID(target, "room-e/orchestrator", text, "", false)
 		if err != nil || typed || mid == "" {
 			t.Fatalf("say %q typed %v id %q err %v, want held", text, typed, mid, err)
 		}

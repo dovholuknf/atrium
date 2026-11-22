@@ -20,7 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// WHICH ROOM RUNS A PR, AND ONE ROW PER PR ACROSS ROOMS. Design: docs/rnd/scm-forge-design.md section 6 and the answers
+// WHICH ROOM RUNS A PR, AND ONE ROW PER PR ACROSS ROOMS. answers
 // at its end, which overrule it where they differ. Item f-new-pr-room-and-dedupe.
 //
 //	POST /_claim/pr (a room, on the git kind)  {key, url, why, head, source}   ask for the key

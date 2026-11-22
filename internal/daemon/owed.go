@@ -13,8 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Owed answers: a worker stops, and the answer it owes survives. See
-// docs/rnd/long-turn-checkin-design.md section 11.
+// Owed answers: a worker stops, and the answer it owes survives.
 //
 // An OPEN ITEM is kept for every worker that reached done, ended, needs-input or needs-permission
 // owing its launcher an answer, whether or not the launcher holds its notices. It closes when the

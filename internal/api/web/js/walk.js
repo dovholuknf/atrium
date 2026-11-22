@@ -1,6 +1,6 @@
 // The walk drawer: a fixed list of items an agent produced, a rail beside the terminal, and one item at a time.
 //
-// docs/rnd/review-tab-design.md, stage 1. The drawer sits BESIDE the one xterm in the terms view and never builds a
+// The drawer sits BESIDE the one xterm in the terms view and never builds a
 // second one, so every guard `openTerm` has still applies and a popped-out `#term=` window gets the drawer too.
 //
 // TWO HALVES, deliberately. The `dock*` functions are the drawer and the rail: open and close, the poll, the
@@ -476,7 +476,7 @@ function walkLinkLabel(r) {
 }
 
 // The API's walk words and the drawer's: done is posted.
-// accepted is clint agreeing it should be raised, dismissed is `skipped` on the wire. The wire words stay.
+// accepted is the operator agreeing it should be raised, dismissed is `skipped` on the wire. The wire words stay.
 function walkUiState(s) {
   return s === "done" ? "posted" : s === "skipped" ? "dismissed" : s === "accepted" || s === "deferred" ? s : "";
 }
@@ -670,7 +670,7 @@ function termWordAt(e) {
   return text.slice(a, b).replace(/[.:!?]+$/, "");
 }
 
-// A card's own branch walk with no file in any mode: clint clicked "walk branch: nothing" on a clean card.
+// A card's own branch walk with no file in any mode: the operator clicked "walk branch: nothing" on a clean card.
 function walkNothing(d) {
   const b = walkTenant.branch;
   return d.tenant === walkTenant && !walkTenant.prId && !walkTenant.hub && !walkTenant.dir && !d.items.length &&
@@ -877,7 +877,7 @@ const walkTenant = {
       if (!it || it.mtime !== (e.mtime || "") || it.size !== (e.size || 0)) {
         const r = await api(`/v1/tasks/${task.id}/files/text?path=${encodeURIComponent("findings/" + e.name)}`);
         const fresh = walkParseFinding(e.name, r.text, r.hash, r.eol, e);
-        // A file we wrote ourselves, seen back: nothing changed that clint did not do.
+        // A file we wrote ourselves, seen back: nothing changed that the operator did not do.
         const mine = it && it.wrote === r.hash;
         fresh.old = it && !mine ? it : null;
         it = fresh;
@@ -1232,7 +1232,7 @@ async function walkAct(k) {
   }
 }
 
-// A keystroke in clint's own terminal, not a message. `POST /message` types and presses Enter and refuses a
+// A keystroke in the operator's own terminal, not a message. `POST /message` types and presses Enter and refuses a
 // part-written line, which is right for someone else talking and wrong here. One frame, so it is not a chunked
 // paste. `a` leaves the line unfinished and the cursor at its end, `A` submits.
 function walkAsk(text, submit) {
@@ -1409,7 +1409,7 @@ async function walkSave() {
     walkEditDone();
   } catch (e) {
     if (e.status === 409 && e.body && e.body.hash) {
-      // Nothing was written. Both sides are kept on screen and it is clint's call which one stands.
+      // Nothing was written. Both sides are kept on screen and it is the operator's call which one stands.
       const disk = walkParseFinding(it.name, e.body.text, e.body.hash, it.eol);
       dock.editing = null;
       dock.conflict = { key: it.key, mine, disk: e.body.text, diskHash: e.body.hash, diskComment: disk.comment,

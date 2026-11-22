@@ -664,7 +664,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		// NO DIVIDER UNDER THE HISTORY, deliberately. A line reading "everything
 		// above is history, live from here" used to sit here to stop the first
 		// live redraw reading as corrupted scrollback. In practice it read as
-		// noise on every reattach, and clint asked to ditch the whole preamble.
+		// noise on every reattach, and the operator asked to ditch the whole preamble.
 		// Silence is the better default: the live output picks up where the
 		// history stops, and the honest "the buffer overwrote older output" note
 		// above still fires when there is a real reason to say something.

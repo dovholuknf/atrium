@@ -21,7 +21,7 @@ import (
 
 // A TURN is what lies between one real prompt and the next, in the card's transcript. The
 // edit tool calls inside it are what the per-reply "N files changed" chip counts
-// (docs/rnd/changes-view-design.md, `?turn=`).
+// (`?turn=`).
 //
 // EVERY PATH HERE IS UNTRUSTED. A transcript is text an agent wrote, so a path in it is a
 // claim and never an address: it is resolved through safepath against the card's worktree

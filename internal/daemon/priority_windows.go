@@ -29,7 +29,7 @@ var raiseFailedOnce sync.Once
 //
 // THE CHILDREN OF THE RUNNER ARE LEFT ALONE, ON PURPOSE. Windows hands a priority class down to a
 // child only for Idle and BelowNormal, so the go test and chrome an agent starts stay Normal and keep
-// the machine as busy as clint wants it, below the key path. Do not "fix" that by walking the tree.
+// the machine as busy as the operator wants it, below the key path. Do not "fix" that by walking the tree.
 //
 // Never fails a spawn. A runner always starts, even when the raise is refused.
 type ptyRaise struct {

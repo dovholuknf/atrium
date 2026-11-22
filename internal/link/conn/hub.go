@@ -308,7 +308,7 @@ func (h *Hub) Serve(ctx context.Context, ln net.Listener) error { return h.Serve
 
 // ServeVia is Serve for one of several listeners, naming the transport it is, so
 // the board can say which one each room came in on. A hub may serve any number
-// at once. See docs/rnd/room-transport-order.md.
+// at once.
 func (h *Hub) ServeVia(ctx context.Context, ln net.Listener, via string) error {
 	go func() {
 		<-ctx.Done()

@@ -25,7 +25,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/sshwizard"
 )
 
-// roomSSHCmd is `atrium room ssh`, the room's own side of turning ssh on. See docs/rnd/room-ssh-wizard-design.md.
+// roomSSHCmd is `atrium room ssh`, the room's own side of turning ssh on.
 //
 // `setup --check` CHANGES NOTHING: it runs the wizard's checks and prints what each found. `setup` alone does the
 // fix half of steps 5 to 7: the room's key, publishing it with the login user to the hub, and writing the set the hub

@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// Web push subscriptions: one row per browser. See migration 0011 and docs/rnd/web-push-design.md.
+// Web push subscriptions: one row per browser. See migration 0011.
 //
 //   - THE ENDPOINT IS THE PROOF OF OWNERSHIP. Only the browser that subscribed knows it, so a removal from the share
 //     names the endpoint and never the id, which is not a secret.

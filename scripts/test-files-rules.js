@@ -14,24 +14,24 @@ vm.runInContext(src + "\nthis.api = { fileOpensHere, filesShownBy, crumbSteps, c
 const { fileOpensHere, filesShownBy, crumbSteps, cardRelPath } = ctx.api;
 
 // OPEN IN YOUR EDITOR only where the window opens in front of the person at the browser.
-const rooms = [{ name: "sg4", transport: "local" }, { name: "sgg", transport: "ziti" }, { name: "m1mini", transport: "mtls" }];
+const rooms = [{ name: "room-e", transport: "local" }, { name: "room-g", transport: "ziti" }, { name: "room-a", transport: "mtls" }];
 const cases = [
   ["a card on the board's own daemon, browser on loopback", "01abc", "127.0.0.1", true],
   ["the same over localhost", "01abc", "localhost", true],
   ["the same over ipv6 loopback", "01abc", "[::1]", true],
-  ["a card on the hub's own room", "sg4~01abc", "127.0.0.1", true],
-  ["a card on a remote room (Windows)", "sgg~01abc", "127.0.0.1", false],
-  ["a card on a remote room (macOS)", "m1mini~01abc", "127.0.0.1", false],
+  ["a card on the hub's own room", "room-e~01abc", "127.0.0.1", true],
+  ["a card on a remote room (Windows)", "room-g~01abc", "127.0.0.1", false],
+  ["a card on a remote room (macOS)", "room-a~01abc", "127.0.0.1", false],
   ["a room the hub does not list", "pi5~01abc", "127.0.0.1", false],
-  ["the board's own card, browser elsewhere", "01abc", "sg4.lan", false],
-  ["the hub's own room, browser over a share", "sg4~01abc", "board.example.zrok.io", false],
+  ["the board's own card, browser elsewhere", "01abc", "room-e.lan", false],
+  ["the hub's own room, browser over a share", "room-e~01abc", "board.example.zrok.io", false],
   ["no card", "", "127.0.0.1", true],
 ];
 for (const [what, id, host, want] of cases) {
   const got = fileOpensHere(id, host, rooms);
   if (got !== want) fail(`open here, ${what}: ${got}, wanted ${want}`);
 }
-if (fileOpensHere("sg4~01abc", "127.0.0.1", undefined)) fail("open here with no room list said yes for a room card");
+if (fileOpensHere("room-e~01abc", "127.0.0.1", undefined)) fail("open here with no room list said yes for a room card");
 
 // SORTED, FOLDERS FIRST whatever the key, and filtered by name without case.
 const rows = [

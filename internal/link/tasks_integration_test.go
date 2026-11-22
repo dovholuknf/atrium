@@ -31,7 +31,7 @@ func newTaskRig(t *testing.T) *taskRig {
 		Body: "THE BACKLOG BODY"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := x.st.PutItem(hubstore.Item{ID: "it-b", Room: "sg4", Card: "c1", Generation: 1, State: "running",
+	if _, _, err := x.st.PutItem(hubstore.Item{ID: "it-b", Room: "room-e", Card: "c1", Generation: 1, State: "running",
 		Revision: 1, OwnerKind: hubstore.OwnerHuman, WorkID: "f-x"}); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestTheSchedulerStartsOneTaskOfAnItemAtATimeInTheOrderAdded(t *testing.T) {
 	if got := x.sent(); len(got) != 1 || !strings.Contains(got[0], `"task_id":"t1"`) {
 		t.Fatalf("launches: %v", got)
 	}
-	if got := x.state(t, "t1"); got.State != hubstore.TaskRunning || got.Card != "sg4~c-task" || got.Attempt != 1 {
+	if got := x.state(t, "t1"); got.State != hubstore.TaskRunning || got.Card != "room-e~c-task" || got.Attempt != 1 {
 		t.Fatalf("t1: %+v", got)
 	}
 	if got := x.state(t, "t2"); got.State != hubstore.TaskPending {
@@ -224,15 +224,15 @@ func (x *taskRig) do(t *testing.T, body map[string]any) (int, string) {
 
 func TestTheTaskRouteAddsForTheBoardAndRefusesWhatT1DoesNotRun(t *testing.T) {
 	x := newItemRig(t)
-	x.st.PutItem(hubstore.Item{ID: "it-b", Room: "sg4", Card: "c1", Generation: 1, State: "running", Revision: 1,
-		OwnerKind: hubstore.OwnerSession, Owner: "orch@sg4", WorkID: "f-x"})
+	x.st.PutItem(hubstore.Item{ID: "it-b", Room: "room-e", Card: "c1", Generation: 1, State: "running", Revision: 1,
+		OwnerKind: hubstore.OwnerSession, Owner: "orch@room-e", WorkID: "f-x"})
 	tr := &taskRig{itemRig: x}
 	for name, c := range map[string]struct {
 		body map[string]any
 		code int
 		says string
 	}{
-		"a stranger": {map[string]any{"do": "add", "by": "someone@sg4", "title": "a", "brief": "b"}, http.StatusForbidden, ""},
+		"a stranger": {map[string]any{"do": "add", "by": "someone@room-e", "title": "a", "brief": "b"}, http.StatusForbidden, ""},
 		"code":       {map[string]any{"do": "add", "by": "board", "title": "a", "brief": "b", "kind": "code"}, http.StatusBadRequest, "not built"},
 		"after":      {map[string]any{"do": "add", "by": "board", "title": "a", "brief": "b", "after": []string{"t1"}}, http.StatusBadRequest, "not built"},
 		"no brief":   {map[string]any{"do": "add", "by": "board", "title": "a"}, http.StatusBadRequest, "brief"},
@@ -246,7 +246,7 @@ func TestTheTaskRouteAddsForTheBoardAndRefusesWhatT1DoesNotRun(t *testing.T) {
 	if list, _ := x.st.TaskList("f-x"); len(list) != 0 {
 		t.Fatalf("a refused add left a task: %+v", list)
 	}
-	for _, by := range []string{"board", "orch@sg4"} {
+	for _, by := range []string{"board", "orch@room-e"} {
 		if code, body := tr.do(t, map[string]any{"do": "add", "by": by, "title": "a", "brief": "b"}); code != http.StatusOK {
 			t.Fatalf("add by %s: %d %s", by, code, body)
 		}
@@ -268,7 +268,7 @@ func TestARoomReportsATaskFileOnceAndOnlyForATaskOnThatRoom(t *testing.T) {
 	x := newTaskRig(t)
 	x.add(t, "first")
 	x.p.taskSchedule(context.Background())
-	file := map[string]any{"event": "file", "room": "sg4", "backlog_id": "f-x", "task_id": "t1", "attempt": 1,
+	file := map[string]any{"event": "file", "room": "room-e", "backlog_id": "f-x", "task_id": "t1", "attempt": 1,
 		"card": "c-task", "path": "out.txt", "data": []byte("abc")}
 	var names []string
 	for i := 0; i < 2; i++ {
@@ -281,11 +281,11 @@ func TestARoomReportsATaskFileOnceAndOnlyForATaskOnThatRoom(t *testing.T) {
 	if names[0] != "f-x-t1-out.txt" || names[1] != names[0] {
 		t.Fatalf("names: %v", names)
 	}
-	file["room"] = "sg5"
+	file["room"] = "room-f"
 	if code, _ := x.send("POST", "/_hub/items/tasks/sync", js(file), loopAddr); code != http.StatusForbidden {
-		t.Fatalf("a task on sg4 reported from sg5: %d", code)
+		t.Fatalf("a task on room-e reported from room-f: %d", code)
 	}
-	file["room"], file["attempt"] = "sg4", 2
+	file["room"], file["attempt"] = "room-e", 2
 	if code, _ := x.send("POST", "/_hub/items/tasks/sync", js(file), loopAddr); code != http.StatusConflict {
 		t.Fatalf("a file for an attempt the task is not on: %d", code)
 	}

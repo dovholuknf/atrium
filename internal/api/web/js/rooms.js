@@ -727,7 +727,7 @@ function sshList(a) {
 // sshBadge is on when the room says it carries an ssh stream to its own sshd, and draws nothing otherwise.
 //
 // OBSERVED, NEVER A SWITCH. The room says it, and only a person at that machine can change it, so there is no
-// control here. The count is how many streams are open right now. See docs/rnd/ssh-via-hub.md.
+// control here. The count is how many streams are open right now.
 function sshBadge(r) {
   const a = r && r.attached && r.remote_access;
   if (!a || !a.on) return "";

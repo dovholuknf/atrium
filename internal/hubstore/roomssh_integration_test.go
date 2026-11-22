@@ -15,15 +15,15 @@ var (
 // A ROOM PUBLISHES, THE SET HOLDS IT, and a second publish replaces the first.
 func TestRoomSSHIsPublishedAndReplaced(t *testing.T) {
 	s := open(t)
-	added(t, s, "sg3")
-	if err := s.PutRoomSSH("sg3", "claude", keyA+" comment", 22, true); err != nil {
+	added(t, s, "room-d")
+	if err := s.PutRoomSSH("room-d", "claude", keyA+" comment", 22, true); err != nil {
 		t.Fatal(err)
 	}
 	set, err := s.RoomSSHSet()
-	if err != nil || len(set) != 1 || set[0].Room != "sg3" || set[0].User != "claude" || set[0].Key != keyA || !set[0].On {
+	if err != nil || len(set) != 1 || set[0].Room != "room-d" || set[0].User != "claude" || set[0].Key != keyA || !set[0].On {
 		t.Fatalf("%+v %v", set, err)
 	}
-	if err := s.PutRoomSSH("sg3", "localai", keyB, 2222, false); err != nil {
+	if err := s.PutRoomSSH("room-d", "localai", keyB, 2222, false); err != nil {
 		t.Fatal(err)
 	}
 	set, _ = s.RoomSSHSet()
@@ -38,15 +38,15 @@ func TestRoomSSHOnlyForKnownRoomsAndGoesWithTheRoom(t *testing.T) {
 	if err := s.PutRoomSSH("ghost", "claude", keyA, 22, true); err == nil {
 		t.Fatal("an unknown room published a key")
 	}
-	r := added(t, s, "sg3")
-	added(t, s, "sg4")
-	s.PutRoomSSH("sg3", "claude", keyA, 22, true)
-	s.PutRoomSSH("sg4", "claude", keyB, 22, true)
+	r := added(t, s, "room-d")
+	added(t, s, "room-e")
+	s.PutRoomSSH("room-d", "claude", keyA, 22, true)
+	s.PutRoomSSH("room-e", "claude", keyB, 22, true)
 	if err := s.Remove(r.ID, "gone"); err != nil {
 		t.Fatal(err)
 	}
 	set, _ := s.RoomSSHSet()
-	if len(set) != 1 || set[0].Room != "sg4" {
+	if len(set) != 1 || set[0].Room != "room-e" {
 		t.Fatalf("the removed room's key is still in the set: %+v", set)
 	}
 }
@@ -54,7 +54,7 @@ func TestRoomSSHOnlyForKnownRoomsAndGoesWithTheRoom(t *testing.T) {
 // WHAT IS STORED IS WRITTEN INTO OTHER MACHINES' authorized_keys, so it is checked hard.
 func TestRoomSSHRefusesWhatCouldBeAnInjection(t *testing.T) {
 	s := open(t)
-	added(t, s, "sg3")
+	added(t, s, "room-d")
 	for name, c := range map[string]struct{ user, key string }{
 		"options":  {"claude", `command="x" ` + keyA},
 		"newline":  {"claude", keyA + "\n" + keyB},
@@ -64,7 +64,7 @@ func TestRoomSSHRefusesWhatCouldBeAnInjection(t *testing.T) {
 		"empty":    {"", keyA},
 		"dashes":   {"claude\nHost *", keyA},
 	} {
-		if err := s.PutRoomSSH("sg3", c.user, c.key, 22, true); err == nil {
+		if err := s.PutRoomSSH("room-d", c.user, c.key, 22, true); err == nil {
 			t.Fatalf("%s: accepted", name)
 		} else if !IsRefusal(err) {
 			t.Fatalf("%s: not a refusal: %v", name, err)

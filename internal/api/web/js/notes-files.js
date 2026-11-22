@@ -1272,6 +1272,7 @@ async function loadHousekeeping() {
   try { s = await api("/v1/settings"); } catch (e) { return; }
   setTimerValue("s-sweep", s.sweep_dead_after, "60");
   setTimerValue("s-prune", s.prune_after, "off");
+  setTimerValue("s-incoming", s.incoming_keep_days, "7");
   // Everything per-room is filled by the room's own pane, from that room, and
   // NOT from here. This endpoint answers for whichever room the board is
   // scoped to, which on a hub looking at all of them is no particular one.

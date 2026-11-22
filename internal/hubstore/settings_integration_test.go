@@ -101,10 +101,11 @@ func TestStashRetentionDefaultsToThirtyAndRoundTrips(t *testing.T) {
 	}
 }
 
-func TestTheOperatorProfileIsAtriumsOwnUntilWrittenThenWhatWasWritten(t *testing.T) {
+func TestTheOperatorProfileIsTheMachinesGitIdentityUntilWrittenThenWhatWasWritten(t *testing.T) {
 	s := open(t)
-	if p, err := s.OperatorProfile(); err != nil || p.Email != DefaultOperatorProfile().Email {
-		t.Fatalf("default: %+v %v", p, err)
+	want, werr := DefaultOperatorProfile()
+	if p, err := s.OperatorProfile(); (err == nil) != (werr == nil) || p.Name != want.Name || p.Email != want.Email {
+		t.Fatalf("default: %+v %v, want %+v %v", p, err, want, werr)
 	}
 	if err := s.SetOperatorProfile(OperatorProfile{Name: "Ann"}); err == nil {
 		t.Fatal("a profile with no email was kept")

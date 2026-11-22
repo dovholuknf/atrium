@@ -86,5 +86,5 @@ Rules for adding:
     own workers.
   - Deploy scripts keep exactly one revert binary. The docs site ships on GitHub Pages, refreshed only at a release.
     First release is 0.0.1.
-  - The unread dot while running waits on the turn-end spike (`docs/rnd/turn-end-spike.md`). Its step 1 (post every Stop)
+  - The unread dot while running waits on the turn-end spike. Its step 1 (post every Stop)
     and step 2 (nudge a silent worker, reverses "no forced turns") are not yet decided.

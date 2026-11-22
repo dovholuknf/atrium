@@ -18,7 +18,7 @@ func TestAPatchOfACardThisRoomDoesNotHoldNamesIt(t *testing.T) {
 	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
-	srv.Room = "claude-sg4"
+	srv.Room = "claude-room-e"
 
 	req := httptest.NewRequest(http.MethodPatch, "/v1/tasks/nosuchcard", strings.NewReader(`{"group":"g"}`))
 	rec := httptest.NewRecorder()
@@ -27,7 +27,7 @@ func TestAPatchOfACardThisRoomDoesNotHoldNamesIt(t *testing.T) {
 		t.Fatalf("answered %d %s, want 404", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "card nosuchcard is not on room claude-sg4") || strings.Contains(body, "sql") {
+	if !strings.Contains(body, "card nosuchcard is not on room claude-room-e") || strings.Contains(body, "sql") {
 		t.Fatalf("the not-found said %s", body)
 	}
 }

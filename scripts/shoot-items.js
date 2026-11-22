@@ -1,7 +1,7 @@
 // The items tab (list, detail, blocked) in a real browser on the fixtures of js/items-mock.js, as PNGs at 1400 and 2400 wide.
 //
 //   NODE_PATH=<dir with playwright> node scripts/shoot-items.js
-//   OUT=<dir>      where the PNGs go (default docs/rnd/img/item-lifecycle, beside the mockups they reproduce)
+//   OUT=<dir>      where the PNGs go (default build.claude/shots/item-lifecycle)
 //   NAME=<suffix>  PNG name suffix (default built, so list-built-1400.png)
 //   ROOT=<tree>    the checkout whose board is drawn
 //   SKIN=<name>    a board skin to wear
@@ -21,7 +21,7 @@ try { ({ chromium } = require("@playwright/test")); } catch (e) {
   try { ({ chromium } = require("playwright")); } catch (e2) { console.log("playwright is not installed"); process.exit(0); }
 }
 
-const OUT = path.resolve(process.env.OUT || path.join(ROOT, "docs", "rnd", "img", "item-lifecycle"));
+const OUT = path.resolve(process.env.OUT || path.join(ROOT, "build.claude", "shots", "item-lifecycle"));
 const NAME = process.env.NAME || "built";
 const HTML = wholeBoard();
 
@@ -39,7 +39,7 @@ const server = http.createServer((req, res) => {
   }
   if (p === "/" || p === "/index.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(HTML); }
   if (p.startsWith("/v1/events")) { res.writeHead(200, { "Content-Type": "text/event-stream" }); return res.write(": open"); }
-  if (p === "/_hub/rooms") return json({ rooms: [{ name: "sg4" }] });
+  if (p === "/_hub/rooms") return json({ rooms: [{ name: "room-e" }] });
   if (p === "/_hub/inventory") return json({ rooms: [] });
   if (p === "/_hub/backlog") return json({ items: [] });
   if (p === "/_hub/reports") return json({ reports: [] });

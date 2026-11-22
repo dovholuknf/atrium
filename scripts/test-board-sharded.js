@@ -8,13 +8,13 @@
 //   node scripts/test-board-sharded.js --list             print the shard plan and stop
 //   node scripts/test-board-sharded.js --no-retry         do not run a failure a second time (every failure then fails the run)
 //   node scripts/test-board-sharded.js --logs dir         keep each shard's output in dir (default: a temp dir, kept on failure)
-//   node scripts/test-board-sharded.js --local            run here instead of on sg3 (see below)
+//   node scripts/test-board-sharded.js --local            run here instead of on room-d (see below)
 //
-// WHERE IT RUNS. By default on sg3 (ATRIUM_SUITE_ROOM names another room), through scripts/board-suite-remote.ps1,
+// WHERE IT RUNS. By default on room-d (ATRIUM_SUITE_ROOM names another room), through scripts/board-suite-remote.ps1,
 // which runs this tree as it is now, committed or not, and streams the report back with the suite's exit code. The
-// suite drives up to 15 browsers and lagged sg4, the machine a person works at, where sg3 and m1mini did not, at the
+// suite drives up to 15 browsers and lagged room-e, the machine a person works at, where room-d and room-a did not, at the
 // same wall time. It runs HERE, with a line saying why, when --local or ATRIUM_SUITE_LOCAL=1 is given, when this
-// machine is that room, when this repository has no git remote of that name (a worker on m1mini has none), or with
+// machine is that room, when this repository has no git remote of that name (a worker on room-a has none), or with
 // --save-weights or --logs, which are about this machine's files.
 
 // Each shard is a separate node process with its own mock server on an ephemeral port and its own headless browser,
@@ -203,7 +203,7 @@ function printFail(indent, prefix, m) {
 
 // Hand the whole run to another room's machine and return its exit code, or null when this run stays here, saying why.
 function dispatchRemote(opt) {
-  const room = process.env.ATRIUM_SUITE_ROOM || "sg3";
+  const room = process.env.ATRIUM_SUITE_ROOM || "room-d";
   const here = why => { console.log("board suite: running here (" + why + ")"); return null; };
   if (opt.local) return here("--local");
   if (process.env.ATRIUM_SUITE_LOCAL === "1") return here("ATRIUM_SUITE_LOCAL=1");

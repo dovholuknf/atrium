@@ -7,9 +7,9 @@ import (
 
 func TestRoomNameOfKeepsWhatAHubNameTakesAndTurnsAwayTheRest(t *testing.T) {
 	for host, want := range map[string]string{
-		"m1mini":                "m1mini",
+		"room-a":                "room-a",
 		"Mac-17.local":          "Mac-17.local",
-		"Clint's Mac":           "Clint-s-Mac",
+		"Operator's Mac":        "Operator-s-Mac",
 		"":                      "room",
 		"...":                   "room",
 		strings.Repeat("a", 80): strings.Repeat("a", 64),

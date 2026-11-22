@@ -20,7 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// Web Push, the notifier's second sink. See docs/rnd/web-push-design.md and docs/backlog/ui/u-new-web-push-build.md.
+// Web Push, the notifier's second sink. See docs/backlog/ui/u-new-web-push-build.md.
 //
 // ── what is shared with the command sink ────────────────
 //

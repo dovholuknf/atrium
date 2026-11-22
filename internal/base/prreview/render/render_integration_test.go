@@ -110,7 +110,7 @@ func TestWalkOrder(t *testing.T) {
 		{Sev: "low", Path: "src/tls_engine.c", Line: 415, Rank: 1},
 		{Sev: "low", Path: "src/http.c", Line: 20, Rank: 1},
 		{Sev: "high", Path: "src/http.c", Line: 20, Rank: 9},
-		{Sev: "nit", Path: "src/tls_engine.c", Line: 412, LeftForClint: true},
+		{Sev: "nit", Path: "src/tls_engine.c", Line: 412, LeftForOperator: true},
 	}
 	in := input(t, fs)
 	d := parseDiff(in.Diff)
@@ -120,7 +120,7 @@ func TestWalkOrder(t *testing.T) {
 		got = append(got, f.Sev+" "+f.Path+":"+strconv.Itoa(f.Line))
 	}
 	want := []string{
-		"nit src/tls_engine.c:412", // left for clint comes first, whatever its severity
+		"nit src/tls_engine.c:412", // left for the operator comes first, whatever its severity
 		"high src/http.c:20",
 		"low src/tls_engine.c:415", // rank 1 ties break on the diff's file order, tls_engine.c is first in it
 		"low src/http.c:20",

@@ -1,5 +1,5 @@
 // Package shepherd is `atrium shepherd run <item>`: a program, not a model session, that takes one backlog item from
-// launch to a held packet. See docs/rnd/script-minion.md.
+// launch to a held packet.
 //
 //   - A PHASE IS A STEP BEHIND AN INTERFACE. The machine knows the order and nothing about what a phase does, so a test
 //     drives it with a fake Runner, Hub, Store and Files and no repository.

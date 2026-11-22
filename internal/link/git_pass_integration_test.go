@@ -113,7 +113,7 @@ func newPassRig(t *testing.T) *passRig {
 	t.Cleanup(func() { cancel(); hubLn.Close() })
 	go func() { _ = x.hub.Serve(ctx, hubLn) }()
 
-	x.room = &Room{Name: "SG3", Dial: plain{addr: hubLn.Addr().String()}, Git: true,
+	x.room = &Room{Name: "ROOM-D", Dial: plain{addr: hubLn.Addr().String()}, Git: true,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
 	rh := &gitsync.RoomHandler{
 		Syncer: &gitsync.Syncer{Runner: gitsync.NewRunner(), Root: func() string { return gitRoot }},
@@ -147,10 +147,10 @@ func newPassRig(t *testing.T) *passRig {
 		inner.ServeHTTP(w, r)
 	})
 	go func() { _ = x.room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return x.hub.Has("sg3") && x.room.State().Up && x.room.HubServesGit() })
+	waitFor(t, 5*time.Second, func() bool { return x.hub.Has("room-d") && x.room.State().Up && x.room.HubServesGit() })
 	x.clone = filepath.Join(gitRoot, "github", "o", "r")
 	// The hub holds what a sync said in memory, so even a copy of a synced rig is synced, which is quick for it.
-	if res, err := x.g.Sync(ctx, "sg3", "github/o/r", true); err != nil || res[0].State != "ok" {
+	if res, err := x.g.Sync(ctx, "room-d", "github/o/r", true); err != nil || res[0].State != "ok" {
 		t.Fatalf("sync: %+v %v", res, err)
 	}
 	if snap == nil {
@@ -236,16 +236,16 @@ func TestAFetchOfAClaudeBranchPassesThroughAndTheHubStoresNothing(t *testing.T) 
 	hubObjects := run(t, x.root+"/checkout", "count-objects", "-v")
 
 	dst := reader(t)
-	run(t, dst, "fetch", "-q", x.url("sg3"), "refs/heads/claude/w1:refs/remotes/sg3/claude/w1")
-	if got := run(t, dst, "rev-parse", "refs/remotes/sg3/claude/w1"); got != x.claudeW1 {
+	run(t, dst, "fetch", "-q", x.url("room-d"), "refs/heads/claude/w1:refs/remotes/room-d/claude/w1")
+	if got := run(t, dst, "rev-parse", "refs/remotes/room-d/claude/w1"); got != x.claudeW1 {
 		t.Fatalf("fetched %s want %s", got, x.claudeW1)
 	}
 	// The diff is there to be reviewed.
-	if out := run(t, dst, "show", "--stat", "--format=", "refs/remotes/sg3/claude/w1"); !strings.Contains(out, "w.txt") {
+	if out := run(t, dst, "show", "--stat", "--format=", "refs/remotes/room-d/claude/w1"); !strings.Contains(out, "w.txt") {
 		t.Fatalf("diff: %q", out)
 	}
 	// The name is case-folded like the hub's, and the short form is the same repository.
-	run(t, dst, "fetch", "-q", strings.Replace(x.url("SG3"), "github/o/r", "o/r", 1), "refs/heads/claude/w1:refs/remotes/short/w1")
+	run(t, dst, "fetch", "-q", strings.Replace(x.url("ROOM-D"), "github/o/r", "o/r", 1), "refs/heads/claude/w1:refs/remotes/short/w1")
 
 	if after := treeDigest(t, x.root+"/hub"); after != before {
 		t.Fatalf("the hub's directory changed by a fetch:\nbefore:\n%s\nafter:\n%s", before, after)
@@ -257,7 +257,7 @@ func TestAFetchOfAClaudeBranchPassesThroughAndTheHubStoresNothing(t *testing.T) 
 	defer x.mu.Unlock()
 	var logged bool
 	for _, a := range x.audit {
-		if strings.Contains(a, "git-passed") && strings.Contains(a, "github/o/r via loopback") && strings.HasPrefix(a, "SG3|") {
+		if strings.Contains(a, "git-passed") && strings.Contains(a, "github/o/r via loopback") && strings.HasPrefix(a, "ROOM-D|") {
 			logged = true
 		}
 	}
@@ -280,7 +280,7 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 		{"hub-main", "refs/heads/hub-main"},
 	} {
 		dst := reader(t)
-		if out, err := rawGit(dst, nil, "fetch", x.url("sg3"), c.ref+":refs/heads/got"); err == nil {
+		if out, err := rawGit(dst, nil, "fetch", x.url("room-d"), c.ref+":refs/heads/got"); err == nil {
 			t.Errorf("%s: went through: %s", c.name, out)
 		}
 		if out := run(t, dst, "for-each-ref"); out != "" {
@@ -290,7 +290,7 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 	// A want by sha, for what the room did not advertise, reaches the room and is refused by its git.
 	for name, sha := range map[string]string{"stash": x.stash, "notes": x.notes, "secret": x.secret} {
 		body := string(pkt("want "+sha+"\n")) + "0000" + string(pkt("done\n"))
-		resp := post(t, x.url("sg3")+"/git-upload-pack", body)
+		resp := post(t, x.url("room-d")+"/git-upload-pack", body)
 		if !strings.Contains(resp, "ERR") || strings.Contains(resp, "PACK") {
 			t.Errorf("%s: a want by sha was answered %q", name, resp)
 		}
@@ -298,12 +298,12 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 	// With a live card, its branch is served, and with the card gone it is not.
 	x.setLive("fix/live")
 	dst := reader(t)
-	run(t, dst, "fetch", "-q", x.url("sg3"), "refs/heads/fix/live:refs/heads/live")
+	run(t, dst, "fetch", "-q", x.url("room-d"), "refs/heads/fix/live:refs/heads/live")
 	if got := run(t, dst, "rev-parse", "refs/heads/live"); got != x.liveSHA {
 		t.Fatalf("live branch at %s", got)
 	}
 	x.setLive()
-	if _, err := rawGit(dst, nil, "fetch", x.url("sg3"), "refs/heads/fix/live:refs/heads/again"); err == nil {
+	if _, err := rawGit(dst, nil, "fetch", x.url("room-d"), "refs/heads/fix/live:refs/heads/again"); err == nil {
 		t.Fatal("a branch whose card ended is still served")
 	}
 }
@@ -336,7 +336,7 @@ func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
 	} {
 		dst := reader(t)
 		a := append([]string{"fetch"}, args...)
-		a = append(a, x.url("sg3"), "refs/heads/claude/w1:refs/heads/got")
+		a = append(a, x.url("room-d"), "refs/heads/claude/w1:refs/heads/got")
 		out, err := rawGit(dst, nil, a...)
 		if err == nil {
 			t.Errorf("%v went through: %s", args, out)
@@ -348,7 +348,7 @@ func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
 	// And by hand, with each line a client could send, none of which may reach the room.
 	for _, line := range []string{"shallow " + x.claudeW1 + "\n", "deepen 1\n", "deepen-since 1\n", "deepen-not x\n", "filter blob:none\n"} {
 		body := string(pkt("want "+x.claudeW1+"\n")) + string(pkt(line)) + "0000" + string(pkt("done\n"))
-		if resp := post(t, x.url("sg3")+"/git-upload-pack", body); !strings.Contains(resp, "ERR atrium") {
+		if resp := post(t, x.url("room-d")+"/git-upload-pack", body); !strings.Contains(resp, "ERR atrium") {
 			t.Errorf("%q answered %q", line, resp)
 		}
 	}
@@ -372,21 +372,21 @@ func TestADetachedOrUnknownRoomAnswers503(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, strings.TrimSpace(string(b))
 	}
-	if code, body := get("sg3"); code != 200 {
+	if code, body := get("room-d"); code != 200 {
 		t.Fatalf("attached: %d %s", code, body)
 	}
 	if code, body := get("nowhere"); code != http.StatusServiceUnavailable || body != "nowhere is not connected" {
 		t.Fatalf("unknown: %d %q", code, body)
 	}
 	x.cancel()
-	waitFor(t, 5*time.Second, func() bool { return !x.hub.Has("sg3") })
-	code, body := get("sg3")
-	if code != http.StatusServiceUnavailable || body != "sg3 is not connected" {
+	waitFor(t, 5*time.Second, func() bool { return !x.hub.Has("room-d") })
+	code, body := get("room-d")
+	if code != http.StatusServiceUnavailable || body != "room-d is not connected" {
 		t.Fatalf("detached: %d %q", code, body)
 	}
 	dst := reader(t)
-	out, err := rawGit(dst, nil, "fetch", x.url("sg3"), "refs/heads/claude/w1")
-	if err == nil || !strings.Contains(out+err.Error(), "sg3 is not connected") {
+	out, err := rawGit(dst, nil, "fetch", x.url("room-d"), "refs/heads/claude/w1")
+	if err == nil || !strings.Contains(out+err.Error(), "room-d is not connected") {
 		t.Fatalf("git was not shown the 503: %v %s", err, out)
 	}
 }
@@ -398,7 +398,7 @@ func TestOnlyTheOperatorsReachesMayFetchThroughTheHub(t *testing.T) {
 	lightSlot(t)
 	x := newPassRig(t)
 	do := func(h http.Handler, host, remote string) int {
-		req := httptest.NewRequest("GET", "http://"+host+"/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack", nil)
+		req := httptest.NewRequest("GET", "http://"+host+"/git/room/room-d/github/o/r.git/info/refs?service=git-upload-pack", nil)
 		req.RemoteAddr = remote
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -433,13 +433,13 @@ func TestACardOnARoomDoesNotReachThePassThroughOverTheLink(t *testing.T) {
 	}
 	lightSlot(t)
 	x := newPassRig(t)
-	other := &Room{Name: "m1mini", Dial: plain{addr: x.hubAddr(t)}, Git: true,
+	other := &Room{Name: "room-a", Dial: plain{addr: x.hubAddr(t)}, Git: true,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = other.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return x.hub.Has("m1mini") && other.HubServesGit() })
-	req, _ := http.NewRequest("GET", "http://hub/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack", nil)
+	waitFor(t, 5*time.Second, func() bool { return x.hub.Has("room-a") && other.HubServesGit() })
+	req, _ := http.NewRequest("GET", "http://hub/git/room/room-d/github/o/r.git/info/refs?service=git-upload-pack", nil)
 	resp, err := other.GitTransport().RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
@@ -464,7 +464,7 @@ func TestSevenFetchesInAMinuteFromOneReaderAreTooMany(t *testing.T) {
 	x.g.PassHandler().FetchesPerMinute, x.g.PassHandler().RoundsPerMinute = 0, 0
 	codes := map[int]int{}
 	for i := 0; i < 8; i++ {
-		resp, err := http.Get(x.url("sg3") + "/info/refs?service=git-upload-pack")
+		resp, err := http.Get(x.url("room-d") + "/info/refs?service=git-upload-pack")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -504,7 +504,7 @@ func TestReadersWithNoAddressShareTheReachsBudgetAndPeersWithOneDoNot(t *testing
 	overlay := edge.MarkReach(x.proxy, edge.ReachOverlay)
 	codes := map[int]int{}
 	for i := 0; i < 8; i++ {
-		req := httptest.NewRequest("GET", "http://atrium.ziti/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack", nil)
+		req := httptest.NewRequest("GET", "http://atrium.ziti/git/room/room-d/github/o/r.git/info/refs?service=git-upload-pack", nil)
 		req.RemoteAddr = fmt.Sprintf("ziti-edge-router connId=%d, logical=er1", i)
 		rec := httptest.NewRecorder()
 		overlay.ServeHTTP(rec, req)

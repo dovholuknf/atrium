@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// A card by its handle, from a shell. See docs/rnd/handle-addressed-http-design.md
+// A card by its handle, from a shell.
 // section 8.
 //
 // `atrium task`, `atrium exit` and `atrium new-context` name a card the way an

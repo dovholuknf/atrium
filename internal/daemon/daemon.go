@@ -1298,6 +1298,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if !d.opts.Passive {
 		d.reattached = make(chan struct{})
 		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
+		go d.incomingSweeper(ctx, IncomingSweepStart, IncomingSweepEvery)
 		go d.diskWatcher(ctx, DiskWatchStart, DiskWatchEvery)
 		go d.hostWatcher(ctx, HostWatchStart, HostWatchEvery)
 		go d.dictateWarm(ctx)

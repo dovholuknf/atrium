@@ -16,8 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Parking, and the human touch that decides what is worth keeping up. See
-// docs/rnd/keepalive-policy-design.md sections 1, 4, 5 and 7.
+// Parking, and the human touch that decides what is worth keeping up.
 //
 // A PARKED CARD IS A FLAG, NOT A STATUS. `parked_at` is set, the status it had
 // is kept, its resume id is kept and no process runs. It sits in its column and

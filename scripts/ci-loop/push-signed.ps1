@@ -2,7 +2,7 @@
 # GitHub CI runs on it.
 # Each landed group is a bucket. A bucket stacks on the newest dev-* on origin that the branch already holds, else on
 # main, so each bucket branch holds every earlier one. Open its PR against that base and merge bottom first.
-# Run as clint. The claude checkout is never touched: the signing happens in a throwaway worktree, on a throwaway
+# Run as the operator. The claude checkout is never touched: the signing happens in a throwaway worktree, on a throwaway
 # branch, and both are removed after.
 # The messages are made the way scripts/land-claude-main.ps1 makes them, by the same scripts/land-history.go: one
 # line, claude scrubbed out, you as author and committer, signed. The repo's pre-push hook refuses any other.
@@ -26,7 +26,7 @@ function g { git --no-pager -c safe.directory=* @args }
 if ($Bucket -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { throw "bad bucket name: $Bucket" }
 $Target = "dev-$Bucket"
 
-$wt = Join-Path 'D:\tmp' ('push-signed-' + ($Branch -replace '[\\/]', '-'))
+$wt = Join-Path $Repo ('.uncommitted/push-signed-' + ($Branch -replace '[\\/]', '-'))
 # land-history.go rewrites a local branch, so the copy gets one of its own.
 $tmp = 'push-signed/' + ($Branch -replace '[\\/]', '-')
 g -C $Repo fetch --prune origin main '+refs/heads/dev-*:refs/remotes/origin/dev-*'

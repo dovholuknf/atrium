@@ -9,8 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// Turning a name somebody typed into a card. See
-// docs/rnd/handle-addressed-http-design.md.
+// Turning a name somebody typed into a card.
 //
 // ONE RULE, TWO CALLERS. The control tools (resolvePeer) and the hub's HTTP
 // routing (placeCard) both find a card by the same order, so a name that works

@@ -15,7 +15,7 @@ import (
 )
 
 // ITEMS, STAGE 3: POOLS. A pool is the resident cards that carry the tag `atrium:pool:<name>`, and it is fed ONE ITEM AT
-// A TIME PER CARD. See docs/changes/items-stage3.md and docs/rnd/atrium-items-decisions.md section 7.
+// A TIME PER CARD. See docs/changes/items-stage3.md.
 //
 //   - THE QUEUE LIVES ON THE POOL'S ROOM, because a pool is cards on one room. A submitted item is a mirror row in the
 //     state `queued` with no card. The hub learns of it when a card takes it, as the first push (`running`), since the hub

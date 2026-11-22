@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// The PR claim table: one owner per PR key across rooms. See migration 0010 and docs/rnd/scm-forge-design.md section 6.
+// The PR claim table: one owner per PR key across rooms. See migration 0010.
 //
 //   - AN INDEX, NOT A COPY. The row, the findings and the run folder stay on the owning room.
 //   - THE FIRST CLAIM WINS. Claim on a key that has an owner answers that owner and changes nothing, so two rooms that

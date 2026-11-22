@@ -7,7 +7,7 @@ import (
 )
 
 // Owed answers: a worker stopped owing its launcher one, and the open item that keeps it.
-// See docs/rnd/long-turn-checkin-design.md section 11 and internal/daemon/owed.go.
+// and internal/daemon/owed.go.
 //
 // KEPT AS SETTINGS, one per worker, so a restart keeps every item and no event kind widens the
 // event table's CHECK. The same posture as the held-notice read marker (heldnotices.go). The

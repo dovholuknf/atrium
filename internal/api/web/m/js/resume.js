@@ -21,8 +21,8 @@
   const key = id => window.mNet.bareId(id);
 
   // ── the sheet ────────────────────────────────────────────────────────────
-  // THE TERMINALS TAB MENU, the same items in the same order (docs/interviews/INTERVIEW-card-menu-2026-10-09.md, and
-  // `termMenuItems` in js/terminal-list.js, which the phone page does not load): restart, resume, new context, add to
+  // THE TERMINALS TAB MENU, the same items in the same order (`termMenuItems` in
+  // js/terminal-list.js, which the phone page does not load): restart, resume, new context, add to
   // group, remove from group, then settings, then stop and terminate and clean up. Each has its (?), and with no hover a
   // tap on it shows the help under the row. No grey lines. Nothing asks "are you sure?" but a clean up of a folder holding
   // work that exists nowhere else, which has its own "never show me this again" tick, kept under the same key the board

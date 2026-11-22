@@ -1,5 +1,5 @@
 {
-  "about": "One bucket per board page and per API surface. Read by scripts/test-touched-plan.js and linted by scripts/check-test-buckets.js. See docs/rnd/test-layout-design.md and docs/changes/test-layout-s0.md. A name written in full beats a glob. Every board source file, every internal/api and internal/link Go source file and every headless unit is in exactly one bucket, or the lint fails.",
+  "about": "One bucket per board page and per API surface. Read by scripts/test-touched-plan.js and linted by scripts/check-test-buckets.js. See docs/changes/test-layout-s0.md. A name written in full beats a glob. Every board source file, every internal/api and internal/link Go source file and every headless unit is in exactly one bucket, or the lint fails.",
   "shared": {
     "internal/api/web/js/core.js": "state and helpers every page reads",
     "internal/api/web/js/fetchyield.js": "every fetch on the board and the walk gives way to an upload",
@@ -130,7 +130,7 @@
     "chat": {
       "file": "scripts/board-tests/chat.js",
       "page": "the chat tab and the chatter tab",
-      "units": ["chatBridge", "chatCap", "chatFast", "chatKeep", "chatPaste", "chatReview", "chatTab", "chatter", "chatterTab"],
+      "units": ["chatBridge", "chatCap", "chatColours", "chatDarkCard", "chatFast", "chatKeep", "chatPaste", "chatReview", "chatTab", "chatter", "chatterTab"],
       "sources": ["internal/api/web/js/chat.js", "internal/api/web/js/review.js", "internal/api/web/css/review.css","internal/api/web/js/terminal-list.js", "internal/api/web/js/chatter.js", "internal/api/web/css/chat.css"],
       "tests": [],
       "checks": []
@@ -255,7 +255,7 @@
     },
     "docs-files": {
       "page": "docs, files, the reader, change requests",
-      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileBack", "artifacts", "fileLinkDrawer", "draftReload", "fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "keptFileLink", "markdownTab", "readerRaw", "docShare", "coverPoll", "coverSteps"],
+      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileBack", "artifacts", "fileLinkDrawer", "draftReload", "boardLive","fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "keptFileLink", "markdownTab", "readerRaw", "docShare", "coverPoll", "coverSteps"],
       "sources": [
         "internal/api/web/js/notes-files.js",
         "internal/api/web/js/files-rules.js",
@@ -282,7 +282,7 @@
       "file": "scripts/board-tests/rooms.js",
       "page": "rooms, the hub gate, the restart menu, transports, the down page",
       "units": [
-        "atriumDown", "reconnectPill", "hubGate", "apiSlots", "apiSlotsReads", "apiSlotsPaste", "walkYield", "rooms*", "restart*", "relaunchAttach", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
+        "atriumDown", "reconnectPill", "hubGate", "apiSlots", "apiSlotsReads", "apiSlotsPaste", "walkYield", "rooms*", "restart*", "relaunchAttach", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "hubProfile", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
       ],
       "sources": [
         "internal/api/web/js/rooms.js",
@@ -290,6 +290,7 @@
         "internal/api/web/js/rooms-dash.js",
         "internal/api/web/js/hubrestart.js",
         "internal/api/web/js/hubhosts.js",
+        "internal/api/web/js/hubprofile.js",
         "internal/api/web/js/hubtransports.js",
         "internal/api/web/js/overlays.js",
         "internal/api/web/js/sharing.js",
@@ -305,7 +306,7 @@
       "file": "scripts/board-tests/settings.js",
       "page": "settings, themes and skins, providers, preferences",
       "units": [
-        "help*", "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "emergingSwitch", "dropdownsInstant", "prefsEverywhere", "alias", "parent"
+        "help*", "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "emergingSwitch", "dropdownsInstant", "dictBoop", "prefsEverywhere", "alias", "parent"
       ],
       "sources": [
         "internal/api/web/js/alias.js",
@@ -414,19 +415,19 @@
     "hub/merge": {"package": "./internal/link", "sources": ["internal/link/merge_mcp.go", "internal/link/profile.go"], "tests": ["internal/link/merge_*test.go"]},
     "hub/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog.go", "internal/link/docdebt.go", "internal/link/docdebt_landed.go"], "tests": ["internal/link/backlog_*test.go", "internal/link/docdebt_*test.go"]},
     "hub/items": {"package": "./internal/link", "sources": ["internal/link/items.go", "internal/link/tasks.go", "internal/link/tasks_launch.go", "internal/link/shepherd.go", "internal/link/item_brief.go", "internal/link/interview.go", "internal/link/lifecycle.go", "internal/link/lifecycle_engine.go", "internal/link/lifecycle_spike.go", "internal/link/lifecycle_git.go", "internal/link/work.go", "internal/link/work_launch.go", "internal/link/work_record.go", "internal/link/workcost.go", "internal/link/workusage.go", "internal/link/launchcaps.go", "internal/link/launchroute.go", "internal/link/launchfind.go", "internal/link/pinorder.go", "internal/link/predates.go", "internal/link/logline.go"], "tests": ["internal/link/interview_*test.go", "internal/link/item_*test.go", "internal/link/items_integration_test.go", "internal/link/tasks_integration_test.go", "internal/link/shepherd_*test.go", "internal/link/launchcaps_*test.go", "internal/link/launchroute_*test.go", "internal/link/lifecycle_*test.go", "internal/link/pinorder_*test.go", "internal/link/work_*test.go", "internal/link/workcost_*test.go", "internal/link/workerpolicy_*test.go", "internal/link/workusage_*test.go"]},
-    "hub/reports": {"package": "./internal/link", "sources": ["internal/link/audit.go", "internal/link/efficacy.go", "internal/link/efficacy_collect.go", "internal/link/efficacy_report.go", "internal/link/efficacy_rollup.go", "internal/link/inputlag.go"], "tests": ["internal/link/audit_*test.go", "internal/link/contextlimits_*test.go", "internal/link/efficacy_*test.go", "internal/link/inputlag_*test.go", "internal/link/inputlagsetting_*test.go", "internal/link/mincolssetting_*test.go"]},
+    "hub/reports": {"package": "./internal/link", "sources": ["internal/link/audit.go", "internal/link/efficacy.go", "internal/link/efficacy_collect.go", "internal/link/efficacy_report.go", "internal/link/efficacy_rollup.go", "internal/link/inputlag.go", "internal/link/uploadtime.go"], "tests": ["internal/link/audit_*test.go", "internal/link/contextlimits_*test.go", "internal/link/efficacy_*test.go", "internal/link/inputlag_*test.go", "internal/link/inputlagsetting_*test.go", "internal/link/mincolssetting_*test.go"]},
     "hub/pulls": {"package": "./internal/link", "sources": ["internal/link/forge_forward.go", "internal/link/changerequest.go"], "tests": ["internal/link/changerequest_*test.go", "internal/link/forge_*test.go", "internal/link/forgeci_*test.go", "internal/link/forgeroute_*test.go", "internal/link/prclaim_*test.go", "internal/link/prmove_*test.go", "internal/link/prworktreeroute_*test.go", "internal/link/pulls_*test.go"]},
     "hub/notify": {"package": "./internal/link/notify", "sources": ["internal/link/notify/*.go"], "tests": ["internal/link/notify/*test.go"]},
     "hub/settings": {"package": "./internal/link/settings", "sources": ["internal/link/settings/*.go"], "tests": []},
     "hub/says": {"package": "./internal/link", "sources": ["internal/link/notify_forward.go", "internal/link/settings_forward.go", "internal/link/says.go"], "tests": ["internal/link/says_*test.go", "internal/link/replies_*test.go", "internal/link/testkit_*test.go"]},
     "hub/git": {"package": "./internal/link", "sources": ["internal/link/git_door.go", "internal/link/git_mcp.go", "internal/link/git_url.go", "internal/link/flow_git.go"], "tests": ["internal/link/git_*test.go"]},
-    "hub/views": {"package": "./internal/link", "sources": ["internal/link/views.go", "internal/link/openroute.go"], "tests": ["internal/link/openroute_*test.go", "internal/link/recogniseroute_*test.go", "internal/link/recognisers_*test.go", "internal/link/views_*test.go"]},
+    "hub/views": {"package": "./internal/link", "sources": ["internal/link/views.go", "internal/link/boardlive.go", "internal/link/openroute.go"], "tests": ["internal/link/openroute_*test.go", "internal/link/recogniseroute_*test.go", "internal/link/recognisers_*test.go", "internal/link/views_*test.go"]},
     "hub/deploy": {"package": "./internal/link", "sources": ["internal/link/restartgate.go", "internal/link/deps.go", "internal/link/flow.go", "internal/link/prune.go"], "tests": ["internal/link/autoapprove_*test.go", "internal/link/deployready_*test.go", "internal/link/deps_*test.go", "internal/link/flow_*test.go", "internal/link/prune_*test.go", "internal/link/restartgate_*test.go"]},
     "hub/files": {"package": "./internal/link", "sources": ["internal/link/docs_forward.go"], "tests": ["internal/link/docs_api_*test.go", "internal/link/files_api_*test.go", "internal/link/docs_mcp_*test.go", "internal/link/files_mcp_*test.go"]},
     "hub/deploypkg": {"package": "./internal/link/deploy", "sources": ["internal/link/deploy/*.go"], "tests": []},
     "hub/docs": {"package": "./internal/link/docs", "sources": ["internal/link/docs/*.go"], "tests": []},
 "hub/cihook": {"package": "./internal/link", "sources": ["internal/link/cihook_deliver.go"], "tests": ["internal/link/cihook_*test.go", "internal/link/eventhook_*test.go"]},
-    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_gate.go", "internal/link/control_remind.go", "internal/link/control_relay.go", "internal/link/hand.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go", "internal/link/review.go", "internal/link/review_mcp.go"], "tests": ["internal/link/review_integration_test.go", "internal/link/control_*test.go", "internal/link/ctl_*test.go", "internal/link/ctlaudit_*test.go", "internal/link/ctlclass_*test.go", "internal/link/launch_item_schema_test.go", "internal/link/launch_schema_integration_test.go", "internal/link/need_integration_test.go"]},
+    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_gate.go", "internal/link/control_remind.go", "internal/link/control_relay.go", "internal/link/hand.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/link_mcp.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go", "internal/link/review.go", "internal/link/review_mcp.go"], "tests": ["internal/link/review_integration_test.go", "internal/link/control_*test.go", "internal/link/ctl_*test.go", "internal/link/ctlaudit_*test.go", "internal/link/ctlclass_*test.go", "internal/link/launch_item_schema_test.go", "internal/link/launch_schema_integration_test.go", "internal/link/need_integration_test.go", "internal/link/link_mcp_integration_test.go"]},
     "mcp/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog_mcp.go"], "tests": []},
     "mcp/deploy": {"package": "./internal/link", "sources": ["internal/link/deploy_forward.go"], "tests": ["internal/link/deploy_*test.go"]},
     "mcp/deps": {"package": "./internal/link", "sources": ["internal/link/deps_mcp.go"], "tests": []},

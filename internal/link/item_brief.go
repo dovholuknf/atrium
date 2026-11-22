@@ -16,7 +16,6 @@ import (
 // It replaces the change record's inventory handed to a new card, and `atrium_item show` prints the same lines, so a card
 // can ask again later and the brief is never the only copy. Nothing here is stored: the lines are made from the hub's
 // `GET /_hub/work/<id>` at launch. A hub that cannot answer costs the brief its header and nothing else.
-// See docs/rnd/item-lifecycle-design.md sections 5 and 8.
 
 // ItemFolder is where an item's logs live on a machine, `~/.atrium/items/<backlog id>/`.
 func ItemFolder(id string) string { return "~/.atrium/items/" + strings.TrimSpace(id) + "/" }

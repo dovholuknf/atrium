@@ -93,7 +93,7 @@ func TestAClaudeNotYetHeardOnAHookIsNotTypedIntoMidTurn(t *testing.T) {
 		t.Fatal("the card was heard from already")
 	}
 
-	out := sayViaMessage(t, d, "sg4/doer", target.ID, "stop now")
+	out := sayViaMessage(t, d, "room-e/doer", target.ID, "stop now")
 	if f.written() != "" || out["delivered"] != "queued" {
 		t.Fatalf("typed or answered wrongly: %q %v", f.written(), out)
 	}
@@ -108,7 +108,7 @@ func TestAnEscalatedDoneIsNotTypedIntoAClaudeMidTurn(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
 
-	out := sayWhen(t, d, "sg4/doer", target.ID, "neither matrix exists", "done")
+	out := sayWhen(t, d, "room-e/doer", target.ID, "neither matrix exists", "done")
 	if out["delivered"] != "queued" {
 		t.Fatalf("a done say is not queued: %v", out)
 	}
@@ -150,7 +150,7 @@ func TestTheRetryDoesNotTypeMidTurnIntoAClaude(t *testing.T) {
 	// Idle, a part written line: queued and held for the line.
 	partial := "half a thou"
 	r.noteOperatorTyped([]byte(partial))
-	if out := sayViaMessage(t, d, "sg4/doer", target.ID, "the build is green"); out["delivered"] != "queued" {
+	if out := sayViaMessage(t, d, "room-e/doer", target.ID, "the build is green"); out["delivered"] != "queued" {
 		t.Fatalf("not queued behind a part written line: %v", out)
 	}
 	if heldCount(d.pending, target.ID) != 1 {
@@ -186,7 +186,7 @@ func TestAHookCarriesALineHeldWhileTheRunnerIsMidTurn(t *testing.T) {
 	target, r, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	r.noteOperatorTyped([]byte("half a thou"))
-	sayViaMessage(t, d, "sg4/doer", target.ID, "the build is green")
+	sayViaMessage(t, d, "room-e/doer", target.ID, "the build is green")
 	d.act.set(target.ID, ActivityTool, "Bash")
 
 	msgs, err := d.takeMessages(target.ID, "permission")
@@ -206,7 +206,7 @@ func TestAnIdleClaudeIsStillTypedAndAnswersTerminal(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityIdle, "")
 
-	for _, from := range []string{"", "sg4/doer"} {
+	for _, from := range []string{"", "room-e/doer"} {
 		before := len(f.written())
 		out := sayViaMessage(t, d, from, target.ID, "ping"+from)
 		if out["delivered"] != "terminal" {
@@ -226,7 +226,7 @@ func TestCodexIsStillTypedIntoMidTurn(t *testing.T) {
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "shell")
 
-	for _, from := range []string{"", "sg4/doer"} {
+	for _, from := range []string{"", "room-e/doer"} {
 		out := sayViaMessage(t, d, from, target.ID, "stop now"+from)
 		if out["delivered"] != "terminal" {
 			t.Fatalf("from %q: codex was not typed into mid-turn: %v", from, out)

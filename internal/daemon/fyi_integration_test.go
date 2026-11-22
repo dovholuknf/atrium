@@ -67,13 +67,13 @@ func TestACrossRoomNoticeToAnOrchestratorIsQueuedForTurnEnd(t *testing.T) {
 	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 		d := testDaemon(t)
 		launcher, _ := holdingPair(t, d, tag)
-		rec := sayKind(t, d, launcher, "sa1@claude-sg4", KindFYI)
+		rec := sayKind(t, d, launcher, "sa1@claude-room-e", KindFYI)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"delivered":"queued`) ||
 			!strings.Contains(rec.Body.String(), `"done"`) || strings.Contains(rec.Body.String(), `"held"`) {
 			t.Fatalf("%s: answered %d, want queued with when done: %s", tag, rec.Code, rec.Body)
 		}
 		msgs := pendingFrom(t, d, launcher.ID)
-		if len(msgs) != 1 || !msgs[0].WaitTurn || msgs[0].FromPeer != "sa1@claude-sg4" {
+		if len(msgs) != 1 || !msgs[0].WaitTurn || msgs[0].FromPeer != "sa1@claude-room-e" {
 			t.Fatalf("%s: queued = %+v, want the fyi waiting for the turn end", tag, msgs)
 		}
 		if n := len(heldOn(t, d, launcher.ID)); n != 0 {
@@ -136,7 +136,7 @@ func TestABlockedFYIReportIsStillNeeds(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, OrchestratorTag)
 	rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked, Kind: "fyi",
-		Ask: "the token, from clint"})
+		Ask: "the token, from operator"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
 	}
@@ -158,7 +158,7 @@ func TestADoneOrAskingFYIReportIsForcedToNeeds(t *testing.T) {
 		"done": {Status: ReportDone, Kind: "fyi", NoCommit: "research only",
 			Recap: "the matrix is written up"},
 		"progress with an ask": {Status: ReportProgress, Kind: "fyi",
-			Recap: "the matrix is written up", Ask: "which table, from clint"},
+			Recap: "the matrix is written up", Ask: "which table, from operator"},
 	} {
 		for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 			n++

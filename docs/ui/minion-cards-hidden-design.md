@@ -98,7 +98,7 @@ that appears and disappears is the whole point: it is exactly "surfaces where th
 small chip, `minion`, so it is clear why an unfamiliar card is asking (drawn by `termRow` in `js/terminal-list.js` and
 the board's card chips in `js/board.js`, which already draw the `subagent` kind of chip).
 
-**Stuck.** `js/keepalive.js` and the long turn check-in (`docs/rnd/long-turn-checkin-design.md`) already mark a card that
+**Stuck.** `js/keepalive.js` and the long turn check-in already mark a card that
 has stopped moving. `cardNeedsYou` includes that mark, so a stuck minion un-hides. The exact field is confirmed in phase
 1 (open question 2).
 

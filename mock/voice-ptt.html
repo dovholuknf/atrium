@@ -107,7 +107,7 @@ body.v-phone #phone { display: flex; }
   talk, release to transcribe. The words are pasted into the input line followed by a new line that does <b>not</b>
   submit. You press <kbd>Enter</kbd> when it reads right. <kbd>Esc</kbd> while holding throws the clip away. On the
   phone, hold the mic beside Send. Release appends the words and a new line to the box, and Send submits. Audio goes
-  only to this room's whisper on sg4's GPU (about 0.4 s for a 5 s clip, 2 s for 35 s). Try it here: the key and both
+  only to this room's whisper on room-e's GPU (about 0.4 s for a 5 s clip, 2 s for 35 s). Try it here: the key and both
   mic buttons are live with canned text.
 </div>
 <div id="stage">
@@ -116,7 +116,7 @@ body.v-phone #phone { display: flex; }
     <section class="term-pane">
       <div class="term-bar">
         <span class="term-who"><span id="t-mark"></span><span class="tname"><strong>voice-push-to-talk</strong></span></span>
-        <span class="chips"><span class="chip">claude</span><span class="chip">sg4</span></span>
+        <span class="chips"><span class="chip">claude</span><span class="chip">room-e</span></span>
         <span class="grow" style="flex:1"></span>
         <!-- NEW: the mic -->
         <button id="t-mic" class="icon" data-st="" aria-label="hold to dictate"
@@ -221,8 +221,8 @@ function setState(s) {
     draw(); tick = setInterval(draw, 500);
     note.dataset.kind = "listen"; note.classList.add("on");
   } else if (s === "transcribing") {
-    pill('<span class="spin"></span> transcribing on sg4 <span class="hint">large-v3-turbo, GPU</span>');
-    note.textContent = "transcribing on sg4"; note.dataset.kind = "busy"; note.classList.add("on");
+    pill('<span class="spin"></span> transcribing on room-e <span class="hint">large-v3-turbo, GPU</span>');
+    note.textContent = "transcribing on room-e"; note.dataset.kind = "busy"; note.classList.add("on");
   } else if (s === "pasted") {
     // Desk: bracketed paste of the words plus "\n". Claude Code keeps the newline in its input, nothing submits.
     $("d-line").innerHTML = '<span class="pasted">' + SAID + '</span>\n  ';

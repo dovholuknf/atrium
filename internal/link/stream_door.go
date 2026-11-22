@@ -11,7 +11,7 @@ import (
 )
 
 // THE HUB MACHINE'S OPERATOR is the one door for the caller `hub`: POST /_hub/ssh/<room> with `Connection: Upgrade` and
-// `Upgrade: atrium-stream`, on the hub's loopback board listener. See docs/rnd/ssh-via-hub.md decisions 6 and 7.
+// `Upgrade: atrium-stream`, on the hub's loopback board listener. decisions 6 and 7.
 //
 // THE BOARD CAN NEVER OPEN A STREAM, for three separate reasons that each hold alone. A browser cannot set `Connection`
 // or `Upgrade` on fetch or XHR, and a WebSocket says `websocket`. `Origin` and `Sec-Fetch-Site` are refused, so a page

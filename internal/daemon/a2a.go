@@ -496,8 +496,7 @@ func (d *Daemon) nudgeSilent(t *store.Task, key string, n int) {
 // THE PROMPT HAS TO BE THE LAUNCHER'S. A message from another session, or a
 // turn the session's own monitor woke, creates no debt, so a resident session
 // whose workers report to it is not stuck for hearing from them. The board's
-// STUCK mark reads this too, on purpose: one definition of owing. See
-// docs/rnd/owed-report-design.md.
+// STUCK mark reads this too, on purpose: one definition of owing.
 //
 // A TURN HAS TO HAVE RUN. Owing a report is not enough: a built-in slash
 // command such as `/model` is a prompt that starts no turn, and a card a
@@ -509,8 +508,7 @@ func (d *Daemon) nudgeSilent(t *store.Task, key string, n int) {
 // A RESIDENT DIRECTOR IS NOT SILENT WHILE ITS WORKERS ARE OUTSTANDING. Its
 // next report is due when its batch is done, not after every worker message
 // that wakes it, so ringing its launcher each time it ends a turn waiting is
-// noise. Once every worker has ended it works as for any card. See
-// docs/rnd/keepalive-policy-design.md section 7.
+// noise. Once every worker has ended it works as for any card.
 func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if t.Status != store.StatusNeedsInput || !t.OwesReport() {
 		return time.Time{}, false
@@ -740,7 +738,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 			x = d.stuckNow(t, now)
 			d.wakeLauncher(t, x)
 		} else {
-			// A LONG TURN IS SHOWN ON EVERY CARD, clint's own included. Only a
+			// A LONG TURN IS SHOWN ON EVERY CARD, the operator's own included. Only a
 			// card with a launcher has somebody to tell.
 			if x = d.launchStuck(t, now); x == nil {
 				x = d.longTurn(t, now)

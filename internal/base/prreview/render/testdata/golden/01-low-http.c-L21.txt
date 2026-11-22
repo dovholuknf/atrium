@@ -12,4 +12,4 @@ Found: traced
 Raised by: codebase-steward
 Impact: a failed dup is passed on as a descriptor
 Second opinion: disputes. dup only fails at the descriptor limit, which the caller has already hit.
-Settled: left for clint
+Settled: left for the operator

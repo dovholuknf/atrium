@@ -18,10 +18,10 @@ const ago = m => new Date(Date.now() - m * 60000).toISOString();
 const work = (at, o) => ({ steps: NAMES.map((s, i) => ({ step: s, state: o && o.all ? "done" : i < at ? "done" : i === at ? "active" : "pending",
   party: o && o.approval && s === "approved" ? "human" : "", cards: "[]", started_at: ago(500) })) });
 // One hub assignment, as the item the board makes of it.
-const asg = (n, backlog, card, state, o) => itemFromHub(Object.assign({ item_id: "a" + n, work_id: backlog, room: "sg4", card, state, owner_kind: "session",
-  owner: "orch@sg4", note: "", created_at: ago(600), updated_at: ago(n) }, o));
+const asg = (n, backlog, card, state, o) => itemFromHub(Object.assign({ item_id: "a" + n, work_id: backlog, room: "room-e", card, state, owner_kind: "session",
+  owner: "orch@room-e", note: "", created_at: ago(600), updated_at: ago(n) }, o));
 const row = (a, w) => itemWithWork(a, w);
-const tasks = ids => ids.map(id => ({ id, room: "sg4" }));
+const tasks = ids => ids.map(id => ({ id, room: "room-e" }));
 const one = (list, tk) => foldItems(list, tk)[0];
 
 // ONE ROW PER BACKLOG ID: four assignments fold into one, and the driver is the newest live card.
@@ -31,8 +31,8 @@ if (r[0].card !== "c3" || r[0].fold.live !== 1 || r[0].fold.ended !== 3) fail("d
 if (r[0].fold.group !== "working") fail("a live card on its step is " + r[0].fold.group);
 if (foldItems([asg(1, "x", "c1", "running"), asg(2, "y", "c2", "running")], null).length !== 2) fail("two backlog ids did not stay two rows");
 
-// ASK TEXT: a human-owned block with a question needs you, with none it does not, and a session-owned block is not clint's.
-const blocked = (note, kind) => row(asg(1, "b2", "c1", "blocked", { owner_kind: kind, owner: kind === "human" ? "clint" : "orch@sg4", note }), work(2));
+// ASK TEXT: a human-owned block with a question needs you, with none it does not, and a session-owned block is not the operator's.
+const blocked = (note, kind) => row(asg(1, "b2", "c1", "blocked", { owner_kind: kind, owner: kind === "human" ? "operator" : "orch@room-e", note }), work(2));
 if (one([blocked("which key?", "human")], tasks(["c1"])).fold.group !== "needs-you") fail("a human question did not need you");
 if (!itemNeedsYou(one([blocked("which key?", "human")], tasks(["c1"])))) fail("itemNeedsYou false for a human question");
 for (const [note, kind] of [["", "human"], ["   ", "human"], ["a question", "session"], ["", "session"]]) {
@@ -55,7 +55,7 @@ const landed = one([row(asg(1, "b5", "c1", "finished"), work(6))], tasks([]));
 if (landed.fold.group !== "working" || !landed.fold.noCard) fail("landed with ended cards is " + landed.fold.group + ", want working with no card needed");
 const pushing = one([row(asg(1, "b5", "c1", "finished"), work(7))], tasks([]));
 if (pushing.fold.group !== "working") fail("waiting to push is " + pushing.fold.group);
-const cancelled = one([asg(1, "b6", "c1", "finished", { note: "cancelled by clint" })], tasks([]));
+const cancelled = one([asg(1, "b6", "c1", "finished", { note: "cancelled by the operator" })], tasks([]));
 if (cancelled.fold.group !== "finished" || !cancelled.fold.cancelled) fail("a cancelled item is " + cancelled.fold.group);
 
 // A pushed item is finished though an earlier step was left open, and so is a backlog item marked done or dropped.
@@ -79,7 +79,7 @@ for (const at of [1, 6, 7]) {
   if (x.fold.group === "idle") fail("step " + at + " is idle");
 }
 // A card on an offline room is unknown, not idle.
-const off = one([row(asg(1, "b10", "c1", "running"), work(2))], [{ id: "c1", room: "sg4", offline: true }]);
+const off = one([row(asg(1, "b10", "c1", "running"), work(2))], [{ id: "c1", room: "room-e", offline: true }]);
 if (off.fold.group !== "working" || off.fold.offline !== 1) fail("an offline card is " + off.fold.group);
 // The board has no card list yet (null): a running assignment is not called idle.
 if (one([row(asg(1, "b11", "c1", "running"), work(2))], null).fold.group !== "working") fail("an unknown card list made a row idle");

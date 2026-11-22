@@ -20,8 +20,8 @@ import (
 )
 
 // The persistent growler: something waiting on a human, shown on every screen
-// until it is handled, dismissed or its reason ends. See
-// docs/rnd/persistent-growler-design.md, which this is stage R1 of.
+// until it is handled, dismissed or its reason ends. This is
+// stage R1 of the persistent growler.
 //
 // ── what earns one ──────────────────────────────────────
 //
@@ -82,7 +82,7 @@ const (
 
 // growlLadderDefault is the ladder when nothing is set: what blocks something
 // keeps reminding, a permission, a hub halt and a stalled deploy hold, and a
-// question or a block rings once (clint, 2026-10-02: no growler reminders for
+// question or a block rings once (the operator, 2026-10-02: no growler reminders for
 // questions). A reason ringing once is still raised, kept in the bell and
 // phoned once, and a human can snooze it for a reminder of their own.
 var growlLadderDefault = map[string]bool{ReasonPermission: true, "halt": true, "deploy-hold": true}
@@ -672,7 +672,7 @@ func (g *Growler) tick(ctx context.Context) {
 			continue
 		}
 		remind = append(remind, r.ID)
-		// A REMINDER GOES TO THE PHONE TOO, on the same backoff (clint,
+		// A REMINDER GOES TO THE PHONE TOO, on the same backoff (the operator,
 		// 2026-09-30), through the notify sink, which holds it back while a
 		// desktop tab is visible and does nothing while notify is off.
 		phone(r)

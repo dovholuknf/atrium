@@ -1,8 +1,8 @@
 // Change requests, as the "Requests" view of the repos area (next to Shelf, Ledger and Feed). docs/fabric/hub-forge-design.md
 // section 6. A request asks for a branch the hub holds to go into a target; atrium's stage 5 is MANUAL, so a request into
-// `main` waits for the orchestrator or clint to merge on the hub's side, and the board only ever RECORDS that it happened.
+// `main` waits for the orchestrator or the operator to merge on the hub's side, and the board only ever RECORDS that it happened.
 //
-//   a "needs the orchestrator or clint" strip on top, one card per open request into main
+//   a "needs the orchestrator or you" strip on top, one card per open request into main
 //   a ledger below it: open | closed, grouped by target on the left, the selected request's page on the right
 //   a page: source -> target, the Pushed line (the hub's push log), why, the change record, the request's history, and the
 //           operator's actions (withdraw, close with a note, record the sha it was merged at)
@@ -123,7 +123,7 @@ function crOperator(r) {
 function crGate(r) {
   if (!crCore.isOpen(r)) return "";
   const main = crCore.needsOperator(r);
-  return '<section class="cr-gate' + (main ? " main" : "") + '"><b>' + (main ? "Needs the orchestrator or clint" : "Waiting to be merged") + "</b>" +
+  return '<section class="cr-gate' + (main ? " main" : "") + '"><b>' + (main ? "Needs the orchestrator or you" : "Waiting to be merged") + "</b>" +
     "<span>" + (main ? "A request into main is merged on the hub's side for now. Nothing on the board does it." : "The board does not merge. Merge it on the hub's side, then record it here.") + "</span>" +
     crSteps() + crOperator(r) + "</section>";
 }
@@ -205,9 +205,9 @@ function crList() {
 function crStrip() {
   const need = crOpen().filter(crCore.needsOperator);
   if (!need.length) return "";
-  return '<section class="cr-need" aria-label="needs the orchestrator or clint">' + need.map(r => {
+  return '<section class="cr-need" aria-label="needs the orchestrator or you">' + need.map(r => {
     const room = crCore.sourceRoom(r);
-    return '<article class="cr-hero ' + hubReposAccent("room" + room) + '"><span class="cr-k">Needs the orchestrator or clint</span><h3>' + esc(r.title) + '</h3>' +
+    return '<article class="cr-hero ' + hubReposAccent("room" + room) + '"><span class="cr-k">Needs the orchestrator or you</span><h3>' + esc(r.title) + '</h3>' +
       '<div class="cr-row"><span class="cr-who">' + hubReposAvatar(room, 26) + '<span class="cr-br">' + esc(r.source.branch) + '</span></span><span class="cr-arrow" aria-hidden="true">→</span><span class="cr-br">main</span></div>' +
       '<div class="cr-row"><span class="cr-quiet">' + esc(r.id) + " · " + esc(hubReposWhen(r.created_at)) + '</span><button type="button" class="cr-btn" data-cr="sel" data-id="' + esc(r.id) + '">Open</button></div></article>';
   }).join("") + "</section>";
@@ -226,7 +226,7 @@ function crForm() {
   const repoField = repos.length > 1 ? '<select id="cr-f-repo" class="cr-in" data-crf="f-repo">' + repos.map(k => '<option' + (k === f.repo ? " selected" : "") + ">" + esc(k) + "</option>").join("") + "</select>"
     : '<input id="cr-f-repo" class="cr-in mono" data-crf="f-repo" value="' + esc(f.repo) + '" autocomplete="off">';
   return '<section class="cr-form" aria-label="open a change request"><h3 class="hr-h">Open a request</h3>' +
-    '<p class="cr-quiet">Asks for a branch on the hub to go into another. The board does not merge it: the orchestrator or clint does, on the hub\'s side.</p>' +
+    '<p class="cr-quiet">Asks for a branch on the hub to go into another. The board does not merge it: the orchestrator or you do, on the hub\'s side.</p>' +
     '<label for="cr-f-repo">Repo</label>' + repoField +
     '<label for="cr-f-branch">Branch to send</label><input id="cr-f-branch" class="cr-in mono" data-crf="f-branch" list="cr-dl" value="' + esc(f.branch) + '" autocomplete="off" spellcheck="false">' +
     '<datalist id="cr-dl">' + dl.map(n => '<option value="' + esc(n) + '">').join("") + "</datalist>" +

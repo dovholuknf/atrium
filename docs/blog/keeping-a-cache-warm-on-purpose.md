@@ -25,7 +25,6 @@ Series: Cards, not agents. Status: idea. Audience: heavy Claude Code users.
 
 - docs/runtime/cache-keepalive-design.md
 - changelog/ui/2026-09-30-u-032.md
-- docs/rnd/keepalive-policy-design.md
 - commit 81492df1
 
 ## Notes for the writer

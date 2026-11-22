@@ -32,12 +32,12 @@ func TestRemoteAccessOnOffAndState(t *testing.T) {
 	if out, err := runRemoteAccess(t, dir); err != nil || !strings.Contains(out, "remote access: off") {
 		t.Fatalf("fresh state: %q %v", out, err)
 	}
-	if out, err := runRemoteAccess(t, dir, "on", "--from", "hub,m1mini", "--port", "2222", "--addr", "127.0.0.1"); err != nil ||
-		!strings.Contains(out, "on, port 2222, from hub, m1mini") {
+	if out, err := runRemoteAccess(t, dir, "on", "--from", "hub,room-a", "--port", "2222", "--addr", "127.0.0.1"); err != nil ||
+		!strings.Contains(out, "on, port 2222, from hub, room-a") {
 		t.Fatalf("on: %q %v", out, err)
 	}
 	s, err := remoteaccess.Load(dir)
-	if err != nil || !s.On || s.Port != 2222 || !s.Allows("m1mini") || s.Allows("sg4") {
+	if err != nil || !s.On || s.Port != 2222 || !s.Allows("room-a") || s.Allows("room-e") {
 		t.Fatalf("saved: %+v %v", s, err)
 	}
 	if _, err := runRemoteAccess(t, dir, "off"); err != nil {
@@ -101,7 +101,7 @@ func TestRemoteAccessLogPrintsNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	writeRoomCert(t, dir)
 	remoteaccess.AppendLog(dir, remoteaccess.LogLine{Event: "open", ID: "s1", Caller: "hub", Via: "direct"})
-	remoteaccess.AppendLog(dir, remoteaccess.LogLine{Event: "refused", ID: "s2", Caller: "m1mini", Error: "no"})
+	remoteaccess.AppendLog(dir, remoteaccess.LogLine{Event: "refused", ID: "s2", Caller: "room-a", Error: "no"})
 	out, err := runRemoteAccess(t, dir, "log", "--n", "5")
 	if err != nil || strings.Index(out, "s2") > strings.Index(out, "s1") || !strings.Contains(out, "refused") {
 		t.Fatalf("log: %q %v", out, err)

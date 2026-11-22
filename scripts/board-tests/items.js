@@ -281,7 +281,7 @@ async function itemMinionChipSection(browser, base) {
       for (const it of [itemsDetail, itemsList.find(x => x.id === "f-ptyhost-reconnect")]) {
         const st = it && it.steps && it.steps[2];
         if (st && !st.cards.some(c => c.name === "reviewer-1")) st.cards.push({ name: "reviewer-1", role: "reviewer" });
-        if (it && !it.cards.some(c => c.name === "reviewer-1")) it.cards.push({ name: "reviewer-1", id: "c-reviewer-1", room: "sg4" });
+        if (it && !it.cards.some(c => c.name === "reviewer-1")) it.cards.push({ name: "reviewer-1", id: "c-reviewer-1", room: "room-e" });
       }
       itemsPaint(true);
       return !!document.querySelector(".it-detail");
@@ -725,8 +725,8 @@ async function itemsRealShapeSection(browser, base) {
     const rows = [], work = [];
     for (let n = 0; n < 30; n++) {
       const at = n % 6, fin = n >= 26;
-      rows.push({ item_id: "5f0c8a1e-0000-4000-8000-0000000000" + String(n).padStart(2, "0"), work_id: "w-" + n, room: "sg4", card: "c-" + n, state: fin ? "finished" : "running",
-        revision: 2, generation: 1, owner_kind: "session", owner: "orch@sg4", created_at: ago(900), updated_at: ago(n + 1) });
+      rows.push({ item_id: "5f0c8a1e-0000-4000-8000-0000000000" + String(n).padStart(2, "0"), work_id: "w-" + n, room: "room-e", card: "c-" + n, state: fin ? "finished" : "running",
+        revision: 2, generation: 1, owner_kind: "session", owner: "orch@room-e", created_at: ago(900), updated_at: ago(n + 1) });
       work.push({ backlog_id: "w-" + n, title: "Backlog title " + n, state: fin ? "finished" : "running", steps: names.map((s, i) => ({ backlog_id: "w-" + n, step: s,
         state: fin ? (i < 6 ? "done" : "pending") : i < at ? "done" : i === at ? "active" : "pending", cards: "[]", started_at: ago(800) })) });
     }
@@ -802,12 +802,12 @@ async function itemsViewSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(e.message));
     const ago = m => new Date(Date.now() - m * 60000).toISOString();
-    const mk = (id, state, extra) => Object.assign({ item_id: id, room: "sg4", card: "c-" + id, state, revision: 2, generation: 1,
-      owner_kind: "human", owner: "", created_by: "orch@sg4", note: "", created_at: ago(300), updated_at: ago(5) }, extra);
+    const mk = (id, state, extra) => Object.assign({ item_id: id, room: "room-e", card: "c-" + id, state, revision: 2, generation: 1,
+      owner_kind: "human", owner: "", created_by: "orch@room-e", note: "", created_at: ago(300), updated_at: ago(5) }, extra);
     let items = [
-      mk("it-run", "running", { owner_kind: "session", owner: "orch@sg4", updated_at: ago(90) }),
+      mk("it-run", "running", { owner_kind: "session", owner: "orch@room-e", updated_at: ago(90) }),
       mk("it-blk", "blocked", { note: "which key do I use?", updated_at: ago(12) }),
-      mk("it-blk2", "blocked", { owner_kind: "session", owner: "orch@sg4", note: "not for you", updated_at: ago(30) }),
+      mk("it-blk2", "blocked", { owner_kind: "session", owner: "orch@room-e", note: "not for you", updated_at: ago(30) }),
       mk("it-q", "queued", { updated_at: ago(2000) }),
       mk("it-done", "finished", { note: "done: abc123", updated_at: ago(600) }),
       mk("it-can", "finished", { note: "cancelled by owner", updated_at: ago(700) })];
@@ -838,7 +838,7 @@ async function itemsViewSection(browser, base) {
     // THE BADGE: only what is blocked on the human, before the tab is ever opened.
     await p.waitForFunction(() => document.getElementById("c-items").textContent === "1", null, { timeout: slow(10000) });
     await p.evaluate(() => {
-      lastTasks = [{ id: "c-it-blk", room: "sg4", title: "pick the signing key", display_title: "pick the signing key", wire_name: "sg4-keys", status: "running" }];
+      lastTasks = [{ id: "c-it-blk", room: "room-e", title: "pick the signing key", display_title: "pick the signing key", wire_name: "room-e-keys", status: "running" }];
       return switchView("items");
     });
     await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 6, null, { timeout: slow(10000) });
@@ -856,7 +856,7 @@ async function itemsViewSection(browser, base) {
     if (got.rows.join() !== "it-blk,it-run,it-blk2,it-q,it-done,it-can") fail("itemsView: row order is " + got.rows);
     if (got.finishedOpen !== 2 || got.finishedN !== "2") fail("itemsView: finished is not open with its count: " + JSON.stringify(got));
     const blkText = await p.evaluate(() => document.querySelector('.it-row[data-item="it-blk"]').textContent);
-    for (const w of ["pick the signing key", "asked", "sg4-keys", "12m", "it-blk"]) if (!blkText.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + blkText);
+    for (const w of ["pick the signing key", "asked", "room-e-keys", "12m", "it-blk"]) if (!blkText.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + blkText);
     if (got.ask.join() !== "which key do I use?" || got.boxes !== 0) fail("itemsView: a blocked row lacks its question, or shows the box before answer is clicked: " + JSON.stringify(got));
     if (await p.locator("#items-list .it-row:not(.st-needs-you) [data-act=ask]").count()) fail("itemsView: a row that is not blocked offers an answer");
     if (await p.locator('.it-group[data-state="finished"]').count() !== 1) fail("itemsView: no finished group");
@@ -905,7 +905,7 @@ async function itemsViewSection(browser, base) {
     await p.click('.it-row[data-item="it-done"] .it-title');
     await p.waitForFunction(() => document.querySelectorAll('.it-detail[data-detail="it-done"] .it-history li b').length === 2, null, { timeout: slow(10000) });
     const det = await p.evaluate(() => document.querySelector('.it-detail[data-detail="it-done"]').textContent);
-    if (!det.includes("done: abc123") || !det.includes("orch@sg4") || !det.includes("room sg4")) fail("itemsView: the detail reads " + det);
+    if (!det.includes("done: abc123") || !det.includes("orch@room-e") || !det.includes("room room-e")) fail("itemsView: the detail reads " + det);
     await p.click('[data-act=back]');
     if (await p.locator(".it-detail").count()) fail("itemsView: back did not return to the list");
     // THE EVENT: a new blocked item shows up and the badge follows, without the tab being touched.
@@ -1161,7 +1161,7 @@ async function itemsUxSection(browser, base) {
     if (got.g["bug-lean-no-status-line"] !== "working" || got.g["rd-test-layout"] !== "idle") fail("itemsUx: groups " + JSON.stringify(got.g));
     if (got.g["u-items-tab"] !== "working" || got.g["r-usage-export"] !== "working" || got.g["d-readme-links"] !== "finished") fail("itemsUx: a landed item is " + JSON.stringify(got.g));
     if (got.g["f-hub-forge-push"] !== "queued" || got.g["f-room-handoff"] !== "working" || got.g["f-session-ask"] !== "working") fail("itemsUx: groups " + JSON.stringify(got.g));
-    if (!/room m1mini offline/.test(got.offlineNote)) fail("itemsUx: an offline card reads " + got.offlineNote);
+    if (!/room room-a offline/.test(got.offlineNote)) fail("itemsUx: an offline card reads " + got.offlineNote);
     if (!got.stepLine.some(l => /^step 3 of 8 · building/.test(l)) || !got.stepLine.some(l => /idle at /.test(l)) || !got.stepLine.some(l => /waiting for your approval/.test(l))) fail("itemsUx: step lines " + got.stepLine.join(" | "));
     if (!/stale step/.test(got.legend) || !/idle: nothing running/.test(got.legend) || !/current step/.test(got.legend)) fail("itemsUx: the legend reads " + got.legend);
     if (got.retired) fail("itemsUx: " + got.retired + " retired list elements are still drawn");
@@ -1210,7 +1210,7 @@ async function itemsTaskListSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(e.message));
     const at = new Date(Date.now() - 600000).toISOString();
-    const row = { item_id: "5f0c8a1e-0000-4000-8000-000000000001", work_id: "f-x", room: "sg4", card: "c-1", state: "running", revision: 1,
+    const row = { item_id: "5f0c8a1e-0000-4000-8000-000000000001", work_id: "f-x", room: "room-e", card: "c-1", state: "running", revision: 1,
       generation: 1, owner_kind: "human", owner: "", created_at: at, updated_at: at };
     const tasks = [
       { backlog_id: "f-x", task_id: "t1", title: "count the rows", state: "captured", attempt: 1, line: "counted 41 rows", why: "the header is not a row",
