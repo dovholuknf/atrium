@@ -1,9 +1,8 @@
 # Make a release: call this with a version. All the logic is scripts/make-release.sh, which also runs by hand.
 #
-# prepare bumps VERSION and writes changelog/v<version>.md from what merged since the last tag, on release/v<version>.
-# open-pr opens the PR to main, starts ci.yml on that branch (a PR opened with GITHUB_TOKEN starts nothing) and turns on
-# auto-merge. wait holds until it merges. tag tags the merge commit and calls release.yml, because a tag pushed with
-# GITHUB_TOKEN does not fire release.yml's tag trigger. The merge commit goes to claude/main by hand: the script prints it.
+# The version commit (scripts/make-release.sh prepare, run by hand) is already on main by a normal merge. tag checks that
+# main's head has that VERSION, the tag is new and ci.yml succeeded on that exact sha, then tags it, and refuses at once
+# otherwise. publish calls release.yml, because a tag pushed with GITHUB_TOKEN does not fire release.yml's tag trigger.
 
 name: make-release
 
@@ -16,55 +15,21 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
-  actions: write
+  actions: read
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ inputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          fetch-depth: 0
-      - run: bash scripts/make-release.sh prepare "$VERSION" --execute
-      - run: bash scripts/make-release.sh open-pr "$VERSION" --execute
-
-  land:
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 200
-    outputs:
-      sha: ${{ steps.merged.outputs.sha }}
-    env:
-      GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ inputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          fetch-depth: 0
-      - id: merged
-        run: echo "sha=$(bash scripts/make-release.sh wait "$VERSION")" >> "$GITHUB_OUTPUT"
-
   tag:
-    needs: land
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ inputs.version }}
-      SHA: ${{ needs.land.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
-      - run: bash scripts/make-release.sh tag "$VERSION" "$SHA" --execute
+      - run: bash scripts/make-release.sh tag "$VERSION" --execute
 
   publish:
     needs: tag
