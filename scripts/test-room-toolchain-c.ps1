@@ -923,7 +923,10 @@ if ($unix) {
     Check 'L2 sim rerun: nothing more to take back' @((@(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log')) -match '/remove:g').Count, $r.Code) @(1, 0)
 }
 
-# L4: Windows PowerShell 5.1 writes the merged file in its own layout
+# L4: Windows PowerShell 5.1 writes the merged file in its own layout, and the docs say so
+$doc = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../docs/changes/f-c-toolchain.md') -Raw
+Check 'L4: the docs say 5.1 reformats a merged CMakeUserPresets.json' ($doc -match '(?s)reformat.{0,200}CMakeUserPresets\.json|CMakeUserPresets\.json.{0,200}reformat') $true
+Check 'L4: and say the content is the same' ($doc -match 'same content') $true
 Check 'L4: the merge itself keeps the content whatever the layout' ((ConvertFrom-Json (Merge-Presets '{"version":4,"configurePresets":[{"name":"mine","cacheVariables":{"A":"b"}}]}' $json).Text).configurePresets[0].cacheVariables.A) 'b'
 
 
