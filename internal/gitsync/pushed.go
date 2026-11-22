@@ -126,6 +126,20 @@ func (s *Store) commitHeld(ctx context.Context, dir, sha string) (bool, error) {
 	return false, err
 }
 
+// holdsAll says whether into already has every change of tip: it is an ancestor, or a squash or a cherry-pick left it
+// off into's history and merging it into changes no file.
+func (s *Store) holdsAll(ctx context.Context, dir, tip, into string) bool {
+	if ok, err := s.isAncestor(ctx, dir, tip, into); err == nil && ok {
+		return true
+	}
+	merged, err := s.git(ctx, dir, gitexec.MergeTree{Branch1: into, Branch2: tip})
+	if err != nil {
+		return false
+	}
+	have, err := s.git(ctx, dir, gitexec.RevParseVerify{Rev: into + "^{tree}", Quiet: true})
+	return err == nil && strings.TrimSpace(strings.SplitN(merged, "\n", 2)[0]) == strings.TrimSpace(have)
+}
+
 // isAncestor says whether a is b or a commit b is built on. Both must be commits the repository holds.
 func (s *Store) isAncestor(ctx context.Context, dir, a, b string) (bool, error) {
 	if !safeRevArg(a) || !safeRevArg(b) {

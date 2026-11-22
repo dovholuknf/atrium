@@ -255,3 +255,17 @@ func TestMergeLandOnAMirrorIsAConflictWhenTheCheckoutsTipMoved(t *testing.T) {
 		t.Fatalf("the hub's claude/main moved to %s", got)
 	}
 }
+
+func TestDeleteLandedTakesABranchClaudeMainHoldsAsASquash(t *testing.T) {
+	x := mergeRig(t)
+	st := x.h.Store()
+	git(t, x.work, "switch", "-q", "-C", "s", "cm")
+	s := commit(t, x.work, "s.txt", "s")
+	x.must(x.push(operator, hubRepo, "s:refs/heads/claude/s"))
+	git(t, x.work, "switch", "-q", "cm")
+	commit(t, x.work, "s.txt", "s")
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	if ok, err := st.DeleteLanded(bg, hubRepo, "claude/s", s); err != nil || !ok || x.refOn(hubRepo, headsPrefix+"claude/s") != "" {
+		t.Fatalf("a squashed branch was kept: %v %v", ok, err)
+	}
+}

@@ -68,3 +68,23 @@ func TestMergeRefusedSaysToTheOrchestrator(t *testing.T) {
 		t.Fatalf("the requester no longer hears: %v", got)
 	}
 }
+
+func TestALandedRequestSetsItsCardsItemDone(t *testing.T) {
+	st, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if _, err := st.ItemFile(hubstore.ItemNew{ID: "f-x", Dept: "docs", Title: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PutItem(hubstore.Item{ID: "i1", Room: "sg4", Card: "w1", State: "running", Revision: 1,
+		OwnerKind: hubstore.OwnerHuman, CreatedBy: "t", WorkID: "f-x"}); err != nil {
+		t.Fatal(err)
+	}
+	mergeItemDone(st, hubstore.MergeRequest{N: 1, Requester: "w1", RequesterRoom: "sg4"})
+	it, err := st.ItemGet("f-x")
+	if err != nil || it.Status != hubstore.ItemDone {
+		t.Fatalf("the item is %q: %v", it.Status, err)
+	}
+}

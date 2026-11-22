@@ -245,6 +245,29 @@ func DeleteFromHub(ctx context.Context, r *Runner, dir, forwarderBase, token, br
 	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, true, false)
 }
 
+// FetchFromHub brings the hub's claude/main and branch into refs/remotes/hub, by the card's token. A branch the hub no
+// longer has is not an error: the delete that follows answers for it.
+func FetchFromHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string) error {
+	if why := CheckPushBranch(branch); why != "" {
+		return fmt.Errorf("%s", why)
+	}
+	ref, err := ParseName(name)
+	if err != nil {
+		return fmt.Errorf("%s is not a repository name the hub takes", name)
+	}
+	target := forwarderBase + strings.TrimPrefix(HubRemotePrefix, "/git/") + ref.Name() + ".git"
+	config := []string{"http." + target + ".proxy=", "http." + forwarderBase + ".proxy="}
+	var first error
+	for i, b := range []string{"claude/main", branch} {
+		_, err := r.GitCall(ctx, dir, Call{Env: PushEnv(forwarderBase, token, 0), Config: config}, gitexec.Fetch{Quiet: true,
+			NoTags: true, Remote: target, Refspecs: []string{"+refs/heads/" + b + ":refs/remotes/" + HubRemote + "/" + b}})
+		if err != nil && i == 0 && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
 // branchGoneOnHub says the hub lists no such branch, as when the merge queue deleted it once it landed.
 func branchGoneOnHub(ctx context.Context, r *Runner, dir, forwarderBase, token, remote, branch string) bool {
 	out, err := r.GitCall(ctx, dir, Call{Env: PushEnv(forwarderBase, token, 0)}, gitexec.LsRemote{Heads: true, Remote: remote,

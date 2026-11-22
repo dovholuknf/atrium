@@ -64,3 +64,17 @@ func (d *Daemon) HubDeleteBranch(ctx context.Context, card, dir, hubRepo, branch
 	}
 	return nil
 }
+
+// HubRefreshBranch is api.Server.HubRefresh.
+func (d *Daemon) HubRefreshBranch(ctx context.Context, card, dir, hubRepo, branch string) error {
+	base := d.HubRemoteBase()
+	if d.st.GitPush() != store.GitPushHub || base == "" || d.HubGit.Cards == nil || strings.TrimSpace(dir) == "" {
+		return nil
+	}
+	tok, err := d.HubGit.Cards.Mint(card)
+	if err != nil {
+		return err
+	}
+	defer d.RevokeHubGit(card, time.Time{})
+	return gitsync.FetchFromHub(ctx, gitsync.Default, filepath.FromSlash(dir), base, tok, branch, hubRepo)
+}
