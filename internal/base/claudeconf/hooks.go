@@ -407,7 +407,7 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 		return rep, none, err
 	}
 
-	out, err := marshalInOrder(raw, doc)
+	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return nil, none, err
 	}

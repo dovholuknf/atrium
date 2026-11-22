@@ -1299,10 +1299,6 @@ function fillMachineFields(s) {
   if (!s) return;
   const ed = document.getElementById("s-editor");
   if (ed) ed.value = s.editor_command || "";
-  const lfo = document.getElementById("s-launch-folder");
-  if (lfo) { lfo.value = s.launch_folder || ""; attachFolderComplete(lfo); }
-  const lmo = document.getElementById("s-launch-mode");
-  if (lmo) lmo.value = s.launch_mode || "";
   pastePrefs = s;
   const keep = document.getElementById("s-pastekeep");
   if (keep) keep.value = (s.paste_keep === "scrap") ? "scrap" : "keep";
@@ -2553,20 +2549,6 @@ async function saveDictURL() {
 async function saveDictModel() {
   const el = document.getElementById("s-dictmodel");
   if (el) await saveHousekeeping("dictate_model", el.value.trim());
-}
-
-async function saveLaunchFolder() {
-  const el = document.getElementById("s-launch-folder");
-  if (!el) return;
-  await saveHousekeeping("launch_folder", el.value.trim());
-  toast(el.value.trim() ? "projects folder set" : "projects folder cleared",
-    el.value.trim() ? "new agents start there" : "new agents have no default folder");
-}
-async function saveLaunchMode() {
-  const el = document.getElementById("s-launch-mode");
-  if (!el) return;
-  await saveHousekeeping("launch_mode", el.value);
-  toast("new agents", el.value === "place" ? "work in place by default" : el.value === "copy" ? "work in a copy by default" : "have no default");
 }
 
 async function saveHousekeeping(field, value) {

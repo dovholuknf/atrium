@@ -141,15 +141,6 @@
 #m-card .pull[hidden] { display: none; }
 #m-card .pull-spin { width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--stroke-dim); border-top-color: var(--teal); transform: rotate(calc(var(--pull, 0) * 3.6deg)); }
 #m-card .pull.go .pull-spin { animation: wk-turn .7s linear infinite; }
-/* Pull up at the very end of a card to reload. A small pill rises with the finger above the composer and says when letting go reloads. */
-#m-card .pullup-wrap { flex: none; position: relative; height: 0; z-index: 5; }
-#m-card .pullup { position: absolute; left: 50%; bottom: 10px; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 8px;
-  box-sizing: border-box; border-radius: 16px; background: var(--card-0); box-shadow: 0 0 0 1px var(--stroke), 0 6px 16px rgba(var(--shadow-rgb), .4);
-  color: var(--dim); font: 600 12.5px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; white-space: nowrap; pointer-events: none;
-  transform: translate(-50%, calc(var(--pu-y, 0) * -1px)); }
-#m-card .pullup[hidden] { display: none; }
-#m-card .pullup.go { color: var(--teal); }
-#m-card .pullup.go .pull-spin, #m-card .pullup.busy .pull-spin { animation: wk-turn .7s linear infinite; }
 
 /* Bubble text selects and copies natively (long-press included): nothing here turns it off. Each bubble's header ends in
    two small actions, copy and reply. They are 15px high on screen with a 40px hit area from the ::after, grown above the button and only 4px below it, and they are not

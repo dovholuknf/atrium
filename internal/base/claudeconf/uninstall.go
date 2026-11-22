@@ -109,7 +109,7 @@ func UninstallTarget(t Target) (UninstallResult, error) {
 		return res, nil
 	}
 
-	out, err := marshalInOrder(raw, doc)
+	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return res, err
 	}

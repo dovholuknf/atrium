@@ -232,10 +232,6 @@
     };
     cur = state;
 
-    const timed = () => {
-      const t = window.atriumVoice.timing(), s = x => ((x || 0) / 1000).toFixed(1) + "s";
-      return t ? " (convert " + s(t.convert) + ", trip " + s(t.trip) + ", whisper " + s(t.whisper) + ", " + t.kb + " KB)" : "";
-    };
     const say = (kind, text) => {
       note.dataset.kind = kind || "";
       note.textContent = text || "";
@@ -348,7 +344,9 @@
             ta.value += pre + text + "\n";
             refresh();
             hint();
-            say("sent", "added, read it and press send" + timed());
+            const t = v.timing(), s = x => ((x || 0) / 1000).toFixed(1) + "s";
+            say("sent", "added, read it and press send" + (t ? " (convert " + s(t.convert) + ", trip " + s(t.trip) +
+              ", whisper " + s(t.whisper) + ", " + t.kb + " KB)" : ""));
           } catch (err) {
             if (cur === state) say("refused", "dictation: " + err.message);
           } finally {
@@ -380,12 +378,12 @@
         try {
           const text = await v.stop(cardId);
           if (cur !== state) return;
-          if (!text) { say("hint", "hold the mic while you speak, then let go"); return; }
+          if (!text) { say("", ""); return; }
           const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
           ta.value += pre + text + "\n";
           refresh();
           hint();
-          say("sent", "added, read it and press send" + timed());
+          say("sent", "added, read it and press send");
         } catch (err) {
           if (cur === state) say("refused", "dictation: " + err.message);
         } finally {
@@ -869,32 +867,5 @@
   const busy = () => !!cur && (cur.sending > 0 || cur.uploading > 0);
   // Whether the mounted box holds something a reload would lose and nothing saves: an attached file or a review comment.
   const holding = () => !!cur && (cur.atts.length > 0 || cur.cmts.length > 0);
-  // A message that did not come from the box, with the same pending row, paste fallback and delivery note. Resolves to
-  // { ok, note }, never throws.
-  let textSeq = 0;
-  async function sendText(cardId, text) {
-    const tell = (name, detail) => { try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch (e) {} };
-    const key = cardId + ":t" + (++textSeq);
-    tell("m-send", { id: cardId, key, text, state: "pending" });
-    try {
-      const card = cardOf(cardId), net = window.mNet;
-      const map = await pasteMap(card && net ? net.roomOf(card.id) || card.room || "" : "");
-      const out = card && map[card.runner] ? text : text.split(/\s*\n\s*/).filter(Boolean).join(" ");
-      const r = await fetch("/v1/tasks/" + encodeURIComponent(cardId) + "/message", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: out, when: "immediate" })
-      });
-      let body = null, raw = "";
-      try { raw = await r.text(); body = JSON.parse(raw); } catch (e) {}
-      if (!r.ok) throw new Error((body && body.error) || raw.trim() || r.statusText || "failed");
-      const o = outcome(body);
-      const ok = o.kind !== "refused";
-      if (ok) tell("m-sent", { id: cardId, text, kind: o.kind });
-      tell("m-send", { id: cardId, key, text, state: ok ? o.kind : "failed" });
-      return { ok, note: o.text };
-    } catch (e) {
-      tell("m-send", { id: cardId, key, text, state: "failed" });
-      return { ok: false, note: "not sent: " + (e && e.message ? e.message : e) };
-    }
-  }
-  window.mCompose = { mount, unmount, insert, quote, attach, busy, holding, addComment, quoteAll, sendText };
+  window.mCompose = { mount, unmount, insert, quote, attach, busy, holding, addComment, quoteAll };
 })();

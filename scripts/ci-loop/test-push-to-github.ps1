@@ -6,7 +6,7 @@ New-Item -ItemType Directory $work | Out-Null
 $work = (Resolve-Path $work).Path
 
 $ast = [Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$PSScriptRoot/push-to-github.ps1").Path, [ref]$null, [ref]$null)
-$want = 'G', 'Get-Incoming', 'Write-Bundle', 'Invoke-Deliver', 'Get-Pathspec', 'Split-Branch','Get-SplitMessage', 'Test-CiCovered', 'Invoke-Request'
+$want = 'G', 'Get-Incoming', 'Write-Bundle', 'Invoke-Deliver', 'Split-Branch', 'Get-SplitMessage', 'Test-CiCovered', 'Invoke-Request'
 foreach ($f in $ast.FindAll({ $args[0] -is [Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -in $want }, $true)) {
     Invoke-Expression $f.Extent.Text
 }
@@ -31,8 +31,6 @@ Run-Git -C $shared config commit.gpgsign false
 foreach ($p in 'README.md', '.github/workflows/ci.yml', 'scripts/ci.sh', 'src/a.go') {
     New-Item -Force -ItemType File (Join-Path $shared $p) -Value "base $p`n" | Out-Null
 }
-New-Item -ItemType Directory (Join-Path $shared 'docs/backlog') | Out-Null
-foreach ($n in 1..2500) { Set-Content (Join-Path $shared ('docs/backlog/item-with-a-long-name-for-the-argv-limit-{0:d5}.md' -f $n)) "i$n" }
 Run-Git -C $shared add -A
 Run-Git -C $shared commit --quiet -m base
 Run-Git -C $shared remote add origin $origin
@@ -87,18 +85,6 @@ Run-Git -C $shared switch --quiet claude/seed
 Invoke-Request 'r1b' 'push titles' | Out-Null
 Assert ((Run-Git -C $origin log -1 --format=%s titles-ci) -eq 'ci: tune ci') 'titles: -ci never takes the tip subject'
 Assert ((Run-Git -C $origin log -1 --format=%s titles) -eq 'rest last, rest first') 'titles: the rest never takes a CI subject'
-
-Run-Git -C $shared switch --quiet -C claude/w-many claude/seed
-Run-Git -C $shared rm --quiet -r docs/backlog
-New-Item -Force -ItemType File (Join-Path $shared 'src/a.go') -Value "many`n" | Out-Null
-New-Item -Force -ItemType File (Join-Path $shared 'scripts/ci.sh') -Value "many`n" | Out-Null
-Run-Git -C $shared add -A
-Run-Git -C $shared commit --quiet -m 'work on many'
-Run-Git -C $shared update-ref refs/remotes/hub/claude/many HEAD
-Run-Git -C $shared switch --quiet claude/seed
-Invoke-Request 'r1c' 'push many' | Out-Null
-Assert ((Origin-Files 'many-ci') -join ',' -eq 'scripts/ci.sh') 'many files: -ci holds only the CI file'
-Assert (@(Origin-Files 'many').Count -eq 2501) 'many files: the rest holds every deletion and the edit'
 
 New-Hub 'plain' @{ 'src/a.go' = "plain`n" }
 $script:gh.Clear()

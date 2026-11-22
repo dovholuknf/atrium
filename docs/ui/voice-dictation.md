@@ -1,34 +1,15 @@
 # Voice dictation
 
-Where does the audio go? To your hub, as one short WAV clip, over the board's own connection. Where does whisper run?
-In one `whisper-server` the hub starts on its own machine, on a loopback port nobody else can reach. Does anything leave
-your machines? No, unless an operator points the hub at a shared `dictate_url`, and then the clip goes only there. No
-hosted API and no browser speech API is involved.
-
-![Boards send a clip to the hub's whisper-server and get text back](img/voice-dictation.svg)
-
-Code: `internal/api/web/js/dictate.js` (desktop), `internal/api/web/m/js/voice.js` and `m/js/compose.js` (phone),
+Status: built and deployed. The one open part is the tooltip wording by destination. The design is clint's, agreed in
+the voice-with-clint card on 2026-11-21. Code: `internal/api/web/js/dictate.js` (desktop),
+`internal/api/web/m/js/voice.js` and `m/js/compose.js` (phone),
 `internal/api/dictate.go`, `internal/daemon/dictate.go`, `internal/daemon/dictate/`,
 `internal/link/hubdictate.go` and `internal/link/conn/dictate.go`.
 
-## The two paths
-
-| Board opened on | Clip goes to | Needs |
-| --- | --- | --- |
-| The hub (`:7778`) | The hub's whisper, whichever room holds the card | speech to text on the hub |
-| A room's own board (`:7781`) or `/m/` through the hub | The room, which sends the clip up its link to the hub | the hub reachable and speech to text on |
-
-The fallback: a room whose hub is down, too old or has speech to text off uses its own whisper when `dictate_server`
-and `dictate_model` are set on the room, and only then says why it cannot. A room with no hub uses its own whisper or
-says it is not set up.
-
-**One whisper per machine.** Set the two paths on the hub only. A room on the hub's machine leaves its own unset, so
-the machine holds one model in memory. A room on another machine sets its own only when it wants the fallback.
-
-## Using it
+## What it is
 
 Hold Right Ctrl or the mic button, talk, release. The words land on the card's input line and **release sends**: the
-text is pasted, then Enter follows 250 ms later. Transcription is whisper.cpp's `whisper-server`.
+text is pasted, then Enter follows 250 ms later. Transcription is whisper.cpp's `whisper-server`, never a hosted API.
 
 | Gesture | Result |
 | --- | --- |
@@ -43,9 +24,21 @@ The board records 16 kHz mono 16-bit WAV, since whisper-server cannot read the b
 the clip to `POST /v1/tasks/<id>/dictate` on whatever it was opened on, and pastes the `text` that comes back.
 
 **Not set up shows on press.** Pressing the key or the mic asks `GET /v1/tasks/<id>/dictate` first, and a board with no
-speech to text behind it says so then, before anyone talks.
+speech to text behind it says so then, not after the person has talked.
 
-## The link
+## Who transcribes
+
+Where the board is opened decides.
+
+| Board opened on | Clip goes to | Needs |
+| --- | --- | --- |
+| The hub (`:7778`) | The hub's whisper, whichever room holds the card | speech to text on the hub |
+| A room's own board (`:7781`) or `/m/` through the hub | The room, which sends the clip up its link to the hub | the hub reachable and speech to text on |
+
+**The room rule.** A linked room uses the hub when the hub has speech to text on. When it does not, the room uses its
+own whisper if `dictate_server` and `dictate_model` are set, and only then says why it cannot. The hub being down or off
+shows as "the hub is not answering" or "speech to text is off on the hub". A room with no hub (not linked) uses its own
+whisper or says it is not set up.
 
 The room dials the hub and the hub never reaches into a room (`internal/link/AGENTS.md`). The room-to-hub clip is the
 room calling up on a `dictate` frame kind on the existing mutual TLS link: one clip, one answer, closed. The hub
@@ -53,10 +46,46 @@ answers the room's hello whether or not it has speech to text, so a room is neve
 
 ## The clip's path
 
-From the hub board the hub answers first. With no hub speech to text it passes the request on to the card's room as it
-passes every other `/v1` call, and that room uses its own whisper if it has one. From a room board the room posts the
-clip up its link and the hub answers, or the room falls back as above. With a `dictate_url` the hub is the only caller
-of the shared server. Boards and rooms never hold its address.
+### From the hub board
+
+```mermaid
+flowchart LR
+    B["hub board :7778<br/>records WAV"] -->|"POST /v1/tasks/id/dictate<br/>X-Atrium-Words"| H["hub proxy<br/>hubDictate"]
+    H -->|"hub speech to text on"| W["hub's whisper-server<br/>or dictate_url"]
+    W -->|text| H
+    H -->|text| B
+    H -.->|"hub has none: falls through"| R["card's room<br/>/v1/tasks/id/dictate"]
+    R --> RW["room's whisper-server<br/>dictate_server + dictate_model"]
+```
+
+The hub answers first. With no hub speech to text it passes the request on to the card's room as it passes every other
+`/v1` call, and that room uses its own whisper if it has one.
+
+### From a room board
+
+```mermaid
+flowchart LR
+    B["room board :7781<br/>records WAV"] -->|"POST /v1/tasks/id/dictate"| R["room API<br/>dictate"]
+    R -->|"clip frame on the mutual TLS link"| H["hub"]
+    H --> HW["hub's whisper<br/>or dictate_url"]
+    HW -->|text| H
+    H -->|text| R
+    R -->|text| B
+    R -.->|"hub off or unavailable, own whisper set"| RW["room's whisper-server"]
+    RW -.->|text| R
+```
+
+### To a shared dictate_url
+
+```mermaid
+flowchart LR
+    B["any board"] --> H["hub"]
+    H -->|"HTTP POST, clip and prompt"| U["shared whisper-server<br/>one GPU machine, nobody's child"]
+    U -->|text| H
+    H --> B
+```
+
+The hub is the only caller of the shared server. Boards and rooms never hold its address.
 
 ## Where whisper runs
 
@@ -69,8 +98,8 @@ Three ways to give the hub a whisper, tried in this order.
    change. It runs with one thread per core up to 8. The room has the same two settings for its own whisper.
 3. Enable speech to text: a button in the hub's settings, in the "speech to text" section. It downloads the whisper.cpp
    release and a model into the hub's state folder, fills in the two paths and starts it. It shows the size and the
-   source first, and the downloads are checksum-pinned. It is the CPU build. A machine with a GPU uses its own
-   build through the paths, or a `dictate_url`.
+   source first, and checksums are pinned. It is the CPU build, and a machine with a GPU is better served by its own
+   build and the paths, or a `dictate_url`.
 
 All three are hub settings, set only from the hub's own machine (`edge.LocalOperator`), because they start a program or
 send audio somewhere. On a hub with one room attached the settings request goes straight to that room, so the hub adds
@@ -86,34 +115,8 @@ room explicitly goes to that room alone and does not carry the hub's section.
 | Shared `dictate_url` | nobody in atrium | left alone, atrium neither starts nor stops it |
 
 The owner started it, so on Windows the server sits in a job object made with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
-(`internal/daemon/dictate/tree_windows.go`), so ending atrium takes the server and its GPU memory with it. Other
-platforms have no tree kill (`tree_other.go`), and the server is stopped on a clean exit only.
-
-## Settings
-
-| Setting | Where | Meaning |
-| --- | --- | --- |
-| `dictate_url` | hub | a shared whisper-server, tried first, atrium starts nothing |
-| `dictate_server`, `dictate_model` | hub | whisper-server binary and ggml model on the hub's machine |
-| `dictate_server`, `dictate_model` | room | the room's own whisper, used only as the fallback |
-| Enable speech to text | hub settings | downloads whisper.cpp and a model, fills the two hub paths |
-
-The sg4 hub runs one whisper-server from `D:/tools/whisper` with large-v3-turbo q8, bound to 127.0.0.1, 8 threads. Its
-room on the same machine leaves both room settings empty.
-
-## Troubleshooting
-
-The board shows the sentence below. Find it, then do the fix.
-
-| The board says | Meaning | Fix |
-| --- | --- | --- |
-| speech to text is off on the hub | the hub answered and has no whisper set | enable speech to text in the hub's settings, or set `dictate_url` or the two paths |
-| the hub is not answering, so there is no speech to text | the room could not reach the hub and has no whisper of its own | start the hub or fix the link, or set the room's two paths for a fallback |
-| the hub is older than speech to text. update the hub | the hub predates the `dictate` frame kind | update the hub |
-| dictation is not set up on this room: set dictate_server and dictate_model | an unlinked room with no whisper | link the room to a hub, or set its two paths |
-| speech to text is set from the machine the hub runs on | a settings change from another machine | open the hub's board on its own machine |
-| the clip is over 8 MB | too long a recording | say less per clip |
-| send the clip as WAV | the clip was not 16 kHz WAV | reload the board |
+(`internal/daemon/dictate/tree_windows.go`). A `taskkill` of atrium is meant to take the server and its GPU memory with
+it, which has not been checked on a real hub. Other platforms have no tree kill yet (`tree_other.go`).
 
 ## Words
 
@@ -123,7 +126,7 @@ directly builds the list from its own cards.
 
 ## The phone
 
-The browser blocks the microphone on a plain `http` page that is not
+The phone board holds the mic in the composer. The browser blocks the microphone on a plain `http` page that is not
 loopback, so a board reached over `http://atrium.ziti` has no `getUserMedia`. Two ways round it:
 
 - Mark the origin as secure in the browser. In Brave on Android that is
@@ -133,19 +136,32 @@ loopback, so a board reached over `http://atrium.ziti` has no `getUserMedia`. Tw
   `capture`), and the clip it makes goes to the same dictate route. The recorder app covers the board while it records.
 
 After each clip taken that way the status line shows `(convert, trip, whisper, KB)`: converting to WAV on the phone, the
-whole round trip, the hub's time in whisper (the hub's `Server-Timing` header) and the size sent.
+whole round trip, the hub's time in whisper (the hub's `Server-Timing` header) and the size sent. https on the ziti
+service, with a private CA on the phone, would give an in-page mic with no flag. It is backlog work.
 
-## Where the audio goes, as the board says it
+## Privacy wording
 
-The mic tooltip reads "Transcribed on the card's room, nothing leaves your machines." That holds for a hub or room
-whisper and not for a `dictate_url`, where the clip goes to the shared server's host.
+The mic tooltip should say where audio goes: "transcribed on your hub" for a hub whisper, "sent to <host>" for a
+`dictate_url`. The words "nothing leaves your machines" stay only where they are true. The tooltip does not do this yet:
+it still reads "Transcribed on the card's room, nothing leaves your machines", which is wrong for a `dictate_url`.
 
 ## The board
 
-The mic sits in the shortcut strip at the bottom of the terminal, left of "details". Its status pill rises above the
-strip. On the phone it sits in the composer.
+The mic lives in the shortcut strip at the bottom of the terminal, left of "details". Its status pill rises above the
+strip. The old floating mic at bottom left is gone.
 
-## Limits
+## Status
 
-- The enable download is the CPU build.
-- Off Windows the whisper-server has no process-tree kill.
+| Part | State |
+| --- | --- |
+| Mic in the strip | built, clint said to keep the placement |
+| Right Ctrl release sends, Shift adds lines, send word | built |
+| Not set up shown on press | built |
+| Hub transcribes hub-board clips | built, tested |
+| Room clips up the link to the hub, and the room rule | built, tested at the connection, not run on a real whisper |
+| `dictate_url` | built |
+| Hub settings section, and the one-room hub fix | built |
+| Enable speech to text, with download | built, CPU build only, the download has not been run on a real hub |
+| Phone capture on an insecure origin | built, works on clint's phone |
+| Tooltip wording by destination | not built |
+| GPU build for the download | not built |

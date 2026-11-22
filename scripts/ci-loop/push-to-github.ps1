@@ -222,18 +222,9 @@ function Show-Run($id) {
 # A branch that edits CI and anything else is split in two. A CI-only one gets a PR but no auto-merge.
 $gatesMain = '^(\.github/|scripts/ci[^/]*$|scripts/flaky-suite\.json$)'
 
-# The pathspec for $files, as the complement of the other touched files once the list would pass the argv limit.
-function Get-Pathspec([string]$srcSha, [string]$onto, [string[]]$files) {
-    if (($files -join ' ').Length -lt 8000) { return $files }
-    $rest = @(G diff --name-only --no-renames "origin/$onto" $srcSha | Where-Object { $_ -notin $files })
-    if (($rest -join ' ').Length -ge 8000) { throw 'too many files on both sides of the split for a git command line' }
-    @('.') + @($rest | ForEach-Object { ":(exclude,literal)$_" })
-}
-
 # One commit on origin/$onto holding only $files as $srcSha has them, with $srcSha's message.
 function Split-Branch([string]$srcSha, [string]$onto, [string[]]$files, [string]$msg = '') {
     $patch = Join-Path $priv 'split.patch'
-    $files = Get-Pathspec $srcSha $onto $files
     G diff --binary --no-renames "--output=$patch" "origin/$onto" $srcSha '--' @files
     G switch --quiet --force -C claude/split "origin/$onto"
     G clean -ffdxq
@@ -246,8 +237,7 @@ function Split-Branch([string]$srcSha, [string]$onto, [string[]]$files, [string]
 
 # The title of a split half comes from the commits that touch its own files, never from the branch tip.
 function Get-SplitMessage([string]$srcSha, [string]$onto, [string[]]$files, [string]$prefix) {
-    $spec = @(Get-Pathspec $srcSha $onto $files)
-    $subjects = @(G log --no-merges --format=%s "origin/$onto..$srcSha" '--' @spec | Select-Object -Unique -First 3)
+    $subjects = @(G log --no-merges --format=%s "origin/$onto..$srcSha" '--' @files | Select-Object -Unique -First 3)
     if (-not $subjects) { $subjects = @("update $(@($files).Count) file(s)") }
     "$prefix$($subjects -join ', ')"
 }

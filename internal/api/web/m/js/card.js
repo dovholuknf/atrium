@@ -310,8 +310,9 @@
     if (s.answered !== false) return "";
     const qs = s.open_questions || [];
     if (!qs.length && !s.questions_unparsed) return "";
-    const body = qs.length ? window.mAnswers.html(t) : '<p class="quiet">Its last turn asked questions atrium could not read. Look at the terminal.</p>';
-    return body ? '<section class="block questions"><h2>Open questions</h2>' + body + "</section>" : "";
+    return '<section class="block questions"><h2>Open questions</h2>' + (qs.length
+      ? "<ol>" + qs.map(x => "<li>" + MD.inline(x) + "</li>").join("") + "</ol>"
+      : '<p class="quiet">Its last turn asked questions atrium could not read. Look at the terminal.</p>') + "</section>";
   }
 
   // The operator's messages from the oldest reply shown on, in time order with the replies.
@@ -580,50 +581,6 @@
       if (go) { ind.classList.add("go"); setTimeout(() => location.reload(), 120); } else reset();
     };
     els.scroll.addEventListener("touchend", end);
-    els.scroll.addEventListener("touchcancel", reset);
-  }
-
-  // ── pull up at the very end to reload ────────────────────────────────────
-  // The same reload from the other end: a single finger dragged up far enough, from a thread already at its end or from the
-  // strip along its bottom edge. Only the thread listens, so the composer, the mic and attach never start one.
-  const PULLUP_AT = 80, PULLUP_EDGE = 24;
-  function pullUpInit() {
-    const ind = q("m-pullup");
-    if (!ind) return;
-    const label = ind.querySelector(".pu-l");
-    const atEnd = () => els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight <= 2;
-    const show = (d, st) => {
-      ind.hidden = false;
-      ind.style.setProperty("--pull", String(Math.min(100, Math.round(d / PULLUP_AT * 100))));
-      ind.style.setProperty("--pu-y", String(Math.round(Math.min(d, PULLUP_AT + 20) * 0.5)));
-      ind.classList.toggle("go", st === "go");
-      ind.classList.toggle("busy", st === "busy");
-      label.textContent = st === "busy" ? "reloading" : st === "go" ? "release to reload" : "pull to reload";
-    };
-    const hide = () => { ind.hidden = true; ind.classList.remove("go", "busy"); ind.style.removeProperty("--pull"); ind.style.removeProperty("--pu-y"); };
-    let g = null;
-    const reset = () => { g = null; hide(); };
-    els.scroll.addEventListener("touchstart", e => {
-      g = null;
-      if (e.touches.length !== 1 || pullBlocked() || !els.recap.hidden || !els.menu.hidden || typing) return;
-      const t = e.touches[0], edge = t.clientY >= els.scroll.getBoundingClientRect().bottom - PULLUP_EDGE;
-      if (!edge && !atEnd()) return;
-      g = { x: t.clientX, y: t.clientY, d: 0, edge };
-    }, { passive: true });
-    els.scroll.addEventListener("touchmove", e => {
-      if (!g) return;
-      if (e.touches.length !== 1 || pullBlocked() || (!g.edge && !atEnd())) { reset(); return; }
-      const t = e.touches[0], dy = g.y - t.clientY, dx = Math.abs(t.clientX - g.x);
-      if (!g.d && dx > 10 && dx > dy) { reset(); return; }
-      if (dy <= 0) { g.d = 0; hide(); return; }
-      g.d = dy;
-      e.preventDefault();
-      show(dy, dy >= PULLUP_AT ? "go" : "");
-    }, { passive: false });
-    els.scroll.addEventListener("touchend", () => {
-      const go = g && g.d >= PULLUP_AT && !pullBlocked();
-      if (go) { g = null; show(PULLUP_AT, "busy"); setTimeout(() => location.reload(), 120); } else reset();
-    });
     els.scroll.addEventListener("touchcancel", reset);
   }
 
@@ -1179,7 +1136,6 @@
     }
     pinchInit();
     pullInit();
-    pullUpInit();
     els.scroll.addEventListener("load", () => { if (openId) settle(); }, true);
     els.jump.addEventListener("click", () => { typingOff(); stick = true; syncAnchor(); toEnd(true); });
     ["touchend", "touchcancel", "pointerup", "pointercancel"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
@@ -1190,7 +1146,6 @@
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
     els.notices.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-force-clear")) forceClear(); });
     els.replies.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-older")) loadOlder(); });
-    window.mAnswers.bind(els.extras, () => { const t = openId && window.mStore.card(openId); return t ? { id: t.id, qs: (t.seen && t.seen.open_questions) || [] } : null; }, () => paint(false));
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
     });

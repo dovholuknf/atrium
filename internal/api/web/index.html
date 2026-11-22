@@ -2081,27 +2081,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
 
     <section class="dlg-sec">
-    <div class="dlg-sec-h">new agents</div>
-    <div class="field">
-      <label class="eyebrow" for="s-launch-folder">projects folder
-        <span class="help" tabindex="0" data-tip="Where new agents start. Keeping it in one folder keeps everything your agents read and write in one place you already know, where your editor, git tools and backups already look. The new agent dialog opens on it and completes the folders under it. Empty means no default.">?</span></label>
-      <div class="picker">
-        <input id="s-launch-folder" spellcheck="false" autocomplete="off" data-saves="saveLaunchFolder"
-          placeholder="empty means no default folder">
-      </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-launch-mode">new agents work
-        <span class="help" tabindex="0" data-tip="In place lets an agent act on your behalf in your own git folder, commits and pushes included, with no permission problems. In a copy keeps it isolated on its own branch until you merge, the atrium way. This is only the default: each launch can still pick the other.">?</span></label>
-      <select id="s-launch-mode" data-saves="saveLaunchMode">
-        <option value="">no default</option>
-        <option value="place">in place: acts on your behalf in your git folder</option>
-        <option value="copy">in a copy: isolated on its own branch until you merge</option>
-      </select>
-    </div>
-    </section>
-
-    <section class="dlg-sec">
     <div class="dlg-sec-h">files and pastes</div>
     <!-- The one setting that starts a process nobody named. Off until it is
          filled in: guessing an editor means atrium picks a program to run on
@@ -3276,7 +3255,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body">
     <div class="two">
       <div class="field notw">
-        <label class="eyebrow" for="na-repo"><span id="na-kind-lbl">repo</span> <span class="help" tabindex="0" data-tip="repo works in a copy: owner/repo, or a GitHub link to a repo, an issue, a pull request or a branch, fills in the name and branch, and the agent gets its own copy on its own branch, kept apart from yours. It cannot commit to your branch or push as you, and its work reaches you when you merge it. folder works in place: the agent works in the same folder as your git, with your git setup, so it can act on your behalf, commit, push and open a pull request with no permission problems. The default for each is under settings, new agents.">?</span><span class="kindseg" id="na-kind"><button type="button" data-v="repo" class="on">repo</button><button type="button" data-v="folder">folder</button></span></label>
+        <label class="eyebrow" for="na-repo"><span id="na-kind-lbl">repo</span> <span class="help" tabindex="0" data-tip="owner/repo, or a GitHub link: a repo, an issue, a pull request or a branch. it fills in the name and branch. Or switch to folder to start the agent in a folder that already exists on this machine, as it is: no worktree, no branch.">?</span><span class="kindseg" id="na-kind"><button type="button" data-v="repo" class="on">repo</button><button type="button" data-v="folder">folder</button></span></label>
         <div class="cb">
           <input type="text" id="na-repo" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false"
             placeholder="none">
@@ -3814,7 +3793,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
 <script src="/js/launchrepo.js"></script>
-<script src="/js/folderpick.js"></script>
 <script src="/js/newagent.js"></script>
 <script src="/js/firstrun.js"></script>
 <script src="/js/tooltips.js"></script>
