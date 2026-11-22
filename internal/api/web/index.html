@@ -82,6 +82,7 @@
 <link rel="stylesheet" href="/css/review.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
+<link rel="stylesheet" href="/css/yourqueue.css">
 <link rel="stylesheet" href="/m/compose.css">
 <link rel="stylesheet" href="/m/docs.css">
 <link rel="stylesheet" href="/m/files.css">
@@ -177,6 +178,8 @@
       <div class="tab" data-view="board">board</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            data-tip="terminals atrium is supervising"></span></div>
+      <div class="tab" data-view="queue">queue<span class="count zero" id="c-queue"
+           data-tip="asks waiting on you"></span></div>
       <div class="tab" data-view="chat">chat</div>
       <!-- Hub only, revealed with the audit tab. It sits with the daily work, not at the end, so it is in the bar and not the overflow menu. The count is items blocked on you. See js/items.js. -->
       <div class="tab" data-view="items" hidden>items<span class="count zero" id="c-items"
@@ -223,6 +226,7 @@
          Left of the share chip, which is the other piece of state that is true
          whichever view you are on. Hidden at zero: a control reporting that it
          has nothing to report is noise. -->
+    <button id="yq-badge" class="yq-badge" onclick="yqGo()" hidden></button>
     <button id="working" class="working" onclick="switchView('terms')" hidden></button>
     <button id="sharing" class="sharing" onclick="openSharing()" hidden></button>
     <button id="gauto" class="gauto" onclick="toggleGlobalAuto()">asking</button>
@@ -414,7 +418,7 @@ Exports honor whatever filter is applied.">?</span>
     <div class="term-disk" id="term-disk" role="status" hidden></div>
     <!-- A process on this host has run away. See js/host-watch.js. -->
     <div class="term-host" id="term-host" role="status" hidden></div>
-    <!-- Every card held on a permission, on any room. Its panel floats over the terminal. See `renderHeldStrip`. -->
+    <!-- Every card held on a permission, on any room. Its panel is in flow above the terminal. See `renderHeldStrip`. -->
     <div class="held-strip" id="held-strip" hidden></div>
     <div class="term-layout" id="term-layout">
       <!-- The way back when the list is hidden. Before the list in the DOM so
@@ -1011,6 +1015,20 @@ Read-only. It says what happened, it does not change anything. Filter by room to
       <select id="audit-kind"></select>
     </div>
     <div id="audit-list"></div>
+  </div>
+
+  <!-- Queue: every ask waiting on you on the left, the one picked on the right. See js/yourqueue.js. -->
+  <div id="queue" hidden>
+    <div id="fd-queue"></div>
+    <div class="yq-layout" id="yq-layout">
+      <aside class="term-list yq-list" id="yq-list"></aside>
+      <!-- The terminals tab's grip, and its width. See `startGrip`. -->
+      <button class="term-grip" id="yq-grip" aria-label="resize the ask list"
+        data-tip="drag to resize the list"
+        onpointerdown="startGrip(event)"
+        onkeydown="gripKey(event)"></button>
+      <section class="yq-pane"><div id="yq-ask" class="yq-ask"></div></section>
+    </div>
   </div>
 
   <!-- Chat: the terminals' session list on the left (js/chat.js moves #term-list in while this view is open) and the
@@ -3735,6 +3753,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/down.js"></script>
 <script src="/js/route.js"></script>
 <script src="/js/ui-hold.js"></script>
+<script src="/js/yourqueue.js"></script>
+<script src="/js/yqmark.js"></script>
 <script src="/js/boot.js"></script>
 </body>
 </html>

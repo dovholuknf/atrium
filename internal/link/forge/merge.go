@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,6 +281,7 @@ func (p *Service) mergeList(w http.ResponseWriter, r *http.Request, st *hubstore
 		ffail(w, err)
 		return
 	}
+	mergeStale(ms, p.mergeBranches, p.RoomCards)
 	room, why := p.mergeRoomPick(st)
 	unlanded, err := st.MergeUnlandedCounts()
 	if err != nil {
@@ -288,6 +290,79 @@ func (p *Service) mergeList(w http.ResponseWriter, r *http.Request, st *hubstore
 	}
 	crJSON(w, http.StatusOK, map[string]any{"requests": ms, "held": p.Merges.holds(), "room": room, "why": why,
 		"unlanded": unlanded})
+}
+
+// mergeStale marks each red request that asks nothing any more: a later request for its branch landed, the branch left
+// the hub or landed there by other means, or the card that asked was closed or is gone from its room. branches and cards
+// answer nil when they do not know, and an unknown is never stale.
+func mergeStale(ms []hubstore.MergeRequest, branches func(repo string) map[string]string, cards func(room string) []ctl.Card) {
+	later := map[string]int64{}
+	for _, m := range ms {
+		if k := m.Repo + " " + m.Branch; m.State == hubstore.MergeLanded && m.N > later[k] {
+			later[k] = m.N
+		}
+	}
+	heads := map[string]map[string]string{}
+	held := map[string][]ctl.Card{}
+	for i := range ms {
+		m := &ms[i]
+		if m.State != hubstore.MergeRed {
+			continue
+		}
+		if later[m.Repo+" "+m.Branch] > m.N {
+			m.Stale = "a later request landed it"
+			continue
+		}
+		if _, ok := heads[m.Repo]; !ok && branches != nil {
+			heads[m.Repo] = branches(m.Repo)
+		}
+		if b := heads[m.Repo]; b != nil {
+			switch s, ok := b[m.Branch]; {
+			case !ok:
+				m.Stale = "the branch is gone from the hub"
+				continue
+			case s == gitsync.BranchLanded:
+				m.Stale = "the branch landed"
+				continue
+			}
+		}
+		if m.Requester == "" || m.RequesterRoom == "" || cards == nil {
+			continue
+		}
+		if _, ok := held[m.RequesterRoom]; !ok {
+			held[m.RequesterRoom] = cards(m.RequesterRoom)
+		}
+		if h := held[m.RequesterRoom]; h != nil {
+			c := ctl.PickCard(h, m.Requester)
+			switch {
+			case c == nil:
+				m.Stale = "the card that asked is gone"
+			case slices.Contains(c.Tags, closedTag):
+				m.Stale = "the card that asked is closed"
+			}
+		}
+	}
+}
+
+// closedTag is on a card the operator closed, as internal/api spells it.
+const closedTag = "atrium:closed"
+
+// mergeBranches is each claude/* branch of a repository and its status, from the hub's last branch pass. Nil when no pass
+// has finished or the last one could not measure the repository.
+func (p *Service) mergeBranches(repo string) map[string]string {
+	g := p.Git()
+	if g == nil {
+		return nil
+	}
+	v, err := g.Store().BranchesSnapshot(repo, gitsync.BranchFilter{})
+	if err != nil || v.Computed == "" || len(v.Why) > 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, b := range v.Branches {
+		out[b.Name] = b.Status
+	}
+	return out
 }
 
 // mergeAskRoute queues a request. The branch has to be on the hub at the sha asked, so "push first" is said here and

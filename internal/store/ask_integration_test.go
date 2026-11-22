@@ -365,3 +365,51 @@ func TestTheAskMigrationAgainstACopyOfALiveDatabase(t *testing.T) {
 	t.Logf("carried %q (asked %s) across on card %s",
 		outstanding[0].Text, outstanding[0].Peer, id)
 }
+
+// A gate is drawn ahead of an older plain ask, carries its verb and stage onto the card, and a newer gate replaces it.
+func TestAGateIsDrawnAndANewerGateReplacesIt(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	task := askCard(t, s, "gater")
+
+	if _, err := s.AddAsk(task.ID, "an older plain question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddGate(task.ID, "approve mock.html", "", "approve", "design"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AskVerb != "approve" || got.AskStage != "design" || !strings.Contains(got.Ask, "mock.html") {
+		t.Fatalf("the card does not draw the gate: verb %q stage %q ask %q", got.AskVerb, got.AskStage, got.Ask)
+	}
+
+	if _, err := s.AddGate(task.ID, "sign it", "", "sign", "build"); err != nil {
+		t.Fatal(err)
+	}
+	outstanding, err := s.OpenAsks(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates := 0
+	for _, a := range outstanding {
+		if a.Verb != "" {
+			gates++
+		}
+	}
+	if len(outstanding) != 2 || gates != 1 {
+		t.Fatalf("a newer gate left %d open asks, %d of them gates, want the plain ask and one gate", len(outstanding), gates)
+	}
+	if got, _ = s.Get(task.ID); got.AskVerb != "sign" || got.AskStage != "build" {
+		t.Fatalf("the card draws %q at %q, not the newer gate", got.AskVerb, got.AskStage)
+	}
+
+	if _, err := s.AnswerAllAsks(task.ID, "the operator"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.Get(task.ID); got.AskVerb != "" || got.AskStage != "" || got.Ask != "" {
+		t.Fatalf("an answered gate stays on the card: verb %q stage %q ask %q", got.AskVerb, got.AskStage, got.Ask)
+	}
+}

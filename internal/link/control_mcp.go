@@ -265,6 +265,7 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	}
 	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneDesc}, end.Done)
 	addTool(s, class, &mcp.Tool{Name: "atrium_blocked", Description: blockedDesc}, end.Blocked)
+	addTool(s, class, &mcp.Tool{Name: "atrium_gate", Description: gateToolDesc}, c.gateHandler)
 
 	addTool(s, class, &mcp.Tool{Name: "atrium_record", Description: recordToolDesc}, c.recordHandler)
 

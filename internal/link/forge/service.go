@@ -49,6 +49,8 @@ type Calls struct {
 	Broadcast func(ev wire.Event)
 	// WorkOfTags is the backlog id a launch's tags attach it to, or "".
 	WorkOfTags func(tags []string) string
+	// RoomCards is every card a room last announced it holds, nil when the hub has no such answer.
+	RoomCards func(room string) []ctl.Card
 }
 
 // Service is the hub's forge, PR claims, merge queue, git side and CI hook.

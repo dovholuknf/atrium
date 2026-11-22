@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en" data-skin="linen">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>atrium: your queue (interactive mock)</title>
+<!-- The board's real stylesheets, loaded from the checkout, so this looks like the approved board. Only the yq- rules
+     below are new. -->
+<link rel="stylesheet" href="../internal/api/web/css/tokens.css">
+<link rel="stylesheet" href="../internal/api/web/css/chrome.css">
+<link rel="stylesheet" href="../internal/api/web/css/cards.css">
+<link rel="stylesheet" href="../internal/api/web/css/rows.css">
+<link rel="stylesheet" href="../internal/api/web/css/terminal.css">
+<link rel="stylesheet" href="../internal/api/web/css/walk.css">
+<link rel="stylesheet" href="../internal/api/web/css/dialogs.css">
+<link rel="stylesheet" href="../internal/api/web/css/themes.css">
+<link rel="stylesheet" href="../internal/api/web/css/topnav.css">
+<style>
+  /* ---- verbs: one colour each, all from the skin's own tokens ---- */
+  .v-answer { --vc: hsl(212 68% 46%); }
+  .v-approve { --vc: hsl(148 52% 34%); }
+  .v-try { --vc: hsl(30 88% 46%); }
+  .v-sign { --vc: hsl(268 48% 50%); }
+  .v-unblock { --vc: var(--danger); }
+  .yq-verb {
+    font: 700 var(--fs-xs)/1.6 var(--sans); letter-spacing: .09em; padding: 0 9px; border-radius: var(--r-sm);
+    color: var(--vc); border: 1px solid var(--vc); background: color-mix(in srgb, var(--vc) 12%, transparent);
+  }
+  button, select, input, textarea { font: inherit; }
+  .yq button.btn, .yq-mockbar button, .yq select {
+    font-size: var(--fs-sm); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer;
+    background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke);
+  }
+  .yq button.btn:hover { background: var(--btn-hover); color: var(--head); }
+  .yq button.btn.primary, .yq button.go {
+    background: var(--vc, var(--teal)); color: var(--on-danger, #fff); border-color: var(--vc, var(--teal)); font-weight: 600;
+  }
+  .yq button.go { font-size: var(--fs-sm); padding: 3px 12px; border-radius: var(--r-sm); cursor: pointer; border: 1px solid var(--vc); }
+  .yq button.btn.primary:hover, .yq button.go:hover { filter: brightness(1.08); background: var(--vc); color: var(--on-danger, #fff); }
+  .yq button.btn.danger { color: var(--danger); border-color: var(--danger); }
+  .yq button.btn.on { background: var(--chip); border-color: var(--teal); color: var(--head); }
+  html[data-skin="linen"] .yq button.go, html[data-skin="frost"] .yq button.go { color: #fff; }
+  .yq .help[data-tip]:hover::after, .yq .help[data-tip]:focus::after {
+    content: attr(data-tip); position: absolute; z-index: 60; left: 50%; top: 125%; transform: translateX(-30%);
+    width: max-content; max-width: 250px; padding: 7px 10px; border-radius: var(--r-sm); text-align: left;
+    background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke); box-shadow: var(--shadow-pop);
+    font: 400 var(--fs-sm)/1.4 var(--sans); white-space: normal; opacity: 1; visibility: visible;
+  }
+
+  /* ---- header additions ---- */
+  .yq-badge {
+    font: 700 var(--fs-md)/1 var(--mono); padding: 7px 14px; border-radius: var(--r-pill); cursor: pointer;
+    color: var(--warn); background: rgba(var(--warn-rgb), .15); border: 1px solid rgba(var(--warn-rgb), .4);
+  }
+  .yq-badge.stuck { color: var(--danger-text); background: rgba(var(--danger-rgb), .22); border-color: var(--danger); animation: pulse 1.9s ease-in-out 3; }
+  .yq-badge[hidden] { display: none; }
+  .tab .count.red { background: rgba(var(--danger-rgb), .24); color: var(--danger-text); box-shadow: 0 0 0 1px var(--danger); }
+
+  /* ---- list tray ---- */
+  .yq-tray { padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--stroke-dim); }
+  .yq-tray .line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--label); }
+  .yq-seg { display: inline-flex; border: 1px solid var(--stroke); border-radius: var(--r-sm); overflow: hidden; }
+  .yq-seg button { border: 0; background: transparent; color: var(--label); padding: 3px 10px; font-size: var(--fs-sm); cursor: pointer; }
+  .yq-seg button.on { background: var(--chip); color: var(--head); }
+  .yq-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 8px 12px; }
+  .yq-sec { font: 700 var(--fs-xs)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--label); margin: 8px 2px 8px; display: flex; align-items: center; gap: 7px; }
+  .yq-sec.stuck { color: var(--danger); }
+  .yq-do { border: 1px dashed var(--stroke); border-radius: var(--r-md); padding: 8px 10px; margin-bottom: 6px; background: var(--lift); }
+  .yq-do ol { margin: 4px 0 0; padding-left: 20px; font-size: var(--fs-sm); color: var(--body); }
+  .yq-do li { margin: 2px 0; cursor: pointer; }
+  .yq-do li:hover { color: var(--head); }
+  .yq-do li b { color: var(--head); font-weight: 600; }
+
+  /* ---- one row ---- */
+  .yq-row.card { cursor: default; }
+  .yq-row.card::before { opacity: 1; background: var(--vc); }
+  .yq-row.stuck { border-color: var(--danger); background: linear-gradient(180deg, rgba(var(--danger-rgb), .12), var(--card-1)); }
+  .yq-row .head { cursor: pointer; }
+  .yq-row .title { white-space: normal; flex: 1 1 auto; }
+  .yq-row .chips { flex: none !important; }
+  .yq-meta .age { white-space: nowrap; }
+  .yq-row .caret { color: var(--dim); width: 12px; display: inline-block; transition: transform .15s; }
+  .yq-row.open .caret { transform: rotate(90deg); }
+  .yq-meta { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--label); }
+  .yq-meta .age { font-family: var(--mono); }
+  .yq-meta .age.old { color: var(--warn); font-weight: 600; }
+  .yq-meta .sp { flex: 1; }
+  .yq-step { display: inline-flex; gap: 3px; align-items: center; }
+  .yq-step i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--stroke); background: transparent; display: block; }
+  .yq-step i.done { background: var(--dim); border-color: var(--dim); }
+  .yq-step i.skip { border-style: dashed; opacity: .55; }
+  .yq-step i.cur { border-color: var(--vc); background: linear-gradient(90deg, var(--vc) 50%, transparent 50%); box-shadow: 0 0 0 2px color-mix(in srgb, var(--vc) 25%, transparent); }
+  .yq-hist { margin-top: 8px; border-top: 1px solid var(--stroke-dim); padding-top: 8px; font-size: var(--fs-sm); }
+  .yq-hist .st { padding: 5px 0 5px 12px; border-left: 2px solid var(--stroke-dim); margin-left: 3px; }
+  .yq-hist .st.cur { border-left-color: var(--vc); }
+  .yq-hist .st h5 { margin: 0 0 2px; font-size: var(--fs-sm); color: var(--head); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .yq-hist .st h5 small { font-weight: 400; color: var(--dim); }
+  .yq-hist .lbl { font: 700 var(--fs-xxs)/1.4 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); display: block; margin-top: 3px; }
+  .yq-hist p { margin: 0; color: var(--body); }
+  .yq-hist .links a { color: var(--blue); margin-right: 10px; text-decoration: underline dotted; cursor: pointer; }
+  .yq-plain { margin-bottom: var(--vs-2); }
+  .yq-plain .dotw { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); flex: none; }
+  .yq-empty { text-align: center; padding: 40px 12px; color: var(--label); }
+  .yq-empty .big { font-size: 34px; color: var(--teal); }
+
+  /* ---- main pane ---- */
+  .yq-panebar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap; }
+  .yq-panebar strong { color: var(--head); font-size: var(--fs-lg); }
+  .yq-panebody { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; }
+  .yq-termbox { background: #14110c; color: #d9d2c0; font: 12.5px/1.5 var(--mono); padding: 12px 14px; border-radius: var(--r-md); min-height: 100%; white-space: pre-wrap; }
+  html:not([data-skin="linen"]):not([data-skin="frost"]) .yq-termbox { background: var(--bg-2); color: var(--body); }
+  .yq-termbox .g { color: #7fd48a; } .yq-termbox .r { color: #ff8b80; } .yq-termbox .d { color: #8e8676; } .yq-termbox .y { color: #e5c06b; }
+  .yq-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .yq-welcome { max-width: 560px; margin: 8vh auto; text-align: center; color: var(--label); }
+
+  /* interview */
+  .yq-iv { display: grid; grid-template-columns: 250px 1fr; gap: 18px; height: 100%; min-height: 0; }
+  .yq-iv .rail { overflow: auto; border-right: 1px solid var(--stroke-dim); padding-right: 12px; }
+  .yq-iv .rail .qi { padding: 8px 10px; border-radius: var(--r-md); cursor: pointer; border: 1px solid transparent; margin-bottom: 6px; font-size: var(--fs-sm); }
+  .yq-iv .rail .qi:hover { background: var(--lift); }
+  .yq-iv .rail .qi.on { background: var(--chip); border-color: var(--stroke); }
+  .yq-iv .rail .qi .q { color: var(--head); font-weight: 600; display: block; }
+  .yq-iv .rail .qi .a { display: block; margin-top: 2px; color: var(--teal); font-family: var(--mono); font-size: var(--fs-xs); }
+  .yq-iv .rail .qi .a.none { color: var(--dim); }
+  .yq-iv .main { overflow: auto; max-width: 720px; }
+  .yq-prog { height: 5px; border-radius: 3px; background: var(--chip); overflow: hidden; margin: 6px 0 14px; }
+  .yq-prog i { display: block; height: 100%; background: var(--vc); }
+  .yq-q { font-size: var(--fs-2xl); color: var(--head); font-weight: 600; margin: 4px 0 8px; }
+  .yq-ctx { font-size: var(--fs-md); color: var(--body); margin-bottom: 12px; }
+  .yq-ctx ul { margin: 6px 0 0; padding-left: 20px; }
+  .yq-rec { border: 1px solid var(--chip-accent-stroke); background: var(--chip-accent); color: var(--chip-accent-text); border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 14px; font-size: var(--fs-md); }
+  .yq-rec b { letter-spacing: .08em; font-size: var(--fs-xs); text-transform: uppercase; display: block; margin-bottom: 2px; }
+  .yq-choices { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .yq-choices button { font-size: var(--fs-md) !important; padding: 8px 20px !important; font-weight: 600; }
+  .yq-choices button.rec::after { content: " (recommended)"; font-weight: 400; font-size: var(--fs-xs); opacity: .8; }
+  .yq-choices button.sel { background: var(--vc) !important; color: #fff !important; border-color: var(--vc) !important; }
+  .yq-reply { width: 100%; min-height: 70px; resize: vertical; background: var(--bg-2); color: var(--head); border: 1px solid var(--stroke); border-radius: var(--r-md); padding: 8px 10px; }
+  .yq-saved { color: var(--teal); font-size: var(--fs-sm); font-family: var(--mono); }
+
+  /* walk */
+  .yq-walk { display: grid; grid-template-columns: 210px 1fr; gap: 18px; height: 100%; min-height: 0; }
+  .yq-walk .rail { overflow: auto; border-right: 1px solid var(--stroke-dim); padding-right: 12px; }
+  .yq-walk .rail .si { display: flex; gap: 8px; padding: 7px 8px; border-radius: var(--r-md); cursor: pointer; font-size: var(--fs-sm); color: var(--label); }
+  .yq-walk .rail .si.on { background: var(--chip); color: var(--head); }
+  .yq-walk .rail .si .n { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--stroke); display: grid; place-items: center; font-size: var(--fs-xxs); flex: none; }
+  .yq-walk .rail .si.seen .n { background: var(--vc); border-color: var(--vc); color: #fff; }
+  .yq-walk .main { overflow: auto; display: flex; flex-direction: column; min-height: 0; }
+  .yq-walk h3 { margin: 0 0 8px; color: var(--head); font-size: var(--fs-2xl); }
+  .yq-walk .body { flex: 1; font-size: var(--fs-md); }
+  .yq-walk .body ul { padding-left: 20px; }
+  .yq-walk .foot { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--stroke-dim); margin-top: 12px; align-items: center; flex-wrap: wrap; }
+  .yq-diff { font: 12px/1.5 var(--mono); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); overflow: hidden; background: var(--bg-2); margin: 8px 0; }
+  .yq-diff div { padding: 0 10px; white-space: pre; overflow: hidden; }
+  .yq-diff .a { background: rgba(80,170,90,.18); } .yq-diff .x { background: rgba(var(--danger-rgb), .16); } .yq-diff .h { color: var(--dim); background: var(--lift); }
+
+  /* annotate */
+  .yq-ann { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 14px; align-items: start; }
+  .yq-tools { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+  .yq-surfwrap { border: 1px solid var(--stroke); border-radius: var(--r-md); overflow: auto; background: #fff; }
+  .yq-surface { position: relative; width: 560px; height: 340px; background: #fbfbfd; color: #222; font: 13px/1.4 Inter, "Segoe UI", sans-serif; user-select: none; overflow: hidden; }
+  .yq-surface .app-h { background: #26324a; color: #fff; padding: 8px 12px; display: flex; gap: 10px; align-items: center; }
+  .yq-surface .app-h .tabx { padding: 3px 9px; border-radius: 5px; background: #3a4a6b; font-size: 12px; }
+  .yq-surface .app-h .tabx.on { background: #5b8def; }
+  .yq-surface .app-b { display: flex; height: 270px; }
+  .yq-surface .app-l { width: 150px; border-right: 1px solid #dde; padding: 8px; background: #f0f2f8; }
+  .yq-surface .app-l div { padding: 5px 7px; border-radius: 5px; margin-bottom: 3px; font-size: 12px; }
+  .yq-surface .app-l div.on { background: #dbe4fb; font-weight: 600; }
+  .yq-surface .app-m { flex: 1; padding: 12px; }
+  .yq-surface .app-m h4 { margin: 0 0 6px; font-size: 14px; }
+  .yq-surface .pbtn { display: inline-block; padding: 6px 14px; border-radius: 6px; background: #5b8def; color: #fff; font-weight: 600; margin: 8px 8px 0 0; font-size: 12.5px; }
+  .yq-surface .pbtn.alt { background: #e6e9f2; color: #333; }
+  .yq-surface .bar { height: 8px; border-radius: 4px; background: #dfe4f1; margin: 8px 0; }
+  .yq-surface .bar i { display: block; height: 100%; background: #5b8def; border-radius: 4px; }
+  .yq-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .yq-svg.draw { cursor: crosshair; }
+  .yq-notes .nt { border: 1px solid var(--stroke-dim); border-radius: var(--r-md); padding: 6px 8px; margin-bottom: 6px; font-size: var(--fs-xs); background: var(--card-0); }
+  .yq-notes .nt .nh { display: flex; align-items: center; gap: 6px; color: var(--head); font-weight: 600; }
+  .yq-notes .nt .nh em { font-style: normal; color: var(--dim); font-weight: 400; font-family: var(--mono); font-size: var(--fs-xxs); }
+  .yq-notes .nt textarea { width: 100%; min-height: 40px; margin-top: 4px; background: var(--bg-2); color: var(--head); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 4px 6px; font-size: var(--fs-sm); }
+  .yq-num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #e0457b; color: #fff; font: 700 11px/1 var(--sans); flex: none; }
+  .yq-thumb { width: 150px; height: 90px; overflow: hidden; position: relative; border: 1px solid var(--stroke); border-radius: var(--r-sm); background: #fff; flex: none; }
+  .yq-thumb .inner { position: absolute; width: 560px; height: 340px; transform-origin: 0 0; }
+
+  /* modal */
+  .yq-modal { position: fixed; inset: 0; z-index: 80; background: rgba(var(--shadow-rgb), .45); display: grid; place-items: center; padding: 20px; }
+  .yq-modal .box { background: var(--shell-0); border: 1px solid var(--stroke); border-radius: var(--r-lg); box-shadow: var(--shadow-dialog); max-width: 720px; width: 100%; max-height: 86vh; overflow: auto; padding: 18px 20px; }
+  .yq-modal h3 { margin: 0 0 8px; color: var(--head); }
+  .yq-modal pre { background: var(--bg-2); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); padding: 10px 12px; font: 12px/1.5 var(--mono); white-space: pre-wrap; color: var(--body); max-height: 260px; overflow: auto; }
+  .yq-thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+
+  /* flow map */
+  .yq-map { display: flex; gap: 10px; align-items: flex-start; padding: 8px 2px; overflow-x: auto; }
+  .yq-gate { min-width: 180px; flex: 1 1 0; }
+  .yq-gate .gh { text-align: center; padding: 8px 6px; border: 1.5px solid var(--vc, var(--stroke)); color: var(--head); background: color-mix(in srgb, var(--vc, var(--stroke)) 12%, var(--shell-0)); border-radius: var(--r-md); font-weight: 600; font-size: var(--fs-sm); position: relative; clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
+  .yq-gate .gh small { display: block; color: var(--vc, var(--label)); font-size: var(--fs-xxs); letter-spacing: .1em; font-weight: 700; }
+  .yq-gate .arrow { text-align: center; color: var(--dim); }
+  .yq-gate .chips { flex-direction: column; align-items: stretch; margin-top: 8px; gap: 6px; }
+  .yq-gate .chip { cursor: pointer; white-space: normal; border: 1px solid var(--vc); color: var(--head); background: var(--card-0); }
+  .yq-gate .chip:hover { background: var(--btn-hover); }
+  .yq-gate.none .gh { opacity: .5; border-style: dashed; }
+  .yq-mapnote { font-size: var(--fs-sm); color: var(--label); margin-top: 10px; }
+
+  /* other tabs */
+  .yq-othertab { margin: 12vh auto; text-align: center; color: var(--label); max-width: 520px; }
+
+  /* mock bar */
+  .yq-mockbar { flex: none; z-index: 30; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 7px 14px; background: #1c1812; color: #e8dfc9; border-top: 2px solid var(--wait); font-size: var(--fs-sm); }
+  .yq-mockbar b { letter-spacing: .12em; color: var(--wait); font-size: var(--fs-xs); }
+  .yq-mockbar button, .yq-mockbar select { background: #2b251b; color: #e8dfc9; border-color: #4a4130; padding: 3px 10px; }
+  .yq-mockbar button.on { background: var(--wait); color: #fff; border-color: var(--wait); }
+  .yq-mockbar .sp { flex: 1; }
+
+  .yq-toast { position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); z-index: 90; background: var(--head); color: var(--bg-0); padding: 8px 16px; border-radius: var(--r-pill); font-size: var(--fs-md); box-shadow: var(--shadow-pop); }
+
+  /* phone width: the same board in a 390px frame, one column, the ask replaces the list */
+  body.phone main { padding: 8px; align-items: center; }
+  body.phone #frame { margin: 0 auto; width: 390px; max-width: 100%; border: 10px solid #1c1812; border-radius: 28px; overflow: hidden; background: var(--bg-1); flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  body.phone #frame .bar { gap: 6px; padding: 8px; }
+  body.phone #frame .wordmark { font-size: var(--fs-lg); letter-spacing: .2em; }
+  body.phone #frame nav { display: none; }
+  body.phone #frame .yq-badge { font-size: var(--fs-sm); padding: 5px 10px; }
+  body.phone .term-layout { flex-direction: column; }
+  body.phone .term-list { flex: 1 1 auto !important; }
+  body.phone .yq-iv, body.phone .yq-walk { grid-template-columns: 1fr; }
+  body.phone .yq-iv .rail, body.phone .yq-walk .rail { display: none; }
+  body.phone .yq-ann { grid-template-columns: 1fr; }
+  body.phone .yq-panebody { padding: 10px; }
+  body.phone .yq-phoneback { display: inline-block !important; }
+  body.phone .yq-phone-hide { display: none !important; }
+  .yq-phoneback { display: none; }
+  #frame { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #frame > header { flex: none; position: relative; }
+  #frame > main { flex: 1; min-height: 0; }
+</style>
+</head>
+<body class="yq">
+<div id="frame">
+<header>
+  <div class="bar">
+    <h1 class="wordmark accent-text">Atrium</h1>
+    <nav id="nav"></nav>
+    <div class="grow"></div>
+    <button class="yq-badge" id="badge" onclick="goQueue()"></button>
+  </div>
+</header>
+<main id="main"></main>
+</div>
+<div class="yq-mockbar" id="mockbar">
+  <b>MOCK</b>
+  <span>state</span>
+  <span id="states"></span>
+  <span class="sp"></span>
+  <span>skin</span><select id="skin"></select>
+  <button onclick="resetAll()" title="put every ask back">reset</button>
+</div>
+<div id="overlay"></div>
+
+<script>
+/* ======================= data ======================= */
+const STAGES = ['Idea', 'Interview', 'Design', 'Mock', 'Try mock', 'Build', 'Try live', 'Sign'];
+const GATES = [
+  { id: 'interview', label: 'Interview', verb: 'ANSWER', stage: 1 },
+  { id: 'design', label: 'Design doc', verb: 'APPROVE', stage: 2 },
+  { id: 'mock', label: 'Mock', verb: 'APPROVE', stage: 3 },
+  { id: 'imock', label: 'Interactive mock', verb: 'TRY', stage: 4 },
+  { id: 'live', label: 'Try live', verb: 'TRY', stage: 6 },
+  { id: 'sign', label: 'Sign and land', verb: 'SIGN', stage: 7 },
+  { id: 'stuck', label: 'Stuck', verb: 'UNBLOCK', stage: 5 },
+];
+const MIN = 1, HR = 60, DAY = 1440;
+const ITEMS = [
+  { id: 'ci', title: 'Merge CI failed: claude/main run 4412', proj: 'atrium', verb: 'UNBLOCK', gate: 'stuck', stage: 5, skip: [], age: 14 * MIN, card: 'claude-sg4', stuck: true, surface: null,
+    hist: { 5: ['Agent landed 3 cards, CI run 4412 failed on windows.', 'TestSupervisorRestart timed out after 60s. Re-run fails the same way, so it is not a flake. Worker is parked waiting on you.'] } },
+  { id: 'cull', title: 'Branch cull interview', proj: 'atrium', verb: 'ANSWER', gate: 'interview', stage: 1, skip: [], age: 3 * HR + 5, card: 'cull-1',
+    hist: { 0: ['"too many claude/* branches, clean them up"', 'Backlog item u-cull. 37 stale claude/* branches in the hub, 5 checked out in worktrees.'] } },
+  { id: 'walkiv', title: 'How the walk should work', proj: 'atrium', verb: 'ANSWER', gate: 'interview', stage: 1, skip: [], age: 1 * DAY + 2 * HR, card: 'walk-design',
+    hist: { 0: ['"the walk is the thing i use most, i want to play with how it works"', 'Open design question on the walk: where it opens, what Send back does, step order.'] } },
+  { id: 'bringup', title: 'Bring-up mock', proj: 'ziti', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 5 * HR + 20, card: 'sgg', surface: 'bringup',
+    hist: { 0: ['"first run of a new machine takes too long to trust"', 'Bring-up should show each machine step with a live result.'], 2: ['Approved design doc 2h earlier today', 'Bring-up as a checklist that fills in as the room reports each step.'] } },
+  { id: 'stepper', title: 'Stepper mock', proj: 'atrium', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 2 * HR + 10, card: 'm1mini', surface: 'stepper',
+    hist: { 0: ['"a stepper for items, like the walk, but for stages"', 'Stage stepper showing which gate an item is at.'] } },
+  { id: 'voice', title: 'Voice push-to-talk mock', proj: 'atrium', verb: 'APPROVE', gate: 'mock', stage: 3, skip: [1], age: 40 * MIN, card: 'claude-sg4', surface: 'voice',
+    hist: { 0: ['"hold a key and talk to the card"', 'Push-to-talk button on the terminal bar, transcript lands in the compose line.'] } },
+  { id: 'plan', title: 'Service and package manager plan doc', proj: 'ziti', verb: 'APPROVE', gate: 'design', stage: 2, skip: [], age: 1 * DAY + 30, card: 'svc-plan', surface: 'doc',
+    hist: { 0: ['"services and packages need one manager, not three scripts"', 'Plan doc proposing one service and package manager across rooms.'], 1: ['Answered 4 of 4', 'Decided: one manager, per-room config, no daemon restart on package change.'] } },
+  { id: 'walkui', title: 'Walk UI live', proj: 'atrium', verb: 'TRY', gate: 'live', stage: 6, skip: [], age: 2 * HR + 45, card: 'walk-build', surface: 'walk',
+    hist: { 3: ['Approved the mock with one change request', 'Step list on the left, diff in the middle, Approve and Send back at the end.'], 5: ['Build finished, 38 tests green', 'Walk UI shipped to the live board behind the walk flag.'] } },
+  { id: 'push', title: 'Push 312 commits on claude/main to origin', proj: 'atrium', verb: 'SIGN', gate: 'sign', stage: 7, skip: [1, 2, 3, 4], age: 6 * HR + 12, card: 'landing', surface: 'commits',
+    hist: { 0: ['Filed from the 312 unpushed commits warning', 'A sign step with no item behind it, so it is filed as one.'], 5: ['312 commits across 41 cards, CI green on 4408', 'Fast-forward push of claude/main, no tag.'] } },
+];
+const PLAIN = [
+  { title: 'api-tests', proj: 'atrium', note: 'working' },
+  { title: 'board-css-sweep', proj: 'atrium', note: 'working' },
+  { title: 'ziti-edge-docs', proj: 'ziti', note: 'working' },
+  { title: 'cert-rotation', proj: 'ziti', note: 'idle' },
+];
+const IV = {
+  cull: { choices: ['DELETE', 'KEEP', 'LAND'], qs: [
+    { q: 'claude/b-* fix branches', ctx: ['14 branches, all merged into claude/main', 'oldest is 31 days, newest 6 days', 'no worktree has one checked out'], rec: 'DELETE', why: 'Everything on them is already on claude/main, so nothing is lost.' },
+    { q: 'claude/*-mock branches', ctx: ['9 branches', '6 are merged', '3 hold a mock html that is on no other branch (your-queue-mock, file-picker-mock, input-line-mock)'], rec: 'KEEP', why: 'Keep the 3 that carry an unmerged mock, the 6 merged ones can go in the next cull.' },
+    { q: 'claude/go-modules-* branches', ctx: ['6 branches', '2 are ahead of claude/main (go-modules-9-5-pulls is 4 commits ahead)', '4 are merged'], rec: 'LAND', why: 'The 2 ahead hold finished work that never got landed. Land them, then the other 4 are safe to delete.' },
+    { q: 'Branches shown with + (checked out in a worktree)', ctx: ['5 branches', 'each has a live card on it', 'deleting one would pull the floor from a running card'], rec: 'KEEP', why: 'Their cards are still running.' },
+    { q: 'Delete backup-batch-1?', yes: true, ctx: ['It has no claude/ prefix', 'last commit 19 days ago', 'every commit on it is reachable from claude/main'], rec: 'Yes', why: 'It is a leftover safety copy from the batch merge, and the merge is long done.' },
+  ] },
+  walkiv: { qs: [
+    { q: 'Should the walk open in the main area instead of a new tab?', yes: true, ctx: ['Today a walk opens as its own page', 'Opening in the main area keeps the card list in view and gives the one-click toggle back to the terminal'], rec: 'Yes', why: 'You said you want to stop needing terminal mode, so the walk should live next to it.' },
+    { q: 'Where should Send back go?', choices: ['Text to the agent', 'Annotations', 'Both'], ctx: ['Today Send back is a typed reason', 'Annotate sends pins, boxes and arrows with a capture'], rec: 'Both', why: 'Text is the reason, annotations are the where.' },
+    { q: 'How should steps be grouped?', choices: ['By file', 'By concern', 'By commit'], ctx: ['By file is today\'s order', 'By concern groups a diff by what it is for, so a change to 9 files reads as 3 steps'], rec: 'By concern', why: 'It matches how you review: intent first, files second.' },
+    { q: 'What should the walk show first for a doc-only change?', text: true, ctx: ['No code diff, so the usual first step (files changed) says little'], rec: 'The rendered doc, with the diff as the second step.', why: 'You read prose rendered, not as markdown source.' },
+  ] },
+};
+
+/* ======================= state ======================= */
+const S = { tab: 'terms', mode: 'stuck', phone: false, group: 'needs', sort: 'age', proj: 'all', view: 'list', open: null, pane: 'ask', exp: {}, done: {}, ans: {}, qi: {}, walkStep: {}, anns: {}, tool: 'pin', sentLog: {} };
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtAge = m => m >= DAY ? Math.floor(m / DAY) + 'd ' + Math.floor((m % DAY) / HR) + 'h' : m >= HR ? Math.floor(m / HR) + 'h ' + (m % HR) + 'm' : m + 'm';
+const help = t => `<span class="help" tabindex="0" data-tip="${esc(t)}">?</span>`;
+const vcls = v => 'v-' + v.toLowerCase();
+const byId = id => ITEMS.find(i => i.id === id);
+
+function visible() {
+  if (S.mode === 'none') return [];
+  let l = ITEMS.filter(i => !S.done[i.id] && (S.mode === 'stuck' || !i.stuck));
+  if (S.proj !== 'all') l = l.filter(i => i.proj === S.proj);
+  const need = { ANSWER: 0, APPROVE: 1, TRY: 2, SIGN: 3, UNBLOCK: 4 };
+  const key = S.sort === 'age' ? (a, b) => b.age - a.age : S.sort === 'need' ? (a, b) => need[a.verb] - need[b.verb] || b.age - a.age : (a, b) => a.proj.localeCompare(b.proj) || b.age - a.age;
+  return l.sort((a, b) => (b.stuck ? 1 : 0) - (a.stuck ? 1 : 0) || key(a, b));
+}
+function allWaiting() { return S.mode === 'none' ? [] : ITEMS.filter(i => !S.done[i.id] && (S.mode === 'stuck' || !i.stuck)); }
+
+/* ======================= chrome ======================= */
+const TABS = ['stack', 'board', 'terms', 'chat', 'items', 'history', 'usage', 'rooms', 'perms'];
+function renderChrome() {
+  const w = allWaiting(), stuck = w.some(i => i.stuck);
+  $('#nav').innerHTML = TABS.map(t => `<div class="tab${S.tab === t ? ' on' : ''}" data-act="tab" data-t="${t}">${t === 'terms' ? 'terminals' : t}${t === 'terms' && w.length ? `<span class="count${stuck ? ' red' : ''}">${w.length}</span>` : ''}</div>`).join('');
+  const b = $('#badge');
+  b.hidden = !w.length;
+  b.className = 'yq-badge' + (stuck ? ' stuck' : '');
+  b.textContent = w.length + ' for you';
+  document.title = (w.length ? '(' + w.length + ') ' : '') + 'atrium: your queue (mock)';
+  $('#states').innerHTML = [['none', 'nothing waiting'], ['several', 'several waiting'], ['stuck', 'one stuck']].map(([k, l]) => `<button class="${S.mode === k && !S.phone ? 'on' : ''}" data-act="mode" data-m="${k}">${l}</button>`).join(' ') +
+    ` <button class="${S.phone ? 'on' : ''}" data-act="phone">phone width</button>`;
+  document.body.classList.toggle('phone', S.phone);
+}
+function render() {
+  renderChrome();
+  const m = $('#main');
+  if (S.tab !== 'terms') {
+    m.innerHTML = `<div class="yq-othertab"><h2 style="color:var(--head)">${S.tab === 'terms' ? '' : esc(S.tab)}</h2><p>Another tab, unchanged. The badge in the header and the count on the terminals tab follow you here.</p><p><button class="btn" data-act="tab" data-t="terms">back to terminals</button></p></div>`;
+    return;
+  }
+  const askOpen = S.open && byId(S.open);
+  const lw = S.phone ? 'auto' : S.group === 'needs' ? '430px' : '280px';
+  m.innerHTML = `<div id="terms"><div class="term-layout" id="term-layout" style="--termw:${lw}">
+    <aside class="term-list${S.phone && askOpen ? ' yq-phone-hide' : ''}" id="term-list">${listHtml()}</aside>
+    <section class="term-pane${S.phone && !askOpen ? ' yq-phone-hide' : ''}" id="term-pane">${paneHtml()}</section></div></div>`;
+  afterPane();
+}
+
+/* ======================= left list ======================= */
+function trayHtml() {
+  const projs = ['all', 'atrium', 'ziti'];
+  return `<div class="yq-tray">
+    <div class="line"><span>group by</span>
+      <span class="yq-seg"><button class="${S.group === 'project' ? 'on' : ''}" data-act="group" data-g="project">project</button><button class="${S.group === 'needs' ? 'on' : ''}" data-act="group" data-g="needs">needs you</button></span>
+      ${S.group === 'needs' ? `<span class="yq-seg" style="margin-left:auto"><button class="${S.view === 'list' ? 'on' : ''}" data-act="view" data-v="list">list</button><button class="${S.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">flow map</button></span>` : ''}</div>
+    ${S.group === 'needs' ? `<div class="line">sort ${help('Stuck items always stay on top. This orders the rest.')}
+      <select data-act="sort">${[['age', 'oldest waiting'], ['need', 'type of need'], ['proj', 'project']].map(([k, l]) => `<option value="${k}"${S.sort === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+      <span style="margin-left:auto">project</span>
+      <span class="yq-seg">${projs.map(p => `<button class="${S.proj === p ? 'on' : ''}" data-act="proj" data-p="${p}">${p}</button>`).join('')}</span></div>` : ''}
+  </div>`;
+}
+function stepper(it) {
+  return `<span class="yq-step" title="${STAGES.map((s, i) => s + (i === it.stage ? ' (here)' : it.skip.includes(i) ? ' (skipped)' : i < it.stage ? ' (done)' : '')).join(', ')}">${STAGES.map((s, i) => `<i class="${i === it.stage ? 'cur' : it.skip.includes(i) ? 'skip' : i < it.stage ? 'done' : ''}"></i>`).join('')}</span>`;
+}
+function actLabel(it) { return { ANSWER: 'Answer', APPROVE: 'Review', TRY: 'Try it', SIGN: 'Sign', UNBLOCK: 'Open' }[it.verb]; }
+function rowHtml(it) {
+  const open = S.exp[it.id], old = it.age >= 4 * HR;
+  return `<div class="card yq-row waiting ${vcls(it.verb)}${it.stuck ? ' stuck' : ''}${open ? ' open' : ''}${S.open === it.id ? ' on' : ''}" data-id="${it.id}">
+    <div class="card-line head" data-act="expand" data-id="${it.id}"><span class="caret">&#9656;</span><span class="title">${esc(it.title)}</span><span class="chips"><span class="yq-verb">${it.verb}</span></span></div>
+    <div class="yq-meta">${stepper(it)}<span class="chip">${it.proj}</span><span class="age${old ? ' old' : ''}" data-tip="waiting on you">waiting ${fmtAge(it.age)}</span><span class="sp"></span><button class="go" data-act="openask" data-id="${it.id}">${actLabel(it)}</button></div>
+    ${open ? histHtml(it) : ''}</div>`;
+}
+function histHtml(it) {
+  const inputs = S.sentLog[it.id] || {};
+  return `<div class="yq-hist">${STAGES.map((s, i) => {
+    if (i > it.stage) return '';
+    const sk = it.skip.includes(i), h = it.hist[i], sent = inputs[i];
+    return `<div class="st${i === it.stage ? ' cur' : ''}"><h5>${s}${sk ? ' <small>skipped</small>' : i === it.stage ? ` <small>waiting on you</small>` : ''}</h5>
+      ${sk ? '' : `<span class="lbl">Your input</span><p>${esc(sent || (h && h[0]) || (i === it.stage ? 'Nothing yet.' : 'Agreed as proposed.'))}</p>
+      <span class="lbl">AI distillation</span><p>${esc((h && h[1]) || (i === it.stage ? 'Waiting for your ' + it.verb.toLowerCase() + '.' : 'Carried forward.'))}</p>
+      ${i >= 1 ? `<span class="links"><a>doc</a>${i >= 2 ? '<a>diagram</a>' : ''}${i >= 3 ? '<a>mock</a>' : ''}</span>` : ''}`}</div>`;
+  }).join('')}</div>`;
+}
+function listHtml() {
+  if (S.group === 'project') {
+    const all = [...ITEMS.filter(i => !S.done[i.id] && S.mode !== 'none' && (S.mode === 'stuck' || !i.stuck)).map(i => ({ title: i.card, proj: i.proj, it: i })), ...PLAIN];
+    const projs = [...new Set(all.map(a => a.proj))];
+    return trayHtml() + `<div class="yq-scroll">${projs.map(p => `<div class="yq-sec">${p}</div>` + all.filter(a => a.proj === p).map(a =>
+      `<div class="card yq-plain ${a.it ? vcls(a.it.verb) : ''}" data-act="${a.it ? 'openask' : 'noop'}" data-id="${a.it ? a.it.id : ''}" style="cursor:pointer"><div class="card-line"><span class="title"><span class="dotw" style="background:${a.it ? 'var(--vc)' : a.note === 'idle' ? 'var(--dim)' : 'var(--teal)'}"></span>${esc(a.title)}</span><span class="chips">${a.it ? `<span class="yq-verb">${a.it.verb}</span>` : `<span class="chip">${a.note}</span>`}</span></div></div>`).join('')).join('')}
+      <div class="yq-sec" style="text-transform:none;letter-spacing:0;font-weight:400">${help('Grouped by project every card shows, and the ones that want you carry their verb. Group by needs you to see only those.')} the plain list</div></div>`;
+  }
+  const l = visible();
+  if (!l.length) return trayHtml() + `<div class="yq-scroll"><div class="yq-empty"><div class="big">&#10003;</div><div style="color:var(--head);font-size:var(--fs-xl)">Nothing is waiting on you</div></div></div>`;
+  const stuck = l.filter(i => i.stuck), rest = l.filter(i => !i.stuck);
+  const top = rest.slice().sort((a, b) => b.age - a.age).slice(0, 3);
+  return trayHtml() + `<div class="yq-scroll">
+    ${stuck.length ? `<div class="yq-sec stuck">stuck ${help('Something broke and the work stopped. These sit above every ask.')}</div>${stuck.map(rowHtml).join('')}` : ''}
+    ${rest.length > 3 ? `<div class="yq-do"><div class="yq-sec" style="margin:0">do these now ${help('The three that have waited longest, a short list over the full one.')}</div><ol>${top.map(i => `<li data-act="openask" data-id="${i.id}"><b>${i.verb.toLowerCase()}</b> ${esc(i.title)}</li>`).join('')}</ol></div>` : ''}
+    ${rest.length ? `<div class="yq-sec">needs you <span class="chip">${rest.length}</span></div>${rest.map(rowHtml).join('')}` : ''}</div>`;
+}
+
+/* ======================= main pane ======================= */
+function paneHtml() {
+  if (S.group === 'needs' && S.view === 'map' && !S.open) return mapHtml();
+  const it = S.open && byId(S.open);
+  if (!it) return `<div class="yq-panebar"><strong>nothing attached</strong></div><div class="yq-panebody"><div class="yq-welcome"><h2 style="color:var(--head)">${S.mode === 'none' ? 'You are caught up' : 'Pick an ask on the left'}</h2><p>${S.mode === 'none' ? 'Nothing is waiting on you. The terminals tab is the plain list again.' : 'The row\'s button opens the ask here. The toggle above it brings the plain terminal back.'}</p>${S.view === 'map' ? '' : ''}</div></div>`;
+  return `<div class="yq-panebar"><button class="btn yq-phoneback" data-act="closeask">&larr; list</button><span class="chip">${it.proj}</span><strong>${esc(it.card)}</strong><span class="yq-verb ${vcls(it.verb)}">${it.verb}</span><span style="flex:1"></span>
+    ${S.group === 'needs' && S.view === 'map' ? `<button class="btn" data-act="closeask">flow map</button>` : ''}
+    <span class="yq-seg"><button class="${S.pane === 'ask' ? 'on' : ''}" data-act="pane" data-p="ask">${it.verb === 'UNBLOCK' ? 'terminal + actions' : 'the ask'}</button><button class="${S.pane === 'term' ? 'on' : ''}" data-act="pane" data-p="term">plain terminal</button></span></div>
+    <div class="yq-panebody ${vcls(it.verb)}" id="panebody">${S.pane === 'term' || it.verb === 'UNBLOCK' ? termHtml(it) : it.verb === 'ANSWER' ? ivHtml(it) : walkHtml(it)}</div>`;
+}
+function termHtml(it) {
+  const t = {
+    ci: `<span class="d">$ gh run view 4412 --log-failed</span>\n<span class="r">FAIL</span> atrium/internal/daemon  60.2s\n--- <span class="r">FAIL</span>: TestSupervisorRestart (60.01s)\n    supervisor_test.go:211: timed out waiting for ptyhost to reattach\n    supervisor_test.go:211: last state: restarting (attempt 4)\n<span class="r">FAIL</span>\n\n<span class="y">claude-sg4:</span> I landed the three cards and CI is red on windows. The same test failed on the re-run, so I think\nthe merge changed reattach timing. I have stopped. Restart me to try a fix, unblock me with a hint,\nor drop the merge.\n\n<span class="g">&gt;</span> _`,
+    cull: `<span class="y">cull-1:</span> I have the list of 37 claude/* branches. I want to ask you about each bucket.\nOpen the ask to answer one at a time.\n\n<span class="g">&gt;</span> _`,
+    walkiv: `<span class="y">walk-design:</span> Four questions on how the walk should work.\n\n<span class="g">&gt;</span> _`,
+  }[it.id] || `<span class="y">${esc(it.card)}:</span> ${esc(it.title)} is ready for your ${it.verb.toLowerCase()}.\n<span class="d">(plain terminal, scrollback and all)</span>\n\n<span class="g">&gt;</span> _`;
+  const act = it.verb === 'UNBLOCK' ? `<div class="yq-actions ${vcls(it.verb)}"><button class="btn" data-act="act" data-w="Restart sent: worker restarted">Restart</button><button class="btn primary" data-act="unblock">Unblock</button><button class="btn danger" data-act="act" data-w="Dropped: the merge was dropped" data-done="1">Drop</button>${help('Restart relaunches the worker. Unblock lets you type a hint and clears the stuck flag. Drop abandons the item.')}</div>` : '';
+  return `<div class="yq-termbox">${t}</div>${act}`;
+}
+
+/* ---------- interview ---------- */
+function ivHtml(it) {
+  const iv = IV[it.id], qs = iv.qs, qi = S.qi[it.id] || 0, a = (S.ans[it.id] = S.ans[it.id] || {});
+  const answered = qs.filter((_, i) => a[i] !== undefined).length;
+  if (answered === qs.length && S.qi[it.id] === 'end') {
+    return `<div class="main" style="max-width:700px"><h2 style="color:var(--head)">All ${qs.length} answered</h2><p>Each answer is saved to the item with its question. This is what the agent receives:</p><pre class="yq-pre" style="background:var(--bg-2);padding:10px 12px;border-radius:var(--r-md);font:12px/1.5 var(--mono);white-space:pre-wrap">${esc(qs.map((q, i) => `Q${i + 1}: ${q.q}\nA${i + 1}: ${a[i]}`).join('\n\n'))}</pre><div class="yq-actions"><button class="btn primary" data-act="finish" data-w="Answers sent to ${esc(it.card)}. Interview done.">Send answers and finish</button><button class="btn" data-act="qgo" data-i="0">review answers</button></div></div>`;
+  }
+  const q = qs[qi], cur = a[qi];
+  const choices = q.yes ? ['Yes', 'No'] : q.choices || iv.choices || null;
+  return `<div class="yq-iv"><div class="rail">${qs.map((x, i) => `<div class="qi${i === qi ? ' on' : ''}" data-act="qgo" data-i="${i}"><span class="q">${i + 1}. ${esc(x.q)}</span><span class="a${a[i] === undefined ? ' none' : ''}">${a[i] === undefined ? 'not answered' : '&rarr; ' + esc(String(a[i]).slice(0, 40))}</span></div>`).join('')}</div>
+  <div class="main"><div style="font-size:var(--fs-sm);color:var(--label)">Question ${qi + 1} of ${qs.length} ${help('One question at a time. Each answer is saved to the item the moment you give it and stays attached to this question.')}</div>
+    <div class="yq-prog"><i style="width:${(answered / qs.length) * 100}%"></i></div>
+    <div class="yq-q">${esc(q.q)}</div>
+    <div class="yq-ctx"><ul>${q.ctx.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>
+    <div class="yq-rec"><b>${esc(it.card)} recommends</b><span style="font-weight:600">${esc(q.rec)}</span>. ${esc(q.why)}</div>
+    ${choices ? `<div class="yq-choices">${choices.map(c => `<button class="btn${c.toLowerCase() === String(q.rec).toLowerCase() ? ' rec' : ''}${cur === c ? ' sel' : ''}" data-act="pick" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : ''}
+    <textarea class="yq-reply" id="reply" placeholder="${choices ? 'Optional: add a note to your answer' : 'Your answer'}">${esc(a['n' + qi] || (!choices && cur) || '')}</textarea>
+    <div class="yq-actions"><button class="btn primary" data-act="savereply">${choices ? 'Save note and next' : 'Save answer and next'}</button>
+      <button class="btn" data-act="usere">Use the recommendation</button>
+      ${qi > 0 ? `<button class="btn" data-act="qgo" data-i="${qi - 1}">back</button>` : ''}
+      ${cur !== undefined ? `<span class="yq-saved">&#10003; saved to ${esc(it.card)}</span>` : ''}</div></div></div>`;
+}
+
+/* ---------- walk ---------- */
+const SURF = {
+  bringup: ['Bring-up', ['sgg', 'Steps', 'Log'], [['Install ptyhost', 100], ['Join the hub', 100], ['Attach card list', 55], ['First card launches', 0]], 'Retry step', 'Skip'],
+  stepper: ['Stepper', ['Item', 'Stages', 'History'], [['Idea', 100], ['Interview', 100], ['Design', 100], ['Mock', 50], ['Build', 0]], 'Advance', 'Send back'],
+  voice: ['Push to talk', ['Terminal', 'Voice', 'Settings'], [['Hold space to talk', 100], ['Transcript: "restart the build"', 100], ['Send to compose line', 0]], 'Send', 'Cancel'],
+  doc: ['Service manager', ['Plan', 'Packages', 'Rollout'], [['One manager per room', 100], ['Package pin file', 70], ['No daemon restart', 40]], 'Accept plan', 'Comment'],
+  walk: ['Walk', ['Walk', 'Files', 'Diff'], [['1 Intent', 100], ['2 Daemon change', 100], ['3 Tests', 60], ['4 Docs', 0]], 'Next', 'Send back'],
+  commits: ['Landing', ['312 commits', 'CI', 'Tags'], [['claude/main ahead of origin by 312', 100], ['CI green on 4408', 100]], 'Sign and push', 'Cancel'],
+};
+function surfaceHtml(key) {
+  const [name, tabs, rows, p, a] = SURF[key];
+  return `<div class="app-h"><b>${name}</b>${tabs.map((t, i) => `<span class="tabx${i === 0 ? ' on' : ''}">${t}</span>`).join('')}</div>
+  <div class="app-b"><div class="app-l">${rows.slice(0, 4).map((r, i) => `<div class="${i === 0 ? 'on' : ''}">${esc(r[0].slice(0, 18))}</div>`).join('')}</div>
+  <div class="app-m"><h4>${esc(name)}</h4>${rows.map(r => `<div style="font-size:12px">${esc(r[0])}</div><div class="bar"><i style="width:${r[1]}%"></i></div>`).join('')}
+  <span class="pbtn">${p}</span><span class="pbtn alt">${a}</span></div></div>`;
+}
+function walkSteps(it) {
+  const doc = it.verb === 'APPROVE' && it.surface === 'doc';
+  const diff = `<div class="yq-diff"><div class="h">@@ internal/web/${it.surface}.js</div><div class="x">-  render(state)</div><div class="a">+  render(state, { queue: true })</div><div class="a">+  paintBadge(state.waiting)</div></div>`;
+  if (it.verb === 'SIGN') return [
+    { t: 'What is going', h: `<p>A fast-forward push of <b>claude/main</b> to origin. No tag, no force.</p><ul><li>312 commits across 41 cards</li><li>Oldest commit 9 days ago</li><li>Backlog and CHANGELOG are untouched by this push</li></ul>` },
+    { t: 'Checks', h: `<ul><li>CI green on 4408, the head of claude/main</li><li>No migration edited, no shipped file removed</li><li>Hub and origin differ by exactly these 312</li></ul><div class="yq-diff"><div class="h">origin/claude/main..claude/main</div><div class="a">+ 312 commits (41 cards)</div></div>` },
+    { t: 'Sign', end: true },
+  ];
+  if (it.verb === 'TRY') return [
+    { t: 'What to try', h: `<p>The walk now opens in the main area. Step through a real change and see if the order feels right.</p><ul><li>Steps are grouped by concern</li><li>Approve and Send back sit at the last step</li></ul>` },
+    { t: 'Try it', h: `<p>Pin, box and arrow what you want changed. Everything is noted with the element under it.</p>`, ann: true },
+    { t: 'Decide', end: true },
+  ];
+  return [
+    { t: doc ? 'The plan' : 'What it is', h: `<p>${esc(it.hist[0] ? it.hist[0][1] : it.title)}</p>${diff}` },
+    { t: doc ? 'Open the doc' : 'The mock', h: `<p>${doc ? 'Rendered, with a diagram of the three parts.' : 'Click around. This is the mock as the agent built it.'}</p>`, ann: true },
+    { t: 'Decide', end: true },
+  ];
+}
+function walkHtml(it) {
+  const steps = walkSteps(it), n = S.walkStep[it.id] || 0, st = steps[n];
+  const body = st.end ? `<h3>${it.verb === 'SIGN' ? 'Sign' : it.verb === 'TRY' ? 'Does it work?' : 'Approve this?'}</h3>
+    <p>${it.verb === 'SIGN' ? '312 commits on claude/main will go to origin.' : 'Approve moves the item to its next stage. Send back returns it with your reason' + ((S.anns[it.id] || []).length ? ' and your ' + S.anns[it.id].length + ' annotation(s).' : '.')}</p>
+    <textarea class="yq-reply" id="reason" placeholder="Reason (needed to send back)"></textarea>
+    <div class="yq-actions ${vcls(it.verb)}">${it.verb === 'SIGN' ? `<button class="btn primary" data-act="finish" data-w="Signed. Pushed 312 commits to origin.">Sign and push</button>` : `<button class="btn primary" data-act="finish" data-w="Approved. ${esc(it.title)} moves on.">Approve</button><button class="btn" data-act="sendback">Send back</button>`}<button class="btn" data-act="wstep" data-n="${n - 1}">back</button></div>`
+    : `<h3>${esc(st.t)}</h3><div class="body">${st.h}${st.ann ? annHtml(it) : ''}</div>`;
+  return `<div class="yq-walk"><div class="rail">${steps.map((s, i) => `<div class="si${i === n ? ' on' : ''}${i <= n ? ' seen' : ''}" data-act="wstep" data-n="${i}"><span class="n">${i + 1}</span>${esc(s.t)}</div>`).join('')}</div>
+  <div class="main">${body}${st.end ? '' : `<div class="foot"><button class="btn" data-act="wstep" data-n="${n - 1}" ${n === 0 ? 'disabled' : ''}>back</button><button class="btn primary" data-act="wstep" data-n="${n + 1}">next</button><span style="flex:1"></span><span style="color:var(--dim);font-size:var(--fs-xs)">step ${n + 1} of ${steps.length}</span></div>`}</div></div>`;
+}
+
+/* ---------- annotate ---------- */
+function annHtml(it) {
+  const list = S.anns[it.id] || [];
+  const T = [['pin', 'Pin'], ['box', 'Box'], ['arrow', 'Arrow'], ['use', 'Use the mock']];
+  return `<div class="yq-ann ${vcls(it.verb)}"><div><div class="yq-tools">${T.map(([k, l]) => `<button class="btn${S.tool === k ? ' on' : ''}" data-act="tool" data-t="${k}">${l}</button>`).join('')}
+    ${help('Pick a tool and draw on the mock. Each mark gets a note, and the board records the element under it, the page, the coordinates and a cropped capture.')}
+    <button class="btn" data-act="clearann" ${list.length ? '' : 'disabled'}>clear all</button></div>
+    <div class="yq-surfwrap"><div class="yq-surface" id="surface">${surfaceHtml(it.surface)}<svg class="yq-svg${S.tool === 'use' ? '' : ' draw'}" id="svg" style="${S.tool === 'use' ? 'pointer-events:none' : ''}"></svg></div></div></div>
+    <div class="yq-notes"><div style="font-weight:600;color:var(--head);margin-bottom:6px">${list.length} annotation${list.length === 1 ? '' : 's'}</div>
+      ${list.map((a, i) => `<div class="nt"><div class="nh"><span class="yq-num">${i + 1}</span>${a.type}<em>${esc(a.el)}</em><button class="btn" style="margin-left:auto;padding:0 7px" data-act="delann" data-i="${i}">&times;</button></div><textarea data-i="${i}" placeholder="what should change?">${esc(a.note)}</textarea></div>`).join('') || '<div style="color:var(--dim);font-size:var(--fs-sm)">Click the mock to drop a pin, or drag for a box or arrow.</div>'}
+      <div class="yq-actions"><button class="btn primary" data-act="sendann" ${list.length ? '' : 'disabled'}>Send to agent</button></div></div></div>`;
+}
+function drawAnn(it) {
+  const svg = $('#svg'); if (!svg) return;
+  const list = S.anns[it.id] || [];
+  svg.innerHTML = `<defs><marker id="ah" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#e0457b"/></marker></defs>` + list.map((a, i) => {
+    const lab = `<g transform="translate(${a.x},${a.y})"><circle r="10" fill="#e0457b"/><text y="4" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="sans-serif">${i + 1}</text></g>`;
+    if (a.type === 'box') return `<rect x="${Math.min(a.x, a.x2)}" y="${Math.min(a.y, a.y2)}" width="${Math.abs(a.x2 - a.x)}" height="${Math.abs(a.y2 - a.y)}" fill="rgba(224,69,123,.12)" stroke="#e0457b" stroke-width="2" stroke-dasharray="5 3"/>${lab}`;
+    if (a.type === 'arrow') return `<line x1="${a.x}" y1="${a.y}" x2="${a.x2}" y2="${a.y2}" stroke="#e0457b" stroke-width="2.5" marker-end="url(#ah)"/>${lab}`;
+    return lab;
+  }).join('');
+}
+function whatsUnder(sx, sy, cx, cy) {
+  const svg = $('#svg'); svg.style.pointerEvents = 'none';
+  const el = document.elementsFromPoint(cx, cy).find(e => $('#surface').contains(e) && e.id !== 'surface' && e.tagName !== 'svg');
+  svg.style.pointerEvents = S.tool === 'use' ? 'none' : '';
+  if (!el) return 'page background';
+  const cls = (el.className && typeof el.className === 'string' && el.className.trim().split(/\s+/)[0]) || '';
+  return el.tagName.toLowerCase() + (cls ? '.' + cls : '') + (el.textContent && el.children.length === 0 ? ' "' + el.textContent.trim().slice(0, 22) + '"' : '');
+}
+let drag = null;
+function bindAnn(it) {
+  const svg = $('#svg'), surf = $('#surface'); if (!svg) return;
+  drawAnn(it);
+  const pt = e => { const r = surf.getBoundingClientRect(); return [Math.round((e.clientX - r.left) / r.width * 560), Math.round((e.clientY - r.top) / r.height * 340)]; };
+  svg.onpointerdown = e => { if (S.tool === 'use') return; const [x, y] = pt(e); drag = { x, y, cx: e.clientX, cy: e.clientY, type: S.tool }; svg.setPointerCapture(e.pointerId); };
+  svg.onpointermove = e => {
+    if (!drag || drag.type === 'pin') return;
+    const [x, y] = pt(e);
+    const tmp = { type: drag.type, x: drag.x, y: drag.y, x2: x, y2: y, note: '' };
+    const l = S.anns[it.id] || []; S.anns[it.id] = l.concat([tmp]); drawAnn(it); S.anns[it.id] = l;
+  };
+  svg.onpointerup = e => {
+    if (!drag) return;
+    const [x, y] = pt(e); let type = drag.type;
+    if (type !== 'pin' && Math.hypot(x - drag.x, y - drag.y) < 8) type = 'pin';
+    const a = { type, x: drag.x, y: drag.y, x2: x, y2: y, note: '', el: whatsUnder(x, y, drag.cx, drag.cy) };
+    (S.anns[it.id] = S.anns[it.id] || []).push(a); drag = null;
+    S.focusNote = S.anns[it.id].length - 1; render();
+  };
+  document.querySelectorAll('.yq-notes textarea').forEach(t => t.oninput = () => { S.anns[it.id][+t.dataset.i].note = t.value; });
+  if (S.focusNote !== undefined) { const t = $(`.yq-notes textarea[data-i="${S.focusNote}"]`); if (t) t.focus(); S.focusNote = undefined; }
+}
+function sendPreview(it) {
+  const list = S.anns[it.id] || [];
+  const txt = `Annotations on "${it.title}"\npage: /${it.surface}  viewport: 560x340  stage: ${STAGES[it.stage]}\n\n` + list.map((a, i) => `${i + 1}. ${a.type.toUpperCase()} at (${a.x},${a.y})${a.type !== 'pin' ? ' to (' + a.x2 + ',' + a.y2 + ')' : ''}\n   element: ${a.el}\n   note: ${a.note || '(no note)'}\n   capture: crop-${i + 1}.png (auto-cropped)`).join('\n');
+  const thumbs = list.map((a, i) => `<div><div class="yq-thumb"><div class="inner" style="transform:scale(.6);left:${75 - a.x * .6}px;top:${45 - a.y * .6}px">${surfaceHtml(it.surface)}</div><span class="yq-num" style="position:absolute;left:67px;top:37px">${i + 1}</span></div><div style="font-size:11px;color:var(--dim);text-align:center">crop-${i + 1}.png</div></div>`).join('');
+  $('#overlay').innerHTML = `<div class="yq-modal ${vcls(it.verb)}"><div class="box"><h3>This is what the agent receives</h3><div class="yq-thumbs">${thumbs}</div><pre>${esc(txt)}</pre><p style="font-size:var(--fs-sm);color:var(--label)">It is also saved as Your input for the ${STAGES[it.stage]} stage, so it stays with the item.</p><div class="yq-actions"><button class="btn primary" data-act="confirmsend">Send</button><button class="btn" data-act="closemodal">Keep editing</button></div></div></div>`;
+}
+
+/* ---------- flow map ---------- */
+function mapHtml() {
+  const l = visible();
+  return `<div class="yq-panebar"><strong>flow map</strong>${help('Every ask as a chip on the gate it waits at. Click a chip to open it.')}</div><div class="yq-panebody"><div class="yq-map">${GATES.map(g => {
+    const its = l.filter(i => i.gate === g.id);
+    return `<div class="yq-gate ${vcls(g.verb)}${its.length ? '' : ' none'}"><div class="gh"><small>${g.verb}</small>${g.label}</div><div class="arrow">&darr;</div><div class="chips">${its.map(i => `<span class="chip" data-act="openask" data-id="${i.id}"><b>${esc(i.title)}</b><br>${i.proj} &middot; ${fmtAge(i.age)}</span>`).join('')}</div></div>`;
+  }).join('')}</div>
+  <div class="yq-mapnote">Idea and Build have no gate: nothing waits on you there. Stuck is its own gate off Build.</div></div>`;
+}
+
+/* ======================= events ======================= */
+function openAsk(id) { S.open = id; S.pane = 'ask'; render(); }
+function knock(it, msg) {
+  S.done[it.id] = true; S.open = null; S.pane = 'ask';
+  const w = allWaiting().length;
+  toast(msg + (w ? ' ' + w + ' left.' : ' Nothing left for you.')); render();
+}
+function toast(t) { const d = document.createElement('div'); d.className = 'yq-toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 3200); }
+function goQueue() { S.tab = 'terms'; S.group = 'needs'; S.view = 'list'; render(); }
+function resetAll() { S.done = {}; S.ans = {}; S.qi = {}; S.walkStep = {}; S.anns = {}; S.sentLog = {}; S.exp = {}; S.open = null; render(); }
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  const d = t.dataset, it = S.open && byId(S.open);
+  switch (d.act) {
+    case 'tab': S.tab = d.t; render(); break;
+    case 'mode': S.mode = d.m; S.phone = false; S.done = {}; S.open = null; render(); break;
+    case 'phone': S.phone = !S.phone; if (S.phone) { S.mode = S.mode === 'none' ? 'stuck' : S.mode; } S.open = null; render(); break;
+    case 'group': S.group = d.g; S.open = null; render(); break;
+    case 'view': S.view = d.v; S.open = null; render(); break;
+    case 'proj': S.proj = d.p; render(); break;
+    case 'expand': S.exp[d.id] = !S.exp[d.id]; render(); break;
+    case 'openask': e.stopPropagation(); openAsk(d.id); break;
+    case 'closeask': S.open = null; render(); break;
+    case 'pane': S.pane = d.p; render(); break;
+    case 'pick': { const a = S.ans[S.open]; const qi = S.qi[S.open] || 0; a[qi] = d.v; const r = $('#reply'); if (r && r.value) a['n' + qi] = r.value; advance(it, qi); break; }
+    case 'usere': { const qi = S.qi[S.open] || 0, q = IV[S.open].qs[qi]; S.ans[S.open][qi] = q.rec; advance(it, qi); break; }
+    case 'savereply': { const qi = S.qi[S.open] || 0, q = IV[S.open].qs[qi], a = S.ans[S.open], r = $('#reply').value.trim(); const choices = q.yes || q.choices || IV[S.open].choices; if (choices) { if (r) a['n' + qi] = r; if (a[qi] === undefined) { toast('Pick one of the buttons first.'); break; } } else { if (!r) { toast('Type an answer or use the recommendation.'); break; } a[qi] = r; } advance(it, qi); break; }
+    case 'qgo': S.qi[S.open] = +d.i; render(); break;
+    case 'wstep': S.walkStep[S.open] = Math.max(0, +d.n); render(); break;
+    case 'finish': knock(it, d.w); break;
+    case 'sendback': { const r = $('#reason').value.trim(); if (!r && !(S.anns[it.id] || []).length) { toast('Say why, or annotate, to send back.'); break; } knock(it, 'Sent back to ' + it.card + ' with your ' + (r ? 'reason' : 'annotations') + '.'); break; }
+    case 'act': if (d.done) knock(it, d.w); else toast(d.w); break;
+    case 'unblock': $('#overlay').innerHTML = `<div class="yq-modal"><div class="box v-unblock"><h3>Unblock ${esc(it.card)}</h3><p>Give it a hint. It is typed into the card and the stuck flag clears.</p><textarea class="yq-reply" id="hint">Raise the reattach timeout to 120s and re-run CI.</textarea><div class="yq-actions"><button class="btn primary" data-act="doUnblock">Unblock</button><button class="btn" data-act="closemodal">Cancel</button></div></div></div>`; break;
+    case 'doUnblock': $('#overlay').innerHTML = ''; knock(it, 'Unblocked. Hint sent to ' + it.card + '.'); break;
+    case 'tool': S.tool = d.t; render(); break;
+    case 'clearann': S.anns[S.open] = []; render(); break;
+    case 'delann': S.anns[S.open].splice(+d.i, 1); render(); break;
+    case 'sendann': sendPreview(it); break;
+    case 'confirmsend': { const n = (S.anns[it.id] || []).length; (S.sentLog[it.id] = S.sentLog[it.id] || {})[it.stage] = n + ' annotation(s) sent: ' + S.anns[it.id].map(a => a.note || a.el).join(' / '); $('#overlay').innerHTML = ''; S.anns[it.id] = []; toast('Sent ' + n + ' annotation(s) to ' + it.card + '. Saved as your input.'); render(); break; }
+    case 'closemodal': $('#overlay').innerHTML = ''; break;
+  }
+});
+function advance(it, qi) {
+  const qs = IV[it.id].qs, a = S.ans[it.id];
+  const next = qs.findIndex((_, i) => i > qi && a[i] === undefined);
+  S.qi[it.id] = next >= 0 ? next : (qs.every((_, i) => a[i] !== undefined) ? 'end' : qi);
+  render();
+}
+document.addEventListener('change', e => { const t = e.target.closest('[data-act="sort"]'); if (t) { S.sort = t.value; render(); } });
+
+function afterPane() { const it = S.open && byId(S.open); if (it && it.verb !== 'ANSWER' && S.pane === 'ask' && it.verb !== 'UNBLOCK') bindAnn(it); }
+
+/* skins: every skin themes.css defines */
+fetch('../internal/api/web/css/themes.css').then(r => r.text()).then(t => {
+  const names = ['linen', ...[...t.matchAll(/data-skin="([a-z0-9-]+)"/g)].map(m => m[1])].filter((v, i, a) => a.indexOf(v) === i);
+  $('#skin').innerHTML = names.map(n => `<option${n === 'linen' ? ' selected' : ''}>${n}</option>`).join('');
+}).catch(() => { $('#skin').innerHTML = ['linen', 'frost', 'slate'].map(n => `<option>${n}</option>`).join(''); });
+$('#skin').onchange = e => { document.documentElement.dataset.skin = e.target.value; };
+render();
+</script>
+</body>
+</html>

@@ -113,6 +113,7 @@ func addPeerTools(s *mcp.Server) {
 	}, reportHandler)
 
 	link.AddEndTools(s, link.EndDoor{Report: endReport})
+	link.AddRoomGateTool(s, gateSet)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_ready",

@@ -1,0 +1,151 @@
+/* Your queue: the Queue tab and the header badge. See js/yourqueue.js. */
+.v-answer { --vc: hsl(212 68% 46%); }
+.v-approve { --vc: hsl(148 52% 34%); }
+.v-try { --vc: hsl(30 88% 46%); }
+.v-sign { --vc: hsl(268 48% 50%); }
+.v-unblock { --vc: var(--danger); }
+
+.yq-badge {
+  font: 700 var(--fs-sm)/1 var(--mono); padding: 6px 12px; border-radius: var(--r-pill); cursor: pointer;
+  color: var(--warn); background: rgba(var(--warn-rgb), .15); border: 1px solid rgba(var(--warn-rgb), .4);
+}
+.yq-badge.stuck { color: var(--danger-text); background: rgba(var(--danger-rgb), .22); border-color: var(--danger); }
+
+.yq-verb {
+  flex: none; font: 700 var(--fs-xs)/1.6 var(--sans); letter-spacing: .09em; padding: 0 9px; border-radius: var(--r-sm);
+  color: var(--vc); border: 1px solid var(--vc); background: color-mix(in srgb, var(--vc) 12%, transparent);
+}
+.yq-stage, .yq-nogate {
+  flex: none; font: 600 var(--fs-xs)/1.6 var(--sans); padding: 0 7px; border-radius: var(--r-sm); white-space: nowrap;
+  color: var(--label); border: 1px solid var(--line, rgba(127, 127, 127, .35));
+}
+.yq-nogate { border-style: dashed; color: var(--dim); }
+.yq-empty { text-align: center; padding: 40px 12px; color: var(--label); }
+.yq-empty .big { font-size: 34px; color: var(--teal); }
+
+main > #queue { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: visible; }
+.yq-layout { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--sp-4); overflow: hidden; }
+#queue[hidden] { display: none; }
+.yq-list { overflow-y: auto; }
+.yq-pane {
+  flex: 1 1 auto; min-width: 0; min-height: 0; position: relative; border-radius: var(--r-lg); overflow: hidden;
+  border: 1px solid var(--stroke-dim); background: var(--shell-0);
+}
+.yq-pick { margin: 40px auto; text-align: center; color: var(--label); }
+.yq-stuckhead .tgname { color: var(--danger); }
+
+.yq-list .yq-row.card { cursor: pointer; }
+.yq-row.card::before { opacity: 1; background: var(--vc); }
+.yq-row.stuck { border-color: var(--danger); background: linear-gradient(180deg, rgba(var(--danger-rgb), .12), var(--card-1)); }
+/* A 22px blur on every row is rasterized again for each tile that scrolls in, and was most of a scrolled frame's raster time. */
+.yq-list .yq-row.card, .yq-list .yq-row.card:hover { box-shadow: 0 3px 8px rgba(var(--shadow-rgb), .45); }
+.yq-list .yq-row.card.sel { box-shadow: 0 0 0 1px var(--vc), 0 3px 8px rgba(var(--shadow-rgb), .45); }
+/* The meta line rides in the path's slot, which is cut from the front with rtl. This line reads left to right. */
+.term-list .card .title .tpath.yq-line { display: flex; align-items: center; gap: 6px; direction: ltr; justify-content: flex-start; }
+.yq-line .yq-verb, .yq-line .yq-stage, .yq-line .yq-nogate { font-size: var(--fs-xxs); line-height: 1.5; padding: 0 5px; letter-spacing: .07em; }
+.yq-line .yq-step i { width: 7px; height: 7px; }
+.yq-age { font-family: var(--mono); white-space: nowrap; }
+.yq-age.old { color: var(--warn); font-weight: 600; }
+.yq-step { display: inline-flex; gap: 3px; align-items: center; }
+.yq-step i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--stroke); display: block; }
+.yq-step i.done { background: var(--dim); border-color: var(--dim); }
+.yq-step i.skip { border-style: dashed; opacity: .55; }
+.yq-step i.cur {
+  border-color: var(--vc); background: linear-gradient(90deg, var(--vc) 50%, transparent 50%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vc) 25%, transparent);
+}
+.yq-step.none { width: 0; }
+
+.yq-ask {
+  position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; min-height: 0;
+  background: var(--shell-0); color: var(--body);
+}
+.yq-askbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--stroke-dim); flex-wrap: wrap; }
+.yq-askbar strong { color: var(--head); font-size: var(--fs-lg); min-width: 0; overflow-wrap: anywhere; }
+.yq-askbar .sp, .yq-pagebar .sp { flex: 1; }
+.yq-askscroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; display: flex; flex-direction: column; }
+.yq-seg { display: inline-flex; border: 1px solid var(--stroke); border-radius: var(--r-sm); overflow: hidden; }
+.yq-seg button { border: 0; background: transparent; color: var(--label); padding: 3px 10px; font-size: var(--fs-sm); cursor: pointer; }
+.yq-seg button.on { background: var(--chip); color: var(--head); }
+.yq-btn {
+  font-size: var(--fs-sm); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer; text-decoration: none;
+  background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke);
+}
+.yq-btn:hover { background: var(--btn-hover); color: var(--head); }
+.yq-btn.primary, .yq-btn.sel { background: var(--vc, var(--teal)); border-color: var(--vc, var(--teal)); color: #fff; font-weight: 600; }
+.yq-btn.send { border-color: var(--teal); color: var(--teal); font-weight: 600; }
+.yq-btn.danger { color: var(--danger); border-color: var(--danger); }
+.yq-btn.on { background: var(--chip); border-color: var(--teal); color: var(--head); }
+.yq-btn.rec::after { content: " (recommended)"; font-weight: 400; font-size: var(--fs-xs); opacity: .8; }
+.yq-back {
+  position: absolute; top: 6px; right: 12px; z-index: 31; font: 600 var(--fs-sm)/1 var(--sans); padding: 6px 12px;
+  border-radius: var(--r-pill); cursor: pointer; background: var(--vc, var(--teal)); color: #fff; border: 1px solid var(--vc, var(--teal));
+}
+.yq-dim { font-size: var(--fs-sm); color: var(--label); overflow-wrap: anywhere; }
+.yq-askbody { max-width: 760px; }
+.yq-askbody p { overflow-wrap: anywhere; }
+.yq-to { margin: 0 0 8px; opacity: .75; }
+.yq-sent { margin: 0 0 8px; font-weight: 600; }
+.yq-sent.bad { color: rgb(var(--danger-rgb)); }
+.yq-q.md { font-size: var(--fs-md, 14px); font-weight: 400; white-space: normal; }
+.yq-q { font-size: var(--fs-xl); color: var(--head); font-weight: 600; margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.yq-rec {
+  border: 1px solid var(--chip-accent-stroke); background: var(--chip-accent); color: var(--chip-accent-text);
+  border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 14px;
+}
+.yq-rec b { letter-spacing: .08em; font-size: var(--fs-xs); text-transform: uppercase; display: block; margin-bottom: 2px; }
+.yq-choices { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.yq-choices .yq-btn { font-size: var(--fs-md); padding: 8px 18px; font-weight: 600; }
+.yq-reply {
+  width: 100%; box-sizing: border-box; resize: vertical; background: var(--bg-2); color: var(--head);
+  border: 1px solid var(--stroke); border-radius: var(--r-md); padding: 8px 10px; font: inherit;
+}
+.yq-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.yq-iv { display: grid; grid-template-columns: minmax(160px, 250px) minmax(0, 1fr); gap: 18px; min-height: 0; }
+.yq-rail { overflow: auto; border-right: 1px solid var(--stroke-dim); padding-right: 12px; }
+.yq-qi { padding: 8px 10px; border-radius: var(--r-md); cursor: pointer; border: 1px solid transparent; margin-bottom: 6px; font-size: var(--fs-sm); }
+.yq-qi:hover { background: var(--lift); }
+.yq-qi.on { background: var(--chip); border-color: var(--stroke); }
+.yq-qi .q { color: var(--head); font-weight: 600; display: block; overflow-wrap: anywhere; }
+.yq-qi .a { display: block; margin-top: 2px; color: var(--teal); font: var(--fs-xs)/1.4 var(--mono); overflow-wrap: anywhere; }
+.yq-qi .a.none { color: var(--dim); }
+.yq-ivmain { min-width: 0; max-width: 720px; }
+.yq-prog { height: 5px; border-radius: 3px; background: var(--chip); overflow: hidden; margin: 6px 0 14px; }
+.yq-prog i { display: block; height: 100%; background: var(--vc); }
+.yq-pagewrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.yq-pagebar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.yq-frame { flex: 1; min-height: 320px; width: 100%; border: 1px solid var(--stroke); border-radius: var(--r-md); background: #fff; }
+.yq-out { font: var(--fs-xs)/1.4 var(--mono); white-space: pre-wrap; background: var(--bg-2); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); padding: 10px; max-height: 50vh; overflow: auto; }
+@media (max-width: 700px) { .yq-iv { grid-template-columns: 1fr; } .yq-rail { display: none; } }
+@media (max-width: 700px) {
+  .yq-layout { flex-direction: column; }
+  .yq-layout .term-grip { display: none; }
+  .yq-list { flex: 0 0 auto; max-height: 40vh; width: 100%; }
+}
+
+.yqm-wrap { position: relative; flex: 1; min-height: 320px; display: flex; }
+.yqm-wrap .yq-frame { flex: 1; min-height: 0; }
+.yqm-ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
+.yqm-wrap.mark .yqm-ov { pointer-events: auto; cursor: crosshair; outline: 2px dashed var(--vc, var(--teal)); outline-offset: -2px; background: rgba(var(--warn-rgb), .05); }
+.yqm-s line, .yqm-s ellipse, .yqm-s rect { fill: none; stroke: var(--vc, var(--teal)); stroke-width: 3; stroke-linecap: round; }
+.yqm-s polygon { fill: var(--vc, var(--teal)); }
+.yqm-s .hit { stroke: transparent; stroke-width: 16; pointer-events: stroke; }
+.yqm-s.on line:not(.hit), .yqm-s.on ellipse:not(.hit), .yqm-s.on rect:not(.hit) { stroke-width: 5; }
+.yqm-b circle { fill: var(--vc, var(--teal)); stroke: #fff; stroke-width: 2; }
+.yqm-b text { fill: #fff; font: 700 11px var(--sans); }
+.yqm-pop {
+  position: absolute; z-index: 5; width: 240px; padding: 8px; border-radius: var(--r-md); background: var(--shell-0);
+  border: 1px solid var(--vc, var(--teal)); box-shadow: 0 4px 14px rgba(var(--shadow-rgb), .35);
+}
+.yqm-pop[hidden] { display: none; }
+.yqm-ph { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--head); font-weight: 600; font-size: var(--fs-sm); }
+.yqm-n { width: 18px; height: 18px; border-radius: 50%; background: var(--vc, var(--teal)); color: #fff; font: 700 11px/18px var(--sans); text-align: center; }
+.yqm-x { margin-left: auto; border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 16px; line-height: 1; }
+.yq-help {
+  position: relative; display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 4px; border-radius: 50%;
+  border: 1px solid var(--dim); color: var(--dim); font: 700 10px/1 var(--sans); cursor: help; vertical-align: middle;
+}
+.yq-help:hover::after, .yq-help:focus::after {
+  content: attr(data-tip); position: absolute; right: -6px; top: 22px; z-index: 40; width: 260px; padding: 6px 8px; text-align: left;
+  background: var(--shell-1); color: var(--body); border: 1px solid var(--stroke); border-radius: 6px; font: 400 var(--fs-sm)/1.4 var(--sans);
+}

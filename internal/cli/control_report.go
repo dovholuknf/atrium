@@ -103,6 +103,25 @@ func endReport(ctx context.Context, _ *mcp.CallToolRequest, body map[string]any)
 	return out, nil
 }
 
+// gateSet is atrium_gate on the stdio server: the room's gate endpoint for this session's card.
+func gateSet(ctx context.Context, body map[string]string) (string, bool, error) {
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+	if me == "" {
+		return "", false, fmt.Errorf("atrium_gate is for a session atrium knows. this one has no ATRIUM_AGENT_NAME")
+	}
+	id, _, err := resolvePeer(ctx, me)
+	if err != nil {
+		return "", false, err
+	}
+	var res struct {
+		Recorded bool `json:"recorded"`
+	}
+	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/gate", body, &res); err != nil {
+		return "", false, err
+	}
+	return id, res.Recorded, nil
+}
+
 // peersRoomsPath is the room's list of sessions on other rooms.
 func peersRoomsPath(all bool) string {
 	if all {

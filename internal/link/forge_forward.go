@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 
@@ -83,7 +84,28 @@ func (p *Proxy) forgeCalls() forgepkg.Calls {
 		BacklogEvent: p.backlogEvent,
 		Broadcast:    func(ev wire.Event) { p.feeds.broadcast(ev) },
 		WorkOfTags:   WorkOfTags,
+		RoomCards:    p.roomCards,
 	}
+}
+
+func (p *Proxy) roomCards(room string) []ctl.Card {
+	stock := p.inventory()
+	if stock == nil {
+		return nil
+	}
+	held, err := stock.Remembered(room)
+	if err != nil || len(held) == 0 {
+		return nil
+	}
+	out := make([]ctl.Card, 0, len(held))
+	for _, c := range held {
+		var k ctl.Card
+		if json.Unmarshal(c.Payload, &k) == nil {
+			k.Status = c.Status
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // markedRooms is the rooms that start nothing new.

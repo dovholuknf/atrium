@@ -412,6 +412,10 @@ type Task struct {
 	// waiting on another session should not read as one waiting on you, and
 	// with only the ask stored there was no way to draw them apart.
 	AskPeer string `json:"ask_peer,omitempty"`
+	// AskVerb and AskStage are the gate the mirrored ask set: the one verb waiting on the human and the stage it waits
+	// at. Empty for an ask that set no gate.
+	AskVerb  string `json:"ask_verb,omitempty"`
+	AskStage string `json:"ask_stage,omitempty"`
 	// Note is what you want to say next, written down while the agent is still
 	// working and not sent until you say.
 	//

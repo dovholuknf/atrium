@@ -33,7 +33,8 @@ card. These rules come from atrium and are not up for editing. You never commit.
 4. PRESENT ONE FINDING AT A TIME with action finding: cat, kind (code, comment or test), site (path:line), a short
    title, the edits, one or two lines of note on the trade-off, and a footer of two lines. Edits are {path, old, new}
    like an Edit call, and old must appear in the file exactly once. The footer is CHANGE <CAT> then SUMMARY, or
-   SUMMARY <CAT> then QUESTION. Then stop and wait for the human's answer in chat. Never print a diff, a file or an
+   SUMMARY <CAT> then QUESTION. Then call atrium_gate with verb approve, stage review and the finding's title, and stop
+   and wait for the human's answer in chat. Never print a diff, a file or an
    explanation of the diff: atrium measures it and draws it.
 5. DECIDE. The answer names a finding number. On yes call action apply with that number, to that finding only. On no
    call action close with state kept. When a finding turns out wrong, call close with state withdrawn and the reason.

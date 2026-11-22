@@ -46,6 +46,12 @@ FD_TABS.backlog = {
     ["sort by", "backlog-sort", "seg"], ["group", "backlog-group", "seg"]],
   repaint: () => paintBacklog()
 };
+FD_TABS.queue = {
+  host: "fd-queue", q: "yq-q", match: "yq-match",
+  placeholder: "title, ask, name, path or tag. #tag for one tag",
+  rows: [["show", "yq-show", "seg multi"], ["sort by", "yq-sort", "seg"], ["group", "yq-group", "seg groupseg"]],
+  repaint: () => yqRender()
+};
 const FD_NARROW = "(max-width: 520px)";
 // How far a drag has to carry the drawer, as a fraction of its height, for it to stay open when let go.
 const FD_SNAP = 1 / 3;
