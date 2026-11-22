@@ -5,10 +5,10 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { jobFailures, retriedRows } = require('./ci-failures');
 
-const DATA = process.env.LEDGER_DIR || 'D:/tmp/qa-flake-ledger';
+const DATA = process.env.LEDGER_DIR || 'build.claude/qa-flake-ledger';
 const ARTIFACTS = process.env.CI_ARTIFACTS || 'C:/Users/claude/.atrium2/hub/ci-artifacts/github.com/dovholuknf/atrium';
-const HISTORY_CSV = process.env.CI_HISTORY_CSV || 'D:/tmp/qa-ci-history.csv';
-const HISTORY_MD = process.env.CI_HISTORY_MD || 'D:/tmp/qa-ci-history.md';
+const HISTORY_CSV = process.env.CI_HISTORY_CSV || 'build.claude/qa-ci-history.csv';
+const HISTORY_MD = process.env.CI_HISTORY_MD || 'build.claude/qa-ci-history.md';
 const FIX_REPO = process.env.FIX_REPO || 'D:/worktrees/claude/atrium/qa';
 const OSES = ['windows', 'macos', 'ubuntu'];
 
