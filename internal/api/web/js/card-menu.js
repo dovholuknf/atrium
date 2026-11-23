@@ -929,6 +929,7 @@ async function cardMenu(e, id) {
     typeof walkMenuItem === "function" ? walkMenuItem(t) : null,
     typeof keepaliveMenuItem === "function" ? keepaliveMenuItem(t, refresh) : null,
     typeof coldHandoffMenuItem === "function" ? coldHandoffMenuItem(t, refresh) : null,
+    typeof roomMoveMenuItem === "function" ? roomMoveMenuItem(t) : null,
     // A PR's walker can be moved, with the review, to another room. See prMove in js/pulls.js.
     typeof walkPrOf === "function" && walkPrOf(id) && prMoveOffered() ? {
       label: "move to another room",

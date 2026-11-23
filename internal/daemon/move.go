@@ -130,6 +130,7 @@ func (d *Daemon) sweepFreezes(at time.Time) {
 		if err != nil || !moved {
 			continue
 		}
+		d.unwip(id)
 		if t, err := d.st.Get(id); err == nil && small.IsParked(t) {
 			if err := d.unpark(id, "move"); err != nil {
 				log.Printf("[atrium] %s undid its own move but could not resume: %v", id, err)

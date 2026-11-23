@@ -444,3 +444,46 @@ func (o ResetHard) build(b *builder) {
 	b.sub("reset", "--hard")
 	b.add(b.ref("commit", o.Commit))
 }
+
+// ResetSoft is `git reset --soft` to Commit, with no --end-of-options as ResetKeep.
+type ResetSoft struct {
+	Commit string
+}
+
+func (o ResetSoft) build(b *builder) {
+	b.sub("reset", "--soft")
+	b.add(b.ref("commit", o.Commit))
+}
+
+// BranchCreate is `git branch` of a new Branch at Start, refused when Branch exists.
+type BranchCreate struct {
+	Branch string
+	Start  string
+}
+
+func (o BranchCreate) build(b *builder) {
+	b.sub("branch")
+	b.add("--", b.ref("branch", o.Branch), b.ref("start", o.Start))
+}
+
+// BundleRevs is `git bundle create --quiet` of Revs into File.
+type BundleRevs struct {
+	File string
+	Revs []string
+}
+
+func (o BundleRevs) build(b *builder) {
+	b.sub("bundle", "create", "--quiet")
+	b.add(b.ref("file", o.File))
+	b.add(b.refs("rev", o.Revs)...)
+}
+
+// BundleVerify is `git bundle verify` of File.
+type BundleVerify struct {
+	File string
+}
+
+func (o BundleVerify) build(b *builder) {
+	b.sub("bundle", "verify")
+	b.add(b.ref("file", o.File))
+}

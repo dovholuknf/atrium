@@ -1,0 +1,39 @@
+/* A card's move to another room: its dialog, the toast after and the "on X" chip. See js/roommove.js. */
+  dialog.mv { width: min(560px, 92vw); }
+  dialog.mv .dlg-foot { justify-content: flex-end; gap: var(--sp-2); }
+  dialog.mv .dlg-foot .left { margin-right: auto; }
+  dialog.mv .dlg-head h2 .help { vertical-align: 3px; margin-left: 8px; }
+
+  .mv-route { display: flex; align-items: center; gap: 10px; font: var(--fs-sm) var(--mono); color: var(--label); margin-bottom: 16px; }
+  .mv-route b { color: var(--head); font-weight: 600; }
+  .mv-route .arrow { color: var(--dimmest); }
+
+  .mv-checks { list-style: none; margin: 0; padding: 0; }
+  .mv-checks li { display: flex; align-items: center; gap: 10px; padding: 7px 0; color: var(--body); font-size: var(--fs-base); }
+  .mv-checks li + li { border-top: 1px solid rgba(var(--stroke-dim-rgb),.4); }
+  .mv-mark { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 50%;
+    font: 700 11px/1 var(--sans); border: 1px solid var(--stroke-dim); color: var(--dimmest); }
+  .mv-mark.ok { color: var(--chip-accent-text); background: var(--chip-accent); border-color: var(--chip-accent-stroke); }
+  .mv-mark.bad { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-stroke); }
+  .mv-mark.fail { color: var(--danger-text, var(--danger)); background: rgba(var(--danger-rgb),.12); border-color: rgba(var(--danger-rgb),.45); }
+  .mv-mark.run { border-color: var(--teal); border-right-color: transparent; animation: tkidspin .9s linear infinite; }
+  .mv-checks .val { margin-left: auto; font: var(--fs-xs) var(--mono); color: var(--dimmest); }
+  .mv-checks .val.warn { color: var(--warn); }
+  .mv-checks li.dim { color: var(--dimmest); }
+  .mv-checks li.now { color: var(--head); }
+  .mv-opt { display: flex; align-items: center; gap: 8px; margin: 10px 0 0 28px; color: var(--label); font-size: var(--fs-sm); }
+  .mv-say { margin: 0 0 14px; font-size: var(--fs-md); color: var(--head); }
+  .mv-say.warn { color: var(--warn); }
+  .mv-say .help { margin-left: 8px; vertical-align: 1px; }
+  .mv-why { font: var(--fs-sm)/1.5 var(--mono); color: var(--label); background: rgba(var(--sink-rgb),.55);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 9px 11px; margin-top: 10px; overflow-wrap: anywhere; }
+
+  .mv-toast { position: fixed; z-index: 60; right: max(18px, env(safe-area-inset-right, 0px));
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: min(330px, calc(100vw - 36px)); padding: 12px 14px;
+    border-radius: var(--r-md); background: var(--shell-0); border: 1px solid var(--stroke); box-shadow: var(--shadow-pop);
+    color: var(--body); font-size: var(--fs-base); }
+  .mv-toast b { color: var(--head); }
+  .mv-toast .row { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+  .mv-toast button { padding: 5px 11px; font-size: var(--fs-sm); }
+
+  .chip.mv-to { background: rgba(var(--path-rgb),.14); border-color: rgba(var(--path-rgb),.32); color: var(--path); }

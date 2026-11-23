@@ -120,7 +120,7 @@ func newRoot() *cobra.Command {
 	root.AddCommand(newDaemon(), newZrokCmd(),
 		newJoin(), newLeave(), newStop(), newRestartPtyHost(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
-		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
+		newAnswer(), newOpen(), newTangent(), newNew(), newMove(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
 		newPtyHost(), newLogs(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), capabilitiesCmd(), mergeCmd(), newWorktree(), newUpdate(), newStatusline(), newAdopt(), newUninstall(), newDoctor())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one.
@@ -153,7 +153,7 @@ func helpGroup(name string) string {
 	switch name {
 	case "run", "launch", "adopt", "doctor", "stop", "uninstall", "version":
 		return "start"
-	case "new", "open", "tangent", "twig", "close", "exit", "new-context", "task", "cd", "dispatch", "preview",
+	case "new", "open", "tangent", "twig", "move", "close", "exit", "new-context", "task", "cd", "dispatch", "preview",
 		"archive-workers":
 		return "cards"
 	case "join", "leave", "peers", "tell", "ask", "answer", "finish", "ready", "subscribe", "unsubscribe",

@@ -78,6 +78,9 @@ type Hub struct {
 	// `refusedEvery`, because whoever it is will redial on a backoff. Nil records
 	// nothing.
 	OnUnprovenRefused func(name, transport, why string)
+	// Readopt, when set, writes down a room this hub has no row for but whose certificate its own CA signed: the
+	// room is the proof of its own enrolment, so a hub that lost its store is rebuilt by the rooms dialling in.
+	Readopt func(name string) error
 	// Attaching is asked before a room is adopted, and may refuse it.
 	//
 	// TWO THINGS AT ONCE, and they are the same thing seen from both ends.
@@ -484,6 +487,11 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// the map, being proxied to, while the hub says it does not exist.
 	if over := unprovenOver(conn); over != "" && h.OnOverlayRoom != nil {
 		h.OnOverlayRoom(name, over)
+	}
+	if h.Readopt != nil && identify(conn) != "" {
+		if err := h.Readopt(name); err != nil {
+			log.Printf("[hub] could not readopt %q: %v", name, err)
+		}
 	}
 	if h.Attaching != nil {
 		if err := h.Attaching(name, hi.Host, hi.Version); err != nil {

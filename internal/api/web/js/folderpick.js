@@ -17,7 +17,7 @@ function attachFolderComplete(input) {
     if (dir === shown) return;
     const my = ++seq;
     let entries = [];
-    try { entries = (await api("/v1/browse?path=" + encodeURIComponent(dir))).entries || []; } catch (e) {}
+    try { entries = (await api("/v1/browse?quiet=1&path=" + encodeURIComponent(dir))).entries || []; } catch (e) {}
     if (my !== seq) return;
     shown = dir;
     list.replaceChildren(...entries.slice(0, 60).map(e => {

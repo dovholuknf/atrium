@@ -67,3 +67,26 @@ func (k *hubRooms) attaching(name, host, ver string) error {
 			"the string to paste here", name, atriumCmd("rooms add"), name)
 	}
 }
+
+// readopt is link.Hub.Readopt: a room with a certificate from this hub's CA and no row gets its row back.
+func (k *hubRooms) readopt(name string) error {
+	if _, err := k.store.ByName(name); err == nil || errors.Is(err, hubstore.ErrHalted) {
+		return nil
+	}
+	// A room this hub removed or forced out still holds a certificate it signed. Its audit says so, until a wipe.
+	past, err := k.store.AuditByName(name, 200)
+	if err != nil {
+		return err
+	}
+	for _, e := range past {
+		if e.Kind == "removed" || e.Kind == "forced-out" {
+			return fmt.Errorf("%q was %s, so it is not readopted", name, e.Kind)
+		}
+	}
+	r, err := k.store.Add(name, hubstore.TransportDirect)
+	if err != nil {
+		return err
+	}
+	k.store.Log(r, "readopted", "dialled in with a certificate this hub signed, and the hub had no row for it")
+	return k.store.MarkEnrolled(r.ID)
+}

@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
@@ -34,10 +35,13 @@ import (
 // maxMoveBundle is the most one bundle carries, so a hub never streams an unbounded transcript.
 const maxMoveBundle = 64 << 20
 
+// maxMoveBody is what a route reads: a full bundle base64 encoded in JSON is 4/3 of it, plus room for the rest.
+const maxMoveBody = maxMoveBundle/3*4 + 1<<20
+
 var (
 	moveConvName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	moveMemoryName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	moveFileName   = regexp.MustCompile(`^(BRIEF\.md|HANDOFF\.[A-Za-z0-9._-]+\.md)$`)
+	moveFileName   = regexp.MustCompile(`^(BRIEF\.md|REPORT\.md|HANDOFF\.[A-Za-z0-9._-]+\.md|\.atrium/incoming/[A-Za-z0-9][A-Za-z0-9._ -]*)$`)
 )
 
 // moveFile is one file in a bundle. Data is base64 on the wire.
@@ -73,6 +77,11 @@ type moveAsk struct {
 	Auto      bool     `json:"auto_approve"`
 	WaitTurn  bool     `json:"wait_turn"`
 	Cwd       string   `json:"cwd"`
+	Repo      string   `json:"repo"`
+	Branch    string   `json:"branch"`
+	Base      string   `json:"base"`
+	Full      bool     `json:"full"`
+	Git       []byte   `json:"git"`
 	rawBundle json.RawMessage
 }
 
@@ -83,13 +92,18 @@ func (d *Daemon) moveHandler() http.Handler {
 		"bundle": d.moveBundle, "park": d.movePark, "moved": d.moveMoved, "queue": d.moveQueue,
 		"ack": d.moveAck, "release": d.moveRelease, "undo": d.moveUndo,
 		"receive": d.moveReceive, "deliver": d.moveDeliver, "adopt": d.moveAdopt,
+		"gitpack": d.moveGitPack, "worktree": d.moveWorktree, "unworktree": d.moveUnworktree,
 	}
 	for name, fn := range steps {
 		fn := fn
 		mux.HandleFunc("POST /v1/move/"+name, func(w http.ResponseWriter, r *http.Request) {
-			raw, err := io.ReadAll(io.LimitReader(r.Body, maxMoveBundle+(1<<20)))
+			raw, err := io.ReadAll(io.LimitReader(r.Body, maxMoveBody+1))
 			if err != nil {
 				small.WriteJSONErr(w, http.StatusBadRequest, err)
+				return
+			}
+			if len(raw) > maxMoveBody {
+				small.WriteJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf("a move body is at most %d bytes", maxMoveBody))
 				return
 			}
 			var in moveAsk
@@ -162,7 +176,7 @@ func (d *Daemon) moveRenew(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 }
 
 // moveExclude keeps atrium's own files out of the clean-tree question, and out of a wip commit.
-var moveExclude = []string{"BRIEF.md", "HANDOFF.*.md"}
+var moveExclude = []string{"BRIEF.md", "REPORT.md", "HANDOFF.*.md", ".atrium/incoming"}
 
 func moveGit(dir string, op gitexec.Op) (string, error) {
 	var errb bytes.Buffer
@@ -206,6 +220,9 @@ func (d *Daemon) moveCheck(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 						fails = append(fails, "dirty: "+err.Error())
 					} else {
 						wip = true
+						if sha, err := moveGit(t.Worktree, gitexec.RevParse{Rev: "HEAD"}); err == nil {
+							moveWips.Store(t.ID, strings.TrimSpace(sha))
+						}
 					}
 				}
 			}
@@ -303,18 +320,26 @@ func (d *Daemon) moveBundle(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 			}
 		}
 	}
-	ents, _ := os.ReadDir(t.Worktree)
-	for _, e := range ents {
-		if e.IsDir() || !moveFileName.MatchString(e.Name()) {
+	var names []string
+	for _, dir := range []string{"", ".atrium/incoming/"} {
+		ents, _ := os.ReadDir(filepath.Join(t.Worktree, dir))
+		for _, e := range ents {
+			if !e.IsDir() {
+				names = append(names, dir+e.Name())
+			}
+		}
+	}
+	for _, name := range names {
+		if !moveFileName.MatchString(name) {
 			continue
 		}
-		data, rerr := readCapped(filepath.Join(t.Worktree, e.Name()), &budget)
+		data, rerr := readCapped(filepath.Join(t.Worktree, filepath.FromSlash(name)), &budget)
 		if errors.Is(rerr, errTooLarge) {
 			fail(rerr)
 			return
 		}
 		if rerr == nil {
-			b.Files = append(b.Files, moveFile{Name: e.Name(), Data: data})
+			b.Files = append(b.Files, moveFile{Name: name, Data: data})
 		}
 	}
 	sort.Slice(b.Files, func(i, j int) bool { return b.Files[i].Name < b.Files[j].Name })
@@ -342,6 +367,7 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 			return
 		}
 		defer d.idle.parking.Delete(t.ID)
+		r.noteCause(store.CauseAsked, "atrium move")
 		d.hk.idleLeave(r, t.ID, d.exitKeysFor(t.ID), d.hk.windDownKeyGap)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
 		for d.sup.Get(t.ID) != nil && time.Now().Before(deadline) {
@@ -469,6 +495,7 @@ func (d *Daemon) undoCard(id, moveID string) error {
 	if f, _ := d.st.Frozen(id); f == nil {
 		return nil
 	}
+	d.unwip(id)
 	if err := d.unpark(id, "move"); err != nil {
 		return err
 	}
@@ -617,4 +644,27 @@ func (d *Daemon) moveAdopt(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 	}
 	d.Publish(t.ID)
 	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// moveWips is the WIP commit each card's check made, by card id. Only that sha is ever reset, and a room restart
+// forgets it, which leaves the commit in place rather than guessing.
+var moveWips sync.Map
+
+// unwip puts back as uncommitted the WIP commit this move's check made, so an undone move leaves the tree as it was.
+func (d *Daemon) unwip(id string) {
+	made, ok := moveWips.LoadAndDelete(id)
+	if !ok {
+		return
+	}
+	t, err := d.st.Get(id)
+	if err != nil || t.Worktree == "" {
+		return
+	}
+	head, err := moveGit(t.Worktree, gitexec.RevParse{Rev: "HEAD"})
+	if err != nil || strings.TrimSpace(head) != made.(string) {
+		return
+	}
+	if _, err := moveGit(t.Worktree, gitexec.ResetSoft{Commit: "HEAD~1"}); err != nil {
+		log.Printf("[atrium] %s: the move's WIP commit stays: %v", id, err)
+	}
 }

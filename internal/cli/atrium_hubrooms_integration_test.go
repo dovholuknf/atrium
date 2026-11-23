@@ -60,3 +60,51 @@ func breakRoomTable(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+// A hub that lost its store gets each room's row back from the room proving itself, and then lets it attach.
+func TestAReadoptedRoomAttachesToAWipedHub(t *testing.T) {
+	store, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	rooms := newHubRooms(store)
+	if err := rooms.attaching("sparta", "h", "v"); err == nil {
+		t.Fatal("a wiped hub let in a room before it was readopted")
+	}
+	if err := rooms.readopt("sparta"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rooms.readopt("sparta"); err != nil {
+		t.Fatalf("a second readopt: %v", err)
+	}
+	if err := rooms.attaching("sparta", "h", "v"); err != nil {
+		t.Fatalf("a readopted room was refused: %v", err)
+	}
+	if ok, _ := store.Enrolled("sparta"); !ok {
+		t.Fatal("a readopted room is not enrolled")
+	}
+}
+
+// A room forced out keeps a certificate this hub signed, and readopt does not let it back.
+func TestAForcedOutRoomIsNotReadopted(t *testing.T) {
+	store, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	r, err := store.Add("sparta", hubstore.TransportDirect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Force(r.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	rooms := newHubRooms(store)
+	if err := rooms.readopt("sparta"); err == nil {
+		t.Fatal("a forced-out room was readopted")
+	}
+	if err := rooms.attaching("sparta", "h", "v"); err == nil {
+		t.Fatal("a forced-out room attached")
+	}
+}

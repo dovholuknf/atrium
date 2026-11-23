@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,30 @@ func TestBrowseDefaultsToCardDirectories(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a card's own directory answered %d, want it browsable: %s",
 			rec.Code, rec.Body)
+	}
+}
+
+func TestBrowseQuietAnswersEveryRefusalWithTheSameEmptyListing(t *testing.T) {
+	t.Parallel()
+	srv, work := browseServer(t)
+	if err := os.MkdirAll(filepath.Join(work, "project"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.ToSlash(t.TempDir())
+	missing := filepath.ToSlash(filepath.Join(work, "nope"))
+	var bodies []string
+	for _, p := range []string{outside, missing} {
+		rec := browseAt(t, srv, p+"&quiet=1")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("quiet browse of %s answered %d: %s", p, rec.Code, rec.Body)
+		}
+		bodies = append(bodies, rec.Body.String())
+	}
+	if bodies[0] != bodies[1] || bodies[0] != "{\"entries\":[],\"parent\":\"\",\"path\":\"\"}\n" {
+		t.Fatalf("outside and missing must answer the same empty listing, got %q and %q", bodies[0], bodies[1])
+	}
+	rec := browseAt(t, srv, filepath.ToSlash(work)+"&quiet=1")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"project\"") {
+		t.Fatalf("quiet browse inside a root must still list it, got %d: %s", rec.Code, rec.Body)
 	}
 }

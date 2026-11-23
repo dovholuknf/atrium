@@ -108,6 +108,18 @@ const check = (name, ok, extra) => { if (!ok) { failed++; console.error("FAIL: "
     await page.fill("#na-cwd", proj.replace(/\\/g, "/"));
     await until("the launch button to name the folder", async () => /launch in billing-api/.test(await page.textContent("#na-go")));
     check("the folder chips offer the folder a session lives in", (await page.$$eval("#fr-folders [data-path]", e => e.length)) >= 1);
+    await page.fill("#na-cwd", home.replace(/\\/g, "/") + "/");
+    await until("the folders under home to be offered", () => page.$$eval("#na-cwd-fc option", e => e.some(o => /\/AppData\/$/.test(o.value))));
+    check("the folder box offers the folders inside a browse root", true);
+    fs.mkdirSync(path.join(home, "work", "inner"), { recursive: true });
+    fs.symlinkSync(path.join(home, "work"), path.join(home, "linked"), "junction");
+    fs.symlinkSync(home, path.join(dir, "homelink"), "junction");
+    await page.fill("#na-cwd", home.replace(/\\/g, "/") + "/linked/");
+    await until("the folders through a junction under home", () => page.$$eval("#na-cwd-fc option", e => e.some(o => /\/inner\/$/.test(o.value))));
+    check("the folder box completes through a junction under home", true);
+    await page.fill("#na-cwd", path.join(dir, "homelink").replace(/\\/g, "/") + "/");
+    await until("the folders through a junction into home", () => page.$$eval("#na-cwd-fc option", e => e.some(o => /\/AppData\/$/.test(o.value))));
+    check("the folder box completes through a junction that leads into home", true);
     await shot("launch");
     await page.click('#fr-run [data-v="copy"]');
     check("in a copy can be picked", await page.$eval('#fr-run [data-v="copy"]', e => e.classList.contains("on")));
