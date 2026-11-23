@@ -291,9 +291,10 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 	if !s.holdsAll(ctx, dir, tip, ClaudeMainRef) {
 		return false, nil
 	}
-	if _, err := s.git(ctx, dir, gitexec.DeleteRef{Ref: headsPrefix + branch, Old: tip}); err != nil {
+	if err := s.dropRef(ctx, dir, name, headsPrefix+branch, tip); err != nil {
 		return false, err
 	}
+	s.dropStashCopies(ctx, dir, name, branch)
 	return true, nil
 }
 

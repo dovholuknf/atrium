@@ -42,6 +42,13 @@ func stashRepo(t *testing.T, refs map[string]time.Duration) (*Hub, string) {
 		sha := git(date, "commit-tree", "-m", ref, empty)
 		git("", "update-ref", ref, sha)
 	}
+	if tips := git("", "for-each-ref", "--format=%(objectname)", "refs/heads/stash/"); tips != "" {
+		args := []string{"commit-tree", "-m", "land", empty}
+		for _, tip := range strings.Fields(tips) {
+			args = append(args, "-p", tip)
+		}
+		git("", "update-ref", "refs/heads/claude/main", git("", args...))
+	}
 	return &Hub{Dir: root, StoreRoot: func() string { return root }, Runner: NewRunner()}, dir
 }
 
@@ -122,7 +129,7 @@ func TestRetentionZeroKeepsEveryStash(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("%v %v", got, err)
 	}
-	if len(refsOf(t, dir)) != 1 {
+	if len(refsOf(t, dir)) != 2 {
 		t.Errorf("refs = %v", refsOf(t, dir))
 	}
 }
@@ -139,7 +146,7 @@ func TestAStashPushedRecentlyIsNotExpiredByItsOldCommit(t *testing.T) {
 	if got, err := h.ExpireStashes(context.Background()); err != nil || len(got) != 0 {
 		t.Fatalf("%v %v", got, err)
 	}
-	if len(refsOf(t, dir)) != 1 {
+	if len(refsOf(t, dir)) != 2 {
 		t.Errorf("refs = %v", refsOf(t, dir))
 	}
 }
@@ -151,7 +158,7 @@ func TestAStashWithNoPushRecordSurvivesAnOldCommitDate(t *testing.T) {
 	if got, err := h.ExpireStashes(context.Background()); err != nil || len(got) != 0 {
 		t.Fatalf("%v %v", got, err)
 	}
-	if len(refsOf(t, dir)) != 1 {
+	if len(refsOf(t, dir)) != 2 {
 		t.Errorf("the stash with no push record was expired: %v", refsOf(t, dir))
 	}
 }
@@ -164,7 +171,7 @@ func TestAPushLogThatCannotBeReadExpiresNothing(t *testing.T) {
 	if err == nil || len(got) != 0 {
 		t.Fatalf("want the push log's error and nothing expired, got %v %v", got, err)
 	}
-	if len(refsOf(t, dir)) != 1 {
+	if len(refsOf(t, dir)) != 2 {
 		t.Errorf("a stash was expired while the push log was down: %v", refsOf(t, dir))
 	}
 }
@@ -173,5 +180,16 @@ func TestTheRetentionDefaultsToThirty(t *testing.T) {
 	h := &Hub{}
 	if h.StashRetention() != 30 {
 		t.Errorf("default = %d", h.StashRetention())
+	}
+}
+
+func TestAnOldStashClaudeMainDoesNotHoldIsKept(t *testing.T) {
+	h, dir := stashRepo(t, map[string]time.Duration{"refs/heads/stash/abc12345/work": 90 * day})
+	h.PushLog = seedPushes(t, map[string]time.Duration{"refs/heads/stash/abc12345/work": 90 * day})
+	gitOut(t, dir, "update-ref", "-d", "refs/heads/claude/main")
+	h.StashRetentionDays = func() int { return 30 }
+	got, err := h.ExpireStashes(context.Background())
+	if err != nil || len(got) != 0 || len(refsOf(t, dir)) != 1 {
+		t.Fatalf("%v %v %v", got, err, refsOf(t, dir))
 	}
 }

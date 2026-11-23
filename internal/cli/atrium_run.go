@@ -403,6 +403,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		n, _ := store.StashRetentionDays()
 		return n
 	}
+	gitHub.BundleRetentionDays = func() int {
+		n, _ := store.BundleRetentionDays()
+		return n
+	}
 	h.GitStore = gitHub.StoreHandler()
 	// A room's atrium_git_url, asked over the same kind.
 	h.GitLookup = gitHub.Lookup

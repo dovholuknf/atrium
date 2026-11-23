@@ -72,6 +72,9 @@ header of the file you are in, not only the package comment.
   compute them on the request. A process spawn is 50 to 100ms on Windows.
 - **A stash pushed by a close expires** after `git.stash_retention_days` (30 by default, 0 for never). One the push log
   has no record of is kept.
+- **A landed claude/* or stash/* branch is deleted with a bundle first** (`branchhygiene.go`), by the merge and by a daily
+  sweep by content. Bundles are in `<hub dir>/git-bundles/` and expire after `git.bundle_retention_days` (30 by
+  default, 0 for never). Never `claude/main`, `main` or a tag, and a branch pushed within two days is skipped.
 - **Most tests carry `//go:build integration && git`** and run only under `scripts/test.sh full`.
 
 ## The files
@@ -97,6 +100,7 @@ header of the file you are in, not only the package comment.
 | `merge.go` | the merge queue: the candidate by `merge-tree`, the locked move of claude/main, deleting a landed branch |
 | `mergerun.go` | the room testing a candidate in its own merge repository, and pruning a landed local branch |
 | `stashexpiry.go` | expiring a close's stash branches |
+| `branchhygiene.go` | bundling then deleting landed branches, the sweep by content, expiring bundles |
 | `scm.go` | clones in the operator's scm folder, and which hosts the credential helper may be asked about |
 | `locks.go` | removing stale lock files, only where the caller owns the ref |
 | `shared.go` | whether two directories share one repository |

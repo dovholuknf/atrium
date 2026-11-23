@@ -136,6 +136,84 @@
     return { kind: "queued", text: "queued, delivered when the line is clear." + warn };
   }
 
+  // HOLD TO TALK, shared by the composer and the phone's answer box. o is { id, say(kind, text), add(text), live() }.
+  function wireMic(mic, o) {
+    const v = window.atriumVoice;
+    const cap = v.capturable();
+    const why = cap ? "" : v.blocked();
+    if (why) mic.dataset.st = "refused";
+    mic.addEventListener("contextmenu", e => e.preventDefault());
+    // An insecure page (http over ziti) has no microphone, so a tap opens the phone's own recorder, and the clip it
+    // makes is transcribed like a held one.
+    const rec = cap ? el("input") : null;
+    if (rec) {
+      mic.setAttribute("aria-label", "tap to record");
+      rec.type = "file";
+      rec.accept = "audio/*";
+      rec.setAttribute("capture", "");
+      rec.hidden = true;
+      mic.after(rec);
+      mic.addEventListener("click", () => { if (!mic.dataset.st) rec.click(); });
+      rec.addEventListener("change", async () => {
+        const f = rec.files && rec.files[0];
+        rec.value = "";
+        if (!f) return;
+        mic.dataset.st = "transcribing";
+        o.say("", "");
+        try {
+          const text = await v.fromFile(o.id, f);
+          if (!o.live()) return;
+          if (!text) { o.say("", ""); return; }
+          o.add(text);
+        } catch (err) {
+          if (o.live()) o.say("refused", "dictation: " + err.message);
+        } finally {
+          if (mic.dataset.st === "transcribing") mic.dataset.st = "";
+        }
+      });
+    }
+    mic.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      if (cap) return;
+      if (why) { o.say("refused", why); return; }
+      if (mic.dataset.st) return;
+      mic.setPointerCapture(e.pointerId);
+      // A phone takes about two seconds to open the mic, so "listening" waits for the recorder, and comes with the boop.
+      mic.dataset.st = "starting";
+      v.start().then(() => {
+        if (mic.dataset.st !== "starting" || !v.active()) return;
+        mic.dataset.st = "listening";
+        o.say("busy", "listening, release to add it, slide off to cancel");
+      }, err => { if (mic.dataset.st === "starting") { mic.dataset.st = ""; o.say("refused", err.message); } });
+    });
+    const drop = () => {
+      if (mic.dataset.st !== "listening" && mic.dataset.st !== "starting") return;
+      mic.dataset.st = ""; v.cancel(); o.say("", "");
+    };
+    mic.addEventListener("pointercancel", drop);
+    mic.addEventListener("pointermove", e => {
+      if (mic.dataset.st !== "listening") return;
+      const r = mic.getBoundingClientRect();
+      if (Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) > 90) drop();
+    });
+    mic.addEventListener("pointerup", async () => {
+      if (mic.dataset.st === "starting") { drop(); return; }
+      if (mic.dataset.st !== "listening") return;
+      mic.dataset.st = "transcribing";
+      o.say("", "");
+      try {
+        const text = await v.stop(o.id);
+        if (!o.live()) return;
+        if (!text) { o.say("hint", "hold the mic while you speak, then let go"); return; }
+        o.add(text);
+      } catch (err) {
+        if (o.live()) o.say("refused", "dictation: " + err.message);
+      } finally {
+        if (mic.dataset.st === "transcribing") mic.dataset.st = why ? "refused" : "";
+      }
+    });
+  }
+
   // HOST AGNOSTIC. The composer does not know where its text goes, the host says.
   //
   //   opts.send(text)   how the text leaves, returning (or resolving to) { kind, text } as `outcome` does, or
@@ -320,90 +398,13 @@
       submit();
     });
     // HOLD TO TALK. Release appends the words and a newline to the box, and only send sends. Sliding off cancels.
-    if (mic) {
-      const v = window.atriumVoice;
-      const cap = v.capturable();
-      const why = cap ? "" : v.blocked();
-      if (why) mic.dataset.st = "refused";
-      mic.addEventListener("contextmenu", e => e.preventDefault());
-      // An insecure page (http over ziti) has no microphone, so a tap opens the phone's own recorder, and the clip it
-      // makes is transcribed like a held one.
-      const rec = cap ? el("input") : null;
-      if (rec) {
-        mic.setAttribute("aria-label", "tap to record");
-        rec.type = "file";
-        rec.accept = "audio/*";
-        rec.setAttribute("capture", "");
-        rec.hidden = true;
-        row.append(rec);
-        mic.addEventListener("click", () => { if (!mic.dataset.st) rec.click(); });
-        rec.addEventListener("change", async () => {
-          const f = rec.files && rec.files[0];
-          rec.value = "";
-          if (!f) return;
-          mic.dataset.st = "transcribing";
-          say("", "");
-          try {
-            const text = await v.fromFile(cardId, f);
-            if (cur !== state) return;
-            if (!text) { say("", ""); return; }
-            const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
-            ta.value += pre + text + "\n";
-            refresh();
-            hint();
-            say("sent", "added, read it and press send" + timed());
-          } catch (err) {
-            if (cur === state) say("refused", "dictation: " + err.message);
-          } finally {
-            if (mic.dataset.st === "transcribing") mic.dataset.st = "";
-          }
-        });
-      }
-      mic.addEventListener("pointerdown", e => {
-        e.preventDefault();
-        if (cap) return;
-        if (why) { say("refused", why); return; }
-        if (mic.dataset.st) return;
-        mic.setPointerCapture(e.pointerId);
-        // A phone takes about two seconds to open the mic, so "listening" waits for the recorder, and comes with the boop.
-        mic.dataset.st = "starting";
-        v.start().then(() => {
-          if (mic.dataset.st !== "starting" || !v.active()) return;
-          mic.dataset.st = "listening";
-          say("busy", "listening, release to add it, slide off to cancel");
-        }, err => { if (mic.dataset.st === "starting") { mic.dataset.st = ""; say("refused", err.message); } });
-      });
-      const drop = () => {
-        if (mic.dataset.st !== "listening" && mic.dataset.st !== "starting") return;
-        mic.dataset.st = ""; v.cancel(); say("", "");
-      };
-      mic.addEventListener("pointercancel", drop);
-      mic.addEventListener("pointermove", e => {
-        if (mic.dataset.st !== "listening") return;
-        const r = mic.getBoundingClientRect();
-        if (Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) > 90) drop();
-      });
-      mic.addEventListener("pointerup", async () => {
-        if (mic.dataset.st === "starting") { drop(); return; }
-        if (mic.dataset.st !== "listening") return;
-        mic.dataset.st = "transcribing";
-        say("", "");
-        try {
-          const text = await v.stop(cardId);
-          if (cur !== state) return;
-          if (!text) { say("hint", "hold the mic while you speak, then let go"); return; }
-          const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
-          ta.value += pre + text + "\n";
-          refresh();
-          hint();
-          say("sent", "added, read it and press send" + timed());
-        } catch (err) {
-          if (cur === state) say("refused", "dictation: " + err.message);
-        } finally {
-          if (mic.dataset.st === "transcribing") mic.dataset.st = why ? "refused" : "";
-        }
-      });
-    }
+    if (mic) wireMic(mic, { id: cardId, say, live: () => cur === state, add: text => {
+      const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
+      ta.value += pre + text + "\n";
+      refresh();
+      hint();
+      say("sent", "added, read it and press send" + timed());
+    } });
     // A tap while a word is still being composed ends the composition, so the box holds the final text.
     function commitComposition() {
       if (!state.composing && !ta.matches(":focus")) return;
@@ -934,5 +935,5 @@
       return { ok: false, note: "not sent: " + (e && e.message ? e.message : e) };
     }
   }
-  window.mCompose = { mount, unmount, insert, quote, attach, busy, holding, addComment, quoteAll, sendText };
+  window.mCompose = { mount, unmount, insert, quote, attach, busy, holding, addComment, quoteAll, sendText, wireMic };
 })();

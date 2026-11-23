@@ -68,13 +68,12 @@
     const n = Object.keys(s.ans).length;
     return '<ol class="q-list">' + qs.map((x, i) => {
       const done = s.ans[i] !== undefined, open = s.open === i;
-      const hint = next(qs.length, s.ans, i) < 0 ? "done" : "next";
       return '<li class="q-item' + (done ? " done" : "") + (open ? " open" : "") + '" data-i="' + i + '">' +
         '<button type="button" class="q-head" aria-expanded="' + open + '"><span class="q-n">' + (i + 1) + '</span><span class="q-main"><span class="q-text">' + qhtml(x) + "</span>" +
         (done ? '<span class="q-ans">' + U.esc(short(s.ans[i])) + "</span>" : "") + "</span>" + (done && !open ? '<span class="q-edit">edit</span>' : "") + "</button>" +
         (open ? '<div class="q-form">' + (options(x).length ? '<div class="q-opts">' + options(x).map(o => '<button type="button" class="q-opt' + (o.rec ? " rec" : "") + (s.ans[i] === "(" + o.k + ") " + o.v ? " on" : "") + '" data-v="' + U.esc("(" + o.k + ") " + o.v) + '"><b>' + o.k + "</b><span>" + U.esc(o.v) + "</span>" + (o.rec ? "<i>recommended</i>" : "") + "</button>").join("") + "</div>" : yesNo(x) ? '<div class="q-chips"><button type="button" class="q-chip' + (s.ans[i] === "yes" ? " on" : "") + '" data-v="yes">Yes</button><button type="button" class="q-chip' + (s.ans[i] === "no" ? " on" : "") + '" data-v="no">No</button></div>' : "") +
-          '<div class="q-row"><textarea class="q-box" rows="1" placeholder="Your answer" enterkeyhint="' + hint + '" autocapitalize="sentences" aria-label="answer to question ' + (i + 1) + '">' + U.esc(s.seed) + "</textarea>" +
-          (window.atriumVoice ? '<button type="button" class="q-mic" aria-label="dictate">' + MIC + "</button>" : "") + '<button type="button" class="q-done">Done</button></div></div>' : "") + "</li>";
+          '<div class="q-row"><textarea class="q-box" rows="1" placeholder="Your answer" enterkeyhint="enter" autocapitalize="sentences" aria-label="answer to question ' + (i + 1) + '">' + U.esc(s.seed) + "</textarea>" +
+          (window.atriumVoice ? '<button type="button" class="q-mic mc-mic" aria-label="hold to talk"><span class="mc-busy">transcribing</span><span class="mc-ic">' + MIC + "</span></button>" : "") + '<button type="button" class="q-done">Done</button></div></div>' : "") + "</li>";
     }).join("") + "</ol>" +
       '<button type="button" class="q-send" id="q-send"' + (n && !s.busy ? "" : " disabled") + ">" + (s.busy ? "Sending…" : "Send answers" + (n ? " (" + n + ")" : "")) + "</button>" +
       (s.note || n ? '<p class="quiet q-sendnote">' + U.esc(s.note || n + " of " + qs.length + " answered. Only those are sent.") + "</p>" : "");
@@ -137,18 +136,34 @@
       const chip = e.target.closest(".q-chip, .q-opt");
       if (chip) { commit(h, chip.dataset.v, true); return; }
       if (e.target.closest(".q-done")) { commit(h, box.value, true); return; }
-      const mic = e.target.closest(".q-mic");
-      if (mic) dictate(h, li, mic);
     });
+    // The mic is the composer's own recorder (hold to talk, the boop, transcribed on the hub), wired to each button as it is drawn.
+    const wireMics = () => host.querySelectorAll(".q-mic:not([data-wired])").forEach(mic => {
+      if (!window.mCompose || !window.mCompose.wireMic) return;
+      mic.dataset.wired = "1";
+      window.mCompose.wireMic(mic, {
+        id: cur() ? cur().id : "", live: () => mic.isConnected,
+        say: (kind, text) => { const h = here(); if (h && kind === "refused") { h.s.note = text; paint(); } },
+        add: text => {
+          const box = mic.closest(".q-item").querySelector(".q-box"), h = here();
+          box.value += (box.value && !/\s$/.test(box.value) ? " " : "") + text;
+          if (h) h.s.draft = box.value;
+          grow(box);
+          box.focus({ preventScroll: true });
+        }
+      });
+    });
+    new MutationObserver(wireMics).observe(host, { childList: true, subtree: true });
     host.addEventListener("input", e => {
       if (!e.target.classList.contains("q-box")) return;
       const h = here();
       if (h) h.s.draft = e.target.value;
       grow(e.target);
     });
-    // Not while a word is being composed, where Enter commits the word.
+    // Not while a word is being composed, where Enter commits the word, and not on a touch-only device, where Return is a newline.
     host.addEventListener("keydown", e => {
       if (!e.target.classList.contains("q-box") || e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+      if (!window.matchMedia("(any-pointer: fine)").matches) return;
       const h = here();
       if (!h) return;
       e.preventDefault();
@@ -156,31 +171,6 @@
     });
     // The buttons never take focus, so a tap on one neither opens nor closes the soft keyboard.
     host.addEventListener("pointerdown", e => { if (e.target.closest && e.target.closest(".q-mic, .q-chip, .q-opt, .q-done")) e.preventDefault(); });
-  }
-
-  // The composer's two ways to dictate: hold to talk where the page may record, else a tap opens the phone's recorder.
-  async function dictate(h, li, mic) {
-    const v = window.atriumVoice, box = li.querySelector(".q-box");
-    if (!v || mic.classList.contains("hot")) return;
-    const put = text => { if (!text) return; box.value += (box.value && !/\s$/.test(box.value) ? " " : "") + text; h.s.draft = box.value; grow(box); box.focus({ preventScroll: true }); };
-    if (!v.capturable()) {
-      const rec = document.createElement("input");
-      rec.type = "file"; rec.accept = "audio/*"; rec.setAttribute("capture", "");
-      rec.addEventListener("change", async () => {
-        const f = rec.files && rec.files[0];
-        if (!f) return;
-        mic.classList.add("hot");
-        try { put(await v.fromFile(h.c.id, f)); } catch (err) { h.s.note = "dictation: " + err.message; } finally { mic.classList.remove("hot"); }
-      });
-      rec.click();
-      return;
-    }
-    mic.classList.add("hot");
-    try { await v.start(); } catch (err) { mic.classList.remove("hot"); h.s.note = "dictation: " + err.message; return; }
-    mic.addEventListener("click", async function stop() {
-      mic.removeEventListener("click", stop);
-      try { put(await v.stop(h.c.id)); } catch (err) { h.s.note = "dictation: " + err.message; } finally { mic.classList.remove("hot"); }
-    }, { once: true, capture: true });
   }
 
   window.mAnswers = { html, bind, yesNo, short, message, next };

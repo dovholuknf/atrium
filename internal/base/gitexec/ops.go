@@ -105,6 +105,18 @@ func (o DeleteRef) build(b *builder) {
 	}
 }
 
+// BundleCreate is `git bundle create`: File holds Ref and the commits under it that Exclude does not have.
+type BundleCreate struct {
+	File    string
+	Ref     string
+	Exclude string
+}
+
+func (o BundleCreate) build(b *builder) {
+	b.sub("bundle", "create", "--quiet")
+	b.add(b.path("file", o.File), b.ref("ref", o.Ref), "^"+b.ref("exclude", o.Exclude))
+}
+
 // RemoteAdd is `git remote add`.
 type RemoteAdd struct {
 	Name string

@@ -1,0 +1,18 @@
+/* The Usage and Queue sheets on the phone, over the items sheet's classes. Board tokens only. See m/js/views.js. */
+.us-gauge { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--r-lg); background: linear-gradient(160deg, var(--card-0), var(--card-1)); border: 1px solid var(--stroke-dim); }
+.us-gauge.hot { border-color: var(--wait-stroke); }
+.us-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.us-head b { color: var(--head); font-size: calc(var(--m-fs) * 1.7); letter-spacing: -.02em; }
+.us-track { position: relative; height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
+.us-track i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: linear-gradient(90deg, var(--teal), var(--blue)); }
+.us-gauge.hot .us-track i { background: var(--wait); }
+.us-line { display: flex; justify-content: space-between; gap: 8px; color: var(--label); font-size: calc(var(--m-fs) * .85); }
+.us-line span:last-child { color: var(--body); text-align: right; }
+.us-flame { color: var(--wait); font-weight: 650; }
+.us-spark { width: 100%; height: 48px; display: block; }
+.us-spark path { fill: none; stroke: var(--teal); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.us-spark path.p { stroke: var(--wait); stroke-dasharray: 4 4; }
+.yq-verb { padding: 1px 9px; border-radius: var(--r-pill); font-weight: 700; font-size: calc(var(--m-fs) * .72); letter-spacing: .1em; background: var(--teal-bg); color: var(--teal); }
+.yq-verb.stuck { background: var(--wait-bg); color: var(--wait); }
+.yq-why { margin: 0; color: var(--body); font-size: calc(var(--m-fs) * .9); overflow-wrap: anywhere; }
+.yq-act { display: flex; gap: 8px; }

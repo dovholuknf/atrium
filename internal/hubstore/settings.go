@@ -253,6 +253,9 @@ const (
 	// SettingStashRetentionDays is how many days a close's stash/<card>/<branch> stays on the hub before the hub
 	// removes it. Unwritten is 30, and 0 is never.
 	SettingStashRetentionDays = "git.stash_retention_days"
+	// SettingBundleRetentionDays is how many days the bundle of a landed branch the hub deleted is kept. Unwritten
+	// is 30, and 0 is never.
+	SettingBundleRetentionDays = "git.bundle_retention_days"
 )
 
 // GitStorePath is where the hub's git store is: the setting, or `<hubDir>/git`.
@@ -328,6 +331,28 @@ func (s *Store) SetStashRetentionDays(days int) error {
 		return errors.New("git.stash_retention_days is a number of days, or 0 for never")
 	}
 	return s.SetHubSetting(SettingStashRetentionDays, strconv.Itoa(days))
+}
+
+// BundleRetentionDays reads how long a deleted branch's bundle is kept, 30 when it was never written or is not a
+// number of days. 0 is never expire.
+func (s *Store) BundleRetentionDays() (int, error) {
+	v, err := s.HubSetting(SettingBundleRetentionDays)
+	if err != nil {
+		return gitsync.DefaultBundleRetentionDays, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return gitsync.DefaultBundleRetentionDays, nil
+	}
+	return n, nil
+}
+
+// SetBundleRetentionDays sets it. 0 keeps every bundle.
+func (s *Store) SetBundleRetentionDays(days int) error {
+	if days < 0 {
+		return errors.New("git.bundle_retention_days is a number of days, or 0 for never")
+	}
+	return s.SetHubSetting(SettingBundleRetentionDays, strconv.Itoa(days))
 }
 
 // HubCardColors is the board's card colours, which the hub owns like the skin: colours belong to the
