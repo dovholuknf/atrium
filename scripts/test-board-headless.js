@@ -32586,6 +32586,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
     await unit("launchNewAgentPath", bu("launchNewAgentPath"));
+    await unit("launchFolderComplete", bu("launchFolderComplete"));
     await unit("launchGroupPlus", bu("launchGroupPlus"));
     await unit("launchNewAgentGroups", bu("launchNewAgentGroups"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
