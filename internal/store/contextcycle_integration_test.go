@@ -9,17 +9,18 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
-// The per-harness limits read the default when unset or unreadable, and drop an entry out of range.
+// The per-harness limits read the default when unset or unreadable, read one under the minimum as the minimum, and
+// drop one over the maximum.
 func TestContextLimitsReadAndCheck(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
 	if got := s.ContextLimits(); len(got) != 1 || got["claude"] != 200 {
 		t.Fatalf("unset reads %v, want claude 200", got)
 	}
-	if err := s.SetSetting(rules.SettingContextLimits, `{"claude":300,"codex":5,"ollama":150}`); err != nil {
+	if err := s.SetSetting(rules.SettingContextLimits, `{"claude":300,"codex":20,"ollama":150,"gemini":2001}`); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.ContextLimits(); got["claude"] != 300 || got["ollama"] != 150 || got["codex"] != 0 {
+	if got := s.ContextLimits(); got["claude"] != 300 || got["ollama"] != 150 || got["codex"] != 50 || got["gemini"] != 0 {
 		t.Fatalf("reads %v", got)
 	}
 	if err := s.SetSetting(rules.SettingContextLimits, `junk`); err != nil {

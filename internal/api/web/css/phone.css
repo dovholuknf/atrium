@@ -15,6 +15,7 @@
     .tab { font-size: var(--fs-lg); padding: 8px 13px; white-space: nowrap; }
     .tab .count { font-size: var(--fs-base); }
     .grow { display: none; }
+    dialog .grow { display: revert; }
     button.newagent { font-size: var(--fs-md); padding: 8px 14px; }
     button.icon { font-size: var(--fs-2xl); padding: 6px 9px; }
     .conn { font-size: var(--fs-md); }

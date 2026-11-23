@@ -121,3 +121,12 @@ dialog .dlg-foot .grow { flex: 1; }
 .fr-note { margin-top: var(--sp-3); font-size: var(--fs-sm); color: var(--label); }
 .fr-note.warn { color: var(--warn); }
 .fr-note[hidden] { display: none; }
+#fr-ctx { width: min(560px, 94vw); }
+.fr-step[data-step="ctx"] .fr-sub { white-space: normal; }
+#fr-ctx .fr-num { font-size: var(--fs-base); line-height: 2.1; color: var(--body); }
+#fr-ctx .fr-num.fr-min { line-height: 1.55; }
+#fr-ctx .fr-num b { font: 600 var(--fs-base)/1 var(--mono); color: var(--head); }
+#fr-ctx .fr-num input { display: inline-block; width: 80px; margin: 0 4px; padding: 4px 8px; font-family: var(--mono); text-align: right; vertical-align: baseline; }
+#fr-ctx .fr-num input[aria-invalid] { border-color: var(--warn); }
+#fr-ctx .fr-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--sp-3); }
+#fr-ctx .field + .field { margin-top: var(--sp-4); }

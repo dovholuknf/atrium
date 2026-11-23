@@ -89,6 +89,19 @@ const check = (name, ok, extra) => { if (!ok) { failed++; console.error("FAIL: "
     check("the checklist opens with the hub and the room done", done === 2, String(done));
 
     await shot("checklist");
+    check("the checklist names the context trigger", /clears an agent's context at 200k/.test(await page.textContent('[data-step="ctx"]')));
+    await page.click('#fr-pane [data-act="ctx"]');
+    await vis("#fr-ctx #fr-ctx-n");
+    check("the context dialog starts on the default", (await page.inputValue("#fr-ctx-n")) === "200");
+    await page.fill("#fr-ctx-n", "30");
+    await page.click('#fr-ctx [data-c="save"]');
+    await vis("#fr-ctx .fr-note.warn");
+    check("a trigger under 50k is refused", /under the minimum/.test(await page.textContent("#fr-ctx .fr-note.warn")));
+    await page.fill("#fr-ctx-n", "300");
+    await page.click('#fr-ctx [data-c="save"]');
+    await until("the context limit to save", async () => ((await (await fetch(base + "/v1/settings")).json()).context_limits || {}).claude === 300);
+    await vis('[data-step="ctx"].done');
+    check("saving marks the context step done", /at 300k/.test(await page.textContent('[data-step="ctx"]')));
     await page.click('#fr-pane [data-act="launch"]');
     await vis("#na #fr-run");
     check("start an agent opens the new-agent dialog on a folder, in place", (await page.evaluate(() => naS.kind)) === "folder");

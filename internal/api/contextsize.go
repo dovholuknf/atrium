@@ -85,7 +85,8 @@ func contextLimitWith(st *store.Store, t *store.Task, compactAtK func(*store.Tas
 		return out
 	}
 	if k, err := strconv.Atoi(strings.TrimSpace(t.Overrides[OverrideContextLimitK])); err == nil &&
-		store.CheckContextLimitK(k) == nil && k > 0 {
+		rules.ReadContextLimitK(k) > 0 {
+		k = rules.ReadContextLimitK(k)
 		out.OwnK = k
 		out.K, out.From = k, LimitFromCard
 	} else {

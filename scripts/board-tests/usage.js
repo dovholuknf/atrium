@@ -451,7 +451,7 @@ async function contextCycleSection(browser, base) {
       return route.fulfill({ json: { context_limits: limits } });
     }
     return route.fulfill({ json: { context_limits: { claude: 200 }, context_limits_default: { claude: 200 },
-      context_limit_k_min: 10, context_limit_k_max: 2000, context_handoff_dir: "" } });
+      context_limit_k_min: 50, context_limit_k_max: 2000, context_handoff_dir: "" } });
   });
   const was = mock.tasksMode;
   try {
@@ -1090,7 +1090,7 @@ async function contextSizeSection(browser, base) {
       return;
     }
     await route.fulfill({ json: { context_limits: { claude: 200 }, context_limits_default: { claude: 200 },
-      context_limit_k_min: 10, context_limit_k_max: 2000 } });
+      context_limit_k_min: 50, context_limit_k_max: 2000 } });
   });
   const was = mock.tasksMode;
   mock.tasksMode = "ctxsize";

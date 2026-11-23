@@ -6,7 +6,7 @@
   const help = tip => `<span class="help" tabindex="0" data-tip="${esc(tip)}">?</span>`;
   const K = {
     seen: "atrium.fr.seen", joined: "atrium.fr.joined", hidden: "atrium.fr.hidden", launched: "atrium.fr.launched",
-    adopted: "atrium.fr.adopted", folder: "atrium.fr.folder", hardened: "atrium.fr.hardened", nudged: "atrium.fr.nudged", undo: "atrium.fr.undo",
+    adopted: "atrium.fr.adopted", folder: "atrium.fr.folder", ctx: "atrium.fr.ctx", hardened: "atrium.fr.hardened", nudged: "atrium.fr.nudged", undo: "atrium.fr.undo",
   };
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const put = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
@@ -52,7 +52,7 @@
     return "";
   }
   const doneFlags = () => ({
-    hub: true, room: rooms().length > 0, folder: get(K.folder) === "1", launch: get(K.launched) === "1", adopt: get(K.adopted) === "1", harden: get(K.hardened) === "1",
+    hub: true, room: rooms().length > 0, folder: get(K.folder) === "1", ctx: get(K.ctx) === "1", launch: get(K.launched) === "1", adopt: get(K.adopted) === "1", harden: get(K.hardened) === "1",
   });
   function steps() {
     const d = doneFlags(), r = rooms()[0];
@@ -63,6 +63,8 @@
         tip: "A room is a machine that runs your agents and dials the hub. Your own laptop is the usual first one." },
       { id: "folder", title: "tell atrium where your projects live", sub: d.folder ? "set" : "", done: d.folder, act: "set folder", key: "folder", optional: true,
         tip: "Where new agents start, and whether they work in place or in a copy. Keeping it in one folder keeps everything your agents use in one place." },
+      { id: "ctx", title: "atrium clears an agent's context at " + ctxK() + "k", sub: "a long context makes agents worse and costs more tokens", done: d.ctx, act: "change", key: "ctx", optional: true,
+        tip: TIP_CTX },
       { id: "launch", title: "start your first agent in your own folder", sub: "", done: d.launch, act: "start an agent", key: "launch",
         tip: "It starts in the folder as it is and edits your files directly: no copy and no branch. Pick in a copy in the dialog if you would rather keep your tree clean." },
       { id: "adopt", title: "bring in a session you already have", sub: d.adopt ? "adopted" : "", done: d.adopt, act: "adopt a session", key: "adopt",
@@ -160,6 +162,7 @@
         <div class="fr-frow"><span class="fr-k">agent found${help("atrium looks for the agent programs on the room's PATH. A missing one can be added under runners.")}</span><code>${f.agentOK ? esc(f.agent) : "no agent program found on this machine's PATH. install claude, then add it under runners"}</code>${f.agentOK ? `<span class="chip ok">ready</span>` : `<span class="chip warn">missing</span>`}</span></div>
         <div class="fr-frow"><span class="fr-k">hooks${help("atrium reports what a session is doing through hooks in the agent's own settings.")}</span><code>${esc(f.hooks || "not read")}</code>${f.hooksOK ? `<span class="chip ok">installed</span>` : `<span class="chip warn">${f.hookMissing ? f.hookMissing + " missing" : "unknown"}</span>`}</div>
         <div class="fr-frow"><span class="fr-k">folders found${help("Folders cards have worked in and folders Claude sessions already live in. They are offered when you start an agent.")}</span><code>${f.folders ? f.folders + " on this machine" : "none yet. type a folder when you start an agent"}</code></div>
+        <div class="fr-frow"><span class="fr-k">context cleared${help(TIP_CTX + " " + TIP_COLD)}</span><code>at ${ctxK()}k, so agents stay sharp and cheap</code><button type="button" data-act="ctx">change</button></div>
       </div>
       <div class="fr-foot">
         <span class="grow"></span>
@@ -178,9 +181,9 @@
       painted = key;
       if (st === "connect") { await loadFacts(); pane.innerHTML = connectHTML(); }
       else if (st === "joined") {
-        await loadFacts();
+        await loadFacts(); await loadCtx();
         pane.innerHTML = joinedHTML(await joinedFacts());
-      } else if (st === "list") { await loadFacts(); pane.innerHTML = checklistHTML(false); }
+      } else if (st === "list") { await loadFacts(); await loadCtx(); pane.innerHTML = checklistHTML(false); }
     }
     pane.dataset.stage = st;
     pane.hidden = !st;
@@ -289,6 +292,7 @@
     else if (a === "adopt") { closeList(); openAdopt(); }
     else if (a === "harden") { closeList(); openHarden(); }
     else if (a === "folder") { closeList(); openFolderAsk(); }
+    else if (a === "ctx") { closeList(); openCtxAsk(); }
     else if (a === "hide" || a === "skip-all") {
       put(K.hidden, "1"); closeList(); painted = ""; paint().catch(() => {});
       if (a === "hide") say("list hidden", "reopen it from getting started in the header");
@@ -502,6 +506,84 @@
     } catch (err) { b.disabled = false; say("that did not stick", err.message); return; }
     put(K.folder, "1"); fd.close(); painted = ""; paint().catch(() => {});
     say("projects folder set", "new agents start there and work " + (FM === "place" ? "in place" : "in a copy"));
+  });
+
+  // ── when atrium clears an agent's context: the hub's claude limit and the room's cold handoff ──
+  const TIP_CTX = "The longer an agent's context gets, the worse it works: it loses track of what was said early on and its answers slip. Every turn also sends the whole context again, so a long context costs more tokens on every turn. At the trigger atrium has the agent write a handoff, clears its context and has it read the handoff back, so it carries on with what matters in a small context. Only claude has a trigger unless you give other agents one. Change it later under settings, context limit, or for one card in its details.";
+  const TIP_MIN = "Every clear costs something: the agent writes a handoff, then reads it back into a fresh context. With a small context that costs about as much as it saves, and the agent would stop to hand off so often that it gets little done. So atrium does not take a trigger under 50k. The highest trigger is 2000k.";
+  const TIP_COLD = "A cached context is cheap to send again, but the cache expires when the agent sits idle, and the next turn then pays full price for the whole context. When atrium stops keeping an idle card's cache warm, it has the agent write its handoff and clears the context a few minutes before the cache expires, so the next turn starts small. Each card can switch this off in its menu.";
+  let ctxS = null;
+  async function loadCtx() {
+    try { ctxS = await api("/v1/settings"); } catch (e) { ctxS = ctxS || {}; }
+    return ctxS;
+  }
+  const ctxK = () => {
+    const s = ctxS || {};
+    return (s.context_limits || {}).claude || (s.context_limits_default || {}).claude || 200;
+  };
+  const cd = document.createElement("dialog");
+  cd.id = "fr-ctx";
+  document.body.appendChild(cd);
+  let C = { val: "", cold: true, err: "" };
+  const ctxMin = () => (ctxS && ctxS.context_limit_k_min) || 50, ctxMax = () => (ctxS && ctxS.context_limit_k_max) || 2000;
+  function ctxCheck(v) {
+    if (!/^[0-9]+$/.test(v)) return `"${v}" is not a number of thousands of tokens, like 300`;
+    const n = Number(v);
+    if (n < ctxMin()) return `${n}k is under the minimum. the lowest trigger allowed is ${ctxMin()}k`;
+    if (n > ctxMax()) return `${n}k is over the highest trigger allowed, ${ctxMax()}k`;
+    return "";
+  }
+  function cdrender() {
+    const def = ((ctxS && ctxS.context_limits_default) || {}).claude || 200;
+    cd.innerHTML = `<div class="dlg-head"><div class="grow"><div class="dlg-eyebrow">a long context makes agents worse and costs more tokens</div><h2>when should atrium clear an agent's context?</h2></div>
+        <button type="button" class="x" data-c="close" aria-label="close">&times;</button></div>
+      <div class="dlg-body">
+        <div class="field"><label class="eyebrow" for="fr-ctx-n">the trigger${help(TIP_CTX)}</label>
+          <div class="fr-num">when an agent's context reaches <input type="text" id="fr-ctx-n" inputmode="numeric" spellcheck="false" value="${esc(C.val)}"${C.err ? ' aria-invalid="true"' : ""}> thousand tokens, atrium has it write a handoff, then clears its context</div>
+          <div class="fr-presets">${[def, 500, 1000].map(n => `<button type="button" class="fr-dot${String(n) === C.val ? " on" : ""}" data-pick="${n}">${n}k${n === def ? " <span>default</span>" : ""}</button>`).join("")}</div>
+          <div class="fr-note warn"${C.err ? "" : " hidden"}>${esc(C.err)}</div></div>
+        <div class="field"><label class="eyebrow">the minimum${help(TIP_MIN)}</label>
+          <div class="fr-num fr-min"><b>${ctxMin()}k</b> is the lowest trigger allowed. below it a clear saves too little to be worth the handoff</div></div>
+        <div class="field"><label class="eyebrow">also clear it${help(TIP_COLD)}</label>
+          <div class="fr-opts"><button type="button" class="fr-opt${C.cold ? " on" : ""}" role="checkbox" aria-checked="${C.cold}" data-cold>
+            <span class="fr-box"></span><span class="fr-ot">before its cache goes cold</span><span class="chip">default</span></button></div></div>
+      </div>
+      <div class="dlg-foot"><button type="button" class="linkbtn" data-c="keep">not sure? keep the defaults</button><span class="grow"></span>
+        <button type="button" class="go big" data-c="save">save</button></div>`;
+  }
+  window.openCtxAsk = async function () {
+    await loadCtx();
+    C = { val: String(ctxK()), cold: ctxS.cache_cold_handoff !== false, err: "" };
+    cdrender();
+    if (!cd.open) cd.showModal();
+  };
+  const ctxDone = () => { put(K.ctx, "1"); cd.close(); painted = ""; paint().catch(() => {}); };
+  cd.addEventListener("input", e => {
+    if (e.target.id !== "fr-ctx-n") return;
+    C.val = e.target.value.trim();
+    cd.querySelectorAll("[data-pick]").forEach(b => b.classList.toggle("on", b.dataset.pick === C.val));
+  });
+  cd.addEventListener("click", async e => {
+    if (e.target.closest(".help")) return;
+    const keep = () => { const i = $("fr-ctx-n"); if (i) C.val = i.value.trim(); };
+    const p = e.target.closest("[data-pick]");
+    if (p) { C.val = p.dataset.pick; C.err = ""; cdrender(); return; }
+    if (e.target.closest("[data-cold]")) { keep(); C.cold = !C.cold; cdrender(); return; }
+    const b = e.target.closest("[data-c]"); if (!b) return;
+    if (b.dataset.c === "close") { cd.close(); return; }
+    if (b.dataset.c === "keep") { ctxDone(); return; }
+    keep(); C.err = ctxCheck(C.val);
+    if (C.err) { cdrender(); $("fr-ctx-n").focus(); return; }
+    b.disabled = true;
+    try {
+      // The hub owns the limits list and the room owns the cold handoff, so they are two writes, the list kept whole.
+      try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (err) {}
+      await post("/v1/settings", { context_limits: Object.assign({}, ctxS.context_limits || {}, { claude: Number(C.val) }) });
+      await post("/v1/settings", { cache_cold_handoff: C.cold });
+    } catch (err) { b.disabled = false; say("that did not stick", err.message); return; }
+    ctxS = null; await loadCtx();
+    ctxDone();
+    say("saved", "atrium clears an agent's context at " + C.val + "k" + (C.cold ? ", and before its cache goes cold" : ""));
   });
 
   // ── the harden wizard: every step writes something the daemon really keeps ───

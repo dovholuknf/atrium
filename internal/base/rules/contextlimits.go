@@ -11,17 +11,27 @@ import (
 // tokens. The hub owns it and hands it to every room. Empty reads as DefaultContextLimits.
 const SettingContextLimits = "context_limits"
 
-// The range a context limit takes.
+// The range a context limit takes. Under 50k a clear saves too little to be worth the handoff, the same floor
+// keep-alive uses.
 const (
-	MinContextLimitK = 10
+	MinContextLimitK = 50
 	MaxContextLimitK = 2000
 )
+
+// ReadContextLimitK is a stored limit as atrium acts on it: one under the minimum, saved before the minimum rose,
+// reads as the minimum, and 0 or one over the maximum reads as 0.
+func ReadContextLimitK(n int) int {
+	if n <= 0 || n > MaxContextLimitK {
+		return 0
+	}
+	return max(n, MinContextLimitK)
+}
 
 // DefaultContextLimits is the limit when nobody set one: claude at 200k, and nothing else cycles.
 func DefaultContextLimits() map[string]int { return map[string]int{"claude": 200} }
 
-// ParseContextLimits reads stored per-harness limits. Unset or unreadable reads as the default. A value out of
-// range is dropped, so one bad entry does not turn the others off.
+// ParseContextLimits reads stored per-harness limits. Unset or unreadable reads as the default. A value under the
+// minimum reads as the minimum, and one over the maximum is dropped, so one bad entry does not turn the others off.
 func ParseContextLimits(v string) map[string]int {
 	if strings.TrimSpace(v) == "" {
 		return DefaultContextLimits()
@@ -32,8 +42,8 @@ func ParseContextLimits(v string) map[string]int {
 	}
 	out := map[string]int{}
 	for k, n := range raw {
-		if k = strings.TrimSpace(k); k != "" && n >= MinContextLimitK && n <= MaxContextLimitK {
-			out[k] = n
+		if k = strings.TrimSpace(k); k != "" && ReadContextLimitK(n) > 0 {
+			out[k] = ReadContextLimitK(n)
 		}
 	}
 	return out

@@ -50,10 +50,11 @@ func contextLimitsIn(r *http.Request) (stored string, found bool, err error) {
 	return stored, true, err
 }
 
-// limitsMap is a stored list as the board reads it: the default when unset.
+// limitsMap is a stored list as the board reads it: the default when unset, and one saved under the minimum at the
+// minimum.
 func limitsMap(stored string) map[string]int {
-	out := map[string]int{}
-	if strings.TrimSpace(stored) == "" || json.Unmarshal([]byte(stored), &out) != nil || len(out) == 0 {
+	out := rules.ParseContextLimits(stored)
+	if len(out) == 0 {
 		return rules.DefaultContextLimits()
 	}
 	return out
@@ -139,7 +140,7 @@ func (p *Service) postContextLimits(ctx context.Context, room, stored string) er
 	defer cancel()
 	limits := map[string]int{}
 	if stored != "" {
-		_ = json.Unmarshal([]byte(stored), &limits)
+		limits = rules.ParseContextLimits(stored)
 	}
 	body, _ := json.Marshal(map[string]any{"context_limits": limits})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
