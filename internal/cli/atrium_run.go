@@ -456,7 +456,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			"taken on trust and checked against the list. `%s` says who, and refuses them "+
 			"once everyone has re-joined", transport, atriumCmd("rooms legacy"))
 	}
-	h.Attaching = newHubRooms(store).attaching
+	rooms := newHubRooms(store)
+	h.Attaching = rooms.attaching
+	if os.Getenv("ATRIUM_HUB_READOPT") == "1" {
+		h.Readopt = rooms.readopt
+	}
 	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
 	// it, started and mounted once the context and the proxy exist.
 	notifier := link.NewNotifier(notifyStore{store})

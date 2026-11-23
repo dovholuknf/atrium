@@ -895,6 +895,7 @@ function cardHTML(t, wearAs) {
       ${tagChips(t)}
       ${noteChip(t)}
       ${originChip(t)}
+      ${typeof roomMoveChip === "function" ? roomMoveChip(t) : ""}
       ${recapChip(t)}
       ${activityChip(t)}
       ${ctxWarnMark(t)}

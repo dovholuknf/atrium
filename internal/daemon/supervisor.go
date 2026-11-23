@@ -2542,8 +2542,8 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	why := ""
 	if lived < startupFailureWindow && tail != "" {
 		payload["output"] = tail
-		// Not on a card that has a newer run alive: it did not fail to start, its old start did.
-		if !x.superseded {
+		// Not on a card that has a newer run alive: it did not fail to start, its old start did. Nor on one atrium ended.
+		if !x.superseded && x.cause == "" {
 			why = "failed to start: " + small.FirstLine(tail)
 		}
 	}

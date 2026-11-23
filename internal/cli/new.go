@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
+	"github.com/dovholuknf/atrium/internal/roommove"
 )
 
 // `atrium new <name>`: gwt's `new` from a checkout. Run it inside any clone or worktree, and the room fetches origin,
@@ -119,28 +120,7 @@ func repoOfCheckout() (string, error) {
 	return repoFromRemote(strings.TrimSpace(string(out)))
 }
 
-// repoFromRemote reads host/org/repo out of a remote url: https, ssh:// or scp-like.
-func repoFromRemote(remote string) (string, error) {
-	host, path := "", ""
-	switch {
-	case strings.Contains(remote, "://"):
-		u, err := url.Parse(remote)
-		if err != nil {
-			return "", fmt.Errorf("cannot read the repo from origin %q", remote)
-		}
-		host, path = u.Hostname(), u.Path
-	case strings.Contains(remote, "@") && strings.Contains(remote, ":"):
-		rest := remote[strings.Index(remote, "@")+1:]
-		i := strings.Index(rest, ":")
-		host, path = rest[:i], rest[i+1:]
-	}
-	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
-	parts := strings.Split(path, "/")
-	if host == "" || len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("cannot read host/org/repo from origin %q. pass --repo host/org/repo", remote)
-	}
-	return strings.ToLower(host) + "/" + parts[0] + "/" + parts[1], nil
-}
+func repoFromRemote(remote string) (string, error) { return roommove.RepoFromRemote(remote) }
 
 func startNew(repo, name string, o newOpts) error {
 	board := boardAddress(o.boardURL)

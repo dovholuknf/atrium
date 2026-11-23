@@ -117,6 +117,8 @@ type controlMCP struct {
 	classes map[string]classEntry
 	// now is the clock the class cache reads. Nil means time.Now, and a test sets it.
 	now func() time.Time
+	// moves are the room moves this hub drives, by move id. See moveask.go.
+	moves sync.Map
 }
 
 // reservation is one in-flight launch holding a slot against its room's cap
@@ -181,6 +183,7 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	}, c.statusHandler)
 
 	addTool(s, class, &mcp.Tool{Name: "atrium_remind", Description: remindToolDesc}, c.remindHandler)
+	addTool(s, class, &mcp.Tool{Name: "atrium_move", Description: moveToolDesc}, c.moveHandler)
 
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_peers",

@@ -226,6 +226,52 @@ func TestAnUndoLeavesTheOldCardAsItWas(t *testing.T) {
 	}
 }
 
+// An undo puts the WIP commit a check made back as uncommitted changes.
+func TestAnUndoPutsTheWIPCommitBack(t *testing.T) {
+	t.Parallel()
+	a, _ := roomDaemon(t)
+	wt := t.TempDir()
+	gitRepo(t, wt)
+	if err := os.WriteFile(filepath.Join(wt, "dirty.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old, _, err := a.st.Register(store.Observed{WireName: "old", Worktree: wt, Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv5", "lease_seconds": 600})
+	for _, name := range []string{"REPORT.md", ".atrium/incoming/drop.txt"} {
+		p := filepath.Join(wt, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out := mvOK(t, a, "check", map[string]any{"id": old.ID, "room": "rb", "wip": true}); out["wip"] != true {
+		t.Fatalf("check %+v", out)
+	}
+	if files := gitT(t, wt, time.Time{}, "show", "--name-only", "--format=", "HEAD"); strings.TrimSpace(files) != "dirty.txt" {
+		t.Fatalf("the WIP commit holds %q", files)
+	}
+	mvOK(t, a, "undo", map[string]any{"id": old.ID, "move_id": "mv5"})
+	subject := gitT(t, wt, time.Time{}, "log", "-1", "--format=%s")
+	status := gitT(t, wt, time.Time{}, "status", "--porcelain")
+	if strings.HasPrefix(subject, "WIP") || !strings.Contains(status, "dirty.txt") {
+		t.Fatalf("after the undo: head %q, status %q", subject, status)
+	}
+
+	// A WIP commit an earlier move made is not this move's, and an undo leaves it.
+	gitT(t, wt, time.Time{}, "commit", "-q", "-m", "WIP: move to ra")
+	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv6", "lease_seconds": 600})
+	mvOK(t, a, "check", map[string]any{"id": old.ID, "room": "rb", "wip": true})
+	mvOK(t, a, "undo", map[string]any{"id": old.ID, "move_id": "mv6"})
+	if subject := gitT(t, wt, time.Time{}, "log", "-1", "--format=%s"); strings.TrimSpace(subject) != "WIP: move to ra" {
+		t.Fatalf("an older WIP commit was undone: head %q", subject)
+	}
+}
+
 // A card whose hub never came back undoes its own freeze at the lease.
 func TestAnExpiredLeaseUndoesTheFreeze(t *testing.T) {
 	t.Parallel()
@@ -254,10 +300,16 @@ func TestReceiveRefusesANameOutsideTheAllowlist(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	b, _ := roomDaemon(t)
 	cwd := t.TempDir()
-	for _, bad := range []string{"../evil.md", "x.sh", ".hidden", "BRIEF.md/../../x"} {
+	for _, bad := range []string{"../evil.md", "x.sh", ".hidden", "BRIEF.md/../../x", ".atrium/incoming/../../x", ".atrium/incoming/a/b", ".atrium/x"} {
 		code, _ := mv(t, b, "receive", map[string]any{"cwd": cwd, "files": []map[string]any{{"name": bad, "data": "eA=="}}})
 		if code != http.StatusBadRequest {
 			t.Fatalf("%q was accepted: %d", bad, code)
+		}
+	}
+	for _, good := range []string{"REPORT.md", ".atrium/incoming/drop.txt"} {
+		mvOK(t, b, "receive", map[string]any{"cwd": cwd, "files": []map[string]any{{"name": good, "data": "eA=="}}})
+		if _, err := os.Stat(filepath.Join(cwd, filepath.FromSlash(good))); err != nil {
+			t.Fatalf("%q was not written: %v", good, err)
 		}
 	}
 	code, _ := mv(t, b, "receive", map[string]any{"cwd": cwd, "memory": []map[string]any{{"name": "../m.md", "data": "eA=="}}})

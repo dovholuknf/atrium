@@ -28,6 +28,14 @@ type browseEntry struct {
 // asks where to run, and a file is not an answer to that.
 func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 	roots := s.browseRootsFor()
+	refuse := func(err error) {
+		// Quiet is for typing: a refusal is an empty listing, one answer for outside, missing and unreadable alike.
+		if r.URL.Query().Get("quiet") != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"path": "", "parent": "", "entries": []browseEntry{}})
+			return
+		}
+		writeErr(w, http.StatusForbidden, err)
+	}
 
 	raw := r.URL.Query().Get("path")
 	if strings.TrimSpace(raw) == "" {
@@ -46,13 +54,13 @@ func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 		// The same answer for outside, missing and unreadable. Distinguishing
 		// them makes this an oracle for what is on the machine, which is most
 		// of what an unbounded lister was giving away in the first place.
-		writeErr(w, http.StatusForbidden, errOutsideRoots)
+		refuse(errOutsideRoots)
 		return
 	}
 
 	info, err := os.Stat(dir)
 	if err != nil {
-		writeErr(w, http.StatusForbidden, errOutsideRoots)
+		refuse(errOutsideRoots)
 		return
 	}
 	if !info.IsDir() {
@@ -61,7 +69,7 @@ func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 		// must not step outside it.
 		up, ok := insideARoot(roots, filepath.Dir(dir))
 		if !ok {
-			writeErr(w, http.StatusForbidden, errOutsideRoots)
+			refuse(errOutsideRoots)
 			return
 		}
 		dir = up
@@ -69,7 +77,7 @@ func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 
 	listing, err := os.ReadDir(dir)
 	if err != nil {
-		writeErr(w, http.StatusForbidden, err)
+		refuse(err)
 		return
 	}
 

@@ -977,6 +977,8 @@ func (s *Server) Handler() http.Handler {
 	if s.HubCall != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/subscriptions", s.cardSubscriptions)
 		mux.HandleFunc("POST /v1/tasks/{id}/remind", s.cardRemind)
+		mux.HandleFunc("POST /v1/tasks/{id}/move", s.cardMove)
+		mux.HandleFunc("GET /v1/tasks/{id}/move", s.cardMove)
 	}
 	mux.HandleFunc("POST /v1/tasks/exist", s.cardsExist)
 	if s.ItemAct != nil {

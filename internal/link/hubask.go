@@ -44,6 +44,9 @@ func hubAskPath(p string) bool {
 		base == docs.DropFilesPath || base == docs.DropGetPath {
 		return true
 	}
+	if base == hubMovePath || (strings.HasPrefix(base, hubMovePath+"/") && !strings.Contains(strings.TrimSuffix(base[len(hubMovePath)+1:], "/undo"), "/")) {
+		return true
+	}
 	if base == "/_hub/merge" || strings.HasPrefix(base, "/_hub/merge/") {
 		return mergeAskPath(strings.TrimPrefix(base, "/_hub/merge"))
 	}
@@ -84,6 +87,9 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req wire.RelayRequ
 			return RelayAnswer{Code: http.StatusBadRequest, Error: "the file drop over the link is a POST"}
 		}
 		return c.dropAsk(ctx, from, base, req)
+	}
+	if base, _, _ := strings.Cut(req.Path, "?"); base == hubMovePath || strings.HasPrefix(base, hubMovePath+"/") {
+		return c.moveAsk(from, method, base, req.Body)
 	}
 	if base, _, _ := strings.Cut(req.Path, "?"); base == hubRoomEventsPath {
 		return c.roomEventAsk(ctx, from, req)
