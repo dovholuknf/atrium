@@ -20,6 +20,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -63,7 +64,7 @@ const (
 	KeepaliveMargin = 5 * time.Minute
 	// keepaliveMinContext is the smallest context worth keeping warm. Below it
 	// a saved wake is worth under $0.40 on Opus 5.5.
-	KeepaliveMinContext = 50_000
+	KeepaliveMinContext = rules.MinContextLimitK * 1000
 	// keepaliveBudgetFraction is the stop rule: refresh spend since the card
 	// went idle may reach this fraction of one full 1h rehydration of its
 	// context. 1/8 fits the resume data best across models.

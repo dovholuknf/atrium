@@ -169,7 +169,7 @@ var table = []row{
 		"internal/api", "internal/base/cardroot", "internal/base/forge", "internal/base/gitexec", "internal/base/safepath", "internal/daemon/shared", "internal/gitsync", "internal/roomstats", "internal/small", "internal/store", "internal/wtfree",
 	}},
 	{5, "internal/daemon/cycle", []string{
-		"internal/api", "internal/base/cardroot", "internal/base/nowindow", "internal/daemon/home", "internal/daemon/shared", "internal/small", "internal/store",
+		"internal/api", "internal/base/cardroot", "internal/base/nowindow", "internal/base/rules", "internal/daemon/home", "internal/daemon/shared", "internal/small", "internal/store",
 	}},
 	{5, "internal/daemon", []string{
 		"internal/capability",

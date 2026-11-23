@@ -133,6 +133,10 @@ func TestTheContextLimitResolvesCardThenHubThenDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(90, LimitFromCard)
+	if err := st.SetOverrides(task.ID, map[string]string{OverrideContextLimitK: "30"}); err != nil {
+		t.Fatal(err)
+	}
+	check(rules.MinContextLimitK, LimitFromCard)
 	if err := st.SetOverrides(task.ID, map[string]string{OverrideContextLimitK: ""}); err != nil {
 		t.Fatal(err)
 	}

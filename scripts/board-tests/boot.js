@@ -1,6 +1,6 @@
 // boot: what every page needs: the board loads with no page error, the service worker, contrast.
 //
-// Units: bootClean, pinHold, linkRoomPick.
+// Units: bootClean, pinHold, linkRoomPick, dialogTitlePhone.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/boot.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -135,12 +135,33 @@ async function linkRoomPickSection(browser, base) {
   console.log("linkRoomPick ok");
 }
 
+// A dialog's title sits in its head's .grow, and the phone rule that hides the header's spacers must not take it.
+async function dialogTitlePhoneSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 800 }, hasTouch: true, isMobile: true });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForFunction(() => !!document.getElementById("hooks"), null, { timeout: slow(15000) });
+    await p.evaluate(() => document.getElementById("hooks").showModal());
+    await frames(p, 2);
+    const h = await p.evaluate(() => {
+      const r = document.querySelector("#hooks .dlg-head h2").getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right), vw: innerWidth };
+    });
+    if (!(h.w > 0 && h.h > 0 && h.right <= h.vw)) fail("dialogTitlePhone: at 400px a dialog's title is not drawn on screen " + JSON.stringify(h));
+  } finally {
+    await ctx.close();
+  }
+  console.log("dialogTitlePhone ok");
+}
+
 const units = [
   { name: "bootClean", run: ({ browser, base }) => bootCleanSection(browser, base) },
   { name: "pinHold", run: ({ browser, base }) => pinHoldSection(browser, base) },
   { name: "linkRoomPick", run: ({ browser, base }) => linkRoomPickSection(browser, base) },
+  { name: "dialogTitlePhone", run: ({ browser, base }) => dialogTitlePhoneSection(browser, base) },
 ];
-const sections = { bootClean: bootCleanSection, pinHold: pinHoldSection, linkRoomPick: linkRoomPickSection };
+const sections = { bootClean: bootCleanSection, pinHold: pinHoldSection, linkRoomPick: linkRoomPickSection, dialogTitlePhone: dialogTitlePhoneSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
