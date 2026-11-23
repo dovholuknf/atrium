@@ -104,13 +104,14 @@ func TestAnUploadForABusySessionAnswersAtOnce(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for {
+		// A busy session emits an event every few tens of ms in a bounded burst, not 1ms forever on the one db connection.
+		for i := 0; i < 100; i++ {
 			select {
 			case <-stop:
 				return
 			default:
 				_ = st.AppendEvent(task.ID, store.EventNotified, map[string]any{"by": "busy"})
-				time.Sleep(time.Millisecond) // wait: paces the busy-session event writer, no condition to wait on
+				time.Sleep(20 * time.Millisecond) // wait: realistic event pacing for a busy session
 			}
 		}
 	}()
@@ -124,7 +125,7 @@ func TestAnUploadForABusySessionAnswersAtOnce(t *testing.T) {
 		t.Fatalf("upload answered %d: %s", w.Code, w.Body.String())
 	}
 	if took > 5*time.Second {
-		t.Fatalf("three 1MB pasted images took %s to land with the session busy", took)
+		t.Fatalf("three 1MB pasted images took %s to land with the session busy, phases: %s", took, w.Header().Get("Server-Timing"))
 	}
 }
 

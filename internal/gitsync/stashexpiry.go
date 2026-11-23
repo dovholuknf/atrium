@@ -20,6 +20,8 @@ import (
 // of is KEPT, never aged by its commit date alone, and a push log that cannot be read expires nothing in that
 // repository.
 //
+// A stash whose work claude/main does not hold is KEPT whatever its age.
+//
 // Only refs/heads/stash/ is ever looked at. Every expiry is logged and audited with the ref, the card and the sha, so
 // the stash can be got back with `git branch <name> <sha>` until git's own gc drops the commit.
 
@@ -115,8 +117,11 @@ func (h *Hub) expireStashesIn(ctx context.Context, e Entry, cut time.Time) ([]Ex
 		if at.After(cut) {
 			continue
 		}
+		if !h.Store().holdsAll(ctx, e.Dir, sha, ClaudeMainRef) {
+			continue
+		}
 		// The old sha is given, so a stash pushed again between the listing and here is not taken.
-		if _, err := run.Git(ctx, e.Dir, gitexec.DeleteRef{Ref: ref, Old: sha}); err != nil {
+		if err := h.Store().dropRef(ctx, e.Dir, name, ref, sha); err != nil {
 			return out, fmt.Errorf("%s: %w", ref, err)
 		}
 		card, _, _ := strings.Cut(strings.TrimPrefix(ref, stashPrefix), "/")

@@ -149,7 +149,7 @@ func gitDeleteCmd(prefix string) *cobra.Command {
 func gitSettingsCmd(prefix string) *cobra.Command {
 	var f hubStoreFlags
 	var storeDir, createOnPush string
-	var stashDays int
+	var stashDays, bundleDays int
 	c := &cobra.Command{
 		Use:   "settings",
 		Short: "Show or set git.store, git.create_on_push and git.stash_retention_days",
@@ -191,6 +191,11 @@ func gitSettingsCmd(prefix string) *cobra.Command {
 					return err
 				}
 			}
+			if cmd.Flags().Changed("bundle-retention-days") {
+				if err := st.SetBundleRetentionDays(bundleDays); err != nil {
+					return err
+				}
+			}
 			path, err := st.GitStorePath(f.keys().Dir)
 			if err != nil {
 				return err
@@ -207,12 +212,18 @@ func gitSettingsCmd(prefix string) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(w, "git.stash_retention_days  %s\n", stashRetentionSaid(days))
+			bdays, err := st.BundleRetentionDays()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(w, "git.bundle_retention_days  %s\n", stashRetentionSaid(bdays))
 			return nil
 		},
 	}
 	c.Flags().StringVar(&storeDir, "store", "", "set git.store, an absolute path on this machine (empty is the default)")
 	c.Flags().StringVar(&createOnPush, "create-on-push", "", "set git.create_on_push: on or off")
 	c.Flags().IntVar(&stashDays, "stash-retention-days", 30, "set git.stash_retention_days: days a close's stash stays on the hub, 0 for never")
+	c.Flags().IntVar(&bundleDays, "bundle-retention-days", 30, "set git.bundle_retention_days: days the bundle of a landed branch the hub deleted is kept, 0 for never")
 	f.bind(c, prefix)
 	return c
 }

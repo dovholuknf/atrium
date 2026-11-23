@@ -339,6 +339,7 @@
         "internal/api/web/m/js/build.js",
         "internal/api/web/m/js/push.js",
         "internal/api/web/m/js/items.js",
+        "internal/api/web/m/js/views.js",
         "internal/api/web/css/phone.css",
         "internal/api/web/m/*.css"
       ],

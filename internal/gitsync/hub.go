@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
@@ -82,6 +83,10 @@ type Hub struct {
 	// StashRetentionDays is the `git.stash_retention_days` setting: how old a close's stash is let get before the
 	// collect timer removes it. Nil is DefaultStashRetentionDays, 0 is never. See stashexpiry.go.
 	StashRetentionDays func() int
+	// BundleRetentionDays is the `git.bundle_retention_days` setting: how long the bundle of a deleted landed branch
+	// is kept. Nil is DefaultBundleRetentionDays, 0 is never. See branchhygiene.go.
+	BundleRetentionDays func() int
+	unlanded            atomic.Int64
 	// LookupTTL and LookupWait override how long a room's answer to the lookup is held, and how long a room has
 	// to give it, when above zero. A test sets them. See lookup.go.
 	LookupTTL, LookupWait time.Duration
@@ -880,6 +885,7 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 	go func() {
 		t := time.NewTicker(collectEvery)
 		defer t.Stop()
+		var swept time.Time
 		for {
 			select {
 			case <-ctx.Done():
@@ -898,6 +904,13 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 			_, err := h.ExpireStashes(ctx)
 			if ctx.Err() == nil {
 				h.auditFailure("", "git-stash-expiry", "stash-expiry", err)
+			}
+			if time.Since(swept) >= SweepEvery {
+				swept = time.Now()
+				err := h.SweepAll(ctx)
+				if ctx.Err() == nil {
+					h.auditFailure("", "git-branch-sweep", "branch-sweep", err)
+				}
 			}
 		}
 	}()

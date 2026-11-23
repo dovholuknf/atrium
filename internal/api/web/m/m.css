@@ -224,7 +224,6 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .q-box::placeholder { color: var(--dim); }
 .q-mic { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; display: grid; place-items: center; background: transparent; color: var(--label); }
 .q-mic svg { width: 22px; height: 22px; }
-.q-mic.hot { background: var(--danger); color: var(--bg-0); }
 .q-done { flex: none; min-width: 64px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 20px; background: var(--teal); color: var(--bg-0); font-size: 15px; font-weight: 700; }
 .q-send { display: block; width: 100%; margin-top: 12px; min-height: 44px; border: 0; border-radius: 22px; background: var(--teal); color: var(--bg-0); font-size: 15px; font-weight: 700; }
 .m .q-send, .m .q-done, .m .q-chip.on, .m .mc-send { color: var(--bg-0); }
