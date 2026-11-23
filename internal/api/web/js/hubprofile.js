@@ -5,6 +5,8 @@
 // the row is read-only. Only on a hub: a 404 hides the row. Read when the gear opens and on a stream reopen.
 
 let hcProfile = {};
+// An edit in the boxes is kept when a stream reopen reads the profile again.
+let hcDirty = false;
 
 function hcEl(id) { return document.getElementById(id); }
 
@@ -19,6 +21,11 @@ async function loadHubProfile() {
   hcProfile = {};
   if (r.ok) { try { hcProfile = (await r.json()) || {}; } catch (e) { hcProfile = {}; } }
   hcEl("s-hc-msg").textContent = r.ok ? "" : "set your name and email, or git config --global user.name and user.email on the hub's machine";
+  if (!row.dataset.dirtyWired) {
+    row.dataset.dirtyWired = "1";
+    for (const id of ["s-hc-name", "s-hc-email"]) hcEl(id).addEventListener("input", () => { hcDirty = true; });
+  }
+  if (hcDirty) return;
   hcEl("s-hc-name").value = hcProfile.name || "";
   hcEl("s-hc-email").value = hcProfile.email || "";
 }
@@ -38,6 +45,7 @@ async function saveHubProfile() {
     }
     if (!r.ok) { msg.textContent = "the hub refused it: " + ((await r.text()) || r.status); return; }
     hcProfile = body;
+    hcDirty = false;
     msg.textContent = "saved";
   } catch (e) { msg.textContent = "could not reach the hub"; }
 }
