@@ -62,7 +62,7 @@ const BACKLOG_COLS = [
 function paintBacklogTab() {
   const tab = document.querySelector('.tab[data-view="backlog"]');
   if (!tab) return;
-  tab.hidden = !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  tab.hidden = !areaOn("backlog") || typeof hubIsHub === "undefined" ? true : !hubIsHub;
 }
 
 async function backlogGet(path) {

@@ -15,3 +15,6 @@ caps:
   - {id: zrok, kind: toolchain, probe: [zrok, version], optional: true}
   - {id: ssh, kind: toolchain, probe: [ssh, -V], version: 'OpenSSH_(\S+)', optional: true}
   - {id: wslc, kind: toolchain, probe: ['${ProgramFiles}/WSL/wslc.exe', --help], optional: true}
+  - {id: ollama, kind: toolchain, probe: [ollama, --version], version: 'version is (\d+\.\d+\.\d+)', optional: true}
+  - {id: llama-server, kind: toolchain, probe: [llama-server, --version], version: 'build (\d+)', optional: true}
+  - {id: opencode, kind: toolchain, probe: [opencode, --version], version: '(\d+\.\d+\.\d+)', optional: true}

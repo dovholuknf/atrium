@@ -122,10 +122,28 @@ func repoOfCheckout() (string, error) {
 
 func repoFromRemote(remote string) (string, error) { return roommove.RepoFromRemote(remote) }
 
+// cardLauncher is the card this command runs inside, as a launch names its parent, or "" outside a card. The room is
+// added because the hub may place the new card on another room.
+func cardLauncher() (by, byID string) {
+	name, id := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")), strings.TrimSpace(os.Getenv("ATRIUM_TASK_ID"))
+	room := strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))
+	if name == "" || id == "" {
+		return "", ""
+	}
+	if room == "" || strings.Contains(name, "@") {
+		return name, ""
+	}
+	if !strings.Contains(id, "~") {
+		id = room + "~" + id
+	}
+	return name + "@" + room, id
+}
+
 func startNew(repo, name string, o newOpts) error {
 	board := boardAddress(o.boardURL)
+	by, byID := cardLauncher()
 	body, err := json.Marshal(map[string]string{"repo": repo, "name": name, "from": strings.TrimSpace(o.from),
-		"prompt": o.prompt, "harness": o.runner, "twig": o.twig})
+		"prompt": o.prompt, "harness": o.runner, "twig": o.twig, "spawned_by": by, "spawned_by_id": byID})
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/userenv"
 )
 
 // outMax bounds what is read from a probe, while it is read.
@@ -46,6 +47,7 @@ type Auditor struct {
 	list    List
 	results map[string]Result
 	running map[string]bool
+	hw      *Hardware
 	run     sync.Mutex
 }
 
@@ -85,12 +87,14 @@ type Snapshot struct {
 	Caps    []Cap    `json:"caps"`
 	Results []Result `json:"results"`
 	Running []string `json:"running,omitempty"`
+
+	Hardware *Hardware `json:"hardware,omitempty"`
 }
 
 func (a *Auditor) Snapshot() Snapshot {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	s := Snapshot{Version: a.list.Version, Caps: append([]Cap(nil), a.list.Caps...)}
+	s := Snapshot{Version: a.list.Version, Caps: append([]Cap(nil), a.list.Caps...), Hardware: a.hw}
 	for _, c := range a.list.Caps {
 		if r, ok := a.results[c.ID]; ok {
 			s.Results = append(s.Results, r)
@@ -100,6 +104,13 @@ func (a *Auditor) Snapshot() Snapshot {
 		}
 	}
 	return s
+}
+
+// SetHardware keeps the newest hardware probe.
+func (a *Auditor) SetHardware(h Hardware) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.hw = &h
 }
 
 // ErrBusy is a run asked for while one is going.
@@ -249,6 +260,9 @@ func (a *Auditor) Probe(ctx context.Context, c Cap) Result {
 			return finish(Unknown, "probe names a path this room has not set")
 		}
 		argv[i] = v
+	}
+	if p, err := userenv.LookPath(argv[0]); err == nil {
+		argv[0] = p
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	if c.Dir != "" {

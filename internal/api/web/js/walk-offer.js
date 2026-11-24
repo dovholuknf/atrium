@@ -35,7 +35,7 @@ function walkOfferText(t) {
 
 // The chip on a card row. Only a done card has one: every other card is walked from its terminal bar.
 function walkChip(t) {
-  if (!t || t.status !== "done" || !t.worktree) return "";
+  if (!t || t.status !== "done" || !t.worktree || !flagOn("walk")) return "";
   walkOfferRead(t);
   const o = walkOffers.get(t.id);
   if (o && o.n === 0 && !o.landed) return "";
@@ -61,7 +61,7 @@ async function walkOfferOpen(id) {
 function walkOfferEvent(d, was) {
   if (!d || !d.id || d.status !== "done" || (was && was.status === "done")) return false;
   walkOfferRead(d);
-  if (!was || !walkOffered(d) || typeof toast !== "function") return true;
+  if (!was || !walkOffered(d) || typeof toast !== "function" || !flagOn("walk")) return true;
   if ((d.spawned_by_id || d.spawned_by) && d.spawned_by !== "@human") return true;
   const name = d.title || d.wire_name || "a card";
   toast(name + " is done", "its changes are ready to walk", "", "", d.id);
@@ -70,7 +70,7 @@ function walkOfferEvent(d, was) {
 
 // The card menu's entry, always there on a card with a directory.
 function walkMenuItem(t) {
-  if (!t || !t.worktree) return null;
+  if (!t || !t.worktree || !flagOn("walk")) return null;
   const o = walkOffers.get(t.id);
   return {
     label: "walk this card's changes",

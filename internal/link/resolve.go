@@ -2,6 +2,7 @@ package link
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,16 @@ import (
 // ACROSS ROOMS NOTHING KEEPS TWO ALIASES APART, so one live match wins, no live
 // match and one done match wins, and anything else is ambiguous. A script is
 // told both rather than reaching whichever room answered first.
+
+// TerminalURL is where a human opens a card's terminal: `<board>/<room>/terminal/<handle>`. A card with no room or no
+// wire name gets the id form `#term=`, which keeps working for every link already sent.
+func TerminalURL(board, room, wire, id string) string {
+	handle := wire[strings.LastIndex(wire, "/")+1:]
+	if room == "" || handle == "" {
+		return board + "/#term=" + url.PathEscape(id)
+	}
+	return board + "/" + url.PathEscape(room) + "/terminal/" + url.PathEscape(handle)
+}
 
 // candidate is one card that answers to a name, and its room.
 type candidate struct {

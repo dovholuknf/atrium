@@ -105,7 +105,7 @@ function toggleWalk() {
 
 async function dockOpen() {
   const drawer = document.getElementById("walk-drawer");
-  if (!drawer || !dock.tenant || !termTask) return;
+  if (!drawer || !dock.tenant || !termTask || (typeof flagOn === "function" && !flagOn("walk"))) return;
   dock.open = true;
   dock.want = dock.taskId;
   const done = typeof cardRows !== "undefined" && cardRows.get(dock.taskId);
@@ -745,6 +745,7 @@ function walkDirOpen(dir) {
 }
 // `<board>/#card=<card>&walk=<folder>`, the link an agent prints for a handoff: { id, dir }, or null.
 function walkLinkOf(url) {
+  if (typeof flagOn === "function" && !flagOn("walk")) return null;
   let u;
   try { u = new URL(url); } catch (e) { return null; }
   const q = new URLSearchParams(u.hash.slice(1));

@@ -3,11 +3,15 @@
 // Launching from one card nests the new one under it, and that is not always who drives it. The room does the change
 // (`POST /v1/tasks/{id}/parent`), so every launcher-reading path agrees. See `ChangeParent` in internal/store/a2a.go.
 
-// The room's other cards a card could nest under: same room, a handle to be known by, and not itself.
+// The other cards a card could nest under: a handle to be known by, and not itself. One on another room is name@room.
 function parentChoices(t) {
   return (typeof lastTasks === "undefined" ? [] : lastTasks)
-    .filter(c => roomOf(c.id) === roomOf(t.id) && !sameCard(c.id, t.id) && c.wire_name)
-    .map(c => ({ value: bareId(c.id), label: (c.display_title || c.title || c.wire_name) + "  ·  " + c.wire_name }));
+    .filter(c => !sameCard(c.id, t.id) && c.wire_name)
+    .map(c => {
+      const here = roomOf(c.id) === roomOf(t.id);
+      const handle = here ? c.wire_name : c.wire_name + "@" + roomOf(c.id);
+      return { value: here ? bareId(c.id) : handle, label: (c.display_title || c.title || c.wire_name) + "  ·  " + handle };
+    });
 }
 
 function parentMenuItem(t) {

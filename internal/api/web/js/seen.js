@@ -21,18 +21,18 @@ const SEEN_DWELL_MS = 3000;
 const SEEN_TICK_MS = 500;
 
 // The unread dot and the questions chip, drawn on a board card and on a
-// terminal strip row.
-function seenChips(t, noDot) {
+// terminal strip row. `noQs` leaves the questions to the attention queue's pill.
+function seenChips(t, noDot, noQs) {
   const s = t && t.seen;
   let out = typeof answerChip === "function" ? answerChip(t) : "";
   if (!s) return out;
-  if (s.unseen && !noDot) {
+  if (s.unseen && !noDot && flagOn("seen")) {
     out += `<span class="chip unseen"
       data-tip="this session's last turn ended and nobody has looked at it since. attach and read it, or type to it, and this clears"
       >&#9679;</span>`;
   }
   const qs = s.open_questions || [];
-  if (s.answered === false && (qs.length || s.questions_unparsed)) {
+  if (!noQs && s.answered === false && (qs.length || s.questions_unparsed)) {
     // An exited session cannot be replied to, so the questions only clear by a click (or once it is started again).
     const gone = typeof termCold === "function" && termCold(t);
     const clears = gone ? "it has exited, so nothing can reply to it. click to dismiss them"

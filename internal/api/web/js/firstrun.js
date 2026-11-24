@@ -346,6 +346,11 @@
     if (tw || !naS || naS.kind !== "folder" || runIn !== "copy") return origLaunch(tw);
     const path = naFolder(), title = naTitle();
     if (!path) return origLaunch(tw);
+    if (await gitAt(slash(path)) === false) {
+      runIn = "place"; naRender();
+      naSay("in a copy needs a git repository, and " + leaf(slash(path)) + " is not one. pick in place", true);
+      return;
+    }
     Object.assign(naS, { kind: "repo", title, titleTouched: true });
     naSetRepo(path, null);
     try { return await origLaunch(tw); }
@@ -378,7 +383,11 @@
     row.hidden = !fold; $("fr-folders").hidden = !fold || !folders.length;
     const cwd = slash(($("na-cwd").value || "").trim());
     const f = folders.find(x => x.path === cwd);
-    const nogit = !!f && f.git === false;
+    const nogit = (!!f && f.git === false) || gitOf.get(cwd) === false;
+    if (fold && cwd && !gitOf.has(cwd) && !(f && f.git != null)) {
+      clearTimeout(gitTimer);
+      gitTimer = setTimeout(() => gitAt(cwd).then(() => { if (naS && naEl("na").open) paintRun(); }), 300);
+    }
     if (nogit && runIn === "copy") runIn = "place";
     $("fr-run").querySelectorAll("button").forEach(b => {
       b.classList.toggle("on", b.dataset.v === runIn);
@@ -388,6 +397,17 @@
     if (fold) $("na-go").firstElementChild.textContent = "launch in " + (cwd ? leaf(cwd) : "folder");
   }
   document.addEventListener("input", e => { if (e.target.id === "na-cwd") setTimeout(paintRun, 0); });
+  // A typed folder is not in the chips, so the room says whether it holds a .git. null is a folder it cannot see.
+  const gitOf = new Map();
+  let gitTimer = 0;
+  async function gitAt(cwd) {
+    if (gitOf.has(cwd)) return gitOf.get(cwd);
+    let out = null;
+    try { out = await api("/v1/browse?quiet=1&path=" + encodeURIComponent(cwd)); } catch (e) {}
+    const known = out && out.path && slash(out.path).toLowerCase() === cwd.toLowerCase();
+    gitOf.set(cwd, known ? !!out.repo : null);
+    return gitOf.get(cwd);
+  }
 
   // ── adopt an existing session ──────────────────────────────────────────────
   const adopt = document.createElement("dialog");

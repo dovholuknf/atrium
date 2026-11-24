@@ -39,6 +39,9 @@ const nest = termNest([orch2, resident]);
 is((nest.kids.get(orch2.id) || []).map(x => x.id).join(), resident.id, "a resident launched on another room nests under its launcher");
 const director = Object.assign({}, resident, { id: "room-d~d1", tags: ["atrium:director", "atrium:resident", "origin:agent"] });
 is(termNest([orch2, director]).nested.has(director.id), false, "a director stays a top row");
+const untagged = { id: "room-d~u1", spawned_by: "orchestrator-room-e-control@room-e-control", tags: [] };
+is(termNest([orch2, untagged]).nested.has(untagged.id), true, "an untagged card with a launcher, a CLI launch or a re-parent, nests");
+is(termNest([orch2, { id: "room-d~h1", spawned_by: "@human", tags: [] }]).nested.size, 0, "a card the human launched stays a top row");
 
 if (bad) process.exit(1);
 console.log("ok: launcherOf same room");

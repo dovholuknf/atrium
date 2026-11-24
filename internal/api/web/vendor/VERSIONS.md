@@ -10,6 +10,7 @@ The board has to work offline and over an overlay, so nothing here comes from a 
 | `xterm-addon-webgl.js` | `@xterm/addon-webgl` | 0.18.0 | `9ffa9ac3ff6d47d4e6216ed1972ca8e0b5336cef744f50ebdc3f67b0ed727cdb` |
 | `xterm-addon-search.js` | `@xterm/addon-search` | 0.15.0 | `3cf52d71d9deb4ba60125087434c53e3fb35bb2249db9b13987991fd2db1c7bd` |
 | `xterm-addon-web-links.js` | `@xterm/addon-web-links` | 0.11.0 | `f230a6c8211ce4614dda5441f27b603c7c1ca95151a655bc0efac6377ee643f0` |
+| `xterm-addon-unicode11.js` | `@xterm/addon-unicode11` | 0.8.0 | `b0c3be540a9984713aea996966c24ed1a639d11f60d44986b22661e3a8a148d0` |
 | `marked.js` | `marked` (`lib/marked.umd.js`) | 12.0.2 | `27ade2eccd4d58ab5edeb4f046eae71f204979547c4575fa11e294332d30a291` |
 | `purify.js` | `dompurify` (`dist/purify.min.js`) | 3.1.6 | `c0845096a7c4a6741f362ac506c94c1c7d27dc603bcc1bf64a587f76f2dbe3a1` |
 
@@ -32,7 +33,7 @@ sha256sum package/lib/xterm.js internal/api/web/vendor/xterm.js
 
 ## Upgrading
 
-Take the core and every addon from the same release wave, replace all five files, and check the terminal
+Take the core and every addon from the same release wave, replace every xterm file, and check the terminal
 actually renders on the GPU afterwards. The check is not "does it work": the DOM fallback also works. Open dev
 tools and look for a `<canvas>` under `#t-screen` rather than rows of `<span>` with `xterm-dom-renderer-owner`
 on the container.

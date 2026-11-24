@@ -452,7 +452,7 @@ async function launchLinkSection(browser, base) {
       return got;
     });
     if (walked.walks.join() !== "/w/x" || walked.tabs.join() !== "http://127.0.0.1:1/#card=c2&walk=/w/y") fail("launchLink: walk links " + JSON.stringify(walked));
-    // A link to this board under another spelling opens on this origin, and a bare board hash navigates in place.
+    // A loopback link to this board opens on this origin, atrium.ziti opens where it says, a board hash navigates in place.
     const rew = await p.evaluate(() => {
       const got = { tabs: [] };
       window.openLinkReused = u => got.tabs.push(u);
@@ -467,8 +467,8 @@ async function launchLinkSection(browser, base) {
       return got;
     });
     const o = base;
-    const want = [o + "/room/r1/c1/files/a.html?x=1#h", o + "/room/r1/c1/files/b.html", o + "/room/r1/c1/files/c.html",
-      "https://example.com/room/r1/c1/files/d.html"];
+    const want = [o + "/room/r1/c1/files/a.html?x=1#h", "http://atrium.ziti/room/r1/c1/files/b.html",
+      "http://atrium.ziti:" + new URL(o).port + "/room/r1/c1/files/c.html", "https://example.com/room/r1/c1/files/d.html"];
     if (rew.tabs.join() !== want.join()) fail("launchLink: rewrite " + JSON.stringify(rew.tabs));
     if (rew.hash !== "#view=cards") fail("launchLink: hash link did not navigate in place: " + rew.hash);
     const man = await p.evaluate(() => document.querySelector('link[rel="manifest"]') && document.querySelector('link[rel="manifest"]').getAttribute("href"));

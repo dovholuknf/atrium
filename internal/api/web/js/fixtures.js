@@ -1222,6 +1222,7 @@ async function linkRoomFor(got) {
 // the way to the launch dialog first. A link nothing recognises comes back to the bar with the reason. Pasting into a
 // box, a terminal or while a dialog is open is the page's own business.
 document.addEventListener("paste", async e => {
+  if (!flagOn("paste")) return;
   const t = e.target;
   if ((t && (t.closest ? t.closest("input, textarea, select, [contenteditable], .xterm") : null)) ||
       document.querySelector("dialog[open]")) return;
@@ -1955,6 +1956,12 @@ async function launchNow(opening) {
     } catch (e) {
       if (!(e.body && e.body.code === "not_openable")) {
         const held = e && e.body && (e.body.code === "held" || e.body.code === "launch_failed") ? e.body.card : "";
+        if (held) {
+          linkOpeningEnd(id);
+          toast(url, "already has a card, here it is");
+          await linkOpeningGoto(held);
+          return;
+        }
         linkOpeningFail(id, e && e.name === "AbortError" ? "the room did not answer in 5 minutes" : (e && e.message) || String(e), held);
         return;
       }

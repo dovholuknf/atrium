@@ -50,6 +50,9 @@
      want. A URL is the one with a scheme in it and the more specific claim, so
      it goes first. -->
 <script src="/vendor/xterm-addon-web-links.js"></script>
+<!-- Unicode 11 widths, so a wide emoji takes the two cells the program printing it counted.
+     addon-unicode11 0.8.0, from the same wave as the rest. -->
+<script src="/vendor/xterm-addon-unicode11.js"></script>
 <!-- This order is the cascade, not an alphabetical list. Several rules rely on coming after another rule of the
      same specificity, so reordering these links changes what the board looks like. tokens first because every
      other file reads its custom properties, phone and themes last because they override what is above them. -->
@@ -149,7 +152,8 @@
         var rest = q.toString();
         to = "/m/" + (rest ? "?" + rest : "") + (land ? "#term=" + encodeURIComponent(land) : /^#term=/.test(h) ? h : "");
       }
-      else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p)) to = "/m" + p;
+      else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p) ||
+        /^\/(?!(?:alias|room|m|v1|js|css|icons)\/)[^/]+\/terminal\/[^/]+\/?$/.test(p)) to = "/m" + p;
       else if ((m = /^\/room\/([^/]+)\/?$/.exec(p))) { localStorage.setItem("atrium.room", decodeURIComponent(m[1])); to = "/m/"; }
       if (!to) return why("not redirected, no /m page for " + p + " (" + seen + ")");
       // With ?why=1 the line is left up for a few seconds first, since the page is about to be replaced.
@@ -1621,8 +1625,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
             <label class="ac-check"><input type="checkbox" id="s-termwear-exited"
               onchange="toggleTermWear('exited', this.checked)"> exited rows keep their theme, faded</label>
           </div>
-          <label>emerging <span class="help" tabindex="0" data-tip="Shows the areas that are not finished: the items, pulls, repos and backlog tabs, and the hub documents on the files tab. Kept in this browser only.">?</span></label>
-          <label class="ac-check"><input type="checkbox" id="s-emerging" onchange="emergingSet(this.checked)"> use emerging features</label>
         </div>
       </div>
 
@@ -2107,6 +2109,70 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b>Suspended for this room:</b> <span id="s-keepalive-why"></span>.
         No card is refreshed until this is cleared.
         <button type="button" onclick="clearKeepaliveSuspension()">clear it</button>
+      </div>
+    </div>
+    <h3 class="s-section">experimental features</h3>
+    <div class="field s-one">
+      <div class="ac-block">
+        <h4 class="ac-title">Experimental <span class="help" tabindex="0" data-tip="Not finished. Off hides every way in, and turning one on again brings it back as it was. Kept in this browser only.">?</span></h4>
+        <div class="ac-grid s-grid">
+          <label>review <span class="help" tabindex="0" data-tip="Walking an agent's changes: the walk ready chip on a done card and its toast, Review the changes in the card menu, the review drawer beside the terminal, the review view in the chat tab, and a pull's walk page.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="walk" onchange="flagSet(this.dataset.flag, this.checked)"> use the review</label>
+          <label>attention queue <span class="help" tabindex="0" data-tip="The asks waiting on you as an N for you pill beside the terminals filter box, which lists them in place of the sessions, with the ask picked over its card's terminal. It takes the place of the queue tab and of the questions chip on a terminal row.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="attention" onchange="flagSet(this.dataset.flag, this.checked)"> use the attention queue</label>
+          <label>board <span class="help" tabindex="0" data-tip="The board tab: cards laid out as a board.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="board" onchange="flagSet(this.dataset.flag, this.checked)"> show board tab</label>
+          <label>stack <span class="help" tabindex="0" data-tip="The stack tab.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="stack" onchange="flagSet(this.dataset.flag, this.checked)"> show stack tab</label>
+          <label>history <span class="help" tabindex="0" data-tip="The history tab.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="history" onchange="flagSet(this.dataset.flag, this.checked)"> show history tab</label>
+          <label>audit <span class="help" tabindex="0" data-tip="The audit tab, on a hub.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="audit" onchange="flagSet(this.dataset.flag, this.checked)"> show audit tab</label>
+          <label>items <span class="help" tabindex="0" data-tip="The items tab on a hub, and the items door on the phone.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="items" onchange="flagSet(this.dataset.flag, this.checked)"> show items tab</label>
+          <label>pulls <span class="help" tabindex="0" data-tip="The pulls tab.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="pulls" onchange="flagSet(this.dataset.flag, this.checked)"> show pulls tab</label>
+          <label>repos <span class="help" tabindex="0" data-tip="The repos tab, on a hub.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="hubrepos" onchange="flagSet(this.dataset.flag, this.checked)"> show repos tab</label>
+          <label>backlog <span class="help" tabindex="0" data-tip="The backlog tab, on a hub.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="backlog" onchange="flagSet(this.dataset.flag, this.checked)"> show backlog tab</label>
+          <label>hub documents <span class="help" tabindex="0" data-tip="The hub documents on the files tab, and on the phone's files list.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="hubdocs" onchange="flagSet(this.dataset.flag, this.checked)"> show hub documents</label>
+        </div>
+      </div>
+
+      <div class="ac-block">
+        <h4 class="ac-title">Feature flags <span class="help" tabindex="0" data-tip="Each is a finished part of the board that can be turned off without breaking the rest. Off hides its tab, button, chip or key, and nothing it stored is lost. Kept in this browser only.">?</span></h4>
+        <div class="ac-grid s-grid">
+          <label>queue <span class="help" tabindex="0" data-tip="The queue tab and the count of asks waiting on you in the header.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="queue" onchange="flagSet(this.dataset.flag, this.checked)"> queue tab and its badge</label>
+          <label>chat <span class="help" tabindex="0" data-tip="The chat tab: a card's conversation as bubbles, with its composer.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="chat" onchange="flagSet(this.dataset.flag, this.checked)"> chat tab</label>
+          <label>usage <span class="help" tabindex="0" data-tip="The usage tab, and a card's token use in its details.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="usage" onchange="flagSet(this.dataset.flag, this.checked)"> usage tab and token use</label>
+          <label>agent messages <span class="help" tabindex="0" data-tip="The messages between agents tab: every say from one session to another.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="chatter" onchange="flagSet(this.dataset.flag, this.checked)"> messages between agents tab</label>
+          <label>path links <span class="help" tabindex="0" data-tip="A file path printed in a terminal is a link that opens the file. Off, it is plain text.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="pathlinks" onchange="flagSet(this.dataset.flag, this.checked)"> paths in a terminal open the file</label>
+          <label>mic <span class="help" tabindex="0" data-tip="Push-to-talk: the mic at the bottom of the screen and the held key, with the dictation pane of this dialog.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="mic" onchange="flagSet(this.dataset.flag, this.checked)"> mic and push-to-talk key</label>
+          <label>pop out <span class="help" tabindex="0" data-tip="Opening one terminal in a window of its own, from its bar and the card menu.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="popout" onchange="flagSet(this.dataset.flag, this.checked)"> terminals pop out to a window</label>
+          <label>left off <span class="help" tabindex="0" data-tip="Coming back to a terminal marks the first new line with a divider and counts the lines below the view.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="lastread" onchange="flagSet(this.dataset.flag, this.checked)"> mark where I left off</label>
+          <label>made files <span class="help" tabindex="0" data-tip="What this session made: the files, reports and published pages slide-out beside a terminal.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="artifacts" onchange="flagSet(this.dataset.flag, this.checked)"> what this session made</label>
+          <label>answers <span class="help" tabindex="0" data-tip="Answering a card's open questions from its peek, with drafts kept on the card and the mail chip that says one is held.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="answers" onchange="flagSet(this.dataset.flag, this.checked)"> answer from the peek</label>
+          <label>quick replies <span class="help" tabindex="0" data-tip="The one-press answers a card offers on the growler.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="replies" onchange="flagSet(this.dataset.flag, this.checked)"> one-press replies</label>
+          <label>unseen marks <span class="help" tabindex="0" data-tip="The dot on a card whose latest turn nobody has looked at yet.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="seen" onchange="flagSet(this.dataset.flag, this.checked)"> dot a turn nobody saw</label>
+          <label>switcher <span class="help" tabindex="0" data-tip="The go-there-now box and its key (ctrl-shift-k by default).">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="switcher" onchange="flagSet(this.dataset.flag, this.checked)"> switcher and its key</label>
+          <label>pasted links <span class="help" tabindex="0" data-tip="A link pasted on the board opens what it names: a pull, an issue, a branch, or new work for a repository link.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="paste" onchange="flagSet(this.dataset.flag, this.checked)"> a pasted link opens it</label>
+        </div>
       </div>
     </div>
 

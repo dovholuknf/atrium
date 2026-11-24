@@ -213,6 +213,11 @@ if ! node "$here/scripts/test-launcher-same-room.js"; then
   fail=1
 fi
 
+if ! node "$here/scripts/test-nested-sort.js"; then
+  echo "a nested card or its parent files by something other than the sort key. see above." >&2
+  fail=1
+fi
+
 # Run sorting checks with tied cards and different input orders to catch
 # rows that would otherwise move between unchanged polls.
 if ! node "$here/scripts/test-sort-order.js"; then

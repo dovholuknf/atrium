@@ -121,8 +121,18 @@ const check = (name, ok, extra) => { if (!ok) { failed++; console.error("FAIL: "
     await until("the folders through a junction into home", () => page.$$eval("#na-cwd-fc option", e => e.some(o => /\/AppData\/$/.test(o.value))));
     check("the folder box completes through a junction that leads into home", true);
     await shot("launch");
+    const fwd = p => p.replace(/\\/g, "/");
+    fs.mkdirSync(path.join(home, "work", "repo", ".git"), { recursive: true });
+    await page.fill("#na-cwd", fwd(path.join(home, "work", "repo")));
     await page.click('#fr-run [data-v="copy"]');
     check("in a copy can be picked", await page.$eval('#fr-run [data-v="copy"]', e => e.classList.contains("on")));
+    await page.fill("#na-cwd", fwd(path.join(home, "work", "inner")));
+    await until("a typed folder with no git to fall back to in place", () => page.$eval("#fr-run", e =>
+      e.querySelector('[data-v="copy"]').disabled && e.querySelector('[data-v="place"]').classList.contains("on")));
+    check("a typed folder with no git turns in a copy off", true);
+    await page.fill("#na-cwd", fwd(path.join(home, "work", "repo")));
+    await until("a typed git folder to offer in a copy again", () => page.$eval('#fr-run [data-v="copy"]', e => !e.disabled));
+    check("a typed git folder offers in a copy again", true);
     await page.click("#na-x");
 
     await page.click('#fr-pane [data-act="adopt"]');

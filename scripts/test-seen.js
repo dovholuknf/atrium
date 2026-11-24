@@ -22,6 +22,7 @@ const make = new Function("document", "WebSocket", "api", "esc", `
   let term = null, termTask = null, termSock = null, termKind = "runner";
   let termListOpen = false, lastTasks = [];
   const termNarrow = () => false;
+  const flagOn = () => true;
   const ago = s => Math.floor(s / 60) + "m";
   const refreshSoon = () => {};
   const bareId = id => String(id).replace(/^[^~]*~/, "");

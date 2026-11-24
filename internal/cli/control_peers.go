@@ -704,7 +704,7 @@ type LaunchInput struct {
 	Lean    *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. false starts it with the operator's whole setup"`
 	MCP     []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
 	Theme   string   `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
-	Needs   []string `json:"needs,omitempty" jsonschema:"capability ids the room must pass, like ssh:agentwsl. the launch goes only to a room where every one passes, newer than 24h, and is refused with each room's reason when none does. see atrium_capabilities"`
+	Needs   []string `json:"needs,omitempty" jsonschema:"capability ids the room must pass, like ssh:agentwsl, or hardware: gpu, gpu:cuda, gpu:rocm, gpu:metal, vram>=12g, ram>=32g, disk>=100g (free), cores>=8. the launch goes only to a room where every one passes, newer than 24h, and is refused with each room's reason when none does. see atrium_capabilities"`
 }
 
 type LaunchOutput struct {

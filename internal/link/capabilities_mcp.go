@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/capability"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
@@ -29,7 +30,7 @@ const capToolDesc = "What each room can do: reach (ssh aliases, ziti controllers
 
 type capInput struct {
 	Action string   `json:"action" jsonschema:"which, room, list or run"`
-	Need   []string `json:"need,omitempty" jsonschema:"for which: capability ids that must all pass, like ssh:agentwsl"`
+	Need   []string `json:"need,omitempty" jsonschema:"for which: capability ids that must all pass, like ssh:agentwsl, or hardware like gpu:cuda or vram>=12g"`
 	Fresh  string   `json:"fresh,omitempty" jsonschema:"for which: how recent a pass must be, like 6h. default 24h"`
 	Room   string   `json:"room,omitempty" jsonschema:"for room and run: the room's name"`
 	Kind   string   `json:"kind,omitempty" jsonschema:"for list: reach, toolchain, build or access"`
@@ -107,6 +108,9 @@ func CapabilityWhich(v CapabilityView, need []string, fresh time.Duration, now t
 		all, stale := true, false
 		for _, n := range need {
 			c, ok := got[wire.KeyOf(rm.Name)][n]
+			if !ok {
+				c, ok = hardwareCell(n, rm.Hardware)
+			}
 			switch {
 			case !ok:
 				m.Results[n] = "unknown"
@@ -131,6 +135,21 @@ func CapabilityWhich(v CapabilityView, need []string, fresh time.Duration, now t
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].OK && !out[j].OK })
 	return out
+}
+
+// hardwareCell judges a need like gpu:cuda or vram>=12g from the room's hardware, false for any other need.
+func hardwareCell(n string, h *capability.Hardware) (capCell, bool) {
+	if h == nil {
+		return capCell{}, false
+	}
+	handled, ok, why := capability.HardwareNeed(n, *h)
+	if !handled {
+		return capCell{}, false
+	}
+	if ok {
+		return capCell{Cap: n, State: "pass", At: h.At}, true
+	}
+	return capCell{Cap: n, State: "fail", Reason: why, At: h.At}, true
 }
 
 func (c *controlMCP) registerCapabilities(s *mcp.Server, class ctl.Class) {

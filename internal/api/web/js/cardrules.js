@@ -194,13 +194,11 @@ function cardHidden(t) {
   if (!isMinion(t) || minionShown() || cardNeedsYou(t)) return false;
   return !(typeof termTask !== "undefined" && termTask && termTask.id === t.id);
 }
-// A RESIDENT AN AGENT LAUNCHED (`resident: true`) carries `atrium:resident` and not `atrium:subagent`, and nests like a worker.
-// A director stays a top row.
-const RESIDENT_TAG = "atrium:resident";
+// A director stays a top row. Any other card nests under its launcher, tagged or not: a CLI launch and a re-parent add no tag.
 const DIRECTOR_TAG = "atrium:director";
 function nestsUnderLauncher(t) {
   const has = tag => !!(t && Array.isArray(t.tags) && t.tags.some(x => String(x).trim().toLowerCase() === tag));
-  return (isSubagent(t) || (has(RESIDENT_TAG) && !has(DIRECTOR_TAG))) && !isInterview(t);
+  return !!t && (isSubagent(t) || !has(DIRECTOR_TAG)) && !isInterview(t);
 }
 
 // THE CARD THAT LAUNCHED `t`, from `cards`, or null. Every list that nests a child under its launcher asks this one

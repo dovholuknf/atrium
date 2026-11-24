@@ -97,7 +97,9 @@ type Hub struct {
 	pass   *Pass
 	locks  map[string]*sync.Mutex
 	mirror map[string]MirrorState
-	rooms  map[string]*RoomState
+	// printed is each repository's ref files as of its last mirror pass. See mirrorIdle.
+	printed map[string]printed
+	rooms   map[string]*RoomState
 	// failing is the last words of each failure already audited. See auditFailure.
 	failing map[string]string
 	// pushing is the pushes in flight from each room, and owed the rooms whose collect was skipped for one. See pushBegan.
@@ -317,13 +319,23 @@ func slash(p string) string { return filepath.ToSlash(p) }
 // Mirror brings each bare repository up to its checkout's branch, and answers the names
 // that moved. A local fetch, run by the hub process and not by an agent.
 func (h *Hub) Mirror(ctx context.Context) (moved []string, err error) {
+	return h.mirrorPass(ctx, false)
+}
+
+// mirrorPass is Mirror. With idle, a repository none of whose ref files changed since its last pass is skipped.
+func (h *Hub) mirrorPass(ctx context.Context, idle bool) (moved []string, err error) {
 	repos, err := h.Repos()
 	if err != nil {
 		return nil, err
 	}
 	var errs []string
 	for _, r := range repos {
+		fp := h.mirrorPrint(r)
+		if idle && h.mirrorIdle(r.Name, fp) {
+			continue
+		}
 		m, err := h.mirrorOne(ctx, r)
+		h.mirrorDone(r.Name, fp, err)
 		h.mu.Lock()
 		if h.mirror == nil {
 			h.mirror = map[string]MirrorState{}
@@ -732,9 +744,19 @@ func (h *Hub) collectOne(ctx context.Context, room, key string, r Repo) CollectR
 		return cr
 	}
 	defer fwd.Close()
-	_, err = run.Git(ctx, bare, gitexec.Fetch{Quiet: true, NoTags: true, NoWriteFetchHead: true, Prune: true,
+	fetch := gitexec.Fetch{Quiet: true, NoTags: true, NoWriteFetchHead: true, Prune: true,
 		Remote:   fwd.URL + "/" + r.Name + ".git",
-		Refspecs: []string{"+refs/heads/claude/*:refs/rooms/" + key + "/claude/*", "^refs/heads/claude/main"}})
+		Refspecs: []string{"+refs/heads/claude/*:refs/rooms/" + key + "/claude/*", "^refs/heads/claude/main"}}
+	_, err = run.Git(ctx, bare, fetch)
+	if err != nil && strings.Contains(err.Error(), "404") {
+		// A room serves only a repository it has synced since it started, so a 404 is a room that forgot, or a
+		// clone it never had. One sync tells which, and says why when it is the second.
+		if sr := h.askRoom(ctx, room, r.Name, false); sr.State == "ok" || sr.State == "behind" {
+			_, err = run.Git(ctx, bare, fetch)
+		} else {
+			err = fmt.Errorf("%w; the room does not serve %s, its sync says %s: %s", err, r.Name, sr.State, sr.Detail)
+		}
+	}
 	if err != nil {
 		cr.Error = err.Error()
 		return cr
@@ -865,7 +887,7 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 		t := time.NewTicker(mirrorEvery)
 		defer t.Stop()
 		for {
-			moved, err := h.Mirror(ctx)
+			moved, err := h.mirrorPass(ctx, true)
 			if ctx.Err() == nil {
 				h.auditFailure("", "git-mirror", "mirror", err)
 			}

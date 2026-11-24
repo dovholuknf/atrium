@@ -1217,6 +1217,11 @@ function openTerm(task) {
   swMark("xterm");
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
+  // Claude Code counts a wide emoji as two cells, and xterm's default Unicode 6 table counts one.
+  if (typeof Unicode11Addon !== "undefined") {
+    term.loadAddon(new Unicode11Addon.Unicode11Addon());
+    term.unicode.activeVersion = "11";
+  }
   // The phone view (t-003b): the key bar, the pinch, and the cursor kept in
   // view. All of it is a no-op on a desktop. See `termPhone`.
   syncPhoneView();
@@ -1249,6 +1254,19 @@ function openTerm(task) {
   term.parser.registerOscHandler(7777, data => {
     // The divider is drawn where the page was kept. See js/clearline.js.
     if (data === "atrium-clear" && keepPage(mine, true)) clMark(mine);
+    return true;
+  });
+  // A runner's own copy (opencode's drag-select) arrives as OSC 52. Taken only just after the viewer's own mouse or key
+  // here, so a replayed screen or an unasked one never writes the viewer's clipboard.
+  let touchedAt = 0;
+  const touched = () => { touchedAt = Date.now(); };
+  screen.addEventListener("pointerup", touched, true);
+  screen.addEventListener("keydown", touched, true);
+  term.parser.registerOscHandler(52, data => {
+    const text = osc52Text(data);
+    if (text && Date.now() - touchedAt < 3000) {
+      navigator.clipboard.writeText(text).catch(() => toast("could not copy", "the browser refused clipboard access"));
+    }
     return true;
   });
   lrInit(term);
@@ -1505,6 +1523,13 @@ function resetTerm(t) {
   try { t._core.viewport.syncScrollArea(true); } catch (e) {}
 }
 
+// osc52Text is the text of an OSC 52 set, `<selection>;<base64>`, or "" for a query or anything unreadable.
+function osc52Text(data) {
+  const b64 = String(data).slice(String(data).indexOf(";") + 1);
+  if (!b64 || b64 === "?") return "";
+  try { return new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0))); } catch (e) { return ""; }
+}
+
 // Every copy of a terminal selection comes through here: ctrl-c, ctrl-insert and copy on select.
 // The copy as shown is `termSelectionText`, the clean one `ccDerender` of it. `cleanByDefault` picks which this gives.
 function copySelection(quiet) {
@@ -1546,10 +1571,11 @@ function hideCleanCopy() {
   if (ccBtn) { ccBtn.remove(); ccBtn = null; }
 }
 
-// The operator's rule: a clean copy drops only the `claude ❯` prompt and each line's edge spaces. Every other character and
-// every line feed stays, so a `# ` comment in a copied command block is still a comment.
+// The operator's rule: a clean copy drops only the `claude ❯` prompt, Claude Code's gutters (the `▎` quote bar, `⎿`, `●`)
+// and each line's edge spaces. Every other character and every line feed stays, so a `# ` comment in a copied command
+// block is still a comment and a `- ` list is still a list.
 function ccDerender(sel) {
-  return String(sel).replace(/[^\r\n]+/g, line => line.trim().replace(/^(claude\s*)?❯\s*/, ""));
+  return String(sel).replace(/[^\r\n]+/g, line => line.trim().replace(/^(claude\s*)?❯\s*/, "").replace(/^(?:▎\s*)+|^[⎿●]\s*/, ""));
 }
 
 // Called once a selection has settled (the mouseup that ends a press, ctrl-a). The button shows at once.

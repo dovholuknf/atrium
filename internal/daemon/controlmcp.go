@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -61,4 +62,40 @@ func wireControlMCP(st *store.Store, home, exe string) error {
 	}
 	_, err = st.SaveHarness(*h)
 	return err
+}
+
+// relayControlHTTP swaps an HTTP atrium-control entry for the hub's /_hub/mcp for the stdio relay. Claude Code never
+// redials an HTTP server, so a hub restart would leave that session without atrium tools. Any other entry is left.
+func relayControlHTTP(home, exe string) error {
+	path := filepath.ToSlash(filepath.Join(home, ".atrium", "mcp.json"))
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	doc := map[string]json.RawMessage{}
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	servers := map[string]json.RawMessage{}
+	if json.Unmarshal(doc["mcpServers"], &servers) != nil {
+		return nil
+	}
+	var cur struct {
+		Type string `json:"type"`
+		URL  string `json:"url"`
+	}
+	if json.Unmarshal(servers["atrium-control"], &cur) != nil || cur.Type != "http" || !strings.Contains(cur.URL, "/_hub/mcp") {
+		return nil
+	}
+	args := []string{"mcp-relay"}
+	if !strings.Contains(cur.URL, "${") {
+		args = append(args, "--url", cur.URL)
+	}
+	servers["atrium-control"], _ = json.Marshal(map[string]any{"type": "stdio", "command": filepath.ToSlash(exe), "args": args})
+	doc["mcpServers"], _ = json.Marshal(servers)
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	return os.WriteFile(path, append(out, '\n'), 0o600)
 }

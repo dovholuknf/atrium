@@ -1077,6 +1077,11 @@
     if (p[0] !== "" || p[1] !== "m") return null;
     if (p[2] === "alias" && p.length === 4 && p[3]) return { kind: "alias", alias: nameOf(dec(p[3])) };
     if (p[2] === "room" && p.length === 5 && p[3] && p[4]) return { kind: "card", room: dec(p[3]), name: dec(p[4]).replace(/^@/, "") };
+    if (p.length === 5 && p[3] === "terminal" && p[2] && p[4] && p[2] !== "alias") {
+      // `<name>~<first 8 of an id>` names one card when two share the name.
+      const m = /^(.+)~([0-9a-f]{8})$/i.exec(dec(p[4]));
+      return { kind: "card", room: dec(p[2]), name: (m ? m[1] : dec(p[4])).replace(/^@/, ""), pick: m ? m[2].toLowerCase() : "" };
+    }
     return null;
   }
 
@@ -1088,11 +1093,12 @@
     const wire = String(t.wire_name || "");
     const handle = wire.slice(wire.lastIndexOf("/") + 1);
     const room = t.room || window.mNet.roomOf(t.id) || "";
-    const clash = alias && window.mStore.cards().some(o => window.mNet.bareId(o.id) !== window.mNet.bareId(t.id) &&
-      nameOf(o.alias) === alias && o.status !== "dead" && o.status !== "done");
-    if (alias && !clash) return base + "/alias/" + enc(alias);
     const name = handle || alias;
-    if (room && name) return base + "/room/" + enc(room) + "/" + enc(name);
+    const handleOf = o => String(o.wire_name || "").slice(String(o.wire_name || "").lastIndexOf("/") + 1);
+    const clash = room && name && window.mStore.cards().some(o => window.mNet.bareId(o.id) !== window.mNet.bareId(t.id) &&
+      (o.room || window.mNet.roomOf(o.id) || "") === room && (nameOf(o.alias) === nameOf(name) || nameOf(handleOf(o)) === nameOf(name)) &&
+      o.status !== "dead" && o.status !== "done");
+    if (room && name) return base + "/" + enc(room) + "/terminal/" + enc(name + (clash ? "~" + window.mNet.bareId(t.id).slice(0, 8) : ""));
     return alias ? base + "/alias/" + enc(alias) : "";
   }
 
@@ -1145,7 +1151,9 @@
     const who = s.kind === "alias" ? s.alias : s.name;
     let t = null;
     try {
-      t = await window.mNet.api("/v1/tasks/" + (s.kind === "alias" ? enc(s.alias) : enc(s.name) + "@" + enc(s.room)));
+      const hit = s.pick && ((await window.mNet.api("/v1/tasks")).tasks || []).find(x => window.mNet.bareId(x.id).toLowerCase().startsWith(s.pick) &&
+        (x.room || window.mNet.roomOf(x.id) || "") === s.room);
+      t = await window.mNet.api(hit ? "/v1/tasks/" + enc(hit.id) : "/v1/tasks/" + (s.kind === "alias" ? enc(s.alias) : enc(s.name) + "@" + enc(s.room)));
     } catch (e) {
       const b = e.body || {};
       const base = s.kind === "alias" ? "" : " on room " + s.room;
@@ -1160,7 +1168,7 @@
         const m = /^(\S+?)(?:@(\S+))?(?: \(@(\S+)\))?$/.exec(w);
         if (!m) return { text: w };
         const room = m[2] || one;
-        return { text: w, href: m[3] ? "/m/alias/" + enc(m[3]) : room ? "/m/room/" + enc(room) + "/" + enc(m[1]) : "" };
+        return { text: w, href: m[3] ? "/m/alias/" + enc(m[3]) : room ? "/m/" + enc(room) + "/terminal/" + enc(m[1]) : "" };
       }), null);
       return;
     }
@@ -1181,7 +1189,7 @@
       let t = null;
       try { t = await window.mNet.api("/v1/tasks/" + enc(c.id)); } catch (e) {}
       rows.push({ text: c.room + "  " + c.name + (t ? "  " + (t.status === "done" ? "done" : (t.activity && t.activity.what) || t.status || "") : ""),
-        href: "/m/room/" + enc(c.room) + "/" + enc(c.name), id: c.id, done: !!t && t.status === "done", at: t && t.created_at || "" });
+        href: "/m/" + enc(c.room) + "/terminal/" + enc(c.name + "~" + window.mNet.bareId(c.id).slice(0, 8)), id: c.id, done: !!t && t.status === "done", at: t && t.created_at || "" });
     }
     rows.sort((a, b) => (a.done - b.done) || String(b.at).localeCompare(String(a.at)));
     say("@" + (s.alias || s.name) + " is on more than one room", rows, s);

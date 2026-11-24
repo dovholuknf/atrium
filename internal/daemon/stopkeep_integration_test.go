@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -354,6 +355,42 @@ func TestHostStateCountsHostRunners(t *testing.T) {
 	d.handleHostState(w, httptest.NewRequest("GET", "/v1/preflight", nil))
 	if !strings.Contains(w.Body.String(), "in_job_cause") || !strings.Contains(w.Body.String(), "refused breakaway") {
 		t.Fatalf("a host in a job does not say why: %s", w.Body.String())
+	}
+}
+
+// A deploy names the cards a stop ends, so preflight lists the cards whose runner lives in this process.
+func TestHostStateNamesInProcessCards(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	hostRunnerCard(t, d, "preflight-kept")
+	if err := d.st.SetSetting(store.SettingPtyHost, "off"); err != nil {
+		t.Fatal(err)
+	}
+	task := cardAt(t, d, "preflight-stopped", t.TempDir())
+	sh, args := someShell(t)
+	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.StopRunner(task.ID) })
+	if hostOf(d.sup.get(task.ID)) != nil {
+		t.Fatal("the test needs the second runner in this process")
+	}
+	w := httptest.NewRecorder()
+	d.handleHostState(w, httptest.NewRequest("GET", "/v1/preflight", nil))
+	var got struct {
+		Runners struct {
+			InProcessCards []string `json:"in_process_cards"`
+		} `json:"runners"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{task.DisplayTitle()}; !slices.Equal(got.Runners.InProcessCards, want) {
+		t.Fatalf("in_process_cards %v, want %v: %s", got.Runners.InProcessCards, want, w.Body.String())
 	}
 }
 

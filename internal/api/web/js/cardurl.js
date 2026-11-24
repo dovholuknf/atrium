@@ -7,6 +7,9 @@
 // `GET /v1/tasks/<name>@<room>`, once per open and never on a timer. What comes back is a card, a 404 with what
 // would have worked, or a 409 naming every card the alias reaches.
 
+// The first segments the server owns, which `/<room>/terminal/<name>` is never read from. Kept with internal/base/cardurl.
+const CARD_URL_OWNED = ["alias", "room", "m", "v1", "js", "css", "icons"];
+
 // What this address is: `alias`, `card` (a room and a name), `room` (the board scoped), or null.
 function cardUrlShape(path) {
   const parts = String(path == null ? location.pathname : path).replace(/\/$/, "").split("/");
@@ -14,6 +17,11 @@ function cardUrlShape(path) {
   if (parts[0] !== "") return null;
   if (parts[1] === "alias" && parts.length === 3 && parts[2]) {
     return { kind: "alias", alias: cardUrlName(dec(parts[2])) };
+  }
+  if (parts.length === 4 && parts[2] === "terminal" && parts[1] && parts[3] && !CARD_URL_OWNED.includes(parts[1])) {
+    // `<name>~<first 8 of an id>` is the form that never clashes. A name that holds a `~` of its own is left alone.
+    const m = /^(.+)~([0-9a-f]{8})$/i.exec(dec(parts[3]));
+    return { kind: "card", room: dec(parts[1]), name: (m ? m[1] : dec(parts[3])).replace(/^@/, ""), pick: m ? m[2].toLowerCase() : "" };
   }
   if (parts[1] === "room" && parts.length === 3 && parts[2]) return { kind: "room", room: dec(parts[2]) };
   if (parts[1] === "room" && parts.length === 4 && parts[2] && parts[3]) {
@@ -64,17 +72,21 @@ function cardUrlPath(t, all) {
   const handle = wire.slice(wire.lastIndexOf("/") + 1);
   const room = t.room || roomOf(t.id) || "";
   const enc = encodeURIComponent;
-  if (alias && !cardUrlClashes(t, alias, all)) return "/alias/" + enc(alias);
   // The handle first: a done card whose alias a live card took is reached by its handle, since the resolver lets a live alias win.
   const name = handle || alias;
-  if (room && name) return "/room/" + enc(room) + "/" + enc(name);
+  // A live card in the same room under the same name takes the `~<8 of its id>` form, which names exactly one card.
+  if (room && name) {
+    const pick = cardUrlClashes(t, name.toLowerCase(), all, room) ? "~" + bareId(t.id).slice(0, 8) : "";
+    return "/" + enc(room) + "/terminal/" + enc(name + pick);
+  }
   return alias ? "/alias/" + enc(alias) : "";
 }
 
-function cardUrlClashes(t, alias, all) {
+function cardUrlClashes(t, name, all, room) {
   const list = all || (typeof cardList === "function" ? cardList() : []);
-  return list.some(o => o && !sameCard(o.id, t.id) && cardUrlName(o.alias) === alias &&
-    o.status !== "dead" && o.status !== "done");
+  const handleOf = o => String(o.wire_name || "").slice(String(o.wire_name || "").lastIndexOf("/") + 1);
+  return list.some(o => o && !sameCard(o.id, t.id) && (o.room || roomOf(o.id) || "") === room &&
+    (cardUrlName(o.alias) === name || handleOf(o).toLowerCase() === name) && o.status !== "dead" && o.status !== "done");
 }
 
 // The address a card is opened from: its readable path, else the fragment.
@@ -109,6 +121,17 @@ function cardUrlLookupPath(shape) {
   return "/v1/tasks/" + (shape.kind === "alias" ? enc(shape.alias) : enc(shape.name) + "@" + enc(shape.room));
 }
 
+// `name~<8 of an id>` names one card, even a done one a live card has taken the name from. "" when the address has no
+// `~` or no card in that room starts with it, and the name then resolves as usual.
+async function cardUrlPickPath(shape) {
+  if (!shape.pick) return "";
+  try {
+    const { tasks } = await api("/v1/tasks");
+    const hit = (tasks || []).find(t => bareId(t.id).toLowerCase().startsWith(shape.pick) && (t.room || roomOf(t.id) || "") === shape.room);
+    return hit ? "/v1/tasks/" + encodeURIComponent(hit.id) : "";
+  } catch (e) { return ""; }
+}
+
 // One line off a 409's candidate list, `alias@room (room~id)`.
 function cardUrlCandidate(s) {
   const m = /^(.*)@(\S+) \((.+)\)$/.exec(String(s));
@@ -120,22 +143,39 @@ function cardUrlCandidate(s) {
 async function cardUrlOpen(shape) {
   let task = null;
   try {
-    task = await soloFetchCard("", cardUrlLookupPath(shape));
+    task = await soloFetchCard("", await cardUrlPickPath(shape) || cardUrlLookupPath(shape));
   } catch (e) {
     if (e.status === 409) return cardUrlClash(shape, e.body || {});
-    if (e.status === 404) cardUrlMiss(shape, e.body || {}, e.message);
-    else cardUrlSay("could not look that up", [{ text: e.message }]);
+    if (e.status === 404) {
+      const renamed = await cardUrlRenamed(shape);
+      if (renamed) return renamed;
+      cardUrlMiss(shape, e.body || {}, e.message);
+    } else cardUrlSay("could not look that up", [{ text: e.message }]);
     return null;
   }
   const notes = [];
-  const last = cardUrlLast(shape);
+  const last = shape.pick ? "" : cardUrlLast(shape);
   if (last && !sameCard(last, task.id)) notes.push(await cardUrlChanged(shape, last, task));
   if (task.status === "done") {
     const recap = String(task.recap || "").trim().split("\n").filter(Boolean).pop();
     notes.push({ text: "this card is done" + (recap ? ". " + recap : "") });
   }
-  cardUrlRemember(shape, task.id);
+  if (!shape.pick) cardUrlRemember(shape, task.id);
   return { id: task.id, task, notes };
+}
+
+// An address no card answers to now, which this browser opened a card by before. That card was renamed when it still
+// exists, so it opens under its new name and the note says so. Null when there was none or it is gone.
+async function cardUrlRenamed(shape) {
+  const last = shape.kind === "card" && !shape.pick ? cardUrlLast(shape) : "";
+  if (!last) return null;
+  let task = null;
+  try { task = await api("/v1/tasks/" + encodeURIComponent(last)); } catch (e) { return null; }
+  const path = cardUrlPath(task);
+  if (!task || !path) return null;
+  history.replaceState(null, "", path);
+  cardUrlRemember(cardUrlShape(path), task.id);
+  return { id: task.id, task, notes: [{ text: "this card was renamed. it was " + shape.name + " and is now " + cardUrlShape(path).name }] };
 }
 
 // The address opens a different card than it did before. Says when this one started and what became of the old one,
@@ -171,7 +211,7 @@ function cardUrlMiss(shape, body, message) {
     const enc = encodeURIComponent;
     let href = "";
     if (m[3]) href = cardUrlPath({ alias: m[3], room }) || "/alias/" + enc(m[3]);
-    else if (room) href = "/room/" + enc(room) + "/" + enc(m[1]);
+    else if (room) href = "/" + enc(room) + "/terminal/" + enc(m[1]);
     return { text: w, href };
   });
   cardUrlSay("no card called " + name + (shape.kind === "card" ? " on room " + shape.room : ""), rows);
@@ -181,7 +221,7 @@ function cardUrlMiss(shape, body, message) {
 // the other. Otherwise the chooser, and picking one remembers it for this path.
 async function cardUrlClash(shape, body) {
   const cands = (body.candidates || []).map(cardUrlCandidate).filter(Boolean);
-  const link = c => "/room/" + encodeURIComponent(c.room) + "/" + encodeURIComponent(c.name);
+  const link = c => "/" + encodeURIComponent(c.room) + "/terminal/" + encodeURIComponent(c.name + "~" + bareId(c.id).slice(0, 8));
   const last = cardUrlLast(shape);
   const mine = last && cands.find(c => sameCard(c.id, last));
   if (mine) {

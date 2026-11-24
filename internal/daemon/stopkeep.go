@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
+	"sort"
 	"time"
 )
 
@@ -166,13 +168,18 @@ func (d *Daemon) handleHostState(w http.ResponseWriter, _ *http.Request) {
 	// A runner started before the setting went on lives in this process and ends with it, so a deploy that skips the
 	// hold needs to know there are none.
 	var held, local int
+	stops := []string{}
 	for _, r := range append(d.sup.all(), d.sup.allShells()...) {
 		if hostOf(r) != nil {
 			held++
 		} else {
 			local++
+			if t, err := d.st.Get(r.taskID); err == nil && !slices.Contains(stops, t.DisplayTitle()) {
+				stops = append(stops, t.DisplayTitle())
+			}
 		}
 	}
+	sort.Strings(stops)
 	host := map[string]any{"on": d.st.PtyHostOn(), "in_job": d.hostInJob.Load(), "build": build}
 	if d.hostInJob.Load() {
 		host["in_job_cause"] = hostInJobCause(os.Getppid())
@@ -180,7 +187,7 @@ func (d *Daemon) handleHostState(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"pty_host": host,
-		"runners":  map[string]any{"host": held, "in_process": local},
+		"runners":  map[string]any{"host": held, "in_process": local, "in_process_cards": stops},
 	})
 }
 

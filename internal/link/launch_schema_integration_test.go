@@ -80,3 +80,39 @@ func daemonLaunchArgs() []string {
 	}
 	return out
 }
+
+func TestEveryToolOutputSchemaAcceptsAnUnknownField(t *testing.T) {
+	ctx := context.Background()
+	classes := []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassWorkerResident, ctl.ClassFullResident,
+		ctl.ClassWorkerItem, ctl.ClassWorkerReview, ctl.ClassChat, ctl.ClassWorker | ctl.Elevated}
+	seen := 0
+	for _, class := range classes {
+		st, ct := mcp.NewInMemoryTransports()
+		ss, err := newControl("", nil, nil).server(class).Connect(ctx, st, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ss.Close() })
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cs.Close() })
+		res, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tl := range res.Tools {
+			if tl.OutputSchema == nil {
+				continue
+			}
+			seen++
+			if !reflect.DeepEqual(ctl.OpenSchema(tl.OutputSchema), tl.OutputSchema) {
+				t.Errorf("class %v: %s has an output schema that refuses a field it does not name", class, tl.Name)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no tool listed an output schema")
+	}
+}

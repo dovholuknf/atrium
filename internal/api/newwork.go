@@ -71,6 +71,9 @@ type newWorkRequest struct {
 	Prepare bool `json:"prepare"`
 	// Twig is the worktree the work is twigged from. See twig.go.
 	Twig string `json:"twig"`
+	// SpawnedBy and SpawnedByID are the card `atrium new` ran inside, so the new card nests under it.
+	SpawnedBy   string `json:"spawned_by"`
+	SpawnedByID string `json:"spawned_by_id"`
 }
 
 type newWorkAnswer struct {
@@ -209,6 +212,9 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Superlean {
 		launch["superlean"] = true
+	}
+	if by := strings.TrimSpace(in.SpawnedBy); by != "" {
+		launch["spawned_by"], launch["spawned_by_id"] = by, strings.TrimSpace(in.SpawnedByID)
 	}
 	body, _ := json.Marshal(launch)
 	task, err := s.Launch(body)
