@@ -2827,7 +2827,7 @@ function tallClip() {
   let last = Math.min(b.cursorY + 1, term.rows - 1);
   for (let r = term.rows - 1; r > last; r--) {
     const line = b.getLine(b.baseY + r);
-    if (line && line.translateToString(true).length) { last = r; break; }
+    if (line && line.translateToString(true).trim().length) { last = r; break; }
   }
   if (last - b.cursorY + 1 > show) last = Math.min(b.cursorY + 1, term.rows - 1);
   const top = Math.max(0, Math.min(term.rows - show, last - show + 1));

@@ -311,6 +311,28 @@ func TestChangeParentNestsRefusesACycleAndRecordsIt(t *testing.T) {
 	}
 }
 
+// A PARENT ON ANOTHER ROOM IS TAKEN BY ITS HANDLE, name@room, and recorded as `spawned_by` the way a cross-room
+// launch records it. A handle naming this room still has to be a card here.
+func TestChangeParentTakesAParentOnAnotherRoom(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	oh.srv.Room = "sg3"
+	st := oh.srv.st
+	kid, _, err := st.Register(store.Observed{WireName: "kid", Worktree: filepath.ToSlash(t.TempDir()), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(t, oh.h, "/v1/tasks/"+kid.ID+"/parent", map[string]any{"parent": "nobody@SG3"}); rec.Code != 404 {
+		t.Fatalf("a handle on this room that is no card: %d %s", rec.Code, rec.Body)
+	}
+	orch := "orchestrator-sg4-control@sg4-control"
+	if rec := post(t, oh.h, "/v1/tasks/"+kid.ID+"/parent", map[string]any{"parent": orch}); rec.Code != 200 {
+		t.Fatalf("the change: %d %s", rec.Code, rec.Body)
+	}
+	if got, _ := st.Get(kid.ID); got.SpawnedBy != orch || got.SpawnedByID != "" {
+		t.Fatalf("after the change: %+v", got)
+	}
+}
+
 func TestProcPIDTakesOnlyAPidThatFitsWindows(t *testing.T) {
 	if pid, err := procPID("4242"); err != nil || pid != 4242 {
 		t.Fatalf("procPID(4242) = %d, %v", pid, err)

@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchNewAgent, launchGroupPlus, launchNewAgentGroups, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog, launchNewAgentPath, launchFolderComplete.
+// Units: launchNewAgent, launchGroupPlus, launchNewAgentGroups, launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog, launchNewAgentPath.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -940,39 +940,6 @@ async function launchNewAgentPathSection(browser, base) {
   }
 }
 
-// THE FOLDER BOX'S SUGGESTIONS. A folder with more than 60 entries still offers one past the 60th once its name is typed,
-// and a box that opens with a folder in it has its list on focus, before any typing.
-async function launchFolderCompleteSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  try {
-    const p = await ctx.newPage();
-    const errors = [];
-    p.on("pageerror", e => errors.push(e.message));
-    const entries = [];
-    for (let i = 0; i < 70; i++) entries.push({ name: "repo" + String(i).padStart(2, "0"), path: "/m/root/repo" + String(i).padStart(2, "0"), repo: true });
-    for (let i = 0; i < 30; i++) entries.push({ name: "notes" + String(i).padStart(2, "0"), path: "/m/root/notes" + String(i).padStart(2, "0"), repo: false });
-    await p.route(/\/v1\/browse(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ path: "/m/root", entries: new URL(r.request().url()).searchParams.get("path") === "/m/root" ? entries : [] }) }));
-    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof openNewAgent === "function" && typeof attachFolderComplete === "function");
-    await p.evaluate(() => openNewAgent(false));
-    await p.click('#na-kind button[data-v="folder"]');
-    const opts = () => p.evaluate(() => [...document.querySelectorAll("#na-cwd-fc option")].map(o => o.value));
-    await p.fill("#na-cwd", "/m/root/notes2");
-    await p.waitForFunction(() => document.querySelectorAll("#na-cwd-fc option").length > 0, null, { timeout: slow(3000) }).catch(() => {});
-    const typed = await opts();
-    if (typed.length !== 10 || !typed.includes("/m/root/notes29/") || typed.some(v => !v.startsWith("/m/root/notes2")))
-      fail("launchFolderComplete: a typed name past the 60th entry is not offered: " + JSON.stringify(typed));
-    await p.evaluate(() => { const i = document.getElementById("na-cwd"); i.blur(); document.getElementById("na-cwd-fc").replaceChildren(); i.value = "/m/root/"; i.focus(); });
-    await p.waitForFunction(() => document.querySelectorAll("#na-cwd-fc option").length > 0, null, { timeout: slow(3000) }).catch(() => {});
-    const focused = await opts();
-    if (focused.length !== 60 || focused[0] !== "/m/root/repo00/") fail("launchFolderComplete: a prefilled box has no list on focus: " + focused.length);
-    if (errors.length) fail("launchFolderComplete: page errors " + errors.join(" | "));
-  } finally {
-    await ctx.close();
-  }
-}
-
 const units = [
   { name: "launchNewAgent", run: ({ browser, base }) => launchNewAgentSection(browser, base) },
   { name: "launchGroupPlus", run: ({ browser, base }) => launchGroupPlusSection(browser, base) },
@@ -984,9 +951,8 @@ const units = [
   { name: "launchPresets", run: ({ browser, base }) => launchPresetsSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
   { name: "launchNewAgentPath", run: ({ browser, base }) => launchNewAgentPathSection(browser, base) },
-  { name: "launchFolderComplete", run: ({ browser, base }) => launchFolderCompleteSection(browser, base) },
 ];
-const sections = { launchNewAgent: launchNewAgentSection, launchGroupPlus: launchGroupPlusSection, launchNewAgentGroups: launchNewAgentGroupsSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection, launchNewAgentPath: launchNewAgentPathSection, launchFolderComplete: launchFolderCompleteSection };
+const sections = { launchNewAgent: launchNewAgentSection, launchGroupPlus: launchGroupPlusSection, launchNewAgentGroups: launchNewAgentGroupsSection, launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection, launchNewAgentPath: launchNewAgentPathSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

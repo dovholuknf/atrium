@@ -268,6 +268,32 @@ wide.setPtyRows(20);
 wide.applyPtySize();
 if (wide.tall() || wide.term.rows !== 20) fail("a pty shorter than the window switched tall on. rows " + wide.term.rows + ".");
 
+// ── a row of only spaces is not content to the clip ─────────────────────────
+//
+// Claude pads rows with literal spaces, which xterm keeps as cells. A 60 row grid whose last row is spaces scrolled the
+// clip to the bottom and left the frame mid-pane over a blank band.
+const clip = new Function(`
+  const classes = new Set(["tall"]);
+  const host = { scrollTop: 0, clientHeight: 400, classList: { contains: c => classes.has(c) } };
+  const document = { getElementById: () => host };
+  const getComputedStyle = () => ({ paddingTop: "0" });
+  const lines = [];
+  for (let i = 0; i < 60; i++) lines.push(i < 45 ? "text" : "");
+  lines[59] = "   ";
+  const term = {
+    rows: 60,
+    buffer: { active: { viewportY: 0, baseY: 0, cursorY: 40, getLine: r => ({ translateToString: () => lines[r] }) } },
+    _core: { _renderService: { dimensions: { css: { cell: { height: 16 } } } } },
+  };
+  ${lift("function tallClip(", "\n}")}
+  tallClip();
+  return host;
+`)();
+if (clip.scrollTop !== 320) {
+  fail("a row of spaces at the bottom of a tall grid scrolled the clip down over a blank band. scrollTop " +
+    clip.scrollTop + ".");
+}
+
 if (bad) process.exit(1);
 console.log("a window drag tells the runner its size once, after it settles, " +
   "a window narrower than the pty scrolls sideways, a window taller than the pty draws its rows, " +

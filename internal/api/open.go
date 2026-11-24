@@ -120,6 +120,15 @@ func openFail(w http.ResponseWriter, status int, step, code, msg string) {
 	prError(w, status, code, msg, map[string]any{"step": step})
 }
 
+// launchFail is a card that did not start. A card already in dir is named, so the board offers to go to it.
+func (s *Server) launchFail(w http.ResponseWriter, dir string, err error) {
+	extra := map[string]any{"step": "card"}
+	if id, _ := s.st.AdoptableTask(filepath.ToSlash(dir)); id != "" {
+		extra["card"] = id
+	}
+	prError(w, http.StatusBadRequest, "launch_failed", "the card did not start: "+err.Error(), extra)
+}
+
 // POST /v1/open
 func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	if s.Recognise == nil || s.Launch == nil {
@@ -179,6 +188,11 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, ans)
 			return
 		}
+	}
+	if t := s.liveLinkCard(key, fmt.Sprintf("pr:%s/%s#%d", org, repo, num)); t != nil {
+		ans.Card, ans.Worktree = t.ID, t.Worktree
+		writeJSON(w, http.StatusOK, ans)
+		return
 	}
 
 	// 3. the worktree
@@ -292,7 +306,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		undoRow()
 		undoPRWorktree(wt)
 		disown()
-		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
+		s.launchFail(w, wt.Path, err)
 		return
 	}
 	s.PublishTask(task)
@@ -350,7 +364,7 @@ func (s *Server) openOwn(w http.ResponseWriter, in openRequest, got *rules.Resol
 	task, err := s.Launch(s.openLaunchBody(in, got, wt, key, org, repo, num))
 	if err != nil {
 		undoPRWorktree(wt)
-		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
+		s.launchFail(w, wt.Path, err)
 		return
 	}
 	s.PublishTask(task)

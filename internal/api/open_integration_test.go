@@ -233,6 +233,45 @@ func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 	}
 }
 
+func TestOpenAnswersALiveCardTaggedWithThePullRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.checkout(t, "o", "r")
+	held := cardIn(t, oh.srv.st, t.TempDir())
+	if err := oh.srv.st.SetTags(held.ID, []string{"pr:o/r#7"}); err != nil {
+		t.Fatal(err)
+	}
+	code, out := oh.open(t, openURL)
+	if code != 200 || out["card"] != held.ID || len(oh.launched) != 0 {
+		t.Fatalf("%d %v, launched %d", code, out, len(oh.launched))
+	}
+}
+
+func TestOpenRefusedByACardInTheDirectoryNamesThatCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.checkout(t, "o", "r")
+	var holder *store.Task
+	oh.srv.Launch = func(body []byte) (*store.Task, error) {
+		var in struct {
+			Cwd string `json:"cwd"`
+		}
+		_ = json.Unmarshal(body, &in)
+		holder = cardIn(t, oh.srv.st, in.Cwd)
+		return nil, errors.New(in.Cwd + " already holds the card")
+	}
+	code, out := oh.open(t, openURL)
+	if code != 400 || out["code"] != "launch_failed" || holder == nil || out["card"] != holder.ID {
+		t.Fatalf("%d %v", code, out)
+	}
+}
+
 func TestOpenFallsBackToTheRecipesRunnerWhenTheRequestedOneIsNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")

@@ -554,6 +554,19 @@ async function hubReposBranchDelete(p, tag) {
   const at = new Date().toISOString(), repo = "github/acme/thing";
   let list = ["fix/y", "claude/main", "claude/held"].map(name => ({ repo, name, status: "orphaned", kind: "code", uncarried: 1, commits: 1, last_commit: at }));
   const posts = [];
+  // A click that times out says what moved: the mutations under the list, the button's box over three frames and the scroll.
+  await p.evaluate(() => { window.__hrMut = []; new MutationObserver(ms => window.__hrMut.push(Math.round(performance.now()) + ":" + ms.length + ":" + ms[0].type + ":" + (ms[0].target.className || ms[0].target.nodeName)))
+    .observe(document.getElementById("hubrepos-list"), { subtree: true, childList: true, attributes: true, characterData: true }); });
+  const click = async sel => {
+    try { await p.click(sel); } catch (e) {
+      const d = await p.evaluate(async sel => {
+        const box = () => { const r = (document.querySelector(sel) || document.body).getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(","); };
+        const frames = [box()]; for (let i = 0; i < 3; i++) { await new Promise(r => requestAnimationFrame(r)); frames.push(box()); }
+        return { frames, n: window.__hrMut.length, last: window.__hrMut.slice(-10), scroll: [scrollY, document.getElementById("hubrepos-list").scrollTop], vw: [innerWidth, innerHeight] };
+      }, sel).catch(x => ({ err: String(x) }));
+      throw new Error(e.message.split(String.fromCharCode(10))[0] + " DIAG " + JSON.stringify(d));
+    }
+  };
   let answer = { status: 400, body: { error: "claude/held has an open merge request. cancel it or let it end first" } };
   await p.unroute(/\/_hub\/git\/branches$/);
   await p.route(/\/_hub\/git\/branches$/, rt => rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ computed: at, counts: {}, branches: list }) }));
@@ -562,25 +575,25 @@ async function hubReposBranchDelete(p, tag) {
     rt.fulfill({ status: answer.status, contentType: "application/json", body: JSON.stringify(answer.body) });
   });
   await p.evaluate(() => { Object.assign(hubRepos.br, { loaded: false, data: null, del: {}, said: "" }); hubRepos.mem = ""; });
-  await p.click('#hubrepos-views [data-hrview="branches"]');
+  await click('#hubrepos-views [data-hrview="branches"]');
   await p.waitForFunction(() => document.querySelectorAll(".hr-brrow").length === 3, null, { timeout: slow(8000) });
   const dels = await p.evaluate(() => [...document.querySelectorAll(".hr-bdel")].map(b => b.dataset.mode).join());
   if (dels !== "fix/y,claude/held") fail(tag + ": delete is offered on the wrong rows " + dels);
   const row = n => '.hr-brrow:has(.hr-bdel[data-mode="' + n + '"]), .hr-brrow:has(.hr-byes[data-mode="' + n + '"])';
-  await p.click('.hr-bdel[data-mode="claude/held"]');
+  await click('.hr-bdel[data-mode="claude/held"]');
   const armed = await p.evaluate(() => ({ sure: !!document.querySelector(".hr-bsure"), focus: document.activeElement.className }));
   if (!armed.sure || armed.focus !== "hr-byes") fail(tag + ": delete did not arm in the row " + JSON.stringify(armed));
-  await p.click('.hr-bno[data-mode="claude/held"]');
+  await click('.hr-bno[data-mode="claude/held"]');
   if (posts.length || await p.locator(".hr-bsure").count()) fail(tag + ": keep posted or stayed armed");
-  await p.click('.hr-bdel[data-mode="claude/held"]');
-  await p.click('.hr-byes[data-mode="claude/held"]');
+  await click('.hr-bdel[data-mode="claude/held"]');
+  await click('.hr-byes[data-mode="claude/held"]');
   await p.waitForFunction(() => document.querySelector(".hr-brrow .hr-bsaid.bad"), null, { timeout: slow(8000) });
   const bad = await p.locator(row("claude/held") + " .hr-bsaid.bad").textContent();
   if (!/open merge request/.test(bad) || posts.length !== 1 || posts[0].repo !== repo || posts[0].branch !== "claude/held") fail(tag + ": the refusal is wrong " + JSON.stringify({ bad, posts }));
   answer = { status: 200, body: { note: "fix/y was at 3f9a1c2 and is deleted" } };
   list = list.filter(b => b.name !== "fix/y");
-  await p.click('.hr-bdel[data-mode="fix/y"]');
-  await p.click('.hr-byes[data-mode="fix/y"]');
+  await click('.hr-bdel[data-mode="fix/y"]');
+  await click('.hr-byes[data-mode="fix/y"]');
   await p.waitForFunction(() => document.querySelectorAll(".hr-brrow").length === 2 && /is deleted/.test((document.querySelector("p.hr-bsaid") || {}).textContent || ""), null, { timeout: slow(8000) })
     .catch(() => fail(tag + ": a delete did not drop the row and say the note"));
   if (posts.length !== 2 || posts[1].branch !== "fix/y") fail(tag + ": the delete posted the wrong branch " + JSON.stringify(posts));

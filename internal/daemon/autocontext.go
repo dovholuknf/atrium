@@ -30,11 +30,6 @@ func (d *Daemon) cycleSubject(t *store.Task) bool {
 	if t == nil || d.sup.Get(t.ID) == nil || small.IsParked(t) || !api.ContextCycleOn(t) {
 		return false
 	}
-	switch t.Status {
-	case store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission:
-	default:
-		return false
-	}
 	if d.Guests.Get(t.ID) != nil || d.FrozenForMove(t.ID) {
 		return false
 	}

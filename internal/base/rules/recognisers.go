@@ -198,7 +198,7 @@ func IsPRRow(tags string) bool {
 }
 
 // repoSegment is one part of a "host/org/repo": no part is . or .., so a path made from it cannot climb out.
-var repoSegment = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
+var repoSegment = regexp.MustCompile(`^\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
 
 // RepoSlug is whether s is "host/org/repo" and nothing else.
 func RepoSlug(s string) bool {

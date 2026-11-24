@@ -221,7 +221,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	task, err := s.Launch(s.openOtherLaunchBody(in, got, ans.Worktree, key, host, org, repo, k.branch, home))
 	if err != nil {
 		undo()
-		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
+		s.launchFail(w, ans.Worktree, err)
 		return
 	}
 	s.PublishTask(task)
@@ -236,20 +236,22 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	writeJSON(w, http.StatusCreated, ans)
 }
 
-// liveLinkCard is a card that is not done or dead and carries the link's tag, or nil.
-func (s *Server) liveLinkCard(key string) *store.Task {
+// liveLinkCard is a card that is not done or dead and carries the link's tag, or one of also, or nil.
+func (s *Server) liveLinkCard(key string, also ...string) *store.Task {
 	all, err := s.st.List()
 	if err != nil {
 		return nil
 	}
-	tag := "link:" + key
+	tags := append([]string{"link:" + key}, also...)
 	for _, t := range all {
 		if t.Status == store.StatusDone || t.Status == store.StatusDead {
 			continue
 		}
 		for _, g := range t.Tags {
-			if strings.EqualFold(g, tag) {
-				return t
+			for _, tag := range tags {
+				if strings.EqualFold(g, tag) {
+					return t
+				}
 			}
 		}
 	}
