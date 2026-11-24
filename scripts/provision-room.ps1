@@ -2089,8 +2089,8 @@ if ($state.binsha -eq $sha) {
 if (Test-Path $Bin) {
     try { & $Bin stop --url $StopUrl 2>&1 | Out-Null } catch {}
     $null = Sch /End /TN atrium
-    # A card's mcp-relay runs this exe for the life of its session, so it is never waited on or killed.
-    function Get-Wound { Get-CimInstance Win32_Process -Filter "Name='atrium.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -eq $Bin -and $_.CommandLine -notmatch 'mcp-relay' } }
+    # A card's atrium-control (`control`, or `mcp-relay`) runs this exe for the life of its session, so it is never waited on or killed.
+    function Get-Wound { Get-CimInstance Win32_Process -Filter "Name='atrium.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -eq $Bin -and $_.CommandLine -notmatch ' (control|mcp-relay)( |$)' } }
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Wound) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
     Get-Wound | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }

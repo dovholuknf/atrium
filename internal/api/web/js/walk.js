@@ -848,7 +848,12 @@ const walkTenant = {
   // The findings of a pulls row. The text is parsed here the way a file is, and what the daemon already worked
   // out (key, place, walk state, the hunk) is laid over it.
   async loadPr(d) {
-    const out = await api(`/v1/prs/${encodeURIComponent(this.prId)}/findings`);
+    let out;
+    try { out = await api(`/v1/prs/${encodeURIComponent(this.prId)}/findings`); } catch (e) {
+      // No review yet, or one not ready: the branch against its base, never an empty walk.
+      if (e && e.body && (e.body.code === "not_ready" || e.body.code === "outside")) return this.loadFiles(termTask);
+      throw e;
+    }
     if (out && out.pr && typeof pullsApplyRow === "function") { pullsApplyRow(out.pr); pullsChanged(); }
     const next = (out.findings || []).map(f => walkPrItem(f));
     const prev = new Map(d.items.map(i => [i.key, i]));

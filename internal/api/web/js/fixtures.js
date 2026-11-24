@@ -1954,7 +1954,7 @@ async function launchNow(opening) {
       });
     } catch (e) {
       if (!(e.body && e.body.code === "not_openable")) {
-        const held = e && e.body && e.body.code === "held" ? e.body.card : "";
+        const held = e && e.body && (e.body.code === "held" || e.body.code === "launch_failed") ? e.body.card : "";
         linkOpeningFail(id, e && e.name === "AbortError" ? "the room did not answer in 5 minutes" : (e && e.message) || String(e), held);
         return;
       }

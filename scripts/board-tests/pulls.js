@@ -789,7 +789,8 @@ async function pullsDrawerSection(browser, base) {
     landCard("land-pw1", { supervised: true, worktree: "/pr/walker" }),
     landCard("land-pw2", { supervised: true, worktree: "/pr/walker2" }),
     landCard("land-pw3", { supervised: true, worktree: "/pr/walker3" }),
-    landCard("land-pw4", { supervised: true, worktree: "/pr/walker4" })
+    landCard("land-pw4", { supervised: true, worktree: "/pr/walker4" }),
+    landCard("land-pw5", { supervised: true, worktree: "/pr/walker5" })
   ];
   mock.landPerms = [];
   const errors = [];
@@ -812,7 +813,8 @@ async function pullsDrawerSection(browser, base) {
     rows: [row("pr_w", { walker_task: "land-pw1", number: 1 }), row("pr_l", { number: 2, created_at: "2026-10-01T08:00:00Z" }),
       // its walker's card is done, which the row does not know
       row("pr_d", { number: 3, walker_task: "land-pwdead", created_at: "2026-10-01T07:00:00Z" }),
-      row("pr_x", { number: 4, walker_task: "land-pw4", created_at: "2026-10-01T06:00:00Z" })],
+      row("pr_x", { number: 4, walker_task: "land-pw4", created_at: "2026-10-01T06:00:00Z" }),
+      row("pr_q", { number: 5, walker_task: "land-pw5", state: "queued", created_at: "2026-10-01T05:00:00Z" })],
     f: {}, puts: [], posts: [], files: 0, findingGets: 0
   };
   const fresh = () => [mk("f-1", 1, "med", "a/b.go", 7, "x = 1", "* first bullet"), mk("f-2", 2, "low", "c.go", 20, "y = 2", "* second bullet")];
@@ -820,6 +822,7 @@ async function pullsDrawerSection(browser, base) {
   st.f.pr_l = fresh();
   st.f.pr_d = fresh();
   st.f.pr_x = fresh();
+  st.f.pr_q = [];
   st.gate = null;
   const counts = id => {
     const c = { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 0 };
@@ -843,6 +846,8 @@ async function pullsDrawerSection(browser, base) {
   await ctx.route(/\/v1\/tasks\/land-pw4\/files\/list/, route => json(route, 200, { entries: [entry] }));
   await ctx.route(/\/v1\/tasks\/land-pw4\/files\/text/, route => json(route, 200, { text: st.f.pr_x[0].text, hash: "h", eol: "\n" }));
   // The walk reads the head tree's copy of a finding's file under src/ for its context lines (u-008), so only other reads count.
+  await ctx.route(/\/v1\/tasks\/land-pw5\/diff/, route => json(route, 200, { branch: "feat", base: "origin/main", mode: "branch", modes: { branch: 1 },
+    diff: "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,2 @@\n a\n+b\n" }));
   await ctx.route(/\/v1\/tasks\/land-pw[12]\/files\//, async route => { if (!/[?&]path=src%2F/.test(route.request().url())) st.files++; return json(route, 404, { error: "no files here" }); });
   await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
     const req = route.request();
@@ -860,6 +865,7 @@ async function pullsDrawerSection(browser, base) {
     if (!cur) return json(route, 404, { error: "no such pr", code: "not_found" });
     if (m === "GET" && rest === "/findings") {
       st.findingGets++;
+      if (cur.state !== "ready") return json(route, 409, { error: "the review is not ready", code: "not_ready", state: cur.state });
       cur.walk = counts(id);
       return json(route, 200, { pr: cur, findings: st.f[id] });
     }
@@ -1076,6 +1082,12 @@ async function pullsDrawerSection(browser, base) {
     release();
     await q.waitForFunction(() => walkTenant.prId === "pr_x", null, { timeout: slow(10000) })
       .catch(() => fail("pullsDrawer: a walker attached before the rows loaded stayed on the files source"));
+
+    // a PR card whose review is not ready walks its branch against the base, never an empty walk
+    await attachRetry(q, { unit: "pullsDrawer", id: "land-pw5", check: () => !!document.querySelector("#t-walk:not([hidden])") });
+    await q.click("#t-walk");
+    await q.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 1 && dock.items[0].kind === "file", null, { timeout: slow(10000) })
+      .catch(async () => fail("pullsDrawer: a PR card with no ready review walked " + await q.evaluate(() => JSON.stringify({ n: dock.items.length, error: dock.error }))));
     if (errors.length) fail("pullsDrawer: the page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();

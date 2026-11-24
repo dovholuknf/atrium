@@ -76,3 +76,14 @@ func TestATagsTemplateHoldsNoPerItemPlaceholder(t *testing.T) {
 		t.Fatalf("broad tags refused: %v", err)
 	}
 }
+
+func TestRepoSlugTakesALeadingDotButNeverDotOrDotDot(t *testing.T) {
+	if !RepoSlug("github.com/openziti/.github") {
+		t.Error("github.com/openziti/.github was refused")
+	}
+	for _, bad := range []string{"github.com/openziti/.", "github.com/openziti/..", "github.com/../.github", "github.com/openziti/...x"} {
+		if RepoSlug(bad) {
+			t.Errorf("%s was taken", bad)
+		}
+	}
+}

@@ -1987,6 +1987,16 @@ function termOrder(tasks) {
   return tasks;
 }
 
+// A launcher and everything it launched sort as one unit, on the first place any card in the group holds in the sorted
+// list. A pinned row keeps its own place, since its order is the one somebody dragged. By name nothing is fresher.
+function termGroupOrder(sorted, top, kids) {
+  if (!termSortStarted && !sortByActivity) return top;
+  const at = new Map(sorted.map((t, i) => [t.id, i]));
+  const lead = t => (kids.get(t.id) || []).reduce((n, k) => Math.min(n, lead(k)), at.get(t.id));
+  const key = new Map(top.map(t => [t.id, t.pinned ? at.get(t.id) : lead(t)]));
+  return top.slice().sort((a, b) => key.get(a.id) - key.get(b.id));
+}
+
 // The line under the title bar, in words: `5 shown · activity · by project`. The chips say what is in the five.
 function termSummary(show, n) {
   const what = n + " shown";
@@ -2106,7 +2116,7 @@ async function renderTermList() {
   const nest = termNest(shown);
   termKids = nest.kids;
   termKidsPool = termNest(all.filter(t => !t.offline)).kids;
-  const top = shown.filter(t => !nest.nested.has(t.id));
+  const top = termGroupOrder(shown, shown.filter(t => !nest.nested.has(t.id)), nest.kids);
   // What each heading would hold with nothing searched away, so it can say `7/15`.
   const nestAll = q ? termNest(tasks) : nest;
   // By age every card is in its age bucket, pinned or not, so there is no pinned bucket.

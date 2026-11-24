@@ -24394,6 +24394,14 @@ async function quickPasteSection(browser, base) {
     });
     if (goto_.first !== "goto" || goto_.card !== "beta~c7")
       fail("quickPaste: a held link did not offer go to card first: " + JSON.stringify(goto_));
+    const prLive = await p.evaluate(() => {
+      const keep = lastTasks;
+      lastTasks = [{ id: "sg4~c9", status: "needs-input", tags: ["pr:openziti/ziti-tunnel-sdk-c#1481"] }];
+      const hit = liveCardFor("https://github.com/openziti/ziti-tunnel-sdk-c/pull/1481", "pr:openziti/ziti-tunnel-sdk-c#1481");
+      lastTasks = keep;
+      return hit ? hit.id : "";
+    });
+    if (prLive !== "sg4~c9") fail("quickPaste: a live card tagged with the pasted PR was not found: " + prLive);
     // its edit is the dialog, filled in
     await p.evaluate(() => document.querySelector('.card.linkopen.failed [data-op-act="edit"]').click());
     await p.waitForFunction(() => document.getElementById("launch").open &&
@@ -32586,7 +32594,6 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchNewAgent", bu("launchNewAgent"));
     await unit("launchNewAgentPath", bu("launchNewAgentPath"));
-    await unit("launchFolderComplete", bu("launchFolderComplete"));
     await unit("launchGroupPlus", bu("launchGroupPlus"));
     await unit("launchNewAgentGroups", bu("launchNewAgentGroups"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));

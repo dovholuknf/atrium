@@ -248,12 +248,16 @@ func (c *contextSizes) forgetExcept(live map[string]bool) []string {
 // holds it to its limit: past it, the context cycle starts, and a cycle already on
 // the card is poked so a prompt that is due goes now. See autocontext.go.
 func (d *Daemon) watchContext() error {
-	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
+	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission, store.StatusDone)
 	if err != nil {
 		return err
 	}
 	live, open := map[string]bool{}, map[string]bool{}
 	for _, t := range tasks {
+		// A done card the human still works in keeps its live session, and its size and cycle with it.
+		if t.Status == store.StatusDone && d.sup.Get(t.ID) == nil {
+			continue
+		}
 		open[t.ID] = true
 		if strings.TrimSpace(t.Worktree) == "" {
 			continue

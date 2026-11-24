@@ -78,6 +78,7 @@ func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 		{"https://github.com/openziti/ziti/pull/4211", "github-pull-request", "openziti", "ziti", "4211"},
 		{"https://github.com/openziti/ziti/pull/4211/files", "github-pull-request", "openziti", "ziti", "4211"},
 		{"https://github.com/openziti/ziti/issues/12", "github-issue", "openziti", "ziti", "12"},
+		{"https://github.com/openziti/.github/pull/17/changes", "github-pull-request", "openziti", ".github", "17"},
 		{"git@github.com:openziti/ziti.git", "github-repo-ssh", "openziti", "ziti", ""},
 	}
 	for _, c := range cases {

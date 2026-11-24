@@ -341,6 +341,23 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 	}
 }
 
+// b-done-card-never-cycles: a done card keeps its status while the human works on in its live session.
+func TestADoneCardWithALiveSessionCycles(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.NcTiming.PromptLost = time.Hour
+	task, f, _ := cycleCard(t, d, 250_000)
+	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	task, _ = d.st.Get(task.ID)
+	if !d.cycleSubject(task) {
+		t.Fatal("a done card with a live runner is not a subject")
+	}
+	watch(t, d)
+	until(t, "the limit prompt on a done card", func() bool { return prompts(f) == 1 })
+}
+
 // The limit prompt names atrium's limit with both numbers, the binary and the path, in the operator's words.
 func TestTheLimitPromptWording(t *testing.T) {
 	t.Parallel()

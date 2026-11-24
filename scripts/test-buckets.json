@@ -109,7 +109,7 @@
         "internal/api/web/css/access.css",
         "internal/api/web/js/access.js"
       ],
-      "tests": ["scripts/test-seen.js", "scripts/test-roommove.js", "scripts/test-sort-order.js", "scripts/test-custom-groups.js", "scripts/test-refresh-storm.js"],
+      "tests": ["scripts/test-seen.js", "scripts/test-roommove.js", "scripts/test-sort-order.js", "scripts/test-group-sort.js", "scripts/test-custom-groups.js", "scripts/test-refresh-storm.js"],
       "checks": ["scripts/check-cards.js", "scripts/check-new-card-row.js", "scripts/check-board-drawer.js"],
       "needs": ["internal/api/web/js/core.js"]
     },

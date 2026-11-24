@@ -28,6 +28,10 @@ func TestNormalizeTags(t *testing.T) {
 		// Runs of whitespace collapse, or "pull  request" and "pull request"
 		// are two groups.
 		{[]string{"pull   request"}, "pull request"},
+		{[]string{"a-tag-that-is-longer-than-forty-characters-long"}, "a-tag-that-is-longer-than-forty-characte"},
+		// The tags a pasted link finds its card by stay whole, or the card is never found again.
+		{[]string{"link:github.com/openziti/ziti-tunnel-sdk-c/1481", "pr:an-org-with-a-long-name/a-repo-with-a-long-name#1"},
+			"link:github.com/openziti/ziti-tunnel-sdk-c/1481,pr:an-org-with-a-long-name/a-repo-with-a-long-name#1"},
 		{nil, ""},
 	}
 	for _, c := range cases {

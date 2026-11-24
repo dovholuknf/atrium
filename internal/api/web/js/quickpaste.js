@@ -202,10 +202,10 @@ function quickPasteNoRunner() {
 }
 
 // The card for a link that is already open: not done, not dead, carrying the link's tag.
-function liveCardFor(key) {
-  const tag = "link:" + String(key).toLowerCase();
+function liveCardFor(key, also) {
+  const tags = ["link:" + String(key).toLowerCase(), String(also || "").toLowerCase()].filter(Boolean);
   return (lastTasks || []).find(t => t.status !== "done" && t.status !== "dead" &&
-    (t.tags || []).some(g => String(g).toLowerCase() === tag)) || null;
+    (t.tags || []).some(g => tags.includes(String(g).toLowerCase()))) || null;
 }
 
 // The key the room files a link under (internal/store/linkkey.go), for the kinds that name a topic or an issue, so
@@ -300,7 +300,8 @@ async function quickPasteGo(url, edit, name) {
     return;
   }
   linkOpenings.get(id).key = key;
-  const live = liveCardFor(key);
+  const gv = got.vars || {};
+  const live = liveCardFor(key, pastedOpenKind(got) === "pr" ? "pr:" + gv.org + "/" + gv.repo + "#" + gv.num : "");
   if (live) {
     linkOpeningEnd(id);
     toast(got.title || key, "already open, here is its card");

@@ -1683,7 +1683,8 @@ func NormalizeTags(in []string) []string {
 		if t == "" || seen[t] {
 			continue
 		}
-		if len(t) > 40 {
+		// A link: or pr: tag is how a pasted link finds its card again, so it is never cut.
+		if len(t) > 40 && !strings.HasPrefix(t, "link:") && !strings.HasPrefix(t, "pr:") {
 			t = t[:40]
 		}
 		seen[t] = true
