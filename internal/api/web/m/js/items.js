@@ -410,7 +410,7 @@
     });
     if (door) door.addEventListener("click", openList);
     avail = await load();
-    const paint = () => { if (door) door.hidden = !avail || !emergingOn(); };
+    const paint = () => { if (door) door.hidden = !avail || !areaOn("items"); };
     window.addEventListener("emerging", paint);
     paint();
   }

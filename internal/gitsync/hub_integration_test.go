@@ -49,6 +49,7 @@ type hubFixture struct {
 	requests atomic.Int32
 	lastSync atomic.Value // the body of the last sync
 	hub      string
+	unserved atomic.Bool // the fake room answers 404 for the repository until a sync says ok
 }
 
 func newHubFixture(t *testing.T, roomGit bool) *hubFixture {
@@ -67,8 +68,10 @@ func newHubFixture(t *testing.T, roomGit bool) *hubFixture {
 	x.answer.Store("ok")
 
 	roomGitBackend := &Backend{
-		Prefix:  "/v1/git",
-		Resolve: func(name string) (string, bool) { return filepath.Join(x.roomWork, ".git"), name == "github/o/r" },
+		Prefix: "/v1/git",
+		Resolve: func(name string) (string, bool) {
+			return filepath.Join(x.roomWork, ".git"), !x.unserved.Load() && name == "github/o/r"
+		},
 		// No hideRefs at all, so claude/main IS advertised and only the hub's own refspec keeps
 		// it out.
 	}
@@ -79,6 +82,9 @@ func newHubFixture(t *testing.T, roomGit bool) *hubFixture {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		b, _ := json.Marshal(body)
 		x.lastSync.Store(string(b))
+		if x.answer.Load().(string) == "ok" {
+			x.unserved.Store(false)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"state": x.answer.Load().(string), "sha": "abc", "detail": "said so"})
 	})
 	mux.Handle("/v1/git/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -532,5 +538,32 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 		if out, err := rawGit(dir, nil, nil, "fsck", "--connectivity-only", "--no-progress"); err != nil {
 			t.Fatalf("fsck %s: %v %s", dir, err, out)
 		}
+	}
+}
+
+func TestACollectThe404sIsSyncedAndRetriedAndSaysWhyWhenTheRoomHasNoClone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newHubFixture(t, true)
+	if _, err := x.h.Mirror(bg); err != nil {
+		t.Fatal(err)
+	}
+	git(t, x.roomWork, "checkout", "-q", "-b", "claude/a")
+	commit(t, x.roomWork, "a.txt", "worker a")
+	git(t, x.roomWork, "checkout", "-q", "claude/main")
+
+	x.unserved.Store(true)
+	res, err := x.h.Collect(bg, "ROOM-D")
+	if err != nil || res.Repos[0].Error != "" || res.Repos[0].Refs != 1 || x.syncs.Load() != 1 {
+		t.Fatalf("a room that forgot is synced and fetched again: %+v err=%v syncs=%d", res, err, x.syncs.Load())
+	}
+
+	x.unserved.Store(true)
+	x.answer.Store("absent")
+	res, err = x.h.Collect(bg, "ROOM-D")
+	if err != nil || !strings.Contains(res.Repos[0].Error, "its sync says absent: said so") {
+		t.Fatalf("a room with no clone says why: %+v err=%v", res, err)
 	}
 }

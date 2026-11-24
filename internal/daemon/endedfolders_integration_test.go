@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -141,7 +142,41 @@ func TestAHomeWhoseCardIsGoneIsRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.sweepEndedFolders(context.Background())
+	homeStays(t, dd)
+	none := func(string, bool) ([]*store.Task, bool) { return nil, true }
+	d.sweepHome(context.Background(), row, none, nil, time.Now().Add(WokenGuard+time.Minute))
 	homeGone(t, d, row, dd)
+}
+
+func TestTwoRepoLaunchesAtOnceKeepTheirCheckoutsThroughASweep(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	repo := homeRepo(t)
+	var wg sync.WaitGroup
+	dds := make([]home.HomeDirs, 2)
+	errs := make([]error, 2)
+	for i, title := range []string{"bug launch missing cwd", "u failed paste toast"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := shared.LaunchRequest{Repo: repo, Title: title}
+			_, dds[i], errs[i] = d.LaunchHome(store.CardHomeWorktree, &req)
+		}()
+	}
+	wg.Wait()
+	for i := range errs {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+	}
+	if out := d.sweepEndedFolders(context.Background()); len(out) != 0 {
+		t.Fatalf("the sweep took homes still being launched: %s", sweptPaths(out))
+	}
+	for _, dd := range dds {
+		if !shared.HasDotGit(dd.Work) {
+			t.Fatalf("%s is not a checkout", dd.Work)
+		}
+	}
 }
 
 func TestUnsavedWorkIsStashedBeforeTheHomeGoes(t *testing.T) {

@@ -237,11 +237,11 @@
       head.appendChild(seg);
     }
     if (!st.card) {
-      st.src = st.src === "published" && !emergingOn() ? "all" : st.src || "all";
+      st.src = st.src === "published" && !areaOn("hubdocs") ? "all" : st.src || "all";
       const seg = el("div", "d-seg");
       seg.setAttribute("role", "group");
       seg.setAttribute("aria-label", "which files");
-      ["all", "published", "dropped", "folders"].filter(name => name !== "published" || emergingOn()).forEach(name => {
+      ["all", "published", "dropped", "folders"].filter(name => name !== "published" || areaOn("hubdocs")).forEach(name => {
         const b = el("button", "d-segb", name);
         b.type = "button";
         b.setAttribute("aria-pressed", String(st.src === name));
@@ -265,7 +265,7 @@
     pick.hidden = true;
     pick.setAttribute("aria-label", "choose a file to upload");
     const upBtn = btn("upload", () => pick.click(), "d-up");
-    const toDrop = !st.card && (st.src === "dropped" || !emergingOn());
+    const toDrop = !st.card && (st.src === "dropped" || !areaOn("hubdocs"));
     const titleIn = el("input", "d-tin");
     titleIn.type = "text";
     titleIn.placeholder = toDrop ? "note (optional)" : "title (optional)";
@@ -306,7 +306,7 @@
       if (text) p.set("q", text);
       if (st.deleted) p.set("deleted", "1");
       if (st.card) p.set("card", st.card);
-      const wantDocs = src !== "dropped" && avail === true && (!!st.card || emergingOn());
+      const wantDocs = src !== "dropped" && avail === true && (!!st.card || areaOn("hubdocs"));
       const wantFiles = !st.card && !st.deleted && src !== "published" && window.mFiles && window.mFiles.available();
       let g = { ok: true, body: { docs: [] } };
       if (wantDocs) {
@@ -826,7 +826,7 @@
     window.addEventListener("resize", () => { if (els && !els.sheet.hidden) boardFrame(true); });
     const door = async () => {
       const f = window.mFiles ? await window.mFiles.ready() : false;
-      const open = (avail === true && emergingOn()) || f;
+      const open = (avail === true && areaOn("hubdocs")) || f;
       if (btnM) btnM.hidden = !open;
       if (tab) tab.hidden = !open;
     };

@@ -173,6 +173,7 @@ func (c *controlMCP) handler() http.Handler {
 // `audited` wrapping are written once whichever servers it lands on.
 func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
+	ctl.OpenOutputs(s)
 
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_status",
@@ -194,7 +195,9 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 			"A peer's `alias`, when it has one, is a short name the operator gave it (`sa89`, " +
 			"`dotfiles`), and `atrium_say` takes that too, with or without the `@`.\n\n" +
 			"`rooms: true` adds the sessions on other rooms. Their handle is `name@room`, and " +
-			"`atrium_say` takes that, as it takes `alias@room`. A bare name always means your own room.",
+			"`atrium_say` takes that, as it takes `alias@room`. A bare name always means your own room.\n\n" +
+			"A `needs-input` peer lists `waits_on`: its open asks and approve gates, each with the board link. " +
+			"One with none is stalled, not waiting.",
 	}, c.peersHandler)
 
 	addTool(s, class, &mcp.Tool{
@@ -654,8 +657,54 @@ type peer struct {
 	// not answered. `atrium_task` has the questions themselves.
 	Unseen        bool `json:"unseen,omitempty"`
 	OpenQuestions int  `json:"open_questions,omitempty"`
+	// WaitsOn is what a needs-input card is blocked on: its open asks and approve gates, each with the board link.
+	// A needs-input card with none is stalled, not waiting.
+	WaitsOn []waitsOn `json:"waits_on,omitempty"`
 	// Everywhere marks a card that is listed because it carries atrium:everywhere.
 	Everywhere bool `json:"everywhere,omitempty"`
+}
+
+type waitsOn struct {
+	Kind  string `json:"kind"`
+	Text  string `json:"text"`
+	Peer  string `json:"peer,omitempty"`
+	Since string `json:"since,omitempty"`
+	Link  string `json:"link"`
+}
+
+// waitsOnOf lists the open asks and gates of a needs-input card. A failed read leaves it empty.
+func (c *controlMCP) waitsOnOf(ctx context.Context, room string, t ctlCard) []waitsOn {
+	if t.Status != "needs-input" {
+		return nil
+	}
+	cardRoom, id := wire.SplitTag(t.ID)
+	if cardRoom == "" {
+		cardRoom = room
+	}
+	var body struct {
+		Asks []struct {
+			Text    string    `json:"text"`
+			Peer    string    `json:"peer"`
+			Verb    string    `json:"verb"`
+			AskedAt time.Time `json:"asked_at"`
+		} `json:"asks"`
+	}
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks/"+t.ID+"/asks", room, nil, &body); err != nil {
+		return nil
+	}
+	link := fmt.Sprintf("%s/room/%s/%s", seenhost.Base(c.board), url.PathEscape(cardRoom), url.PathEscape(id))
+	var out []waitsOn
+	for _, a := range body.Asks {
+		w := waitsOn{Kind: "ask", Text: a.Text, Peer: a.Peer, Link: link}
+		if a.Verb != "" {
+			w.Kind = "gate"
+		}
+		if !a.AskedAt.IsZero() {
+			w.Since = a.AskedAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, w)
+	}
+	return out
 }
 
 type peersOutput struct {
@@ -696,6 +745,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 			Doing: t.Activity.What, Where: t.Worktree,
 			Waiting: t.Wait, Owned: t.Superv,
 			Unseen: t.Seen != nil && t.Seen.Unseen, OpenQuestions: t.Seen.OpenCount(),
+			WaitsOn: c.waitsOnOf(ctx, room, t),
 		})
 	}
 	// OTHER ROOMS, marked, when asked. Only for a caller with a room: without one
@@ -1999,9 +2049,8 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		}
 		out.Brief = strings.TrimRight(strings.ReplaceAll(dir, "\\", "/"), "/") + "/" + "BRIEF.md"
 	}
-	// Where the human looks. Worth returning rather than leaving them to assemble
-	// it, because the fragment form is not guessable.
-	out.Watch = seenhost.Base(c.board) + "/#term=" + url.PathEscape(t.ID)
+	// Where the human looks. Worth returning rather than leaving them to assemble it.
+	out.Watch = TerminalURL(seenhost.Base(c.board), room, t.Wire, t.ID)
 	out.Note = LaunchStartedNote
 	if out.Recovered {
 		out.Note = LaunchRecoveredNote

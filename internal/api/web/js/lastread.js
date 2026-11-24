@@ -127,7 +127,7 @@ function lrMarkLine(m) { return m && !m.isDisposed && m.line >= 0 ? m.line : -1;
 
 // Writes down where this terminal was left. Idempotent while away.
 function lrLeave(why) {
-  if (LR_OFF) return;
+  if (LR_OFF || !flagOn("lastread")) return;
   const t = term;
   if (!t || !termTask || !t.buffer || !t.element) return;
   if (document.getElementById("terms").hidden) return;
@@ -189,7 +189,7 @@ function lrDraw(t, row, cur, k) {
 // Coming back. `why` is tab, focus, visible (the window or tab came back), show (a kept terminal was shown) or attach
 // (a terminal was built or reconnected and its replay has settled).
 function lrReturn(why) {
-  if (LR_OFF) return;
+  if (LR_OFF || !flagOn("lastread")) return;
   const t = term;
   if (!t || !termTask || !t.buffer) return;
   // Not while the Terminals view is hidden: a restore spent on a hidden element is lost, and the return that matters is

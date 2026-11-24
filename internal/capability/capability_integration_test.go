@@ -71,3 +71,13 @@ func TestRunOnlyDeclaredAndNeedsGate(t *testing.T) {
 		t.Fatal("results did not survive a restart")
 	}
 }
+
+func TestProbeHardwareNeverFailsAndReadsTheBasics(t *testing.T) {
+	h := ProbeHardware(context.Background(), t.TempDir()+"/not/made/yet")
+	if h.Cores < 1 || h.RAM == 0 || h.DiskFree == 0 || h.At == "" {
+		t.Fatalf("%+v", h)
+	}
+	if s := strings.Join(h.Summary(), "\n"); !strings.Contains(s, "cores") || !strings.Contains(s, "disk:") {
+		t.Fatalf("summary: %s", s)
+	}
+}

@@ -307,6 +307,7 @@ async function dictFinish(linesOnly) {
 }
 
 document.addEventListener("keydown", e => {
+  if (!flagOn("mic")) return;
   const code = dictCode();
   if (dictState === "listening" && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); dictCancel(); return; }
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") {

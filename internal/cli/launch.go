@@ -302,6 +302,9 @@ func launchBody(o launchOpts, cwd string) error {
 		}
 		fields["prompt"] = link.WithItemReportLine(o.prompt)
 	}
+	if by, byID := cardLauncher(); by != "" {
+		fields["spawned_by"], fields["spawned_by_id"] = by, byID
+	}
 	body, err := json.Marshal(fields)
 	if err != nil {
 		return err

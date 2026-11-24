@@ -57,7 +57,7 @@ function paintItemsTab() {
   const tab = document.querySelector('.tab[data-view="items"]');
   if (!tab) return;
   // The fixtures (`?itemsmock=1`) show the tab on a board with no hub, so the views can be read without one.
-  tab.hidden = itemsMockOn() ? false : !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  tab.hidden = itemsMockOn() ? false : !areaOn("items") || typeof hubIsHub === "undefined" ? true : !hubIsHub;
   // Once as the tab appears: after that the `item` event moves the badge, and a paint is not a reason to read.
   if (tab.hidden) itemsBadgeAsked = false;
   else if (!itemsBadgeAsked) { itemsBadgeAsked = true; loadItemsBadge(); }

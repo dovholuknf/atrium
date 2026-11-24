@@ -179,6 +179,19 @@ if (withPin !== "cabd") {
     `pass is meant to lift one row and leave the order underneath it alone.`);
 }
 
+// BY STARTED follows the instant, so a child stamped with another room's offset still sorts by when it began.
+mode.on = "started";
+const kids = [
+  { id: "doc", created_at: "2026-11-20T19:00:00-05:00" },
+  { id: "new", created_at: "2026-11-23T21:37:00-05:00" },
+  { id: "toast", created_at: "2026-11-24T02:35:00Z" },
+  { id: "beep", created_at: "2026-11-24T02:34:00Z" }
+];
+const kidOrder = strip(kids.slice()).map(t => t.id).join(",");
+if (kidOrder !== "new,toast,beep,doc") {
+  fail(`by started ranked ${kidOrder}, expected new,toast,beep,doc: newest instant first whatever the offset.`);
+}
+
 // WORKING NOW SORTS ABOVE EVERYTHING under `by activity`, which is the whole
 // point of the mode and used to be inverted: a session logging nothing during a
 // long build read as idle and sank. A card doing work outranks a waiting one,

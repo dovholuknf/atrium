@@ -1,5 +1,7 @@
 // YOUR QUEUE (docs/design/your-queue.md): every ask waiting on the operator, one row each, stuck first, newest first. The
-// Queue tab draws it, and the header badge counts it on every tab.
+// Queue tab draws it, and the header badge counts it on every tab. With the "attention" flag on, the terminals tab's
+// `N for you` pill beside the filter box swaps the session list for it instead, and the ask picked sits as a strip over
+// its card's terminal.
 //
 // An ask is { key, verb, stuck, title, since, why, card, item, merge }. Its verb is one of answer, approve, try, sign,
 // unblock. Asks come from the hub's items, its merge queue, and the card list, and a card an item already covers is
@@ -9,9 +11,42 @@ const YQ_HUB_MS = 60000;
 const yqHub = { items: null, merges: null, at: 0, busy: false };
 const YQ_FOLD_KEY = "atrium.queue.folded";
 
-function yqOn() {
-  return typeof isViewing === "function" && isViewing("queue");
+const yqFor = { on: false };
+
+function yqAttn() {
+  return typeof flagOn === "function" && flagOn("attention");
 }
+
+function yqForOn() {
+  return yqAttn() && yqFor.on && typeof isViewing === "function" && isViewing("terms");
+}
+
+function yqOn() {
+  return yqAttn() ? yqForOn() : typeof isViewing === "function" && isViewing("queue");
+}
+
+function yqForSet(on) {
+  yqFor.on = !!on;
+  if (!yqFor.on && yqView.ask) yqCloseAsk();
+  yqPaint();
+  if (typeof renderTermList === "function") renderTermList();
+}
+
+// The strip lives in the terminal pane with the flag on, and in the Queue tab's pane with it off.
+function yqAskPlace() {
+  const el = document.getElementById("yq-ask");
+  const home = yqAttn() ? document.getElementById("term-perm") : document.querySelector("#queue .yq-pane");
+  if (!el || !home) return;
+  if (yqAttn() && el.previousElementSibling !== home) home.after(el);
+  else if (!yqAttn() && el.parentNode !== home) { home.append(el); el.hidden = false; }
+}
+
+window.addEventListener("emerging", () => {
+  if (!yqAttn()) yqFor.on = false;
+  yqAskPlace();
+  yqPaint();
+  yqPaintAsk(true);
+});
 
 async function yqLoadHub() {
   if (yqHub.busy || Date.now() - yqHub.at < YQ_HUB_MS) return;
@@ -323,7 +358,7 @@ let yqLast = [];
 const yqSeen = { all: 0, counts: {} };
 function yqListHTML(tasks) {
   const all = yqAsks(tasks);
-  const show = yqShow(), q = typeof fdSearchText === "function" ? fdSearchText("queue") : "";
+  const show = yqShow(), q = typeof fdSearchText === "function" ? fdSearchText(yqAttn() ? "terms" : "queue") : "";
   const sort = yqPick(YQ_SORT_KEY, YQ_SORTS, "activity"), mode = yqPick(YQ_GROUP_KEY, YQ_GROUP_MODES, "need");
   const counts = Object.fromEntries(YQ_CHIPS.map(c => [c[0], 0]));
   const l = yqLast = all.filter(a => {
@@ -376,16 +411,18 @@ function yqPatch(host, html) {
 }
 
 function yqRender() {
-  const host = document.getElementById("yq-list");
+  const attn = yqAttn();
+  const host = document.getElementById(attn ? "yq-forlist" : "yq-list");
   if (!host || !yqOn()) return;
   yqLoadHub();
   const html = yqListHTML(typeof lastTasks !== "undefined" ? lastTasks : []);
-  if (host.__yq !== html) { host.__yq = html; yqPatch(host, html); }
+  // `renderTermList` morphs the list and can empty the for-you host while keeping it, cache and all.
+  if (host.__yq !== html || !host.firstChild) { host.__yq = html; yqPatch(host, html); }
   if (typeof pillCounts === "function") pillCounts("yq-show", yqSeen.counts);
   if (typeof fdStatus === "function") {
     const sort = yqPick(YQ_SORT_KEY, YQ_SORTS, "activity"), mode = yqPick(YQ_GROUP_KEY, YQ_GROUP_MODES, "need");
-    fdStatus("queue", {
-      summary: [yqLast.length + " shown", sort, YQ_GROUP_MODES.find(g => g[0] === mode)[1]].join(" · "),
+    fdStatus(attn ? "terms" : "queue", {
+      summary: [yqLast.length + (attn ? " for you" : " shown"), sort, YQ_GROUP_MODES.find(g => g[0] === mode)[1]].join(" · "),
       match: yqLast.length !== yqSeen.all ? `${yqLast.length} of ${yqSeen.all}` : ""
     });
   }
@@ -412,10 +449,39 @@ function yqPaint() {
   el.textContent = l.length + " for you";
   el.dataset.tip = l.length ? YQ_VERBS.map(v => [v, l.filter(a => a.verb === v).length]).filter(x => x[1]).map(x => x[1] + " " + x[0].toLowerCase()).join(", ") : "";
   if (typeof badge === "function" && document.getElementById("c-queue")) badge("c-queue", l.length);
+  yqForPill(l.length, el.dataset.tip);
+  yqAskPlace();
   yqRender();
 }
 
+// Kept just before the filter box, so `termHeadPlace` carries it wherever the box goes.
+function yqForPill(n, tip) {
+  let b = document.getElementById("yq-for");
+  const q = document.getElementById("term-q");
+  if (!yqAttn()) { if (b) b.remove(); return; }
+  if (!b && q) {
+    b = document.createElement("button");
+    b.type = "button";
+    b.id = "yq-for";
+    b.className = "yq-for";
+    // Its `.fline` opens the filter drawer on a click, and the drawer then swallows the first tap on the list.
+    b.addEventListener("click", e => { e.stopPropagation(); yqForSet(!yqFor.on); });
+    q.before(b);
+  }
+  if (!b) return;
+  b.textContent = n + " for you";
+  b.classList.toggle("on", yqFor.on);
+  b.classList.toggle("none", !n);
+  b.setAttribute("aria-pressed", String(yqFor.on));
+  b.dataset.tip = yqFor.on ? "back to the session list" : n ? tip + ". click to list them here" : "nothing is waiting on you";
+}
+
 function yqGo() {
+  if (yqAttn()) {
+    if (typeof switchView === "function") switchView("terms");
+    if (!yqFor.on) yqForSet(true);
+    return;
+  }
   if (typeof switchView === "function") switchView("queue");
 }
 
@@ -444,9 +510,21 @@ function yqAskEl() {
 
 function yqOpenAsk(a) {
   Object.assign(yqView, { key: a.key, ask: a, mode: "ask", at: Date.now(), qi: 0, drop: false, page: 0, sent: null, listed: false });
-  if (!yqOn() && typeof switchView === "function") switchView("queue");
+  if (yqAttn()) yqForOpen(a);
+  else if (!yqOn() && typeof switchView === "function") switchView("queue");
   yqRender();
   yqPaintAsk(true);
+}
+
+function yqForOpen(a) {
+  const here = typeof termTask !== "undefined" && termTask && a.card && bareId(termTask.id) === bareId(a.card.id);
+  // Even when it is here: a read still out for an earlier pick would otherwise land and take the pane.
+  if (a.card && a.card.supervised && typeof attachTask === "function") attachTask(a.card.id);
+  else if (a.card) {
+    // No runner: attaching asks to resume over the ask, so the pane stays empty until `plain terminal`.
+    if (!here && termTask && typeof closeTerm === "function") closeTerm();
+    if (typeof attachSeq !== "undefined") attachSeq++;
+  }
 }
 
 // The card's own terminal, on the Terminals tab, with a pill there back to the ask.
@@ -454,6 +532,10 @@ function yqToTerm() {
   const a = yqView.ask;
   if (!a || !a.card) return;
   yqView.mode = "term";
+  if (yqAttn()) {
+    if (!a.card.supervised && typeof attachTask === "function") attachTask(a.card.id);
+    return yqPaintAsk(true);
+  }
   yqView.at = Date.now();
   // Switching first showed whatever card the pane already held until a dead card's read came back, or for good if it failed.
   if (typeof attachTask === "function") attachTask(a.card.id);
@@ -630,15 +712,32 @@ function yqPaintAsk(force) {
   const back = document.getElementById("yq-back");
   const a = yqView.ask;
   const t = a && a.card;
-  if (a && t && yqView.mode === "term" && typeof termTask !== "undefined" && termTask && bareId(termTask.id) !== bareId(t.id) && Date.now() - yqView.at > 4000) {
-    yqView.mode = "ask";
-  }
-  if (back) back.hidden = !a || yqView.mode === "ask";
-  if (!yqView.ask) {
-    const s = yqView.sent;
-    const empty = (s ? `<p class="yq-sent${s.bad ? " bad" : ""}" role="status">${esc(s.line)}</p>` : "") + `<p class="yq-pick">Pick an ask on the left.</p>`;
-    if (el.__yq !== empty) { el.__yq = empty; el.innerHTML = empty; }
-    return;
+  if (yqAttn()) {
+    // Another card in the pane means the operator moved on, and the strip would sit over the wrong terminal.
+    if (a && t && typeof termTask !== "undefined" && termTask && bareId(termTask.id) !== bareId(t.id) && Date.now() - yqView.at > 4000) {
+      return yqCloseAsk();
+    }
+    const shown = !!a && yqView.mode === "ask" && typeof isViewing === "function" && isViewing("terms");
+    if (back) back.hidden = !a || shown;
+    const s = !a && yqView.sent;
+    el.hidden = !shown && !(s && yqOn());
+    if (!a) {
+      const sent = s ? `<div class="yq-askbar"><p class="yq-sent${s.bad ? " bad" : ""}" role="status">${esc(s.line)}</p><span class="sp"></span>` +
+        `<button class="yq-btn" data-yq-do="close" aria-label="dismiss">&times;</button></div>` : "";
+      if (el.__yq !== sent) { el.__yq = sent; el.innerHTML = sent; }
+      return;
+    }
+  } else {
+    if (a && t && yqView.mode === "term" && typeof termTask !== "undefined" && termTask && bareId(termTask.id) !== bareId(t.id) && Date.now() - yqView.at > 4000) {
+      yqView.mode = "ask";
+    }
+    if (back) back.hidden = !a || yqView.mode === "ask";
+    if (!yqView.ask) {
+      const s = yqView.sent;
+      const empty = (s ? `<p class="yq-sent${s.bad ? " bad" : ""}" role="status">${esc(s.line)}</p>` : "") + `<p class="yq-pick">Pick an ask on the left.</p>`;
+      if (el.__yq !== empty) { el.__yq = empty; el.innerHTML = empty; }
+      return;
+    }
   }
   const left = typeof lastTasks !== "undefined" && (!yqView.ask.item || yqHub.items) && !yqAsks(lastTasks).some(x => x.key === yqView.key);
   if (left && yqView.listed) return yqCloseAsk();
@@ -716,12 +815,13 @@ function yqPageChoices(frame) {
 
 async function yqAskClick(e) {
   const b = e.target.closest && e.target.closest("[data-yq-do]");
+  if (b && !yqView.ask && b.dataset.yqDo === "close" && yqView.sent) { yqView.sent = null; return yqPaintAsk(true); }
   if (!b || !yqView.ask) return;
   const a = yqView.ask, t = yqCard(), id = t && t.id, d = b.dataset.yqDo;
   if (d.startsWith("mk-")) return yqmClick(b, d);
   if (d === "close") return yqCloseAsk();
   if (d === "mode-term") return yqToTerm();
-  if (d === "mode-ask") { yqView.mode = "ask"; if (typeof switchView === "function") switchView("queue"); return yqPaintAsk(true); }
+  if (d === "mode-ask") { yqView.mode = "ask"; if (!yqAttn() && typeof switchView === "function") switchView("queue"); return yqPaintAsk(true); }
   if (d === "q") { yqView.qi = Number(b.dataset.i) || 0; return yqPaintAsk(true); }
   if (d === "page") { yqView.page = Number(b.dataset.i) || 0; return yqPaintAsk(true); }
   if ((d === "permok" || d === "permno") && typeof decideFromTerm === "function") return decideFromTerm(b.dataset.id, d === "permok" ? "approve" : "block", b);

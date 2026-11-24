@@ -570,3 +570,17 @@
     background: rgb(var(--shell1-rgb)); color: var(--head); border: 1px solid rgb(var(--warn-rgb));
   }
   #safe-banner a { color: var(--blue); }
+
+  /* A feature flag that is off hides its way in (js/emerging.js). */
+  :root[data-off~="walk"] #t-walk,
+  :root[data-off~="walk"] #t-walk-pr,
+  :root[data-off~="walk"] .walkchip,
+  :root[data-off~="walk"] #chat-review,
+  :root[data-off~="queue"] #yq-badge,
+  :root[data-off~="usage"] #d-usage-field,
+  :root[data-off~="mic"] .dict-dock,
+  :root[data-off~="popout"] #t-popout,
+  :root[data-off~="popout"] #walk-popout,
+  :root[data-off~="artifacts"] #t-arts,
+  :root[data-off~="artifacts"] #t-arts-panel,
+  :root[data-off~="paste"] #quickpaste-open { display: none !important; }

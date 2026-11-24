@@ -1109,6 +1109,22 @@ async function groupDragSection(browser, base) {
     if (!tag.some(t => /custom grouping/.test(t.title))) {
       fail("a heading outside custom mode does not say where reordering lives: " + JSON.stringify(tag));
     }
+    // By age a pinned card sorts by its own age: an older pinned one sits under a newer unpinned one in its bucket.
+    const filedAt = FILED.last_activity_at;
+    FILED.last_activity_at = new Date(Date.now() - 120000).toISOString();
+    mock.LOOSE.last_activity_at = new Date().toISOString();
+    const agePair = () => dp.evaluate(() => [...document.querySelectorAll(
+      '#term-list .card.tab[data-id="filed1"], #term-list .card.tab[data-id="loose1"]')]
+      .map(e => e.dataset.id + "@" + e.closest(".tnest").previousElementSibling.textContent.trim()));
+    await dp.waitForFunction(() => {
+      const r = document.querySelector('#term-list .card.tab[data-id="filed1"], #term-list .card.tab[data-id="loose1"]');
+      return r && r.dataset.id === "loose1";
+    }, null, { timeout: slow(5000) }).catch(() => {});
+    const ageOrder = await agePair();
+    FILED.last_activity_at = filedAt;
+    if (ageOrder.length !== 2 || !ageOrder[0].startsWith("loose1@") || ageOrder[0].split("@")[1] !== ageOrder[1].split("@")[1]) {
+      fail("by age a pinned card sorted above a newer unpinned one in its bucket: " + JSON.stringify(ageOrder));
+    }
     // In age order a row cannot be rearranged: a real drag says so at the pointer, a hover says nothing.
     const rowBox = async () => { const c = dp.locator("#term-list .card.tab:not(.kid)").first(); await c.scrollIntoViewIfNeeded(); return c.boundingBox(); };
     const noteShown = () => dp.evaluate(() => { const n = document.getElementById("tdragnote"); return !!n && !n.hidden && n.textContent; });
@@ -7793,14 +7809,34 @@ async function emergingSwitchSection(browser, base) {
     if ((await state()).on === "items") fail("emergingSwitch: an emerging view opened with the switch off");
     await p.evaluate(() => document.getElementById("gear").click());
     await p.waitForSelector("#settings[open]");
-    await p.check("#s-emerging");
+    await p.evaluate(() => showSettingsPane("experimental features"));
+    const flags = await p.evaluate(() => ({ walk: flagOn("walk"), box: document.querySelector('input[data-flag="walk"]').checked,
+      chatBox: document.querySelector('input[data-flag="chat"]').checked, off: document.documentElement.getAttribute("data-off") }));
+    if (flags.walk || flags.box || !flags.chatBox || flags.off !== "walk attention") fail("emergingSwitch: the review is not off and the rest on by default: " + JSON.stringify(flags));
+    await p.check('input[data-flag="walk"]');
+    if (!(await p.evaluate(() => flagOn("walk") && JSON.parse(localStorage.getItem("atrium.flags")).walk === true))) fail("emergingSwitch: the review switch did not store on");
+    await p.evaluate(() => { document.getElementById("settings").close(); switchView("chat"); flagSet("chat", false); });
+    const chat = await p.evaluate(() => ({ hidden: document.querySelector('.tab[data-view="chat"]').hidden, on: document.querySelector(".tab.on").dataset.view,
+      off: document.documentElement.getAttribute("data-off") }));
+    if (!chat.hidden || chat.on !== "terms" || chat.off !== "chat attention") fail("emergingSwitch: chat off did not hide its tab and fall back to terminals: " + JSON.stringify(chat));
+    await p.evaluate(() => { switchView("chat"); document.getElementById("gear").click(); showSettingsPane("experimental features"); });
+    if ((await p.evaluate(() => document.querySelector(".tab.on").dataset.view)) === "chat") fail("emergingSwitch: a view whose flag is off opened");
+    await p.check('input[data-flag="items"]');
     st = await state();
-    if (st.shown.join() !== "items,hubrepos,backlog" || !st.mark || st.stored !== "1") fail("emergingSwitch: on did not show the tabs: " + JSON.stringify(st));
+    if (st.shown.join() !== "items" || !st.mark) fail("emergingSwitch: the items switch alone did not show only the items tab: " + JSON.stringify(st));
+    const plain = await p.evaluate(() => ["board", "stack", "history"].filter(v => !document.querySelector('.tab[data-view="' + v + '"]').hidden));
+    if (plain.length) fail("emergingSwitch: the items switch showed another area: " + plain.join());
+    await p.check('input[data-flag="hubrepos"]');
+    await p.check('input[data-flag="backlog"]');
+    st = await state();
+    if (st.shown.join() !== "items,hubrepos,backlog" || !st.mark) fail("emergingSwitch: on did not show the tabs: " + JSON.stringify(st));
     await p.evaluate(() => { document.getElementById("settings").close(); switchView("backlog"); });
     await p.evaluate(() => emergingSet(false));
     st = await state();
     if (st.shown.length || st.on !== "terms" || st.mark || st.stored !== "0") fail("emergingSwitch: off did not hide the tabs and fall back to terminals: " + JSON.stringify(st));
-    await p.evaluate(() => { localStorage.setItem("atrium.emerging", "1"); emergingApply(); });
+    await p.evaluate(() => { localStorage.removeItem("atrium.flags"); localStorage.setItem("atrium.emerging", "1"); emergingApply(); });
+    const legacy = await p.evaluate(() => EMERGING_AREAS.filter(a => !areaOn(a)));
+    if (legacy.length) fail("emergingSwitch: the old switch left these areas off: " + legacy.join());
     const mark = await p.evaluate(() => getComputedStyle(document.querySelector('.tab[data-view="items"]'), "::after").content);
     if (mark !== "none") fail("emergingSwitch: the items tab wears a marker: " + mark);
   } finally {
@@ -9373,6 +9409,67 @@ async function copySelectSection(browser, base) {
   mock.tasksMode = was;
 }
 
+// ── typing in the find bar leaves the viewport where the match is ────────
+// Typed into the terminal, so the view follows output, then find opened while the runner prints. Typing the phrase
+// into find one key at a time finds it, and the output that follows does not drag the view back to the bottom.
+async function termFindTypingSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        sent: [], send(m) { this.sent.push(m); }, close() { this.readyState = 3; } };
+      window.__sock = s;
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termFindTyping", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    const lines = [];
+    for (let i = 0; i < 300; i++) lines.push(i === 60 ? "see The \"new agent\" dialog here" : "filler line " + i);
+    await p.evaluate(t => termSock.onmessage({ data: t }), lines.join("\r\n") + "\r\n");
+    await termWrite(p, "");
+    // Typed into the terminal first, so the view follows the runner's output, then find while the runner prints.
+    await p.click("#t-screen .xterm-screen");
+    await p.keyboard.type("x");
+    await p.evaluate(() => { window.__sock.sent = []; openFind(); });
+    await p.evaluate(() => { let i = 0; window.__spun = 0; window.__spin = setInterval(() => { termSock.onmessage({ data: new TextEncoder().encode("\r\x1b[K\u273b Thinking " + (i++)).buffer }); window.__spun++; }, 40); });
+    const seen = [];
+    for (const ch of "The \"new agent\" dialog") {
+      const at = await p.evaluate(() => window.__spun);
+      await p.keyboard.type(ch);
+      await p.waitForFunction(n => window.__spun >= n + 2, at, { timeout: slow(5000) });
+      await frames(p, 2);
+      seen.push(await p.evaluate(() => { const b = term.buffer.active; return { y: b.viewportY, base: b.baseY }; }));
+    }
+    const end = await p.evaluate(() => { clearInterval(window.__spin); return { n: document.getElementById("t-find-n").textContent,
+      sel: term.getSelection(), y: term.buffer.active.viewportY, base: term.buffer.active.baseY,
+      sent: window.__sock.sent.map(String).filter(m => !/"t":"(resize|focus)"/.test(m) && !/\u001b\[[IO]/.test(m)) }; });
+    if (seen.some(s => s.y === s.base)) fail("typing in find dragged the terminal to the bottom: " + JSON.stringify(seen));
+    if (end.sel !== "The \"new agent\" dialog" || end.n !== "1 of 1") fail("typing in find did not find the phrase: " + JSON.stringify(end));
+    if (end.sent.length) fail("typing in find reached the terminal: " + JSON.stringify(end.sent));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the find typing page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
 // ── find by speaker: "me" matches only the operator's tinted prompt rows ──
 // A wrapped tinted prompt holds the word on its continuation row and the agent's plain row holds it too. "me" finds
 // the prompt's, "agent" the agent's, "all" both.
@@ -9496,7 +9593,7 @@ async function cleanCopySection(browser, base) {
       await p.screenshot({ path: path.join(process.env.SHOTS_DIR, name) });
     };
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-    const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
+    const want = "Please review the plan and tell\nme what is missing from it.";
     const lf = t => String(t).replace(/\r\n/g, "\n");
 
     // 1. A rendered quote: a plain copy is the render, and a button offers the clean one.
@@ -9622,12 +9719,24 @@ async function cleanCopySection(browser, base) {
       prompt: ccDerender("claude ❯ git status"),
       bare: ccDerender("  ❯ ls -la"),
       box: ccDerender("╭────────╮\n│ output │\n╰────────╯"),
+      quote: ccDerender("  ▎ On the twelfth day\n  ▎\n  ▎ ▎ my true love"),
+      gutter: ccDerender("● Bash(git status)\n  ⎿  On branch main\n  - item"),
     }));
     if (dr.hash !== "# 4. List the worktrees.") fail("cleanCopy: a # comment copied clean as " + JSON.stringify(dr.hash));
     if (dr.lines !== "$a = 1\n\n# 2. next\n- item\nindented\n") fail("cleanCopy: a multi-line block copied clean as " + JSON.stringify(dr.lines));
     if (dr.crlf !== "a\r\nb") fail("cleanCopy: CRLF lines copied clean as " + JSON.stringify(dr.crlf));
     if (dr.prompt !== "git status" || dr.bare !== "ls -la") fail("cleanCopy: the prompt was not stripped: " + JSON.stringify([dr.prompt, dr.bare]));
     if (dr.box !== "╭────────╮\n│ output │\n╰────────╯") fail("cleanCopy: a box copied clean as " + JSON.stringify(dr.box));
+    if (dr.quote !== "On the twelfth day\n\nmy true love") fail("cleanCopy: a quoted block kept its bar: " + JSON.stringify(dr.quote));
+    if (dr.gutter !== "Bash(git status)\nOn branch main\n- item") fail("cleanCopy: Claude Code's gutters copied clean as " + JSON.stringify(dr.gutter));
+
+    // 4a2. A wide emoji takes two cells, so the 1 after it is not drawn inside it.
+    await select("🎄1 What\r\n", [0, 0]);
+    const wide = await p.evaluate(() => {
+      const l = term.buffer.active.getLine(0);
+      return { v: term.unicode.activeVersion, w: l.getCell(0).getWidth(), next: l.getCell(2).getChars() };
+    });
+    if (wide.v !== "11" || wide.w !== 2 || wide.next !== "1") fail("cleanCopy: a wide emoji is not two cells: " + JSON.stringify(wide));
 
     // 4a4. A block padded to the width with spaces, each row wrapping into the next (Claude Code's prompt), copies as its
     // own lines with no padding, and a line that genuinely runs on past the width stays one line.
@@ -9690,7 +9799,7 @@ async function cleanCopyDefaultSection(browser, base) {
     await attachRetry(p, { unit: "cleanCopyDefault", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await frames(p, 3);
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-    const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
+    const want = "Please review the plan and tell\nme what is missing from it.";
     const lf = t => String(t).replace(/\r\n/g, "\n");
     // Selects the quote, does what ctrl-c does, and reads the copy, the button's label, and what a click on it copies.
     const copy = async () => {
@@ -9806,7 +9915,7 @@ async function cleanCopyGestureSection(browser, base) {
     await attachRetry(p, { unit: "cleanCopyGesture", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await frames(p, 3);
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-    const want = "▎ Please review the plan and tell\n▎ me what is missing from it.";
+    const want = "Please review the plan and tell\nme what is missing from it.";
     const copy = async () => {
       await p.evaluate(out => { window.__clip = []; window.__refused = 0; resetTerm(term); termSock.onmessage({ data: out }); }, shown);
       await termWrite(p, "");
@@ -17006,7 +17115,7 @@ async function cardUrlTableSection(browser, base) {
       const t = await cuText(r.page, "#cardurl");
       if (!/no card called rnd on room claude-room-e/.test(t)) fail("cardUrlTable miss: it says: " + t);
       const links = await cuLinks(r.page, "#cardurl");
-      if (links.join() !== "/alias/rnd2,/room/claude-room-e/plain") fail("cardUrlTable miss: the links are " + links.join());
+      if (links.join() !== "/claude-room-e/terminal/rnd2,/claude-room-e/terminal/plain") fail("cardUrlTable miss: the links are " + links.join());
       if (await r.page.evaluate(() => soloID)) fail("cardUrlTable miss: a terminal opened on a miss");
     });
 
@@ -17066,11 +17175,11 @@ async function cardUrlClashSection(browser, base) {
     try {
       await r.page.waitForSelector("#cardurl:not([hidden]) .cu-row", { timeout: slow(15000) });
       const links = await cuLinks(r.page, "#cardurl");
-      if (links.join() !== "/room/room-e/rnd,/room/m1/rnd") fail("cardUrlClash: the chooser links are " + links.join());
+      if (links.join() !== "/room-e/terminal/rnd~land-x,/m1/terminal/rnd~land-y") fail("cardUrlClash: the chooser links are " + links.join());
       const t = await cuText(r.page, "#cardurl");
       if (!/more than one room/.test(t) || !/m1 {2}rnd {2}done/.test(t)) fail("cardUrlClash: the chooser says: " + t);
       if (await r.page.evaluate(() => soloID)) fail("cardUrlClash: a terminal opened with two candidates");
-      await r.page.click('#cardurl a[href="/room/m1/rnd"]');
+      await r.page.click('#cardurl a[href="/m1/terminal/rnd~land-y"]');
       const last = await r.page.evaluate(() => localStorage.getItem("atrium.cardurl.alias:rnd"));
       if (last !== "land-y") fail("cardUrlClash: picking did not remember the card for the path: " + last);
     } finally { await r.ctx.close(); }
@@ -17082,7 +17191,7 @@ async function cardUrlClashSection(browser, base) {
       const t = await cuText(r.page, "#cardurl-note");
       if (!/@rnd is also on m1/.test(t)) fail("cardUrlClash: the remembered card's line says: " + t);
       const links = await cuLinks(r.page, "#cardurl-note");
-      if (links.join() !== "/room/m1/rnd") fail("cardUrlClash: the line links to " + links.join());
+      if (links.join() !== "/m1/terminal/rnd~land-y") fail("cardUrlClash: the line links to " + links.join());
       if (await cuText(r.page, "#cardurl")) fail("cardUrlClash: the chooser showed for a remembered card");
     } finally { await r.ctx.close(); }
 
@@ -17120,12 +17229,17 @@ async function cardUrlLinksSection(browser, base) {
         return r.page.evaluate(() => location.pathname + location.hash);
       };
       let at = await go("land-b");
-      if (at !== "/alias/other") fail("cardUrlLinks: the switcher wrote " + at + " for a card with an alias");
+      if (at !== "/r1/terminal/other") fail("cardUrlLinks: the switcher wrote " + at + " for a card with an alias");
       await r.page.evaluate(() => { swTasks = [{ id: "r2~z", alias: "twin", status: "running", room: "r2" }]; });
       at = await go("land-c");
-      if (at !== "/room/r1/twin") fail("cardUrlLinks: a clashing alias was written as " + at);
+      if (at !== "/r1/terminal/twin") fail("cardUrlLinks: an alias another room holds was written as " + at);
+      const picked = await r.page.evaluate(() => [
+        cardUrlPath({ id: "r1~0123abcd-1", alias: "twin", room: "r1" }, [{ id: "r1~ffffffff-2", alias: "twin", room: "r1", status: "running" }]),
+        JSON.stringify(cardUrlShape("/r1/terminal/twin~0123abcd"))]);
+      if (picked[0] !== "/r1/terminal/twin~0123abcd") fail("cardUrlLinks: two live cards of one name were written as " + picked[0]);
+      if (picked[1] !== '{"kind":"card","room":"r1","name":"twin","pick":"0123abcd"}') fail("cardUrlLinks: the ~ form was read as " + picked[1]);
       at = await go("land-h");
-      if (at !== "/room/r1/handled") fail("cardUrlLinks: a card with only a handle was written as " + at);
+      if (at !== "/r1/terminal/handled") fail("cardUrlLinks: a card with only a handle was written as " + at);
       at = await go("land-n");
       if (at !== "/#term=land-n") fail("cardUrlLinks: a card with neither was written as " + at);
       const last = await r.page.evaluate(() => localStorage.getItem("atrium.cardurl.r1/twin"));
@@ -17143,14 +17257,15 @@ async function cardUrlLinksSection(browser, base) {
         for (const id of ["land-b", "land-c", "land-n"]) await popOutTask(id);
         return out;
       });
-      if (urls.join() !== "/alias/other,/room/r1/twin,/#term=land-n") fail("cardUrlLinks: the pop-out links are " + urls.join());
+      if (urls.join() !== "/r1/terminal/other,/r1/terminal/twin,/#term=land-n") fail("cardUrlLinks: the pop-out links are " + urls.join());
     } finally { await r.ctx.close(); }
 
     // an old `#term=` link still opens, and a notification landing writes `/`
     r = await cuOpen(browser, base, "/#term=land-a", {});
     try {
       await cuSolo(r.page, "land-a");
-      if (await r.page.evaluate(() => location.hash) !== "#term=land-a") fail("cardUrlLinks: the fragment was rewritten");
+      await r.page.waitForFunction(() => location.pathname === "/r1/terminal/rnd", null, { timeout: slow(10000) })
+        .catch(() => fail("cardUrlLinks: the fragment was not rewritten to the readable path"));
     } finally { await r.ctx.close(); }
     mock.landList = [mock.LAND["land-a"]];
     r = await cuOpen(browser, base, "/room/r1?land=land-a&view=terms", {});
@@ -17212,7 +17327,7 @@ async function mCardUrlSection(browser) {
     await p.route("**/*", route => {
       const rq = route.request();
       const u = new URL(rq.url());
-      if (/^\/m\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") {
+      if (/^\/m\/(alias|room|[^/]+\/terminal)\//.test(u.pathname) && rq.resourceType() === "document") {
         return route.fulfill({ status: 200, contentType: "text/html", body: fs.readFileSync(path.join(M_ROOT, "index.html")) });
       }
       const m = /^\/v1\/tasks\/([^/]+)$/.exec(u.pathname);
@@ -17240,7 +17355,7 @@ async function mCardUrlSection(browser) {
       if (await pathNow(r.p) !== "/m/alias/solo") fail("mCardUrl: the path was rewritten to " + await pathNow(r.p));
       if (r.hits.length !== 1) fail("mCardUrl: " + r.hits.length + " lookups for one open");
       if (await r.p.evaluate(() => localStorage.getItem("atrium.cardurl.alias:solo")) !== "card-d") fail("mCardUrl: the last id was not kept");
-      if (await r.p.getAttribute("#m-card-term", "href") !== "/alias/solo") fail("mCardUrl: open terminal is not the readable board path");
+      if (await r.p.getAttribute("#m-card-term", "href") !== "/claude-room-e/terminal/solo") fail("mCardUrl: open terminal is not the readable board path");
       await r.p.tap("#m-card-back");
       await r.p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
       if (await pathNow(r.p) !== "/m/") fail("mCardUrl: closing a card opened from its address left the path at " + await pathNow(r.p));
@@ -17248,7 +17363,7 @@ async function mCardUrlSection(browser) {
     } finally { await r.ctx.close(); }
 
     // the qualified address, by handle
-    r = await open("/m/room/claude-room-e/handled", { "handled@claude-room-e": { body: tb } });
+    r = await open("/m/claude-room-e/terminal/handled", { "handled@claude-room-e": { body: tb } });
     try {
       await r.p.waitForSelector("#m-card.on", { timeout: slow(10000) });
       if (!/only a handle/.test(await r.p.textContent("#m-card-head"))) fail("mCardUrl: /m/room/<room>/<name> opened the wrong card");
@@ -17268,7 +17383,7 @@ async function mCardUrlSection(browser) {
         return at;
       };
       const got = [await pushed("card-d"), await pushed("card-a"), await pushed("card-b")];
-      if (got.join() !== "/m/alias/solo,/m/room/claude-room-e/builder-1,/m/room/claude-room-e/handled") fail("mCardUrl: the pushed paths are " + got.join());
+      if (got.join() !== "/m/claude-room-e/terminal/solo,/m/claude-room-e/terminal/builder-1,/m/claude-room-e/terminal/handled") fail("mCardUrl: the pushed paths are " + got.join());
     } finally { await r.ctx.close(); }
 
     // a miss says what would have worked, as links to this page
@@ -17276,7 +17391,7 @@ async function mCardUrlSection(browser) {
     try {
       await r.p.waitForFunction(() => { const e = document.getElementById("m-cardurl"); return e && !e.hidden; }, null, { timeout: slow(10000) });
       if (!/no card called ghost/.test(await said(r.p))) fail("mCardUrl: a miss says: " + await said(r.p));
-      if ((await links(r.p)).join() !== "/m/alias/builder,/m/room/claude-room-e/plain") fail("mCardUrl: the miss links are " + (await links(r.p)).join());
+      if ((await links(r.p)).join() !== "/m/alias/builder,/m/claude-room-e/terminal/plain") fail("mCardUrl: the miss links are " + (await links(r.p)).join());
       if (await r.p.evaluate(() => !document.getElementById("m-card").hidden)) fail("mCardUrl: a sheet opened on a miss");
     } finally { await r.ctx.close(); }
 
@@ -17286,7 +17401,7 @@ async function mCardUrlSection(browser) {
     r = await open("/m/alias/builder", lookups);
     try {
       await r.p.waitForFunction(() => document.querySelectorAll("#m-cardurl a.cu-row").length === 2, null, { timeout: slow(10000) });
-      if ((await links(r.p)).join() !== "/m/room/r2/builder,/m/room/claude-room-e/builder" && (await links(r.p)).join() !== "/m/room/claude-room-e/builder,/m/room/r2/builder") fail("mCardUrl: the clash links are " + (await links(r.p)).join());
+      if ((await links(r.p)).join() !== "/m/r2/terminal/builder~card-c,/m/claude-room-e/terminal/builder~card-a" && (await links(r.p)).join() !== "/m/claude-room-e/terminal/builder~card-a,/m/r2/terminal/builder~card-c") fail("mCardUrl: the clash links are " + (await links(r.p)).join());
       if (await r.p.evaluate(() => !document.getElementById("m-card").hidden)) fail("mCardUrl: a sheet opened with two candidates");
     } finally { await r.ctx.close(); }
     r = await open("/m/alias/builder", lookups, () => localStorage.setItem("atrium.cardurl.alias:builder", "card-a"));
@@ -17322,15 +17437,15 @@ async function cardUrlNotifySection(browser, base) {
       showNotification("d", "b", "", "", "s", "", "land-done", "k");
       return out.map(m => m.path);
     });
-    if (sent.join() !== "/alias/rnd,,/room/r1/Done-One") fail("cardUrlNotify: the notification paths are " + JSON.stringify(sent));
+    if (sent.join() !== "/r1/terminal/rnd,,/r1/terminal/Done-One") fail("cardUrlNotify: the notification paths are " + JSON.stringify(sent));
     const opened = await r.page.evaluate(async () => {
       const out = [];
       window.open = u => { out.push(u); return { focus() {}, closed: false }; };
       await popOutTask("land-done");
       return out;
     });
-    if (opened.join() !== "/room/r1/Done-One") fail("cardUrlNotify: the pop-out link for a done card with a taken alias is " + opened.join());
-    if (await r.page.evaluate(() => cardUrlShape("/room/r1/Done-One").name) !== "Done-One") fail("cardUrlNotify: the handle was lowercased");
+    if (opened.join() !== "/r1/terminal/Done-One") fail("cardUrlNotify: the pop-out link for a done card with a taken alias is " + opened.join());
+    if (await r.page.evaluate(() => cardUrlShape("/r1/terminal/Done-One").name) !== "Done-One") fail("cardUrlNotify: the handle was lowercased");
   } finally { await r.ctx.close(); }
 
   // The worker's click, run on its own source with a fake scope and windows.
@@ -21799,14 +21914,19 @@ async function workerCardColorsSection(browser, base) {
       const boss = { id: "a~boss", theme: "nord", worktree: "/Users/me/git/github/openziti/ziti-console/x" };
       const wk = { id: "a~wk", launcher_id: "boss", tags: ["atrium:subagent"], worktree: "C:/temp/wk" };
       const doer = { id: "a~doer", launcher_id: "boss", tags: ["origin:agent"], worktree: "C:/temp/doer" };
-      lastTasks = [boss, wk, doer];
+      const plain = { id: "b~plain", wire_name: "atrium-1", worktree: "C:/temp/plain" };
+      const pinned = { id: "a~pin", pinned: true, theme: "", tags: ["orchestrators"], spawned_by: "atrium-1@b",
+        worktree: "/Users/me/git/github/openziti/ziti-console/y" };
+      lastTasks = [boss, wk, doer, plain, pinned];
       try {
         repoColorsHave({ card_colors: { default: "", repos: { "github/openziti/ziti-console": "dracula" } } });
-        return { repo: themeSource(wk) === themeNamed("dracula"), doer: themeSource(doer) === themeNamed("nord") };
+        return { repo: themeSource(wk) === themeNamed("dracula"), doer: themeSource(doer) === themeNamed("nord"),
+          pinned: !!launcherOf(pinned, lastTasks) && themeSource(pinned) === themeNamed("dracula") };
       } finally { lastTasks = saved; repoColorsHave({ card_colors: savedColors }); }
     });
     if (!inherit.repo) fail(tag + "a worker lost its launcher's repo colour");
     if (!inherit.doer) fail(tag + "a card that is no worker lost its launcher's theme");
+    if (!inherit.pinned) fail(tag + "a pinned card with a plain launcher on another room lost its own repo colour");
 
     await p.click('.tab[data-view="board"]');
     await p.waitForSelector('.card:not(.tab)[data-id="room-e-control~wk-here"]', { state: "attached", timeout: slow(15000) });
@@ -24061,6 +24181,8 @@ async function quickPasteSection(browser, base) {
           worktree: "/wt/discourse-4784", repo: "github.com/openziti/ziti", created: true, title: "discourse-4784" });
       }
       if (st.hold && /pull\/14$/.test(url)) await st.hold;
+      if (/pull\/16$/.test(url)) return json(route, 400, { error: "the card did not start: /wt/zrok-16 already holds the card",
+        code: "launch_failed", step: "card", card: "t-q" });
       if (/pull\/13$/.test(url)) return json(route, 400, { error: "could not fetch the head of pull request 13: boom",
         code: "worktree_failed", step: "worktree" });
       if (/issues\/6$/.test(url)) return json(route, 422, { error: "that link names no piece of work", code: "not_openable", step: "recognise" });
@@ -24440,6 +24562,10 @@ async function quickPasteSection(browser, base) {
       fail("quickPaste: a pasted link showed the launch dialog");
     if (await p.evaluate(open("switcher"))) fail("quickPaste: a pasted link opened the bar");
     if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("quickPaste: the pasted link's card stayed pending");
+    await paste("https://github.com/openziti/zrok/pull/16");
+    if (!st.cardReads) fail("quickPaste: a pasted link whose card exists did not open that card");
+    if (await p.evaluate(() => !!document.querySelector(".card.linkopen") || document.getElementById("terms").hidden))
+      fail("quickPaste: a pasted link whose card exists left a tile or did not show the terminal");
     // a link nothing knows comes back to the bar with the reason
     await paste("https://nowhere.example/y", false);
     await p.waitForFunction(() => document.getElementById("switcher").open &&
@@ -25324,6 +25450,70 @@ async function queueBarSection(browser, base) {
   if (!bad) console.log("queueBar ok");
 }
 
+// The attention flag: off, the board keeps the Queue tab. On, a pill beside the terminals filter box lists the asks there
+// in its place, the filter box narrows them, and the ask picked opens as a strip in the terminal pane.
+async function attentionQueueSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof yqGo === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      ["atrium.queue.show", "atrium.queue.sort", "atrium.queue.group", "atrium.termlist.mode"].forEach(k => localStorage.removeItem(k));
+      const ago = m => new Date(Date.now() - m * 60000).toISOString();
+      const card = (id, more) => Object.assign({ id, status: "needs-input", supervised: true, pinned: false, title: id, display_title: id,
+        tags: [], worktree: "/w/github/o/" + id, created_at: ago(300), last_activity_at: ago(1) }, more);
+      window.__cards = [
+        card("zeta", { recap: "needs: a token", reported_at: ago(5), tags: ["red"] }),
+        card("alpha", { ask: "approve the mock", ask_at: ago(30), ask_verb: "approve", created_at: ago(10) }),
+        card("parked", { status: "done", supervised: false, parked_at: ago(60), report_sha: "4f2dc4f0b1", recap: "built it",
+          reported_at: ago(90), spawned_by: "@human" })
+      ];
+      boardCards = async () => window.__cards;
+      lastTasks = window.__cards;
+      switchView("terms");
+      yqPaint();
+    });
+    const look = () => p.evaluate(() => {
+      const pill = document.getElementById("yq-for"), q = document.getElementById("term-q"), ask = document.getElementById("yq-ask");
+      return { tab: !document.querySelector('.tab[data-view="queue"]').hidden, pill: !!pill, nextToBox: !!pill && pill.parentNode === q.parentNode,
+        text: pill ? pill.textContent : "", on: !!pill && pill.classList.contains("on"), list: !!document.querySelector("#term-list #yq-forlist"),
+        askInPane: ask.parentNode.id === "term-pane", askInQueue: !!ask.closest("#queue"), askHidden: ask.hidden };
+    });
+    let v = await look();
+    if (!v.tab || v.pill || v.list || !v.askInQueue || v.askHidden) fail("attentionQueue: with the flag off the board is not as before: " + JSON.stringify(v));
+
+    await p.evaluate(() => flagSet("attention", true));
+    v = await look();
+    if (v.tab || !v.pill || !v.nextToBox || v.text !== "3 for you" || v.on || !v.askInPane || !v.askHidden) fail("attentionQueue: the flag on did not swap the tab for the pill: " + JSON.stringify(v));
+    await p.evaluate(() => document.getElementById("yq-for").click());
+    await p.waitForSelector("#yq-forlist .yq-row", { timeout: slow(5000) });
+    const keys = () => p.evaluate(() => [...document.querySelectorAll("#yq-forlist .yq-row")].map(r => r.dataset.yq.replace("card:", "")).join(","));
+    let got = await keys();
+    if (got !== "zeta,alpha,parked") fail("attentionQueue: the default is not stuck first, newest first: " + got);
+    await p.fill("#term-q", "mock");
+    await p.waitForFunction(() => document.querySelectorAll("#yq-forlist .yq-row").length === 1, null, { timeout: slow(5000) }).catch(() => {});
+    if ((got = await keys()) !== "alpha") fail("attentionQueue: the filter box did not narrow the asks: " + got);
+    await p.fill("#term-q", "");
+    await p.evaluate(() => yqOpenAsk(yqAsks(lastTasks).find(x => x.key === "card:parked")));
+    v = await look();
+    const strip = await p.evaluate(() => document.querySelector("#yq-ask .yq-askbar .yq-verb").textContent);
+    if (v.askHidden || !strip) fail("attentionQueue: the ask did not open as a strip in the terminal pane: " + JSON.stringify(v));
+    await p.evaluate(() => document.querySelector('#yq-ask [data-yq-do="close"]').click());
+    await p.evaluate(() => document.getElementById("yq-for").click());
+    await p.waitForFunction(() => !document.getElementById("yq-forlist") && !document.getElementById("yq-for").classList.contains("on"), null, { timeout: slow(5000) })
+      .catch(() => fail("attentionQueue: the pill did not put the session list back"));
+
+    await p.evaluate(() => flagSet("attention", false));
+    v = await look();
+    if (!v.tab || v.pill || !v.askInQueue || v.askHidden) fail("attentionQueue: the flag off did not put the board back: " + JSON.stringify(v));
+    if (errors.length) fail("attentionQueue: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("attentionQueue ok");
+}
+
 // The Queue list is patched in place: a tick of the ages mid-scroll replaces no row and moves nothing.
 async function queueScrollKeepsSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
@@ -25893,6 +26083,11 @@ async function switcherDismissSection(browser, base) {
     await p.click("#sw-q");
     await p.click("#sw-foot", { position: { x: 2, y: 2 } });
     if (!(await isOpen())) fail("switcherDismiss: a click inside the form closed the switcher");
+    await p.evaluate(() => { const was = swMove; window.__swMoved = []; swMove = d => { window.__swMoved.push(d); was(d); }; });
+    await p.keyboard.press("ArrowDown");
+    await p.keyboard.press("ArrowUp");
+    const picked = await p.evaluate(() => ({ moved: window.__swMoved, box: document.activeElement === document.getElementById("sw-q") }));
+    if (picked.moved.join() !== "1,-1" || !picked.box) fail("switcherDismiss: the arrows did not pick after a click inside: " + JSON.stringify(picked));
     await p.mouse.click(4, 4);
     await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
       .catch(() => fail("switcherDismiss: a click outside a clean form did not close the switcher"));
@@ -27251,7 +27446,7 @@ async function phoneRedirectSection(browser, base) {
       const rq = route.request();
       const u = new URL(rq.url());
       if (/^\/m\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>m</title>phone page" });
-      if (/^\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+      if (/^\/(alias|room|[^/]+\/terminal)\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
       if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND["land-a"]) });
       return route.continue();
     });
@@ -27263,7 +27458,7 @@ async function phoneRedirectSection(browser, base) {
   const phone = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
   try {
     const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
-      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-room-e/rnd", "/m/room/claude-room-e/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-room-e", "/m/"]];
+      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-room-e/rnd", "/m/room/claude-room-e/rnd"], ["/claude-room-e/terminal/rnd", "/m/claude-room-e/terminal/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-room-e", "/m/"]];
     // Each case is its own context and only reads the mock, so they load at once.
     const opened = await Promise.all(cases.map(([from]) => open(phone, from)));
     for (const [i, [from, to]] of cases.entries()) {
@@ -27293,7 +27488,7 @@ async function phoneRedirectSection(browser, base) {
     await r.ctx.close();
     // a pop-out window by its name, and by its opener
     r = await open(phone, "/#term=land-a", () => { window.name = "atrium-term-land-a"; });
-    if (r.where !== "/#term=land-a") fail("phoneRedirect: a pop-out was sent to " + r.where);
+    if (r.where !== "/#term=land-a" && r.where !== "/claude-room-e/terminal/rnd-director") fail("phoneRedirect: a pop-out was sent to " + r.where);
     await r.ctx.close();
     // the opt-out belongs to the tab: another tab goes to /m again, and an old localStorage value is ignored and removed
     {
@@ -30384,7 +30579,7 @@ async function main() {
     browser.newContext = async (o = {}, more) => {
       const { emerging, ...rest } = o;
       const ctx = await newContext(rest, more);
-      if (emerging !== false) await ctx.addInitScript(() => localStorage.setItem("atrium.emerging", "1"));
+      if (emerging !== false) await ctx.addInitScript(() => { localStorage.setItem("atrium.emerging", "1"); if (localStorage.getItem("atrium.flags") === null) localStorage.setItem("atrium.flags", JSON.stringify({ walk: true })); });
       return ctx;
     };
   }
@@ -30399,7 +30594,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, readerRaw: readerRawSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termLinkFirstHover: termLinkFirstHoverSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, walkLinkFresh: walkLinkFreshSection, walkTour: walkTourSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, relaunchAttach: relaunchAttachSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, termFindTyping: termFindTypingSection, cleanCopy: cleanCopySection, cleanCopyDefault: cleanCopyDefaultSection, cleanCopyGesture: cleanCopyGestureSection, composePasteDefault: composePasteDefaultSection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection, termHeldKeys: termHeldKeysSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, peekLeftover: peekLeftoverSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -32346,6 +32541,7 @@ async function main() {
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));
     await unit("termFindSpeaker", () => termFindSpeakerSection(browser, base));
+    await unit("termFindTyping", () => termFindTypingSection(browser, base));
     await unit("cleanCopy", () => cleanCopySection(browser, base));
     await unit("cleanCopyDefault", () => cleanCopyDefaultSection(browser, base));
     await unit("cleanCopyGesture", () => cleanCopyGestureSection(browser, base));
@@ -32578,6 +32774,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("yqTermCard", () => yqTermCardSection(browser, base));
     await unit("yqTourFixes", () => yqTourFixesSection(browser, base));
     await unit("queueBar", () => queueBarSection(browser, base));
+    await unit("attentionQueue", () => attentionQueueSection(browser, base));
     await unit("queueScrollKeeps", () => queueScrollKeepsSection(browser, base));
     await unit("yqMark", () => yqMarkSection(browser, base));
     await unit("newContextSse", () => newContextSseSection(browser, base));

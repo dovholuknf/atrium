@@ -241,6 +241,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["lean_worker_gateway"] = s.st.LeanWorkerGateway()
 	// What the room's hub forwarder lets a card do: `hub` or `none`. See store.SettingGitPush.
 	out["git_push"] = s.st.GitPush()
+	out["local_servers"], _ = s.st.Setting(store.SettingLocalServers)
 	out["runner_priority"] = "above_normal"
 	if !s.st.RunnerPriorityRaised() {
 		out["runner_priority"] = "normal"
@@ -366,6 +367,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The Windows priority class of a new runner and its pseudo console host:
 		// `above_normal` or `normal`. See `store.SettingRunnerPriority`.
 		RunnerPriority *string `json:"runner_priority"`
+		// The servers the room keeps up, as JSON. See `store.SettingLocalServers`.
+		LocalServers *string `json:"local_servers"`
 		// The name of the mcp.json server that stands in for `mercurius` on a default
 		// lean launch. A name, never a URL. See `store.SettingLeanWorkerGateway`.
 		LeanWorkerGateway *string `json:"lean_worker_gateway"`
@@ -934,6 +937,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingGitPush, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.LocalServers != nil {
+		v := strings.TrimSpace(*body.LocalServers)
+		if _, err := store.ParseLocalServers(v); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingLocalServers, v); err != nil {
 			s.fail(w, err)
 			return
 		}

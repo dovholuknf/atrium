@@ -34,7 +34,7 @@ const replies = (function () {
   // `ask` text still gets that text's own `{choices}` block, so a board talking to a room that predates the fields
   // keeps what the growler did before. `stop` ends any list, because stopping answers every question.
   function of(card) {
-    if (!card) return [];
+    if (!card || (typeof flagOn === "function" && !flagOn("replies"))) return [];
     let list = Array.isArray(card.replies) ? card.replies.filter(r => typeof r === "string" && r.trim()) : [];
     if (!list.length && typeof card.ask === "string") list = split(card.ask).choices;
     if (list.length) return list.includes(STOP) ? list : list.concat(STOP);

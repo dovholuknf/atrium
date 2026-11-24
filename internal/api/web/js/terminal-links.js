@@ -76,7 +76,7 @@ function useFileLinks(t, task) {
   const id = task.id;
   try {
     t.registerLinkProvider({
-      provideLinks: (y, done) => provideFileLinks(t, id, y, done)
+      provideLinks: (y, done) => flagOn("pathlinks") ? provideFileLinks(t, id, y, done) : done(undefined)
     });
   } catch (e) {
     // Not worth a word to the operator. What they lose is an underline.
@@ -662,15 +662,14 @@ function openTermURL(ev, uri) {
   openLinkReused(here ? here.href : uri);
 }
 
-// A URL that names this board under another spelling (localhost, 127.0.0.1, [::1], atrium.ziti, or the host the
+// A URL that names this board under another spelling (localhost, 127.0.0.1, [::1] on this port, or the host the
 // board is open on), as the same path, query and hash on `location.origin`. null for any other URL.
 function boardLinkHere(url) {
   let u;
   try { u = new URL(url); } catch (e) { return null; }
   if (u.protocol !== "http:" && u.protocol !== "https:") return null;
   const loop = h => h === "127.0.0.1" || h === "localhost" || h === "[::1]";
-  const mine = u.host === location.host || (loop(u.hostname) && u.port === location.port) ||
-    (u.hostname === "atrium.ziti" && (u.port === "" || u.port === location.port));
+  const mine = u.host === location.host || (loop(u.hostname) && u.port === location.port);
   if (!mine) return null;
   return new URL(u.pathname + u.search + u.hash, location.origin);
 }
@@ -993,6 +992,8 @@ function clearFind() {
 function runFind(step, back) {
   const q = document.getElementById("t-find-q");
   if (!q) return;
+  // A find moves the view to its match, so output after a key typed into the terminal must not follow to the bottom.
+  stopFollow();
   // SAID, not returned silently. Without the addon there is no search at all,
   // and the box still accepts typing and still looks like it is working, which
   // is indistinguishable from a search that matches nothing. That ambiguity

@@ -82,6 +82,25 @@ func pageDefault(dir string) (string, bool) {
 	return filepath.Join(dir, only), only != ""
 }
 
+// serveRoomPage is servePage for the address atrium_link gives, reached on the room's own port rather than the hub's.
+func (s *Server) serveRoomPage(w http.ResponseWriter, r *http.Request) {
+	r.Header.Set(PagePrefixHeader, "/room/"+r.PathValue("room")+"/"+r.PathValue("id")+"/files/")
+	s.servePage(w, r)
+}
+
+// withoutCheckoutDir drops a leading folder name equal to the checkout's own ("work/"), which a link written from the
+// card's directory carries, when the file is not there as written.
+func withoutCheckoutDir(worktree, want string) string {
+	first, rest, ok := strings.Cut(want, "/")
+	if !ok || first != filepath.Base(filepath.FromSlash(worktree)) {
+		return want
+	}
+	if _, err := os.Stat(filepath.Join(filepath.FromSlash(worktree), filepath.FromSlash(want))); err == nil {
+		return want
+	}
+	return rest
+}
+
 // servePage opens a file of a card inline as a sandboxed page. Relative assets resolve under the same prefix. The path
 // is held to the card's own directory: no open_paths, and a link out of it answers like a missing file.
 func (s *Server) servePage(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +126,7 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
 		return
 	}
+	want = withoutCheckoutDir(task.Worktree, want)
 	if want == "" {
 		want = "."
 	}
@@ -149,6 +169,15 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(real))
 	if ct := mime.TypeByExtension(ext); ct != "" {
 		w.Header().Set("Content-Type", ct)
+	}
+	if prefix != "" && ext == ".md" && r.URL.Query().Get("raw") != "1" && fi.Size() <= 16<<20 {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			writeErr(w, http.StatusForbidden, errors.New("cannot read that"))
+			return
+		}
+		pageMarkdown(w, b, prefix, filepath.Base(real))
+		return
 	}
 	if prefix != "" && (ext == ".html" || ext == ".htm" || ext == ".css") && fi.Size() <= 16<<20 {
 		b, err := io.ReadAll(f)

@@ -707,7 +707,7 @@ async function cardMenu(e, id) {
 
   const items = [
     t.supervised ? { label: "attach", act: () => attachTask(id) } : null,
-    t.supervised ? { label: "pop out", icon: popIcon(), act: () => popOutTask(id) } : null,
+    t.supervised && flagOn("popout") ? { label: "pop out", icon: popIcon(), act: () => popOutTask(id) } : null,
     t.supervised ? { sep: true } : null,
     // The compact details: context now and the token totals. The same view a
     // one-second hover opens. See js/peek.js.

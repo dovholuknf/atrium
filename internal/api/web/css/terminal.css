@@ -54,6 +54,10 @@
   .term-head .seg { flex: none; flex-wrap: nowrap; }
   .term-head .seg button { padding: 4px 7px; }
   .tl-headed .term-list { padding-top: 40px; }
+  /* The attention queue puts its pill beside the box, so the box takes a row of its own under the pill and the title. */
+  :root:not([data-off~="attention"]) .term-head { flex-wrap: wrap; }
+  :root:not([data-off~="attention"]) .term-head .fq { order: 1; flex: 1 0 100%; }
+  :root:not([data-off~="attention"]) .tl-headed .term-list { padding-top: 74px; }
   /* The rows. Side and bottom padding keep a card's focus ring from being clipped by this scroll box. */
   .termscroll {
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;

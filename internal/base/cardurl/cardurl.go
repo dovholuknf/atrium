@@ -45,12 +45,27 @@ func Page(urlPath string) (page string, isCard bool) {
 			}
 		}
 	default:
-		return "", false
+		if !terminalPath(p) {
+			return "", false
+		}
 	}
 	if phone {
 		return "m/index.html", true
 	}
 	return "index.html", true
+}
+
+// terminalPath is `/<room>/terminal/<name>`. The first segment is never one the server already owns.
+func terminalPath(p string) bool {
+	parts := strings.Split(p, "/")
+	if len(parts) != 4 || parts[0] != "" || parts[2] != "terminal" || parts[1] == "" || parts[3] == "" {
+		return false
+	}
+	switch parts[1] {
+	case "alias", "room", "m", "v1", "js", "css", "icons":
+		return false
+	}
+	return true
 }
 
 // NotFound is the page for a card address of the wrong shape.
@@ -63,6 +78,7 @@ func NotFound(w http.ResponseWriter, urlPath string) {
 		`</code> is not a card address. These are:</p><ul>` +
 		`<li><code>/alias/&lt;alias&gt;</code></li>` +
 		`<li><code>/room/&lt;room&gt;/&lt;alias or handle&gt;</code></li>` +
+		`<li><code>/&lt;room&gt;/terminal/&lt;name&gt;</code></li>` +
 		`<li><code>/room/&lt;room&gt;</code>, the board for that room</li>` +
 		`<li><code>/m/alias/&lt;alias&gt;</code> and <code>/m/room/&lt;room&gt;/&lt;name&gt;</code> on the phone</li>` +
 		`</ul><p><a href="/">the board</a></p></body>`))

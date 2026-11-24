@@ -210,6 +210,15 @@ function Test-RunnersSurvive([string]$Url = $RoomPreflightUrl, [hashtable]$Heade
   return [bool]($r.pty_host -and $r.pty_host.on -and -not $r.pty_host.in_job -and $r.runners -and $r.runners.in_process -eq 0)
 }
 
+# Get-StoppedCards says which cards a stop of this room ends, from GET /v1/preflight: the cards whose runner lives in
+# the room's own process. A room too old to name them gives the count. Empty when none, or the room did not answer.
+function Get-StoppedCards([string]$Url = $RoomPreflightUrl, [hashtable]$Headers = @{}) {
+  try { $r = Invoke-RestMethod $Url -Headers $Headers -TimeoutSec 10 } catch { return '' }
+  if (-not $r.runners -or -not $r.runners.in_process) { return '' }
+  if ($r.runners.in_process_cards) { return "runners stopped: $(@($r.runners.in_process_cards) -join ', ')" }
+  "$($r.runners.in_process) runner(s) stopped"
+}
+
 # Test-StopWouldRefuse says whether the room's plain shutdown would answer 409, which is what Stop-Room reports as
 # REFUSED: the pty host is in the room task's job, so it would die with the room, and at least one runner lives in it.
 # Asked before any hold is set, so a deploy that is going to refuse never holds the room. -KillRunners is not refused.

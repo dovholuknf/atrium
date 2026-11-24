@@ -21,6 +21,9 @@ const capTick = time.Minute
 
 const capHubFile = "capabilities.hub.yaml"
 
+// hwEvery is how often the hardware is read again. Free RAM and disk move, the rest does not.
+const hwEvery = time.Hour
+
 var capOnce sync.Once
 var capAud *capability.Auditor
 
@@ -86,8 +89,14 @@ func (d *Daemon) handleCapabilitiesRun(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) capabilityLoop(ctx context.Context) {
 	t := time.NewTicker(capTick)
 	defer t.Stop()
+	var hwAt time.Time
 	for {
 		a := d.capabilities()
+		if time.Since(hwAt) >= hwEvery {
+			hwAt = time.Now()
+			root, _ := d.CardRoot()
+			a.SetHardware(capability.ProbeHardware(ctx, root))
+		}
 		d.capabilityHubList(ctx, a)
 		if ids := a.Due(); len(ids) > 0 {
 			_, _ = a.Run(ctx, ids)

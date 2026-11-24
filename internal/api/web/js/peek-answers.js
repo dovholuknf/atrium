@@ -109,6 +109,7 @@ function qaFlush() {
 // The open questions, as the peek draws them: each a button that opens the flyout, an earlier turn's drafts under
 // theirs, and the send button once there is something to send.
 function peekQuestionsHtml(t) {
+  if (!flagOn("answers")) return "";
   const groups = qaOn && qaOn.id === t.id ? qaOn.groups : qaGroups(t);
   const done = qaAnswered(groups), total = qaTotal(groups);
   const q = (g, gi, i) => {
@@ -400,7 +401,7 @@ const MAIL_SVG = `<svg viewBox="0 0 12 9" aria-hidden="true"><rect x=".65" y=".6
 
 // THE MAIL CHIP: a card holding drafted answers that were not sent. Click opens its peek, which offers to send them.
 function answerChip(t) {
-  const n = qaDraftCount(t);
+  const n = flagOn("answers") ? qaDraftCount(t) : 0;
   if (!n) return "";
   const tip = `${n} drafted answer${n === 1 ? "" : "s"} waiting on you to send. click to open them`;
   return `<span class="chip warn mail" role="button" tabindex="0" data-tip="${esc(tip)}" data-id="${esc(t.id)}" ` +

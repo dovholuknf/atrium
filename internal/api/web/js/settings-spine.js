@@ -143,7 +143,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-termkeep").value = String(termKeepN());
   document.getElementById("s-termkeeplines").value = String(termKeepLines());
   document.getElementById("s-cardcolors").checked = cardColors;
-  document.getElementById("s-emerging").checked = emergingOn();
+  document.querySelectorAll("input[data-flag]").forEach(b => { b.checked = flagOn(b.dataset.flag); });
   paintRepoColors(true);
   for (const k of ["selected", "idle", "exited"])
     document.getElementById("s-termwear-" + k).checked = termWearOn[k];

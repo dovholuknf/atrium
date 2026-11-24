@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -371,7 +373,14 @@ func TestUnparkFailureLeavesItParked(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "nowhere", store.StatusRunning)
-	// No runner and a harness that does not exist: the launch fails.
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetWorktree(card.ID, file); err != nil {
+		t.Fatal(err)
+	}
+	// No runner and a working directory that is a file: the launch fails.
 	if err := d.unpark(card.ID, ViaResume); err == nil {
 		t.Fatal("unpark with nothing to launch reported success")
 	}

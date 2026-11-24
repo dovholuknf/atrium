@@ -98,7 +98,7 @@ addEventListener("keydown", e => {
   // switcher on the way past would be the feature fighting its own
   // configuration.
   if (swCapturing) return;
-  if (comboOf(e) !== switchKey()) return;
+  if (comboOf(e) !== switchKey() || !flagOn("switcher")) return;
   e.preventDefault();
   e.stopPropagation();
   toggleSwitcher();
@@ -544,7 +544,7 @@ async function soloSwitch(id) {
     if (link) quickPasteWatch(link, e.inputType === "insertFromPaste");
     paintSwitcher();
   });
-  q.addEventListener("keydown", e => {
+  const keys = e => {
     if (e.key === "ArrowDown") { e.preventDefault(); swMove(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); swMove(-1); }
     else if (e.key === "Enter") {
@@ -557,6 +557,15 @@ async function soloSwitch(id) {
       else if (t) switchTo(t.id);
     }
     // Escape is the dialog's own and needs nothing here.
+  };
+  q.addEventListener("keydown", keys);
+  // A click on the dialog's own text takes focus out of the box, and the keys still pick.
+  document.addEventListener("keydown", e => {
+    const dlg = switcherDlg();
+    if (!dlg || !dlg.open || repoNaming || e.target === q || !/^(ArrowDown|ArrowUp|Enter)$/.test(e.key)) return;
+    if (e.target.closest && e.target.closest("input, textarea, select, button, a, [contenteditable]")) return;
+    q.focus();
+    keys(e);
   });
 })();
 

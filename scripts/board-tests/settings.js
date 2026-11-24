@@ -427,8 +427,8 @@ async function themePreviewSection(browser, base) {
 }
 
 // ── a card's parent ───────────────────────────────────────────────────────
-// The card menu offers "change parent…", the dialog lists the room's other cards and "(no parent)", and the pick is
-// POSTed to the card's parent route. See js/parent.js.
+// The card menu offers "change parent…", the dialog lists the other cards (name@room off this room) and "(no parent)",
+// and the pick is POSTed to the card's parent route. See js/parent.js.
 async function parentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const pp = await ctx.newPage();
@@ -448,7 +448,7 @@ async function parentSection(browser, base) {
       return { label: m.label, note: m.note, values };
     }, T1);
     if (item.label !== "change parent…" || item.note !== "orch") fail("the parent menu item reads wrong: " + JSON.stringify(item));
-    if (item.values.join() !== "a1") fail("the parent choices are not the room's other cards: " + JSON.stringify(item));
+    if (item.values.join() !== "a1,far@x") fail("the parent choices are not the other cards, by name@room off this room: " + JSON.stringify(item));
     await pp.waitForSelector("#ask[open] #ask-choices", { timeout: slow(5000) });
     await pp.selectOption("#ask-choices", "a1");
     await pp.click("#ask-actions button.go");

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
@@ -429,7 +430,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	if tune != nil {
 		tune(&d.hk)
 	}
-	if st.Fresh() {
+	{
 		home, err := os.UserHomeDir()
 		if opts.LocationFile != "" {
 			// A room with its own address file is a second one: its mcp.json sits beside its database, never the first room's.
@@ -437,8 +438,15 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		}
 		if err != nil {
 			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
-		} else if err := wireControlMCP(st, home, d.hk.AtriumBinary()); err != nil {
-			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
+		} else {
+			if st.Fresh() {
+				if err := wireControlMCP(st, home, d.hk.AtriumBinary()); err != nil {
+					log.Printf("[atrium] atrium-control not wired for claude: %v", err)
+				}
+			}
+			if err := relayControlHTTP(home, d.hk.AtriumBinary()); err != nil {
+				log.Printf("[atrium] atrium-control not moved to the relay: %v", err)
+			}
 		}
 	}
 	d.HubGit.Cards = &gitsync.CardTokens{Live: d.CardLive}
@@ -752,6 +760,9 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	// than read off the body so nothing on the wire can claim it.
 	req.Interactive = true
 	req.SpawnedBy = launcherFor(req)
+	if name, room, err := address.SplitAddress(req.SpawnedBy); err == nil && room != "" && d.otherRoom(room) == "" {
+		req.SpawnedBy = name
+	}
 	if err := d.launchWhileStopping(); err != nil {
 		return nil, err
 	}
@@ -1302,6 +1313,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		go d.diskWatcher(ctx, DiskWatchStart, DiskWatchEvery)
 		go d.hostWatcher(ctx, HostWatchStart, HostWatchEvery)
 		go d.dictateWarm(ctx)
+		go d.localServeLoop(ctx)
 	}
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.

@@ -3,6 +3,8 @@
 package daemon
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,6 +72,13 @@ func TestUnshelveWithAnUnknownRunnerExplainsItself(t *testing.T) {
 
 	task := shelvable(t, d, "unknown-runner")
 	if err := d.st.SetResumeID(task.ID, "sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetWorktree(task.ID, file); err != nil {
 		t.Fatal(err)
 	}
 

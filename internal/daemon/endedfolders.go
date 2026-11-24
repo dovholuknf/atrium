@@ -214,6 +214,10 @@ func (d *Daemon) sweepHome(ctx context.Context, row store.CardHome, users func(s
 	if !d.cardEnded(t, fixtures, now) {
 		return FolderSwept{}, false
 	}
+	// A home with no card yet is a launch still making it, until it is older than any launch.
+	if at, err := time.Parse(store.TimeFormat, row.CreatedAt); row.Card == "" && err == nil && now.Sub(at) < WokenGuard {
+		return FolderSwept{}, false
+	}
 	cards, ended := users(row.Path, false)
 	if !ended {
 		return FolderSwept{}, false

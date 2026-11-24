@@ -1,4 +1,4 @@
-// A launcher and its launched cards sort as one unit, on the freshest place any of them holds.
+// By activity a launcher and its launched cards sort as one unit. By started each card keeps its own place.
 const { boardScript } = require("./board-source.js");
 
 const page = boardScript();
@@ -22,10 +22,10 @@ const run = (started, activity, list) => new Function("termSortStarted", "sortBy
 
 is(run(true, false, top), ["docprev", "qa", "orch"], "docprev and qa are fresher than the kid, so they stay on top");
 sorted.splice(0, sorted.length, kid, docprev, qa, orch, pin);
-is(run(true, false, top), ["orch", "docprev", "qa"], "a fresh launched card lifts its whole group");
+is(run(true, false, top), ["docprev", "qa", "orch"], "by started a fresh launched card does not lift its parent");
 is(run(false, true, top), ["orch", "docprev", "qa"], "the same by activity");
 is(run(false, false, top), ["docprev", "qa", "orch"], "by name the order is left alone");
 sorted.splice(0, sorted.length, pin, kid, docprev, qa, orch);
-is(run(true, false, [pin, docprev, orch]), ["pin", "orch", "docprev"], "a pinned row keeps its own place");
+is(run(true, false, [pin, docprev, orch]), ["pin", "docprev", "orch"], "a pinned row keeps its own place");
 if (bad) process.exit(1);
 console.log("test-group-sort: ok");
