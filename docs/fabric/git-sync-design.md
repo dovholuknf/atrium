@@ -84,7 +84,8 @@ Serving the checkout directly would be one moving part fewer. It is not done, fo
 
 ### 4.3 Keeping it current (stage 1)
 
-- **Mirror in.** Every 30 seconds, and at once when asked, the hub reads `branch` in `checkout` (`git rev-parse`) and,
+- **Mirror in.** Every 30 seconds the hub looks at the ref files of `branch` and `origin/main` in `checkout` and the
+  bare's `branch` with no git, and only when one changed, or at once when asked, reads `branch` (`git rev-parse`) and,
   when it moved, runs `git -C <bare> fetch --no-tags <checkout> +refs/heads/<branch>:refs/heads/<branch>`. A local
   fetch, run by the hub process, not by an agent.
 - **The hub's tip never goes backwards, and the merger lands claude/main.** When `branch` is `claude/main`, the recorded

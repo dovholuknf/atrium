@@ -45,6 +45,8 @@ type Calls struct {
 	// BacklogStore is the hub's backlog store, and BacklogEvent says a backlog event on every board.
 	BacklogStore func() *hubstore.Store
 	BacklogEvent func(kind string, v any)
+	// ItemEnded tells the cards attached to a backlog item that it went done, dropped or held. Nil in a test.
+	ItemEnded func(id, status, by string)
 	// Broadcast sends one event to every board.
 	Broadcast func(ev wire.Event)
 	// WorkOfTags is the backlog id a launch's tags attach it to, or "".

@@ -221,3 +221,25 @@ func TestBrowseQuietAnswersEveryRefusalWithTheSameEmptyListing(t *testing.T) {
 		t.Fatalf("quiet browse inside a root must still list it, got %d: %s", rec.Code, rec.Body)
 	}
 }
+
+func TestBrowseSaysWhetherTheFolderItselfIsARepo(t *testing.T) {
+	t.Parallel()
+	srv, work := browseServer(t)
+	plain, repo := filepath.Join(work, "plain"), filepath.Join(work, "repo")
+	for _, d := range []string{plain, filepath.Join(repo, ".git")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for dir, want := range map[string]bool{plain: false, repo: true} {
+		var body struct {
+			Repo bool `json:"repo"`
+		}
+		if err := json.Unmarshal(browseAt(t, srv, filepath.ToSlash(dir)+"&quiet=1").Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Repo != want {
+			t.Errorf("%s: repo %v, want %v", dir, body.Repo, want)
+		}
+	}
+}

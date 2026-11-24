@@ -82,6 +82,7 @@ func (p *Proxy) forgeCalls() forgepkg.Calls {
 		},
 		BacklogStore: p.backlogStore,
 		BacklogEvent: p.backlogEvent,
+		ItemEnded:    p.backlogEnded,
 		Broadcast:    func(ev wire.Event) { p.feeds.broadcast(ev) },
 		WorkOfTags:   WorkOfTags,
 		RoomCards:    p.roomCards,

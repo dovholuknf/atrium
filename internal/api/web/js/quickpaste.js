@@ -28,7 +28,7 @@ const QUICKPASTE_KEY = "ctrl+alt+KeyR";
 // for AltGr, and AltGr+r is a letter somebody meant to type, so that is left
 // alone, the same rule as ctrl-alt-n in js/terminal.js.
 addEventListener("keydown", e => {
-  if (swCapturing || comboOf(e) !== QUICKPASTE_KEY) return;
+  if (swCapturing || comboOf(e) !== QUICKPASTE_KEY || !flagOn("paste")) return;
   if (e.getModifierState && e.getModifierState("AltGraph")) return;
   e.preventDefault();
   e.stopPropagation();

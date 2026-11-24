@@ -82,6 +82,17 @@ func firstUnmet(v CapabilityView, needs []string, room string, now time.Time) st
 			}
 		}
 		if !found {
+			for _, rm := range v.Rooms {
+				if c, ok := hardwareCell(n, rm.Hardware); ok && wire.EqualFold(rm.Name, room) {
+					if c.State == "pass" {
+						found = true
+					} else {
+						return n + " fail: " + c.Reason
+					}
+				}
+			}
+		}
+		if !found {
 			return n + " has no result"
 		}
 	}

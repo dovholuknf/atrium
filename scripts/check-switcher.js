@@ -37,7 +37,7 @@ if (!/function openSwitcher\(/.test(html)) {
 // event allowed through opens the switcher AND sends a control character to
 // whatever the runner is in the middle of. Capture is what puts this ahead of
 // xterm at all.
-const hookAt = html.indexOf("if (comboOf(e) !== switchKey()) return;");
+const hookAt = html.indexOf("if (comboOf(e) !== switchKey() || !flagOn(\"switcher\")) return;");
 if (hookAt < 0) {
   fail("nothing compares a keystroke against `switchKey()`. Either the hotkey is gone, or " +
     "it is matching a hardcoded key, which is the one thing this feature may not do: the " +

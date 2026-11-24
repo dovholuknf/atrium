@@ -871,3 +871,45 @@ func TestOperatorRoutesRefuseALocalProxy(t *testing.T) {
 		}
 	}
 }
+
+func TestPeersNameWhatANeedsInputCardWaitsOn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/tasks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+				{"id": "c1", "wire_name": "waiter", "status": "needs-input"},
+				{"id": "c2", "wire_name": "stalled", "status": "needs-input"},
+				{"id": "c3", "wire_name": "busy", "status": "working"},
+			}})
+		case "/v1/tasks/c1/asks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"asks": []map[string]any{
+				{"text": "which list", "asked_at": "2026-11-23T21:57:00Z"},
+				{"text": "approve the mock", "verb": "approve", "stage": "mock", "asked_at": "2026-11-23T21:58:00Z"},
+			}})
+		case "/v1/tasks/c2/asks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"asks": []map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	_, out, err := c.peersHandler(context.Background(), ctlReq("me", "r1"), peersInput{})
+	if err != nil {
+		t.Fatalf("peers: %v", err)
+	}
+	by := map[string]peer{}
+	for _, p := range out.Peers {
+		by[p.Handle] = p
+	}
+	w := by["waiter"].WaitsOn
+	if len(w) != 2 || w[0].Kind != "ask" || w[1].Kind != "gate" || w[0].Text != "which list" ||
+		w[0].Link != srv.URL+"/room/r1/c1" {
+		t.Errorf("waiter waits on %+v", w)
+	}
+	if len(by["stalled"].WaitsOn) != 0 || len(by["busy"].WaitsOn) != 0 {
+		t.Errorf("a card with no open ask, or one not needing input, waits on nothing: %+v", out.Peers)
+	}
+}

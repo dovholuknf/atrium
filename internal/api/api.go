@@ -715,6 +715,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/files", s.uploadFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files", s.downloadFile)
 	mux.HandleFunc("GET /v1/tasks/{id}/page/{path...}", s.servePage)
+	mux.HandleFunc("GET /room/{room}/{id}/files/{path...}", s.serveRoomPage)
 	mux.HandleFunc("PUT /v1/tasks/{id}/files/drop", s.dropIn)
 	// Finding a file so it can be taken back out. Bounded to the card's own
 	// directory, and carried by whatever already carries the board.
@@ -779,6 +780,7 @@ func (s *Server) Handler() http.Handler {
 	// Closing a card frees its inventory. See close.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/close", s.getClose)
 	mux.HandleFunc("POST /v1/tasks/{id}/close", s.postClose)
+	mux.HandleFunc("POST /v1/tasks/{id}/item-ended", s.postItemEnded)
 	mux.HandleFunc("POST /v1/tasks/{id}/cleanup-offer", s.postCleanupOffer)
 	// Closing every card in a worktree, the call gwt makes before it removes one. See cardsarchive.go.
 	mux.HandleFunc("POST /v1/cards/archive", s.postCardsArchive)

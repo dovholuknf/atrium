@@ -15,6 +15,7 @@
 //   session.created (child)    atrium hook --event subagent-start
 //   session.idle (child)       atrium hook --event subagent-end
 //   session.idle               atrium turn --event end
+//   permission.asked           atrium hook --event permission   (as a PermissionRequest, then replied)
 //
 // Measured against opencode 1.18.34 by reading the installed binary, not the
 // docs: tool.execute.before runs before opencode's own permission ask, and an
@@ -28,12 +29,15 @@
 // OPEN: anything other than an explicit deny from atrium lets the tool run and
 // leaves opencode's own permission rules in charge.
 //
-// Those rules are opencode's defaults, which allow bash and edits, and the
-// runner row deliberately does not tighten them to `ask`. opencode asks AFTER
-// this hook returns, so `ask` would put a second prompt in the opencode
-// terminal behind every call atrium had already approved, and nobody is
-// sitting at that terminal. 1.18.34 has no plugin trigger for its own ask, so
-// there is no way to answer it from here.
+// opencode's own asks (external_directory, and any rule set to `ask`) come after
+// this hook, as a permission.asked event. Measured against 1.19.4: there is no
+// plugin hook that answers one, but the in-process client can reply to it. So
+// the ask goes to atrium as a PermissionRequest, the same native shape codex
+// uses, and atrium's answer is sent back as `once` or `reject`. "Always" is an
+// atrium rule, never opencode's. Two kinds of ask are answered `once` with no
+// human: one for a call atrium itself approved a moment ago, and one for paths
+// inside the card's own home (ATRIUM_HOME). No answer from atrium leaves the ask
+// in opencode's terminal, which is failing open.
 //
 // Only a session atrium launched is reported. atrium sets ATRIUM_RUNNER on
 // every launch, and without it this plugin does nothing, so an opencode started
@@ -127,6 +131,38 @@ function applyEdit(upd, args) {
   } catch {
     return false
   }
+}
+
+// opencode's ask metadata, as atrium's gate reads a tool input.
+const ASK_ARGS = { filepath: "file_path", parentDir: "parent_dir" }
+
+function askInput(ask) {
+  const out = {}
+  if (isObject(ask?.metadata)) for (const [k, v] of Object.entries(ask.metadata)) out[ASK_ARGS[k] || k] = v
+  if (!out.command && !out.file_path && Array.isArray(ask?.patterns)) out.patterns = ask.patterns
+  return out
+}
+
+function slashPath(p) {
+  let s = String(p || "").replace(/\\/g, "/").replace(/\/?\*+$/, "").replace(/\/+$/, "")
+  if (process.platform === "win32") s = s.toLowerCase()
+  return s
+}
+
+// inHome is true only for an external_directory ask whose every path is the
+// card's home or under it.
+function inHome(ask, home) {
+  const h = slashPath(home)
+  if (!h || ask?.permission !== "external_directory") return false
+  const meta = isObject(ask.metadata) ? ask.metadata : {}
+  const paths = [...(Array.isArray(ask.patterns) ? ask.patterns : []),
+    ...(Array.isArray(meta.directories) ? meta.directories : [])]
+  if (meta.filepath) paths.push(meta.filepath)
+  if (!paths.length) return false
+  return paths.every((p) => {
+    const s = slashPath(p)
+    return s === h || s.startsWith(h + "/")
+  })
 }
 
 function locationFile() {
@@ -253,11 +289,45 @@ export const AtriumPlugin = async ({ client, directory }) => {
     } catch {}
   }
 
+  // Calls atrium approved in tool.execute.before, until they finish.
+  const approved = new Set()
+
+  // The plugin's client is opencode's own: v2 has permission.reply, v1 the session route.
+  const reply = async (ask, answer, message) => {
+    try {
+      if (client?.permission?.reply) {
+        await client.permission.reply({ requestID: ask.id, reply: answer, message })
+        return
+      }
+      await client?.postSessionIdPermissionsPermissionId?.({
+        path: { id: ask.sessionID, permissionID: ask.id }, body: { response: answer },
+      })
+    } catch {}
+  }
+
+  const onAsk = async (ask) => {
+    if (!ask?.id) return
+    if (approved.has(ask.tool?.callID) || inHome(ask, process.env.ATRIUM_HOME)) return reply(ask, "once")
+    const payload = base({
+      hook_event_name: "PermissionRequest", tool_name: claudeTool(ask.permission), tool_input: askInput(ask),
+      session_id: ask.sessionID || "", tool_use_id: ask.id,
+    })
+    const out = await run(["hook", "--event", "permission", "--runner", RUNNER], payload, 0, cwd)
+    let decision
+    try { decision = JSON.parse(out || "null")?.hookSpecificOutput?.decision } catch {}
+    if (decision?.behavior === "allow") return reply(ask, "once")
+    if (decision?.behavior === "deny") return reply(ask, "reject", decision.message || "blocked via atrium")
+  }
+
   return {
     event: async ({ event }) => {
       try {
         const p = event?.properties || {}
         switch (event?.type) {
+          case "permission.asked":
+            // Not awaited: a human may take minutes, and the event loop serves the whole session.
+            onAsk(p).catch(() => {})
+            break
           case "session.created": {
             const info = p.info || {}
             if (info.parentID) {
@@ -314,6 +384,7 @@ export const AtriumPlugin = async ({ client, directory }) => {
         return
       }
       if (!ans) return
+      if (ans.permissionDecision === "allow" && input?.callID) approved.add(input.callID)
       if (ans.permissionDecision === "deny") {
         // The one error this plugin raises on purpose: it is how a tool call
         // is refused, and the reason is what the model reads.
@@ -331,6 +402,7 @@ export const AtriumPlugin = async ({ client, directory }) => {
 
     "tool.execute.after": async (input) => {
       try {
+        approved.delete(input?.callID)
         activity("tool-end", { tool_name: claudeTool(input?.tool), session_id: input?.sessionID || "", tool_use_id: input?.callID || "" })
       } catch {}
     },

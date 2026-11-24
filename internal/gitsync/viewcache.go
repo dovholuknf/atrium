@@ -9,9 +9,10 @@ import (
 // THE BOARD'S LIST OF REPOSITORIES is read from a snapshot, never computed on the request. Listing a
 // repository's branches costs a git subprocess, and a process spawn is 50-100ms on Windows, so a GET that
 // ran one per repository took seconds. The snapshot is rebuilt in the background: after a push, after an
-// init, and on a timer for what changes without either (a forge refresh, a branch made on the hub's disk).
+// init, and when the store's ref files change for what changes without either (a forge refresh, a branch made
+// on the hub's disk). Looking at the ref files runs no git, so an idle hub runs none.
 
-// ViewEvery is how often the snapshot is rebuilt when nothing asked for it sooner.
+// ViewEvery is how often the store's ref files are looked at for a change nothing asked a rebuild for.
 const ViewEvery = 20 * time.Second
 
 // Snapshot is the list as last computed. Computed is empty until the first build has finished, and then
@@ -102,8 +103,12 @@ func (s *Store) buildViews() {
 }
 
 func (s *Store) viewLoop() {
+	last := s.refsPrint()
 	for {
 		time.Sleep(ViewEvery)
-		s.RefreshView()
+		if p := s.refsPrint(); p != last {
+			last = p
+			s.RefreshView()
+		}
 	}
 }

@@ -156,7 +156,7 @@
   function paintArrange() {
     const p = prefs();
     list.replaceChildren();
-    const vis = p.order.filter(v => emergingOn() || !EMERGING_VIEWS.includes(v));
+    const vis = p.order.filter(v => !viewOff(v));
     vis.forEach((v, i) => {
       const row = document.createElement("div");
       row.className = "tabsdlg-row";

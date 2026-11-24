@@ -276,6 +276,7 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 		return
 	}
 	p.RecordAudit("", "backlog-status", id+" "+b.Status)
+	p.backlogEnded(b.ID, b.Status, in.By)
 	p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
 	crJSON(w, http.StatusOK, b)
 }

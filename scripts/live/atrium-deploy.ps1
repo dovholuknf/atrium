@@ -32,7 +32,8 @@
 #
 # A room with pty_host on keeps its runners across the stop and the swap: `atrium stop` leaves what the pty host holds
 # running and the new room reattaches it. The result then reads `success (runners kept)`, and no deploy hold is set for
-# it (deploy-batch.ps1, Test-RunnersSurvive). Turning it on per room is docs/changes/blue-green-1-2.md.
+# it (deploy-batch.ps1, Test-RunnersSurvive). Turning it on per room is docs/changes/blue-green-1-2.md. A room without
+# it ends the runners in its own process, and the result names their cards: `success (runners stopped: a, b)`.
 #
 # Remote rooms are built for their platform with the same stamp, copied over with scp, stopped with `atrium stop`, and
 # swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude. A
@@ -330,6 +331,8 @@ foreach ($name in $remoteNames) {
   # result says so, so a deploy that was meant to leave agents running can be told from one that did not.
   $keeps = (-not $WhatIf) -and (Test-RunnersSurvive 'http://127.0.0.1:7778/v1/preflight' @{ 'X-Atrium-Room' = $name })
   Say "${name}: runners survive the restart: $keeps"
+  $stops = if ($WhatIf -or $keeps) { '' } else { Get-StoppedCards 'http://127.0.0.1:7778/v1/preflight' @{ 'X-Atrium-Room' = $name } }
+  if ($stops) { Say "${name}: the restart ends these and reopens them after, $stops" }
   $start = Get-Date
   $script:swapStart = $start
   $swapOut = @()
@@ -387,16 +390,18 @@ foreach ($name in $remoteNames) {
     elseif (-not $back) { "failed - restarted but not back on the hub after ${ReattachBudget}s" }
     elseif (-not (Test-Unheld 'http://127.0.0.1:7778/v1/hold' @{ 'X-Atrium-Room' = $name })) { $heldMsg }
     elseif ($keeps) { 'success (runners kept)' }
+    elseif ($stops) { "success ($stops)" }
     else { 'success' }
 }
 
 # 3. The hub, with claude-sg4 when it is named. Run as child scripts, so their own checks and reverts apply.
 if ($want -contains 'claude-sg4') {
-  & "$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate -KillRunners:$KillRunners -RoomOnly:(-not ($want -contains 'hub'))
+  $stops = if ($WhatIf -or (Test-RunnersSurvive)) { '' } else { Get-StoppedCards }
+  &"$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate -KillRunners:$KillRunners -RoomOnly:(-not ($want -contains 'hub'))
   $code = $LASTEXITCODE
   $ok = if ($WhatIf) { 'success (WhatIf)' } else { 'success' }
   switch ($code) {
-    0 { $results['claude-sg4'] = $ok; if ($results.Contains('hub')) { $results['hub'] = $ok } }
+    0 { $results['claude-sg4'] = if ($stops) { "success ($stops)" } else { $ok }; if ($results.Contains('hub')) { $results['hub'] = $ok } }
     2 { $results['claude-sg4'] = 'failed - serves locally but is not on the hub, see deploy-batch.log'
       if ($results.Contains('hub')) { $results['hub'] = $ok } }
     default { $results['claude-sg4'] = "failed - exit $code, see deploy-batch.log"

@@ -304,3 +304,18 @@ func TestAResidentLaunchEndsOnTheResidentLine(t *testing.T) {
 		t.Fatalf("prompt %q", got)
 	}
 }
+
+func TestLaunchCreatesAMissingWorkingDirectory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+
+	dir := filepath.Join(t.TempDir(), "a", "b")
+	_, _ = d.Launch(shared.LaunchRequest{Harness: briefHarness(t, d), Cwd: dir})
+
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		t.Fatalf("the missing working directory was not created: %v", err)
+	}
+}

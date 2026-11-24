@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/base/resources"
+	"github.com/dovholuknf/atrium/internal/capability"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
@@ -31,6 +32,9 @@ const resourcesToolDesc = "List the machines and environments you may use: build
 	"Each room's `linux` is how it reaches Linux, from its own probes: the ssh hosts that answer and whether they " +
 	"have docker, whether wslc is there, and whether docker answers (DOCKER_HOST or local). Use these before you " +
 	"ask anyone for Linux or docker.\n\n" +
+	"Each online room's `hardware` is what its own read-only probe found: CPU and cores, total and free RAM, each GPU " +
+	"with its VRAM and cuda, rocm or metal, and free disk under the card root. A field the probe could not read is " +
+	"left out. Place GPU work with atrium_launch `needs`, like gpu:cuda or vram>=12g.\n\n" +
 	"READ-ONLY. No agent writes the file: if you find something that belongs in it, tell your director. It names " +
 	"hosts and commands and never holds a credential. Where an entry names a working directory rule, build there, " +
 	"so two cards do not collide."
@@ -48,6 +52,8 @@ type resourceRoom struct {
 	// Tools is where each toolchain is on the room, from its hello. Online rooms only.
 	Tools map[string]string `json:"tools,omitempty"`
 	Linux *resourceLinux    `json:"linux,omitempty"`
+
+	Hardware *capability.Hardware `json:"hardware,omitempty"`
 }
 
 // resourceLinux is how a room reaches Linux, read from its capability results: each `ssh:<host>` with its
@@ -121,6 +127,13 @@ func (p *Proxy) roomsForResources() []resourceRoom {
 			}
 		}
 	}
+	p.cap.mu.Lock()
+	for i := range out {
+		if r := p.cap.rooms[wire.KeyOf(out[i].Name)]; r != nil && out[i].Online {
+			out[i].Hardware = r.Hardware
+		}
+	}
+	p.cap.mu.Unlock()
 	return out
 }
 
@@ -245,6 +258,11 @@ func (c *controlMCP) resourcesHandler(ctx context.Context, req *mcp.CallToolRequ
 			fmt.Fprintf(&b, "  - %s: %s\n", n, r.Tools[n])
 		}
 		writeLinux(&b, r.Linux)
+		if r.Hardware != nil {
+			for _, l := range r.Hardware.Summary() {
+				fmt.Fprintf(&b, "  - %s\n", l)
+			}
+		}
 	}
 	out.Text = b.String()
 	return nil, out, nil

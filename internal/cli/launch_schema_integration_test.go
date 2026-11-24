@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 func TestEveryLaunchArgTheRoomReadsIsAdvertisedByStdioControl(t *testing.T) {
@@ -64,4 +65,30 @@ func daemonLaunchArgs() []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+func TestEveryLocalToolOutputSchemaAcceptsAnUnknownField(t *testing.T) {
+	ctx := context.Background()
+	for _, s := range []*mcp.Server{controlServer(), chatControlServer()} {
+		st, ct := mcp.NewInMemoryTransports()
+		ss, err := s.Connect(ctx, st, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ss.Close() })
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cs.Close() })
+		res, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tl := range res.Tools {
+			if tl.OutputSchema != nil && !reflect.DeepEqual(ctl.OpenSchema(tl.OutputSchema), tl.OutputSchema) {
+				t.Errorf("%s has an output schema that refuses a field it does not name", tl.Name)
+			}
+		}
+	}
 }

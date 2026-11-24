@@ -35,17 +35,28 @@
 
   const fetchBoop = () => { clipBytes = clipBytes || fetch("/m/boop.mp3").then(r => r.arrayBuffer()); return clipBytes; };
 
+  // One context for every boop, made on the press: a fresh one per boop started its output stream after the mic opened.
+  let actx = null;
+  function audio() {
+    if (!actx || actx.state === "closed") actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume().catch(() => {});
+    return actx;
+  }
+
+  const decodeBoop = ctx => {
+    clip = clip || fetchBoop().then(b => ctx.decodeAudioData(b.slice(0))).catch(e => { clip = clipBytes = null; throw e; });
+    return clip;
+  };
+
   // The recorded boop is decoded once and played through the same context path as the blip.
   function voiceBoop(ctx) {
-    clip = clip || fetchBoop().then(b => ctx.decodeAudioData(b.slice(0)));
-    return clip.then(buf => {
+    return decodeBoop(ctx).then(buf => {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       const g = ctx.createGain();
       g.gain.value = boopVol();
       src.connect(g);
       g.connect(ctx.destination);
-      src.onended = () => ctx.close();
       src.start();
     });
   }
@@ -55,9 +66,8 @@
     const kind = boopKind();
     if (kind === "off") return;
     try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      const ctx = new Ctx();
-      if (kind === "voice") { voiceBoop(ctx).catch(() => ctx.close()); return; }
+      const ctx = audio();
+      if (kind === "voice") { voiceBoop(ctx).catch(() => {}); return; }
       const osc = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
       osc.frequency.value = 660;
       g.gain.setValueAtTime(0, t);
@@ -65,7 +75,6 @@
       g.gain.linearRampToValueAtTime(0, t + 0.08);
       osc.connect(g);
       g.connect(ctx.destination);
-      osc.onended = () => ctx.close();
       osc.start(t);
       osc.stop(t + 0.08);
     } catch (e) {}
@@ -77,7 +86,8 @@
     if (why) throw new Error(why);
     const r = { chunks: [], at: 0, stream: null, mr: null, gone: false };
     rec = r;
-    if (boopKind() === "voice") fetchBoop().catch(() => { clipBytes = null; });
+    const kind = boopKind();
+    if (kind !== "off") try { const ctx = audio(); if (kind === "voice") decodeBoop(ctx).catch(() => {}); } catch (e) {}
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });

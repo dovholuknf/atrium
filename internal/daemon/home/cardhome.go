@@ -198,7 +198,7 @@ func (d *Service) ResolveRepo(ctx context.Context, repo string) (string, error) 
 	if filepath.IsAbs(filepath.FromSlash(repo)) {
 		dir := filepath.FromSlash(repo)
 		if !shared.HasDotGit(dir) {
-			return "", fmt.Errorf("%s is not a git clone on this room", repo)
+			return "", fmt.Errorf("in a copy needs a git repository, and %s is not one on this room. launch in place instead", repo)
 		}
 		return dir, nil
 	}

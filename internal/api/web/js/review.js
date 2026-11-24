@@ -47,7 +47,7 @@ async function reviewLoad() {
 // Called at the end of chatSelect.
 function reviewSelected(id) {
   reviewStop();
-  reviewFor = id && reviewIsCard(id) ? id : "";
+  reviewFor = id && flagOn("walk") && reviewIsCard(id) ? id : "";
   reviewData = null;
   const btn = document.getElementById("chat-review");
   if (btn) btn.hidden = true;

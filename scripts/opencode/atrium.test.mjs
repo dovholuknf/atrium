@@ -42,8 +42,10 @@ mock.module("node:child_process", {
 
 process.env.ATRIUM_RUNNER = "opencode"
 process.env.ATRIUM_HOOK_EXE = "fake-atrium"
+process.env.ATRIUM_HOME = "/cards/c1"
 const { AtriumPlugin } = await import("./atrium.js")
-const hooks = await AtriumPlugin({ client: {}, directory: process.cwd() })
+const client = {}
+const hooks = await AtriumPlugin({ client, directory: process.cwd() })
 const before = hooks["tool.execute.before"]
 
 function allow(updatedInput) {
@@ -115,4 +117,91 @@ test("a patch is sent to the board once, under its own name", async () => {
   assert.ok(perm, "no permission request was sent")
   assert.deepEqual(perm.payload.tool_input, { patchText: "*** the patch" })
   assert.equal(perm.payload.tool_name, "Edit")
+})
+
+const replies = []
+client.permission = { reply: async (r) => { replies.push(r) } }
+
+function native(behavior, message) {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior, message } } })
+}
+
+async function ask(props) {
+  replies.length = 0
+  sent.length = 0
+  await hooks.event({ event: { type: "permission.asked", properties: { sessionID: "ses_test", ...props } } })
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r))
+}
+
+const outside = {
+  permission: "external_directory", patterns: ["/other/x/*"], always: ["/other/x/*"],
+  metadata: { filepath: "/other/x/a.txt", parentDir: "/other/x" },
+}
+
+test("opencode's own ask goes to atrium as a PermissionRequest and an allow replies once", async () => {
+  answer = native("allow")
+  await ask({ id: "per_1", ...outside })
+  const perm = sent.find((s) => s.event === "permission")
+  assert.equal(perm.payload.hook_event_name, "PermissionRequest")
+  assert.equal(perm.payload.tool_name, "external_directory")
+  assert.equal(perm.payload.tool_input.file_path, "/other/x/a.txt")
+  assert.deepEqual(replies, [{ requestID: "per_1", reply: "once", message: undefined }])
+})
+
+test("a deny from atrium rejects opencode's ask with atrium's reason", async () => {
+  answer = native("deny", "not there")
+  await ask({ id: "per_2", ...outside })
+  assert.deepEqual(replies, [{ requestID: "per_2", reply: "reject", message: "not there" }])
+})
+
+test("no answer from atrium leaves opencode's ask to its own terminal", async () => {
+  answer = ""
+  await ask({ id: "per_3", ...outside })
+  assert.ok(sent.find((s) => s.event === "permission"))
+  assert.deepEqual(replies, [])
+})
+
+test("an ask inside the card's home is answered once without asking atrium", async () => {
+  answer = native("deny", "must not be asked")
+  await ask({
+    id: "per_4", permission: "external_directory", patterns: ["/cards/c1/*"],
+    metadata: { filepath: "/cards/c1/BRIEF.md", parentDir: "/cards/c1" },
+  })
+  assert.equal(sent.filter((s) => s.event === "permission").length, 0)
+  assert.deepEqual(replies, [{ requestID: "per_4", reply: "once", message: undefined }])
+})
+
+test("a home-like sibling folder is not the card's home", async () => {
+  answer = ""
+  await ask({ id: "per_5", permission: "external_directory", patterns: ["/cards/c10/*"], metadata: {} })
+  assert.ok(sent.find((s) => s.event === "permission"))
+  assert.deepEqual(replies, [])
+})
+
+test("an ask for a call atrium just approved is answered once without asking again", async () => {
+  answer = JSON.stringify({ hookSpecificOutput: { permissionDecision: "allow" } })
+  await before({ tool: "edit", sessionID: "ses_test", callID: "call_ok" }, { args: { filePath: "/other/x/a.txt" } })
+  answer = native("deny", "must not be asked")
+  await ask({ id: "per_6", ...outside, tool: { messageID: "m", callID: "call_ok" } })
+  assert.equal(sent.filter((s) => s.event === "permission").length, 0)
+  assert.deepEqual(replies, [{ requestID: "per_6", reply: "once", message: undefined }])
+  await hooks["tool.execute.after"]({ tool: "edit", sessionID: "ses_test", callID: "call_ok" })
+  answer = ""
+  await ask({ id: "per_7", ...outside, tool: { messageID: "m", callID: "call_ok" } })
+  assert.deepEqual(replies, [])
+})
+
+test("a v1 client is answered on the session route", async () => {
+  const v2 = client.permission
+  delete client.permission
+  const posted = []
+  client.postSessionIdPermissionsPermissionId = async (o) => { posted.push(o) }
+  try {
+    answer = native("allow")
+    await ask({ id: "per_8", ...outside })
+    assert.deepEqual(posted, [{ path: { id: "ses_test", permissionID: "per_8" }, body: { response: "once" } }])
+  } finally {
+    client.permission = v2
+    delete client.postSessionIdPermissionsPermissionId
+  }
 })

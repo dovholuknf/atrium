@@ -914,6 +914,9 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		cwd, _ = os.Getwd()
 	}
 	cwd = filepath.FromSlash(cwd)
+	if _, err := os.Stat(cwd); os.IsNotExist(err) && filepath.IsAbs(cwd) && !strings.Contains(cwd, "..") && !safepath.Network(cwd) {
+		_ = os.MkdirAll(cwd, 0o755)
+	}
 	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", cwd)
 	}
@@ -1293,6 +1296,11 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 
 	if cardHome != nil && made.Path != "" {
 		if err := d.st.CardHomeCard(cardHome.Path, task.ID); err != nil {
+			return nil, err
+		}
+		if cardHome.Kind == store.CardHomeWorktree && !shared.HasDotGit(cwd) {
+			err := fmt.Errorf("the card's work folder %s is not a git checkout", filepath.ToSlash(cwd))
+			d.launchFailed(task.ID, err.Error())
 			return nil, err
 		}
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/capability"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
@@ -98,5 +99,26 @@ func TestCapabilitiesListPassesItsOutputSchema(t *testing.T) {
 	b, _ := json.Marshal(res.StructuredContent)
 	if !strings.Contains(string(b), `"caps":[{"id":"ssh:x","kind":"reach"}]`) {
 		t.Fatalf("%s", b)
+	}
+}
+
+func TestLaunchNeedsPlacesGPUWorkFromHardware(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	at := now.Add(-time.Hour).Format(time.RFC3339)
+	v := CapabilityView{Rooms: []CapabilityRoom{
+		{Name: "a", Online: true, Hardware: &capability.Hardware{At: at, GPUs: []capability.GPU{{Name: "small", VRAM: 8 << 30, API: "cuda"}}}},
+		{Name: "b", Online: true, Hardware: &capability.Hardware{At: at, GPUs: []capability.GPU{{Name: "big", VRAM: 24 << 30, API: "cuda"}}}},
+		{Name: "c", Online: true},
+	}}
+	need := []string{"gpu:cuda", "vram>=12g"}
+	if got, err := roomForNeeds(v, need, "a", false, now); err != nil || got != "b" {
+		t.Fatalf("gpu work went to %q, %v", got, err)
+	}
+	_, err := roomForNeeds(v, need, "a", true, now)
+	if err == nil || !strings.Contains(err.Error(), "a: vram>=12g fail: vram 8g") {
+		t.Fatalf("a named room with too little vram was not refused with its reason: %v", err)
+	}
+	if _, err := roomForNeeds(v, need, "c", true, now); err == nil || !strings.Contains(err.Error(), "c: gpu:cuda has no result") {
+		t.Fatalf("a room with no hardware probe took gpu work: %v", err)
 	}
 }

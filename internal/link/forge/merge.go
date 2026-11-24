@@ -1233,7 +1233,9 @@ func (p *Service) MergeEnd(ctx context.Context, st *hubstore.Store, step hubstor
 	}
 	if m.State == hubstore.MergeLanded {
 		p.mergeTidy(ctx, m.Repo, m.Branch, m.SHA)
-		mergeItemDone(st, m)
+		if id := mergeItemDone(st, m); id != "" && p.ItemEnded != nil {
+			p.ItemEnded(id, hubstore.ItemDone, "merge queue")
+		}
 	}
 	if m.State != hubstore.MergeCancelled || step.From == hubstore.MergeTesting {
 		p.mergeTell(ctx, m)
@@ -1261,17 +1263,21 @@ func (p *Service) MergeEnd(ctx context.Context, st *hubstore.Store, step hubstor
 }
 
 // mergeItemDone sets the backlog item the requesting card is attached to done, since its work is on claude/main.
-func mergeItemDone(st *hubstore.Store, m hubstore.MergeRequest) {
+func mergeItemDone(st *hubstore.Store, m hubstore.MergeRequest) string {
 	if m.Requester == "" || m.RequesterRoom == "" {
-		return
+		return ""
 	}
 	w, err := st.WorkOfCard(m.RequesterRoom, m.Requester)
 	if err != nil {
-		return
+		return ""
 	}
-	if _, err := st.ItemSetStatus(w.BacklogID, hubstore.ItemDone, "merge queue"); err != nil && !errors.Is(err, hubstore.ErrItemNotFound) {
-		log.Printf("[hub] merge %d: could not set %s done: %v", m.N, w.BacklogID, err)
+	if _, err := st.ItemSetStatus(w.BacklogID, hubstore.ItemDone, "merge queue"); err != nil {
+		if !errors.Is(err, hubstore.ErrItemNotFound) {
+			log.Printf("[hub] merge %d: could not set %s done: %v", m.N, w.BacklogID, err)
+		}
+		return ""
 	}
+	return w.BacklogID
 }
 
 // mergeTidy deletes a landed branch in the hub's store and asks every attached room to delete its local branch.

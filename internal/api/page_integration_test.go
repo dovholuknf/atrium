@@ -101,6 +101,30 @@ func TestAFolderOpensItsLoneHTMLWithRootLinksPutBackUnderThePrefixAndTheBoardCSS
 	}
 }
 
+func TestAMarkdownFileIsDrawnAsAPageAndRawIsKept(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	os.WriteFile(filepath.Join(work, "n.md"), []byte("# Hi</script>"), 0o644)
+	get := func(q string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "/v1/tasks/"+task.ID+"/page/n.md"+q, nil)
+		r.SetPathValue("id", task.ID)
+		r.SetPathValue("path", "n.md")
+		r.Header.Set(PagePrefixHeader, "/room/r/"+task.ID+"/files/")
+		w := httptest.NewRecorder()
+		s.servePage(w, r)
+		return w
+	}
+	w := get("")
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), "vendor/marked.js") ||
+		strings.Contains(w.Body.String(), "# Hi</script>") {
+		t.Fatalf("not drawn: %q", w.Body.String())
+	}
+	if w := get("?raw=1"); w.Body.String() != "# Hi</script>" {
+		t.Fatalf("raw = %q", w.Body.String())
+	}
+}
+
 func TestHumanBaseAnswersTheSeenHostAndNothingBeforeOne(t *testing.T) {
 	s, _, _ := fileServer(t)
 	seenhost.Reset()
@@ -118,5 +142,22 @@ func TestHumanBaseAnswersTheSeenHostAndNothingBeforeOne(t *testing.T) {
 	seenhost.Note(r)
 	if got := ask(); got != `{"base":"http://atrium.ziti"}` {
 		t.Fatalf("after a host was seen: %s", got)
+	}
+}
+
+func TestTheRoomServesACardLinkOnItsOwnPortAndAcceptsAWorkPrefix(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	if err := os.MkdirAll(filepath.Join(work, "mock"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(work, "mock", "a.html"), []byte("<p>hi</p>"), 0o644)
+	for _, p := range []string{"mock/a.html", filepath.Base(work) + "/mock/a.html"} {
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/room/r1/"+task.ID+"/files/"+p, nil))
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "<p>hi</p>") {
+			t.Errorf("%s answered %d %q", p, w.Code, w.Body.String())
+		}
 	}
 }

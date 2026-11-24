@@ -37,7 +37,7 @@ let auditKindFilter = "";
 function paintAuditTab() {
   const tab = document.querySelector('.tab[data-view="audit"]');
   if (!tab) return;
-  tab.hidden = !emergingOn() || typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  tab.hidden = !areaOn("audit") || typeof hubIsHub === "undefined" ? true : !hubIsHub;
 }
 
 // auditQuery builds the request from the current filters.

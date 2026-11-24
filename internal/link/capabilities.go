@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/capability"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
@@ -39,6 +40,8 @@ type capRoom struct {
 	Checked time.Time
 	Since   time.Time
 	Ver     int
+
+	Hardware *capability.Hardware
 }
 
 type capWatch struct {
@@ -68,6 +71,8 @@ type roomCapSnapshot struct {
 		MS      int64  `json:"ms"`
 	} `json:"results"`
 	Running []string `json:"running"`
+
+	Hardware *capability.Hardware `json:"hardware"`
 }
 
 // RunCapabilityWatch reads attached rooms' capabilities until ctx ends.
@@ -121,7 +126,8 @@ func (p *Proxy) readCaps(ctx context.Context, a wire.Attached) bool {
 		}
 		p.cap.caps[id.ID] = raw
 	}
-	p.cap.rooms[wire.KeyOf(a.Name)] = &capRoom{Running: snap.Running, Checked: time.Now().UTC(), Since: a.Since, Ver: snap.Version}
+	p.cap.rooms[wire.KeyOf(a.Name)] = &capRoom{Running: snap.Running, Checked: time.Now().UTC(), Since: a.Since, Ver: snap.Version,
+		Hardware: snap.Hardware}
 	p.cap.mu.Unlock()
 	if st == nil {
 		return true
@@ -148,6 +154,8 @@ type CapabilityRoom struct {
 	Online  bool     `json:"online"`
 	Checked string   `json:"checked,omitempty"`
 	Running []string `json:"running,omitempty"`
+
+	Hardware *capability.Hardware `json:"hardware,omitempty"`
 }
 
 func (p *Proxy) capabilityView() (CapabilityView, error) {
@@ -159,7 +167,8 @@ func (p *Proxy) capabilityView() (CapabilityView, error) {
 	}
 	known := map[string]CapabilityRoom{}
 	for k, r := range p.cap.rooms {
-		known[k] = CapabilityRoom{Name: k, Checked: r.Checked.Format(time.RFC3339), Running: r.Running}
+		known[k] = CapabilityRoom{Name: k, Checked: r.Checked.Format(time.RFC3339), Running: r.Running,
+			Hardware: r.Hardware}
 	}
 	p.cap.mu.Unlock()
 	if st != nil {

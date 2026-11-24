@@ -49,7 +49,7 @@ func TestARelayedLaunchLandsOnTheTargetWithTheLaunchersLineage(t *testing.T) {
 		ans.Task.Card != "room-e~kid" || ans.Model != "" {
 		t.Fatalf("answer = %+v (task %+v)", ans, ans.Task)
 	}
-	if !strings.HasSuffix(ans.Watch, "/#term=kid") || ans.Brief != "/srv/atrium/BRIEF.md" {
+	if !strings.HasSuffix(ans.Watch, "/room-e/terminal/kid") || ans.Brief != "/srv/atrium/BRIEF.md" {
 		t.Fatalf("watch %q, brief %q", ans.Watch, ans.Brief)
 	}
 	if x.mini.launchBody() != nil {

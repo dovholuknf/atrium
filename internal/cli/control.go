@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // Turning atrium off and on again, from inside a session atrium is running.
@@ -99,6 +100,7 @@ func newControl() *cobra.Command {
 // chatControlServer is a chat card's whole atrium-control: atrium_need.
 func chatControlServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
+	ctl.OpenOutputs(s)
 	addNeedTool(s)
 	return s
 }
@@ -106,6 +108,7 @@ func chatControlServer() *mcp.Server {
 // controlServer builds the MCP server with both tools attached.
 func controlServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
+	ctl.OpenOutputs(s)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_status",

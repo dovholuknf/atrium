@@ -484,18 +484,19 @@ function termHeadPlace() {
   const q = document.getElementById("term-q"), match = document.getElementById("term-match");
   const label = document.getElementById("term-label");
   if (!head || !lay || !q || !match || !label) return;
+  const fy = document.getElementById("yq-for");
   const on = !termNarrow() && termListMode === "full" && !(typeof chatLent !== "undefined" && chatLent)
     && !document.body.classList.contains("solo");
   if (on && q.parentNode !== head) {
     termHeadHome = { line: q.parentNode, row: label.parentNode, at: label.parentNode.previousSibling, hint: q.placeholder };
-    head.append(q, match, label);
+    head.append(...(fy ? [fy] : []), q, match, label);
     termHeadHome.row.remove();
     q.placeholder = "filter";
     q.dataset.tip = termHeadHome.hint;
   } else if (!on && q.parentNode === head && termHeadHome) {
     q.placeholder = termHeadHome.hint;
     delete q.dataset.tip;
-    termHeadHome.line.append(q, match);
+    termHeadHome.line.append(...(fy ? [fy] : []), q, match);
     termHeadHome.row.append(label);
     termHeadHome.at.after(termHeadHome.row);
   }
@@ -1425,7 +1426,7 @@ function termRowChips(t, lead) {
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
   const wk = typeof walkChip === "function" ? walkChip(t) : "";
-  const inner = (lead || "") + minion + wk + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true) + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + wk + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true, typeof yqAttn === "function" && yqAttn()) + held + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1938,21 +1939,11 @@ function termCount(node, kids) {
 // lets test-sort-order.js check stability across different input orders.
 function termOrder(tasks) {
   if (termSortStarted) {
-    // NEWEST CARD FIRST, whatever the card is doing. The card id breaks a tie, so two polls with the same data
-    // give the same order. Grouping keeps this order inside each heading.
-    tasks.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "") ||
-      (a.id || "").localeCompare(b.id || ""));
+    // Instants, not strings: rooms stamp with different offsets, so the text order is not the time order.
+    const began = t => Date.parse(t.created_at) || 0;
+    tasks.sort((a, b) => began(b) - began(a) || (a.id || "").localeCompare(b.id || ""));
   } else if (sortByActivity) {
-    // WORKING NOW SITS ON TOP. "Sorted by activity" is about which sessions are
-    // doing something, so the live signal leads: a card running a tool or
-    // thinking (`workingNow`, the same badge the mark animates) outranks one
-    // that is idle or waiting. This used to sort on `idle_seconds` alone, which
-    // is a stored gap since the last event and not the same thing: a session
-    // grinding through a long build logs nothing for a stretch and so read as
-    // idle and sank, which is exactly backwards. Under it, anything waiting on
-    // you is lifted next so a "wants you" card is not buried under idle rows,
-    // and then most-recent activity breaks the rest. The shared tiebreak keeps
-    // equal values from reshuffling between two polls that said the same thing.
+    // Working outranks waiting, which outranks idle: a long silent build is still working.
     tasks.sort((a, b) => {
       const act = (workingNow(b) ? 1 : 0) - (workingNow(a) ? 1 : 0);
       if (act) return act;
@@ -1961,27 +1952,13 @@ function termOrder(tasks) {
       return cardActivityCmp(a, b) || cardTieBreak(a, b);
     });
   } else {
-    // Sort by the name the row leads with, which is `display_title` and then
-    // the address when the card has no name of its own: the same key `termRow`
-    // draws first and the one the board and the stack sort on. This sorted on
-    // the address alone, so a list of named cards came out in the order of the
-    // dim second line under each name. Grouping preserves this order within
-    // headings.
+    // The name the row leads with, display_title before the address.
     const named = t => String(t.display_title || "").trim() || terminalLabel(t) || "";
     tasks.sort((a, b) => named(a).localeCompare(named(b)) || cardTieBreak(a, b));
   }
-  // Lift pinned rows with a stable second pass to preserve the order within
-  // pinned and unpinned groups.
-  //
-  // WITHIN the pinned set the order is the one somebody dragged, and neither
-  // sort above gets a say. That is the difference between a bucket and a
-  // filter: activity and name both move on their own, so a set arranged by
-  // hand and then sorted by either is a set that rearranges itself while you
-  // are not looking. `rank` is what every view now uses to order the pinned
-  // bucket (see the pinned-order-fix on the board, and `SetPinOrder` in the
-  // store: the drop writes both fields and every view reads rank). Two pins
-  // still at their creation rank stay tied and fall through to the sort
-  // underneath, so an untouched board looks exactly as it did.
+  // By age there is no pinned bucket, so a pinned card sorts by its own age.
+  if (typeof termAgeOrder === "function" && termAgeOrder()) return tasks;
+  // The pinned bucket keeps its dragged order (rank) above the sort, and two tied ranks fall through to it.
   tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
     (a.pinned && b.pinned ? (a.rank || 0) - (b.rank || 0) : 0));
   return tasks;
@@ -1992,8 +1969,9 @@ function termOrder(tasks) {
 function termGroupOrder(sorted, top, kids) {
   if (!termSortStarted && !sortByActivity) return top;
   const at = new Map(sorted.map((t, i) => [t.id, i]));
-  const lead = t => (kids.get(t.id) || []).reduce((n, k) => Math.min(n, lead(k)), at.get(t.id));
-  const key = new Map(top.map(t => [t.id, t.pinned ? at.get(t.id) : lead(t)]));
+  const lead = t => termSortStarted ? at.get(t.id) : (kids.get(t.id) || []).reduce((n, k) => Math.min(n, lead(k)), at.get(t.id));
+  const byAge = typeof termAgeOrder === "function" && termAgeOrder();
+  const key = new Map(top.map(t => [t.id, t.pinned && !byAge ? at.get(t.id) : lead(t)]));
   return top.slice().sort((a, b) => key.get(a.id) - key.get(b.id));
 }
 
@@ -2163,7 +2141,9 @@ async function renderTermList() {
   });
   // Pinned rows the dead chip keeps out of the bucket, so an empty bucket can say why.
   const deadPinned = show.has("dead") ? 0 : deadCold.length;
-  setHTML(host, tasks.length || ended.length || endedAll.length || deadCold.length
+  setHTML(host, typeof yqForOn === "function" && yqForOn()
+    ? termDropHTML() + `<div class="termbody"><div class="termscroll yq-list" id="yq-forlist"></div></div>`
+    : tasks.length || ended.length || endedAll.length || deadCold.length
     ? termDropHTML() + `<div class="termbody">` +
       `<div class="termscroll">` +
       (byAge ? "" : termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
@@ -2185,6 +2165,7 @@ async function renderTermList() {
     new ResizeObserver(() => termRoomFit(host)).observe(host);
   }
   termHeadPlace();
+  if (typeof yqAttn === "function" && yqAttn()) yqPaint();
   requestAnimationFrame(placeTabBridge);
   // Scrolling the rows moves the attached card under a bridge that is not
   // moving with it, and so does the tray rolling up or down. A capturing

@@ -119,5 +119,8 @@ func (s *Server) browse(w http.ResponseWriter, r *http.Request) {
 		"path":    filepath.ToSlash(dir),
 		"parent":  parent,
 		"entries": entries,
+		"repo":    statOK(filepath.Join(dir, ".git")),
 	})
 }
+
+func statOK(p string) bool { _, err := os.Stat(p); return err == nil }

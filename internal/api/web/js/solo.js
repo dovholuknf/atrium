@@ -543,6 +543,11 @@ async function bootTerminalOnly() {
     want = decodeURIComponent(location.hash.slice("#term=".length));
     // Named like the others, so the board can raise it by name once it has a card to find it by.
     window.name = "atrium-term-" + bareId(want);
+    // The bar then holds the link worth copying. The id link in it already worked and keeps working.
+    api("/v1/tasks/" + encodeURIComponent(want)).then(t => {
+      const p = cardUrlPath(t);
+      if (p) history.replaceState(null, "", p);
+    }).catch(() => {});
   } else {
     found = await cardUrlOpen(cardUrlShape());
     if (!found) return;
