@@ -85,6 +85,7 @@ func sessionSteps(r runnerShape, cwd, transcript string) []step {
 func TestFakeRunnerDrivesTheCardThroughEveryHook(t *testing.T) {
 	for _, r := range runnerShapes {
 		t.Run(r.target.ID, func(t *testing.T) {
+			scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 			agentAddr, humanAddr := startTestDaemon(t)
 			for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
 				t.Setenv(k, "")
@@ -92,7 +93,7 @@ func TestFakeRunnerDrivesTheCardThroughEveryHook(t *testing.T) {
 			t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
 
 			commands := installedCommands(t, r.target)
-			cwd := filepath.Join(t.TempDir(), "fake-"+r.target.ID)
+			cwd := filepath.Join(scratch, "fake-"+r.target.ID)
 			if err := os.MkdirAll(cwd, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -124,6 +125,7 @@ func TestFakeRunnerDrivesTheCardThroughEveryHook(t *testing.T) {
 func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
 	for _, r := range runnerShapes {
 		t.Run(r.target.ID, func(t *testing.T) {
+			scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 			agentAddr, humanAddr := startTestDaemon(t)
 			for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
 				t.Setenv(k, "")
@@ -131,7 +133,7 @@ func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
 			t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
 
 			commands := installedCommands(t, r.target)
-			cwd := filepath.Join(t.TempDir(), "cont-"+r.target.ID)
+			cwd := filepath.Join(scratch, "cont-"+r.target.ID)
 			if err := os.MkdirAll(cwd, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -180,6 +182,7 @@ func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
 func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
 	for _, r := range runnerShapes {
 		t.Run(r.target.ID, func(t *testing.T) {
+			scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 			agentAddr, humanAddr := startTestDaemon(t)
 			for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
 				t.Setenv(k, "")
@@ -187,7 +190,7 @@ func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
 			t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
 
 			commands := installedCommands(t, r.target)
-			cwd := filepath.Join(t.TempDir(), "done-"+r.target.ID)
+			cwd := filepath.Join(scratch, "done-"+r.target.ID)
 			if err := os.MkdirAll(cwd, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -270,6 +273,7 @@ func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
 		t.Skip("slow: real work")
 	}
 	r := runnerShapes[0]
+	scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 	agentAddr, humanAddr := startTestDaemon(t)
 	for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
 		t.Setenv(k, "")
@@ -277,7 +281,7 @@ func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
 	t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
 
 	commands := installedCommands(t, r.target)
-	cwd := filepath.Join(t.TempDir(), "panel-"+r.target.ID)
+	cwd := filepath.Join(scratch, "panel-"+r.target.ID)
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		t.Fatal(err)
 	}
