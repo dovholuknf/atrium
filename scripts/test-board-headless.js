@@ -7812,13 +7812,13 @@ async function emergingSwitchSection(browser, base) {
     await p.evaluate(() => showSettingsPane("experimental features"));
     const flags = await p.evaluate(() => ({ walk: flagOn("walk"), box: document.querySelector('input[data-flag="walk"]').checked,
       chatBox: document.querySelector('input[data-flag="chat"]').checked, off: document.documentElement.getAttribute("data-off") }));
-    if (flags.walk || flags.box || !flags.chatBox || flags.off !== "walk attention") fail("emergingSwitch: the review is not off and the rest on by default: " + JSON.stringify(flags));
+    if (flags.walk || flags.box || !flags.chatBox || flags.off !== "walk attention micin") fail("emergingSwitch: the review is not off and the rest on by default: " + JSON.stringify(flags));
     await p.check('input[data-flag="walk"]');
     if (!(await p.evaluate(() => flagOn("walk") && JSON.parse(localStorage.getItem("atrium.flags")).walk === true))) fail("emergingSwitch: the review switch did not store on");
     await p.evaluate(() => { document.getElementById("settings").close(); switchView("chat"); flagSet("chat", false); });
     const chat = await p.evaluate(() => ({ hidden: document.querySelector('.tab[data-view="chat"]').hidden, on: document.querySelector(".tab.on").dataset.view,
       off: document.documentElement.getAttribute("data-off") }));
-    if (!chat.hidden || chat.on !== "terms" || chat.off !== "chat attention") fail("emergingSwitch: chat off did not hide its tab and fall back to terminals: " + JSON.stringify(chat));
+    if (!chat.hidden || chat.on !== "terms" || chat.off !== "chat attention micin") fail("emergingSwitch: chat off did not hide its tab and fall back to terminals: " + JSON.stringify(chat));
     await p.evaluate(() => { switchView("chat"); document.getElementById("gear").click(); showSettingsPane("experimental features"); });
     if ((await p.evaluate(() => document.querySelector(".tab.on").dataset.view)) === "chat") fail("emergingSwitch: a view whose flag is off opened");
     await p.check('input[data-flag="items"]');

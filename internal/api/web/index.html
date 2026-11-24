@@ -85,6 +85,7 @@
 <link rel="stylesheet" href="/css/chat.css">
 <link rel="stylesheet" href="/css/review.css">
 <link rel="stylesheet" href="/css/growl.css">
+<link rel="stylesheet" href="/css/mic.css">
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/css/yourqueue.css">
 <link rel="stylesheet" href="/m/compose.css">
@@ -490,6 +491,7 @@ Exports honor whatever filter is applied.">?</span>
           <!-- The picker behind the cog's attach row and the phone key bar's. No `accept`, since a narrow one blocks
                HEIC and the camera on iOS and Android. -->
           <input type="file" id="t-attach-in" multiple hidden tabindex="-1">
+          <button type="button" class="mic" data-mic-term="1" tabindex="-1" aria-label="dictate into the terminal" data-tip="dictate into the terminal"></button>
           <button id="t-full" class="icon" onclick="toggleTermFull()" aria-pressed="false"
             aria-label="full screen terminal" data-tip="full screen: the terminal fills the window"><svg
             viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
@@ -2120,6 +2122,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <label class="ac-check"><input type="checkbox" data-flag="walk" onchange="flagSet(this.dataset.flag, this.checked)"> use the review</label>
           <label>attention queue <span class="help" tabindex="0" data-tip="The asks waiting on you as an N for you pill beside the terminals filter box, which lists them in place of the sessions, with the ask picked over its card's terminal. It takes the place of the queue tab and of the questions chip on a terminal row.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="attention" onchange="flagSet(this.dataset.flag, this.checked)"> use the attention queue</label>
+          <label>mic in every text box <span class="help" tabindex="0" data-tip="A mic beside every box that sends text to an agent, on the board and the phone page. Tap it, speak, and the words are typed into the box. One listens at a time. Needs a browser with speech recognition.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="micin" onchange="flagSet(this.dataset.flag, this.checked)"> use the mic in every text box</label>
           <label>board <span class="help" tabindex="0" data-tip="The board tab: cards laid out as a board.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="board" onchange="flagSet(this.dataset.flag, this.checked)"> show board tab</label>
           <label>stack <span class="help" tabindex="0" data-tip="The stack tab.">?</span></label>
@@ -3957,6 +3961,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/quickpaste.js"></script>
 <script src="/js/repolink.js"></script>
 <script src="/js/dictate.js"></script>
+<script src="/js/mic.js"></script>
 <script src="/js/hubrestart.js"></script>
 <script src="/js/topnav.js"></script>
 <script src="/js/down.js"></script>

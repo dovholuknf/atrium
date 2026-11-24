@@ -183,7 +183,7 @@
       v.start().then(() => {
         if (mic.dataset.st !== "starting" || !v.active()) return;
         mic.dataset.st = "listening";
-        o.say("busy", "listening, release to add it, slide off to cancel");
+        o.say("busy", "listening, release to " + (o.sends && o.sends() ? "send" : "add it") + ", slide off to cancel");
       }, err => { if (mic.dataset.st === "starting") { mic.dataset.st = ""; o.say("refused", err.message); } });
     });
     const drop = () => {
@@ -397,12 +397,15 @@
       commitComposition();
       submit();
     });
-    // HOLD TO TALK. Release appends the words and a newline to the box, and only send sends. Sliding off cancels.
-    if (mic) wireMic(mic, { id: cardId, say, live: () => cur === state, add: text => {
+    // HOLD TO TALK. Release appends the words and a newline to the box, and only send sends, unless the mic switch under
+    // experimental features is on, where release sends. Sliding off cancels.
+    const micSends = () => typeof flagOn === "function" && flagOn("micin");
+    if (mic) wireMic(mic, { id: cardId, say, live: () => cur === state, sends: micSends, add: text => {
       const pre = ta.value && !/\s$/.test(ta.value) ? "\n" : "";
       ta.value += pre + text + "\n";
       refresh();
       hint();
+      if (micSends()) { submit(); return; }
       say("sent", "added, read it and press send" + timed());
     } });
     // A tap while a word is still being composed ends the composition, so the box holds the final text.
