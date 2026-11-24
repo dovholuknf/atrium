@@ -61,6 +61,8 @@
         "internal/api/web/js/runners.js",
         "internal/api/web/js/popfit.js",
         "internal/api/web/js/dictate.js",
+        "internal/api/web/js/mic.js",
+        "internal/api/web/css/mic.css",
         "internal/api/web/js/inputlag.js",
         "internal/api/web/js/link-opening.js",
         "internal/api/web/js/solo.js",
@@ -72,7 +74,7 @@
       "tests": [
         "scripts/test-term-cursor.js", "scripts/test-term-nesting.js", "scripts/test-origin-place.js", "scripts/test-term-resize-settle.js",
         "scripts/test-term-retag.js", "scripts/test-term-tabreturn.js", "scripts/test-term-trace.js", "scripts/test-morph.js",
-        "scripts/test-peek-answers.js", "scripts/test-term-osc52.js"
+        "scripts/test-peek-answers.js", "scripts/test-term-osc52.js", "scripts/test-mic.js"
       ],
       "checks": [
         "scripts/check-terminal.js", "scripts/check-terminal-titles.js", "scripts/check-morph.js", "scripts/check-runner-panes.js",

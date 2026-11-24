@@ -1,0 +1,27 @@
+/* The one mic button, added by js/mic.js to every box that sends text to an agent, in its action row beside send or
+   inside the box at its bottom right. Shape is !important because the growler and permission rows restyle every button. */
+.mic-wrap { position: relative; display: block; flex: 1 1 0; min-width: 0; }
+.mic-wrap > [data-mic] { width: 100% !important; box-sizing: border-box !important; padding-right: calc(var(--mic-size, 24px) + 10px) !important; }
+button.mic {
+  flex: none; align-self: center; display: grid; place-items: center;
+  width: var(--mic-size, 24px) !important; height: var(--mic-size, 24px) !important; min-height: 0 !important;
+  padding: 0 !important; margin: 0 !important; border-radius: 50% !important;
+  border: 1px solid var(--stroke, #2a4860) !important; background: transparent !important; color: var(--dim, #5e819c) !important;
+  cursor: pointer; transform: none !important; -webkit-tap-highlight-color: transparent;
+}
+.growl .gm-opts > .gm-why { flex: 1 1 100% !important; }
+.mic-wrap > button.mic { position: absolute; right: 4px; bottom: 4px; }
+button.mic:hover { color: var(--head, #f2f8ff) !important; }
+button.mic svg { width: 55%; height: 55%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button.mic .mic-slash { display: none; }
+button.mic[data-state="listening"] {
+  background: var(--teal, #00e3b0) !important; border-color: var(--teal, #00e3b0) !important; color: var(--bg-0, #0b1b2e) !important;
+  animation: mic-pulse 1.1s ease-in-out infinite;
+}
+button.mic[data-state="denied"] { color: var(--danger, #ff6b6b) !important; border-color: var(--danger, #ff6b6b) !important; }
+button.mic[data-state="denied"] .mic-slash { display: block; }
+[data-mic].mic-live { box-shadow: 0 0 0 2px var(--teal, #00e3b0) inset !important; }
+html[data-mic-show="one"] button.mic:not(.mic-here):not([data-state="listening"]) { display: none !important; }
+@keyframes mic-pulse { 50% { box-shadow: 0 0 0 6px rgba(var(--teal-rgb, 0, 160, 140), .22); } }
+@media (pointer: coarse) { :root { --mic-size: 40px; } }
+:root[data-off~="micin"] button.mic { display: none !important; }
