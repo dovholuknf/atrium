@@ -1326,6 +1326,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.vacuumLoop(ctx, VacuumEvery)
 	// A say typed into a runner's queued box is read when its transcript shows the box drained. See typedproof.go.
 	go d.typedProofLoop(ctx)
+	go d.hooklessLoop(ctx)
 	// The commands that find work. Its own loop rather than the reap ticker,
 	// because a source runs on the interval its own row names and the reaper
 	// asks one question at one rate. Nothing here can halt anything: intake is

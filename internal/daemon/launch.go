@@ -212,6 +212,9 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		return nil, "", errors.New("a resumed conversation already has its instruction. " +
 			"start it, then say something to it from the card")
 	}
+	if typesOpeningPrompt(h) {
+		return args, logged, nil
+	}
 	if len(h.PromptArgs) == 0 {
 		return nil, "", fmt.Errorf("%s has no way to take an opening prompt. "+
 			"set prompt arguments on the runner, using {prompt} where the text goes", h.Label)
@@ -1470,6 +1473,9 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		spawned = sp
 		if prompt != "" {
 			sp.owedPrompt.Store(&prompt)
+			if typesOpeningPrompt(h) && fork == "" {
+				sp.openingPrompt.Store(&prompt)
+			}
 		}
 		pid := sp.pid
 		via = "pty"

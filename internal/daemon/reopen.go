@@ -326,7 +326,7 @@ func (d *Daemon) reopenResume(t *store.Task) string {
 		d.startedFresh(t, "this card has no conversation id recorded")
 		return ""
 	}
-	if !api.SessionExists(t.Worktree, id) {
+	if d.transcriptGone(t.Runner, t.Worktree, id) {
 		log.Printf("[atrium] %s resumed conversation %s, which is gone. starting fresh", t.ID, id)
 		d.startedFresh(t, fmt.Sprintf("conversation %s is not on disk", id))
 		return ""
@@ -349,4 +349,13 @@ func (d *Daemon) startedFresh(t *store.Task, why string) {
 		log.Printf("[atrium] clear %s questions: %v", t.ID, err)
 	}
 	d.Publish(t.ID)
+}
+
+// transcriptGone is whether a conversation is missing from disk. Only claude's transcripts are where SessionExists looks,
+// so a harness with its own session store is trusted and left to its own resume_args.
+func (d *Daemon) transcriptGone(runner, cwd, id string) bool {
+	if h, err := d.st.Harness(runner); err == nil && !api.IsClaudeHarness(h) {
+		return false
+	}
+	return !api.SessionExists(cwd, id)
 }

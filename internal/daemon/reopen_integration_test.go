@@ -290,3 +290,17 @@ func TestTheSweepLeavesAKilledLiveCard(t *testing.T) {
 		t.Fatalf("live after the sweep: %v", got)
 	}
 }
+
+// A harness with its own session store keeps its resume id: claude's transcript folder says nothing about it.
+func TestAnotherHarnessKeepsItsResumeIDWithNoClaudeTranscript(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	if _, err := d.st.SaveHarness(store.Harness{ID: "codexlike", Label: "codexlike", Cmd: "codexlike",
+		LaunchMode: store.LaunchPTY, ResumeArgs: []string{"resume", "{resume}"}}); err != nil {
+		t.Fatal(err)
+	}
+	task := &store.Task{ID: "card-codex", Runner: "codexlike", Worktree: t.TempDir(), ResumeID: "019e-rollout"}
+	if got := d.reopenResume(task); got != task.ResumeID {
+		t.Fatalf("resumed %q, want %q", got, task.ResumeID)
+	}
+}

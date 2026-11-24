@@ -134,6 +134,7 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	// Ask it to exit the way its harness says to, and wait for the slot to clear.
 	// Nothing is closed or killed on the way: a runner that will not leave is left
 	// running and the refusal says so, because a restart is not a terminate.
+	d.sup.get(taskID).noteCause(store.CauseAsked, "a restart")
 	if err := d.askExit(taskID, d.hk.restartAskGrace); err != nil {
 		return nil, err
 	}
