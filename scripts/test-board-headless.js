@@ -25269,15 +25269,18 @@ async function yqTourFixesSection(browser, base) {
     await p.evaluate(() => { yqOpenAsk(yqAsks(lastTasks).find(x => x.key === "card:try")); yqView.mode = "term"; yqView.at = Date.now(); termTask = lastTasks.find(c => c.id === "try"); switchView("terms"); renderHeldStrip(); yqPaintAsk(true); });
     await p.waitForFunction(() => !!document.querySelector("#held-strip .held-row") && !document.getElementById("yq-back").hidden, null, { timeout: slow(8000) })
       .catch(() => fail("yqTourFixes: the held strip or the back pill did not show"));
-    const reach = await p.evaluate(() => {
+    await p.evaluate(() => { window.__yqReach = () => {
       const b = document.getElementById("yq-back"), r = b.getBoundingClientRect();
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       const rows = document.querySelector("#held-strip .held-rows").getBoundingClientRect();
       const bar = document.querySelector("#term-pane .term-bar").getBoundingClientRect();
       const list = document.getElementById("term-list").getBoundingClientRect();
       const cross = (a, c) => a.left < c.right && a.right > c.left && a.top < c.bottom && a.bottom > c.top;
-      return { hit: top === b, overBar: cross(rows, bar), overList: cross(rows, list) };
-    });
+      return { hit: top === b, overBar: cross(rows, bar), overList: cross(rows, list), top: top ? (top.id || top.className || top.nodeName) : null, pill: [r.x, r.y, r.width, r.height].map(Math.round).join(",") };
+    }; });
+    // The pane lays out over a few frames after the pill shows, so the pill is read once it is on top.
+    await p.waitForFunction(() => window.__yqReach().hit, null, { timeout: slow(3000) }).catch(() => {});
+    const reach = await p.evaluate(() => window.__yqReach());
     if (!reach.hit || reach.overBar || reach.overList) fail("yqTourFixes: the held strip covers the back pill, the bar or the list: " + JSON.stringify(reach));
 
     await p.evaluate(() => { yqView.mode = "ask"; switchView("queue"); yqPaintAsk(true); toast("sent", "to somewhere"); });
