@@ -642,6 +642,11 @@ type runner struct {
 	resumed bool
 	// owedPrompt is the launch prompt until the runner submits it or atrium types it again. See retypeLaunchPrompt.
 	owedPrompt atomic.Pointer[string]
+	// openingPrompt is a launch prompt atrium types once the runner is ready, for a row with no prompt_args. See hookless.go.
+	openingPrompt atomic.Pointer[string]
+	// openingTyped is when the opening prompt was last typed and openingTries how often, until output shows it taken.
+	openingTyped atomic.Int64
+	openingTries atomic.Int32
 	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
 	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
 	esc         screen.EscParser
@@ -812,6 +817,8 @@ type runner struct {
 	// keystroke), and a plain bool under `r.mu` there would put every keystroke
 	// behind whatever else holds `r.mu`, which is the lag this fix removes.
 	echoPeers atomic.Bool
+	// plainBanner is a runner whose input parser reads a typed colour code as a mouse report, so its banner is typed bare.
+	plainBanner bool
 	// reattached is set when a daemon picked this runner up from the pty host instead of starting it. Its activity
 	// counts (subagents, background work) began at zero in this process, which reads as idle, so it is not idle
 	// parkable until its runner posts a fresh Stop, and reattachedAt is when this daemon took it over. See adoptLive.
@@ -1312,6 +1319,9 @@ func (r *runner) inject(banner, body string, ok func() bool, force bool) (bool, 
 	}
 	if ok != nil && !ok() {
 		return false, nil
+	}
+	if r.plainBanner {
+		banner = string(screen.StripSGR([]byte(banner)))
 	}
 	// BEFORE THE BYTES, so the mark is in the stream ahead of anything the clear
 	// makes the runner draw. A new-context cycle types `/clear` here.
@@ -2337,6 +2347,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	// first bytes and nothing before them, which is the bug being fixed.
 	if t, err := d.st.Get(taskID); err == nil {
 		r.line.escClears = screen.ClearsOnEsc(t.Runner)
+		r.plainBanner = screen.ReadsSGRAsMouse(t.Runner)
 	}
 	d.adoptCarryover(r)
 	// DURABLE BEFORE THE LAUNCH COUNTS AS COMPLETE. See `recordRun`.

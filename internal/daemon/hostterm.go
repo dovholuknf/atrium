@@ -566,6 +566,7 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 	if !shell {
 		r.onSized = d.noteRoomSize
 		r.line.escClears = screen.ClearsOnEsc(task.Runner)
+		r.plainBanner = screen.ReadsSGRAsMouse(task.Runner)
 		// What this daemon never saw: the activity counts and the operator's line. See reattachLineKey.
 		r.reattached.Store(true)
 		r.line.lost(reattachLineKey)

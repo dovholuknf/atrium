@@ -258,7 +258,7 @@ func (d *Daemon) fixtureResume(f *store.Fixture, onto string) (string, *heldResu
 
 	if strings.EqualFold(strings.TrimSpace(f.ResumeMode), "card") {
 		id := d.resumeIDFor(onto)
-		if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
+		if id != "" && cwd != "" && d.transcriptGone(f.Harness, cwd, id) {
 			log.Printf("[atrium] fixture %q resumes card %s, whose conversation %s is gone. "+
 				"starting fresh", fixtureName(f), onto, id)
 			return "", nil
@@ -281,7 +281,7 @@ func (d *Daemon) fixtureResume(f *store.Fixture, onto string) (string, *heldResu
 	// Nothing on disk to go back to. The card's own id is the last thing worth
 	// trying, and it is checked like everything else.
 	id := d.resumeIDFor(onto)
-	if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
+	if id != "" && cwd != "" && d.transcriptGone(f.Harness, cwd, id) {
 		return "", held
 	}
 	if h := d.resumeHeld(onto, id); h != nil {
