@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
@@ -60,6 +61,9 @@ func (d *Daemon) hooklessPass(seen map[string]*hooklessSeen, now time.Time) {
 		live[run.taskID] = true
 		d.typeOpeningPrompt(run, now)
 		t, err := d.st.Get(run.taskID)
+		if err == nil {
+			d.claimOpencodeSession(t, run, now)
+		}
 		if err != nil || !d.hookless(t) {
 			delete(seen, run.taskID)
 			continue
@@ -102,7 +106,7 @@ func (d *Daemon) typeOpeningPrompt(run *runner, now time.Time) {
 	}
 	// A runner still loading (crush) drops keys without drawing them, so a prompt nothing answered is typed again.
 	if typed := run.openingTyped.Load(); typed != 0 {
-		if run.lastOut.Load() > typed {
+		if run.lastOut.Load() > typed && promptOnScreen(run, *p) {
 			run.openingPrompt.CompareAndSwap(p, nil)
 			return
 		}
@@ -129,6 +133,16 @@ func (d *Daemon) typeOpeningPrompt(run *runner, now time.Time) {
 		run.owedPrompt.Store(nil)
 		log.Printf("[atrium] %s: typed the opening prompt, its runner takes none on its command line", run.taskID)
 	}
+}
+
+// promptOnScreen is whether the start of a typed prompt was drawn, since a loading runner redraws without echoing keys.
+func promptOnScreen(run *runner, prompt string) bool {
+	squash := func(s string) string { return strings.Join(strings.Fields(s), "") }
+	head := squash(prompt)
+	if len(head) > 24 {
+		head = head[:24]
+	}
+	return strings.Contains(squash(ansi.ReplaceAllString(string(run.buf.Tail(tailBytes)), "")), head)
 }
 
 func (d *Daemon) hooklessTurn(t *store.Task, run *runner, s *hooklessSeen, now time.Time) {

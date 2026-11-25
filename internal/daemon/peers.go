@@ -94,6 +94,10 @@ const (
 
 	// peerWindow is the period that limit is measured over.
 	peerWindow = time.Minute
+
+	// wakesPerWindow bounds how often one launcher may wake its finished workers. Each wake starts a runner and its MCP servers.
+	wakesPerWindow = 12
+	wakeWindow     = 10 * time.Minute
 )
 
 // peerLimiter counts recent sends per sender.
@@ -103,20 +107,28 @@ const (
 // either. Charon's equivalent leaks across restarts because it was persisted,
 // which is the failure the Charon read catalogs at length.
 type peerLimiter struct {
-	mu   sync.Mutex
-	sent map[string][]time.Time
-	now  func() time.Time
+	mu     sync.Mutex
+	sent   map[string][]time.Time
+	now    func() time.Time
+	limit  int
+	window time.Duration
 }
 
 func newPeerLimiter() *peerLimiter {
-	return &peerLimiter{sent: map[string][]time.Time{}, now: time.Now}
+	return &peerLimiter{sent: map[string][]time.Time{}, now: time.Now, limit: peerSendsPerMinute, window: peerWindow}
+}
+
+func newWakeLimiter() *peerLimiter {
+	l := newPeerLimiter()
+	l.limit, l.window = wakesPerWindow, wakeWindow
+	return l
 }
 
 // allow records a send and reports whether it is within the limit.
 func (l *peerLimiter) allow(from string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	cut := l.now().Add(-peerWindow)
+	cut := l.now().Add(-l.window)
 	keep := l.sent[from][:0]
 	for _, t := range l.sent[from] {
 		if t.After(cut) {
@@ -124,7 +136,7 @@ func (l *peerLimiter) allow(from string) bool {
 		}
 	}
 	l.sent[from] = keep
-	if len(keep) >= peerSendsPerMinute {
+	if len(keep) >= l.limit {
 		return false
 	}
 	l.sent[from] = append(l.sent[from], l.now())

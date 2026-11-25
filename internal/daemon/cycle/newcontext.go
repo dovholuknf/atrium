@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"io"
 	"log"
@@ -274,7 +273,7 @@ func (d *Service) HandoffPath(t *store.Task) string {
 	dir := d.St.ContextHandoffDir()
 	if dir == "" {
 		if h, ok := d.HomeOf(t.ID); ok {
-			return filepath.Join(home.DirsOf(h.Path).Meta, "handoff.md")
+			return filepath.Join(d.RowDirs(h).Meta, "handoff.md")
 		}
 	}
 	if dir == "" {

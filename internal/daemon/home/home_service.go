@@ -35,6 +35,7 @@ type Calls struct {
 	Publish          func(id string)
 	OptAgentAddr     func() string
 	Room             func() string
+	StateDir         func() string
 	HasSession       func(id string) bool
 	NotifyLauncher   func(worker *store.Task, source, key, body string) bool
 	WaitRunnerGone   func(taskID string, within time.Duration) bool

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -232,7 +233,7 @@ func (d *Daemon) sweepHome(ctx context.Context, row store.CardHome, users func(s
 		_ = d.st.CardHomeSet(row.Path, store.CardHomeRemoved, "the folder was already gone", row.Owed)
 		return FolderSwept{}, false
 	}
-	dd := home.DirsOf(row.Path)
+	dd := d.RowDirs(row)
 	if why := unseenWork(t, dd.Work); why != "" {
 		d.sweepKeep(row.Path, why)
 		return FolderSwept{}, false
@@ -293,8 +294,8 @@ func (d *Daemon) sweepHome(ctx context.Context, row store.CardHome, users func(s
 	return d.sweptOne(row.Path, row.Card, bytes, stashed), true
 }
 
-// closeEmptyHome removes the home of a card a close has just freed when nothing but folders is in it, and answers why it
-// kept one, "" when there was none or it went.
+// closeEmptyHome removes the home of a card a close has just freed, after saving its loose files to the hub (closesave.go),
+// and answers why it kept one, "" when there was none or it went.
 func (d *Daemon) closeEmptyHome(cardID string) string {
 	row, ok := d.HomeOf(cardID)
 	if !ok {
@@ -304,20 +305,18 @@ func (d *Daemon) closeEmptyHome(cardID string) string {
 	if _, err := d.HomeGuard(row); err != nil {
 		return err.Error()
 	}
-	var file string
-	_ = filepath.WalkDir(dir, func(p string, e fs.DirEntry, err error) error {
-		if err == nil && !e.IsDir() {
-			file = p
-			return fs.SkipAll
-		}
-		return nil
-	})
-	if file != "" {
-		return "it holds " + filepath.ToSlash(file)
+	files, why := homeLooseFiles(dir)
+	if why != "" {
+		return why
 	}
 	t, err := d.st.Get(cardID)
 	if err != nil {
 		return ""
+	}
+	if len(files) > 0 {
+		if why := d.saveHomeFiles(context.Background(), t, files); why != "" {
+			return why
+		}
 	}
 	_, kept, _ := d.ReclaimHome(t, row, false)
 	return kept
@@ -337,12 +336,17 @@ func unseenWork(t *store.Task, work string) string {
 	}
 	if status, err := shared.GitIn(work, gitexec.Status{V1: true, Ignored: true}); err == nil {
 		for _, l := range strings.Split(status, "\n") {
-			if strings.HasPrefix(l, "!! ") {
+			if p, ok := strings.CutPrefix(l, "!! "); ok && !regenerablePath(p) {
 				return "work/ holds ignored files that no stash carries"
 			}
 		}
 	}
 	return ""
+}
+
+// regenerablePath says whether a path git lists as ignored is build output or a cache, which is rebuilt and never saved.
+func regenerablePath(p string) bool {
+	return slices.ContainsFunc(strings.Split(filepath.ToSlash(p), "/"), func(c string) bool { return regenerableDirs[c] })
 }
 
 // filesNoGit says whether a home has a file under work/ and no .git anywhere.
@@ -371,7 +375,7 @@ func filesNoGit(dd home.HomeDirs) bool {
 func (d *Daemon) sweepCheckouts(ctx context.Context, t *store.Task, row store.CardHome, dd home.HomeDirs) ([]string, []string, error) {
 	var stashed, clones []string
 	var dirs []string
-	_ = filepath.WalkDir(dd.Dir, func(path string, e fs.DirEntry, err error) error {
+	visit := func(path string, e fs.DirEntry, err error) error {
 		if ctx.Err() != nil {
 			return fs.SkipAll
 		}
@@ -396,7 +400,12 @@ func (d *Daemon) sweepCheckouts(ctx context.Context, t *store.Task, row store.Ca
 			clones = append(clones, filepath.Dir(filepath.Clean(filepath.FromSlash(common))))
 		}
 		return nil
-	})
+	}
+	_ = filepath.WalkDir(dd.Dir, visit)
+	// A flat home keeps its tmp in the state folder, which goes with the home and so is looked through too.
+	if rel, err := filepath.Rel(dd.Dir, dd.Tmp); err != nil || strings.HasPrefix(rel, "..") {
+		_ = filepath.WalkDir(dd.Tmp, visit)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -406,6 +415,9 @@ func (d *Daemon) sweepCheckouts(ctx context.Context, t *store.Task, row store.Ca
 			continue
 		}
 		rel, _ := filepath.Rel(dd.Dir, dir)
+		if strings.HasPrefix(rel, "..") {
+			rel, _ = filepath.Rel(filepath.Dir(dd.Tmp), dir)
+		}
 		name, err := d.sweepStashOf(ctx, t, dir, branch, filepath.ToSlash(rel)+" "+why)
 		if err != nil {
 			return nil, nil, err

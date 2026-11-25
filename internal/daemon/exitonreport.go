@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"log"
 	"strings"
 	"time"
@@ -130,7 +131,22 @@ func (d *Daemon) exitAfterReport(taskID string) {
 	}
 	if err := d.hk.stopAfterReport(d, taskID); err != nil {
 		log.Printf("[atrium] could not exit %s after its done report: %v", taskID, err)
+		return
 	}
+	d.closeWhenDone(taskID)
+}
+
+// closeWhenDone closes a close-when-done card that has no repo, whose folder is only where it ran. A card with a
+// branch keeps it: its launcher may wake it, and a merge culls it.
+func (d *Daemon) closeWhenDone(taskID string) {
+	t, err := d.st.Get(taskID)
+	if err != nil || t.Lifetime != store.LifetimeWork || d.ap == nil {
+		return
+	}
+	if row, ok := d.HomeOf(taskID); !ok || row.Kind != store.CardHomeScratch {
+		return
+	}
+	d.ap.CloseWhenDone(context.Background(), taskID)
 }
 
 // exitHooks are the seams of the exit on report.

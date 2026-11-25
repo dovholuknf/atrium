@@ -71,6 +71,8 @@ func (d *Daemon) HubRefreshBranch(ctx context.Context, card, dir, hubRepo, branc
 	if d.st.GitPush() != store.GitPushHub || base == "" || d.HubGit.Cards == nil || strings.TrimSpace(dir) == "" {
 		return nil
 	}
+	d.HubGit.Stashing.Store(card, true)
+	defer d.HubGit.Stashing.Delete(card)
 	tok, err := d.HubGit.Cards.Mint(card)
 	if err != nil {
 		return err

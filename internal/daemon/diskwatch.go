@@ -380,7 +380,7 @@ func (d *Daemon) reclaimCaches(now time.Time) (freed int64) {
 		if t == nil || !d.cardEnded(t, nil, now) {
 			continue
 		}
-		tmp := home.DirsOf(row.Path).Tmp
+		tmp := d.RowDirs(row).Tmp
 		for _, name := range diskCacheDirs {
 			dir := filepath.Join(tmp, name)
 			if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {

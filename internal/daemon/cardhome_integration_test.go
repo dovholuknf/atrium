@@ -368,7 +368,7 @@ func TestCloseRemovesAnEmptyHomeAndKeepsOneWithAFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dd.Work, "mine.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if why := d.closeEmptyHome(task.ID); !strings.Contains(why, "mine.txt") {
+	if why := d.closeEmptyHome(task.ID); !strings.Contains(why, "no link to a hub") {
 		t.Fatalf("why %q", why)
 	}
 	if _, err := os.Stat(filepath.Join(dd.Work, "mine.txt")); err != nil {

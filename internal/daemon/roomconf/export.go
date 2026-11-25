@@ -161,6 +161,7 @@ var ExportedSettings = []string{
 	api.SettingShellCommand,
 	api.SettingLoginCommand,
 	store.SettingUnexpectedExit,
+	api.SettingCruftNightly,
 	api.SettingGuardCardRoot,
 }
 

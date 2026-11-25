@@ -184,7 +184,14 @@ func TestARowWithNoPromptArgsTypesItsOpeningPrompt(t *testing.T) {
 	if got := strings.Count(p.written(), "fix the bug"); got != 2 {
 		t.Fatalf("typed the prompt %d times, wanted it typed again when the screen never answered", got)
 	}
+	r.buf.Write([]byte("\x1b[2J Ready for instructions\r\n"))
 	r.lastOut.Store(retyped.Add(time.Millisecond).UnixNano())
+	d.hooklessPass(seen, retyped.Add(hooklessEvery))
+	if r.openingPrompt.Load() == nil {
+		t.Fatal("a redraw that never showed the prompt was taken as the prompt landing")
+	}
+	r.buf.Write([]byte("> fix the\x1b[0m bug\r\n"))
+	r.lastOut.Store(retyped.Add(2 * time.Millisecond).UnixNano())
 	d.hooklessPass(seen, retyped.Add(hooklessEvery))
 	if r.openingPrompt.Load() != nil {
 		t.Fatal("the prompt is still owed after the screen answered it")

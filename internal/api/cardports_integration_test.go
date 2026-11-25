@@ -164,6 +164,8 @@ func TestCloseStopsAChildOfARecordedProcessThatDied(t *testing.T) {
 	}
 	go func() { _ = bystander.Wait() }()
 	t.Cleanup(func() { _ = bystander.Process.Kill() })
+	// wait: powershell can take seconds to start, so its exit is timed from when it has written the child pid
+	testwait.Poll(30*time.Second, func() bool { b, err := os.ReadFile(idFile); return err == nil && len(b) > 0 })
 	if !gone(parent.Process.Pid) {
 		t.Fatal("the parent did not exit")
 	}

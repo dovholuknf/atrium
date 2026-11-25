@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -54,6 +55,7 @@ type Calls struct {
 	DBPath                  func() string
 	Room                    func() string
 	HomeOf                  func(cardID string) (store.CardHome, bool)
+	RowDirs                 func(row store.CardHome) home.HomeDirs
 	HasGuest                func(id string) bool
 	ResetPending            func(taskID string)
 	ContextTokens           func(t *store.Task) (int64, bool)

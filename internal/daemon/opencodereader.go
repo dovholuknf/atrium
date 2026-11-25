@@ -289,3 +289,55 @@ func parseOpencodeExport(out []byte) ([]Reply, []Prompt, error) {
 	sort.SliceStable(prompts, func(i, j int) bool { return prompts[i].At.Before(prompts[j].At) })
 	return replies, prompts, nil
 }
+
+// opencodeSessionEvery is how often a card with no session id asks opencode for it.
+const opencodeSessionEvery = 10 * time.Second
+
+// claimOpencodeSession gives an opencode card the id of the session opencode ran in its folder. opencode posts no
+// hook that announces it, and without the id the card can neither resume nor show its conversation.
+func (d *Daemon) claimOpencodeSession(t *store.Task, run *runner, now time.Time) {
+	if t.ResumeID != "" || t.Worktree == "" || now.UnixNano()-run.sessionTry.Load() < int64(opencodeSessionEvery) {
+		return
+	}
+	h, err := d.st.Harness(t.Runner)
+	if err != nil || !isOpenCode(h) {
+		return
+	}
+	run.sessionTry.Store(now.UnixNano())
+	bin, err := d.hk.opencodeLookPath(h.Exe())
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), opencodeTimeout)
+	out, _ := d.hk.opencodeExec(ctx, bin, []string{"session", "list", "--format", "json"}, opencodeMaxOut, d.hk.opencodeWaitDelay)
+	cancel()
+	if id := opencodeSessionIn(out, t.Worktree); id != "" {
+		_ = d.claimResume(t, id, "opencode session list", true)
+	}
+}
+
+// opencodeSessionIn is the newest session in a `session list --format json` answer that ran in dir.
+func opencodeSessionIn(out []byte, dir string) string {
+	i := bytes.IndexByte(out, '[')
+	if i < 0 {
+		return ""
+	}
+	var list []struct {
+		ID        string `json:"id"`
+		Directory string `json:"directory"`
+		Updated   int64  `json:"updated"`
+	}
+	if json.Unmarshal(out[i:], &list) != nil {
+		return ""
+	}
+	slash := func(p string) string { return strings.TrimRight(strings.ReplaceAll(p, "\\", "/"), "/") }
+	want := slash(dir)
+	var id string
+	var newest int64
+	for _, s := range list {
+		if strings.EqualFold(slash(s.Directory), want) && opencodeSessionID.MatchString(s.ID) && s.Updated >= newest {
+			id, newest = s.ID, s.Updated
+		}
+	}
+	return id
+}

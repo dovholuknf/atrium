@@ -1029,7 +1029,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 			//
 			// After `set`, which clears the flag. Reversing these two lines
 			// raises the dialog and then immediately forgets it.
-			if in.Notification == "permission_prompt" && !d.hasPendingPermission(taskID) {
+			if (in.Notification == "permission_prompt" || in.Notification == "toolpermission") && !d.hasPendingPermission(taskID) {
 				d.act.dialogRaised(taskID)
 			}
 		} else {

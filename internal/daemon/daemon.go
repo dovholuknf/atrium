@@ -262,6 +262,8 @@ type Daemon struct {
 	// because the thing it bounds is a runaway session and a session does not
 	// outlive the daemon either.
 	peerLimit *peerLimiter
+	// wakeLimit bounds how often one launcher wakes its finished workers.
+	wakeLimit *peerLimiter
 
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
@@ -421,6 +423,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		hk: defaultHooks(), opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		peerLimit:   newPeerLimiter(),
+		wakeLimit:   newWakeLimiter(),
 		launching:   small.NewKeyedMutex(),
 		windingDown: new(atomic.Bool),
 		startedAt:   new(sync.Map),
@@ -1312,6 +1315,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if !d.opts.Passive {
 		d.reattached = make(chan struct{})
 		go d.folderSweeper(ctx, FolderSweepStart, FolderSweepEvery)
+		go d.cruftLoop(ctx)
 		go d.incomingSweeper(ctx, IncomingSweepStart, IncomingSweepEvery)
 		go d.diskWatcher(ctx, DiskWatchStart, DiskWatchEvery)
 		go d.hostWatcher(ctx, HostWatchStart, HostWatchEvery)
@@ -1743,6 +1747,7 @@ func (d *Daemon) initServices() {
 			Publish:        func(id string) { d.Publish(id) },
 			OptAgentAddr:   func() string { return d.opts.AgentAddr },
 			Room:           func() string { return d.opts.Room },
+			StateDir:       d.hostStateDir,
 			HasSession:     func(id string) bool { return d.sup != nil && d.sup.Get(id) != nil },
 			NotifyLauncher: func(w *store.Task, source, key, body string) bool { return d.notifyLauncher(w, source, key, body) },
 			WaitRunnerGone: func(id string, within time.Duration) bool { return d.waitRunnerGone(id, within) },
@@ -1769,6 +1774,7 @@ func (d *Daemon) initServices() {
 			DBPath:   func() string { return d.opts.DBPath },
 			Room:     func() string { return d.opts.Room },
 			HomeOf:   func(id string) (store.CardHome, bool) { return d.HomeOf(id) },
+			RowDirs:  func(row store.CardHome) home.HomeDirs { return d.RowDirs(row) },
 			HasGuest: func(id string) bool { return d.Guests.Get(id) != nil },
 			ResetPending: func(id string) {
 				if d.pending != nil {

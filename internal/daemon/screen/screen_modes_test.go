@@ -18,3 +18,14 @@ func TestReplayKeepsInputModes(t *testing.T) {
 		}
 	}
 }
+
+func TestModeTrackKeepsModesPastTheRing(t *testing.T) {
+	var m ModeTrack
+	m.Feed([]byte("\x1b[?1000h\x1b[?10"))
+	m.Feed([]byte("16h\x1b[?1002;1006h\x1b[?1002lbody \x1b"))
+	m.Feed([]byte("[?2004h"))
+	want := "\x1b[?1000h\x1b[?1006h\x1b[?1016h\x1b[?2004h"
+	if got := m.On(); got != want {
+		t.Fatalf("On() = %q, want %q", got, want)
+	}
+}

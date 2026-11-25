@@ -270,7 +270,7 @@ func (d *Daemon) shellEnv(taskID string) []string {
 	}
 	extra := map[string]string{"ATRIUM_TASK_ID": taskID, "ATRIUM_CARD": d.cardLabel(taskID)}
 	if row, ok := d.HomeOf(taskID); ok {
-		for k, v := range home.HomeEnv(home.DirsOf(row.Path)) {
+		for k, v := range home.HomeEnv(d.RowDirs(row)) {
 			extra[k] = v
 		}
 	}

@@ -658,6 +658,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			}
 			body = screen.ReplayCut(backlog, "screen", cuts, bufRows)
 		}
+		body = append(body, run.buf.InputModes()...)
 		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
 			return
 		}
