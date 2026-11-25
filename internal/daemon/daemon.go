@@ -537,6 +537,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.dict.Conf = d.dictateConf
 	d.ap.Dictate = d.dictateText
 	d.ap.DictateOff = d.dictateOff
+	d.ap.DictateFirst = d.dict.FirstClip
 	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.LoginStatus = d.handleLoginStatus
 	d.ap.DrainAuto = d.drainForAuto

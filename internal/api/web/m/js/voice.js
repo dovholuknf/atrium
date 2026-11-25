@@ -144,13 +144,15 @@
   // How long the last clip took, for the status line: converting here, the whole round trip, and what the hub says it
   // spent reading the upload and in whisper.
   let last = null;
+  let lastTrip = null;
   const timing = () => last;
 
   async function send(cardId, wav, convert) {
     const t = performance.now();
-    const res = await fetch("/v1/tasks/" + encodeURIComponent(cardId) + "/dictate", {
-      method: "POST", headers: { "Content-Type": "audio/wav", "X-Atrium-Words": words() }, body: wav
-    });
+    const headers = { "Content-Type": "audio/wav", "X-Atrium-Words": words() };
+    if (lastTrip !== null) headers["X-Atrium-Last-Trip"] = String(lastTrip);
+    const res = await fetch("/v1/tasks/" + encodeURIComponent(cardId) + "/dictate", { method: "POST", headers, body: wav });
+    lastTrip = Math.round(performance.now() - t);
     let j = null;
     try { j = await res.json(); } catch (e) {}
     const st = {};

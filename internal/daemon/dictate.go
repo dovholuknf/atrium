@@ -79,9 +79,10 @@ func (d *Daemon) dictateWarm(ctx context.Context) {
 	if bin, model := d.dictateConf(); bin == "" || model == "" {
 		return
 	}
+	t0 := time.Now()
 	if err := d.dict.Warm(ctx); err != nil {
 		log.Printf("[atrium] dictation: %v", err)
 		return
 	}
-	log.Printf("[atrium] dictation: whisper-server is warm")
+	log.Printf("[atrium] dictation: whisper-server is warm in %d ms", time.Since(t0).Milliseconds())
 }

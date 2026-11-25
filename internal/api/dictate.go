@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/daemon/dictate"
 )
 
 // maxDictateClip is about four minutes of the 16 kHz mono WAV the board records.
@@ -24,6 +27,7 @@ func (s *Server) dictate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, errors.New("dictation is not set up on this room"))
 		return
 	}
+	t0 := time.Now()
 	wav, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxDictateClip))
 	if err != nil {
 		writeErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf("the clip is over %d MB", maxDictateClip>>20))
@@ -33,11 +37,14 @@ func (s *Server) dictate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("send the clip as WAV"))
 		return
 	}
+	t1 := time.Now()
 	text, err := s.Dictate(r.Context(), wav, s.dictateWords())
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, err)
 		return
 	}
+	dictate.LogClip("room", len(wav), t1.Sub(t0), time.Since(t1), time.Since(t0), r.Header.Get(dictate.LastTrip),
+		s.DictateFirst != nil && s.DictateFirst())
 	writeJSON(w, http.StatusOK, map[string]any{"text": text})
 }
 
