@@ -395,7 +395,13 @@ foreach ($name in $remoteNames) {
 }
 
 # 3. The hub, with claude-sg4 when it is named. Run as child scripts, so their own checks and reverts apply.
-if ($want -contains 'claude-sg4') {
+# The heads-up is asked once here, for both paths, so the hub-only script is not asked again below.
+$headsUp = $true
+if (($want -contains 'hub') -and -not $WhatIf) { $headsUp = Invoke-HeadsUp }
+if (-not $headsUp) {
+  $results['hub'] = 'held - paused from the board, nothing changed'
+  if ($want -contains 'claude-sg4') { $results['claude-sg4'] = 'held - paused from the board, nothing changed' }
+} elseif ($want -contains 'claude-sg4') {
   $stops = if ($WhatIf -or (Test-RunnersSurvive)) { '' } else { Get-StoppedCards }
   &"$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate -KillRunners:$KillRunners -RoomOnly:(-not ($want -contains 'hub'))
   $code = $LASTEXITCODE

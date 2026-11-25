@@ -6,7 +6,7 @@ New-Item -ItemType Directory $work | Out-Null
 $work = (Resolve-Path $work).Path
 
 $ast = [Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$PSScriptRoot/push-to-github.ps1").Path, [ref]$null, [ref]$null)
-$want = 'G', 'Get-Incoming', 'Write-Bundle', 'Invoke-Deliver', 'Get-Pathspec', 'Split-Branch','Get-SplitMessage', 'Test-CiCovered', 'Test-Attribution', 'Get-PrText', 'Enter-LoopLock', 'Exit-LoopLock', 'Invoke-Request'
+$want = 'G', 'Invoke-GH', 'Get-ChangedFiles', 'Get-OriginCommit', 'Invoke-Rerun', 'Test-BranchName', 'Test-PushTarget', 'Get-Incoming', 'Write-Bundle', 'Invoke-Deliver', 'Get-Pathspec', 'Split-Branch','Get-SplitMessage', 'Test-CiCovered', 'Test-Attribution', 'Get-PrText', 'Invoke-Request', 'Test-Git', 'Get-MergeBase', 'Get-RemoteTip', 'Read-Small', 'Assert-Arg', 'Get-AttributionHits'
 foreach ($f in $ast.FindAll({ $args[0] -is [Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -in $want }, $true)) {
     Invoke-Expression $f.Extent.Text
 }
@@ -18,7 +18,7 @@ function Assert($ok, $what) { if (-not $ok) { throw "FAIL: $what" }; "ok   $what
 $GhRepo = 'fake/repo'
 $inbox = Join-Path $work 'inbox'
 New-Item -ItemType Directory $inbox | Out-Null
-function Write-Pr([string]$req, [string]$text = "Faster builds for the board`n`nThe board builds quicker because the test step no longer repeats itself.") {
+function Write-Pr([string]$req, [string]$text = "Faster builds for the board`n`nChanges:`n- The board builds quicker because the test step no longer repeats itself.") {
     Set-Content -LiteralPath (Join-Path $inbox "$req.pr.md") $text
 }
 $Branch = ''
@@ -28,8 +28,12 @@ $origin = Join-Path $work 'origin.git'
 $shared = Join-Path $work 'shared'
 $clone = Join-Path $work 'clone'
 New-Item -ItemType Directory $priv, $out | Out-Null
+$nohooks = Join-Path $work 'nohooks'
+New-Item -ItemType Directory $nohooks | Out-Null
 Run-Git init --quiet --bare -b main $origin
+Run-Git -C $origin config core.hooksPath $nohooks
 Run-Git init --quiet -b claude/seed $shared
+Run-Git -C $shared config core.hooksPath $nohooks
 Run-Git -C $shared config user.name t
 Run-Git -C $shared config user.email t@example.com
 Run-Git -C $shared config commit.gpgsign false
@@ -44,6 +48,7 @@ Run-Git -C $shared remote add origin $origin
 Run-Git -C $shared push --quiet origin claude/seed:main
 Run-Git -C $shared update-ref refs/heads/claude/main HEAD
 Run-Git clone --quiet $origin $clone
+Run-Git -C $clone config core.hooksPath $nohooks
 Run-Git -C $clone config user.name t
 Run-Git -C $clone config user.email t@example.com
 Run-Git -C $clone config commit.gpgsign false
@@ -65,16 +70,24 @@ Set-Content $landExe '$global:LASTEXITCODE = 0'
 $script:landExe = $landExe
 $script:gh = [Collections.Generic.List[string]]::new()
 function Assert-Private {}
+$script:ghArgv = [Collections.Generic.List[object]]::new()
 $script:ghOpen = ''
+$script:ghBatch = @()
 $script:ghReleases = @('v0.0.6')
 $script:ghCi = 1
+$script:ghHeads = @{}
+$script:ghAuto = ''
 $script:TagFlag = '-a'
 function gh {
-    $script:gh.Add("$args"); $global:LASTEXITCODE = 0
-    if ("$args" -like 'pr list*--json headRefName*') { $script:ghOpen }
+    $script:gh.Add("$args"); $script:ghArgv.Add($args); $global:LASTEXITCODE = 0
+    if ("$args" -like 'pr list*--head *') { $script:ghHeads[$args[[array]::IndexOf($args, '--head') + 1]] }
+    elseif ("$args" -like 'pr view*') { $script:ghAuto }
+    elseif ("$args" -like 'pr list*--json headRefName*') { $script:ghOpen }
+    elseif ("$args" -like 'pr list*--base main*') { $script:ghBatch }
     elseif ("$args" -like 'run list*') { $script:ghCi }
     elseif ("$args" -like 'release view*') {
-        if ($script:ghReleases | Where-Object { "$args" -like "release view $_ *" }) { '{"tagName":"x"}' } else { $global:LASTEXITCODE = 1; 'release not found' }
+        $line = "$args"
+        if ($script:ghReleases | Where-Object { $line -like "release view $_ *" }) { '{"tagName":"x"}' } else { $global:LASTEXITCODE = 1; 'release not found' }
     }
 }
 
@@ -202,7 +215,7 @@ foreach ($t in '0.1.0', 'v0.1', 'v0.1.0-rc1', 'main') {
 }
 
 # The PR text: refused before anything is pushed when it is missing, names a file or a commit subject, or has no description.
-New-Hub 'prtext' @{ 'src/a.go' = "prtext`n" }
+New-Hub 'prtext' @{ 'src/a.go' = "prtext`n" } 'claude/squash'
 function Refused-Push([string]$req, [string]$like, [string]$what) {
     $m = try { Invoke-Request $req 'push prtext'; '' } catch { "$_" }
     Assert ($m -like $like -and -not (Run-Git -C $origin branch --list prtext)) $what
@@ -210,19 +223,83 @@ function Refused-Push([string]$req, [string]$like, [string]$what) {
 Refused-Push 'p1' '*no PR text*' 'pr text: refused without the file'
 Write-Pr 'p2' "publish-release.sh trim
 
-The release notes no longer break the release."
+Changes:
+- The release notes no longer break the release."
 Refused-Push 'p2' '*names a file*' 'pr text: a title naming a script is refused'
 Write-Pr 'p3' "work on prtext
 
-The release notes no longer break the release."
+Changes:
+- The release notes no longer break the release."
 Refused-Push 'p3' '*commit subject*' 'pr text: a commit subject as the title is refused'
 Write-Pr 'p4' "Release notes fit GitHub again"
 Refused-Push 'p4' '*no description*' 'pr text: no description is refused'
+Write-Pr 'p4b' "Release notes fit GitHub again`n`n  `n"
+Refused-Push 'p4b' '*no description*' 'pr text: a title-only file with blank lines after it is refused'
 $script:gh.Clear()
-Write-Pr 'p5' "Release notes fit GitHub again`n`nA long changelog used to make the release fail, so it is now cut and linked."
+$fmt = "Release notes fit GitHub again`n`n"
+Write-Pr 'p4c' ($fmt + "Features:`n- A long changelog is cut and linked, with a good enough reason.`n`nHow it was checked: by hand, twice.")
+Refused-Push 'p4c' '*no other prose*' 'pr text: a How it was checked line is refused'
+Write-Pr 'p4d' ($fmt + "A long changelog used to make the release fail, so it is now cut and linked.")
+Refused-Push 'p4d' '*no other prose*' 'pr text: a description with no sections is refused'
+Write-Pr 'p4e' ($fmt + "- A long changelog is cut and linked, with a good enough reason.")
+Refused-Push 'p4e' '*outside*section*' 'pr text: a bullet before any section is refused'
+Write-Pr 'p4f' ($fmt + "Features:`n`nBugs fixed:`n- A long changelog is cut and linked, with a good enough reason.")
+Refused-Push 'p4f' '*Features*no bullets*' 'pr text: a section with no bullets is refused'
+Write-Pr 'p4g' ($fmt + "Changes:`n- " + ((1..501 | ForEach-Object { 'w' }) -join ' '))
+Refused-Push 'p4g' '*over 500 words*' 'pr text: a description over 500 words is refused'
+Write-Pr 'p5' ($fmt + "Features:`n- A long changelog used to make the release fail, so it is now cut and linked.`n`nBugs fixed:`n- The release no longer fails on a long changelog.")
 Invoke-Request 'p5' 'push prtext' | Out-Null
 $create = @($script:gh | Where-Object { $_ -like 'pr create*' })
-Assert ($create.Count -eq 1 -and $create[0] -like '*--title Release notes fit GitHub again --body *' -and $create[0] -like '*A long changelog used to make the release fail*' -and $create[0] -like '*Changes 1 file(s):*src/a.go*') 'pr text: the title and description are used, the file list sits under the body'
+Assert ($create.Count -eq 1 -and $create[0] -like '*--title Release notes fit GitHub again --body *' -and $create[0] -like '*A long changelog used to make the release fail*' -and $create[0] -notlike '*Changes*' -and $create[0] -notlike '*src/a.go*') 'pr text: the title and description are used, the body holds no file list'
+New-Hub 'batch-9-n2' @{ 'src/a.go' = "batch`n" } 'claude/squash'
+Write-Pr 'p6'
+$script:ghBatch = @('77 batch-9-n1')
+$m = try { Invoke-Request 'p6' 'push batch-9-n2'; '' } catch { "$_" }
+Assert ($m -like '*PR #77 (batch-9-n1) is still open: re-send to that branch or close it first*' -and -not (Run-Git -C $origin branch --list batch-9-n2)) 'batch: a second batch PR is refused and nothing is pushed'
+$script:ghBatch = @('77 batch-9-n1', '78 batch-9-n2')
+$script:ghArgv.Clear()
+Invoke-Request 'p6' 'push batch-9-n2' | Out-Null
+$list = @($script:ghArgv | Where-Object { "$($_[0]) $($_[1])" -eq 'pr list' -and $_ -contains '--base' })[0]
+$at = [array]::IndexOf($list, '--json')
+Assert ($at -ge 0 -and $list[$at + 1] -is [string] -and $list[$at + 1] -ceq 'number,headRefName') 'json fields: one comma value reaches gh as a single argument'
+Assert ([bool](Run-Git -C $origin branch --list batch-9-n2)) 'batch: a re-send to the branch that holds the open PR is allowed'
+$script:ghBatch = @()
+# A name that is a glob is a file name, not a pattern: scripts/c[i].sh must not pull in scripts/ci.sh.
+New-Hub 'globs' @{ 'scripts/ci.sh' = "globbed`n"; 'scripts/c[i].sh' = "literal`n" } 'claude/squash'
+Write-Pr 'g1'
+Invoke-Request 'g1' 'push globs' | Out-Null
+Assert ((Origin-Files 'globs-ci') -join ',' -eq 'scripts/ci.sh') 'pathspec: the CI half holds only its own file'
+Assert ((Origin-Files 'globs') -join ',' -eq 'scripts/c[i].sh') 'pathspec: a name with glob characters does not match another file'
+
+# Every half is checked before the first is pushed: a missing PR text for the second leaves the first unpushed.
+New-Hub 'part' @{ '.github/workflows/ci.yml' = "part`n"; 'src/part.go' = "part`n" } 'claude/squash'
+$script:ghHeads['part-ci'] = '5'
+$m = try { Invoke-Request 'g2' 'push part'; '' } catch { "$_" }
+$script:ghHeads.Clear()
+Assert ($m -like '*no PR text*' -and -not (Run-Git -C $origin branch --list 'part*')) 'mixed: a refusal on the second half pushes nothing'
+
+# A CI push to a branch whose open PR has auto-merge on turns it off.
+New-Hub 'amerge' @{ 'scripts/ci.sh' = "amerge`n" } 'claude/squash'
+$script:ghHeads['amerge'] = '6'
+$script:ghAuto = 'true'
+$script:gh.Clear()
+Invoke-Request 'g3' 'push amerge' | Out-Null
+$script:ghHeads.Clear(); $script:ghAuto = ''
+Assert (@($script:gh | Where-Object { $_ -like 'pr merge amerge *--disable-auto' }).Count -eq 1) 'auto-merge: switched off for a branch that now edits CI'
+
+# A request the agent wrote is never followed through a link or read past its size limit.
+$small = Join-Path $work 'small.txt'
+Set-Content $small 'push x'
+Assert ((Read-Small $small 1024).Trim() -eq 'push x') 'read: a plain small file is read'
+Set-Content $small ('x' * 2000)
+$m = try { Read-Small $small 1024; '' } catch { "$_" }
+Assert ($m -like '*over 1024 bytes*') 'read: a file over the limit is refused'
+$secret = Join-Path $work 'secret.txt'
+Set-Content $secret 'push stolen'
+$link = Join-Path $work 'link.txt'
+New-Item -ItemType HardLink -Path $link -Target $secret | Out-Null
+$m = try { Read-Small $link 1024; '' } catch { "$_" }
+Assert ($m -like '*HardLink*not reading it*') 'read: a link is refused'
 # A branch cut before origin moved README.md would put it back: refused with the file listed, nothing pushed.
 New-Hub 'stale' @{ 'src/new2.go' = "n`n" }
 function Move-Origin([string]$file, [string]$value, [string]$msg) {
@@ -245,42 +322,26 @@ function Refused([string]$line, [string]$like, [string]$what) {
     Assert ($m -like $like) $what
 }
 Move-Origin 'internal/cli/VERSION' "0.2.0`n" 'Version 0.2.0'
+Refused 'release 0.2.0' '*no changelog/v0.2.0.md*' 'release: refused without the changelog file'
+Move-Origin 'changelog/v0.2.0.md' "notes`n" 'Notes 0.2.0'
 $script:ghCi = 0
 Refused 'release 0.2.0' '*no successful run*' 'release: refused without a green ci run on the head'
 Assert (-not (Run-Git -C $origin tag --list v0.2.0)) 'release: no tag after a refusal'
 $script:ghCi = 1
+$script:ghHeads = @{}
+$script:ghAuto = ''
 Refused 'release 0.2.1' '*is 0.2.0, not 0.2.1*' 'release: refused when VERSION is another version'
 $script:gh.Clear()
 Invoke-Request 'r12' 'release 0.2.0' | Out-Null
 Assert ((Run-Git -C $origin rev-parse 'v0.2.0^{commit}') -eq (Run-Git -C $origin rev-parse main)) 'release: the tag is on origin main''s head'
 Assert (@($script:gh | Where-Object { $_ -like 'workflow run*' }).Count -eq 0) 'release: no workflow is dispatched, the tag push starts it'
-Assert ((Run-Git -C $origin log -1 --format=%B v0.2.0).Trim() -eq 'v0.2.0') 'release: the tag message is plain'
+Assert ((Run-Git -C $origin tag -l --format='%(contents)' v0.2.0).Trim() -eq 'v0.2.0') 'release: the tag message is plain'
 Refused 'release 0.2.0' '*already exists*' 'release: refused when the tag exists'
 Move-Origin 'internal/cli/VERSION' "0.2.2`n" "Version 0.2.2`n`nCo-Authored-By: someone"
+Move-Origin 'changelog/v0.2.2.md' "notes`n" 'Notes 0.2.2'
 Refused 'release 0.2.2' '*Co-Authored-By*' 'release: refused when a commit since the last tag carries attribution'
 Assert (-not (Run-Git -C $origin tag --list v0.2.2)) 'release: no tag after an attribution refusal'
 foreach ($ok in 'Route Codex native approvals through atrium', 'claude/main', 'Support claude and codex runners') { Assert (-not (Test-Attribution $ok)) "attribution: a bare product word passes: $ok" }
 foreach ($bad in 'Co-Authored-By: Claude <noreply@anthropic.com>', 'Generated with Claude Code', 'generated by an AI', "robot $([char]::ConvertFromUtf32(0x1F916))", 'mail bot@openai.com') { Assert (Test-Attribution $bad) "attribution: real attribution fails: $bad" }
-# One loop at a time: the lock is refused while a pwsh holds it, and taken over when its process is gone or is not pwsh.
-$lock = Join-Path $work 'loop.lock'
-Enter-LoopLock $lock
-Assert ((Get-Content -LiteralPath $lock -Raw | ConvertFrom-Json).pid -eq $PID) 'lock: written with this pid'
-$m = try { Enter-LoopLock $lock; "" } catch { "$_" }
-Assert ($m -like '*already running*') 'lock: a second start is refused while the holder is a live pwsh'
-Exit-LoopLock $lock
-Assert (-not (Test-Path $lock)) 'lock: removed on exit'
-$dead = Start-Process (Get-Process -Id $PID).Path -ArgumentList '-NoProfile', '-Command', 'exit' -PassThru -Wait
-@{ pid = $dead.Id; started = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $lock
-Enter-LoopLock $lock
-Assert ((Get-Content -LiteralPath $lock -Raw | ConvertFrom-Json).pid -eq $PID) 'lock: a dead holder is taken over'
-$other = Start-Process ping -ArgumentList '-n', '30', '127.0.0.1' -PassThru -WindowStyle Hidden
-try {
-    @{ pid = $other.Id; started = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $lock
-    Enter-LoopLock $lock
-    Assert ((Get-Content -LiteralPath $lock -Raw | ConvertFrom-Json).pid -eq $PID) 'lock: a live holder that is not pwsh is taken over'
-    @{ pid = $other.Id; started = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $lock
-    Exit-LoopLock $lock
-    Assert (Test-Path $lock) 'lock: exit leaves a lock held by another process'
-} finally { Stop-Process -Id $other.Id -Force -ErrorAction SilentlyContinue }
 
 'PASS'

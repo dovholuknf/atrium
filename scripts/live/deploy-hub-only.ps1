@@ -25,8 +25,7 @@ if (-not $WhatIf) {
 if ($NoGate) {
   Say 'gate skipped (-NoGate)'
 } elseif (-not $WhatIf) {
-  & 'D:\git\github\dovholuknf\atrium\scripts\hub-restart-gate.ps1' | ForEach-Object { Say "gate: $_" }
-  if ($LASTEXITCODE -ne 0) { Say 'restart held by the board, nothing changed'; exit 0 }
+  if (-not (Invoke-HeadsUp)) { Say 'restart held by the board, nothing changed'; exit 0 }
 } else { Say 'WHATIF: run scripts\hub-restart-gate.ps1 and stop here unless it says go' }
 
 # 0. Snapshot the outgoing binary under its build id.

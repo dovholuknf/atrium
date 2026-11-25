@@ -2353,10 +2353,41 @@ $sources = @{
     # codex-path. codex-package-<triple>.tar.gz holds all of them in the layout
     # codex looks for (bin/, codex-resources/, codex-path/).
     codex  = "https://github.com/openai/codex/releases/latest/download/codex-package-$triple.tar.gz"
+    opencode = 'https://registry.npmjs.org/opencode-ai'
+    crush    = 'https://registry.npmjs.org/@charmland/crush'
+    qwen     = 'https://registry.npmjs.org/@qwen-code/qwen-code'
+    pi       = 'https://registry.npmjs.org/@mariozechner/pi-coding-agent'
+    copilot  = 'https://registry.npmjs.org/@github/copilot'
+    gemini   = 'https://registry.npmjs.org/@google/gemini-cli'
 }
+# These come from npm alone: node and npm must already be on the room's PATH.
+$npmPackage = @{ opencode = 'opencode-ai'; crush = '@charmland/crush'; qwen = '@qwen-code/qwen-code'; pi = '@mariozechner/pi-coding-agent'; copilot = '@github/copilot'; gemini = '@google/gemini-cli' }
 function Get-InstallScript {
     param([string] $runner)
     $url = $sources[$runner]
+    if ($npmPackage.ContainsKey($runner)) {
+        $pkg = $npmPackage[$runner]
+        if ($os -eq 'windows') { return (@'
+$ErrorActionPreference = 'Continue'; $ProgressPreference = 'SilentlyContinue'
+$d = Join-Path $HOME '.local\bin'; New-Item -ItemType Directory -Force $d | Out-Null
+$b = Join-Path $d '__RUNNER__.cmd'; $preb = Test-Path $b
+if (-not ((Get-Command node -ErrorAction SilentlyContinue) -and (Get-Command npm -ErrorAction SilentlyContinue))) { 'node and npm are not on the PATH'; exit 1 }
+$o = & npm install -g --prefix $d --allow-scripts='__PKG__' '__PKG__' 2>&1 | Out-String
+if (-not (Test-Path $b)) { $o; 'npm finished but __RUNNER__.cmd is not there'; exit 1 }
+if (-not $preb) { "installed=$b" }
+"path=$b"; 'via=npm'
+'@) -replace '__RUNNER__', $runner -replace '__PKG__', $pkg }
+        return (@'
+d="$HOME/.local/bin"; b="$d/__RUNNER__"; mkdir -p "$d"
+if [ -e "$b" ] || [ -L "$b" ]; then preb=1; else preb=0; fi
+sh_=${SHELL:-/bin/sh}
+if ! "$sh_" -lc 'command -v node && command -v npm' </dev/null >/dev/null 2>&1; then echo "node and npm are not on the PATH"; exit 1; fi
+o=$("$sh_" -lc 'npm install -g --prefix "$HOME/.local" --allow-scripts="__PKG__" "__PKG__"' </dev/null 2>&1) || { echo "$o"; exit 1; }
+if [ ! -e "$b" ]; then echo "$o"; echo "npm finished but $b is not there"; exit 1; fi
+if [ $preb = 0 ]; then echo "installed=$b"; fi
+echo "path=$b"; echo "via=npm"
+'@) -replace '__RUNNER__', $runner -replace '__PKG__', $pkg
+    }
     if ($os -eq 'windows') {
         switch ($runner) {
             'claude' { return @"
@@ -2514,6 +2545,7 @@ foreach ($runner in $Install) {
     # THE TRUST WARNING, before anything is fetched. -Install is the consent,
     # and this says what it was consent to.
     $via = if ($runner -eq 'codex') { "(or, when node and npm are there, npm's @openai/codex into ~/.local) " } else { '' }
+    if ($npmPackage.ContainsKey($runner)) { $via = "with npm's $($npmPackage[$runner]) into ~/.local, running its install script " }
     Step "install:$runner" 'warn' ("trusting atrium to fetch $($sources[$runner]) $via" + "and run it on $Target. " +
         "if you do not trust that, install $runner yourself and leave -Install off")
     $r = Invoke-Remote (Get-InstallScript $runner)
