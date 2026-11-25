@@ -111,6 +111,13 @@
       "reason": "A card never makes a second checkout outside its home ('{name}' would land outside ATRIUM_HOME, or the guard cannot tell where), because nothing records or removes it. Work in the card's own work/ folder and use a claude/* branch there. A checkout you truly need goes under the home's tmp/ folder, written as a full path, where the room stashes and removes it with the card. Work that needs a tree of its own is a worker: atrium_launch_worker with repo and branch, and the room makes its home."
     },
     {
+      "id": "outside-card-folder",
+      "check": "outside-home",
+      "tools": ["shell", "Write", "Edit", "NotebookEdit"],
+      "params": {"env": "ATRIUM_CARD_ROOT", "dir": "ATRIUM_HOME"},
+      "reason": "Do not write or make folders in the card root outside this card's own folder: '{name}' is beside it, and nothing frees it when the card closes. Write under the card's own folder (ATRIUM_HOME), its work/ or tmp/ folder, and clone or extract there."
+    },
+    {
       "id": "git-plain-checkout",
       "check": "git-plain-checkout",
       "tools": ["shell"],

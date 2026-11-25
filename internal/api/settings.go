@@ -217,6 +217,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["card_root_required"] = s.st.CardRootRequiredOn()
 	// Whether the usage tab draws cache reads. Off unless switched on.
 	out["usage_cache_reads"] = s.usageCacheReads()
+	out["guard_card_root"] = s.guardCardRoot()
 	out["open_external_anywhere"] = s.openExternalAnywhere()
 	// When the weekly limit resets, for the usage tab's "this week" range. See usageweek.go.
 	out["usage_week_reset"] = s.usageWeekReset()
@@ -400,6 +401,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		ColdHandoff *bool `json:"cache_cold_handoff"`
 		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
 		UsageCacheReads *bool `json:"usage_cache_reads"`
+		GuardCardRoot   *bool `json:"guard_card_root"`
 		// The removed open externally's switch, still stored. See SettingOpenExternalAnywhere.
 		OpenExternalAnywhere *bool `json:"open_external_anywhere"`
 		// When the weekly limit resets: weekday, time and time zone. One per board. See usageweek.go.
@@ -1133,6 +1135,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		s.Broadcast("settings", globalAutoView(s))
 	}
 
+	if body.GuardCardRoot != nil {
+		v := "off"
+		if *body.GuardCardRoot {
+			v = "on"
+		}
+		if err := s.st.SetSetting(SettingGuardCardRoot, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
 	if body.OpenExternalAnywhere != nil {
 		v := "off"
 		if *body.OpenExternalAnywhere {
@@ -1161,6 +1174,14 @@ const SettingUsageCacheReads = "usage_cache_reads"
 
 func (s *Server) usageCacheReads() bool {
 	v, err := s.st.Setting(SettingUsageCacheReads)
+	return err == nil && strings.TrimSpace(v) == "on"
+}
+
+// SettingGuardCardRoot is `on` when the guard refuses a card's writes in the card root outside its own folder. Unset is off.
+const SettingGuardCardRoot = "guard_card_root"
+
+func (s *Server) guardCardRoot() bool {
+	v, err := s.st.Setting(SettingGuardCardRoot)
 	return err == nil && strings.TrimSpace(v) == "on"
 }
 

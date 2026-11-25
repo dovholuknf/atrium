@@ -63,6 +63,13 @@ the answer go), and it corrects rather than prevents, since the reply is written
 The guard reads command text. It cannot see `Start-Process` or other ways of starting a program it does not parse, a
 renamed copy of a binary, or the contents of a script file run by path.
 
+`outside-card-folder` reads `ATRIUM_CARD_ROOT`, which the room sets only while the `guard_card_root` setting is on. It
+checks Write, Edit, redirects, git clone and worktree add, tar (-C, -f of a create, the cwd without -C), unzip -d,
+curl -o and -O, Expand-Archive -DestinationPath, Invoke-WebRequest -OutFile, and the paths of mkdir, touch, tee, cp,
+mv, ln, install and their PowerShell names. A drive path is compared without case and with either slash. It cannot see
+a path built from a variable, wget, 7z, a build or a script that writes by itself, a script run by path, or a symlink
+that leads in.
+
 ## Files
 
 | File | What it holds |

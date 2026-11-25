@@ -161,6 +161,7 @@ var ExportedSettings = []string{
 	api.SettingShellCommand,
 	api.SettingLoginCommand,
 	store.SettingUnexpectedExit,
+	api.SettingGuardCardRoot,
 }
 
 // neverExported names the settings keys that must not leave, so the test that

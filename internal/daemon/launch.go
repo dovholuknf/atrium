@@ -1417,6 +1417,11 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		for k, v := range home.HomeEnv(homeDir) {
 			atrium[k] = v
 		}
+		if v, _ := d.st.Setting(api.SettingGuardCardRoot); strings.TrimSpace(v) == "on" {
+			if root, err := d.CardRoot(); err == nil {
+				atrium["ATRIUM_CARD_ROOT"] = filepath.ToSlash(root)
+			}
+		}
 	}
 	if dir := d.scratchFor(task, cwd); dir != "" {
 		atrium[scratch.Env] = dir
