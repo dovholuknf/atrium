@@ -128,6 +128,12 @@ type launchOptions struct {
 	GitDir string
 	// ControlMCP is the atrium binary a codex launch runs as its atrium-control MCP server, "" for none.
 	ControlMCP string
+	// HookTrust says atrium's hooks are in a codex launch's CODEX_HOME, so codex is told to run them unreviewed.
+	HookTrust bool
+	// CursorPlugin is the folder of the plugin that gives a cursor launch atrium-control, "" for none.
+	CursorPlugin string
+	// CursorForce says a cursor launch goes through atrium's gate, so cursor's own prompt is turned off.
+	CursorForce bool
 }
 
 // runnerArgsWith is runnerArgs with the effort and the extra argv as well.
@@ -202,6 +208,12 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 	}
 	if o.ControlMCP != "" && isCodex(h) {
 		args = withCodexControlMCP(args, o.Args, o.ControlMCP)
+	}
+	if o.HookTrust && isCodex(h) {
+		args = withCodexHookTrust(args, o.Args)
+	}
+	if isCursor(h) {
+		args = withCursorLaunch(args, o.Args, o.CursorPlugin, o.CursorForce)
 	}
 	if len(o.Args) > 0 {
 		args = append(append([]string{}, args...), o.Args...)
@@ -1142,6 +1154,20 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 			if err := claudeconf.AnswerCodexSandbox(overEnv(h.Env, extraEnv)["CODEX_HOME"]); err != nil {
 				log.Printf("[atrium] could not pre-answer codex's sandbox setup: %v", err)
 			}
+		}
+		ok, err := ensureCodexHooks(overEnv(h.Env, extraEnv)["CODEX_HOME"], d.hk.AtriumBinary())
+		if err != nil {
+			log.Printf("[atrium] could not wire atrium's codex hooks: %v", err)
+		}
+		opts.HookTrust = ok
+	}
+	if isCursor(h) {
+		dir := filepath.Join(filepath.Dir(d.opts.DBPath), "cursor-plugin")
+		if err := writeCursorPlugin(dir, d.hk.AtriumBinary()); err != nil {
+			log.Printf("[atrium] atrium-control not wired for cursor: %v", err)
+		} else {
+			opts.CursorPlugin = dir
+			opts.CursorForce = gatedLaunch(overEnv(h.Env, extraEnv))
 		}
 	}
 	// The compaction window, from the limit this card will be held to. The tags are the

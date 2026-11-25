@@ -56,8 +56,8 @@ func TestClaudeHooksCheckAndApply(t *testing.T) {
 func TestInspectCountsOnlyFailures(t *testing.T) {
 	env, _ := geminiHome(t)
 	rep := Inspect(Gemini, env)
-	// trust fails (untrusted root), auth fails (nothing chosen), hooks is n/a.
-	if rep.Failing != 2 || len(rep.Checks) != 3 || rep.Installed {
+	// trust fails (untrusted root), auth fails (nothing chosen), hooks fail (none wired).
+	if rep.Failing != 3 || len(rep.Checks) != 3 || rep.Installed {
 		t.Fatalf("got %+v", rep)
 	}
 	for _, c := range rep.Checks {

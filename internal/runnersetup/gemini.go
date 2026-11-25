@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 )
 
 // Gemini, measured against gemini-cli 0.60.0 by reading the installed bundle
@@ -33,12 +35,16 @@ var Gemini = &Adapter{
 	Checks: []Check{
 		{ID: "trust", Label: "trusts the workspace", Run: geminiTrustCheck, Apply: geminiTrustApply},
 		{ID: "auth", Label: "signed in", Run: geminiAuthCheck},
-		{ID: "hooks", Label: "atrium hooks", Run: func(Env) Result {
-			return Result{State: NA, Detail: "atrium has no hooks target for gemini yet, so a gemini " +
-				"card shows its terminal and reports nothing about itself."}
-		}},
+		{ID: "hooks", Label: "atrium hooks", Run: hooksCheck(claudeconf.Gemini), Apply: hooksApply(claudeconf.Gemini)},
 	},
-	Launch: geminiLaunch,
+	Launch: func(env Env, cwd string) (string, error) {
+		note, err := geminiLaunch(env, cwd)
+		if err != nil {
+			return note, err
+		}
+		wired, err := hooksLaunch(claudeconf.Gemini)(env, cwd)
+		return strings.TrimSpace(note + " " + wired), err
+	},
 }
 
 const (

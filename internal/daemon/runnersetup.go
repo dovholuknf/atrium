@@ -3,8 +3,10 @@ package daemon
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -43,10 +45,15 @@ func (d *Daemon) prepareRunnerSetup(h *store.Harness, cwd string, env []string) 
 	if root, err := d.CardRoot(); err == nil {
 		roots = append(roots, root)
 	}
+	exe, _ := os.Executable()
+	if hook := claudeconf.HookExe(exe); hook != "" {
+		exe = hook
+	}
 	note, err := a.Launch(runnersetup.Env{
-		Home:   home,
-		Getenv: func(k string) string { return vars[k] },
-		Roots:  roots,
+		Home:      home,
+		Getenv:    func(k string) string { return vars[k] },
+		Roots:     roots,
+		AtriumExe: filepath.ToSlash(exe),
 	}, cwd)
 	if err != nil {
 		log.Printf("[atrium] runner setup for %s in %s did not apply: %v", h.ID, cwd, err)

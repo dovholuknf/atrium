@@ -20,6 +20,14 @@ func runnerPID() int {
 			return 0
 		}
 		if i > 0 && (runnerNames[name] || runnerNames[argv0Base(walk)]) {
+			// qwen and gemini relaunch themselves as a child node, and the card holds the outermost.
+			for j := 0; j < maxHops; j++ {
+				up, grand, ok := procInfo(parent)
+				if !ok || !(runnerNames[up] || runnerNames[argv0Base(parent)]) {
+					break
+				}
+				walk, parent = parent, grand
+			}
 			return walk
 		}
 		walk = parent

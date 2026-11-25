@@ -55,6 +55,8 @@ type turnInput struct {
 	// StopHookActive is set when this turn is only still running because a
 	// Stop hook blocked the last one. Blocking again would never terminate.
 	StopHookActive bool `json:"stop_hook_active"`
+	// LoopCount is cursor's stop_hook_active: how many stops in a row a hook has already continued.
+	LoopCount int `json:"loop_count"`
 	// TranscriptPath is where this conversation is being written, which is
 	// what makes its id worth storing. See hasTranscript in session.go.
 	TranscriptPath string `json:"transcript_path"`
@@ -160,6 +162,9 @@ func newTurn() *cobra.Command {
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if borrowedByCursor(runner) {
+				return nil
+			}
 			fmt.Fprint(cmd.OutOrStdout(), turnEnded(hubURL, event, name, runner))
 			return nil
 		},
@@ -198,12 +203,13 @@ func turnEnded(hubURL, event, name, runner string) string {
 			return keepGoing
 		}
 	}
+	in.StopHookActive = in.StopHookActive || in.LoopCount > 0
 	// A subagent finishing is not this session finishing. See HookEventName.
 	// Anything that names itself and does not name `Stop` is left alone, which
 	// covers `SubagentStop` and anything a future runner adds, and `keepGoing`
 	// is the right answer for all of them: it is what a Stop hook says when it
 	// has nothing to say.
-	if in.HookEventName != "" && !strings.EqualFold(in.HookEventName, "Stop") {
+	if in.HookEventName != "" && !strings.EqualFold(in.HookEventName, "Stop") && !strings.EqualFold(in.HookEventName, "AfterAgent") {
 		return keepGoing
 	}
 

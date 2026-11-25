@@ -79,14 +79,13 @@ var Profiles = []Profile{
 		// cursor position typically holds for, so the prompt's cursor still
 		// shows between frames while codex animates.
 		CursorSettle: 40 * time.Millisecond},
-	{ID: "gemini", Cmds: []string{"gemini"},
+	{ID: "copilot", Cmds: []string{"copilot"}, Hooks: "copilot"},
+	{ID: "gemini", Cmds: []string{"gemini"}, Hooks: "gemini",
 		Unmeasured: []string{
-			"hooks: atrium has no target for gemini, so a gemini card reports no activity. a target " +
-				"needs gemini's hooks file, event names and payload fields measured, then a row in " +
-				"claudeconf.Targets and in the fake runner's runnerShapes",
 			"cursor: an Ink app like claude, so probably draws its own cursor and needs no settle; " +
 				"trace one with scripts/replay-term-trace.js before setting CursorSettle",
 		}},
+	{ID: "qwen", Cmds: []string{"qwen"}, Hooks: "qwen"},
 	{ID: "ollama", Cmds: []string{"ollama"},
 		Unmeasured: []string{
 			"hooks: ollama has none, so a card shows its terminal and nothing else",

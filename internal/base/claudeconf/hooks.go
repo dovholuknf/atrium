@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -877,7 +878,7 @@ func program(t Target, exe string) string {
 	q := quoted(exe)
 	// PowerShell reads a leading quoted string as a string, not a program, so
 	// the call operator is what makes it run. An unquoted path needs none.
-	if q != filepath.ToSlash(exe) && needsPowerShell(t) {
+	if q != filepath.ToSlash(exe) && (needsPowerShell(t) || t.PowerShellOnWindows && runtime.GOOS == "windows") {
 		return "& " + q
 	}
 	return q
