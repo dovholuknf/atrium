@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/calllog"
 	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 	"github.com/dovholuknf/atrium/internal/base/cardurl"
 	"github.com/dovholuknf/atrium/internal/base/edge"
@@ -1574,6 +1575,9 @@ func (p *Proxy) SetControl(boardAddr string) {
 	}
 	c.docs = p.docStore
 	c.resourcesDir = p.resourcesStateDir
+	if dir := p.resourcesStateDir(); dir != "" {
+		c.calls = calllog.New(dir, "hub-calls.log", 0)
+	}
 	c.rooms = p.roomsForResources
 	c.growler = p.growler
 	p.control = c.handler()

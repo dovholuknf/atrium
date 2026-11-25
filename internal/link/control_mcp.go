@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/calllog"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
@@ -75,6 +76,8 @@ type controlMCP struct {
 	// audit records an operational event, e.g. a launch refused by the cap. Nil
 	// on a hub that keeps no log, and best effort: it never blocks a launch.
 	audit func(room, kind, detail string)
+	// calls is the durable log of tool calls. Nil drops every line.
+	calls *calllog.Log
 
 	// mu guards reservations. The control server is one instance shared by every
 	// request (see newControlHandler), so the launch cap's book-keeping lives here
@@ -173,6 +176,7 @@ func (c *controlMCP) handler() http.Handler {
 // `audited` wrapping are written once whichever servers it lands on.
 func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
+	s.AddReceivingMiddleware(c.logCalls)
 	ctl.OpenOutputs(s)
 
 	addTool(s, class, &mcp.Tool{

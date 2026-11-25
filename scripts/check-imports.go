@@ -56,6 +56,7 @@ var table = []row{
 	{0, "internal/base/safepath", nil},
 	{0, "internal/base/scratch", nil},
 	{0, "internal/base/seenhost", nil},
+	{0, "internal/base/calllog", nil},
 	{1, "internal/base/setupcheck", []string{"internal/base/nowindow"}},
 	{0, "internal/base/shellpick", nil},
 	{0, "internal/base/sshcfg", nil},
@@ -143,7 +144,7 @@ var table = []row{
 	}},
 	{4, "internal/link", []string{
 		"internal/capability", "internal/daemon/dictate",
-		"internal/base/seenhost",
+		"internal/base/seenhost", "internal/base/calllog",
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
 		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules", "internal/base/safepath",
@@ -174,7 +175,7 @@ var table = []row{
 	}},
 	{5, "internal/daemon", []string{
 		"internal/capability",
-		"internal/base/seenhost",
+		"internal/base/seenhost", "internal/base/calllog",
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare", "internal/base/detach",
 		"internal/daemon/cycle", "internal/daemon/dictate", "internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
