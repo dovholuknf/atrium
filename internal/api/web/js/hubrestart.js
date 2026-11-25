@@ -304,6 +304,35 @@ function onRefreshSettled(seq) {
   if (!hubRestarting || hubSettleFrom <= 0 || seq < hubSettleFrom) return;
   if (typeof boardReloading !== "undefined" && boardReloading) return;
   hubClearRestarting();
+  hubNotice("back", "✓", "atrium is back", "your agents kept running.", "", 6000);
+}
+
+// A note in the gate toasts' family: same card, its own accent. `acts` is markup for the buttons, and `ms` takes it
+// down by itself. The board updated notice and the all-clear after a restart are the two.
+function hubNotice(cls, icon, title, body, acts, ms) {
+  const host = document.getElementById("toasts");
+  if (!host) return null;
+  if (typeof recordToLog === "function") recordToLog(title, body, "", null, null);
+  const el = document.createElement("div");
+  el.className = "toast hubgate sticky " + cls;
+  el.innerHTML = `<div class="hg-icon"><i></i></div><div class="body"><b></b><div class="what"></div></div>` + acts;
+  el.querySelector("i").textContent = icon;
+  el.querySelector("b").textContent = title;
+  el.querySelector(".what").textContent = body;
+  host.appendChild(el);
+  if (typeof raiseToasts === "function") raiseToasts();
+  if (ms) setTimeout(() => el.remove(), ms);
+  return el;
+}
+
+function hubBoardUpdated() {
+  if (document.querySelector("#toasts .toast.fresh")) return;
+  const el = hubNotice("fresh", "↻", "board updated",
+    "a new version of this page is ready. reload to use it. your terminals and drafts are kept.",
+    `<div class="hg-acts"><button class="hg-go">Reload</button><button class="hg-later">later</button></div>`);
+  if (!el) return;
+  el.querySelector(".hg-go").addEventListener("click", () => location.reload());
+  el.querySelector(".hg-later").addEventListener("click", () => el.remove());
 }
 
 (function holdTheCover() {
@@ -327,8 +356,16 @@ function onRefreshSettled(seq) {
   } catch (e) {}
 })();
 
+// Tells the hub this board wears the heads-up, so a deploy warns only while one does.
+function hubWatch() {
+  if (hubIsHub && flagOn("headsup")) plainFetch("/_hub/restart/watch", { method: "POST" }).catch(() => {});
+}
+setInterval(hubWatch, 30000);
+window.addEventListener("emerging", hubWatch);
+
 // What the hub said, off the event stream.
 function onHubRestart(d) {
+  if (!flagOn("headsup")) return;
   switch (d && d.state) {
     case "countdown":
       hubDropPaused();
@@ -362,7 +399,8 @@ function onHubRestart(d) {
 // it. The hub's name is kept from here, for the cover to wait on.
 function onHubStreamOpen() {
   if (hubRestarting) { hubCheckBack(); return; }
-  if (!hubIsHub) return;
+  if (!hubIsHub || !flagOn("headsup")) return;
+  hubWatch();
   plainFetch("/_hub/restart").then(r => r.ok ? r.json() : null).then(st => {
     if (!st || hubRestarting) return;
     // A DIFFERENT HUB UNDER A COUNTDOWN is the restart it promised, heard by a

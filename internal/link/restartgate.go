@@ -53,6 +53,8 @@ const (
 	maxCountdown     = 60
 	maxIdle          = 600
 	maxWait          = 3600
+	// watchFor is how long a board's word that it wears the heads-up holds. The board repeats it well inside this.
+	watchFor = 90 * time.Second
 	// How long one request of a re-polling script is held before it is
 	// answered `waiting` and asked again.
 	maxHold = 60
@@ -84,6 +86,8 @@ type restartGate struct {
 	asking bool
 	// until is when the countdown on screen ends, zero when none is showing.
 	until time.Time
+	// watched is when a board with the restart heads-up switched on last said so.
+	watched time.Time
 	// why is the reason for the last go. See saidGo.
 	why string
 	// held is a re-polling script's ask, kept until its answer is collected
@@ -142,6 +146,13 @@ func (g *restartGate) input() {
 	}
 }
 
+// watch records that a board with the restart heads-up on is open. A deploy warns only while one is.
+func (g *restartGate) watch() {
+	g.mu.Lock()
+	g.watched = g.now()
+	g.mu.Unlock()
+}
+
 // pause stops a countdown and holds every later one until resume.
 func (g *restartGate) pause() map[string]any {
 	g.mu.Lock()
@@ -185,7 +196,7 @@ func (g *restartGate) state() map[string]any {
 	}
 	return map[string]any{
 		"paused": g.paused, "waiting": g.asking, "countdown_left": left, "boards": g.boards(),
-		"boot": g.boot,
+		"boot": g.boot, "watching": !g.watched.IsZero() && g.now().Sub(g.watched) < watchFor,
 	}
 }
 
@@ -552,12 +563,15 @@ func (p *Proxy) serveRestart(w http.ResponseWriter, r *http.Request, sub string)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(goAnswer(answer, g.lastWhy()))
-	case "input", "pause", "resume":
+	case "input", "pause", "resume", "watch":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		switch sub {
+		case "watch":
+			g.watch()
+			fmt.Fprint(w, `{"ok":true}`)
 		case "input":
 			g.input()
 			fmt.Fprint(w, `{"ok":true}`)

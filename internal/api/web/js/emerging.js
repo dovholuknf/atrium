@@ -56,8 +56,8 @@ prefLive(EMERGING_KEY, emergingApply);
 
 // Per-browser on/off switches for finished parts of the board, and the review (walk), which is off until it is finished.
 const FLAGS = ["walk", "queue", "chat", "usage", "chatter", "pathlinks", "mic", "popout", "lastread", "artifacts", "answers",
-  "replies", "seen", "switcher", "paste", "attention", "micin"];
-const FLAGS_DEFAULT_OFF = ["walk", "attention", "micin"];
+  "replies", "seen", "switcher", "paste", "attention", "micin", "headsup"];
+const FLAGS_DEFAULT_OFF = ["walk", "attention", "micin", "headsup"];
 const FLAG_VIEWS = { queue: "queue", chat: "chat", usage: "usage", chatter: "chatter" };
 
 function flagsRead() {

@@ -40,6 +40,7 @@ async function restartGateSection(browser, base) {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await fakeWait(gp, () => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), null, 15000);
+    await gp.evaluate(() => flagSet("headsup", true));
     await fakePause(gp);
 
     // Input is reported, and throttled.
@@ -256,7 +257,7 @@ async function restartStaysSection(browser, base) {
     const now = () => {
       const cover = document.getElementById("hubrestart");
       if (cover && cover.open) return "c";
-      return [...document.querySelectorAll(".toast.hubgate")].some(el => el.getClientRects().length > 0)
+      return [...document.querySelectorAll(".toast.hubgate:not(.back)")].some(el => el.getClientRects().length > 0)
         ? "t" : "-";
     };
     const tick = () => {
@@ -279,6 +280,7 @@ async function restartStaysSection(browser, base) {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await wait(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), 15000);
+    await gp.evaluate(() => flagSet("headsup", true));
     await fakePause(gp);
     await fakeTick(gp, 500);
 
@@ -417,6 +419,7 @@ async function atriumDownSection(browser, base) {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await until(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), 15000);
+    await dp.evaluate(() => flagSet("headsup", true));
     await fakePause(dp);
     await run(500);
 
@@ -546,6 +549,7 @@ async function atriumDownSection(browser, base) {
       await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
         { timeout: slow(15000) }).catch(() => fail("the board after down.html never went live."));
       await sp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
+      await sp.evaluate(() => flagSet("headsup", true));
       const say = state => {
         const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
         openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });

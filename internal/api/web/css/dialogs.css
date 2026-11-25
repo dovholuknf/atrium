@@ -269,6 +269,24 @@
     animation: hg-drain linear forwards; animation-duration: inherit;
   }
   @keyframes hg-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  /* The board updated notice and the all-clear after a restart: the same card, nothing counting, so no ring turns. */
+  .toast.hubgate.fresh, .toast.hubgate.back { cursor: default; }
+  .toast.hubgate.fresh { border-left-color: var(--blue); }
+  .toast.hubgate.fresh:hover { border-left-color: var(--blue); }
+  .toast.hubgate.fresh .hg-icon, .toast.hubgate.back .hg-icon { animation: none; }
+  .toast.hubgate.fresh .hg-icon > i, .toast.hubgate.back .hg-icon > i { animation: none; }
+  .toast.hubgate.fresh .hg-icon { font-size: var(--fs-xl); border-right-color: var(--blue); }
+  .toast.hubgate.back .hg-icon { border-color: var(--teal); color: var(--teal); }
+  .hg-acts { flex: none; align-self: center; display: flex; flex-direction: column; gap: 6px; }
+  .hg-go {
+    font-weight: 600; color: var(--on-danger); border: 1px solid var(--teal); border-radius: var(--r-sm);
+    padding: 6px 16px; cursor: pointer;
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    box-shadow: 0 4px 14px rgba(var(--teal-rgb),.35);
+  }
+  .hg-go:hover { filter: brightness(1.08); background: linear-gradient(90deg, var(--teal), var(--blue)); color: var(--on-danger); }
+  .hg-later { background: none; border: none; color: var(--dim); font-size: var(--fs-xs); cursor: pointer; padding: 2px; }
+  .hg-later:hover { color: var(--head); background: none; }
 
   /* ── the wait family ────────────────────────────────────
      Every surface that stands between you and the board while something happens: atrium restarting
