@@ -40,6 +40,7 @@ type Engine struct {
 	base    string
 	exited  chan struct{}
 	logTail *tail
+	clipped bool
 }
 
 // Warm starts the server if it is configured and not running, and waits until it answers.
@@ -124,6 +125,7 @@ func (e *Engine) startLocked(bin, model string) error {
 	cmd := exec.Command(bin, "-m", model, "--host", "127.0.0.1", "--port", strconv.Itoa(port),
 		"-t", strconv.Itoa(min(runtime.NumCPU(), 8)))
 	e.logTail = &tail{}
+	e.clipped = false
 	cmd.Stdout, cmd.Stderr = e.logTail, e.logTail
 	nowindow.Hide(cmd)
 	if err := cmd.Start(); err != nil {

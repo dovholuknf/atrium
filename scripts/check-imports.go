@@ -114,7 +114,7 @@ var table = []row{
 	{3, "internal/shepherd", []string{"internal/base/gitexec", "internal/gitsync", "internal/base/nowindow"}},
 	{3, "internal/worktrees", []string{"internal/base/gitexec", "internal/gitsync"}},
 	{4, "internal/api", []string{
-		"internal/base/seenhost", "internal/base/address", "internal/small",
+		"internal/base/seenhost", "internal/daemon/dictate", "internal/base/address", "internal/small",
 		"internal/base/cardcolors", "internal/base/cardproc", "internal/cardreview", "internal/base/cardroot", "internal/base/cardurl",
 		"internal/base/claudeconf", "internal/base/edge", "internal/base/forge", "internal/base/gitexec", "internal/gitsync", "internal/base/inputlag",
 		"internal/base/mcprule", "internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/runnersetup",

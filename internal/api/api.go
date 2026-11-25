@@ -152,6 +152,8 @@ type Server struct {
 	ToolchainMissing func() map[string]any
 	// Dictate turns a WAV clip into text on this room's whisper-server, primed with words. See internal/daemon/dictate.
 	Dictate func(ctx context.Context, wav []byte, words []string) (string, error)
+	// DictateFirst is true for the first clip this room's whisper-server has served, for the timing log line.
+	DictateFirst func() bool
 	// DictateOff answers why dictation cannot work here, or nil when it can, so the board asks before it records.
 	DictateOff func() error
 	// CancelPending answers every outstanding request on a task with a block.

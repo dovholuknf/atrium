@@ -47,8 +47,11 @@ func (p *Proxy) SetDictateInstall(dir string) {
 			_ = st.SetHubSetting("dictate_model", model)
 		}
 		if d, ok := p.dictation().(interface{ Warm(context.Context) error }); ok {
+			t0 := time.Now()
 			if err := d.Warm(context.Background()); err != nil {
 				log.Printf("[hub] speech to text: %v", err)
+			} else {
+				log.Printf("[hub] speech to text: whisper-server warm in %d ms", time.Since(t0).Milliseconds())
 			}
 		}
 	}
@@ -141,6 +144,9 @@ func (p *Proxy) hubDictate(w http.ResponseWriter, r *http.Request) bool {
 	}
 	w.Header().Set("Server-Timing", fmt.Sprintf("read;dur=%d, whisper;dur=%d",
 		t1.Sub(t0).Milliseconds(), time.Since(t1).Milliseconds()))
+	first, _ := d.(interface{ FirstClip() bool })
+	dictate.LogClip("hub", len(wav), t1.Sub(t0), time.Since(t1), time.Since(t0), r.Header.Get(dictate.LastTrip),
+		first != nil && first.FirstClip())
 	writeJSONBody(w, http.StatusOK, map[string]any{"text": text})
 	return true
 }
@@ -186,6 +192,8 @@ func NewHubDictation(conf func() (string, string), url ...func() string) HubDict
 
 // Warm starts the server now, so the first clip does not wait for the model.
 func (h *hubWhisper) Warm(ctx context.Context) error { return h.eng.Warm(ctx) }
+
+func (h *hubWhisper) FirstClip() bool { return h.eng.FirstClip() }
 
 func (h *hubWhisper) On() bool {
 	if dictate.Base(h.url()) != "" {
