@@ -145,7 +145,7 @@ type Adapter struct {
 }
 
 // Adapters are the runners atrium knows how to set up.
-var Adapters = []*Adapter{Gemini, Claude}
+var Adapters = []*Adapter{Gemini, Claude, Codex, Qwen}
 
 // For finds the adapter for a harness row, by its command's leaf name, or nil.
 //

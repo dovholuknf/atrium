@@ -205,7 +205,7 @@ func skillName(arg string, in hookInput) string {
 // into noise on upgrade.
 func wantsAHuman(in hookInput) bool {
 	switch notificationKind(in) {
-	case "idle_prompt", "agent_needs_input", "elicitation_dialog", "permission_prompt":
+	case "idle_prompt", "agent_needs_input", "elicitation_dialog", "permission_prompt", "toolpermission":
 		return true
 	}
 	return false
@@ -235,9 +235,12 @@ func newHook() *cobra.Command {
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if borrowedByCursor(runner) {
+				return nil
+			}
 			// Permission decisions need their own stdout protocol rather than activity reporting.
 			if strings.EqualFold(strings.TrimSpace(event), permissionEvent) {
-				if out := codexPreToolUse(permissionHookForRunner(hubURL, readStdin(), runnerPID, runner), runner); out != nil {
+				if out := codexPreToolUse(cursorPreToolUse(permissionHookForRunner(hubURL, readStdin(), runnerPID, runner)), runner); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}
 				return nil
@@ -533,11 +536,27 @@ func readPayload() hookInput {
 	return in
 }
 
-// readStdin reads a hook payload, or gives up. Empty on anything unusual.
+// stdinRead is the payload already read from stdin, so a hook can look at it before the code that uses it does.
+var stdinRead struct {
+	from *os.File
+	raw  []byte
+}
+
+// readStdin is the hook payload, read once per stdin.
+func readStdin() []byte {
+	if stdinRead.from != nil && stdinRead.from == os.Stdin {
+		return stdinRead.raw
+	}
+	raw := readStdinNow()
+	stdinRead.from, stdinRead.raw = os.Stdin, raw
+	return raw
+}
+
+// readStdinNow reads a hook payload, or gives up. Empty on anything unusual.
 //
 // Bounded in size as well as in time: a tool result can be large and none of
 // it is wanted by any caller here.
-func readStdin() []byte {
+func readStdinNow() []byte {
 	if interactive() {
 		return nil
 	}

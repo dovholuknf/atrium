@@ -13,10 +13,12 @@ scratch `CODEX_HOME` that wrote its stdin to a file. Where a claim is not measur
 | --- | --- | --- | --- | --- |
 | claude code | twelve | yes | `--resume <id>` | everything |
 | codex | twelve, same file shape, same payload fields | yes | `codex resume <id>` | everything except a notification |
+| copilot | claude's names and fields | yes | `--resume <id>` | everything, permissions through the board |
+| cursor-agent | its own names, its own answers | yes | `--resume <id>` | everything except a notification |
 | ollama | none | none | none | nothing |
 | shell | none | none | none | nothing |
 
-Two of four can report. Two cannot, and the board now says so on the row instead of leaving a blank where the
+Four of six can report. Two cannot, and the board now says so on the row instead of leaving a blank where the
 count goes.
 
 ## Codex
@@ -135,6 +137,61 @@ is the operator's to write.
 - **`turn_id`**. Recorded here, read by nothing.
 - **`PreCompact`** is wired and has not been seen to fire. Filling a context to make it happen costs more than
   the fact is worth. The subcommand behind it reads `trigger` and records the moment either way.
+
+## Copilot
+
+Measured against **copilot 1.0.115** on Windows, with a scratch `COPILOT_HOME` and a local model.
+
+Copilot reads every `*.json` in `$COPILOT_HOME/hooks`, or `~/.copilot/hooks`. Under claude's event names it sends
+claude's payload fields, maps its tools to claude's names (`Read`, `Bash`), and honours claude's answers: a
+`PreToolUse` allow runs the tool with no copilot prompt, a deny refuses it with the reason, and a `Stop` block
+continues the turn with the reason as the next prompt. So copilot is a claudeconf target like codex, written on
+launch into `hooks/atrium.json` under the row's `COPILOT_HOME`. Three things differ from claude:
+
+- A `PreToolUse` hook that times out lets the tool run, and the default is 30 seconds. The gate carries a day.
+- On Windows a hook command runs in PowerShell, so a quoted program gets the call operator.
+- `Notification` keeps camelCase fields but sends `notification_type`, which is the one field atrium reads.
+
+Copilot does not read `~/.claude/settings.json`, so nothing reports twice. It does read a repository's
+`.claude/settings.json`, which atrium does not write.
+
+## Cursor
+
+Measured against **cursor-agent 2026.11.22** on Windows, from its own bundle and with probe hooks.
+
+Cursor has its own event names (`sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `stop` and so on), its own
+answers, and no notification event. Atrium writes `hooks/hooks.json` into the cursor plugin it already passes
+with `--plugin-dir`, every line saying `--runner cursor`. Every payload carries `cursor_version`, and
+`session_id` is the chat id `--resume` takes.
+
+Cursor also runs claude's `~/.claude/settings.json` hooks. Those lines name no runner, so for a payload with
+`cursor_version` they stay silent and a cursor session is reported once.
+
+The gate answers in cursor's words, `permission`, `user_message` and `agent_message`. Cursor takes a hook's
+`deny` and never its `allow`: its own prompt still comes up. So a launch whose `ATRIUM_PERM_GATE` is on, the
+default, also gets `--force`, and the board is the only approver. **This fails open the way claude's gate does.**
+When atrium cannot be reached, or the card is not gated, the hook gives no answer and the tool runs, with no
+cursor prompt to fall back on. A row that wants cursor's own prompt sets `ATRIUM_PERM_GATE=off`.
+
+`stop` has no `stop_hook_active`. `loop_count` above zero means a hook already continued the turn, and atrium
+reads it as the same guard. A `{decision: block}` answer is cursor's `followup_message`.
+
+## Gemini and Qwen Code
+
+Read from the bundled hooks docs and the installed bundles, gemini-cli 0.71.1 and qwen 0.27.3. Atrium writes both
+files itself at launch (`runnersetup`), and `atrium hook install --runner gemini` or `qwen` does the same by hand.
+
+| | Gemini | Qwen Code |
+| --- | --- | --- |
+| File | `~/.gemini/settings.json` (`$GEMINI_CLI_HOME`) | `~/.qwen/settings.json` (`$QWEN_HOME`) |
+| Turn start, end | `BeforeAgent`, `AfterAgent` (a `deny` is a new prompt, `stop_hook_active` guards it) | `UserPromptSubmit`, `Stop` |
+| Tools | `BeforeTool`, `AfterTool` | `PreToolUse`, `PostToolUse` |
+| Session id | `session_id` on every payload | the same |
+| Permission ask | `Notification` with `ToolPermission`, observe only, so it is answered at the terminal | `PermissionRequest`, atrium answers it |
+| Timeout unit | milliseconds | seconds, 1000 or more is read as milliseconds |
+
+Gemini runs `BeforeTool` after the user has confirmed, so no gemini hook can answer an ask. The card shows the ask
+and atrium treats the terminal as holding a dialog, so a `say` never types an Enter into it.
 
 ## Ollama
 

@@ -10,7 +10,7 @@ import (
 func TestForMatchesOnTheCommandLeaf(t *testing.T) {
 	for cmd, want := range map[string]*Adapter{
 		"gemini": Gemini, `C:\Users\x\AppData\Roaming\npm\gemini.cmd`: Gemini, "claude": Claude,
-		"codex": nil, "ollama": nil,
+		"codex": Codex, "ollama": nil,
 	} {
 		if got := For(&store.Harness{Cmd: cmd}); got != want {
 			t.Errorf("For(%q) = %v, want %v", cmd, got, want)

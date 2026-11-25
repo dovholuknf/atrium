@@ -41,6 +41,8 @@ type runnerShape struct {
 	target claudeconf.Target
 	// prompt and result are the two field names that differ between runners.
 	prompt, result string
+	// rename maps claude's hook names to the runner's own, nil when they are the same.
+	rename map[string]string
 }
 
 var runnerShapes = []runnerShape{
@@ -48,6 +50,14 @@ var runnerShapes = []runnerShape{
 	// Measured against codex-cli 0.153.2: a shell call arrives as `Bash`, the
 	// prompt as `prompt`, the result as `tool_response`.
 	{target: claudeconf.Codex, prompt: "prompt", result: "tool_response"},
+	// Measured against copilot 1.0.115: claude's event names bring claude's fields, a read arrives as `Read`, a shell
+	// call as `Bash`.
+	{target: claudeconf.Copilot, prompt: "prompt", result: "tool_response"},
+	// Measured against qwen 0.27.3's hooks doc and bundle: claude's names and payloads, a `prompt` and a `tool_response`.
+	{target: claudeconf.Qwen, prompt: "prompt", result: "tool_response"},
+	// gemini 0.71.1: its own event names over claude's payload fields. A permission ask is only a Notification.
+	{target: claudeconf.Gemini, prompt: "prompt", result: "tool_response", rename: map[string]string{
+		"UserPromptSubmit": "BeforeAgent", "PreToolUse": "BeforeTool", "PostToolUse": "AfterTool", "Stop": "AfterAgent"}},
 }
 
 // sessionSteps is one whole session: open, one prompt, one tool, the turn
@@ -63,7 +73,7 @@ func sessionSteps(r runnerShape, cwd, transcript string) []step {
 		}
 		return m
 	}
-	return []step{
+	steps := []step{
 		// A session that just opened is waiting for its first prompt.
 		{hook: "SessionStart", payload: base("SessionStart", map[string]any{"source": "startup"}),
 			status: store.StatusNeedsInput, activity: "-"},
@@ -80,6 +90,14 @@ func sessionSteps(r runnerShape, cwd, transcript string) []step {
 		{hook: "SessionEnd", payload: base("SessionEnd", map[string]any{"reason": "prompt_input_exit"}),
 			status: store.StatusDone, activity: "-"},
 	}
+	for i, st := range steps {
+		if to, ok := r.rename[st.hook]; ok {
+			st.hook = to
+			st.payload["hook_event_name"] = to
+			steps[i] = st
+		}
+	}
+	return steps
 }
 
 func TestFakeRunnerDrivesTheCardThroughEveryHook(t *testing.T) {
@@ -124,6 +142,9 @@ func TestFakeRunnerDrivesTheCardThroughEveryHook(t *testing.T) {
 // room, so the card goes back to needs-input instead of staying running.
 func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
 	for _, r := range runnerShapes {
+		if r.rename != nil {
+			continue
+		}
 		t.Run(r.target.ID, func(t *testing.T) {
 			scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 			agentAddr, humanAddr := startTestDaemon(t)
@@ -181,6 +202,9 @@ func TestFakeRunnerContinuedTurnStillEnds(t *testing.T) {
 // internal/daemon/saywhen.go.
 func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
 	for _, r := range runnerShapes {
+		if r.rename != nil {
+			continue
+		}
 		t.Run(r.target.ID, func(t *testing.T) {
 			scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 			agentAddr, humanAddr := startTestDaemon(t)
@@ -273,7 +297,6 @@ func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
 		t.Skip("slow: real work")
 	}
 	r := runnerShapes[0]
-	scratch := t.TempDir() // made first, so it is removed after the daemon has stopped writing into it
 	agentAddr, humanAddr := startTestDaemon(t)
 	for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {
 		t.Setenv(k, "")
@@ -281,7 +304,7 @@ func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
 	t.Setenv("ATRIUM_HUB_URL", "http://"+agentAddr)
 
 	commands := installedCommands(t, r.target)
-	cwd := filepath.Join(scratch, "panel-"+r.target.ID)
+	cwd := filepath.Join(t.TempDir(), "panel-"+r.target.ID)
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		t.Fatal(err)
 	}
