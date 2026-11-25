@@ -202,11 +202,11 @@ func TestAuditedCapRefusalWritesARefusalLine(t *testing.T) {
 func TestAuditedBadCwdWritesARefusalLine(t *testing.T) {
 	c, lines := ctlAuditHarness(t, ctlAuditTasks)
 	_, _, err := audited(c, "ctl-launch", describeLaunch, c.launchHandler)(context.Background(),
-		ctlReq("orch", "beta"), launchInput{})
+		ctlReq("orch", "beta"), launchInput{Cwd: "/work/dir", Repo: "github.com/o/r"})
 	if err == nil {
-		t.Fatal("a launch with no cwd should be refused")
+		t.Fatal("a launch with cwd and repo should be refused")
 	}
-	if d := onlyLine(t, lines, "beta", "ctl-launch"); !strings.Contains(d, ", refused: say where to run it") {
+	if d := onlyLine(t, lines, "beta", "ctl-launch"); !strings.Contains(d, ", refused: pass cwd for a directory you made") {
 		t.Errorf("detail = %q, want a refusal", d)
 	}
 }

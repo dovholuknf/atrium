@@ -68,6 +68,13 @@ const ClosedTag = "atrium:closed"
 // closeGitWait bounds one git command of a close.
 const closeGitWait = time.Minute
 
+// closeMeasureWait bounds every size a close preview measures together, under the hub's 12s read wait: a size is only
+// for the dialog, and a walk of a huge node_modules must not keep the preview from answering.
+const closeMeasureWait = 5 * time.Second
+
+// closeRefreshWait bounds every hub branch refresh of a close preview together, for the same reason.
+const closeRefreshWait = 6 * time.Second
+
 // closeTreeWait bounds the wait for a card's stopped processes to exit, so none still holds its worktree.
 const closeTreeWait = 30 * time.Second
 
@@ -311,6 +318,9 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	if s.sessionLive(t) {
 		pv.Warnings = append(pv.Warnings, "the session is still running. it is stopped first")
 	}
+	measureCtx, measureCancel := context.WithTimeout(ctx, durOr(s.measureWait, closeMeasureWait))
+	defer measureCancel()
+	s.refreshHubBranches(ctx, t, rows)
 	// A pull request's card: its hub branches count as merged once the forge's main has them (closehub.go).
 	prCard := len(s.walkedOutside(t.ID, nil)) > 0
 	for _, r := range rows {
@@ -329,12 +339,10 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			}
 			// Measured now, ignored trees included: a stored size can predate the install that made 0.4 GB of
 			// node_modules, and the dialog must not say a small number for a big delete.
-			mctx, mcancel := context.WithTimeout(ctx, measureWait)
-			if n := dirSize(mctx, filepath.FromSlash(r.Ref)); n > 0 {
+			if n := dirSize(measureCtx, filepath.FromSlash(r.Ref)); n > 0 {
 				it.Bytes = n
 				pv.DiskBytes += n - max(r.Bytes, 0)
 			}
-			mcancel()
 			dirty, unpushed, branch := worktreeWork(ctx, r.Ref)
 			if dirty > 0 || unpushed > 0 {
 				it.Action = "ask"
@@ -364,9 +372,6 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			it.Note = "the clone this card's open made, deleted after its worktree. kept if its worktree is"
 		case store.ResHubBranch:
 			it.Note = hubBranchNote(r)
-			if s.HubRefresh != nil {
-				_ = s.HubRefresh(ctx, t.ID, hubPushDir(ctx, t, rows), r.Detail, r.Ref)
-			}
 			if !hubBranchMerged(ctx, hubPushDir(ctx, t, rows), r.Ref) {
 				it.Action, it.Note = "ask", "not merged into claude/main, so it is asked about: keep or delete"
 				if prCard {
@@ -409,6 +414,32 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 		pv.reviewNotes(p)
 	}
 	return pv, nil
+}
+
+// refreshHubBranches fetches every live hub branch row at once, each fetch costing seconds over the link, within one
+// closeRefreshWait. A branch not refreshed is judged on the refs already there, which errs toward asking.
+func (s *Server) refreshHubBranches(ctx context.Context, t *store.Task, rows []*store.CardResource) {
+	if s.HubRefresh == nil {
+		return
+	}
+	rctx, cancel := context.WithTimeout(ctx, durOr(s.refreshWait, closeRefreshWait))
+	defer cancel()
+	dir := ""
+	var wg sync.WaitGroup
+	for _, r := range rows {
+		if !r.Live() || r.Kind != store.ResHubBranch {
+			continue
+		}
+		if dir == "" {
+			dir = hubPushDir(rctx, t, rows)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.HubRefresh(rctx, t.ID, dir, r.Detail, r.Ref)
+		}()
+	}
+	wg.Wait()
 }
 
 // reviewNotes adds what closing a review warns about and keeps.
@@ -849,6 +880,24 @@ func (s *Server) reclaimInventory(ctx context.Context, t *store.Task) {
 	s.closeCard(t, pv, answers, false, nil)
 }
 
+// CloseWhenDone closes a close-when-done card that reported done, which removes its own folder. A card whose close has
+// a question to ask (work no git holds) stays open for the operator, who is asked the usual keep, stash or delete.
+func (s *Server) CloseWhenDone(ctx context.Context, taskID string) {
+	t, err := s.st.Get(taskID)
+	if err != nil || slices.Contains(t.Tags, ClosedTag) {
+		return
+	}
+	pv, err := s.closePreview(ctx, t)
+	if err != nil || len(pv.Asks) > 0 {
+		return
+	}
+	if _, busy := closing.LoadOrStore(t.ID, true); busy {
+		return
+	}
+	defer closing.Delete(t.ID)
+	s.closeCard(t, pv, map[string]string{}, false, nil)
+}
+
 // POST /v1/tasks/{id}/cleanup-offer claims the one offer of a "clean up when done" close: it swaps cleanup:when-done
 // for cleanup:offered in one step and answers 200 to the single caller that swapped it, 409 to every other, since the
 // mark was already gone. Boards show the close only on a 200, so two open boards never both offer it.
@@ -1076,4 +1125,12 @@ func (s *Server) setRunAside(p *store.PRReview) error {
 		return err
 	}
 	return os.RemoveAll(filepath.Join(to, "src"))
+}
+
+// durOr is d, or def when d is unset. A negative d is a budget already spent.
+func durOr(d, def time.Duration) time.Duration {
+	if d != 0 {
+		return d
+	}
+	return def
 }

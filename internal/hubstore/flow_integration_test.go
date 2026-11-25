@@ -157,3 +157,71 @@ func TestEpochOpensOnceAndClosesWithTheTips(t *testing.T) {
 		t.Fatalf("epochs: %+v", got)
 	}
 }
+
+func TestTheMockStagesAreOffUntilTheExperimentalSettingIsOn(t *testing.T) {
+	s := open(t)
+	s.ItemFile(newItem("f-off", "fabric"))
+	for _, f := range []FlowSet{{ItemID: "f-off", Stage: "mocked"}, {ItemID: "f-off", Stage: "idea", UI: true}} {
+		if _, err := s.FlowSetStage(f); !errors.Is(err, ErrMockStagesOff) {
+			t.Fatalf("%+v: %v", f, err)
+		}
+	}
+	if f, err := s.FlowSetStage(FlowSet{ItemID: "f-off", Stage: "implementing"}); err != nil || f.Stage != "implementing" {
+		t.Fatalf("today's stages: %+v %v", f, err)
+	}
+}
+
+func TestAUIItemIsNotBuiltBeforeItsMockIsReviewedAndApproved(t *testing.T) {
+	s := open(t)
+	s.SetMockStages(true)
+	s.ItemFile(newItem("f-ui", "fabric"))
+	if _, err := s.FlowSetStage(FlowSet{ItemID: "f-ui", Stage: "mocked", By: "author", UI: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{"mock-reviewed", "approved", "implementing"} {
+		if _, err := s.FlowSetStage(FlowSet{ItemID: "f-ui", Stage: stage, By: "author"}); !errors.Is(err, ErrMockOrder) {
+			t.Fatalf("%s without a review: %v", stage, err)
+		}
+	}
+	if _, err := s.MockReviewAdd(FlowMockReview{ItemID: "f-ui", Verdict: "ready", By: "author"}); !IsRefusal(err) {
+		t.Fatalf("the author reviewing its own mock: %v", err)
+	}
+	if _, err := s.MockReviewAdd(FlowMockReview{ItemID: "f-ui", Verdict: "not-ready", By: "rev", Note: "no phone"}); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := s.FlowGet("f-ui"); f.Stage != "mocked" {
+		t.Fatalf("a not-ready review moved it to %s", f.Stage)
+	}
+	if _, err := s.MockReviewAdd(FlowMockReview{ItemID: "f-ui", Verdict: "ready", By: "rev"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FlowSetStage(FlowSet{ItemID: "f-ui", Stage: "implementing"}); !errors.Is(err, ErrMockOrder) {
+		t.Fatalf("implementing before approved: %v", err)
+	}
+	if _, err := s.FlowSetStage(FlowSet{ItemID: "f-ui", Stage: "approved", By: "board"}); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := s.FlowSetStage(FlowSet{ItemID: "f-ui", Stage: "implementing"}); err != nil || !f.UI {
+		t.Fatalf("implementing after approved: %+v %v", f, err)
+	}
+	if got, _ := s.MockReviews("f-ui"); len(got) != 2 || got[0].Verdict != "ready" {
+		t.Fatalf("reviews: %+v", got)
+	}
+}
+
+func TestANonUIItemKeepsItsStagesAndGitMayRaiseAUIItem(t *testing.T) {
+	s := open(t)
+	s.SetMockStages(true)
+	s.ItemFile(newItem("f-plain", "fabric"))
+	if f, err := s.FlowSetStage(FlowSet{ItemID: "f-plain", Stage: "implementing"}); err != nil || f.UI {
+		t.Fatalf("non-UI: %+v %v", f, err)
+	}
+	s.ItemFile(newItem("f-ui2", "fabric"))
+	s.FlowSetStage(FlowSet{ItemID: "f-ui2", Stage: "idea", UI: true})
+	if f, err := s.FlowSetStage(FlowSet{ItemID: "f-ui2", Stage: "implemented", FromGit: true}); err != nil || f.Stage != "implemented" {
+		t.Fatalf("git: %+v %v", f, err)
+	}
+	if _, err := s.MockReviewAdd(FlowMockReview{ItemID: "f-plain", Verdict: "ready", By: "rev"}); !IsRefusal(err) {
+		t.Fatalf("a review of a non-UI item: %v", err)
+	}
+}

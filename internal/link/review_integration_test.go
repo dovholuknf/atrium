@@ -17,6 +17,12 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
+func TestTheMockReviewTagIsTheOneTheRoomReads(t *testing.T) {
+	if MockReviewTag != daemon.MockReviewTag {
+		t.Fatalf("hub says %q, room reads %q", MockReviewTag, daemon.MockReviewTag)
+	}
+}
+
 func TestTheReviewTagIsTheOneTheRoomReads(t *testing.T) {
 	if ReviewTag != daemon.ReviewTag {
 		t.Fatalf("hub says %q, room reads %q", ReviewTag, daemon.ReviewTag)

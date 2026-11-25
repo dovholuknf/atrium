@@ -125,6 +125,33 @@ func TestCloseFreesWhatTheOpenMadeAndKeepsTheHistory(t *testing.T) {
 	}
 }
 
+func TestClosePreviewStopsMeasuringAtItsOwnBudget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	oh, card, wt, _ := openForClose(t)
+	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "big.bin"), make([]byte, 1<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.measureWait = -time.Nanosecond // spent before the walk starts, whatever the clock resolution
+
+	start := time.Now()
+	rec := httpDo(t, oh.h, "GET", "/v1/tasks/"+card+"/close")
+	var pv closePreview
+	_ = json.Unmarshal(rec.Body.Bytes(), &pv)
+	if rec.Code != 200 {
+		t.Fatalf("preview %d %s", rec.Code, rec.Body.String())
+	}
+	for _, it := range pv.Items {
+		if it.Kind == store.ResWorktree && it.Bytes >= 1<<20 {
+			t.Errorf("the worktree was measured in full past the budget: %d", it.Bytes)
+		}
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Errorf("the preview took %s", time.Since(start))
+	}
+}
+
 func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")

@@ -15,6 +15,9 @@ func TestProjectDirEncodingMatchesClaudeCode(t *testing.T) {
 		`C:/Users/claude/AppData/Local/Temp/atrium-ts-tw/work`:      "C--Users-claude-AppData-Local-Temp-atrium-ts-tw-work",
 		`D:\worktrees\my_repo\v1.2 beta`:                            "D--worktrees-my-repo-v1-2-beta",
 		"  D:\\padded  ":                                            "D--padded",
+		"D:/worktrees/github/docpreview/nfprev-nov/":                "D--worktrees-github-docpreview-nfprev-nov",
+		`D:\worktrees\x\\`:                                          "D--worktrees-x",
+		"d:/worktrees/x":                                            "D--worktrees-x",
 	}
 	for in, want := range cases {
 		if got := encodeProjectDir(in); got != want {

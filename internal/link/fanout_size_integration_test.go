@@ -17,6 +17,23 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
+func TestHubTaskListStripsLaunchCommandFromAnOlderRoom(t *testing.T) {
+	old := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"tasks":[{"id":"c1","launch_cmd":{"exe":"claude","args":["`+strings.Repeat("x", 5000)+`"]}}]}`)
+	})
+	front, _, done := two(t, old, old)
+	defer done()
+	res, err := http.Get(front.URL + "/v1/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if strings.Contains(string(raw), "launch_cmd") {
+		t.Fatalf("the hub list carries launch_cmd from an older room: %d bytes", len(raw))
+	}
+}
+
 func seededRoom(t *testing.T, n int) (*api.Server, string) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "atrium.db"))

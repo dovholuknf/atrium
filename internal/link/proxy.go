@@ -55,6 +55,8 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// release is the hub's read of the newest GitHub release, nil on a hub that keeps none. See release.go.
+	release *ReleaseCheck
 	// authView and authSave are the hub board's own sign-in, nil on a hub that keeps none. See hubauth.go.
 	authView func() any
 	authSave func([]byte) error
@@ -1238,8 +1240,11 @@ type Known struct {
 	// nothing. It is what a removal rests on, and the board draws it as the
 	// difference between a room waiting to be tidied and one that is ready.
 	ClearedAt *time.Time `json:"cleared_at,omitempty"`
-	Host      string     `json:"host,omitempty"`
-	Version   string     `json:"version,omitempty"`
+	// ExpectedOffline is an operator's word that this room is off on purpose. Cleared when it reconnects.
+	ExpectedOffline     bool   `json:"expected_offline,omitempty"`
+	ExpectedOfflineNote string `json:"expected_offline_note,omitempty"`
+	Host                string `json:"host,omitempty"`
+	Version             string `json:"version,omitempty"`
 	// Cards is how many this room was last holding, from the cache. Only worth
 	// showing when the room is not attached, and worth saying is a memory.
 	Cards int `json:"cards"`
@@ -1283,6 +1288,8 @@ type Inventory interface {
 	Known() ([]Known, error)
 	// MarkRoom puts a room on its way out, or takes the mark back off.
 	MarkRoom(name string, marked bool) error
+	// ExpectOffline marks a room as offline on purpose, with an optional note, or takes the mark off.
+	ExpectOffline(name string, on bool, note string) error
 	// ForgetRoom drops a room's durable record, so it disappears from the
 	// picker and the rooms tab.
 	//
@@ -1493,6 +1500,38 @@ func (p *Proxy) changeInventory(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
+// expectOffline marks a room as offline on purpose, or takes the mark off.
+func (p *Proxy) expectOffline(w http.ResponseWriter, r *http.Request) {
+	stock := p.inventory()
+	if stock == nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		fmt.Fprintf(w, `{"error":%q}`, "this hub keeps no record of its rooms, so there is nothing to mark")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+		On   bool   `json:"on"`
+		Note string `json:"note"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":%q}`, "could not read that: "+err.Error())
+		return
+	}
+	if err := stock.ExpectOffline(body.Name, body.On, body.Note); err != nil {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error":%q}`, err.Error())
+		return
+	}
+	p.feeds.roomsChanged()
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
 // forgetInventory drops a room's durable record so it leaves the picker.
 //
 // REFUSE-IF-ATTACHED IS THE SAFER DEFAULT, and it is chosen here rather than in
@@ -1677,6 +1716,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveRemind(w, r)
 		return
 	}
+	if sub == "cruft" {
+		p.serveCruft(w, r)
+		return
+	}
 	if sub == "events" || sub == "events/subs" {
 		p.serveHubEvents(w, r, sub)
 		return
@@ -1767,10 +1810,14 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveNudge(w, r)
 	case "everywhere":
 		p.serveEverywhere(w, r)
+	case "release":
+		p.serveRelease(w, r)
 	case "inventory":
 		p.serveInventory(w, r)
 	case "inventory/mark":
 		p.changeInventory(w, r)
+	case "inventory/expect-offline":
+		p.expectOffline(w, r)
 	case "inventory/forget":
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":

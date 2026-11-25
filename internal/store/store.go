@@ -325,6 +325,8 @@ type Task struct {
 	// LaunchReplay is set on the card a launch answered from the key it was made under, and not stored: the answer is
 	// the card the first attempt filed, and no second session was started. See launchkey.go.
 	LaunchReplay bool `json:"launch_replay,omitempty"`
+	// BriefPath is where a launch wrote the card's BRIEF.md, not stored: only the launch answer carries it.
+	BriefPath string `json:"brief_path,omitempty"`
 	// ReportedAt is the last time this card said something to its launcher: a
 	// structured report, or a peer message to it. See
 	// docs/runtime/a2a-reliability-design.md.

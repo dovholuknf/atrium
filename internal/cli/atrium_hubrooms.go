@@ -21,6 +21,8 @@ type hubRooms struct {
 
 	mu    sync.Mutex
 	known map[string]bool
+
+	changed func()
 }
 
 func newHubRooms(store *hubstore.Store) *hubRooms {
@@ -47,6 +49,9 @@ func (k *hubRooms) attaching(name, host, ver string) error {
 		// Last heard from is bookkeeping. A store that halts on writing it does not unmake the room.
 		if err := k.store.Seen(r.ID, host, ver); err != nil && !errors.Is(err, hubstore.ErrHalted) {
 			return err
+		}
+		if cleared, err := k.store.ClearExpectedOffline(r.ID); err == nil && cleared && k.changed != nil {
+			k.changed()
 		}
 		return nil
 	case errors.Is(err, hubstore.ErrHalted):

@@ -5,6 +5,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -911,5 +912,35 @@ func TestPeersNameWhatANeedsInputCardWaitsOn(t *testing.T) {
 	}
 	if len(by["stalled"].WaitsOn) != 0 || len(by["busy"].WaitsOn) != 0 {
 		t.Errorf("a card with no open ask, or one not needing input, waits on nothing: %+v", out.Peers)
+	}
+}
+
+func TestTwoRepoLaunchesNameTheirOwnBriefPaths(t *testing.T) {
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/launch" {
+			http.NotFound(w, r)
+			return
+		}
+		n++
+		card := fmt.Sprintf("card%d", n)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": card, "wire_name": card,
+			"worktree": "/cards/repo/" + card, "brief_path": "/state/" + card + "/BRIEF.md"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	var got []string
+	for _, brief := range []string{"first job", "second job"} {
+		_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+			launchInput{Item: "f-test", Repo: "github.com/o/r", Brief: brief})
+		if err != nil {
+			t.Fatalf("launch: %v", err)
+		}
+		got = append(got, out.Brief)
+	}
+	if got[0] != "/state/card1/BRIEF.md" || got[1] != "/state/card2/BRIEF.md" {
+		t.Fatalf("brief paths = %v, want one per card", got)
 	}
 }

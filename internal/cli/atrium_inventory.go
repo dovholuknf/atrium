@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardcolors"
@@ -58,6 +59,7 @@ func (i inventory) Known() ([]link.Known, error) {
 			Name: r.Name, SelfName: r.SelfName, Transport: r.Transport,
 			State: r.State, FirstSeen: r.FirstSeen, LastSeen: r.LastSeen,
 			Version: r.Version, ClearedAt: r.ClearedAt,
+			ExpectedOffline: r.ExpectedOfflineAt != nil, ExpectedOfflineNote: r.ExpectedOfflineNote,
 		}
 		if a, ok := live[fold(r.Name)]; ok {
 			k.Attached = true
@@ -112,6 +114,23 @@ func (i inventory) MarkRoom(name string, marked bool) error {
 		return knownRooms(i.store, name, err)
 	}
 	return i.store.Mark(r.ID, marked)
+}
+
+// ExpectOffline marks a room as offline on purpose. A room that is answering is refused, since the mark is for a
+// room that is away and it clears itself on the next attach.
+func (i inventory) ExpectOffline(name string, on bool, note string) error {
+	r, err := i.store.ByName(name)
+	if err != nil {
+		return knownRooms(i.store, name, err)
+	}
+	if on {
+		for _, a := range i.hub.Rooms() {
+			if fold(a.Name) == fold(r.Name) {
+				return fmt.Errorf("%s is connected right now, so it is not offline", r.Name)
+			}
+		}
+	}
+	return i.store.SetExpectedOffline(r.ID, on, note)
 }
 
 // ForgetRoom drops a room's durable record.

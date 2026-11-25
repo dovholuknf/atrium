@@ -1294,6 +1294,47 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS capability_result_latest ON capability_result (room, cap, id DESC)`,
 		},
 	},
+	{
+		// A UI ITEM'S MOCK STAGES. flow_item's stage CHECK gains mocked, mock-reviewed and approved and the row gains ui and
+		// mock_by, so it is rebuilt as 0031 did growl. flow_mock_review is append-only, one row per verdict on a mock.
+		name: "0043_flow_mock_stages",
+		stmts: []string{
+			`DROP TABLE IF EXISTS flow_item_rebuilt`,
+			`CREATE TABLE flow_item_rebuilt (
+				item_id    TEXT PRIMARY KEY,
+				stage      TEXT NOT NULL DEFAULT 'idea' CHECK (stage IN ('idea','designed','mocked','mock-reviewed','approved','implementing','implemented','merged','tested','deployed','pushed-by-clint')),
+				branch     TEXT NOT NULL DEFAULT '',
+				sha        TEXT NOT NULL DEFAULT '',
+				note       TEXT NOT NULL DEFAULT '',
+				changed_at TEXT NOT NULL,
+				changed_by TEXT NOT NULL DEFAULT '',
+				ui         INTEGER NOT NULL DEFAULT 0 CHECK (ui IN (0,1)),
+				mock_by    TEXT NOT NULL DEFAULT ''
+			)`,
+			`INSERT INTO flow_item_rebuilt (item_id, stage, branch, sha, note, changed_at, changed_by)
+				SELECT item_id, stage, branch, sha, note, changed_at, changed_by FROM flow_item`,
+			`DROP TABLE flow_item`,
+			`ALTER TABLE flow_item_rebuilt RENAME TO flow_item`,
+			`CREATE TABLE IF NOT EXISTS flow_mock_review (
+				n        INTEGER PRIMARY KEY,
+				item_id  TEXT NOT NULL,
+				mock_ref TEXT NOT NULL DEFAULT '',
+				verdict  TEXT NOT NULL CHECK (verdict IN ('ready','not-ready')),
+				by       TEXT NOT NULL DEFAULT '',
+				shots    TEXT NOT NULL DEFAULT '',
+				note     TEXT NOT NULL DEFAULT '',
+				at       TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS flow_mock_review_item ON flow_mock_review (item_id, n)`,
+		},
+	},
+	{
+		name: "0044_room_expected_offline",
+		stmts: []string{
+			`ALTER TABLE room ADD COLUMN expected_offline_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE room ADD COLUMN expected_offline_note TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

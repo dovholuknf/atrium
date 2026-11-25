@@ -457,6 +457,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			"once everyone has re-joined", transport, atriumCmd("rooms legacy"))
 	}
 	rooms := newHubRooms(store)
+	rooms.changed = roomsChanged
 	h.Attaching = rooms.attaching
 	if os.Getenv("ATRIUM_HUB_READOPT") == "1" {
 		h.Readopt = rooms.readopt
@@ -544,6 +545,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE DURABLE LIST, which is a different question from what is
 	// attached and gets a different endpoint for exactly that reason.
 	proxy.SetInventory(inventory{store: store, hub: h})
+	hubVersion, _, _ := versionInfo()
+	proxy.SetRelease(link.NewReleaseCheck(hubVersion))
 	proxy.SetDictation(link.NewHubDictation(func() (string, string) {
 		bin, _ := store.HubSetting("dictate_server")
 		model, _ := store.HubSetting("dictate_model")

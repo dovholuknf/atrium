@@ -4,19 +4,20 @@ import (
 	"html"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // pageMarkdown draws a card's .md file as the board's own markdown view does, from the board's marked and purify. The
-// source rides HTML-escaped in a hidden textarea, which the parser reads as text, and raw HTML in it is shown as text, as read.js does.
+// source rides in an inert text block, and raw HTML in it is shown as text, as read.js does.
 func pageMarkdown(w http.ResponseWriter, src []byte, prefix, name string) {
-	b := html.EscapeString(prefix + pageBoardDir)
-	text := html.EscapeString(string(src))
+	b := prefix + pageBoardDir
+	text := strings.ReplaceAll(string(src), "</", `<\/`)
 	out := `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width, initial-scale=1"><title>` + html.EscapeString(name) + `</title>` +
 		`<link rel="stylesheet" href="` + b + `css/tokens.css"><link rel="stylesheet" href="` + b + `css/themes.css">` +
 		pageMarkdownStyle + `</head><body><header><code>` + html.EscapeString(name) +
 		`</code><a class="raw" href="?raw=1">Raw</a></header><article id="md" class="md"></article>` +
-		`<textarea id="src" hidden readonly>` + "\n" + text + `</textarea>` +
+		`<script id="src" type="text/plain">` + text + `</script>` +
 		`<script src="` + b + `vendor/marked.js"></script><script src="` + b + `vendor/purify.js"></script>` +
 		pageMarkdownScript + `</body></html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -53,7 +54,7 @@ const pageMarkdownScript = `<script>
     var s = typeof h === "string" ? h : (h && (h.text || h.raw)) || "";
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   };
-  var dirty = marked.parse(document.getElementById("src").value, { gfm: true, breaks: false, renderer: r, async: false });
+  var dirty = marked.parse(document.getElementById("src").textContent, { gfm: true, breaks: false, renderer: r, async: false });
   document.getElementById("md").innerHTML = DOMPurify.sanitize(dirty, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select", "iframe", "object", "embed", "svg", "math", "link", "meta", "base"],

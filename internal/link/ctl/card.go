@@ -6,6 +6,7 @@ type Card struct {
 	ID string `json:"id"`
 	// LaunchReplay: the room answered with the card an earlier attempt filed under the same launch key.
 	LaunchReplay bool     `json:"launch_replay"`
+	BriefPath    string   `json:"brief_path"`
 	Title        string   `json:"display_title"`
 	Wire         string   `json:"wire_name"`
 	Alias        string   `json:"alias"`

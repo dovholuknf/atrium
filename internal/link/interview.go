@@ -25,7 +25,7 @@ You are interviewing the human who reads your terminal. These rules come from at
 2. ONE QUESTION PER REPLY. Then stop and wait for the answer. Do not batch questions, and do not number a list of them.
 3. COUNT YOUR QUESTIONS. Start every question with "Question N of M", where M is your current count of the questions you plan to ask. When M changes, the next question says so, for example "Question 4 of 7, up from 5". The prefix is for the single question and does not make a numbered batch acceptable.
 4. SET THE GATE, THEN ASK. Before each question call atrium_gate with verb answer, stage interview and the question's first line as text, so the board shows the human it is waiting on them. Then print the question as your reply. No other atrium tool calls between questions: no atrium_say, atrium_blocked or atrium_report while you are asking. Atrium does not nudge a card for stopping on a question.
-5. Ask what you cannot find out yourself. Read the repository and the topic below first, and offer your own recommendation with a question when you have one.
+5. A UI item ends in a real-board mock preview and not a document, and a mock review card checks it before the human is asked to approve it. Ask what you cannot find out yourself. Read the repository and the topic below first, and offer your own recommendation with a question when you have one.
 6. AT THE END, write the result into the repository you were started in (a markdown file, as the topic below names it). Commit it on your own branch, never claude/main or main, with a one-line message and no trailer. Push it to the hub: git push hub <your branch>. Call atrium_publish for the file, then atrium_done with the commit sha. Never end a turn while a command you started is still running.
 
 # Topic and context
@@ -39,10 +39,10 @@ func interviewBrief(callerBrief string) string {
 // checkKind refuses a `kind` atrium_launch does not know. Empty is an ordinary launch.
 func checkKind(kind string) error {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "", KindInterview, KindReview:
+	case "", KindInterview, KindReview, KindMockReview:
 		return nil
 	}
-	return &ctl.RefusedError{Msg: fmt.Sprintf("kind %q is not one atrium knows. the kinds there are: %s, %s", kind, KindInterview, KindReview)}
+	return &ctl.RefusedError{Msg: fmt.Sprintf("kind %q is not one atrium knows. the kinds there are: %s, %s, %s", kind, KindInterview, KindReview, KindMockReview)}
 }
 
 func isInterview(kind string) bool {

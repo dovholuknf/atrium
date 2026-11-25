@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
@@ -61,6 +62,13 @@ func (c *controlMCP) gateHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		Recorded bool `json:"recorded"`
 	}
 	verb := strings.ToLower(strings.TrimSpace(in.Verb))
+	if strings.EqualFold(strings.TrimSpace(in.Stage), "mock") {
+		if wid := WorkOfTags(c.launcherTags(ctx, room, me)); wid != "" {
+			if v, ui := c.uiFlow(ctx, wid); ui && hubstore.StageIndex(v.Stage) < hubstore.StageIndex("mock-reviewed") {
+				return nil, out, &ctl.RefusedError{Msg: "a mock-review READY is needed first: " + wid + " is " + v.Stage}
+			}
+		}
+	}
 	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/gate", room,
 		map[string]string{"verb": verb, "stage": strings.TrimSpace(in.Stage), "text": in.Text}, &res); err != nil {
 		return nil, out, err

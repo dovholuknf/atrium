@@ -33,6 +33,25 @@ func (s *Store) SetFlowRepo(name string) error {
 	return s.SetHubSetting(SettingFlowRepo, name)
 }
 
+// SettingFlowMockStages turns on the mock stages of a UI item: mocked, mock-reviewed and approved, and the holds that go
+// with them. It is an experimental feature, so it is off until "on" is set, and off the flow is what it was.
+const SettingFlowMockStages = "flow_mock_stages"
+
+// MockStagesOn reads it.
+func (s *Store) MockStagesOn() (bool, error) {
+	v, err := s.HubSetting(SettingFlowMockStages)
+	return v == "on", err
+}
+
+// SetMockStages sets it.
+func (s *Store) SetMockStages(on bool) error {
+	v := ""
+	if on {
+		v = "on"
+	}
+	return s.SetHubSetting(SettingFlowMockStages, v)
+}
+
 // The roles, as the CHECK constraint spells them.
 const (
 	RoleOrchestrator = "orchestrator"
@@ -42,13 +61,17 @@ const (
 )
 
 // Stages are the stages of an item, in order.
-var Stages = []string{"idea", "designed", "implementing", "implemented", "merged", "tested", "deployed", "pushed-by-clint"}
+var Stages = []string{"idea", "designed", "mocked", "mock-reviewed", "approved", "implementing", "implemented", "merged", "tested", "deployed", "pushed-by-clint"}
 
 var (
 	// ErrFlowItemNotFound is an item that is not in the flow.
 	ErrFlowItemNotFound = errors.New("that item is not in the merge flow")
 	// ErrStageBackwards is a report that would move an item back.
 	ErrStageBackwards = errors.New("a stage only moves forward")
+	// ErrMockOrder is a report that skips the mock, its review or the human's approve on a UI item.
+	ErrMockOrder = errors.New("a UI item goes mocked, mock-reviewed, approved before it is built")
+	// ErrMockStagesOff is a report of a mock stage while the experimental setting is off.
+	ErrMockStagesOff = errors.New("the mock stages are an experimental feature and are off")
 	// ErrMergerRetired is naming a merger, which the merge queue replaced. Rows already there are left alone.
 	ErrMergerRetired = errors.New("the merge queue is the merger now: atrium merge")
 
@@ -198,6 +221,8 @@ type FlowItem struct {
 	Note      string `json:"note,omitempty"`
 	ChangedAt string `json:"changed_at"`
 	ChangedBy string `json:"changed_by"`
+	UI        bool   `json:"ui,omitempty"`
+	MockBy    string `json:"mock_by,omitempty"`
 }
 
 // FlowSet is a report of an item's stage. Branch, SHA and Note are kept when empty. The item has to be a backlog
@@ -205,6 +230,9 @@ type FlowItem struct {
 // updates the branch, sha and note.
 type FlowSet struct {
 	ItemID, Stage, Branch, SHA, Note, By string
+	// UI turns the item's UI flag on. It is never turned off. FromGit is a stage git raised, which the mock order does
+	// not refuse: the work is already there.
+	UI, FromGit bool
 }
 
 func (f FlowSet) check() string {
@@ -227,8 +255,15 @@ func (s *Store) FlowSetStage(f FlowSet) (FlowItem, error) {
 	if why := f.check(); why != "" {
 		return FlowItem{}, refuse(errors.New(why))
 	}
+	on, err := s.MockStagesOn()
+	if err != nil {
+		return FlowItem{}, err
+	}
+	if !on && !f.FromGit && (f.UI || StageIndex(f.Stage) >= StageIndex("mocked") && StageIndex(f.Stage) <= StageIndex("approved")) {
+		return FlowItem{}, refuse(ErrMockStagesOff)
+	}
 	var out FlowItem
-	err := s.tx(func(t *sql.Tx) error {
+	err = s.tx(func(t *sql.Tx) error {
 		var one int
 		if err := t.QueryRow(`SELECT 1 FROM backlog_item WHERE id = ?`, f.ItemID).Scan(&one); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -240,8 +275,11 @@ func (s *Store) FlowSetStage(f FlowSet) (FlowItem, error) {
 		at := ts(s.now())
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			if _, err := t.Exec(`INSERT INTO flow_item (`+flowCols+`) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				f.ItemID, f.Stage, f.Branch, f.SHA, f.Note, at, f.By); err != nil {
+			if err := mockOrder(t, FlowItem{Stage: "idea", UI: f.UI}, f); err != nil {
+				return err
+			}
+			if _, err := t.Exec(`INSERT INTO flow_item (`+flowCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				f.ItemID, f.Stage, f.Branch, f.SHA, f.Note, at, f.By, f.UI, mockBy(f)); err != nil {
 				return err
 			}
 		case err != nil:
@@ -259,8 +297,16 @@ func (s *Store) FlowSetStage(f FlowSet) (FlowItem, error) {
 			if f.Note == "" {
 				f.Note = cur.Note
 			}
-			if _, err := t.Exec(`UPDATE flow_item SET stage = ?, branch = ?, sha = ?, note = ?, changed_at = ?, changed_by = ? WHERE item_id = ?`,
-				f.Stage, f.Branch, f.SHA, f.Note, at, f.By, f.ItemID); err != nil {
+			f.UI = f.UI || cur.UI
+			if err := mockOrder(t, cur, f); err != nil {
+				return err
+			}
+			by := cur.MockBy
+			if f.Stage == "mocked" {
+				by = f.By
+			}
+			if _, err := t.Exec(`UPDATE flow_item SET stage = ?, branch = ?, sha = ?, note = ?, changed_at = ?, changed_by = ?, ui = ?, mock_by = ? WHERE item_id = ?`,
+				f.Stage, f.Branch, f.SHA, f.Note, at, f.By, f.UI, by, f.ItemID); err != nil {
 				return err
 			}
 		}
@@ -270,11 +316,45 @@ func (s *Store) FlowSetStage(f FlowSet) (FlowItem, error) {
 	return out, err
 }
 
-const flowCols = `item_id, stage, branch, sha, note, changed_at, changed_by`
+const flowCols = `item_id, stage, branch, sha, note, changed_at, changed_by, ui, mock_by`
+
+func mockBy(f FlowSet) string {
+	if f.Stage == "mocked" {
+		return f.By
+	}
+	return ""
+}
+
+// mockOrder refuses a report that skips the mock stages of a UI item. A stage git raised is let through.
+func mockOrder(q interface {
+	QueryRow(string, ...any) *sql.Row
+}, cur FlowItem, f FlowSet) error {
+	if f.FromGit || !cur.UI && !f.UI {
+		return nil
+	}
+	at, to := StageIndex(cur.Stage), StageIndex(f.Stage)
+	switch {
+	case f.Stage == "mock-reviewed":
+		var n int
+		err := q.QueryRow(`SELECT COUNT(*) FROM flow_mock_review WHERE item_id = ? AND verdict = 'ready' AND n > COALESCE(
+			(SELECT MAX(n) FROM flow_mock_review WHERE item_id = ? AND verdict = 'not-ready'), 0)`, f.ItemID, f.ItemID).Scan(&n)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return refuse(fmt.Errorf("%w: %s has no READY mock review", ErrMockOrder, f.ItemID))
+		}
+	case f.Stage == "approved" && at < StageIndex("mock-reviewed"):
+		return refuse(fmt.Errorf("%w: %s is %s", ErrMockOrder, f.ItemID, cur.Stage))
+	case to >= StageIndex("implementing") && at < StageIndex("approved"):
+		return refuse(fmt.Errorf("%w: %s is %s", ErrMockOrder, f.ItemID, cur.Stage))
+	}
+	return nil
+}
 
 func scanFlow(sc rowScanner) (FlowItem, error) {
 	var f FlowItem
-	err := sc.Scan(&f.ItemID, &f.Stage, &f.Branch, &f.SHA, &f.Note, &f.ChangedAt, &f.ChangedBy)
+	err := sc.Scan(&f.ItemID, &f.Stage, &f.Branch, &f.SHA, &f.Note, &f.ChangedAt, &f.ChangedBy, &f.UI, &f.MockBy)
 	return f, err
 }
 
@@ -438,6 +518,93 @@ func (s *Store) Deploys() ([]FlowDeploy, error) {
 				return err
 			}
 			out = append(out, d)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// FlowMockReview is a verdict on an item's mock.
+type FlowMockReview struct {
+	N       int64  `json:"n"`
+	ItemID  string `json:"item_id"`
+	MockRef string `json:"mock_ref,omitempty"`
+	Verdict string `json:"verdict"`
+	By      string `json:"by"`
+	Shots   string `json:"shots,omitempty"`
+	Note    string `json:"note,omitempty"`
+	At      string `json:"at"`
+}
+
+// MockReviewAdd records a verdict on the item's mock. The reviewer is never the card that reported the mock, and READY
+// moves the item to mock-reviewed.
+func (s *Store) MockReviewAdd(m FlowMockReview) (FlowMockReview, error) {
+	if m.Verdict != "ready" && m.Verdict != "not-ready" {
+		return FlowMockReview{}, refuse(errors.New("a verdict is ready or not-ready"))
+	}
+	for name, v := range map[string]string{"mock ref": m.MockRef, "screenshots": m.Shots, "note": m.Note} {
+		if why := CRText(name, v, 2000, true); why != "" {
+			return FlowMockReview{}, refuse(errors.New(why))
+		}
+	}
+	if why := CRText("reviewer", m.By, backlogByMax, false); why != "" {
+		return FlowMockReview{}, refuse(errors.New(why))
+	}
+	if on, err := s.MockStagesOn(); err != nil || !on {
+		if err == nil {
+			err = refuse(ErrMockStagesOff)
+		}
+		return FlowMockReview{}, err
+	}
+	var out FlowMockReview
+	err := s.tx(func(t *sql.Tx) error {
+		cur, err := scanFlow(t.QueryRow(`SELECT `+flowCols+` FROM flow_item WHERE item_id = ?`, m.ItemID))
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return refuse(ErrFlowItemNotFound)
+		case err != nil:
+			return err
+		case !cur.UI || cur.Stage != "mocked":
+			return refuse(fmt.Errorf("%s is %s: only a UI item at mocked has a mock to review", m.ItemID, cur.Stage))
+		case cur.MockBy == m.By:
+			return refuse(fmt.Errorf("%s reported the mock, so it cannot review it", m.By))
+		}
+		var top int64
+		if err := t.QueryRow(`SELECT COALESCE(MAX(n), 0) FROM flow_mock_review`).Scan(&top); err != nil {
+			return err
+		}
+		if _, err := t.Exec(`INSERT INTO flow_mock_review (n, item_id, mock_ref, verdict, by, shots, note, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			top+1, m.ItemID, m.MockRef, m.Verdict, m.By, m.Shots, m.Note, ts(s.now())); err != nil {
+			return err
+		}
+		if m.Verdict == "ready" {
+			if _, err := t.Exec(`UPDATE flow_item SET stage = 'mock-reviewed', changed_at = ?, changed_by = ? WHERE item_id = ?`,
+				ts(s.now()), m.By, m.ItemID); err != nil {
+				return err
+			}
+		}
+		return t.QueryRow(`SELECT n, item_id, mock_ref, verdict, by, shots, note, at FROM flow_mock_review WHERE n = ?`, top+1).
+			Scan(&out.N, &out.ItemID, &out.MockRef, &out.Verdict, &out.By, &out.Shots, &out.Note, &out.At)
+	})
+	return out, err
+}
+
+// MockReviews lists the verdicts on an item's mock, newest first.
+func (s *Store) MockReviews(id string) ([]FlowMockReview, error) {
+	out := []FlowMockReview{}
+	err := s.guard(func() error {
+		out = []FlowMockReview{}
+		rows, err := s.db.Query(`SELECT n, item_id, mock_ref, verdict, by, shots, note, at FROM flow_mock_review WHERE item_id = ? ORDER BY n DESC`, id)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var m FlowMockReview
+			if err := rows.Scan(&m.N, &m.ItemID, &m.MockRef, &m.Verdict, &m.By, &m.Shots, &m.Note, &m.At); err != nil {
+				return err
+			}
+			out = append(out, m)
 		}
 		return rows.Err()
 	})

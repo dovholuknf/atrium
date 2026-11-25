@@ -69,6 +69,9 @@ func newSession() *cobra.Command {
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if borrowedByCursor(runner) {
+				return nil
+			}
 			reported := reportSession(hubURL, event, name, runner)
 			if interactive() {
 				addr, source := hubAddressFrom(hubURL)

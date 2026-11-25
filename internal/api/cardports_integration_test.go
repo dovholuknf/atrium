@@ -309,6 +309,17 @@ func TestChangeParentNestsRefusesACycleAndRecordsIt(t *testing.T) {
 	if got, _ = st.Get(hook.ID); got.SpawnedByID != "" || got.SpawnedBy != store.HumanLauncher {
 		t.Errorf("after the clear: %+v", got)
 	}
+	for _, top := range []string{"top", "atrium"} {
+		if rec := post(t, oh.h, "/v1/tasks/"+kid.ID+"/parent", map[string]any{"parent": orch.WireName}); rec.Code != 200 {
+			t.Fatalf("nest: %d %s", rec.Code, rec.Body)
+		}
+		if rec := post(t, oh.h, "/v1/tasks/"+kid.ID+"/parent", map[string]any{"parent": top}); rec.Code != 200 {
+			t.Fatalf("%s: %d %s", top, rec.Code, rec.Body)
+		}
+		if got, _ = st.Get(kid.ID); got.SpawnedByID != "" || got.SpawnedBy != store.HumanLauncher {
+			t.Errorf("after %s: %+v", top, got)
+		}
+	}
 }
 
 // A PARENT ON ANOTHER ROOM IS TAKEN BY ITS HANDLE, name@room, and recorded as `spawned_by` the way a cross-room

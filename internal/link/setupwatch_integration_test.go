@@ -140,6 +140,25 @@ func TestARoomThatDoesNotAnswerIsNotASetupProblem(t *testing.T) {
 	}
 }
 
+// One failed read keeps the last good facts, so a hooks problem does not vanish and come back.
+func TestOneFailedReadKeepsTheLastGoodSetup(t *testing.T) {
+	b := newBench(t)
+	down := false
+	b.attach("alpha", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		setupRoom(5, 0, "").ServeHTTP(w, r)
+	}))
+	sweep(b)
+	down = true
+	b.proxy.setupSweep(context.Background(), time.Now().Add(setupEvery+time.Second))
+	if s := setupOf(t, b, "alpha"); s == nil || !s.Answering || s.HooksMissing != 5 {
+		t.Fatalf("setup = %+v", s)
+	}
+}
+
 // The facts ride the same builder as the attached list, so the event and the endpoint carry them.
 func TestTheSetupRidesTheRoomsEndpoint(t *testing.T) {
 	b := newBench(t)

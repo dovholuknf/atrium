@@ -29,7 +29,8 @@ type remembering struct {
 
 func (r *remembering) Known() ([]Known, error) { return r.rooms, nil }
 
-func (r *remembering) MarkRoom(string, bool) error { return nil }
+func (r *remembering) MarkRoom(string, bool) error              { return nil }
+func (r *remembering) ExpectOffline(string, bool, string) error { return nil }
 
 // ForgetRoom drops the room's record, mirroring the store: an unknown name is
 // an error, and a known one leaves the list.

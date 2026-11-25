@@ -28,3 +28,20 @@ func TestUsageCacheReadsSettingRoundTrip(t *testing.T) {
 		t.Fatalf("settings read back usage_cache_reads=%v after off", got)
 	}
 }
+
+func TestCruftNightlySettingRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	srv, _, _ := fileServer(t)
+	if got := settingsGet(t, srv)["cruft_nightly"]; got != false {
+		t.Fatalf("a new room reads cruft_nightly=%v", got)
+	}
+	if rec := settingsPost(t, srv, `{"cruft_nightly":true}`); rec.Code != 200 {
+		t.Fatalf("post: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := settingsGet(t, srv)["cruft_nightly"]; got != true {
+		t.Fatalf("settings read back cruft_nightly=%v", got)
+	}
+}

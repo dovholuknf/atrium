@@ -75,6 +75,16 @@ var knownRunners = []candidate{
 			"not yet tried on this machine. it finds a session by id, so a fork copies nothing.",
 	},
 	{
+		ID: "crush", Label: "crush", Cmd: "crush",
+		ExitKeys: []string{"ctrl-c"},
+		Confirm:  "crush needs a provider set in its own config before a card can do anything. resume is not wired here.",
+	},
+	{
+		ID: "qwen", Label: "qwen code", Cmd: "qwen",
+		ExitKeys: []string{"ctrl-d", "ctrl-d"},
+		Confirm:  "qwen needs a provider set in ~/.qwen/settings.json before a card can do anything. resume is not wired here.",
+	},
+	{
 		ID: "codex", Label: "codex", Cmd: "codex",
 		ExitKeys: []string{"ctrl-d"},
 		Confirm: "codex takes no arguments to open interactively. its resume flag is not " +

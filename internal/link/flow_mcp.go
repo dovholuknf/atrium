@@ -21,13 +21,15 @@ const flowToolDesc = "The merge flow, kept on the hub: who holds each role, whic
 	"which checks passed on which sha, and which sha each room runs. After a restart this is where it is read from, " +
 	"not from other sessions.\n\n" +
 	"Roles are `orchestrator`, `tester` and `director`. One holder each, except tester. The merge queue (`atrium merge`) " +
-	"moves claude/main on the hub, and the orchestrator closes an epoch. Stages, in order: idea, designed, implementing, implemented, " +
+	"moves claude/main on the hub, and the orchestrator closes an epoch. Stages, in order: idea, designed, mocked, mock-reviewed, approved, implementing, implemented, " +
 	"merged, tested, deployed, pushed-by-clint. A stage only moves forward. The item must be a backlog item.\n\n" +
 	"action is one of:\n" +
 	"- `roles {role?}`: who holds roles.\n" +
 	"- `role_set {role, room, card}` / `role_clear {role, room, card}`: name or release a holder.\n" +
 	"- `items {stage?}`: the items in the flow. `item {id}`: one, with what git and the recorded checks and deploys say of it. The stage is computed when you ask.\n" +
-	"- `stage {id, stage, branch?, sha?, note?}`: report an item's stage.\n" +
+	"- `stage {id, stage, branch?, sha?, note?, ui?}`: report an item's stage. A UI item (`ui` true, never turned off) goes mocked, mock-reviewed, approved before implementing. approved is the human's Approve on the board and is never reported.\n" +
+	"- `mock_stages {on?}`: the experimental mock stages, off by default. Off, the flow is as it was and mocked, mock-reviewed, approved and ui are refused. Without on, read it.\n" +
+	"- `mock_review {id, verdict, ref?, shots?, note?}` / `mock_reviews {id}`: record READY (`ready`) or `not-ready` on the item's mock, by a card that did not report it mocked, or read the verdicts. READY moves the item to mock-reviewed.\n" +
 	"- `checks {sha?}` / `check {sha, name, result}`: list, or record that a check passed, failed or timed out on a sha.\n" +
 	"- `epoch`: the open epoch, the latest ones, and the plan for resetting claude/main onto main: the commits to replay. " +
 	"`epoch_open {sha?}`: the operator fetched claude/main (at sha, or where it is now). " +
@@ -37,32 +39,38 @@ const flowToolDesc = "The merge flow, kept on the hub: who holds each role, whic
 	"- `deploys` / `deploy {room, sha}`: what each room runs, or record that a room now runs a sha."
 
 type flowInput struct {
-	Action string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys or deploy"`
-	Role   string `json:"role,omitempty" jsonschema:"orchestrator, tester or director"`
-	Room   string `json:"room,omitempty" jsonschema:"the room, for role_set, role_clear and deploy"`
-	Card   string `json:"card,omitempty" jsonschema:"the card id of the holder, for role_set and role_clear"`
-	ID     string `json:"id,omitempty" jsonschema:"the backlog item id, for item and stage"`
-	Stage  string `json:"stage,omitempty" jsonschema:"for stage, or to narrow items"`
-	Branch string `json:"branch,omitempty" jsonschema:"for stage: the branch the work is on. for epoch_close: the branch with the replayed commits"`
-	Expect string `json:"expect,omitempty" jsonschema:"for epoch_close: the old_tip of the plan you replayed, so a landing since is caught"`
-	SHA    string `json:"sha,omitempty" jsonschema:"a commit id, for stage, check, checks and deploy"`
-	Note   string `json:"note,omitempty" jsonschema:"for stage: one line, or where the doc is"`
-	Repo   string `json:"repo,omitempty" jsonschema:"for repo: github.com/owner/repo, or empty to read"`
-	Name   string `json:"name,omitempty" jsonschema:"for check: the check, like sanity"`
-	Result string `json:"result,omitempty" jsonschema:"for check: pass, fail or timeout"`
+	Action  string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, mock_review, mock_reviews, mock_stages, checks, check, epoch, epoch_open, epoch_close, repo, deploys or deploy"`
+	Role    string `json:"role,omitempty" jsonschema:"orchestrator, tester or director"`
+	Room    string `json:"room,omitempty" jsonschema:"the room, for role_set, role_clear and deploy"`
+	Card    string `json:"card,omitempty" jsonschema:"the card id of the holder, for role_set and role_clear"`
+	ID      string `json:"id,omitempty" jsonschema:"the backlog item id, for item and stage"`
+	Stage   string `json:"stage,omitempty" jsonschema:"for stage, or to narrow items"`
+	Branch  string `json:"branch,omitempty" jsonschema:"for stage: the branch the work is on. for epoch_close: the branch with the replayed commits"`
+	Expect  string `json:"expect,omitempty" jsonschema:"for epoch_close: the old_tip of the plan you replayed, so a landing since is caught"`
+	SHA     string `json:"sha,omitempty" jsonschema:"a commit id, for stage, check, checks and deploy"`
+	Note    string `json:"note,omitempty" jsonschema:"for stage: one line, or where the doc is"`
+	Repo    string `json:"repo,omitempty" jsonschema:"for repo: github.com/owner/repo, or empty to read"`
+	Name    string `json:"name,omitempty" jsonschema:"for check: the check, like sanity"`
+	Result  string `json:"result,omitempty" jsonschema:"for check: pass, fail or timeout"`
+	On      *bool  `json:"on,omitempty" jsonschema:"for mock_stages: true or false to set the experimental setting, left out to read it. Off by default"`
+	UI      bool   `json:"ui,omitempty" jsonschema:"for stage: the item is a UI item"`
+	Verdict string `json:"verdict,omitempty" jsonschema:"for mock_review: ready or not-ready"`
+	Ref     string `json:"ref,omitempty" jsonschema:"for mock_review: the link or branch of the mock that was reviewed"`
+	Shots   string `json:"shots,omitempty" jsonschema:"for mock_review: the screenshots, desktop and phone"`
 }
 
 type flowOutput struct {
-	Roles    []hubstore.RoleHolder `json:"roles,omitempty"`
-	Replaced []hubstore.RoleHolder `json:"replaced,omitempty"`
-	Items    []hubstore.FlowItem   `json:"items,omitempty"`
-	Item     *hubstore.FlowItem    `json:"item,omitempty"`
-	View     *FlowView             `json:"view,omitempty"`
-	Checks   []hubstore.FlowCheck  `json:"checks,omitempty"`
-	Deploys  []hubstore.FlowDeploy `json:"deploys,omitempty"`
-	Repo     *string               `json:"repo,omitempty"`
-	Epoch    json.RawMessage       `json:"epoch,omitempty"`
-	Note     string                `json:"note,omitempty"`
+	Roles    []hubstore.RoleHolder     `json:"roles,omitempty"`
+	Replaced []hubstore.RoleHolder     `json:"replaced,omitempty"`
+	Items    []hubstore.FlowItem       `json:"items,omitempty"`
+	Item     *hubstore.FlowItem        `json:"item,omitempty"`
+	View     *FlowView                 `json:"view,omitempty"`
+	Checks   []hubstore.FlowCheck      `json:"checks,omitempty"`
+	Reviews  []hubstore.FlowMockReview `json:"mock_reviews,omitempty"`
+	Deploys  []hubstore.FlowDeploy     `json:"deploys,omitempty"`
+	Repo     *string                   `json:"repo,omitempty"`
+	Epoch    json.RawMessage           `json:"epoch,omitempty"`
+	Note     string                    `json:"note,omitempty"`
 }
 
 func (c *controlMCP) registerFlow(s *mcp.Server, class ctl.Class) {
@@ -130,11 +138,40 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 		var f hubstore.FlowItem
 		err := c.Ask(ctx, http.MethodPost, "/_hub/flow/items/"+url.PathEscape(id), "", map[string]any{
-			"stage": in.Stage, "branch": in.Branch, "sha": in.SHA, "note": in.Note, "by": by}, &f)
+			"stage": in.Stage, "branch": in.Branch, "sha": in.SHA, "note": in.Note, "by": by, "ui": in.UI}, &f)
 		if err != nil {
 			return nil, out, err
 		}
 		out.Item = &f
+		return nil, out, nil
+	case "mock_stages":
+		var body struct {
+			On bool `json:"on"`
+		}
+		var err error
+		if in.On == nil {
+			err = c.Ask(ctx, http.MethodGet, "/_hub/flow/mock-stages", "", nil, &body)
+		} else {
+			err = c.Ask(ctx, http.MethodPost, "/_hub/flow/mock-stages", "", map[string]any{"on": *in.On, "by": by}, &body)
+		}
+		out.Note = fmt.Sprintf("the mock stages are %s", map[bool]string{true: "on", false: "off"}[body.On])
+		return nil, out, err
+	case "mock_reviews":
+		if id == "" {
+			return nil, out, &ctl.RefusedError{Msg: "mock_reviews needs id"}
+		}
+		return nil, out, c.Ask(ctx, http.MethodGet, "/_hub/flow/mock-reviews/"+url.PathEscape(id), "", nil, &out)
+	case "mock_review":
+		if id == "" || in.Verdict == "" {
+			return nil, out, &ctl.RefusedError{Msg: "mock_review needs id and verdict"}
+		}
+		var m hubstore.FlowMockReview
+		err := c.Ask(ctx, http.MethodPost, "/_hub/flow/mock-reviews/"+url.PathEscape(id), "", map[string]any{
+			"mockref": in.Ref, "verdict": in.Verdict, "shots": in.Shots, "note": in.Note, "by": by}, &m)
+		if err != nil {
+			return nil, out, err
+		}
+		out.Reviews = []hubstore.FlowMockReview{m}
 		return nil, out, nil
 	case "checks":
 		err := c.Ask(ctx, http.MethodGet, "/_hub/flow/checks"+q("sha", in.SHA), "", nil, &out)
@@ -210,7 +247,7 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Deploys = []hubstore.FlowDeploy{d}
 		return nil, out, nil
 	}
-	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys, deploy", in.Action)}
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, mock_review, mock_reviews, mock_stages, checks, check, epoch, epoch_open, epoch_close, repo, deploys, deploy", in.Action)}
 }
 
 // requireOrchestrator refuses unless the caller is the card the hub has recorded as the orchestrator. THE CALLER IS A CLAIM, as for
