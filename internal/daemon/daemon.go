@@ -31,6 +31,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/calllog"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
@@ -1218,7 +1219,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
 	// rebind a name onto it, or open a terminal. See internal/edge.
-	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: edge.For(d.opts.AgentAddr, agentMux)}
+	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: edge.For(d.opts.AgentAddr,
+		logged(calllog.New(StateDir(), "room-calls.log", 0), d.RoomName, agentMux))}
 	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: edge.For(d.opts.HumanAddr, seenhost.Handler(d.BoardHandler()))}
 
 	d.mu.Lock()
