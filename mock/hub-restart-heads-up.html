@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en" data-skin="linen">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>atrium: restart heads-up and board updated (interactive mock)</title>
+<!-- The board's real stylesheets from the checkout. Only the rules marked NEW are new, and the countdown, paused toast and
+     the cover are the shipped ones, untouched. System fonts stand in for the vendored ones. Nothing touches storage. -->
+<link rel="stylesheet" href="../internal/api/web/css/tokens.css">
+<link rel="stylesheet" href="../internal/api/web/css/chrome.css">
+<link rel="stylesheet" href="../internal/api/web/css/cards.css">
+<link rel="stylesheet" href="../internal/api/web/css/rows.css">
+<link rel="stylesheet" href="../internal/api/web/css/dialogs.css">
+<link rel="stylesheet" href="../internal/api/web/css/themes.css">
+<link rel="stylesheet" href="../internal/api/web/css/topnav.css">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--bg-1); color: var(--body); font: var(--fs-base)/1.4 var(--sans); }
+  #frame { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #frame > header { flex: none; position: relative; }
+  #toasts { bottom: 64px; }
+  main { flex: 1; min-height: 0; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  main .card { cursor: default; }
+
+  /* NEW: board updated. The restart popup's family (.toast.hubgate): same card, same left accent, same icon slot and the
+     same type, in blue because nothing is wrong and nothing is counting. It says what changed, and its button is a real
+     one. "later" lets it go, and the reload is only ever taken by the person who presses it. */
+  .toast.hubgate.fresh {
+    border-left-color: var(--blue); cursor: default;
+    background:
+      radial-gradient(ellipse 60% 120% at 0% 50%, rgba(var(--teal-rgb),.10), transparent 70%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+  }
+  .toast.hubgate.fresh:hover { border-left-color: var(--blue); }
+  .toast.hubgate.fresh .hg-icon {
+    animation: none; font-size: var(--fs-xl); border-color: rgba(var(--teal-rgb),.28);
+    border-top-color: var(--teal); border-right-color: var(--blue);
+  }
+  .toast.hubgate.fresh .hg-icon > i { animation: none; }
+  .fresh .hg-what { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .fresh .hg-what span {
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: var(--r-pill); color: var(--chip-accent-text); background: rgba(var(--teal-rgb),.12);
+  }
+  .fresh .hg-acts { flex: none; align-self: center; display: flex; flex-direction: column; gap: 6px; }
+  .fresh .hg-go {
+    font-weight: 600; color: var(--on-danger); border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 6px 16px; cursor: pointer;
+    background: linear-gradient(90deg, var(--teal), var(--blue));
+    box-shadow: 0 4px 14px rgba(var(--teal-rgb),.35);
+  }
+  .fresh .hg-go:hover { filter: brightness(1.08); background: linear-gradient(90deg, var(--teal), var(--blue)); color: var(--on-danger); }
+  /* MOCK ONLY: the cover is shown non-modal over a scrim, so the MOCK bar stays clickable. The board's is a modal. */
+  #hubrestart { position: fixed; inset: 0 0 auto 0; margin: 26vh auto 0; z-index: 2000; }
+  #scrim { display: none; position: fixed; inset: 0; z-index: 1999; background: rgba(var(--sink-rgb),.62); }
+  #scrim.on { display: block; }
+  .fresh .hg-later { background: none; border: none; color: var(--dim); font-size: var(--fs-xs); cursor: pointer; padding: 2px; }
+  .fresh .hg-later:hover { color: var(--head); background: none; }
+  /* NEW: the all-clear when the new hub answers, the same card in the settled colour, gone by itself. */
+  .toast.hubgate.back { border-left-color: var(--teal); }
+  .toast.hubgate.back .hg-icon { animation: none; border-color: var(--teal); color: var(--teal); }
+  .toast.hubgate.back .hg-icon > i { animation: none; }
+
+  .mockbar { flex: none; z-index: 3000; position: relative; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 7px 14px; background: #1c1812; color: #e8dfc9; border-top: 2px solid var(--wait); font-size: var(--fs-sm); }
+  .mockbar b { letter-spacing: .12em; color: var(--wait); font-size: var(--fs-xs); }
+  .mockbar button, .mockbar select { background: #2b251b; color: #e8dfc9; border: 1px solid #4a4130; padding: 3px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+  .mockbar button.on { background: var(--wait); color: #fff; border-color: var(--wait); }
+  .mockbar .sp { flex: 1; }
+</style>
+</head>
+<body>
+<div id="frame">
+<header>
+  <div class="bar">
+    <h1 class="wordmark accent-text">Atrium</h1>
+    <nav><button class="tab on">Terminals <span class="count">4</span></button><button class="tab">Files</button><button class="tab">Pulls</button></nav>
+    <div class="grow"></div>
+  </div>
+</header>
+<main>
+  <div class="card"><div class="card-line"><span class="title">u-hub-restart-heads-up</span><span class="chips"><span class="chip">working</span></span></div></div>
+  <div class="card"><div class="card-line"><span class="title">merge-queue-fix</span><span class="chips"><span class="chip">waiting</span></span></div></div>
+  <div class="card"><div class="card-line"><span class="title">weekly-roll-up</span><span class="chips"><span class="chip">idle</span></span></div></div>
+  <div class="card"><div class="card-line"><span class="title">docs-sweep</span><span class="chips"><span class="chip">done</span></span></div></div>
+</main>
+</div>
+
+<div id="scrim"></div>
+<div id="toasts"></div>
+<dialog id="hubrestart" class="waitcard" data-guard>
+  <div class="wc-ring"></div>
+  <div class="wc-eyebrow">installing an update</div>
+  <h2>atrium is restarting</h2>
+  <div id="hubrestart-t" class="wc-say">back in a few seconds. your agents keep running, and this page picks up where you left off.</div>
+  <div class="wc-bar"></div>
+  <div class="wc-foot"><span>nothing to do, this page reconnects on its own</span><span id="hubrestart-el" class="wc-clock">3s</span></div>
+</dialog>
+
+<div class="mockbar">
+  <b>MOCK</b><span>state</span><span id="states"></span><span class="sp"></span>
+  <span>skin</span><select id="skin"></select>
+</div>
+
+<script>
+const SKINS = ["linen","paper","daylight","frost","graphite","oxide","moss","plum","ember","glacier","noir","vapor","sandstone","abyss","slate","dusk","fern","clay","cobalt","mint","website"];
+const scrim = document.getElementById("scrim"), toasts = document.getElementById("toasts"), cover = document.getElementById("hubrestart");
+let tick = 0, clock = 0;
+function clear() {
+  clearInterval(tick); clearInterval(clock); toasts.innerHTML = "";
+  if (cover.open) cover.close();
+  scrim.classList.remove("on");
+}
+function toast(cls, icon, title, body, acts, extra) {
+  const el = document.createElement("div");
+  el.className = "toast hubgate sticky " + cls;
+  el.innerHTML = `<div class="hg-icon"><i>${icon}</i></div><div class="body"><b>${title}</b><div class="what">${body}</div>${extra || ""}</div>${acts}`;
+  toasts.appendChild(el);
+  return el;
+}
+const S = {
+  countdown() {
+    const secs = 10, end = Date.now() + secs * 1000, left = () => Math.max(0, Math.ceil((end - Date.now()) / 1000));
+    const el = toast("", secs, "atrium restarts in " + secs + "s", "an update is ready. press pause to hold it until you are done.", '<button class="hubgate-act">pause</button>');
+    const bar = document.createElement("div"); bar.className = "hg-bar"; bar.style.animationDuration = secs + "s"; el.appendChild(bar);
+    tick = setInterval(() => { const n = left(); el.querySelector("b").textContent = "atrium restarts in " + n + "s"; el.querySelector("i").textContent = n; if (!n) clearInterval(tick); }, 250);
+  },
+  paused() {
+    toast("held", "❚❚", "restart on hold", "atrium keeps running as it is until you press resume.", '<button class="hubgate-act">resume</button>');
+  },
+  away() {
+    cover.show(); scrim.classList.add("on"); const t0 = Date.now();
+    clock = setInterval(() => { document.getElementById("hubrestart-el").textContent = Math.floor((Date.now() - t0) / 1000) + "s"; }, 500);
+  },
+  back() {
+    const el = toast("back", "✓", "atrium is back", "updated to build 4f9c2e1. your agents never stopped.", "");
+    setTimeout(() => el.remove(), 6000);
+  },
+  updated() {
+    toast("fresh", "↻", "board updated", "a new version of this page is ready. reload to use it. your terminals and drafts are kept.",
+      '<div class="hg-acts"><button class="hg-go">Reload</button><button class="hg-later">later</button></div>',
+      "");
+    toasts.querySelector(".hg-later").onclick = clear;
+  },
+};
+const LABEL = { countdown: "countdown", paused: "paused", away: "hub away", back: "back", updated: "board updated" };
+const bar = document.getElementById("states");
+function go(k) {
+  clear(); S[k](); localStorage_noop();
+  [...bar.children].forEach(b => b.classList.toggle("on", b.dataset.k === k));
+}
+function localStorage_noop() {}
+Object.keys(S).forEach(k => { const b = document.createElement("button"); b.textContent = LABEL[k]; b.dataset.k = k; b.onclick = () => go(k); bar.appendChild(b); });
+const sk = document.getElementById("skin");
+SKINS.forEach(s => sk.add(new Option(s, s)));
+sk.onchange = () => document.documentElement.dataset.skin = sk.value;
+const [st, skin] = decodeURIComponent(location.search.slice(1)).split(",");
+if (skin) { sk.value = skin; sk.onchange(); }
+go(S[st] ? st : "countdown");
+</script>
+</body>
+</html>

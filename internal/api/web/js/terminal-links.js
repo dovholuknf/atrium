@@ -1203,6 +1203,7 @@ function boardEvent(d) {
   if (was && d.rest === was.rest) { swapStyles(d.css); return; }
   boardScriptStale = true;
   if (typingNow() || document.querySelector("dialog[open]")) {
+    if (flagOn("headsup")) { hubBoardUpdated(); return; }
     const t = toast("board updated", "");
     const what = t && t.querySelector(".what");
     if (what && !what.querySelector("a")) {
