@@ -717,6 +717,15 @@ function Stop-Control {
 }
 
 # Stop-Hub stops the atrium. It holds nothing, so a hard stop is fine.
+# Invoke-HeadsUp tells every open board the hub restarts in 10 seconds and returns $true on go. It does not wait for an idle
+# board, and a pause from a board holds it until resumed. A board shows it only with the restart heads-up switched on.
+function Invoke-HeadsUp {
+  try { $st = Invoke-RestMethod -Uri 'http://127.0.0.1:7778/_hub/restart' -TimeoutSec 5 } catch { $st = $null }
+  if (-not ($st -and $st.watching)) { Say 'gate: no board has the restart heads-up on, restarting as before'; return $true }
+  &'D:\git\github\dovholuknf\atrium\scripts\hub-restart-gate.ps1' -Idle 0.001 -Countdown 10 | ForEach-Object { Say "gate: $_" }
+  return ($LASTEXITCODE -eq 0)
+}
+
 function Stop-Hub {
   $hub = Find-Atrium run
   if (-not $hub) { Say 'no running hub found'; return }

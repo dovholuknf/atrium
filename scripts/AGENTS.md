@@ -99,8 +99,10 @@ attribution, then signs the tag (`git tag -s`) in the loop user's shell and push
 The ci-loop `push <name>` opens its PR from text the sender writes first: `.uncommitted\ci-loop\inbox\<request>.pr.md`,
 before the `<request>.txt` file. The first line is the PR title and the rest is the description, in plain words: what
 changes for clint and why. The loop refuses, and pushes nothing, when the file is missing, when the title names a file,
-a script, a path or one of the branch's commit subjects, or when there is no description. It adds the list of changed
-files under the description. A branch that already has an open PR needs no file.
+a script, a path or one of the branch's commit subjects, or when there is no description. After the title the description has `Features:`, `Changes:` and `Bugs fixed:`
+sections of bullets, an empty section left out and at least one present. It holds no other prose, no "How it was
+checked" line, and is at most 500 words, and the loop refuses anything else with the rule it broke. A branch with no
+open PR is also refused, and nothing is pushed, while another open PR to main has a `batch-*` head. A branch that already has an open PR needs no file.
 
 ## The layout
 
