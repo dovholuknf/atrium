@@ -1351,6 +1351,8 @@ function fillMachineFields(s) {
   showForgeSettings(s);
   const exitWake = document.getElementById("s-exitwake");
   if (exitWake) exitWake.checked = s.unexpected_exit_wake !== false;
+  const guardRoot = document.getElementById("s-guardroot");
+  if (guardRoot) guardRoot.checked = s.guard_card_root === true;
   fillIdlePark(s);
   // What an empty box comes out as. A search of the daemon's own PATH, so it
   // is not something the person reading the box could work out from here.
@@ -2012,6 +2014,20 @@ async function saveExitWake() {
   toast("saved", el.checked
     ? "a session this room interrupts mid-turn is told so when it comes back"
     : "nothing is typed after this room goes away mid-turn");
+}
+
+// Whether the guard keeps a card's writes inside its own folder, on or off for this room.
+async function saveGuardRoot() {
+  const el = document.getElementById("s-guardroot");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", { method: "POST", body: JSON.stringify({ guard_card_root: !!el.checked }) });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  afterMachineSave();
+  toast("saved", el.checked ? "cards started from now on keep to their own folder" : "cards may write anywhere in the card root");
 }
 
 // The idle park timer is seconds on the wire and minutes in the box. `idle_park_after_now` is what is in force,

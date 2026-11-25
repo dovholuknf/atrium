@@ -403,3 +403,122 @@ func TestCheckoutStaysInHome(t *testing.T) {
 		t.Errorf("a session with no home was checked: %s", d.Rule)
 	}
 }
+
+func TestWritesStayInTheCardFolder(t *testing.T) {
+	rules, err := Load([]byte(outsideOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := env0
+	e.vars = map[string]string{"ATRIUM_CARD_ROOT": "V:/cards", "ATRIUM_HOME": "V:/cards/scratch/c1"}
+	cwd := "V:/cards/scratch/c1/work"
+	cases := []struct{ tool, cmd, path, want string }{
+		{"Bash", `git clone https://x/r.git V:/cards/lb`, "", "outside-card-folder"},
+		{"Bash", `mkdir -p V:/cards/lb/tools`, "", "outside-card-folder"},
+		{"Bash", `touch V:/cards/lb/a`, "", "outside-card-folder"},
+		{"Bash", `mkdir ../../lb`, "", "outside-card-folder"},
+		{"Bash", `echo hi > V:/cards/lb/a`, "", "outside-card-folder"},
+		{"Bash", `echo hi | tee V:/cards/other/a`, "", "outside-card-folder"},
+		{"Bash", `cp a.txt V:/cards/lb/`, "", "outside-card-folder"},
+		{"Bash", `tar xf a.tar -C V:/cards/lb && mv V:/cards/scratch/c1/tmp/a V:/cards/lb/a`, "", "outside-card-folder"},
+		{"PowerShell", `New-Item -ItemType Directory V:/cards/lb`, "", "outside-card-folder"},
+		{"Write", "", "V:/cards/lb/a.txt", "outside-card-folder"},
+		{"Edit", "", "V:/cards/scratch/c2/work/a.txt", "outside-card-folder"},
+		{"Write", "", "../../lb/a.txt", "outside-card-folder"},
+		{"Bash", `mkdir -p V:/cards/scratch/c1/tmp/x`, "", ""},
+		{"Bash", `mkdir tools`, "", ""},
+		{"Bash", `echo hi > ../tmp/a`, "", ""},
+		{"Bash", `cp V:/cards/lb/a.txt .`, "", ""},
+		{"Bash", `ls V:/cards/lb`, "", ""},
+		{"Bash", `mkdir V:/elsewhere/x`, "", ""},
+		{"Bash", `mkdir $DIR`, "", ""},
+		{"Write", "", "V:/cards/scratch/c1/work/a.txt", ""},
+		{"Write", "", "V:/elsewhere/a.txt", ""},
+	}
+	for _, c := range cases {
+		if d := rules.Evaluate(call{tool: c.tool, cmd: c.cmd, path: c.path, cwd: cwd}.input(), e); d.Rule != c.want {
+			t.Errorf("%s %q %q: want %q, got %q (%s)", c.tool, c.cmd, c.path, c.want, d.Rule, d.Reason)
+		}
+	}
+	for _, vars := range []map[string]string{nil, {"ATRIUM_HOME": "V:/cards/scratch/c1"}} {
+		e.vars = vars
+		if d := rules.Evaluate(call{tool: "Bash", cmd: `mkdir V:/cards/lb`, cwd: cwd}.input(), e); d.Rule == "outside-card-folder" {
+			t.Errorf("a session with no card root was checked: %v", vars)
+		}
+	}
+}
+
+// outsideOnly is the one rule, so a drive path in a case does not meet the drive-root rule first.
+const outsideOnly = `{"rules":[{"id":"outside-card-folder","check":"outside-home","tools":["shell","Write","Edit"],
+"params":{"env":"ATRIUM_CARD_ROOT","dir":"ATRIUM_HOME"},"reason":"no {name}"}]}`
+
+func TestTargetPathsOfWritingCommands(t *testing.T) {
+	rules, err := Load([]byte(outsideOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := env0
+	e.vars = map[string]string{"ATRIUM_CARD_ROOT": "V:/localai/cards", "ATRIUM_HOME": "V:/localai/cards/scratch/c1"}
+	const cwd = "V:/localai/cards/scratch/c1/work"
+	const hit = "outside-card-folder"
+	cases := []struct{ tool, cmd, cwd, want string }{
+		{"Bash", `git clone https://github.com/o/r.git V:/localai/cards/lb`, cwd, hit},
+		{"Bash", `git clone https://github.com/o/r.git 'v:\LocalAI\Cards\LB'`, cwd, hit},
+		{"Bash", `git clone https://github.com/o/r.git ../../lb`, cwd, hit},
+		{"Bash", `git clone https://github.com/o/r.git`, "V:/localai/cards/lb", hit},
+		{"Bash", `git -C V:/localai/cards/lb worktree add V:/LOCALAI/cards/lb/w claude/x`, cwd, hit},
+		{"Bash", `git clone https://github.com/o/r.git V:/localai/cards/scratch/c1/tmp/r`, cwd, ""},
+		{"Bash", `git clone https://github.com/o/r.git`, cwd, ""},
+
+		{"Bash", `tar -xf a.tar -C V:/localai/cards/lb`, cwd, hit},
+		{"Bash", `tar xzf a.tgz -C 'v:\localai\CARDS\lb'`, cwd, hit},
+		{"Bash", `tar -xzf a.tgz -CV:/localai/cards/lb`, cwd, hit},
+		{"Bash", `tar --extract --file=a.tar --directory=V:/localai/cards/lb`, cwd, hit},
+		{"Bash", `tar -xf a.tar --directory V:/localai/cards/lb`, cwd, hit},
+		{"Bash", `tar -xf a.tar`, "V:/localai/cards/lb", hit},
+		{"Bash", `tar -czf V:/localai/cards/lb/out.tgz src`, cwd, hit},
+		{"Bash", `tar -xf a.tar -C V:/localai/cards/scratch/c1/tmp/x`, cwd, ""},
+		{"Bash", `tar -xf a.tar`, cwd, ""},
+		{"Bash", `tar -tf V:/localai/cards/lb/a.tar`, cwd, ""},
+		{"Bash", `tar -czf ../tmp/out.tgz src`, cwd, ""},
+
+		{"Bash", `unzip a.zip -d V:/localai/cards/lb`, cwd, hit},
+		{"Bash", `unzip -o a.zip -dV:/localai/cards/lb`, cwd, hit},
+		{"Bash", `unzip a.zip -d 'v:\LOCALAI\cards\lb'`, cwd, hit},
+		{"Bash", `unzip a.zip`, "V:/localai/cards/lb", hit},
+		{"Bash", `unzip a.zip -d V:/localai/cards/scratch/c1/tmp/x`, cwd, ""},
+		{"Bash", `unzip -l V:/localai/cards/lb/a.zip`, "V:/localai/cards/lb", ""},
+		{"Bash", `unzip a.zip`, cwd, ""},
+
+		{"Bash", `curl -o V:/localai/cards/lb/a.bin https://x/a`, cwd, hit},
+		{"Bash", `curl -sSLo V:/localai/cards/lb/a.bin https://x/a`, cwd, hit},
+		{"Bash", `curl --output='v:\localai\CARDS\lb\a.bin' https://x/a`, cwd, hit},
+		{"Bash", `curl --output V:/localai/cards/lb/a.bin https://x/a`, cwd, hit},
+		{"Bash", `curl -O https://x/a.bin`, "V:/localai/cards/lb", hit},
+		{"Bash", `curl -O --output-dir V:/localai/cards/lb https://x/a.bin`, cwd, hit},
+		{"Bash", `curl -o V:/localai/cards/scratch/c1/tmp/a.bin https://x/a`, cwd, ""},
+		{"Bash", `curl -O https://x/a.bin`, cwd, ""},
+		{"Bash", `curl https://x/a`, "V:/localai/cards/lb", ""},
+
+		{"PowerShell", `Expand-Archive -Path a.zip -DestinationPath V:\localai\cards\lb`, cwd, hit},
+		{"PowerShell", `expand-archive a.zip v:\LOCALAI\cards\lb -Force`, cwd, hit},
+		{"PowerShell", `Expand-Archive -Path a.zip -Dest V:/localai/cards/lb`, cwd, hit},
+		{"PowerShell", `Expand-Archive -DestinationPath:V:/localai/cards/lb a.zip`, cwd, hit},
+		{"PowerShell", `Expand-Archive -Path a.zip -DestinationPath V:\localai\cards\scratch\c1\tmp\x`, cwd, ""},
+
+		{"PowerShell", `Invoke-WebRequest https://x/a -OutFile V:\localai\cards\lb\a.zip`, cwd, hit},
+		{"PowerShell", `iwr -uri https://x/a -outfile v:\LOCALAI\Cards\lb\a.zip`, cwd, hit},
+		{"PowerShell", `Invoke-RestMethod https://x/a -OutFile:V:/localai/cards/lb/a.zip`, cwd, hit},
+		{"PowerShell", `curl.exe -o V:\localai\cards\lb\a.zip https://x/a`, cwd, hit},
+		{"PowerShell", `Invoke-WebRequest https://x/a -OutFile V:\localai\cards\scratch\c1\tmp\a.zip`, cwd, ""},
+		{"PowerShell", `Invoke-WebRequest https://x/a -OutVariable r`, cwd, ""},
+
+		{"Bash", `tar -xf a.tar -C $DIR`, cwd, ""},
+		{"Bash", `tar -xf a.tar -C V:/elsewhere/x`, cwd, ""},
+	}
+	for _, c := range cases {
+		if d := rules.Evaluate(call{tool: c.tool, cmd: c.cmd, cwd: c.cwd}.input(), e); d.Rule != c.want {
+			t.Errorf("%s %q in %s: want %q, got %q (%s)", c.tool, c.cmd, c.cwd, c.want, d.Rule, d.Reason)
+		}
+	}
+}

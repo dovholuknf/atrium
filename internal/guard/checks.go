@@ -42,6 +42,7 @@ func init() {
 		"path":                   checkPath,
 		"content":                checkContent,
 		"file-name":              checkFileName,
+		"outside-home":           checkOutsideHome,
 	}
 }
 
