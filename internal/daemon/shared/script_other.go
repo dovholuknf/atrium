@@ -15,3 +15,6 @@ func ViaShellIfScript(resolved string, args []string) (string, []string, error) 
 
 // NewConsole is a no-op off Windows, where a runner never gets a console of its own.
 func NewConsole(cmd *exec.Cmd) {}
+
+// RefusedByCmd is false off Windows, where no runner goes through cmd.exe.
+func RefusedByCmd(resolved, arg string) bool { return false }

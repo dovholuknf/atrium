@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// wireControlMCP puts the stdio relay to atrium-control in <home>/.atrium/mcp.json and names that file in the
+// wireControlMCP puts `atrium control` as atrium-control in <home>/.atrium/mcp.json and names that file in the
 // claude runner row, on a room's first start, as scripts/provision-room.ps1 step 11 does. The row passes
 // --strict-mcp-config, so a session reads only the servers an --mcp-config file lists.
 func wireControlMCP(st *store.Store, home, exe string) error {
@@ -35,7 +35,7 @@ func wireControlMCP(st *store.Store, home, exe string) error {
 	// One the operator made is theirs, whatever it runs.
 	if _, ok := servers["atrium-control"]; !ok {
 		servers["atrium-control"], _ = json.Marshal(map[string]any{
-			"type": "stdio", "command": filepath.ToSlash(exe), "args": []string{"mcp-relay"},
+			"type": "stdio", "command": filepath.ToSlash(exe), "args": []string{"control"},
 		})
 		doc["mcpServers"], _ = json.Marshal(servers)
 		out, _ := json.MarshalIndent(doc, "", "  ")

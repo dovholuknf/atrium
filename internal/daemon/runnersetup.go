@@ -11,7 +11,7 @@ import (
 
 // prepareRunnerSetup runs the runner's adapter step for the launch folder,
 // before the process starts. For gemini that trusts a new worktree inside a
-// workspace root, so gemini does not stop at a trust prompt nobody is watching.
+// workspace root or the card root, so gemini does not stop at a trust prompt nobody is watching.
 //
 // NEVER FAILS A LAUNCH. A write that goes wrong is logged and the runner starts
 // anyway, and the runner's own prompt is the fallback. See
@@ -39,10 +39,14 @@ func (d *Daemon) prepareRunnerSetup(h *store.Harness, cwd string, env []string) 
 			vars[k] = v
 		}
 	}
+	roots := runnersetup.WorkspaceRoots(ps)
+	if root, err := d.CardRoot(); err == nil {
+		roots = append(roots, root)
+	}
 	note, err := a.Launch(runnersetup.Env{
 		Home:   home,
 		Getenv: func(k string) string { return vars[k] },
-		Roots:  runnersetup.WorkspaceRoots(ps),
+		Roots:  roots,
 	}, cwd)
 	if err != nil {
 		log.Printf("[atrium] runner setup for %s in %s did not apply: %v", h.ID, cwd, err)

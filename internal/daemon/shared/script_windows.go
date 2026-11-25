@@ -142,3 +142,15 @@ func NewConsole(cmd *exec.Cmd) {
 		cmd.Stderr = none
 	}
 }
+
+// RefusedByCmd says ViaShellIfScript would refuse arg for resolved.
+func RefusedByCmd(resolved, arg string) bool {
+	switch strings.ToLower(filepath.Ext(resolved)) {
+	case ".cmd", ".bat":
+		if _, _, ok := npmNodeEntry(resolved); ok {
+			return false
+		}
+		return strings.IndexFunc(arg, cmdLive) >= 0
+	}
+	return false
+}
