@@ -25,14 +25,16 @@ const gateToolDesc = "Set the gate on your own card: the one thing you are waiti
 	"`stage` is where the work is, in a word or two, such as `interview`, `design` or `review`. `text` is the ask in " +
 	"a sentence or two. When there is a page to look at, put its board link or its path in your folder (like " +
 	"`mock.html`) in `text`, and the board opens it beside Approve and Send back.\n\n" +
+	"If the human answers in the terminal instead (typed \"yes, approve it\"), the board cannot see it: call " +
+	"atrium_gate with verb `clear` as soon as you go on, so the Approve bar comes down. `clear` needs no text.\n\n" +
 	"The gate stays until it is answered: the human replies through the board, or you set a newer gate. A newer gate " +
 	"replaces the old one. atrium_done clears every open ask, so when you finish with something to approve, call " +
 	"atrium_done first and atrium_gate after it."
 
 type gateInput struct {
-	Verb  string `json:"verb" jsonschema:"answer, approve, try, sign or unblock"`
+	Verb  string `json:"verb" jsonschema:"answer, approve, try, sign or unblock. clear takes your open gate down when the human answered in the terminal"`
 	Stage string `json:"stage,omitempty" jsonschema:"where the work is, in a word or two, such as interview, design or review"`
-	Text  string `json:"text" jsonschema:"the ask in a sentence or two, with the page's link or path when there is one"`
+	Text  string `json:"text,omitempty" jsonschema:"the ask in a sentence or two, with the page's link or path when there is one. not needed with clear"`
 }
 
 type gateOutput struct {
@@ -65,6 +67,19 @@ func (c *controlMCP) gateHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	out.Recorded, out.Card, out.Verb, out.Stage = res.Recorded, id, verb, strings.TrimSpace(in.Stage)
 	return nil, out, nil
+}
+
+// AddRoomLinkTool puts atrium_link on a room's stdio control server. Build answers the url for a file in the caller's card.
+func AddRoomLinkTool(s *mcp.Server, build func(ctx context.Context, path string) (string, error)) {
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_link", Description: linkToolDesc}, func(ctx context.Context,
+		_ *mcp.CallToolRequest, in linkInput) (*mcp.CallToolResult, linkOutput, error) {
+
+		u, err := build(ctx, in.Path)
+		if err != nil {
+			return nil, linkOutput{}, err
+		}
+		return nil, linkOutput{URL: u}, nil
+	})
 }
 
 // AddRoomGateTool puts atrium_gate on a room's stdio control server. Set posts the gate for the caller's card and

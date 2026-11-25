@@ -31,12 +31,21 @@ let cardsLoading = null;
 // A pin the board has drawn and the room has not confirmed yet: id -> wanted value. A list read that began before the
 // PATCH landed carries the old value and would flip the star back off.
 const pinHeld = new Map();
+// A board link an agent wrote as the loopback address opens nowhere but the agent's own machine, so the ask shows the
+// origin this board was reached on.
+function ownOriginLinks(t) {
+  if (!t || typeof location === "undefined" || !location.origin || location.origin === "null") return t;
+  const re = /https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?=\/|$|[\s)\]>"'])/gi;
+  if (typeof t.ask === "string") t.ask = t.ask.replace(re, location.origin);
+  if (t.seen && Array.isArray(t.seen.open_questions)) t.seen.open_questions = t.seen.open_questions.map(q => typeof q === "string" ? q.replace(re, location.origin) : q);
+  return t;
+}
 function loadCards(signal) {
   if (cardsLoading) return cardsLoading;
   cardsLoading = (async () => {
     const { tasks } = await api("/v1/tasks", { signal });
     const next = new Map();
-    (tasks || []).forEach(t => { if (t && t.id) next.set(t.id, t); });
+    (tasks || []).forEach(t => { if (t && t.id) next.set(t.id, ownOriginLinks(t)); });
     pinHeld.forEach((on, id) => { if (next.has(id)) next.set(id, Object.assign({}, next.get(id), { pinned: on })); });
     if (cardsLoaded) next.forEach((t, id) => cleanupWhenDone(cardRows.get(id), t));
     cardRows = next;
@@ -64,7 +73,7 @@ function cardRowComplete(d) {
 
 function upsertCard(row) {
   cleanupWhenDone(cardRows.get(row.id), row);
-  cardRows.set(row.id, row);
+  cardRows.set(row.id, ownOriginLinks(row));
 }
 
 function dropCard(id) {

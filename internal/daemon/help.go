@@ -106,11 +106,34 @@ func (d *Daemon) handleSetGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	verb := strings.ToLower(strings.TrimSpace(in.Verb))
+	if verb == "clear" {
+		d.clearGate(w, r.PathValue("id"))
+		return
+	}
 	if verb == "" {
 		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("a gate names its verb: "+strings.Join(store.GateVerbs, ", ")))
 		return
 	}
 	d.help(w, HelpRequest{TaskID: r.PathValue("id"), Ask: in.Text, Blocked: true, Verb: verb, Stage: in.Stage})
+}
+
+// clearGate settles the card's open gates, the way a session does once the human answered it in the terminal.
+func (d *Daemon) clearGate(w http.ResponseWriter, id string) {
+	task, err := d.taskFor("", id)
+	if err != nil {
+		small.WriteJSONErr(w, http.StatusNotFound, err)
+		return
+	}
+	settled, err := d.st.ClearGates(task.ID, "agent")
+	if err != nil {
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(settled) > 0 {
+		d.Publish(task.ID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "recorded": true, "cleared": len(settled)})
 }
 
 func (d *Daemon) help(w http.ResponseWriter, in HelpRequest) {

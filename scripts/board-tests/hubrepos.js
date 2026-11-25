@@ -564,7 +564,8 @@ async function hubReposBranchDelete(p, tag) {
         const frames = [box()]; for (let i = 0; i < 3; i++) { await new Promise(r => requestAnimationFrame(r)); frames.push(box()); }
         return { frames, n: window.__hrMut.length, last: window.__hrMut.slice(-10), scroll: [scrollY, document.getElementById("hubrepos-list").scrollTop], vw: [innerWidth, innerHeight] };
       }, sel).catch(x => ({ err: String(x) }));
-      throw new Error(e.message.split(String.fromCharCode(10))[0] + " DIAG " + JSON.stringify(d));
+      const rows = await p.evaluate(() => (document.getElementById("hubrepos-list") || document.body).innerHTML.slice(0, 600)).catch(() => "");
+      throw new Error(e.message.split(String.fromCharCode(10))[0] + " SEL " + sel + " DIAG " + JSON.stringify(d).slice(0, 500) + " HTML " + rows);
     }
   };
   let answer = { status: 400, body: { error: "claude/held has an open merge request. cancel it or let it end first" } };
