@@ -122,6 +122,25 @@ func gateSet(ctx context.Context, body map[string]string) (string, bool, error) 
 	return id, res.Recorded, nil
 }
 
+// linkFor is atrium_link on the stdio server: the room's link endpoint for this session's card.
+func linkFor(ctx context.Context, p string) (string, error) {
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+	if me == "" {
+		return "", fmt.Errorf("atrium_link is for a session atrium knows. this one has no ATRIUM_AGENT_NAME")
+	}
+	id, _, err := resolvePeer(ctx, me)
+	if err != nil {
+		return "", err
+	}
+	var res struct {
+		URL string `json:"url"`
+	}
+	if err := ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id)+"/link?path="+url.QueryEscape(p), nil, &res); err != nil {
+		return "", err
+	}
+	return res.URL, nil
+}
+
 // peersRoomsPath is the room's list of sessions on other rooms.
 func peersRoomsPath(all bool) string {
 	if all {

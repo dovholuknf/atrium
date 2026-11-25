@@ -413,3 +413,25 @@ func TestAGateIsDrawnAndANewerGateReplacesIt(t *testing.T) {
 		t.Fatalf("an answered gate stays on the card: verb %q stage %q ask %q", got.AskVerb, got.AskStage, got.Ask)
 	}
 }
+
+func TestClearGatesTakesTheGateDownAndLeavesAPlainAsk(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	task := askCard(t, s, "clearer")
+	if _, err := s.AddAsk(task.ID, "a plain question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddGate(task.ID, "approve mock.html", "", "approve", "design"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ClearGates(task.ID, "agent"); err != nil || len(got) != 1 {
+		t.Fatalf("cleared %d gates, err %v, want 1", len(got), err)
+	}
+	got, err := s.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AskVerb != "" || got.Ask != "a plain question" {
+		t.Fatalf("the card draws verb %q ask %q, want the plain question alone", got.AskVerb, got.Ask)
+	}
+}

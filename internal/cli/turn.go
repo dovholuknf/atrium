@@ -234,7 +234,7 @@ func turnEnded(hubURL, event, name, runner string) string {
 		"runner":      whichRunner(runner),
 		// The runner's own pid, so the daemon can tell a nested `claude`'s Stop
 		// from the card's. Zero when it cannot be found, which is believed.
-		"pid":             runnerPID(),
+		"pid":             boundedRunnerPID(start),
 		"cwd":             filepath.ToSlash(cwd),
 		"resume":          in.SessionID,
 		"resumable":       hasTranscript(in.TranscriptPath),
@@ -276,6 +276,19 @@ func turnEnded(hubURL, event, name, runner string) string {
 		return keepGoing
 	}
 	return turnAnswer(resp.Body)
+}
+
+// boundedRunnerPID is runnerPID given a third of what is left of the hook budget, since the process walk is slow on a
+// loaded Windows machine and the daemon takes a zero pid as unknown.
+func boundedRunnerPID(start time.Time) int {
+	got := make(chan int, 1)
+	go func() { got <- runnerPID() }()
+	select {
+	case pid := <-got:
+		return pid
+	case <-time.After(hookLeft(start) / 3):
+		return 0
+	}
 }
 
 // postStop posts the turn end, again while the room refuses the connection, as a restart does, inside the hook

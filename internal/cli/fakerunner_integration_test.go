@@ -539,7 +539,7 @@ func runHookLine(t *testing.T, line, payload string) int {
 func assertCard(t *testing.T, humanAddr, name, runner string, s step) {
 	t.Helper()
 	var last string
-	if testwait.Poll(3*time.Second, func() bool {
+	if testwait.Poll(15*time.Second, func() bool {
 		card, ok := findCard(t, humanAddr, name)
 		if !ok {
 			last = "no card"

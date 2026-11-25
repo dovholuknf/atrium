@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 func termReq(id string) *http.Request {
@@ -100,7 +102,18 @@ func TestTerminalWithoutThePlaceholderStillGetsTheDirectory(t *testing.T) {
 
 func TestTerminalRunsTheConfiguredCommand(t *testing.T) {
 	t.Parallel()
-	s, st, work := fileServer(t)
+	st := openMigrated(t)
+	// Not t.TempDir: the command starts in this folder and Windows may still hold it when cleanup runs.
+	dir, err := os.MkdirTemp("", "termruns")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	work, err := safepath.Real(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(st)
 	task := cardIn(t, st, work)
 
 	// The test binary itself, with a filter that matches nothing, so something

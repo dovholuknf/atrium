@@ -319,6 +319,11 @@ func (s *Store) AnswerAsksFrom(taskID, peer, by string) ([]*Ask, error) {
 	return s.answerMatching(taskID, by, func(a *Ask) bool { return a.Peer == peer })
 }
 
+// ClearGates settles the card's open gates and nothing else, for a session that saw the human answer in the terminal.
+func (s *Store) ClearGates(taskID, by string) ([]*Ask, error) {
+	return s.answerMatching(taskID, by, func(a *Ask) bool { return a.Verb != "" })
+}
+
 // AnswerAllAsks settles everything outstanding on a card.
 //
 // The broad door, for the two events that genuinely end every question at

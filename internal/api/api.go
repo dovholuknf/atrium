@@ -1030,6 +1030,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Gate != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/gate", s.Gate)
 	}
+	mux.HandleFunc("GET /v1/tasks/{id}/link", s.getLink)
 	if s.LoginHandler != nil {
 		mux.HandleFunc("GET /v1/login-needed", s.LoginHandler)
 		mux.HandleFunc("DELETE /v1/login-needed", s.LoginHandler)
