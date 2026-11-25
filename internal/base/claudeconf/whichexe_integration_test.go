@@ -106,3 +106,14 @@ func TestHookExeUsesForwardSlashes(t *testing.T) {
 		t.Fatalf("resolved %q, want forward slashes", got)
 	}
 }
+
+// A second room's sessions carry ATRIUM_LOCATION, so a hook installed from one of them names that room's binary.
+func TestHookExeReadsTheRoomInATRIUM_LOCATION(t *testing.T) {
+	t.Setenv(HookExeEnv, "")
+	room := anExe(t)
+	path, _ := withLocation(t, `{"pid":1,"exe":"`+room+`"}`)()
+	t.Setenv("ATRIUM_LOCATION", path)
+	if got := HookExe("D:/git/atrium/build.claude/atrium.exe"); got != room {
+		t.Fatalf("resolved %q, want the room in ATRIUM_LOCATION at %q", got, room)
+	}
+}

@@ -25,7 +25,7 @@ import (
 // Resolution, in order:
 //
 //  1. `ATRIUM_HOOK_EXE`.
-//  2. The running daemon's own path, from the location file.
+//  2. The running daemon's own path, from ATRIUM_LOCATION's file or the default location file.
 //  3. The caller's own path, which is correct when there is no daemon to ask.
 //
 // Never an error. No daemon running is the ordinary case for somebody setting
@@ -48,7 +48,16 @@ const HookExeEnv = "ATRIUM_HOOK_EXE"
 // `fallback` is what to use when nothing better is known. Callers inside the
 // daemon pass their own `os.Executable()`; callers outside pass theirs. Empty
 // means work it out.
-func HookExe(fallback string) string { return hookExeWith(defaultLocationPath, fallback) }
+func HookExe(fallback string) string { return hookExeWith(locationPath, fallback) }
+
+// locationPath is the room this caller belongs to: ATRIUM_LOCATION, which a room gives every session it starts, else
+// the default.
+func locationPath() (string, error) {
+	if p := strings.TrimSpace(os.Getenv("ATRIUM_LOCATION")); p != "" {
+		return p, nil
+	}
+	return defaultLocationPath()
+}
 
 // hookExeWith is HookExe with the daemon found by `locate`.
 func hookExeWith(locate func() (string, error), fallback string) string {

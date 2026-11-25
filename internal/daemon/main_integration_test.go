@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -22,6 +23,14 @@ func seedMigratedDB(t testing.TB, path string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// What its first start wrote, or the daemon wires atrium-control into the claude row as for a room missing it.
+	mcp := filepath.Join(filepath.Dir(path), ".atrium", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(mcp), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mcp, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

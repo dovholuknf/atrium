@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -40,7 +41,7 @@ func TestWireControlMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := doc.MCPServers["atrium-control"]
-	if got.Type != "stdio" || got.Command != "/opt/atrium/atrium" || !slices.Equal(got.Args, []string{"mcp-relay"}) {
+	if got.Type != "stdio" || got.Command != "/opt/atrium/atrium" || !slices.Equal(got.Args, []string{"control"}) {
 		t.Fatalf("atrium-control = %+v", got)
 	}
 	h, err := st.Harness("claude")
@@ -109,5 +110,43 @@ func TestRelayControlHTTP(t *testing.T) {
 	}
 	if doc.MCPServers["other"].Command != "o" {
 		t.Fatalf("other server lost: %s", read())
+	}
+}
+
+func TestAReopenedRoomRepairsAMissingControlMCP(t *testing.T) {
+	dir := t.TempDir()
+	opts := Options{
+		AgentAddr: freePort(t), HumanAddr: freePort(t), DBPath: filepath.ToSlash(filepath.Join(dir, "atrium.db")),
+		LongPoll: 2 * time.Second, LocationFile: filepath.Join(dir, "daemon.json"),
+	}
+	first, err := testNew(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, ".atrium", "mcp.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	h, err := first.st.Harness("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Args = []string{"--strict-mcp-config"}
+	if _, err := first.st.SaveHarness(*h); err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+
+	opts.AgentAddr, opts.HumanAddr = freePort(t), freePort(t)
+	second, err := testNew(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { second.Close() })
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("mcp.json was not repaired: %v", err)
+	}
+	if h, _ := second.st.Harness("claude"); !slices.Contains(h.Args, "--mcp-config") {
+		t.Fatalf("args = %q", h.Args)
 	}
 }

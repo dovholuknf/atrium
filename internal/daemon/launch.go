@@ -126,6 +126,8 @@ type launchOptions struct {
 	Autocompact string
 	// GitDir is a worktree's git common dir outside its cwd, which a codex launch adds as a writable root.
 	GitDir string
+	// ControlMCP is the atrium binary a codex launch runs as its atrium-control MCP server, "" for none.
+	ControlMCP string
 }
 
 // runnerArgsWith is runnerArgs with the effort and the extra argv as well.
@@ -197,6 +199,9 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 			args = append(append([]string{}, args...), "--sandbox", "workspace-write")
 		}
 		args = append(append([]string{}, args...), "--add-dir", o.GitDir)
+	}
+	if o.ControlMCP != "" && isCodex(h) {
+		args = withCodexControlMCP(args, o.Args, o.ControlMCP)
 	}
 	if len(o.Args) > 0 {
 		args = append(append([]string{}, args...), o.Args...)
@@ -1125,12 +1130,18 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
 	if isCodex(h) {
 		opts.GitDir = outsideGitDir(cwd)
+		opts.ControlMCP = d.hk.AtriumBinary()
 		trust := []string{cwd}
 		if opts.GitDir != "" {
 			trust = append(trust, filepath.Dir(opts.GitDir))
 		}
-		if err := claudeconf.TrustCodexProjects(trust); err != nil {
+		if err := claudeconf.TrustCodexProjects(overEnv(h.Env, extraEnv)["CODEX_HOME"], trust); err != nil {
 			log.Printf("[atrium] could not pre-trust %v for codex: %v", trust, err)
+		}
+		if runtime.GOOS == "windows" {
+			if err := claudeconf.AnswerCodexSandbox(overEnv(h.Env, extraEnv)["CODEX_HOME"]); err != nil {
+				log.Printf("[atrium] could not pre-answer codex's sandbox setup: %v", err)
+			}
 		}
 	}
 	// The compaction window, from the limit this card will be held to. The tags are the
@@ -1316,6 +1327,13 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	// A prompt with no brief is built before the card has an id too, so the walk link is added to it here.
 	if briefPath == "" && prompt != "" && req.Resume == "" && !outside && !shared.IsClaude(h) {
 		args, prompt = withPromptLine(args, prompt, d.walkLinkLine(task))
+	}
+	if prompt != "" {
+		promptDir := cwd
+		if cardHome != nil {
+			promptDir = homeDir.Dir
+		}
+		args, prompt = cmdSafePrompt(h.Exe(), promptDir, args, prompt)
 	}
 
 	// Mark the card before spawning so even an immediate exit cleans up its

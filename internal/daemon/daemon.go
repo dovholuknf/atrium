@@ -439,7 +439,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		if err != nil {
 			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
 		} else {
-			if st.Fresh() {
+			if _, serr := os.Stat(filepath.Join(home, ".atrium", "mcp.json")); st.Fresh() || os.IsNotExist(serr) {
 				if err := wireControlMCP(st, home, d.hk.AtriumBinary()); err != nil {
 					log.Printf("[atrium] atrium-control not wired for claude: %v", err)
 				}
