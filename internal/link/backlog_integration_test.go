@@ -390,3 +390,40 @@ func TestBacklogEditOverHTTPAndTool(t *testing.T) {
 		t.Fatalf("tool append with nothing: %v", err)
 	}
 }
+
+func TestBacklogItemsRunEachEntryAndOneFailureDoesNotStopTheRest(t *testing.T) {
+	x := newBacklogRig(t)
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	ctx := context.Background()
+	for _, id := range []string{"a", "b", "c"} {
+		x.send("POST", "/_hub/backlog", js(map[string]any{"id": id, "dept": "fabric", "title": "t"}), loopAddr)
+	}
+
+	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "priority", Priority: "low", Items: []backlogEntry{
+		{ID: "a"}, {ID: "nope"}, {ID: "b", Priority: "urgent"}, {ID: "c", Priority: "high"}}})
+	if err != nil || len(out.Lines) != 4 || out.Lines[0] != "a ok" || !strings.HasPrefix(out.Lines[1], "nope ") ||
+		out.Lines[1] == "nope ok" || !strings.Contains(out.Lines[2], "high, medium, low") || out.Lines[3] != "c ok" {
+		t.Fatalf("batch: %q %v", out.Lines, err)
+	}
+	for id, want := range map[string]string{"a": "low", "b": "", "c": "high"} {
+		_, got, _ := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get", ID: id})
+		if got.Item == nil || got.Item.Priority != want {
+			t.Fatalf("%s priority = %+v, want %q", id, got.Item, want)
+		}
+	}
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "append", Text: "same", Items: []backlogEntry{
+		{ID: "a"}, {ID: "b", Text: "own"}}})
+	if err != nil || len(out.Lines) != 2 || out.Lines[0] != "a ok" || out.Lines[1] != "b ok" {
+		t.Fatalf("append batch: %q %v", out.Lines, err)
+	}
+	_, got, _ := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "b"})
+	if got.Item == nil || !strings.Contains(got.Item.Body, "own") || strings.Contains(got.Item.Body, "same") {
+		t.Fatalf("b body = %+v", got.Item)
+	}
+
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", Items: []backlogEntry{{ID: "a"}}}); err == nil {
+		t.Fatal("items on edit was not refused")
+	}
+}

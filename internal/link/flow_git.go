@@ -63,6 +63,9 @@ func (p *Proxy) flowRefresh(ctx context.Context, st *hubstore.Store, id string) 
 		return FlowView{}, err
 	}
 	v := FlowView{FlowItem: item}
+	if on, _ := st.MockStagesOn(); !on {
+		v.UI = false
+	}
 	g := p.flowGitOf()
 	if g == nil || (item.Branch == "" && item.SHA == "") {
 		return v, nil
@@ -115,7 +118,7 @@ func (p *Proxy) flowRefresh(ctx context.Context, st *hubstore.Store, id string) 
 		raise("pushed-by-clint")
 	}
 	if want != item.Stage {
-		moved, err := st.FlowSetStage(hubstore.FlowSet{ItemID: id, Stage: want, SHA: f.SHA, By: gitStageBy})
+		moved, err := st.FlowSetStage(hubstore.FlowSet{ItemID: id, Stage: want, SHA: f.SHA, By: gitStageBy, FromGit: true})
 		if err != nil {
 			return v, err
 		}

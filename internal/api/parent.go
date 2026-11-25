@@ -15,7 +15,7 @@ import (
 // ParentChanged is the `by` of the `notified` event that records an operator moving a card under another card.
 const ParentChanged = "parent-changed"
 
-// postParent nests a card under another card, or under nobody when `parent` is empty. The parent is a card id or
+// postParent nests a card under another card, or under nobody when `parent` is empty, `top`, `atrium`, `none` or `@human`. The parent is a card id or
 // a handle of this room, or name@room for a card on another room.
 func (s *Server) postParent(w http.ResponseWriter, r *http.Request) {
 	t, err := s.st.Get(r.PathValue("id"))
@@ -36,6 +36,10 @@ func (s *Server) postParent(w http.ResponseWriter, r *http.Request) {
 	}
 	var parent *store.Task
 	ref := strings.TrimSpace(in.Parent)
+	switch strings.ToLower(ref) {
+	case "top", "atrium", "none", store.HumanLauncher:
+		ref = ""
+	}
 	// A parent on another room is not in this store: record its handle, as a cross-room launch does.
 	if name, room, err := address.SplitAddress(ref); err == nil && strings.Contains(ref, "@") && room != "" &&
 		!strings.EqualFold(room, strings.TrimSpace(s.Room)) {

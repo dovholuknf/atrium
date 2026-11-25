@@ -217,6 +217,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["card_root_required"] = s.st.CardRootRequiredOn()
 	// Whether the usage tab draws cache reads. Off unless switched on.
 	out["usage_cache_reads"] = s.usageCacheReads()
+	out["cruft_nightly"] = s.cruftNightly()
 	out["guard_card_root"] = s.guardCardRoot()
 	out["open_external_anywhere"] = s.openExternalAnywhere()
 	// When the weekly limit resets, for the usage tab's "this week" range. See usageweek.go.
@@ -401,6 +402,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		ColdHandoff *bool `json:"cache_cold_handoff"`
 		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
 		UsageCacheReads *bool `json:"usage_cache_reads"`
+		CruftNightly    *bool `json:"cruft_nightly"`
 		GuardCardRoot   *bool `json:"guard_card_root"`
 		// The removed open externally's switch, still stored. See SettingOpenExternalAnywhere.
 		OpenExternalAnywhere *bool `json:"open_external_anywhere"`
@@ -1135,6 +1137,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		s.Broadcast("settings", globalAutoView(s))
 	}
 
+	if body.CruftNightly != nil {
+		v := "off"
+		if *body.CruftNightly {
+			v = "on"
+		}
+		if err := s.st.SetSetting(SettingCruftNightly, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
 	if body.GuardCardRoot != nil {
 		v := "off"
 		if *body.GuardCardRoot {
@@ -1174,6 +1187,14 @@ const SettingUsageCacheReads = "usage_cache_reads"
 
 func (s *Server) usageCacheReads() bool {
 	v, err := s.st.Setting(SettingUsageCacheReads)
+	return err == nil && strings.TrimSpace(v) == "on"
+}
+
+// SettingCruftNightly is `on` when the room runs the nightly cruft pass. Unset is off.
+const SettingCruftNightly = "cruft_nightly"
+
+func (s *Server) cruftNightly() bool {
+	v, err := s.st.Setting(SettingCruftNightly)
 	return err == nil && strings.TrimSpace(v) == "on"
 }
 

@@ -36,24 +36,30 @@ const backlogToolDesc = "The backlog, kept on the hub, so a director on any room
 	"- `status {id, status}`: change the status.\n" +
 	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`.\n" +
 	"- `edit {id, title?, body?}`: replace the title, the body, or both.\n" +
-	"- `append {id, text}`: add a paragraph to the body, headed with who and the day."
+	"- `append {id, text}`: add a paragraph to the body, headed with who and the day." +
+	"\n\nTo do status, priority or append to more than a few items, give `items`, a list of `{id, status?, priority?, " +
+	"text?}`, in ONE call instead of one call each. A field an entry leaves out is the call's own. It answers `lines`, " +
+	"one per entry in the order given, `<id> ok` or `<id> <the error>`. One failure does not stop the rest, and each " +
+	"change is written and logged as its own single call would be."
 
 type backlogInput struct {
-	Action   string `json:"action" jsonschema:"list, get, file, status, priority, edit or append"`
-	ID       string `json:"id,omitempty" jsonschema:"the item id, for get and status, and for file when you choose it"`
-	Dept     string `json:"dept,omitempty" jsonschema:"the department, for file, and to narrow a list"`
-	Title    string `json:"title,omitempty" jsonschema:"for file and edit: one line"`
-	Body     string `json:"body,omitempty" jsonschema:"for file and edit: the item, markdown"`
-	Text     string `json:"text,omitempty" jsonschema:"for append: the paragraph to add, markdown"`
-	Priority string `json:"priority,omitempty" jsonschema:"high, medium or low (unset for none). for file, priority, and to narrow a list"`
-	Status   string `json:"status,omitempty" jsonschema:"for status: open, held, in-progress, done or dropped. for list: only that status"`
-	Open     bool   `json:"open,omitempty" jsonschema:"for list: leave out done and dropped"`
+	Action   string         `json:"action" jsonschema:"list, get, file, status, priority, edit or append"`
+	ID       string         `json:"id,omitempty" jsonschema:"the item id, for get and status, and for file when you choose it"`
+	Dept     string         `json:"dept,omitempty" jsonschema:"the department, for file, and to narrow a list"`
+	Title    string         `json:"title,omitempty" jsonschema:"for file and edit: one line"`
+	Body     string         `json:"body,omitempty" jsonschema:"for file and edit: the item, markdown"`
+	Text     string         `json:"text,omitempty" jsonschema:"for append: the paragraph to add, markdown"`
+	Priority string         `json:"priority,omitempty" jsonschema:"high, medium or low (unset for none). for file, priority, and to narrow a list"`
+	Status   string         `json:"status,omitempty" jsonschema:"for status: open, held, in-progress, done or dropped. for list: only that status"`
+	Open     bool           `json:"open,omitempty" jsonschema:"for list: leave out done and dropped"`
+	Items    []backlogEntry `json:"items,omitempty" jsonschema:"for status, priority and append on many items in one call: one entry per item"`
 }
 
 type backlogOutput struct {
 	Items []hubstore.BacklogItem `json:"items,omitempty"`
 	Item  *hubstore.BacklogItem  `json:"item,omitempty"`
 	Note  string                 `json:"note,omitempty"`
+	Lines []string               `json:"lines,omitempty"`
 }
 
 const reportsToolDesc = "Director reports, kept on the hub, so a report from a director on any room reaches the " +
@@ -144,7 +150,45 @@ func backlogRoom(req *mcp.CallToolRequest) string {
 	return ""
 }
 
+type backlogEntry struct {
+	ID       string `json:"id" jsonschema:"the item id"`
+	Status   string `json:"status,omitempty" jsonschema:"for status: this item's status, else the call's"`
+	Priority string `json:"priority,omitempty" jsonschema:"for priority: this item's priority, else the call's"`
+	Text     string `json:"text,omitempty" jsonschema:"for append: this item's paragraph, else the call's"`
+}
+
 func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolRequest, in backlogInput) (
+	*mcp.CallToolResult, backlogOutput, error) {
+
+	if len(in.Items) == 0 {
+		return c.backlogOne(ctx, req, in)
+	}
+	act := strings.TrimSpace(in.Action)
+	if act != "status" && act != "priority" && act != "append" {
+		return nil, backlogOutput{}, &ctl.RefusedError{Msg: "items is for status, priority and append, not " + strconv.Quote(act)}
+	}
+	var out backlogOutput
+	for _, e := range in.Items {
+		one := backlogInput{Action: act, ID: e.ID, Status: in.Status, Priority: in.Priority, Text: in.Text}
+		if e.Status != "" {
+			one.Status = e.Status
+		}
+		if e.Priority != "" {
+			one.Priority = e.Priority
+		}
+		if e.Text != "" {
+			one.Text = e.Text
+		}
+		line := strings.TrimSpace(e.ID) + " ok"
+		if _, _, err := c.backlogOne(ctx, req, one); err != nil {
+			line = strings.TrimSpace(e.ID) + " " + err.Error()
+		}
+		out.Lines = append(out.Lines, line)
+	}
+	return nil, out, nil
+}
+
+func (c backlogTools) backlogOne(ctx context.Context, req *mcp.CallToolRequest, in backlogInput) (
 	*mcp.CallToolResult, backlogOutput, error) {
 
 	var out backlogOutput

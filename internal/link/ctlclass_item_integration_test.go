@@ -4,6 +4,7 @@ package link
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -109,5 +110,37 @@ func TestANonItemLaunchIsUnchanged(t *testing.T) {
 	}
 	if _, ok := body["item"]; ok {
 		t.Errorf("an ordinary launch sends an item key: %v", body["item"])
+	}
+}
+
+func TestAUIItemWorkerWaitsForTheApprovedMockAndAMockReviewIsLaunchable(t *testing.T) {
+	h := newClassHarness(t, classTasks)
+	h.flow = map[string]map[string]any{"f-ui": {"item_id": "f-ui", "stage": "mocked", "ui": true}}
+	s := h.connect(t, "boss", "alpha")
+	call := func(args map[string]any) error {
+		res, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "atrium_launch_worker", Arguments: args})
+		if err == nil && res.IsError {
+			err = fmt.Errorf("%v", res.Content[0].(*mcp.TextContent).Text)
+		}
+		return err
+	}
+	build := map[string]any{"cwd": "/work/dir", "prompt": "build it", "item": "f-ui", "isolated": true}
+	if err := call(build); err == nil || !strings.Contains(err.Error(), "UI item") || len(*h.launches) != 0 {
+		t.Fatalf("a build before approval: %v, launches %d", err, len(*h.launches))
+	}
+	if err := call(map[string]any{"cwd": "/work/dir", "prompt": "review", "item": "f-ui", "isolated": true, "kind": KindMockReview,
+		"brief": "mock at http://x"}); err != nil {
+		t.Fatalf("a mock review: %v", err)
+	}
+	review := (*h.launches)[0]
+	if !hasTag(tagsOf(review), MockReviewTag) || !strings.Contains(review["brief"].(string), "How to review this mock") {
+		t.Fatalf("mock review launch: %v", review)
+	}
+	h.flow["f-ui"]["stage"] = "approved"
+	if err := call(build); err != nil || len(*h.launches) != 2 {
+		t.Fatalf("a build after approval: %v", err)
+	}
+	if b, _ := (*h.launches)[1]["brief"].(string); !strings.Contains(b, "This is a UI item") {
+		t.Fatalf("the worker brief lacks the UI order: %q", b)
 	}
 }

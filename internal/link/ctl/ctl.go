@@ -89,11 +89,11 @@ func (c Class) Base() Class { return c &^ Elevated }
 
 // LaunchInput is the parameters of atrium_launch.
 type LaunchInput struct {
-	Cwd    string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and name repo (or home) so atrium makes the card's own folder under the room's card root. not together with repo"`
+	Cwd    string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and atrium makes the card's own folder under the room's card root (with a worktree when you name repo). not together with repo"`
 	Repo   string `json:"repo,omitempty" jsonschema:"the repository to work in, as host/owner/repo (cloned from the hub when the room has no clone yet) or an absolute path to a clone on the room. atrium makes the card's home under its card root and adds a git worktree there as the card's directory. use this instead of making a worktree yourself. not together with cwd"`
 	Branch string `json:"branch,omitempty" jsonschema:"the branch for the worktree that repo makes. made from base when it does not exist. default claude/<title>"`
 	Base   string `json:"base,omitempty" jsonschema:"where a new branch starts. default the clone's claude/main, else its default branch"`
-	Home   bool   `json:"home,omitempty" jsonschema:"true asks for a home with no repo: an empty folder under the room's card root for scratch work. the card is kept open"`
+	Home   bool   `json:"-"`
 	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why    string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	Prompt string `json:"prompt,omitempty" jsonschema:"the first instruction it gets"`

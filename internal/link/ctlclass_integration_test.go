@@ -46,6 +46,8 @@ type classHarness struct {
 	launches *[]map[string]any
 	mu       sync.Mutex
 	clock    time.Time
+	// flow is the flow row the fake hub answers for an item id.
+	flow map[string]map[string]any
 }
 
 func newClassHarness(t *testing.T, tasks []map[string]any) *classHarness {
@@ -57,6 +59,8 @@ func newClassHarness(t *testing.T, tasks []map[string]any) *classHarness {
 		case r.URL.Path == "/v1/tasks":
 			h.lookups.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": tasks})
+		case strings.HasPrefix(r.URL.Path, "/_hub/flow/items/") && h.flow[strings.TrimPrefix(r.URL.Path, "/_hub/flow/items/")] != nil:
+			_ = json.NewEncoder(w).Encode(h.flow[strings.TrimPrefix(r.URL.Path, "/_hub/flow/items/")])
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/launch":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)

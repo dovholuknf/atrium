@@ -133,7 +133,7 @@ func addPeerTools(s *mcp.Server) {
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +
 			"gate and its own card, it outlives the session that started it, and the human can " +
 			"watch it, type into it or take it over. It is a colleague rather than a call.\n\n" +
-			"LAUNCH WITH `repo` AND `branch`, NOT WITH A WORKTREE YOU MADE. Give `repo` (host/owner/repo, or an absolute path to a clone on the room) and optionally `branch` and `base`, and atrium makes the card's home under the room's card root and adds the worktree there, so the room's work is in one place and its space is taken back when the card is culled. `home: true` alone makes an empty home for scratch work. `cwd` is for a directory that already exists and is not together with `repo`. A room can be set to refuse an agent launch whose `cwd` is outside its card root.\n\n" +
+			"LAUNCH WITH `repo` AND `branch`, NOT WITH A WORKTREE YOU MADE. Give `repo` (host/owner/repo, or an absolute path to a clone on the room) and optionally `branch` and `base`, and atrium makes the card's folder under the room's card root and adds the worktree there, so the room's work is in one place and its space is taken back when the card is culled. Leave out `repo` and `cwd` and the card still gets a folder of its own, only where it runs. `cwd` is for a directory that already exists and is not together with `repo`. A room can be set to refuse an agent launch whose `cwd` is outside its card root.\n\n" +
 			"IT STARTS EMPTY. Unlike a subagent it inherits nothing of your conversation, " +
 			"which is the point as often as it is the cost: hand it what it needs and it is " +
 			"not carrying three hours of unrelated debugging. Use `brief` for that. It is " +
@@ -163,11 +163,12 @@ func addPeerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch_worker",
 		Description: "Start a new agent for PARALLEL WORK that ends when its branch merges. Same parameters as " +
-			"`atrium_launch`, and the same session, but the card is marked `lifetime: work`: once its branch is merged " +
+			"`atrium_launch`, and the same session, but the card is CLOSE WHEN DONE: once its branch is merged " +
 			"to claude/main atrium EXITS its runner, and it also exits it a few seconds after the worker's own final " +
 			"`atrium_done`, scratch or not, so a finished worker never holds a launch slot. Pass `resident: true` to " +
 			"keep one running. A blocked worker keeps running. The card and the worktree stay, and `atrium_say` with " +
-			"`wake: true` resumes the worker for another round. Use it for a worker with a job that ends in a " +
+			"`wake: true` resumes the worker for another round. A card with no repo closes when it reports done, and " +
+			"its folder goes with it, unless it holds work to ask about. Use it for a worker with a job that ends in a " +
 			"merge or a report.\n\n" +
 			"Use `atrium_launch` instead for an investigation, a long conversation, or anything the human said to " +
 			"leave open: atrium never exits that card on a merge. Which one you call is the choice, so make it.",
@@ -651,11 +652,11 @@ func resolvePeer(ctx context.Context, who string) (id, handle string, err error)
 type LaunchInput struct {
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`.
 	Lifetime string `json:"-"`
-	Cwd      string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and name repo (or home) so atrium makes the card's own folder under the room's card root. not together with repo"`
+	Cwd      string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and atrium makes the card's own folder under the room's card root (with a worktree when you name repo). not together with repo"`
 	Repo     string `json:"repo,omitempty" jsonschema:"the repository to work in, as host/owner/repo (cloned from the hub when the room has no clone yet) or an absolute path to a clone on the room. atrium makes the card's home under its card root and adds a git worktree there as the card's directory. use this instead of making a worktree yourself. not together with cwd"`
 	Branch   string `json:"branch,omitempty" jsonschema:"the branch for the worktree that repo makes. made from base when it does not exist. default claude/<title>"`
 	Base     string `json:"base,omitempty" jsonschema:"where a new branch starts. default the clone's claude/main, else its default branch"`
-	Home     bool   `json:"home,omitempty" jsonschema:"true asks for a home with no repo: an empty folder under the room's card root for scratch work. the card is kept open"`
+	Home     bool   `json:"-"`
 	Title    string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why      string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	// Prompt is the first thing the new session is told.
@@ -780,10 +781,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 
 	out := LaunchOutput{}
 	atriumHome := strings.TrimSpace(in.Cwd) == ""
-	if atriumHome && strings.TrimSpace(in.Repo) == "" && !in.Home {
-		return nil, out, fmt.Errorf("say where to run it: cwd for a directory you made, or repo (with branch) so atrium " +
-			"makes the card's own folder, or home for an empty one")
-	}
+	in.Home = atriumHome && strings.TrimSpace(in.Repo) == ""
 	if !atriumHome && strings.TrimSpace(in.Repo) != "" {
 		return nil, out, fmt.Errorf("pass cwd for a directory you made, or repo for one atrium makes, not both")
 	}

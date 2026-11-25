@@ -394,6 +394,12 @@ func (p *Proxy) workAction(w http.ResponseWriter, r *http.Request, st *hubstore.
 			crFail(w, http.StatusConflict, "the design is now at "+short(want)+", not "+short(sha)+". read it again")
 			return
 		}
+		if fi, err := st.FlowGet(id); err == nil && fi.UI {
+			if _, err := st.FlowSetStage(hubstore.FlowSet{ItemID: id, Stage: "approved", By: by}); err != nil {
+				ifail(w, err)
+				return
+			}
+		}
 		pl, _ := json.Marshal(map[string]string{"design": design.AtSHA, "by": by})
 		if _, err := st.AddWorkFact(hubstore.WorkFact{BacklogID: id, Kind: hubstore.FactApprove, Source: hubstore.SourceSeen,
 			AtSHA: want, Payload: string(pl)}); err != nil {

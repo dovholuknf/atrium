@@ -119,6 +119,8 @@ type Server struct {
 	// HubRefresh fetches the hub's claude/main and a hub branch into the clone's remote-tracking refs, so a close judges
 	// a branch against the hub as it is now. Best effort: nil, or an error, leaves the refs as last fetched.
 	HubRefresh func(ctx context.Context, card, dir, hubRepo, branch string) error
+	// measureWait and refreshWait bound a close preview's size walk and hub refresh. Zero is the default, a test sets less.
+	measureWait, refreshWait time.Duration
 	// StashRetentionDays is how long the hub keeps a stash before it removes it, for the expiry date a close names. Nil
 	// is 30, the hub's default. The room does not hear the hub's setting, so a hub set to another number removes it
 	// on its own date and this one is what the close could say. 0 is never.

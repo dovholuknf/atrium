@@ -132,6 +132,10 @@ func (p *Proxy) checkSetup(ctx context.Context, a wire.Attached) bool {
 		p.setup.facts = map[string]*wire.RoomSetup{}
 	}
 	old := p.setup.facts[k]
+	// One failed read must not drop what the last good one said: the row vanished and came back on the next read.
+	if old != nil && old.Answering && !f.Answering && f.Checked.Sub(old.Checked) < 3*setupEvery {
+		return false
+	}
 	p.setup.facts[k] = f
 	return old == nil || steadySetup(*old) != steadySetup(*f)
 }

@@ -69,6 +69,9 @@ type Room struct {
 	// does not decide: it waits to be told, by the room, in the only way a room
 	// speaks about itself. Cleared the moment that stops being true.
 	ClearedAt *time.Time `json:"cleared_at,omitempty"`
+	// ExpectedOfflineAt is when an operator said this room is offline on purpose. It clears when the room reconnects.
+	ExpectedOfflineAt   *time.Time `json:"expected_offline_at,omitempty"`
+	ExpectedOfflineNote string     `json:"expected_offline_note,omitempty"`
 }
 
 // EverConnected reports whether this room has ever dialled in.
@@ -329,7 +332,7 @@ func (s *Store) Enrolled(name string) (bool, error) {
 }
 
 const roomCols = `SELECT id, name, self_name, transport, state, created_at,
-	first_seen_at, last_seen_at, version, cleared_at, pending`
+	first_seen_at, last_seen_at, version, cleared_at, pending, expected_offline_at, expected_offline_note`
 
 func (s *Store) one(where string, args ...any) (*Room, error) {
 	var r *Room
@@ -352,10 +355,10 @@ type scanner interface{ Scan(...any) error }
 
 func scanRoom(sc scanner) (*Room, error) {
 	var r Room
-	var created, first, last, cleared string
+	var created, first, last, cleared, expected string
 	var pending int
 	if err := sc.Scan(&r.ID, &r.Name, &r.SelfName, &r.Transport, &r.State,
-		&created, &first, &last, &r.Version, &cleared, &pending); err != nil {
+		&created, &first, &last, &r.Version, &cleared, &pending, &expected, &r.ExpectedOfflineNote); err != nil {
 		return nil, err
 	}
 	if pending == 1 {
@@ -367,6 +370,7 @@ func scanRoom(sc scanner) (*Room, error) {
 	r.FirstSeen = parseOrNil(first)
 	r.LastSeen = parseOrNil(last)
 	r.ClearedAt = parseOrNil(cleared)
+	r.ExpectedOfflineAt = parseOrNil(expected)
 	return &r, nil
 }
 
@@ -425,6 +429,49 @@ func (s *Store) Mark(id string, marked bool) error {
 		s.Log(r, "unmarked", "back in ordinary service")
 	}
 	return nil
+}
+
+// SetExpectedOffline marks a room as offline on purpose, with an optional note, or takes the mark off.
+func (s *Store) SetExpectedOffline(id string, on bool, note string) error {
+	at := ""
+	if on {
+		at = ts(s.now())
+	} else {
+		note = ""
+	}
+	r, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if err := s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE room SET expected_offline_at = ?, expected_offline_note = ? WHERE id = ?`,
+			at, strings.TrimSpace(note), id)
+		return err
+	}); err != nil {
+		return err
+	}
+	if on {
+		s.Log(r, "expected-offline", "offline on purpose until it reconnects")
+	} else {
+		s.Log(r, "expected-online", "no longer expected to be offline")
+	}
+	return nil
+}
+
+// ClearExpectedOffline drops the mark when the room is back, and reports whether there was one.
+func (s *Store) ClearExpectedOffline(id string) (bool, error) {
+	cleared := false
+	err := s.guard(func() error {
+		res, err := s.db.Exec(
+			`UPDATE room SET expected_offline_at = '', expected_offline_note = '' WHERE id = ? AND expected_offline_at != ''`, id)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		cleared = n > 0
+		return nil
+	})
+	return cleared, err
 }
 
 // Remove deletes a room the hub is done with.

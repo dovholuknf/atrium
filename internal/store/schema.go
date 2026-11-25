@@ -2628,6 +2628,13 @@ var migrations = []struct {
 			 WHERE name = 'default' AND walker_brief = '` + walkerBriefSeeded + `'`,
 		},
 	},
+	{
+		// WHICH LAYOUT A CARD HOME IS IN. Empty is the first one, `<root>/<slug>-<id6>/work`. See store/cardhome.go.
+		name: "0127_card_home_layout",
+		stmts: []string{
+			`ALTER TABLE card_home ADD COLUMN layout TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

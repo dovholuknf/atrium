@@ -111,7 +111,7 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.host, "host", "", "which forge it is on, such as github.com")
 	c.Flags().StringVar(&o.branch, "branch", "", "which branch this directory is on, or with --repo as host/owner/repo the branch of the worktree atrium makes")
 	c.Flags().StringVar(&o.base, "base", "", "with --repo as host/owner/repo: where a new branch starts (default claude/main)")
-	c.Flags().BoolVar(&o.home, "home", false, "run in a new empty folder atrium makes under the room's card root, for scratch work")
+	c.Flags().BoolVar(&o.home, "home", false, "run in a new empty folder atrium makes under the room's card root")
 	c.Flags().StringVar(&o.window, "window", "",
 		"which pile this belongs to, and what the board groups by. free text: "+
 			"active-work, pull-requests, tangent, a repo name, anything")

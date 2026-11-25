@@ -39,7 +39,7 @@ func hubAskPath(p string) bool {
 	if base == "/_hub/backlog/follow" || base == "/_hub/backlog/follow/" {
 		return false
 	}
-	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" || base == hubRoomEventsPath ||
+	if base == hubPublishPath || base == hubSubsPath || base == "/_hub/remind" || base == "/_hub/cruft" || base == hubRoomEventsPath ||
 		base == "/_hub/capabilities" || base == "/_hub/capability-list" ||
 		base == docs.DropFilesPath || base == docs.DropGetPath {
 		return true
@@ -108,7 +108,7 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req wire.RelayRequ
 		// FROM THE LINK, never from the room's word. See above.
 		// `room` is only a field of a new row, and the endpoints refuse a field they do not know.
 		if base, _, _ := strings.Cut(req.Path, "?"); base == "/_hub/backlog" || base == "/_hub/reports" ||
-			base == "/_hub/items/sync" || base == "/_hub/items/tasks/sync" || base == hubSubsPath || base == "/_hub/remind" ||
+			base == "/_hub/items/sync" || base == "/_hub/items/tasks/sync" || base == hubSubsPath || base == "/_hub/remind" || base == "/_hub/cruft" ||
 			base == "/_hub/merge" || base == "/_hub/merge/report" {
 			m["room"] = from
 		} else if base == "/_hub/items" || (strings.HasPrefix(base, "/_hub/items/") && strings.HasSuffix(base, "/tasks")) {

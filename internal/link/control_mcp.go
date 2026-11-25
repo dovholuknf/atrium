@@ -314,7 +314,7 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +
 			"gate and its own card, it outlives the session that started it, and the human can " +
 			"watch it, type into it or take it over. It is a colleague rather than a call.\n\n" +
-			"LAUNCH WITH `repo` AND `branch`, NOT WITH A WORKTREE YOU MADE. Give `repo` (host/owner/repo, or an absolute path to a clone on the room) and optionally `branch` and `base`, and atrium makes the card's home under the room's card root and adds the worktree there, so the room's work is in one place and its space is taken back when the card is culled. `home: true` alone makes an empty home for scratch work. `cwd` is for a directory that already exists and is not together with `repo`. A room can be set to refuse an agent launch whose `cwd` is outside its card root.\n\n" +
+			"LAUNCH WITH `repo` AND `branch`, NOT WITH A WORKTREE YOU MADE. Give `repo` (host/owner/repo, or an absolute path to a clone on the room) and optionally `branch` and `base`, and atrium makes the card's folder under the room's card root and adds the worktree there, so the room's work is in one place and its space is taken back when the card is culled. Leave out `repo` and `cwd` and the card still gets a folder of its own, only where it runs. `cwd` is for a directory that already exists and is not together with `repo`. A room can be set to refuse an agent launch whose `cwd` is outside its card root.\n\n" +
 			"IT STARTS EMPTY. Unlike a subagent it inherits nothing of your conversation, " +
 			"which is the point as often as it is the cost: hand it what it needs and it is " +
 			"not carrying three hours of unrelated debugging. Use `prompt` for that.\n\n" +
@@ -368,11 +368,12 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_launch_worker",
 		Description: "Start a new agent for PARALLEL WORK that ends when its branch merges. Same parameters as " +
-			"`atrium_launch`, and the same session, but the card is marked `lifetime: work`: once its branch is merged " +
+			"`atrium_launch`, and the same session, but the card is CLOSE WHEN DONE: once its branch is merged " +
 			"to claude/main atrium EXITS its runner, and it also exits it a few seconds after the worker's own final " +
 			"`atrium_done`, scratch or not, so a finished worker never holds a launch slot. Pass `resident: true` to " +
 			"keep one running. A blocked worker keeps running. The card and the worktree stay, and `atrium_say` with " +
-			"`wake: true` resumes the worker for another round. Use it for a worker with a job that ends in a " +
+			"`wake: true` resumes the worker for another round. A card with no repo closes when it reports done, and " +
+			"its folder goes with it, unless it holds work to ask about. Use it for a worker with a job that ends in a " +
 			"merge or a report.\n\n" +
 			"Use `atrium_launch` instead for an investigation, a long conversation, or anything the human said to " +
 			"leave open: atrium never exits that card on a merge. Which one you call is the choice, so make it.",
@@ -1754,10 +1755,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	*mcp.CallToolResult, launchOutput, error) {
 
 	out := launchOutput{}
-	if strings.TrimSpace(in.Cwd) == "" && strings.TrimSpace(in.Repo) == "" && !in.Home {
-		return nil, out, &ctl.RefusedError{Msg: "say where to run it: cwd for a directory you made, or repo (with branch) so atrium " +
-			"makes the card's own folder, or home for an empty one"}
-	}
+	in.Home = strings.TrimSpace(in.Cwd) == "" && strings.TrimSpace(in.Repo) == ""
 	if strings.TrimSpace(in.Cwd) != "" && strings.TrimSpace(in.Repo) != "" {
 		return nil, out, &ctl.RefusedError{Msg: "pass cwd for a directory you made, or repo for one atrium makes, not both"}
 	}
@@ -1849,6 +1847,14 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		}
 	}
 
+	// A UI ITEM IS NOT BUILT BEFORE THE HUMAN APPROVED ITS MOCK. A launch is let through when it makes the mock or reviews it.
+	if workID != "" && (in.Isolated || in.Task != nil) && !isMockReview(in.Kind) && !hasTag(in.Tags, StepTagPrefix+hubstore.StepDesigned) {
+		if v, ui := c.uiFlow(ctx, workID); ui && hubstore.StageIndex(v.Stage) < hubstore.StageIndex("approved") {
+			return out, &ctl.RefusedError{Msg: workID + " is a UI item at " + v.Stage + ". it is mocked, mock-reviewed and approved " +
+				"by the human before a worker builds it"}
+		}
+	}
+
 	// AN ITEM THAT WAITS ON OTHER WORK does not start, before any slot is reserved. A
 	// worker's title starts with its item id, so a director cannot start blocked work by
 	// accident. There is no override: a human clears the gate on the board first.
@@ -1934,10 +1940,19 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 		brief = reviewBrief(in.Base, in.Brief)
 		tags = append(tags, ReviewTag)
 	}
+	if isMockReview(in.Kind) {
+		brief = mockReviewBrief(in.Brief)
+		tags = append(tags, MockReviewTag)
+	}
 	if wid := WorkOfTags(tags); wid != "" && brief != "" && !isInterview(in.Kind) && in.Task == nil {
 		brief = WithItemBrief(brief, ItemBrief(ctx, func(ctx context.Context, method, path string, body, out any) error {
 			return c.Ask(ctx, method, path, "", body, out)
 		}, wid))
+	}
+	if wid := WorkOfTags(tags); wid != "" && !isInterview(in.Kind) && !isMockReview(in.Kind) && in.Task == nil {
+		if _, ui := c.uiFlow(ctx, wid); ui {
+			brief += uiRules
+		}
 	}
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
@@ -2052,6 +2067,9 @@ func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, 
 			dir = path.Dir(strings.TrimRight(strings.ReplaceAll(t.Worktree, "\\", "/"), "/"))
 		}
 		out.Brief = strings.TrimRight(strings.ReplaceAll(dir, "\\", "/"), "/") + "/" + "BRIEF.md"
+		if t.BriefPath != "" {
+			out.Brief = t.BriefPath
+		}
 	}
 	// Where the human looks. Worth returning rather than leaving them to assemble it.
 	out.Watch = TerminalURL(seenhost.Base(c.board), room, t.Wire, t.ID)

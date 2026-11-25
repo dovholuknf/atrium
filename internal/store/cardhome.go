@@ -17,6 +17,11 @@ const (
 	CardHomeScratch   = "scratch"
 	CardHomeTask      = "task"
 	CardHomeThrowaway = "throwaway"
+
+	// CardHomeFlat is the layout where the row's path is the card's working directory itself, `<root>/<forge>/<org>/
+	// <repo>/<worktree>` or `<root>/scratch/<slug>-<id6>`. A row with no layout is `<path>/work` beside `tmp` and
+	// `.atrium`.
+	CardHomeFlat = "flat"
 )
 
 // CardHome is one folder a card works in. Owed is the event the hub has not acknowledged, `reaped` once the folder is
@@ -41,15 +46,16 @@ type CardHome struct {
 	Files      int64    `json:"files"`
 	MeasuredAt string   `json:"measured_at"`
 	RemovedAt  string   `json:"removed_at"`
+	Layout     string   `json:"layout"`
 }
 
-const cardHomeCols = `id, path, kind, backlog_id, task_id, attempt, card, clone, branch, base, created_at, state, reason, owed, outputs, bytes, files, measured_at, removed_at`
+const cardHomeCols = `id, path, kind, backlog_id, task_id, attempt, card, clone, branch, base, created_at, state, reason, owed, outputs, bytes, files, measured_at, removed_at, layout`
 
 func scanCardHome(sc interface{ Scan(...any) error }) (CardHome, error) {
 	var d CardHome
 	var outputs string
 	err := sc.Scan(&d.ID, &d.Path, &d.Kind, &d.BacklogID, &d.TaskID, &d.Attempt, &d.Card, &d.Clone, &d.Branch, &d.Base,
-		&d.CreatedAt, &d.State, &d.Reason, &d.Owed, &outputs, &d.Bytes, &d.Files, &d.MeasuredAt, &d.RemovedAt)
+		&d.CreatedAt, &d.State, &d.Reason, &d.Owed, &outputs, &d.Bytes, &d.Files, &d.MeasuredAt, &d.RemovedAt, &d.Layout)
 	_ = json.Unmarshal([]byte(outputs), &d.Outputs)
 	return d, err
 }
@@ -69,8 +75,8 @@ func (s *Store) CardHomeAdd(path, backlogID, taskID string, attempt int, outputs
 func (s *Store) CardHomeNew(h CardHome) (CardHome, error) {
 	h.ID, h.CreatedAt, h.State = newID(), ts(s.now()), CardHomeLive
 	err := s.guard(func() error {
-		_, err := s.db.Exec(`INSERT INTO card_home (id, path, kind, backlog_id, task_id, card, clone, branch, base, created_at, state) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, 'live')`,
-			h.ID, h.Path, h.Kind, h.Card, h.Clone, h.Branch, h.Base, h.CreatedAt)
+		_, err := s.db.Exec(`INSERT INTO card_home (id, path, kind, backlog_id, task_id, card, clone, branch, base, created_at, state, layout) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, 'live', ?)`,
+			h.ID, h.Path, h.Kind, h.Card, h.Clone, h.Branch, h.Base, h.CreatedAt, h.Layout)
 		return err
 	})
 	return h, err

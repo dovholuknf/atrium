@@ -307,6 +307,28 @@ func TestARoomHeardFromRecentlyReadsAsStillThere(t *testing.T) {
 	}
 }
 
+func TestExpectedOfflineClearsWhenCleared(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sgg")
+	if err := s.SetExpectedOffline(r.ID, true, "moving"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(r.ID)
+	if got.ExpectedOfflineAt == nil || got.ExpectedOfflineNote != "moving" {
+		t.Fatalf("mark not kept: %+v", got)
+	}
+	if cleared, err := s.ClearExpectedOffline(r.ID); err != nil || !cleared {
+		t.Fatalf("clear: %v %v", cleared, err)
+	}
+	got, _ = s.Get(r.ID)
+	if got.ExpectedOfflineAt != nil || got.ExpectedOfflineNote != "" {
+		t.Fatalf("mark survived: %+v", got)
+	}
+	if cleared, _ := s.ClearExpectedOffline(r.ID); cleared {
+		t.Fatal("cleared a mark that was not there")
+	}
+}
+
 // MARKING IS REVERSIBLE, which is the whole reason it is safe to press.
 func TestMarkingForDeletionCanBeTakenBack(t *testing.T) {
 	s := open(t)

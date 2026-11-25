@@ -221,6 +221,9 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 			// builds comes from this id, so carrying the room in it routes the
 			// click without the board knowing rooms exist.
 			obj["room"] = a.room
+			if spec == "/v1/tasks" {
+				delete(obj, "launch_cmd") // a room older than the strip still sends it, 247KB of a 1MB list
+			}
 			if m.idField != "" {
 				if id, ok := obj[m.idField].(string); ok {
 					obj[m.idField] = wire.TagFor(a.room, id)
@@ -313,6 +316,7 @@ func (p *Proxy) remembered(spec string, live []wire.Attached) []any {
 				continue
 			}
 			obj["room"] = name
+			delete(obj, "launch_cmd")
 			// THE SAME TAGGING A LIVE CARD GETS, so the board builds the same
 			// urls from it. Those urls will be refused, by name, which is
 			// better than a card whose buttons quietly do nothing.

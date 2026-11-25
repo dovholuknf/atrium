@@ -165,3 +165,34 @@ func TestFlowEpochOpensAndClosesThroughTheGitPlan(t *testing.T) {
 		t.Fatalf("close with none open: %d", code)
 	}
 }
+
+func TestFlowMockStagesAreHeldOnTheHub(t *testing.T) {
+	x := newBacklogRig(t)
+	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-ui", "dept": "fabric", "title": "a screen"}), loopAddr)
+	post := func(path string, body map[string]any) int {
+		code, _ := x.send("POST", path, js(body), loopAddr)
+		return code
+	}
+	if c := post("/_hub/flow/items/f-ui", map[string]any{"stage": "mocked", "ui": true, "by": "author"}); c < 400 {
+		t.Fatalf("mocked while the setting is off: %d", c)
+	}
+	post("/_hub/flow/mock-stages", map[string]any{"on": true})
+	if c := post("/_hub/flow/items/f-ui", map[string]any{"stage": "mocked", "ui": true, "by": "author"}); c != 200 {
+		t.Fatalf("mocked: %d", c)
+	}
+	if c := post("/_hub/flow/items/f-ui", map[string]any{"stage": "approved", "by": "worker"}); c != 403 {
+		t.Fatalf("a worker approving: %d", c)
+	}
+	if c := post("/_hub/flow/items/f-ui", map[string]any{"stage": "implementing", "by": "worker"}); c < 400 {
+		t.Fatalf("building before the review: %d", c)
+	}
+	if c := post("/_hub/flow/mock-reviews/f-ui", map[string]any{"verdict": "ready", "by": "author"}); c < 400 {
+		t.Fatalf("the author reviewing: %d", c)
+	}
+	if c := post("/_hub/flow/mock-reviews/f-ui", map[string]any{"verdict": "ready", "by": "rev", "shots": "a.png b.png"}); c != 200 {
+		t.Fatalf("review: %d", c)
+	}
+	if c := post("/_hub/flow/items/f-ui", map[string]any{"stage": "approved", "by": "board"}); c != 200 {
+		t.Fatalf("board approve: %d", c)
+	}
+}

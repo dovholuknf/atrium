@@ -108,6 +108,7 @@ against and the operator chose on purpose.
 | `recognisers.go` / `recogniseroute.go` | the hub-owned recogniser table, and recognising a paste on the hub |
 | `forgeroute.go` / `forgeci.go` | the forge, run by the hub for its rooms |
 | `conn/git.go` / `git_hub.go` / `git_store.go` / `git_url.go` | the git kind, the hub's git side, the store on the board, the lookup |
+| `cruft.go` | a room's nightly cruft report: the hub keeps the latest per room and raises one question growler only for a kept item that needs the operator |
 | `remind.go` | `atrium_remind`: `/_hub/remind` and the loop that raises a `reminder` growler on a card when one is due, and with `wake` types the text in |
 | `tasks.go` / `tasks_launch.go` | the tasks of an item: the owner's routes, a room's report of one, and the scheduler that starts the next. `docs/runtime/item-tasks-design.md` |
 | `backlog.go` / `changerequest.go` / `deps.go` / `flow*.go` | the hub's backlog, change requests, gates and merge flow |

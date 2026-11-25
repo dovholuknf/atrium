@@ -79,12 +79,19 @@ func ProjectDirFor(cwd string) (string, error) { return projectDirFor(cwd) }
 
 // encodeProjectDir is Claude Code's name for a directory's transcript folder.
 func encodeProjectDir(cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if len(cwd) > 3 {
+		cwd = strings.TrimRight(cwd, `/\`)
+	}
+	if len(cwd) >= 2 && cwd[1] == ':' && cwd[0] >= 'a' && cwd[0] <= 'z' {
+		cwd = strings.ToUpper(cwd[:1]) + cwd[1:]
+	}
 	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
 			return r
 		}
 		return '-'
-	}, strings.TrimSpace(cwd))
+	}, cwd)
 }
 
 // LatestSession is the most recently written conversation in a directory, or

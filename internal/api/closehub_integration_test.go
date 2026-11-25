@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -26,6 +28,46 @@ func hubRowFor(t *testing.T, st *store.Store, card, branch string) *store.CardRe
 	}
 	t.Fatalf("no hub branch row for %s", branch)
 	return nil
+}
+
+func TestClosePreviewRefreshesHubBranchesTogetherAndWithinItsBudget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	oh, card, _, _ := openForClose(t)
+	for _, b := range []string{"claude/a", "claude/b", "claude/c"} {
+		if _, err := oh.srv.st.AddResource(card, store.ResHubBranch, b, "github/o/r"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oh.srv.refreshWait = 2 * time.Second
+	var mu sync.Mutex
+	var begun int
+	allBegun := make(chan struct{})
+	oh.srv.HubRefresh = func(ctx context.Context, _, _, _, _ string) error {
+		mu.Lock()
+		begun++
+		if begun == 3 {
+			close(allBegun)
+		}
+		mu.Unlock()
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	start := time.Now()
+	rec := httpDo(t, oh.h, "GET", "/v1/tasks/"+card+"/close")
+	if rec.Code != 200 {
+		t.Fatalf("preview %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-allBegun:
+	default:
+		t.Error("the refreshes did not all start before the first ended")
+	}
+	if d := time.Since(start); d > 8*time.Second {
+		t.Errorf("the preview took %s past a 2s refresh budget", d)
+	}
 }
 
 func TestCloseDeletesAMergedHubBranchAndAsksAboutAnUnmergedOne(t *testing.T) {

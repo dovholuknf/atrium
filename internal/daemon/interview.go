@@ -19,6 +19,9 @@ const InterviewTag = "atrium:interview"
 // in chat, so atrium never nudges it for stopping without a report and never raises the launch-idle notice for it.
 const ReviewTag = api.ReviewTag
 
+// MockReviewTag marks a card launched with `kind: "mock-review"`, left alone the same way (link.MockReviewTag).
+const MockReviewTag = "atrium:mock-review"
+
 // DefaultInterviewModel is the model an interview gets when the launch names none and worker_policy sets no
 // interview_model.
 const DefaultInterviewModel = "opus"

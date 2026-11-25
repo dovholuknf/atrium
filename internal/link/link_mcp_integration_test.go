@@ -5,6 +5,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,5 +88,45 @@ func TestLinkAnswersTheBoardLinkForAFileInTheCard(t *testing.T) {
 	}
 	if _, _, err := c.linkHandler(context.Background(), ctlReq("", ""), linkInput{Path: "x.html"}); err == nil {
 		t.Fatal("a call with no card was not refused")
+	}
+}
+
+func TestLinkAnswersOneLinkPerPathInOneCall(t *testing.T) {
+	seenhost.Reset()
+	t.Cleanup(seenhost.Reset)
+	asks := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asks++
+		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+			{"id": "w1", "wire_name": "worker", "status": "running"},
+		}})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	var paths []string
+	for i := range 16 {
+		paths = append(paths, fmt.Sprintf("slides/s%02d.html", i))
+	}
+	paths = append(paths[:3], append([]string{"../x"}, paths[3:]...)...)
+	_, out, err := c.linkHandler(context.Background(), ctlReq("worker", "room-d"), linkInput{Paths: paths})
+	if err != nil || len(out.Links) != 17 || out.URL != "" {
+		t.Fatalf("links = %+v, err = %v", out, err)
+	}
+	for i, l := range out.Links {
+		if l.Path != paths[i] {
+			t.Fatalf("link %d is for %q, want %q", i, l.Path, paths[i])
+		}
+		if i == 3 {
+			if l.URL != "" || l.Error == "" {
+				t.Fatalf("a bad path got %+v", l)
+			}
+			continue
+		}
+		if want := srv.URL + "/room/room-d/w1/files/" + paths[i]; l.URL != want || l.Error != "" {
+			t.Fatalf("link %d = %+v, want %q", i, l, want)
+		}
+	}
+	if asks != 1 {
+		t.Fatalf("the card was looked up %d times, want once", asks)
 	}
 }

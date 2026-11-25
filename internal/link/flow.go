@@ -17,11 +17,13 @@ import (
 //	GET  /_hub/flow/roles?role=      who holds each role, or one
 //	POST /_hub/flow/roles            {do:"set"|"clear", role, room, card, by?}
 //	GET  /_hub/flow/repo             the repository stages are read from, POST {repo} sets it ("" unsets)
+//	GET  /_hub/flow/mock-stages      whether the experimental mock stages are on, POST {on} sets it. Off by default
 //	GET  /_hub/flow/epoch            the open epoch, the latest ones and the plan for a reset of claude/main onto main
 //	POST /_hub/flow/epoch            {do:"open", sha?} | {do:"close", n, branch?, expect?}: see flowEpoch
 //	GET  /_hub/flow/items?stage=     the items in the flow
 //	GET  /_hub/flow/items/<id>       one
 //	POST /_hub/flow/items/<id>       {stage, branch?, sha?, note?, by?}: report a stage
+//	GET  /_hub/flow/mock-reviews/<id>  the verdicts on an item's mock, POST {mock_ref?, verdict, shots?, note?, by}
 //	GET  /_hub/flow/checks?sha=      the checks recorded, newest first
 //	POST /_hub/flow/checks           {sha, name, result, by?}
 //	GET  /_hub/flow/deploys          the sha each room runs
@@ -80,6 +82,28 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 		}
 		p.RecordAudit("", "flow-repo", in.Repo+" by "+in.By)
 		crJSON(w, http.StatusOK, map[string]any{"repo": strings.TrimSpace(in.Repo)})
+	case rest == "mock-stages" && !write:
+		on, err := st.MockStagesOn()
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		crJSON(w, http.StatusOK, map[string]any{"on": on})
+	case rest == "mock-stages":
+		var in struct {
+			On bool
+			By string
+		}
+		if err := crDecode(r, &in); err != nil {
+			crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
+			return
+		}
+		if err := st.SetMockStages(in.On); err != nil {
+			ffail(w, err)
+			return
+		}
+		p.RecordAudit("", "flow-mock-stages", fmt.Sprint(in.On)+" by "+in.By)
+		crJSON(w, http.StatusOK, map[string]any{"on": in.On})
 	case rest == "epoch" && !write:
 		cur, err := st.EpochOpenNow()
 		if err != nil && !errors.Is(err, hubstore.ErrNoEpoch) {
@@ -112,6 +136,8 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 		crJSON(w, http.StatusOK, map[string]any{"items": items})
 	case strings.HasPrefix(rest, "items/") && backlogIDRe.MatchString(strings.TrimPrefix(rest, "items/")):
 		p.flowItem(w, r, st, strings.TrimPrefix(rest, "items/"), write)
+	case strings.HasPrefix(rest, "mock-reviews/") && backlogIDRe.MatchString(strings.TrimPrefix(rest, "mock-reviews/")):
+		p.flowMockReview(w, r, st, strings.TrimPrefix(rest, "mock-reviews/"), write)
 	case rest == "checks" && !write:
 		cs, err := st.Checks(r.URL.Query().Get("sha"), 0)
 		if err != nil {
@@ -204,12 +230,19 @@ func (p *Proxy) flowItem(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		crJSON(w, http.StatusOK, v)
 		return
 	}
-	var in struct{ Stage, Branch, SHA, Note, By string }
+	var in struct {
+		Stage, Branch, SHA, Note, By string
+		UI                           bool
+	}
 	if err := crDecode(r, &in); err != nil {
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
 		return
 	}
-	f, err := st.FlowSetStage(hubstore.FlowSet{ItemID: id, Stage: in.Stage, Branch: in.Branch, SHA: in.SHA, Note: in.Note, By: in.By})
+	if in.Stage == "approved" && in.By != "board" {
+		crFail(w, http.StatusForbidden, "approved is the human's: it comes from the board's Approve, not from a report")
+		return
+	}
+	f, err := st.FlowSetStage(hubstore.FlowSet{ItemID: id, Stage: in.Stage, Branch: in.Branch, SHA: in.SHA, Note: in.Note, By: in.By, UI: in.UI})
 	if err != nil {
 		ffail(w, err)
 		return
@@ -217,6 +250,32 @@ func (p *Proxy) flowItem(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	p.RecordAudit("", "flow-stage", id+" "+f.Stage)
 	p.backlogEvent("flow", map[string]string{"id": id, "stage": f.Stage})
 	crJSON(w, http.StatusOK, f)
+}
+
+// flowMockReview lists the verdicts on an item's mock, or records one.
+func (p *Proxy) flowMockReview(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string, write bool) {
+	if !write {
+		ms, err := st.MockReviews(id)
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		crJSON(w, http.StatusOK, map[string]any{"mock_reviews": ms})
+		return
+	}
+	var in struct{ MockRef, Verdict, Shots, Note, By string }
+	if err := crDecode(r, &in); err != nil {
+		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	m, err := st.MockReviewAdd(hubstore.FlowMockReview{ItemID: id, MockRef: in.MockRef, Verdict: in.Verdict, By: in.By, Shots: in.Shots, Note: in.Note})
+	if err != nil {
+		ffail(w, err)
+		return
+	}
+	p.RecordAudit("", "flow-mock-review", id+" "+m.Verdict)
+	p.backlogEvent("flow", map[string]string{"id": id, "mock_review": m.Verdict})
+	crJSON(w, http.StatusOK, m)
 }
 
 // flowEpoch opens or closes an epoch. Opening says the operator fetched claude/main at sha, which is claude/main's tip when
