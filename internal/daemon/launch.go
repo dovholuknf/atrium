@@ -909,7 +909,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		}
 	} else if task != nil {
 		if row, ok := d.HomeOf(task.ID); ok {
-			homeDir = home.DirsOf(row.Path)
+			homeDir = d.RowDirs(row)
 			cardHome = &row
 		}
 	}
@@ -1066,8 +1066,8 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
 		briefDir, briefName := cwd, briefFileName
 		if cardHome != nil {
-			briefDir = homeDir.Dir
-			briefName = filepath.ToSlash(filepath.Join(homeDir.Dir, briefFileName))
+			briefDir = homeDir.Brief
+			briefName = filepath.ToSlash(filepath.Join(homeDir.Brief, briefFileName))
 		}
 		write := writeBriefFile
 		if shared.IsClaude(h) {
@@ -1168,6 +1168,12 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		} else {
 			opts.CursorPlugin = dir
 			opts.CursorForce = gatedLaunch(overEnv(h.Env, extraEnv))
+		}
+	}
+	if shared.RunsAs(h, "copilot") {
+		t := claudeconf.CopilotAt(overEnv(h.Env, extraEnv)["COPILOT_HOME"])
+		if _, err := ensureHooks(t, d.hk.AtriumBinary()); err != nil {
+			log.Printf("[atrium] could not wire atrium's copilot hooks: %v", err)
 		}
 	}
 	// The compaction window, from the limit this card will be held to. The tags are the
@@ -1801,7 +1807,11 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 
 	d.Publish(created.ID)
-	return d.st.Get(created.ID)
+	out, err := d.st.Get(created.ID)
+	if err == nil {
+		out.BriefPath = briefPath
+	}
+	return out, err
 }
 
 // launchedName is the wire name a launched runner reports itself under.

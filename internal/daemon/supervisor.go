@@ -121,6 +121,15 @@ type ringBuffer struct {
 	// marks is every width this output was composed at, oldest first, and is
 	// never empty: a buffer starts at the size its terminal was opened with.
 	marks []widthMark
+	// modes is the input modes over everything ever written, which outlives the bytes that set them.
+	modes screen.ModeTrack
+}
+
+// InputModes is what turns the terminal's input modes back on after a replay.
+func (r *ringBuffer) InputModes() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.modes.On()
 }
 
 // newRing starts a buffer at a width, with the default height. Every caller
@@ -173,6 +182,7 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 	defer r.mu.Unlock()
 	n := len(p)
 	r.written += int64(n)
+	r.modes.Feed(p)
 	defer r.forgetOldMarks()
 	// A write larger than the whole buffer keeps only its tail.
 	if n >= r.max {
@@ -647,6 +657,8 @@ type runner struct {
 	// openingTyped is when the opening prompt was last typed and openingTries how often, until output shows it taken.
 	openingTyped atomic.Int64
 	openingTries atomic.Int32
+	// sessionTry is when an opencode card last asked for its session id. See claimOpencodeSession.
+	sessionTry atomic.Int64
 	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
 	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
 	esc         screen.EscParser
@@ -2477,6 +2489,7 @@ func (d *Daemon) awaitExit(r *runner) {
 		log.Printf("[atrium] lost the pty host link for %s, its runner may still be running", r.taskID)
 		return
 	}
+	reapLeft(pid, r.started)
 	// The runner is gone, and so is its right to push. Unless a newer start of the same card has already taken over:
 	// its token was minted after this one's runner began, and is not this exit's to revoke.
 	if d.sup.get(r.taskID) == nil {

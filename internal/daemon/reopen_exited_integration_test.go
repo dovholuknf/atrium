@@ -174,6 +174,41 @@ func TestTwoCardsOnTheReopenListShareNoConversation(t *testing.T) {
 	}
 }
 
+// A WORKTREE STORED WITH A TRAILING SLASH STILL FINDS ITS CONVERSATION. Claude wrote the transcript under the folder
+// without the slash, and a wake that looked under the other name started a new conversation.
+func TestAWorktreeWithATrailingSlashResumesItsConversation(t *testing.T) {
+	d := reopenDaemon(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := t.TempDir()
+	proj := filepath.Join(home, ".claude", "projects", strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '-'
+	}, dir))
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const conv = "524b0469-0000-4000-8000-000000000001"
+	if err := os.WriteFile(filepath.Join(proj, conv+".jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	task, _, _ := d.st.Register(store.Observed{WireName: "slashed", Worktree: filepath.ToSlash(dir) + "/", Runner: "claude"})
+	if err := d.st.SetResumeID(task.ID, conv); err != nil {
+		t.Fatal(err)
+	}
+	task, _ = d.st.Get(task.ID)
+	task.Worktree = filepath.ToSlash(dir) + "/"
+	if d.transcriptGone(task.Runner, task.Worktree, conv) {
+		t.Fatal("the transcript is on disk and reads as gone")
+	}
+	if got := d.reopenResume(task); got != conv {
+		t.Fatalf("the wake resumed %q, want %s", got, conv)
+	}
+}
+
 // A FIXTURE'S FIRST START NEVER HALTS THE STORE (r-new-review-c184ae8c). It has no
 // card until it launches, and a refused resume noted on card "" failed the
 // event's foreign key, which halted the room. The note lands on the card it made.

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -130,8 +131,22 @@ func TestClosePreviewStopsMeasuringAtItsOwnBudget(t *testing.T) {
 		t.Skip("slow: a real server with git worktrees and a database")
 	}
 	oh, card, wt, _ := openForClose(t)
+	// wait: the measure after the open must finish first, or it counts big.bin into the stored size
+	testwait.Poll(5*time.Second, func() bool {
+		rows, _ := oh.srv.st.Resources(card)
+		for _, r := range rows {
+			if r.Kind == store.ResWorktree && r.Bytes >= 0 {
+				return true
+			}
+		}
+		return false
+	})
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "big.bin"), make([]byte, 1<<20), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	rows, _ := oh.srv.st.Resources(card)
+	for _, r := range rows {
+		_ = oh.srv.st.SetResourceBytes(card, r.Seq, 0)
 	}
 	oh.srv.measureWait = -time.Nanosecond // spent before the walk starts, whatever the clock resolution
 

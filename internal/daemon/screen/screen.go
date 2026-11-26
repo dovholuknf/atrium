@@ -122,7 +122,7 @@ type Screen struct {
 }
 
 // inputModes are the private modes that change what the terminal sends rather than what it draws.
-var inputModes = []string{"1000", "1002", "1003", "1005", "1006", "1015", "1004", "2004"}
+var inputModes = []string{"1000", "1002", "1003", "1005", "1006", "1015", "1016", "1004", "2004"}
 
 // region is the rows a line feed scrolls between, inclusive.
 func (s *Screen) region() (top, bot int) {
@@ -1499,7 +1499,7 @@ func (s *Screen) privateMode(params string, final byte) {
 			} else if final == 'l' {
 				s.fromAlt()
 			}
-		case "1000", "1002", "1003", "1005", "1006", "1015", "1004", "2004":
+		case "1000", "1002", "1003", "1005", "1006", "1015", "1016", "1004", "2004":
 			if s.modes == nil {
 				s.modes = map[string]bool{}
 			}

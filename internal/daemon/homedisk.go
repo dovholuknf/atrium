@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -79,7 +80,7 @@ func (d *Daemon) DiskView() (any, error) {
 		if ents, err := os.ReadDir(root); err == nil {
 			for _, e := range ents {
 				p := strings.ToLower(filepath.ToSlash(filepath.Join(root, e.Name())))
-				if !known[p] {
+				if !known[p] && !holdsHome(rows, p) {
 					v.NotAtriums = append(v.NotAtriums, filepath.ToSlash(filepath.Join(root, e.Name())))
 				}
 			}
@@ -108,6 +109,15 @@ func (d *Daemon) DiskView() (any, error) {
 }
 
 var insideRoot = shared.InsideRoot
+
+// holdsHome says whether an open home is somewhere below a folder of the card root, as a flat home is below its forge or
+// scratch folder.
+func holdsHome(rows []store.CardHome, dir string) bool {
+	prefix := strings.ToLower(filepath.ToSlash(dir)) + "/"
+	return slices.ContainsFunc(rows, func(r store.CardHome) bool {
+		return strings.HasPrefix(strings.ToLower(filepath.ToSlash(r.Path)), prefix)
+	})
+}
 
 type HomeRemoved struct {
 	Removed bool   `json:"removed"`

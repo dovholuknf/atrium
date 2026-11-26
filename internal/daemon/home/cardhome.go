@@ -82,11 +82,30 @@ func (d *Service) CardRoot() (string, error) {
 // homeDirs are the places inside one home.
 type HomeDirs struct {
 	Dir, Work, Tmp, Meta string
+	// Brief is the folder BRIEF.md is written in: the home itself in the first layout, Meta in the flat one.
+	Brief string
 }
 
+// DirsOf is the first layout, where a home holds work/, tmp/ and .atrium/. A row in any layout goes by RowDirs.
 func DirsOf(path string) HomeDirs {
 	dir := filepath.FromSlash(path)
-	return HomeDirs{Dir: dir, Work: filepath.Join(dir, HomeWork), Tmp: filepath.Join(dir, HomeTmp), Meta: filepath.Join(dir, HomeMeta)}
+	return HomeDirs{Dir: dir, Work: filepath.Join(dir, HomeWork), Tmp: filepath.Join(dir, HomeTmp), Meta: filepath.Join(dir, HomeMeta), Brief: dir}
+}
+
+// RowDirs are the places of a home in the layout its row says. A flat home is the working directory itself, and what
+// atrium keeps for the card (tmp, says, the brief) is in the room's state folder, never in the repo tree.
+func (d *Service) RowDirs(row store.CardHome) HomeDirs {
+	if row.Layout != store.CardHomeFlat {
+		return DirsOf(row.Path)
+	}
+	dir := filepath.FromSlash(row.Path)
+	state := d.cardState(row)
+	meta := filepath.Join(state, "meta")
+	return HomeDirs{Dir: dir, Work: dir, Tmp: filepath.Join(state, HomeTmp), Meta: meta, Brief: meta}
+}
+
+func (d *Service) cardState(row store.CardHome) string {
+	return filepath.Join(d.StateDir(), "card-homes", row.ID)
 }
 
 // homeOf is the open home a card works in, false for a card with none.
@@ -101,7 +120,7 @@ func (d *Service) HomeOf(cardID string) (store.CardHome, bool) {
 // saysDir is where a long say from a launcher is written: the card's .atrium/says, "" for a card with no home.
 func (d *Service) SaysDir(cardID string) string {
 	if h, ok := d.HomeOf(cardID); ok {
-		return filepath.Join(DirsOf(h.Path).Meta, "says")
+		return filepath.Join(d.RowDirs(h).Meta, "says")
 	}
 	return ""
 }
@@ -185,6 +204,80 @@ func (d *Service) MakeHome(kind, title, wire string) (store.CardHome, HomeDirs, 
 	}
 	if kind != store.CardHomeWorktree {
 		if err := os.Mkdir(dd.Work, 0o755); err != nil {
+			return fail(err)
+		}
+	}
+	return row, dd, nil
+}
+
+// flatName is a part of a flat home's path, refused when it could leave its folder.
+func flatName(p string) (string, error) {
+	if p == "" || p == "." || p == ".." || strings.ContainsAny(p, `/\:`) {
+		return "", fmt.Errorf("%q cannot be a folder name in the card root", p)
+	}
+	return p, nil
+}
+
+// MakeFlatHome records and makes a home in the flat layout: the card's working directory is the home itself, at
+// `<root>/<forge>/<org>/<repo>/<slug>` for place forge, org and repo, else `<root>/scratch/<slug>-<id6>`. A worktree
+// home leaves the folder to git. What atrium keeps for the card is made in the state folder. The row is written first.
+func (d *Service) MakeFlatHome(kind, title, wire string, place ...string) (store.CardHome, HomeDirs, error) {
+	root, err := d.CardRoot()
+	if err != nil {
+		return store.CardHome{}, HomeDirs{}, err
+	}
+	parent := filepath.Join(root, "scratch")
+	if len(place) > 0 {
+		parent = root
+		for _, p := range place {
+			if p, err = flatName(p); err != nil {
+				return store.CardHome{}, HomeDirs{}, err
+			}
+			parent = filepath.Join(parent, p)
+		}
+	}
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return store.CardHome{}, HomeDirs{}, fmt.Errorf("could not make %s: %v", filepath.ToSlash(parent), err)
+	}
+	slug := HomeSlug(title, wire)
+	var path string
+	for i := 0; ; i++ {
+		path = filepath.Join(parent, slug)
+		if len(place) == 0 || i > 0 {
+			path = filepath.Join(parent, slug+"-"+HomeID6())
+		}
+		if _, err := os.Lstat(path); os.IsNotExist(err) {
+			if _, taken, _ := d.St.CardHomeByPath(filepath.ToSlash(path)); !taken {
+				break
+			}
+		}
+		if i == 8 {
+			return store.CardHome{}, HomeDirs{}, errors.New("could not find a free name for the card's home")
+		}
+	}
+	if _, err := safepath.Contained(root, path); err != nil {
+		return store.CardHome{}, HomeDirs{}, fmt.Errorf("the card's home %s is not inside the card root", filepath.ToSlash(path))
+	}
+	row, err := d.St.CardHomeNew(store.CardHome{Path: filepath.ToSlash(path), Kind: kind, Layout: store.CardHomeFlat})
+	if err != nil {
+		return store.CardHome{}, HomeDirs{}, err
+	}
+	dd := d.RowDirs(row)
+	fail := func(err error) (store.CardHome, HomeDirs, error) {
+		_ = RemoveTree(d.cardState(row))
+		if kind != store.CardHomeWorktree {
+			_ = RemoveTree(dd.Dir)
+		}
+		_ = d.St.CardHomeSet(row.Path, store.CardHomeRemoved, "the home could not be made", "")
+		return store.CardHome{}, HomeDirs{}, fmt.Errorf("could not make the card's home: %v", err)
+	}
+	for _, p := range []string{dd.Tmp, dd.Meta} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			return fail(err)
+		}
+	}
+	if kind != store.CardHomeWorktree {
+		if err := os.Mkdir(dd.Dir, 0o755); err != nil {
 			return fail(err)
 		}
 	}
@@ -353,13 +446,18 @@ func (d *Service) BranchCheck(repo, branch string) (BranchState, error) {
 	bs := BranchStateIn(clone, branch)
 	if bs.HeldAt != "" {
 		dir := filepath.Dir(filepath.FromSlash(bs.HeldAt))
-		if row, ok, _ := d.St.CardHomeByPath(filepath.ToSlash(dir)); ok {
+		// A flat home is the worktree itself, and a home of the first layout holds it as work/.
+		if row, ok, _ := d.St.CardHomeByPath(bs.HeldAt); ok && row.Layout == store.CardHomeFlat {
+			bs.HeldBy = row.Card
+		} else if row, ok, _ := d.St.CardHomeByPath(filepath.ToSlash(dir)); ok {
 			bs.HeldBy = row.Card
 		} else if rows, err := d.St.CardHomesOpen(); err == nil {
 			// git reports the real path; a symlinked or 8.3 temp dir stores another spelling of it.
 			want, _ := filepath.EvalSymlinks(dir)
+			wantFlat, _ := filepath.EvalSymlinks(filepath.FromSlash(bs.HeldAt))
 			for _, r := range rows {
-				if got, err := filepath.EvalSymlinks(filepath.FromSlash(r.Path)); err == nil && want != "" && strings.EqualFold(got, want) {
+				if got, err := filepath.EvalSymlinks(filepath.FromSlash(r.Path)); err == nil && want != "" &&
+					(strings.EqualFold(got, want) || r.Layout == store.CardHomeFlat && strings.EqualFold(got, wantFlat)) {
 					bs.HeldBy = r.Card
 					break
 				}
@@ -610,7 +708,7 @@ func (d *Service) ReclaimHomeBranch(t *store.Task, row store.CardHome, force boo
 	if t != nil && !d.WaitRunnerGone(t.ID, HomeGoneWait) {
 		return keep("its runner was still up after " + HomeGoneWait.String())
 	}
-	dd := DirsOf(row.Path)
+	dd := d.RowDirs(row)
 	onHub := false
 	if row.Kind == store.CardHomeWorktree {
 		var why string
@@ -642,9 +740,26 @@ func (d *Service) ReclaimHomeBranch(t *store.Task, row store.CardHome, force boo
 	if err := RemoveTree(path); err != nil {
 		return keep("the folder could not be removed: " + small.FirstLine(err.Error()))
 	}
+	if row.Layout == store.CardHomeFlat {
+		_ = RemoveTree(d.cardState(row))
+		d.pruneEmptyParents(path)
+	}
 	_ = d.St.CardHomeSet(row.Path, store.CardHomeRemoved, "", row.Owed)
 	log.Printf("[atrium] removed the home %s", row.Path)
 	return true, "", branch, branchGone
+}
+
+// pruneEmptyParents removes the empty folders a flat home leaves above it, up to and never including the card root.
+func (d *Service) pruneEmptyParents(path string) {
+	root, err := d.CardRoot()
+	if err != nil {
+		return
+	}
+	for dir := filepath.Dir(path); !shared.SamePath(dir, root) && strings.HasPrefix(filepath.ToSlash(dir), filepath.ToSlash(root)+"/"); dir = filepath.Dir(dir) {
+		if os.Remove(dir) != nil {
+			return
+		}
+	}
 }
 
 // homeClone is the clone a worktree home was added from: the ledger's, else the one its .git file points back to.
@@ -731,7 +846,14 @@ func (d *Service) LaunchHome(kind string, req *shared.LaunchRequest) (store.Card
 	if r := strings.Trim(strings.ReplaceAll(strings.TrimSpace(req.Repo), `\`, "/"), "/"); r != "" {
 		leaf = r[strings.LastIndex(r, "/")+1:]
 	}
-	row, dd, err := d.MakeHome(kind, req.Title, leaf)
+	var place []string
+	if kind == store.CardHomeWorktree {
+		place = []string{"local", "local", filepath.Base(clone)}
+		if ref, ok := OriginRef(clone); ok {
+			place = []string{ref.Host, ref.Owner, ref.Repo}
+		}
+	}
+	row, dd, err := d.MakeFlatHome(kind, req.Title, leaf, place...)
 	if err != nil {
 		return store.CardHome{}, HomeDirs{}, err
 	}
@@ -753,9 +875,6 @@ func (d *Service) LaunchHome(kind string, req *shared.LaunchRequest) (store.Card
 		if ref, ok := OriginRef(clone); ok && req.Host == "" && req.Org == "" {
 			req.Host, req.Org = ref.Host, ref.Owner
 		}
-	}
-	if kind == store.CardHomeScratch && !small.HasTag(req.Tags, shared.KeepOpenTag) {
-		req.Tags = append(append([]string{}, req.Tags...), shared.KeepOpenTag)
 	}
 	return row, dd, nil
 }

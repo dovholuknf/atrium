@@ -522,7 +522,7 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	// waiting for work or for its workers, and its launcher prompting it created
 	// the debt this checks. The tag is what atrium_launch sets for it. Its real
 	// blockers (a menu, a stuck tool) have their own escalations.
-	if small.HasTag(t.Tags, DirectorTag) || small.HasTag(t.Tags, InterviewTag) || small.HasTag(t.Tags, ReviewTag) || small.HasTag(t.Tags, ResidentTag) {
+	if small.HasTag(t.Tags, DirectorTag) || small.HasTag(t.Tags, InterviewTag) || small.HasTag(t.Tags, ReviewTag) || small.HasTag(t.Tags, MockReviewTag) || small.HasTag(t.Tags, ResidentTag) {
 		return time.Time{}, false
 	}
 	// A PERSON TYPED AT THE CARD'S TERMINAL after the launcher's prompt: the turn is theirs, as for a board

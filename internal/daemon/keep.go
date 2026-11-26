@@ -6,8 +6,10 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -221,6 +223,11 @@ func (d *Daemon) wakeGone(taskID, via string) error {
 	if !resumable(t) {
 		return fmt.Errorf("%s cannot be resumed: nothing records its conversation", t.DisplayTitle())
 	}
+	if t.SpawnedByID != "" && !d.wakeLimit.allow(t.SpawnedByID) {
+		return fmt.Errorf("%s has woken finished workers %d times in the last %s, which is the limit. "+
+			"nothing was resumed. wait, or resume %s from the board", t.SpawnedBy, wakesPerWindow, wakeWindow, t.DisplayTitle())
+	}
+	d.stopEarlier(taskID)
 	launch := d.launchLocked
 	if d.wakeLaunch != nil {
 		launch = d.wakeLaunch
@@ -234,6 +241,27 @@ func (d *Daemon) wakeGone(taskID, via string) error {
 	log.Printf("[atrium] %s had finished and is resumed (%s)", t.DisplayTitle(), via)
 	d.Publish(taskID)
 	return nil
+}
+
+// stopEarlier ends what an earlier run of a card left behind before a wake starts the next one: a runner whose session
+// ended but whose terminal is still registered, and every process that still carries the card's id.
+func (d *Daemon) stopEarlier(taskID string) {
+	if r := d.sup.get(taskID); r != nil {
+		if tm := r.tm(); tm != nil && tm.Pid() > 4 {
+			killTree(tm.Pid())
+			if p, err := os.FindProcess(tm.Pid()); err == nil {
+				_ = p.Kill()
+			}
+		}
+		select {
+		case <-r.Done():
+		case <-time.After(5 * time.Second):
+		}
+		for end := time.Now().Add(5 * time.Second); d.sup.get(taskID) == r && time.Now().Before(end); {
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
+	cardproc.StopCard(taskID)
 }
 
 // keptHooks are the seams of waking a kept card.

@@ -10,7 +10,6 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/gitexec"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
-	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -96,7 +95,7 @@ func (d *Daemon) homeKeeps(t *store.Task) string {
 	if !ok {
 		return ""
 	}
-	status, err := gitIn(home.DirsOf(row.Path).Work, gitexec.Status{V1: true, Untracked: "normal", Ignored: true})
+	status, err := gitIn(d.RowDirs(row).Work, gitexec.Status{V1: true, Untracked: "normal", Ignored: true})
 	if err != nil {
 		return ""
 	}

@@ -72,7 +72,7 @@ func (d *Daemon) cloneRepo(t *store.Task) (string, error) {
 func (d *Daemon) briefOf(t *store.Task) string {
 	dir := t.Worktree
 	if row, ok := d.HomeOf(t.ID); ok {
-		dir = home.DirsOf(row.Path).Dir
+		dir = d.RowDirs(row).Brief
 	}
 	data, err := os.ReadFile(filepath.Join(filepath.FromSlash(dir), briefFileName))
 	if err != nil {
