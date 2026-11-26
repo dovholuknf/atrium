@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'JetBrains Mono Bundled'; font-weight: 400; font-style: normal; font-display: swap;
+  src: url("/vendor/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: 'JetBrains Mono Bundled'; font-weight: 700; font-style: normal; font-display: swap;
+  src: url("/vendor/fonts/JetBrainsMono-Bold.woff2") format("woff2");
+}
   /* Terminal: the layout, the session list with its mini and off modes, the rail, the grip, the tabs, the
      bar, the pane, `#t-screen`, the find bar, the paste box, and the permission banner that appears while a
      session is attached.
@@ -308,6 +316,19 @@
   .term-list .card .card-line > .chips { flex: 0 1 auto; max-width: 60%; min-width: 0; overflow: hidden; flex-wrap: nowrap; }
   /* The room chip never shrinks, it tells two rooms apart. The title gives way first, then the cycle chip. */
   .term-list .card .card-line > .chips .chip.room { flex: none; overflow: visible; text-overflow: clip; }
+  /* Waiting on you: the questions in the old "?" chip's warn, the gate in the accent. A worn row rewrites both. */
+  .term-list .card .card-line > .chips .chip.wchip {
+    flex: none; display: inline-flex; align-items: stretch; padding: 0; overflow: hidden; cursor: pointer;
+    border-color: var(--chip-accent-stroke);
+  }
+  .term-list .card .card-line > .chips .chip.wchip.hasq:not(.hasa) { border-color: var(--warn-stroke); }
+  .chip.wchip > span { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; }
+  .chip.wchip .wq { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+  .chip.wchip .wa { background: var(--chip-accent); color: var(--chip-accent-text); font-weight: 700; }
+  .chip.wchip.hasq.hasa .wa { border-left: 1px solid var(--chip-accent-stroke); }
+  .chip.wchip:hover > span { filter: brightness(1.15); }
+  /* The chips and the fold sit on the name's line, not centred across the name and the path. */
+  :not(.tl-mini) > .term-list .card .card-line { align-items: flex-start; }
   .term-list .card .card-line > .chips .chip.cycle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* ONE LINE, running or parked. The board's card line wraps (be49b743) so a busy card grows a line, which here put
      the chips under a long path and made a parked row, with its resume chip, taller than a running one. The title
@@ -333,6 +354,10 @@
     :not(.tl-mini) > .term-list .card .card-line > .chips { grid-column: 4; grid-row: 2; max-width: none; margin-left: 4px; }
     :not(.tl-mini) > .term-list .card .card-line > .tkidfold { grid-column: 5; grid-row: 2; margin-left: 4px; }
     :not(.tl-mini) > .term-list .card .card-line > .chips .chip.room { display: none; }
+    :not(.tl-mini) > .term-list .card.wyou .title .tname { grid-column: 3; }
+    :not(.tl-mini) > .term-list .card.wyou .card-line > .chips { grid-row: 1; }
+    :not(.tl-mini) > .term-list .card.wyou .card-line { grid-template-columns: auto auto minmax(0, 1fr) fit-content(60%) auto; }
+    :not(.tl-mini) > .term-list .card.wyou .card-line > .chips { min-width: 0; }
   }
   /* Mini. These come after the single-line rules above so those do not undo them.
      The entry is an icon and a short name, so both are centred in the column rather than left-aligned against
@@ -967,6 +992,10 @@
     border-color: var(--head); border-right-color: transparent;
     box-shadow: inset 0 calc(var(--framew) - 1px) 0 var(--head), inset 0 calc(1px - var(--framew)) 0 var(--head),
       inset calc(var(--framew) - 1px) 0 0 var(--head);
+  }
+  /* At tight whitespace the top padding is thinner than the frame, so the chips drop clear of it without moving the row. */
+  .term-list .card.worn.on > .card-line > .chips, .term-list .card.carries > .card-line > .chips {
+    position: relative; top: max(0px, calc(var(--framew) + 1px - var(--row-y-xs)));
   }
   /* `.on` paints the name in the raw cursor colour, which is fine alone on its background and under 3:1 on
      some themes. Worn, the name takes `--head`, which is that colour moved until it reads. */

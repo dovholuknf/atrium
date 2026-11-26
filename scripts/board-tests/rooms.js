@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, hubGate, apiSlots, apiSlotsReads, apiSlotsPaste, walkYield, recogniserRepo, roomsMenuScroll, roomsThemes.
+// Units: reconnectPill, restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, roomsLogin, loginNeeded, restartMenu, roomsSetup, roomsRelease, hubGate, apiSlots, apiSlotsReads, apiSlotsPaste, walkYield, recogniserRepo, roomsMenuScroll, roomsThemes.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -107,6 +107,26 @@ async function restartGateSection(browser, base) {
     }, null, 15000).catch(() => fail("a board opened during a pause did not show it."));
     await late.close();
     mock.gatePaused = false;
+
+    // THE HEADS-UP SITS BELOW THE "BOARD UPDATED" NOTICE, both whole, neither over the other.
+    await gp.setViewportSize({ width: 1700, height: 900 });
+    await gp.evaluate(() => hubBoardUpdated());
+    say({ state: "countdown", seconds: 30 });
+    await fakeWait(gp, () => !!document.querySelector(".toast.hubgate:not(.fresh)"), null, 5000)
+      .catch(() => fail("a countdown beside the board updated notice drew no toast."));
+    await run(400);
+    const pile = await gp.evaluate(() => {
+      const box = el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
+      return { fresh: box(document.querySelector(".toast.fresh")), count: box(document.querySelector(".toast.hubgate:not(.fresh)")), h: innerHeight };
+    });
+    if (pile.count.top < pile.fresh.bottom - 1) fail("the heads-up is not below the board updated notice: " + JSON.stringify(pile));
+    if (pile.count.bottom > pile.h || pile.fresh.top < 0) fail("the heads-up and the notice do not both fit: " + JSON.stringify(pile));
+    if (process.env.STACK_SHOT) await gp.screenshot({ path: process.env.STACK_SHOT });
+    say({ state: "cancelled" });
+    await fakeWait(gp, () => !document.querySelector(".toast.hubgate:not(.fresh)"), null, 5000)
+      .catch(() => fail("a cancelled countdown stayed up beside the notice."));
+    await gp.evaluate(() => document.querySelector(".toast.fresh").remove());
+    await gp.setViewportSize({ width: 1400, height: 900 });
 
     // THE COUNTDOWN STAYS until the hub says what comes next: not the toast cap,
     // not a removal, not its own clock running out, not a stream reopen.
@@ -1745,7 +1765,7 @@ async function roomsSetupSection(browser, base) {
         : "  " + (c.querySelector(".k") ? c.querySelector(".k").textContent + ": " : "") + (c.querySelector(".tx") ? c.querySelector(".tx").textContent : c.textContent)).join("\n") }; });
     let s = await pill();
     has("the pill is not warning", s.warn, s);
-    has("the tip does not name room-g's hooks", /room-g[^\n]*\n(  [^\n]*\n)*  hooks: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
+    has("the tip does not name room-g's hooks", /room-g[^\n]*\n(  [^\n]*\n)*  hooks: 3 missing, 1 stale/.test(s.tip), s);
     has("the tip does not name alpha's build", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip), s);
     has("the tip does not name room-g's commit as stale", /room-g[^\n]*\n(  [^\n]*\n)*  build: runs commit bbbbbbb2, hub aaaaaaa1/.test(s.tip), s);
     has("the hub's own room is called stale", /alpha[^\n]*\n  build: runs a different atrium build/.test(s.tip) && !/runs commit aaaaaaa1/.test(s.tip), s);
@@ -2288,6 +2308,90 @@ async function recogniserRepoSection(browser, base) {
   if (!bad) console.log("recogniserRepo ok");
 }
 
+// roomsRelease: the rooms menu says which machines run an older release than GitHub's, the hub first, with the update
+// summary line and a release line each, and says nothing it cannot know: unchecked, offline, checking, ahead and dismissed.
+async function roomsReleaseSection(browser, base) {
+  const wasHub = mock.hubMode, wasRoomG = mock.roomGAttached;
+  mock.hubMode = true;
+  mock.roomGAttached = true;
+  mock.ALPHA.setup = { answering: true, issues: [] };
+  mock["ROOM-G"].setup = { answering: true, issues: [] };
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const has = (label, ok, extra) => { if (!ok) fail("roomsRelease: " + label + (extra ? ": " + JSON.stringify(extra) : "")); };
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 2 &&
+      !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await p.evaluate(async () => { await loadRelease(); loadRelease = async () => {}; });
+    const show = (info, versions, dismissed) => p.evaluate(([info, versions, dismissed]) => {
+      localStorage.removeItem("atrium.update.dismissed");
+      if (dismissed) localStorage.setItem("atrium.update.dismissed", dismissed);
+      hubRooms.forEach((r, i) => { r.version = versions[i]; });
+      releaseInfo = info;
+      paintRooms();
+      const pop = document.getElementById("setuppop"), pill = document.getElementById("rooms");
+      return { warn: pill.classList.contains("warn"), count: document.getElementById("rooms-u").hidden ? "" : document.getElementById("rooms-u").textContent,
+        rows: [...pop.querySelectorAll(".rm")].map(r => r.querySelector("h5") ? r.querySelector("h5").textContent + " " +
+          (r.querySelector(".ver") || { textContent: "" }).textContent + " " + (r.querySelector(".ok") ? "ok" : (r.querySelector(".mk") || { textContent: "" }).textContent) : ""),
+        its: [...pop.querySelectorAll(".it")].map(r => r.textContent.replace(/\s+/g, " ").trim()),
+        line: (pop.querySelector(".relline") || { textContent: "" }).textContent,
+        chip: document.getElementById("rooms-t").textContent, link: (pop.querySelector(".relblock a") || {}).href || "", sum: (pop.querySelector(".relblock") || { textContent: "" }).textContent.replace(/\s+/g, " ").trim(), buttons: [...pop.querySelectorAll("button")].map(b => b.textContent) };
+    }, [info, versions, dismissed || ""]);
+    const ok = { latest: "v1.8.0", url: "https://github.com/dovholuknf/atrium/releases/tag/v1.8.0", state: "ok", hub: "1.7.4", checked_at: new Date().toISOString() };
+
+    let s = await show(null, ["1.8.0", "1.8.0"]);
+    has("with no release answer the menu changed", s.count === "" && s.line === "" && s.rows.every(r => !/ver|v?1\.8/.test(r)), s);
+
+    s = await show(ok, ["1.8.0", "1.7.2"]);
+    has("the hub is not the first row", /^hub 1\.7\.4 /.test(s.rows[0]), s.rows);
+    has("the pill did not warn or count one behind", s.warn && /1/.test(s.count), s);
+    has("the room's release line is wrong", s.its.some(t => /release ?runs 1\.7\.4, latest v1\.8\.0/.test(t)) && s.its.some(t => /release ?runs 1\.7\.2, latest v1\.8\.0/.test(t)), s.its);
+    has("the summary line is wrong", /^1 of 2 rooms differ: 1 behind v1\.8\.0 · release/.test(s.sum), s.sum);
+    has("the pill and the popup count different rooms", /^\d+\/2 rooms$/.test(s.chip) && /^1 of 2 /.test(s.sum) && /1/.test(s.count), s);
+    has("the release link is wrong", /releases\/tag\/v1\.8\.0$/.test(s.link), s.link);
+    has("dismiss is missing or copy came back", s.buttons.includes("dismiss") && !s.buttons.includes("copy"), s.buttons);
+
+    s = await show(ok, ["1.8.0", "1.8.0"]);
+    has("the hub behind alone counted as a room", !s.warn && s.count === "" && s.its.length === 1 && !s.sum && /^\d+\/2 rooms$/.test(s.chip), s);
+
+    s = await show(Object.assign({}, ok, { hub: "v1.8.0" }), ["1.8.0", "v1.8.0"]);
+    has("all current still warns or counts", !s.warn && s.count === "" && s.rows.every(r => /ok$/.test(r)) && !s.its.length && !s.sum, s);
+
+    s = await show(Object.assign({}, ok, { state: "unknown", checked_at: new Date(Date.now() - 3 * 3600e3).toISOString() }), ["1.7.0", "1.8.0"]);
+    has("offline drew a warning or a check", !s.warn && s.count === "" && !s.its.length && s.rows.every(r => !/ok$/.test(r)) && /last checked 3h/.test(s.line), s);
+
+    s = await show(Object.assign({}, ok, { state: "unknown", checked_at: "" }), ["1.7.0", "1.8.0"]);
+    has("never checked did not say so", /never checked/.test(s.line) && !s.warn, s);
+
+    s = await show(Object.assign({}, ok, { state: "checking", checked_at: "" }), ["1.7.0", "1.8.0"]);
+    has("checking drew a warning or missed its line", /checking github/.test(s.line) && !s.warn && s.rows.some(r => /…$/.test(r)), s);
+
+    s = await show(Object.assign({}, ok, { hub: "1.9.0-dev" }), ["1.8.0", "1.9.0-dev"]);
+    has("ahead of the release warned", !s.warn && s.rows.some(r => /ahead of v1\.8\.0/.test(r)), s);
+
+    s = await show(ok, ["1.8.0", "1.7.2"], "v1.8.0");
+    has("a dismissed version still warned or kept its rows", !s.warn && s.count === "" && !s.its.length && !s.sum && s.buttons.includes("undo") &&
+      s.rows.some(r => /v1\.8\.0 dismissed/.test(r)), s);
+    await p.evaluate(() => document.querySelector("#setuppop .relundo").click());
+    s = await show(ok, ["1.8.0", "1.7.2"]);
+    has("undo did not bring the warning back", s.warn, s);
+
+    await p.evaluate(() => { document.querySelector("#setuppop .reldismiss").click(); });
+    has("dismiss did not remember the version", await p.evaluate(() => localStorage.getItem("atrium.update.dismissed")) === "v1.8.0");
+    await p.evaluate(() => localStorage.removeItem("atrium.update.dismissed"));
+  } finally {
+    mock.hubMode = wasHub;
+    mock.roomGAttached = wasRoomG;
+    delete mock.ALPHA.setup;
+    delete mock["ROOM-G"].setup;
+    await ctx.close();
+  }
+  if (errors.length) fail("roomsRelease: the page threw: " + errors.join(" | "));
+}
+
 // roomsMenuScroll: the rooms dropdown, scrolled to its end, shows the last tile whole above the window's bottom edge.
 async function roomsMenuScrollSection(browser, base) {
   const shots = process.env.ROOMS_MENU_SHOTS || "";
@@ -2511,6 +2615,7 @@ const units = [
   { name: "loginNeeded", run: ({ browser, base }) => loginNeededSection(browser, base) },
   { name: "restartMenu", run: ({ browser, base }) => restartMenuSection(browser, base) },
   { name: "roomsSetup", run: ({ browser, base }) => roomsSetupSection(browser, base) },
+  { name: "roomsRelease", run: ({ browser, base }) => roomsReleaseSection(browser, base) },
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "apiSlots", run: ({ browser, base }) => apiSlotsSection(browser, base) },
   { name: "apiSlotsReads", run: ({ browser, base }) => apiSlotsReadsSection(browser, base) },
@@ -2520,7 +2625,7 @@ const units = [
   { name: "roomsMenuScroll", run: ({ browser, base }) => roomsMenuScrollSection(browser, base) },
   { name: "roomsThemes", run: ({ browser, base }) => roomsThemesSection(browser, base) },
 ];
-const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, apiSlots: apiSlotsSection, apiSlotsReads: apiSlotsReadsSection, apiSlotsPaste: apiSlotsPasteSection, walkYield: walkYieldSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
+const sections = { reconnectPill: reconnectPillSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, roomsLogin: roomsLoginSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, roomsRelease: roomsReleaseSection, hubGate: hubGateSection, apiSlots: apiSlotsSection, apiSlotsReads: apiSlotsReadsSection, apiSlotsPaste: apiSlotsPasteSection, walkYield: walkYieldSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection, roomsThemes: roomsThemesSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

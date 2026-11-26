@@ -407,8 +407,7 @@ async function ctxLimitLayersSection(browser, base) {
 }
 
 // THE CONTEXT CYCLE ON THE BOARD (docs/runtime/context-cycle-design.md): the details dialog's switch and limit write the
-// card's overrides, the settings save one per-harness list through the hub, the stored handoff is a row in the
-// card's history with its text behind a disclosure, and the chip names the step.
+// card's overrides, the settings save one per-harness list through the hub, and the chip names the step.
 async function contextCycleSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const wp = await ctx.newPage();
@@ -420,7 +419,6 @@ async function contextCycleSection(browser, base) {
     all["width-floor"] = true;
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
   });
-  const handoff = "## done\nthe daemon half.\n## left\nthe board half. <b>not markup</b>";
   const card = Object.assign({}, T1, {
     id: "ll-cycle", display_title: "cycling card", supervised: true, pinned: true, worktree: "/tmp/cll/cycle",
     context_size: { tokens: 210000, warn: true, threshold_k: 200, source: "hub", cycle: true },
@@ -436,12 +434,6 @@ async function contextCycleSection(browser, base) {
     card.overrides = Object.assign({}, card.overrides, body.overrides || {});
     await route.fulfill({ json: card });
   });
-  await ctx.route("**/v1/tasks/ll-cycle/events*", route => route.fulfill({ json: { events: [
-    { kind: "notified", at: "2026-10-05T12:00:00Z", payload: { by: "context-cycle", started: true,
-      tokens: 210000, limit: 200000, path: "/tmp/atrium/handoffs/ll-cycle.md" } },
-    { kind: "notified", at: "2026-10-05T12:01:00Z", payload: { by: "context-cycle", handoff,
-      path: "/tmp/atrium/handoffs/ll-cycle.md", bytes: handoff.length } }
-  ] } }));
   await ctx.route("**/v1/settings", async route => {
     const r = route.request();
     if (r.method() === "POST") {
@@ -658,49 +650,17 @@ async function contextCycleSection(browser, base) {
       fail("the pasted image path was not queued with the text: " + JSON.stringify(composed));
     await wp.evaluate(() => { termTask = null; });
 
-    // The details: the switch on, no own limit, and a line naming the limit in force and where from.
     await wp.evaluate(() => openTask("ll-cycle"));
-    await wp.waitForSelector("#detail[open] #d-ctx-cycle", { timeout: slow(15000) });
-    const shown = await wp.evaluate(() => ({ on: document.getElementById("d-ctx-cycle").checked,
-      limit: document.getElementById("d-ctx-limit").value, now: document.getElementById("d-ctx-now").textContent }));
-    if (!shown.on || shown.limit !== "" || !/200k from hub/.test(shown.now)) fail("the details' cycle section shows " + JSON.stringify(shown));
+    await wp.waitForSelector("#detail[open]", { timeout: slow(15000) });
 
     // A limit its runner's compaction point cut says so, and the card's own limit has a clear button.
     const capped = await wp.evaluate(() => {
       const t = { overrides: { context_limit_k: "900" }, context_size: { tokens: 1, threshold_k: 200, source: "runner",
         own_k: 900, ceiling_k: 200, wanted_k: 900, wanted_from: "card" } };
-      return { from: limitFrom(t), own: typeof ownLimitNote === "function" ? ownLimitNote(t) : "", clearHidden: (() => {
-        const c = document.getElementById("d-ctx-clear"); return c ? c.hidden : "missing"; })() };
+      return { from: limitFrom(t), own: typeof ownLimitNote === "function" ? ownLimitNote(t) : "" };
     });
     if (!/200k, capped by its runner from 900k \(card\)/.test(capped.from) || !/above its runner's ceiling of 200k/.test(capped.own))
       fail("a capped limit reads " + JSON.stringify(capped));
-    if (capped.clearHidden !== true) fail("the clear button should be hidden while the card has no own limit: " + JSON.stringify(capped));
-
-    // CAP_SHOTS=<dir> CAP_STATE=before|after writes the details and the hover text of a card with its own 900k limit.
-    if (process.env.CAP_SHOTS) {
-      const after = process.env.CAP_STATE === "after";
-      await wp.evaluate(after => {
-        current.overrides = { context_limit_k: "900" };
-        current.context_size = after
-          ? { tokens: 210000, warn: true, threshold_k: 200, source: "runner", cycle: true, own_k: 900, ceiling_k: 200, wanted_k: 900, wanted_from: "card" }
-          : { tokens: 210000, warn: true, threshold_k: 900, source: "card", cycle: true };
-        paintCardCycle(current);
-        document.getElementById("d-ctx-sec").insertAdjacentHTML("beforeend",
-          `<div id="cap-hover" style="padding:6px;border:1px solid #888;margin-top:8px">hover: ${landTip(current)}</div>`);
-      }, after);
-      await wp.locator("#d-ctx-sec").screenshot({ path: path.join(process.env.CAP_SHOTS, `card-limit-${process.env.CAP_STATE}.png`) });
-      process.exit(0);
-    }
-    // An own limit and the switch off are written as the card's overrides.
-    await wp.fill("#d-ctx-limit", "300");
-    await wp.dispatchEvent("#d-ctx-limit", "change");
-    await until(() => patches.some(p => (p.overrides || {}).context_limit_k === "300"), 5000, "the limit override").catch(() => {});
-    await wp.click("#d-ctx-cycle");
-    await until(() => patches.some(p => (p.overrides || {}).context_cycle === "off"), 5000, "the switch override").catch(() => {});
-    const o = patches.map(p => p.overrides || {});
-    if (!o.some(x => x.context_limit_k === "300" && x.context_cycle === "")) fail("the limit box did not save as an override: " + JSON.stringify(patches));
-    if (!o.some(x => x.context_cycle === "off" && x.context_limit_k === "300")) fail("the switch did not save off: " + JSON.stringify(patches));
-    if (await wp.evaluate(() => document.getElementById("d-ctx-clear").hidden)) fail("the clear button is hidden although the card has its own limit.");
 
     // The terminal cog's context limit row is a stepper that saves the same override.
     const cog = await wp.evaluate(async () => {
@@ -720,24 +680,6 @@ async function contextCycleSection(browser, base) {
     if (!patches.some(p => p.overrides && p.overrides.context_limit_k === cogK))
       fail("the cog's context limit did not save as an override: " + JSON.stringify(patches));
 
-    // The history: the start as a line, the handoff as a row with its text behind a disclosure, escaped.
-    await wp.waitForSelector("#d-events details.handoff", { timeout: slow(5000) })
-      .catch(() => fail("the stored handoff is not a row in the card's history."));
-    const hist = await wp.evaluate(() => {
-      const d = document.querySelector("#d-events details.handoff");
-      const row = d && d.closest(".evr");
-      const out = { verdict: row && row.querySelector(".c-verdict").textContent, open: d && d.open,
-        summary: d && d.querySelector("summary").textContent, markup: !!(d && d.querySelector("pre b")) };
-      if (d) d.open = true;
-      out.text = d ? d.querySelector("pre").textContent : "";
-      out.started = document.getElementById("d-events").textContent.includes("past its limit, 210k of 200k");
-      return out;
-    });
-    if (hist.verdict !== "handoff" || hist.open || !/bytes from \/tmp\/atrium\/handoffs\/ll-cycle\.md/.test(hist.summary)) {
-      fail("the handoff row reads " + JSON.stringify(hist));
-    }
-    if (hist.text !== handoff || hist.markup) fail("the handoff text is not shown whole and escaped: " + JSON.stringify(hist.text));
-    if (!hist.started) fail("the cycle's start is not a line in the history.");
     await wp.evaluate(() => document.getElementById("detail").close());
 
     // The settings: one harness=k list, saved through the hub, and a bad entry refused before it is sent.

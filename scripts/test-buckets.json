@@ -16,6 +16,8 @@
         "internal/api/web/sw.js",
         "internal/api/web/js/board.js",
         "internal/api/web/js/audit.js",
+        "internal/api/web/js/ciloop.js",
+        "internal/api/web/css/ciloop.css",
         "internal/api/web/js/browser-dialogs.js",
         "internal/api/web/js/fixtures.js",
         "internal/api/web/css/chrome.css",
@@ -28,7 +30,7 @@
       "page": "the terminal view: xterm, attach, switching, paste, peek, popouts, the card's own composer",
       "units": [
         "term*", "rowTextClearsChips", "tallPty", "attachAtOnce", "switch*", "copySelect", "cleanCopy*","clear*", "paste*", "quickPaste", "repoPaste", "walk*",
-        "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepaliveMark", "coldHandoff", "keepMemory",
+        "peek*", "crossedPane", "worn", "waitChip", "gateBar", "waitChipOff", "gateBarOff", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepaliveMark", "coldHandoff", "keepMemory",
         "idle*", "looksIdle", "joined*", "heldStrip", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
         "bridge", "collapsedBridge", "groupBridge", "selectedFits", "selectedFitsLone", "termBarNowrap", "childFits", "childFoldSticks", "childRollupCount", "nineAgentCounts", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
         "newContextSse", "composerStaysPut", "composePasteDefault", "queueBar", "attentionQueue", "queueScrollKeeps", "yqMark", "yqTermCard", "yqTourFixes","replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
@@ -209,14 +211,13 @@
     "growls": {
       "page": "growls, questions, notifications, toasts, held lines, auto permission",
       "units": [
-        "growl*", "ciGrowl", "askAgain", "alertKinds", "questionsClick", "quietDoer", "popoutBell", "windowMute", "notify*", "trayMerge", "sayEnter", "sayWhen",
-        "toast*", "hears", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip", "heldEnvelope", "cycleChip", "cardRowChips"
+        "growl*", "ciGrowl", "askAgain", "alertKinds", "questionsClick", "quietDoer", "popoutBell", "windowMute", "notify*", "trayMerge", "sayEnter", "sayWhen", "cardSave",
+        "toast*", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip", "heldEnvelope", "cycleChip", "cardRowChips"
       ],
       "sources": [
         "internal/api/web/js/growl.js",
         "internal/api/web/js/notify.js",
         "internal/api/web/js/heldline.js",
-        "internal/api/web/js/hears.js",
         "internal/api/web/js/toast-log.js",
         "internal/api/web/js/toasts.js",
         "internal/api/web/js/sounds.js",
@@ -260,7 +261,7 @@
     },
     "docs-files": {
       "page": "docs, files, the reader, change requests",
-      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileBack", "artifacts", "fileLinkDrawer", "draftReload", "boardLive","fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "keptFileLink", "markdownTab", "readerRaw", "docShare", "coverPoll", "coverSteps"],
+      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileBack", "artifacts", "fileLinkDrawer", "boardLive","fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "keptFileLink", "markdownTab", "readerRaw", "docShare", "coverPoll", "coverSteps"],
       "sources": [
         "internal/api/web/js/notes-files.js",
         "internal/api/web/js/files-rules.js",
@@ -311,7 +312,7 @@
       "file": "scripts/board-tests/settings.js",
       "page": "settings, themes and skins, providers, preferences",
       "units": [
-        "help*", "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "emergingSwitch", "dropdownsInstant", "dictBoop", "prefsEverywhere", "alias", "parent"
+        "help*", "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "settingsLabelsOneLine", "emergingSwitch", "dropdownsInstant", "dictBoop", "prefsEverywhere", "alias", "parent"
       ],
       "sources": [
         "internal/api/web/js/alias.js",
@@ -324,6 +325,8 @@
         "internal/api/web/js/prefs-live.js",
         "internal/api/web/js/emerging.js",
         "internal/api/web/js/logs-rules.js",
+        "internal/api/web/js/look.js",
+        "internal/api/web/css/look.css",
         "internal/api/web/css/themes.css",
         "internal/api/web/css/tokens.css"
       ],

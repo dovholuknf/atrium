@@ -2995,6 +2995,107 @@ prefLive("atrium.termfont.*", key => {
   setTermFont(readTermFont(termTask.id));
 });
 
+// THE TERMINAL'S FONT. A face is taste, where the size answers the screen: one default per browser, and a repo or a
+// card may wear another. The card wins over its repo, the repo over the default.
+const TERM_FONT_DEFAULT_STACK = "'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, " +
+  "ui-monospace, monospace";
+const TERM_FONT_FAMILY_KEY = "atrium.termfontfamily";
+const TERM_FONT_REPOS_KEY = "atrium.termfontfamily.repos";
+const TERM_FONT_CARDS_KEY = "atrium.termfontfamily.cards";
+// `bundled` ships in vendor/fonts, so a phone can wear what the desktop does. `prop` is a proportional face.
+const TERM_FONT_FACES = [
+  { name: "JetBrains Mono", bundled: true },
+  { name: "Cascadia Mono" }, { name: "Cascadia Code" }, { name: "Fira Code" }, { name: "Consolas" },
+  { name: "Source Code Pro" }, { name: "IBM Plex Mono" }, { name: "Roboto Mono" }, { name: "Hack" },
+  { name: "DejaVu Sans Mono" }, { name: "Liberation Mono" }, { name: "Ubuntu Mono" }, { name: "Menlo" },
+  { name: "SF Mono" }, { name: "Monaco" }, { name: "Courier New" },
+  { name: "Segoe UI", prop: true }, { name: "Arial", prop: true }, { name: "Helvetica", prop: true },
+  { name: "Verdana", prop: true }, { name: "Tahoma", prop: true }, { name: "Trebuchet MS", prop: true },
+  { name: "Georgia", prop: true }, { name: "Times New Roman", prop: true }, { name: "Inter", prop: true }
+];
+
+// The bundled face has a family of its own, so it never answers to the plain name in the board's stacks.
+const termFontFamilyOf = (name) => name === "JetBrains Mono" ? "JetBrains Mono Bundled" : name;
+const termFontKnown = (name) => TERM_FONT_FACES.some(f => f.name === name);
+
+// The stored default face, or "" for the default list. Only a name this build offers is honoured.
+function readTermFontFamily() {
+  try {
+    const v = localStorage.getItem(TERM_FONT_FAMILY_KEY);
+    if (termFontKnown(v)) return v;
+  } catch (e) {}
+  return "";
+}
+
+// The repo or card overrides, as { key: face }.
+function readTermFontMap(storeKey) {
+  try {
+    const m = JSON.parse(localStorage.getItem(storeKey) || "{}");
+    const out = {};
+    for (const k of Object.keys(m || {})) if (termFontKnown(m[k])) out[k] = m[k];
+    return out;
+  } catch (e) { return {}; }
+}
+
+// The face a card wears: its own, then its repo's, then the default.
+function termFontFor(task) {
+  if (task) {
+    const own = readTermFontMap(TERM_FONT_CARDS_KEY)[task.id];
+    if (own) return own;
+    const repo = repoKeyOf(task);
+    const rep = repo && readTermFontMap(TERM_FONT_REPOS_KEY)[repo];
+    if (rep) return rep;
+  }
+  return readTermFontFamily();
+}
+
+// The chosen face first, then the default list behind it for the glyphs it lacks (box drawing, powerline).
+function termFontStack(name) {
+  return name ? "'" + termFontFamilyOf(name) + "', " + TERM_FONT_DEFAULT_STACK : TERM_FONT_DEFAULT_STACK;
+}
+
+// A bundled face is always there, and nothing loads it until it is picked. An installed face is told by drawing
+// against two fallbacks: a missing one measures as the fallback does.
+const termFontHave = new Map();
+function termFontInstalled(f) {
+  if (termFontHave.has(f.name)) return termFontHave.get(f.name);
+  let ok = false;
+  try {
+    if (f.bundled) ok = true;
+    else {
+      const ctx = document.createElement("canvas").getContext("2d");
+      const w = (fam) => { ctx.font = "40px " + fam; return ctx.measureText("mmmmmmmmmmlliWW0O").width; };
+      ok = ["monospace", "serif"].some(base => w("'" + f.name + "', " + base) !== w(base));
+    }
+  } catch (e) {}
+  termFontHave.set(f.name, ok);
+  return ok;
+}
+
+// A face change re-measures the cell, so it is a resize exactly as a size change is, and for the same reason it goes
+// through `onTermResize`. The bundled face is loaded first, or the cell is measured against the fallback.
+async function setTermFontFamily(name) {
+  try { localStorage.setItem(TERM_FONT_FAMILY_KEY, name); } catch (e) {}
+  await applyTermFontFamily();
+}
+// An empty face removes the override.
+async function setTermFontOverride(kind, key, name) {
+  const storeKey = kind === "card" ? TERM_FONT_CARDS_KEY : TERM_FONT_REPOS_KEY;
+  const m = readTermFontMap(storeKey);
+  if (name) m[key] = name; else delete m[key];
+  try { localStorage.setItem(storeKey, JSON.stringify(m)); } catch (e) {}
+  await applyTermFontFamily();
+}
+async function applyTermFontFamily() {
+  const stack = termFontStack(termFontFor(termTask));
+  try { await document.fonts.load("14px " + stack.split(",")[0]); } catch (e) {}
+  if (!term || term.options.fontFamily === stack) return;
+  term.options.fontFamily = stack;
+  term._atriumBox = null;
+  onTermResize();
+}
+prefLive([TERM_FONT_FAMILY_KEY, TERM_FONT_REPOS_KEY, TERM_FONT_CARDS_KEY], () => applyTermFontFamily());
+
 // SIZE THE GRID TO ITS ROWS. xterm draws whole rows, so the grid is
 // `rows * cellHeight` and rarely the exact height of `#t-screen`: the leftover
 // is up to one line, and a pty shorter than the pane adds whole rows to it.

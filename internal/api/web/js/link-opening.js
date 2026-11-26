@@ -73,7 +73,7 @@ function linkOpeningFail(id, why, heldCard) {
   const o = linkOpenings.get(id);
   if (!o) return;
   o.error = why || "the open failed";
-  // A link another card holds says which: `go to card` is then the first button, the default.
+  // A link another card holds says which: `open that card` is then the first button, the default.
   o.card = heldCard || "";
   linkOpeningPaint();
   toast(o.name || o.url, o.error);
@@ -97,9 +97,9 @@ function linkOpeningHTML(id, o) {
     : o.error
     ? `<div class="linkopen-say warn">${esc(o.error)}</div>
        <div class="linkopen-acts">
-         ${o.card ? `<button type="button" class="primary" data-op-act="goto">go to card</button>` : ""}
-         <button type="button" data-op-act="edit">edit</button>
-         <button type="button" data-op-act="again">again</button>
+         ${o.card ? `<button type="button" class="primary" data-op-act="goto">open that card</button>` : ""}
+         <button type="button" data-op-act="edit">fix the link</button>
+         <button type="button" data-op-act="again">try again</button>
          <button type="button" data-op-act="dismiss">dismiss</button>
        </div>`
     : `<div class="linkopen-say"><span class="linkopen-spin" aria-hidden="true"></span>${esc(o.step)}…${linkOpeningElapsed(o)}</div>`;

@@ -13,12 +13,14 @@ const { attachRetry, landContext } = require("../lib/helpers.js");
 // ── the pulls view ───────────────────────────────────────
 // /v1/prs is mocked in the page (nothing real behind it), the event stream is the harness's real one.
 // One card's menu, read or pressed: the `...` opens #cardmenu, whose rows are sentences.
-// Scrolled into view and settled first: a scroll after the press closes the menu, as it should.
+// Scrolled into view and settled first: a scroll after the press closes the menu, as it should. Toasts are cleared before
+// each press because one over the button swallows the click.
 const pullMenuOpen = async (p, id) => {
   const sel = '#pulls-list .pull[data-id="' + id + '"] button[data-act="menu"]';
   await p.evaluate(s => { const b = document.querySelector(s); if (b) b.scrollIntoView({ block: "center" }); return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }, sel);
   // A scroll the press itself caused can close the menu again, so a second press is allowed.
   for (let i = 0; ; i++) {
+    await p.evaluate(() => { const t = document.getElementById("toasts"); if (t) t.replaceChildren(); });
     await p.click(sel);
     try { await p.waitForSelector("#cardmenu.on button", { timeout: slow(2500) }); return; } catch (e) { if (i >= 2) throw e; }
   }
@@ -1325,7 +1327,10 @@ async function pullsMorePendingSection(browser, base) {
     await shot(p, "pending");
     const ready = () => p.evaluate(() => { pullsTasksMoved(); return pullsNavN + ":" + pullGroup(pulls.rows[0]); });
     if (!process.env.MOREBEFORE && await ready() !== "0:progress") fail("pullsMorePending: the row is ready while its panel card runs: " + await ready());
+    // the mock list is done too, so a poll in flight cannot put the panel card back to running
+    mock.landList.find(t => t.id === "land-pm2").status = "done";
     await p.evaluate(() => { lastTasks.find(t => t.id === "land-pm2").status = "done"; dockResync(); });
+    await p.waitForFunction(() => { pullsTasksMoved(); return pullsNavN + ":" + pullGroup(pulls.rows[0]) === "1:ready"; }, null, { timeout: slow(5000) }).catch(() => {});
     if (await ready() !== "1:ready") fail("pullsMorePending: the row is not ready once its panel is done: " + await ready());
     if (process.env.MOREBEFORE) { await shot(p, "ask"); return; }
     const declared = await p.evaluate(() => {

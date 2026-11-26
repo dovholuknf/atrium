@@ -396,7 +396,7 @@ function firstSeen(iso) {
 
 const isWaiting = cardWaiting;
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "queue", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items", "caps"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "queue", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items", "caps", "ciloop"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -544,6 +544,7 @@ function switchView(name) {
   if (name === "backlog" && typeof loadBacklog === "function") loadBacklog();
   // Read on the way in, and every 3s while a probe is running. See js/caps.js.
   if (name === "caps" && typeof loadCaps === "function") loadCaps();
+  if (name === "ciloop" && typeof loadCiLoop === "function") loadCiLoop();
   // Read on the way in, on an `item` event, and every 5s while it is on screen. See js/items.js.
   if (name === "items" && typeof startItems === "function") startItems();
   // Where you were, so a reload puts you back. A restart of the daemon
@@ -1135,10 +1136,6 @@ async function dismissAsks(id) {
 async function answerAsk(id) {
   if (!id) return;
   if (!(detail.open && current && current.id === id)) await openTask(id);
-  const box = document.getElementById("d-say");
-  if (!box) return;
-  box.scrollIntoView({ block: "center" });
-  box.focus();
 }
 
 // ── grouping cards by project ───────────────────────────

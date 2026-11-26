@@ -226,9 +226,7 @@ function staleActivity(t) {
   return over(t);
 }
 
-const KEY_EVENTS = ["created", "prompted", "perm-decided", "status-changed"];
 const detail = document.getElementById("detail");
-const reviewDlg = document.getElementById("review");
 let current = null;
 
 // Fits a box to its content: a textarea cannot say "as tall as what is in me",

@@ -114,7 +114,6 @@ paintStackSort();
 paintBoardShow();
 paintBoardSort();
 paintGroupSegs();
-wireSeg("d-ev-seg", paintTimeline);
 loadGlobalAuto();
 rememberOpen("rules-d", "atrium.rules.open");
 rememberOpen("hist-d", "atrium.history.open");

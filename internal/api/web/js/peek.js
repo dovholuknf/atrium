@@ -219,11 +219,11 @@ function peekRows(t) {
   const kids = typeof termChildInfo === "function" && typeof lastTasks !== "undefined" ? termChildInfo(t, lastTasks) : null;
   const age = t.recap ? peekRecapAge(t) : "";
   const recap = t.recap || (t.status === "done" ? "finished without saying what it did" : "");
-  // One short word: atrium_launch_worker cards are exited when their branch merges. A kept card says nothing.
+  // atrium_launch_worker cards close when done. A card that stays open says nothing.
   const needSum = (fn("isBlocker", t) || fn("isStuck", t)) ? "blocked or stuck" : peekHasQuestions(t) ? "a question" : "waiting on you";
   return (need.length ? `<div class="peek-sec need" data-drawer="need" data-label="needs you" data-sum="${esc(needSum)}">${need.join("")}</div>` : "") +
     peekKidsHtml(kids) +
-    (t.lifetime ? `<div class="peek-sec">${row("lifetime", t.lifetime)}</div>` : "") +
+    (t.lifetime ? `<div class="peek-sec">${row("close when done", "yes")}</div>` : "") +
     peekIdHtml(t) +
     peekScratchHtml(t) +
     (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +

@@ -126,6 +126,9 @@ function pickRoom(name) {
 
 // ── the header chip ─────────────────────────────────────────────────────────
 
+// roomExpected is a room an operator marked offline on purpose, and only while the switch is on and it is away.
+const roomExpected = r => flagOn("roomoff") && !!r.expected_offline && !r.attached;
+
 // paintRooms draws the counter, which is the one thing on this board that says
 // what you are looking at.
 //
@@ -172,9 +175,9 @@ function paintRooms() {
   // NEITHER IS THE HUB'S OWN MACHINE. Off is a switch somebody threw, not a
   // room that went missing, so it must not sit in the denominator making the
   // counter read as though something needs looking at.
-  const everConnected = hubInventory.filter(r =>
-    r.transport !== "local" && (r.attached || r.first_seen)).length;
-  const known = Math.max(live, everConnected, room ? 1 : 0);
+  const expected = hubInventory.filter(roomExpected);
+  const unexpected = hubInventory.filter(r => r.transport !== "local" && (r.first_seen || r.attached) && !r.attached &&
+    !roomExpected(r) && !hubRooms.some(h => h.name === r.name));
   const here = room ? (hubRooms.some(r => r.name === room) ? 1 : 0) : live;
 
   const label = document.getElementById("rooms-t");
@@ -185,11 +188,14 @@ function paintRooms() {
       ? `scoped to ${room}. this is that machine's atrium.`
       : `scoped to ${room}, which is not attached right now.`;
   } else {
-    label.textContent = `${here}/${known} room${known === 1 ? "" : "s"}`;
-    label.dataset.n = `${here}/${known}`;
-    hint = "you are on an atrium hub, looking at every room at once. " +
-      "click to focus on one.";
+    const total = relTotal();
+    label.textContent = `${here}/${total} room${total === 1 ? "" : "s"}`;
+    label.dataset.n = `${here}/${total}`;
+    hint = "click a room to focus on it.";
+    if (expected.length) hint += " " + expected.map(r => r.name + " is offline (expected)" +
+      (r.expected_offline_note ? ": " + r.expected_offline_note : "")).join(". ") + ".";
   }
+  el.classList.toggle("partial", flagOn("roomoff") && !room && unexpected.length > 0);
   // `down` belonged to the folded-in stream state and coloured the whole chip as
   // though a room were in trouble. The stream now speaks through `#conn`, so the
   // room chip is never `down`: it reports rooms and nothing else.
@@ -202,7 +208,12 @@ function paintRooms() {
   // went unseen for hours. Every attached room counts, scoped or not: the problem is on a machine you may not
   // be looking at. One line each, in the tooltip.
   const drift = roomsWithSetupIssues();
-  el.classList.toggle("warn", drift.length > 0);
+  const differing = relDiffering(drift, relGone()).size;
+  let up = document.getElementById("rooms-u");
+  if (!up) { up = document.createElement("span"); up.id = "rooms-u"; up.className = "upn"; el.appendChild(up); }
+  up.hidden = !differing;
+  up.innerHTML = differing ? `&middot; ${differing}<span class="w"> differ</span>` : "";
+  el.classList.toggle("warn", differing > 0);
   // One popup on hover: the hint rides in the checklist rather than in a tooltip beside it.
   delete el.dataset.tip;
   paintSetupPop(drift, hint);
@@ -211,39 +222,122 @@ function paintRooms() {
 // The checklist is a popover on hover of the pill, laid out the same in every state: rooms alphabetized, each with its
 // problems grouped by kind and alphabetized inside the group, or on one line with a tick when it has none. A click in
 // it pins it open so its text can be selected, and a click outside or Esc closes it.
-const setupPicked = new Set();
-const setupKey = (room, id) => room + "\n" + id;
 function setupWhyNot(r, i) {
   if (i.kind === "hooks") return "settings.json unreadable";
   if (i.id === "git") return "install git there";
   return "";
 }
+// The newest release on GitHub, as the hub last read it. `/_hub/release` answers {latest, url, state, checked_at, hub} and
+// is a 404 on an older hub, which leaves this null and the menu exactly as it was.
+let releaseInfo = null;
+async function loadRelease() {
+  try {
+    const res = await plainFetch("/_hub/release");
+    releaseInfo = res.ok ? await res.json() : null;
+  } catch (e) {
+    releaseInfo = null;
+  }
+  paintRooms();
+}
+const relNums = v => String(v || "").replace(/^v/, "").split(/[-+]/)[0].split(".").map(n => parseInt(n, 10) || 0);
+function relCmp(a, b) {
+  const x = relNums(a), y = relNums(b);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0) ? -1 : 1;
+  return 0;
+}
+const relDismissed = () => !!releaseInfo && localStorage.getItem("atrium.update.dismissed") === releaseInfo.latest;
+// relState says how one machine stands: behind, current, ahead, or unknown when there is no fresh answer to compare with.
+function relState(ver) {
+  if (!releaseInfo || !ver) return "";
+  if (releaseInfo.state !== "ok" || !releaseInfo.latest) return releaseInfo.state === "checking" ? "checking" : "unknown";
+  const c = relCmp(ver, releaseInfo.latest);
+  return c < 0 ? "behind" : c > 0 ? "ahead" : "current";
+}
+function relRows() {
+  const out = [];
+  if (releaseInfo && releaseInfo.hub) out.push({ name: "hub", ver: releaseInfo.hub, hub: true });
+  for (const r of hubRooms) if (r.version) out.push({ name: r.name, ver: r.version });
+  return out;
+}
+const relBehind = () => relDismissed() ? [] : relRows().filter(r => relState(r.ver) === "behind");
+function relMark(ver) {
+  const st = relState(ver);
+  if (st === "checking") return `<span class="mk">&hellip;</span>`;
+  if (st === "unknown") return `<span class="mk" data-tip="not checked against the latest release">&ndash;</span>`;
+  if (st === "ahead") return `<span class="mk">ahead of ${esc(releaseInfo.latest)}</span>`;
+  if (st === "behind") return relDismissed()
+    ? `<span class="mk">${esc(releaseInfo.latest)} dismissed</span><button class="ghost relundo">undo</button>`
+    : `<span class="mk warn" data-tip="update available">&#9888;&#xFE0E;</span>`;
+  return `<span class="ok">&#10003;</span>`;
+}
+// relGone is the rooms the hub has seen and that are not attached now.
+const relGone = () => hubInventory.filter(r => r.transport !== "local" && (r.attached || r.first_seen) &&
+  !hubRooms.some(h => h.name === r.name)).sort((a, b) => a.name.localeCompare(b.name));
+// relTotal is the one room count: the pill's denominator and the popup's "of N". The hub is not a room.
+const relTotal = () => Math.max(hubRooms.length, hubInventory.filter(r =>
+  r.transport !== "local" && (r.attached || r.first_seen)).length);
+// relBehindRooms is relBehind without the hub, which keeps its row but is not a room that differs.
+const relBehindRooms = () => relBehind().filter(r => !r.hub);
+// relDiffering is the names that differ, the one set the pill and the menu's summary line both count.
+function relDiffering(drift, gone) {
+  const behind = releaseInfo ? relBehindRooms().map(r => r.name) : [];
+  return new Set([...behind, ...gone.map(r => r.name), ...drift.map(d => d.name)]);
+}
+const relKindLabel = { build: "other build", hooks: "hooks to fix", checklist: "setup to fix" };
+function relBlock(drift, gone) {
+  const behind = releaseInfo ? relBehindRooms().map(r => r.name) : [];
+  const kinds = new Map();
+  for (const d of drift) for (const k of new Set(d.issues.map(i => i.kind))) kinds.set(k, (kinds.get(k) || new Set()).add(d.name));
+  const differ = relDiffering(drift, gone);
+  if (!differ.size) return "";
+  const parts = [];
+  if (behind.length) parts.push(`${behind.length} behind ${esc(releaseInfo.latest)} &middot; <a href="${esc(releaseInfo.url)}" target="_blank" rel="noopener">release</a>`);
+  for (const [k, v] of kinds) parts.push(`${v.size} ${esc(k === "hooks" && v.size === 1 ? "hook to fix" : relKindLabel[k] || k)}`);
+  if (gone.length) parts.push(`${gone.length} not attached`);
+  const total = relTotal();
+  return `<div class="relblock"><div class="relhead"><span class="tx">${differ.size} of ${total} ${total === 1 ? "room" : "rooms"} differ: ${parts.join(", ")}</span>
+    ${behind.length ? `<button class="reldismiss">dismiss</button>` : ""}</div></div>`;
+}
+function relItems(ver) {
+  if (relState(ver) !== "behind" || relDismissed()) return "";
+  return `<div class="it"><span class="k">release</span><span class="tx">runs ${esc(ver)}, latest ${esc(releaseInfo.latest)}</span><span></span></div>`;
+}
+function relRowHtml(name, ver, hub) {
+  const bad = relState(ver) === "behind" && !relDismissed();
+  return `<div class="rm${bad ? " bad" : ""}"><h5>${esc(name)}</h5><span class="ver">${esc(ver)}</span>${relMark(ver)}</div>` + relItems(ver);
+}
+function relLine() {
+  if (!releaseInfo) return "";
+  const t = releaseInfo.checked_at ? shortTime(releaseInfo.checked_at) : "";
+  const note = releaseInfo.state === "checking" ? "checking github"
+    : releaseInfo.state === "ok" ? "checked " + t
+    : t ? "last checked " + t : "never checked";
+  return `<div class="relline"><span>releases: ${esc(note)}</span><span class="help" tabindex="0" data-tip="checks GitHub releases once a day.">?</span></div>`;
+}
+
 function setupChecklistHtml(drift, hint) {
   const by = new Map(drift.map(d => [d.name, d.issues]));
   const rooms = hubRooms.filter(r => r.setup && r.setup.answering).sort((a, b) => a.name.localeCompare(b.name));
-  const head = hint ? `<div class="hint">${esc(hint)}</div>` : "";
-  const gone = hubInventory.filter(r => r.transport !== "local" && (r.attached || r.first_seen) &&
-    !hubRooms.some(h => h.name === r.name)).sort((a, b) => a.name.localeCompare(b.name));
-  if (!rooms.length && !gone.length) return head + `<div class="rm"><span class="none">no room has answered yet</span></div>`;
-  const live = new Set();
+  const gone = relGone();
+  const head = (hint ? `<div class="hint">${esc(hint)}</div>` : "") + relLine() + relBlock(drift, gone);
+  const hubRow = releaseInfo && releaseInfo.hub ? relRowHtml("hub", releaseInfo.hub, true) : "";
+  if (!rooms.length && !gone.length) return head + hubRow + `<div class="rm"><span class="none">no room has answered yet</span></div>`;
   const html = rooms.map(r => {
     const issues = (by.get(r.name) || []).slice().sort((a, b) => a.kind.localeCompare(b.kind) || a.text.localeCompare(b.text));
-    if (!issues.length) return `<div class="rm"><h5>${esc(r.name)}</h5><span class="ok">&#10003;</span></div>`;
-    return `<div class="rm bad"><h5>${esc(r.name)}</h5></div>` + issues.map(i => {
+    if (!issues.length) return releaseInfo && r.version ? relRowHtml(r.name, r.version) : `<div class="rm"><h5>${esc(r.name)}</h5><span class="ok">&#10003;</span></div>`;
+    return `<div class="rm bad"><h5>${esc(r.name)}</h5>${r.version && releaseInfo ? `<span class="ver">${esc(r.version)}</span>${relMark(r.version)}` : ""}</div>` + relItems(r.version) + issues.map(i => {
       const id = i.kind === "hooks" ? (r.setup.hooks_unreadable ? "" : "hooks") : i.fix ? i.id : "";
-      const key = setupKey(r.name, id);
-      if (id) live.add(key);
+      const fix = id ? ` <button class="setupfix" data-room="${esc(r.name)}" data-id="${esc(id)}">fix</button>` : "";
       const tail = id
-        ? `<input type="checkbox" class="setuppick" data-room="${esc(r.name)}" data-id="${esc(id)}"${setupPicked.has(key) ? " checked" : ""}>`
-        : setupWhyNot(r, i) ? `<span class="why">${esc(setupWhyNot(r, i))}</span>` : "";
-      return `<div class="it"><span class="k">${esc(i.kind)}</span><span class="tx">${esc(i.text)}</span>${tail}</div>`;
+        ? "<span></span>"
+        : setupWhyNot(r, i) ? `<span class="why">${esc(setupWhyNot(r, i))}</span>` : "<span></span>";
+      const text = i.kind === "hooks" ? i.text.replace(/^atrium claude hooks: /, "") : i.text;
+      return `<div class="it"><span class="k">${esc(i.kind)}</span><span class="tx">${esc(text)}${fix}</span>${tail}</div>`;
     }).join("");
   }).join("");
-  for (const k of [...setupPicked]) if (!live.has(k)) setupPicked.delete(k);
-  const cols = live.size ? `<div class="cols"><span>fix</span></div>` : "";
   const off = gone.map(r => `<div class="rm bad"><h5>${esc(r.name)}</h5></div>` +
     `<div class="it"><span class="k">attached</span><span class="tx">not attached, last seen ${esc(shortTime(r.last_seen))}</span><span></span></div>`).join("");
-  return head + cols + html + off + (setupPicked.size ? `<div class="setupall"><button class="ghost setupfixall">Fix all now (${setupPicked.size})</button></div>` : "");
+  return head + hubRow + html + off;
 }
 
 function paintSetupPop(drift, hint) {
@@ -262,6 +356,8 @@ function paintSetupPop(drift, hint) {
       pop.hidden = false;
       pop.style.top = r.bottom + 2 + "px";
       pop.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+      const w = pop.getBoundingClientRect();
+      if (w.left < 8) pop.style.right = Math.max(8, window.innerWidth - w.width - 8) + "px";
     });
     const away = () => { clearTimeout(leave); leave = setTimeout(() => { if (!pinned) pop.hidden = true; }, 250); };
     el.addEventListener("pointerleave", away);
@@ -272,20 +368,12 @@ function paintSetupPop(drift, hint) {
     document.addEventListener("pointerdown", e => { if (!pop.contains(e.target) && !el.contains(e.target)) close(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
     const fixOne = (room, id) => id === "hooks" ? fixRoomHooks(room) : fixRoomSetup(room, id);
-    pop.addEventListener("change", e => {
-      const c = e.target;
-      if (!c.classList || !c.classList.contains("setuppick")) return;
-      const key = setupKey(c.dataset.room, c.dataset.id);
-      if (c.checked) setupPicked.add(key); else setupPicked.delete(key);
-      paintSetupPop(roomsWithSetupIssues(), pop.dataset.hint);
-    });
     pop.addEventListener("click", e => {
       const t = e.target.closest && e.target.closest("button");
       if (!t) return;
-      if (t.classList.contains("setupfix")) busyWhile(t, () => fixOne(t.dataset.room, t.dataset.id), "fixing…");
-      else if (t.classList.contains("setupfixall")) busyWhile(t, async () => {
-        for (const k of [...setupPicked]) { const [room, id] = k.split("\n"); setupPicked.delete(k); await fixOne(room, id); }
-      }, "fixing…");
+      if (t.classList.contains("reldismiss")) { localStorage.setItem("atrium.update.dismissed", releaseInfo.latest); paintRooms(); }
+      else if (t.classList.contains("relundo")) { localStorage.removeItem("atrium.update.dismissed"); paintRooms(); }
+      else if (t.classList.contains("setupfix")) busyWhile(t, () => fixOne(t.dataset.room, t.dataset.id), "fixing…");
     });
   }
   // Left alone when unchanged, so a repaint does not drop a selection.
@@ -402,7 +490,8 @@ function roomPickerRows() {
       onclick="pickRoom('${q}')">
         <span class="dot"></span>
         <strong>${name}</strong>
-        <span class="meta">disconnected${r.last_seen
+        <span class="meta"${roomExpected(r) ? ` data-tip="${esc(r.expected_offline_note || "offline on purpose")}"` : ""}>${roomExpected(r)
+          ? "offline (expected)" : "disconnected"}${r.last_seen
           ? " &middot; " + esc(shortTime(r.last_seen)) : ""}</span>
         <span class="roomx" aria-label="forget ${name}, removing this stale room from the hub" data-tip="forget ${name}, removing this stale room from the hub"
           onclick="event.stopPropagation();rejectRoom('${q}')">&times;</span></button>`);
@@ -1002,6 +1091,18 @@ function paintRoomFacts(r) {
     mark.textContent = marked ? "take the mark off" : "mark for deletion";
     mark.className = marked ? "go" : "no";
   }
+  const eo = document.getElementById("rc-eo");
+  if (eo) {
+    eo.hidden = !(flagOn("roomoff") && !r.attached && r.transport !== "local");
+    const expected = !!r.expected_offline;
+    const note = document.getElementById("rc-eo-note");
+    note.hidden = expected;
+    note.value = "";
+    const btn = document.getElementById("rc-eo-btn");
+    btn.textContent = expected ? "expect it back" : "offline on purpose";
+    btn.className = expected ? "go" : "no";
+    if (expected && r.expected_offline_note) state.innerHTML += ` <b>Offline on purpose:</b> ${esc(r.expected_offline_note)}`;
+  }
 }
 
 // showRoomFields hides the settings themselves for a room that cannot answer.
@@ -1094,6 +1195,26 @@ async function markFromCog() {
   const r = hubInventory.find(x => String(x.name) === String(roomCfgFor));
   if (!r) return;
   await markRoom(r.name, r.state !== "marked-for-deletion");
+  await openRoomCog(roomCfgFor);
+}
+
+// expectOfflineFromCog marks the room in its own pane as offline on purpose, or takes the mark off.
+async function expectOfflineFromCog() {
+  const r = hubInventory.find(x => String(x.name) === String(roomCfgFor));
+  if (!r) return;
+  try {
+    const got = await plainFetch("/_hub/inventory/expect-offline", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: r.name, on: !r.expected_offline, note: document.getElementById("rc-eo-note").value })
+    });
+    if (!got.ok) {
+      const why = await got.json().catch(() => ({}));
+      throw new Error(why.error || "the hub refused that");
+    }
+  } catch (e) { tellText("rooms", e.message); return; }
+  hubRead = 0;
+  await loadHubRooms();
+  renderRooms();
   await openRoomCog(roomCfgFor);
 }
 
@@ -1532,6 +1653,9 @@ async function startRooms() {
     roomsDemoStart();
   }
   if (!await loadHubRooms()) return;
+  loadRelease();
+  // Every minute and not every half hour: the answer carries the hub's own build, which changes when the hub restarts.
+  setInterval(loadRelease, 60000);
   // NO POLL OF ITS OWN. The merged stream says `rooms` the moment membership
   // changes. A board scoped to one room is not on that stream, so its counter is
   // read again by the safety resync (see `startResync`), once a minute.

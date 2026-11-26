@@ -450,6 +450,7 @@ function yqPaint() {
   el.dataset.tip = l.length ? YQ_VERBS.map(v => [v, l.filter(a => a.verb === v).length]).filter(x => x[1]).map(x => x[1] + " " + x[0].toLowerCase()).join(", ") : "";
   if (typeof badge === "function" && document.getElementById("c-queue")) badge("c-queue", l.length);
   yqForPill(l.length, el.dataset.tip);
+  gbPaint();
   yqAskPlace();
   yqRender();
 }
@@ -759,8 +760,10 @@ function yqPaintAsk(force) {
 }
 
 function yqBoxVal(prefix) {
-  const box = document.querySelector(`#yq-ask textarea[data-yq-text^="${prefix}"]`);
-  return box ? box.value.trim() : "";
+  for (const box of document.querySelectorAll(`#yq-ask textarea[data-yq-text^="${prefix}"], #t-gatebar textarea[data-yq-text^="${prefix}"]`)) {
+    if (box.value.trim()) return box.value.trim();
+  }
+  return "";
 }
 
 function yqClearBox(prefix) {
@@ -901,6 +904,95 @@ async function yqAskClick(e) {
   toast("sent to " + to, "");
   yqHub.at = 0;
   yqCloseAsk();
+}
+
+// ---- the gate bar: the open gate or ask of the card in the terminal, under its terminal, with the queue's own actions ----
+const GB_VERBS = { APPROVE: "Approve", ANSWER: "Answer", TRY: "Try", SIGN: "Sign", UNBLOCK: "Unblock" };
+// The ask each card was answered from here, so the bar goes before the next card list says so.
+const gbSent = new Map();
+
+function gbCard() {
+  if (typeof termTask === "undefined" || !termTask) return null;
+  return ((typeof lastTasks !== "undefined" && lastTasks) || []).find(t => bareId(t.id) === bareId(termTask.id)) || null;
+}
+
+// The ask the queue would open for this card's gate, or for its open ask when it set no gate.
+function gbAsk(t) {
+  if (!t || !t.ask || t.ask_peer || yqMs(t.prompted_at) > yqMs(t.ask_at)) return null;
+  if (gbSent.has(t.id) && gbSent.get(t.id) === t.ask_at) return null;
+  const v = String(t.ask_verb || "").toUpperCase();
+  const verb = GB_VERBS[v] ? v : "ANSWER";
+  return { key: "card:" + t.id, card: t, title: t.display_title || t.title || t.id, verb, stage: t.ask_stage || "", gate: !!t.ask_verb,
+    stuck: verb === "UNBLOCK", since: t.ask_at, why: t.ask, pages: verb === "APPROVE" || verb === "TRY" ? yqPages(t) : [] };
+}
+
+function gbText(s, pages) {
+  let out = "", at = 0;
+  for (const m of s.matchAll(/https?:\/\/[^\s)"'<>]+/g)) {
+    const u = m[0].replace(/[.,;]+$/, "");
+    let p = pages.indexOf(u);
+    try { const x = new URL(u); if (p < 0) p = pages.indexOf(x.pathname + x.search); } catch (e) { /* not a link */ }
+    out += esc(s.slice(at, m.index)) +
+      `<a class="gb-link" href="${esc(u)}" target="_blank" rel="noopener"${p >= 0 ? ` data-gb-page="${p}"` : ""}>${esc(u)}</a>`;
+    at = m.index + u.length;
+  }
+  return out + esc(s.slice(at));
+}
+
+function gbActs(t, a) {
+  const b = (d, label, cls) => `<button class="yq-btn${cls ? " " + cls : ""}" data-yq-do="${d}">${label}</button>`;
+  if (a.verb === "APPROVE" || a.verb === "TRY") return yqBox("p:" + t.id, "A note: what to change", 1) + b("approve", "Approve", "primary") + b("sendback", "Send back");
+  if (a.verb === "SIGN") return yqBox("s:" + t.id, "Send back: what to change", 1) + b("sign", "Sign", "primary") + b("sendback", "Send back");
+  if (a.verb === "UNBLOCK") return yqBox("u:" + t.id, "What it needs to hear", 1) + b("unblock", "Unblock", "primary");
+  return yqBox("r:" + t.id, "Your answer", 1) + b("reply", "Send", "primary");
+}
+
+function gbPaint() {
+  const el = document.getElementById("t-gatebar");
+  if (!el) return;
+  if (!el.__gbWired) {
+    el.__gbWired = true;
+    el.addEventListener("click", gbClick);
+    el.addEventListener("input", e => { if (e.target.dataset && e.target.dataset.yqText) yqView.text[e.target.dataset.yqText] = e.target.value; });
+  }
+  const t = gbCard(), a = flagOn("gatebar") ? gbAsk(t) : null;
+  // The queue's strip already shows this ask over the terminal.
+  const shown = a && !(yqAttn() && yqView.key === a.key && yqView.mode === "ask");
+  el.hidden = !shown;
+  const html = shown ? `<div class="gb-line"><span class="gb-verb">${GB_VERBS[a.verb]} this:</span><span class="gb-text">${gbText(String(a.why), a.pages)}</span></div>
+    <div class="gb-acts">${gbActs(t, a)}</div>` : "";
+  if (el.__gb === html) return;
+  if (shown && el.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") return;
+  el.__gb = html;
+  el.innerHTML = html;
+}
+
+// A button runs the queue's own action on this card's ask, and the queue's pick, if it had another, is put back.
+async function gbClick(e) {
+  const t = gbCard(), a = gbAsk(t);
+  if (!a) return;
+  const link = e.target.closest && e.target.closest("a[data-gb-page]");
+  if (link) {
+    e.preventDefault();
+    yqOpenAsk(a);
+    yqView.page = Number(link.dataset.gbPage) || 0;
+    yqPaintAsk(true);
+    return gbPaint();
+  }
+  if (!(e.target.closest && e.target.closest("[data-yq-do]"))) return;
+  const was = yqView.key === a.key ? null
+    : { key: yqView.key, ask: yqView.ask, mode: yqView.mode, at: yqView.at, listed: yqView.listed, page: yqView.page, drop: yqView.drop };
+  const sent = yqView.sent;
+  if (was) Object.assign(yqView, { key: a.key, ask: a, mode: "term", at: Date.now(), listed: false, page: 0, drop: false });
+  try {
+    await yqAskClick(e);
+  } finally {
+    if (was && (!yqView.key || yqView.key === a.key)) { Object.assign(yqView, was); yqRender(); yqPaintAsk(true); }
+    if (yqView.sent && yqView.sent !== sent && !yqView.sent.bad) gbSent.set(t.id, t.ask_at);
+    const el = document.getElementById("t-gatebar");
+    if (el) el.__gb = "";
+    gbPaint();
+  }
 }
 
 // A page an agent made may post its own answer: parent.postMessage({ atrium: "reply", text }) from the page in the frame.

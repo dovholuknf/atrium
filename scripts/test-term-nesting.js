@@ -92,7 +92,7 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termPlaceOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termStateSlot", "termRunningIn", "termHeldAge", "termHeldTip", "termHeldChip",
-  "termRoomChip", "termRowChips", "termCold", "termHeldLine", "termLeftoverChip", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
+  "termRoomChip", "waitsOf", "waitRowCls", "waitChip", "termRowChips", "termCold", "termHeldLine", "termLeftoverChip", "termJoined", "termRowWear", "termKidTotal", "termKidsShut", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
   "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termRowsCount", "termGroupsHTML",
   "termFlatGroupsHTML", "termAgeOrder"];
 // Whatever sits between two functions comes along with the one above it, so
@@ -135,12 +135,12 @@ const terminalParts = (t) => {
 // same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
   "themeFor", "themeSource", "NO_WEAR", "termWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
-  "newCardClass", "newCardChip", "isFolded", "attachIsInFlight", "ctxLine", "ctxWarnMark", "isMinion", "cardLead",
+  "newCardClass", "newCardChip", "isFolded", "attachIsInFlight", "ctxLine", "ctxWarnMark", "isMinion", "cardLead", "flagOn",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => ({ cursor: "#fff", background: "#000" }), { cls: "", style: "" },
   () => ({ cls: "", style: "" }), () => "", () => false, null,
-  () => false, () => false, () => "", () => "", () => "", () => false, () => false, () => "", () => "", () => false, t => ({ main: String(t.display_title || "").trim(), other: "" }));
+  () => false, () => false, () => "", () => "", () => "", () => false, () => false, () => "", () => "", () => false, t => ({ main: String(t.display_title || "").trim(), other: "" }), () => true);
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────

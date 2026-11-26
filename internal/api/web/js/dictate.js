@@ -276,6 +276,15 @@ function dictTestShow(text, shiftHeld, any) {
     (t ? " convert " + s(t.convert) + ", trip " + s(t.trip) + ", whisper " + s(t.whisper) + ", " + t.kb + " KB." : "");
 }
 
+// The Enter waits for the runner to show the paste, because an Ink input reads an Enter that beats its own redraw as part of the text.
+function dictEnter(card, until) {
+  setTimeout(() => {
+    if (!termTask || termTask.id !== card) return;
+    if (pasteFlights.size && Date.now() < until) { dictEnter(card, until); return; }
+    sendInput("\r");
+  }, 250);
+}
+
 async function dictFinish(linesOnly) {
   if (dictState !== "listening") return;
   dictReset();
@@ -298,7 +307,7 @@ async function dictFinish(linesOnly) {
     const send = !linesOnly || cut !== text;
     const bracketed = (term && term.modes && term.modes.bracketedPasteMode) || !!termCaps.bracketed_paste;
     if (cut) sendPasteText(cut + (send ? "" : bracketed ? "\n" : " "));
-    if (send) setTimeout(() => { if (termTask && termTask.id === card) sendInput("\r"); }, 250);
+    if (send) dictEnter(card, Date.now() + 3000);
     dictShow("", "");
   } catch (err) {
     dictState = "";

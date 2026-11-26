@@ -661,6 +661,7 @@ function paintTermChips(task) {
          onclick="event.stopPropagation();copyPath(this.parentNode)"
          >${copyIcon()}</button><span class="ptext">${esc(task.worktree || "")}</span></span>`);
   if (typeof composeBar === "function") composeBar(task);
+  if (typeof gbPaint === "function") gbPaint();
 }
 
 
@@ -842,6 +843,7 @@ function keepShow(slot, task) {
   swMark("keep-show");
   termSlotPut(slot);
   termTask = task;
+  artLoad();
   const el = term.element;
   delete el.dataset.kept;
   el.style.display = "";
@@ -853,6 +855,8 @@ function keepShow(slot, task) {
     term.options.scrollback = scrollbackLines();
     const size = readTermFont(task.id);
     if (term.options.fontSize !== size) { termFontSize = size; term.options.fontSize = size; term._atriumBox = ""; }
+    const stack = termFontStack(termFontFor(termTask));
+    if (term.options.fontFamily !== stack) { term.options.fontFamily = stack; term._atriumBox = ""; }
   } catch (e) {}
   swMark("keep-theme");
   if (!term._atriumGl) useWebgl(term);
@@ -1078,6 +1082,7 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  artLoad();
   themeTrace("attach", task);
   fileViewEnter();
   // The card this window reads changed, and other windows silence its alerts by it.
@@ -1163,8 +1168,7 @@ function openTerm(task) {
     // Cascadia Mono ships with Windows Terminal and is drawn for exactly this:
     // it has the box drawing and powerline glyphs an agent's output uses, which
     // Consolas renders as boxes.
-    fontFamily: "'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', " +
-      "'Fira Code', Consolas, ui-monospace, monospace",
+    fontFamily: termFontStack(termFontFor(task)),
     fontSize: termFontSize,
     lineHeight: 1.2,
     letterSpacing: 0.2,
@@ -2032,7 +2036,7 @@ function uploadTimerEnd(up, task) {
   const room = ["room-read", "room-write", "room-event"].filter(k => k in st).map(k => `${k} ${Math.round(st[k])}`).join(", ");
   console.info(`[atrium upload] ${up.id} ${up.name} ${up.n}B ${Math.round(total)}ms: ` +
     Object.keys(ms).map(k => `${k} ${Math.round(ms[k])}`).join(", ") + (room ? ` | ${room}` : ""));
-  toast(`${up.name} ${pasteSize(up.n)} in ${f(total)}`, big ? `slowest: ${slow} ${f(big)}` : "");
+  if (total >= 500) toast(`${up.name} ${pasteSize(up.n)} in ${f(total)}`, big ? `slowest: ${slow} ${f(big)}` : "");
 }
 
 // The one pipeline for paste, drop and picker.

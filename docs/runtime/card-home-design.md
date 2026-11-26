@@ -132,7 +132,7 @@ which the next sweep marks `removed`, and never a folder with no row.
 | `repo` | the repository to work in: `host/owner/repo` (resolved through `gitsync.ClonePath`, cloned from the hub when the room has no clone yet), or an absolute path to a clone on the room |
 | `branch` | the branch for the worktree. Made from `base` when it does not exist. Default `claude/<slug>` |
 | `base` | where a new branch starts. Default the clone's `claude/main`, else its default branch |
-| `home` | `true` asks for a home with no repo: an empty `work/` (scratch work) |
+| `home` | internal: a launch with no repo and no `cwd` sets it, and gets an empty `work/`. Never a user choice |
 
 `repo`, `org`, `host` and `branch` exist today as labels. They keep that meaning when `cwd` is given, so no caller
 changes behaviour by accident.
@@ -142,7 +142,7 @@ changes behaviour by accident.
 | Sent | Result |
 | --- | --- |
 | `repo` (with or without `branch`), no `cwd` | a home of kind `worktree`: `git worktree add <home>/work -b <branch> <base>` from the clone, as an argv, as `makeProviderWorktree` does |
-| `home: true`, no `cwd` | a home of kind `scratch`. The card wears `atrium:keep-open`, as a scratch launch does now |
+| no `repo`, no `cwd` | a home of kind `scratch`. It is only where the card runs, and never keeps the card open. A close-when-done card with one closes itself on its done report and its folder goes |
 | `throwaway: true`, no `cwd` | a home of kind `throwaway` instead of `os.MkdirTemp`. Removed on exit (5) |
 | `cwd` | no home. The directory is used as given, `agentCheckoutRefusal` applies, and reclaim is today's |
 | `cwd` and `repo` | refused: "pass cwd for a directory you made, or repo for one atrium makes, not both" |
@@ -323,3 +323,16 @@ With temp directories, no live hub, the link harness where a hub is needed:
 - **Size:** the walk stops at its budget and resumes. Links are not followed. The board shows the age past an hour.
 - **Board** (headless, mocked): the card shows path and size, the room total turns orange only under the free-space
   line, the Disk view's remove posts the row id and never a path.
+
+## The flat layout (launches after `0127_card_home_layout`)
+
+The ledger row says its `layout`. A row with none is the layout above and keeps every path it has. A new launch is flat:
+
+- **Repo:** `<card_root>/<forge>/<org>/<repo>/<worktree>`, for example `github/dovholuknf/atrium/f-close-when-done`.
+  The worktree folder is the card's working directory, with no `work/` below it. Forge, org and repo come from the
+  clone's origin, else `local/local/<folder>`. A name already taken gets `-<id6>`.
+- **No repo:** `<card_root>/scratch/<slug>-<id6>`, also the working directory.
+- **Atrium's own files** (BRIEF.md, says, handoff, `TMP`) are in `<state>/card-homes/<row id>/`, never in the repo
+  tree. The sweep and reclaim look through that tmp for checkouts too, and remove the folder with the home.
+- **Reclaim** also removes the empty `<forge>/<org>/<repo>` folders above a home, never the root.
+- Close, cruft, stash and the folder sweep read places through the row (`RowDirs`), so both layouts work.

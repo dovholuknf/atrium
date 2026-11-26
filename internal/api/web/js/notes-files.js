@@ -1,110 +1,3 @@
-// ── notes to self ───────────────────────────────────────
-//
-// Held by the daemon rather than the browser, because a note is about the work
-// and not about this screen: it should be there from another browser and after
-// a restart, like the card's theme and its bell.
-//
-// Saved as you stop typing rather than on a button, since a scratch pad you
-// can lose by closing a dialog is a scratch pad you stop using.
-
-let noteTimer = null;
-
-function paintNote() {
-  const box = document.getElementById("d-note");
-  box.value = (current && current.note) || "";
-  noteState("");
-  document.getElementById("d-note-send").disabled = !box.value.trim();
-  document.getElementById("d-note-now").disabled = !box.value.trim();
-  document.getElementById("d-note-clear").disabled = !box.value.trim();
-}
-
-function noteState(text) {
-  document.getElementById("d-note-state").textContent = text;
-}
-
-document.getElementById("d-note").addEventListener("input", e => {
-  const empty = !e.target.value.trim();
-  document.getElementById("d-note-send").disabled = empty;
-  document.getElementById("d-note-now").disabled = empty;
-  document.getElementById("d-note-clear").disabled = empty;
-  noteState("saving...");
-  clearTimeout(noteTimer);
-  noteTimer = setTimeout(async () => {
-    if (!current) return;
-    // patchTask rather than patch: the wrapper repaints the board, and doing
-    // that every time you pause typing is a lot of work to show a card whose
-    // note nothing else displays.
-    try {
-      await patchTask(current.id, { note: e.target.value });
-      current.note = e.target.value;
-      noteState("saved");
-    } catch (err) { noteState("not saved: " + err.message); }
-  }, 500);
-});
-
-// One message, not one per line. The whole reason a note exists is that three
-// things thought of during a long turn should arrive as one instruction.
-//
-// `when` is "done" for send it, which waits for the turn to end, or
-// "immediate" for the button beside it. See sayToCurrent.
-//
-// Through `busyWhile`, so a second press while the first is posting sends
-// nothing. The buttons go dead only once it has answered and the box is empty,
-// which is after `busyWhile` has put them back. See js/core.js.
-async function sendNote(when = "done") {
-  if (!current) return;
-  const box = document.getElementById("d-note");
-  if (!box.value.trim()) return;
-  const other = document.getElementById(when === "immediate" ? "d-note-send" : "d-note-now");
-  if (other && other.dataset.busy) return;
-  const btn = document.getElementById(when === "immediate" ? "d-note-now" : "d-note-send");
-  const res = await busyWhile(btn, () => sendNoteNow(current, box, when), "sending…");
-  if (!res) return;
-  box.value = "";
-  document.getElementById("d-note-send").disabled = true;
-  document.getElementById("d-note-now").disabled = true;
-  document.getElementById("d-note-clear").disabled = true;
-  // The same words the message box uses, because they are the same promises:
-  // typed means it has already landed, queued means it has not.
-  toast("sent", sayOutcome(res));
-  refresh();
-}
-
-// Answers the room's reply, or null when the note did not go.
-async function sendNoteNow(task, box, when) {
-  // Any keystrokes still inside the debounce go first, or the send would post
-  // what was saved rather than what is on screen.
-  clearTimeout(noteTimer);
-  try { await patchTask(task.id, { note: box.value }); }
-  catch (e) { noteState("not saved, so not sent: " + e.message); return null; }
-
-  try {
-    return await api(`/v1/tasks/${task.id}/note/send`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ when })
-    });
-  } catch (e) { noteState("did not send: " + e.message); return null; }
-}
-
-// The buttons go dead after `busyWhile` has put them back, as in sendNote.
-async function clearNote() {
-  if (!current) return;
-  if (!await confirmUser("clear this note?",
-    "What you wrote is thrown away. It has not been sent anywhere.", "clear it")) return;
-  clearTimeout(noteTimer);
-  const task = current;
-  const ok = await busyWhile("d-note-clear", async () => {
-    try { await patchTask(task.id, { note: "" }); return true; } catch (e) { noteState(e.message); return false; }
-  }, "clearing…");
-  if (!ok) return;
-  current.note = "";
-  document.getElementById("d-note").value = "";
-  document.getElementById("d-note-send").disabled = true;
-  document.getElementById("d-note-now").disabled = true;
-  document.getElementById("d-note-clear").disabled = true;
-  noteState("");
-}
-
 // ── getting a file out of a card ────────────────────────
 //
 // The counterpart to paste and drop. Those put bytes in; this takes them back
@@ -1178,27 +1071,6 @@ function actionsFor(t) {
   });
 }
 
-async function paintCardActions() {
-  const field = document.getElementById("d-actions-field");
-  const host = document.getElementById("d-actions");
-  if (!field || !host || !current) return;
-  if (!allActions.length) await loadActions();
-
-  const mine = actionsFor(current);
-  field.hidden = !mine.length;
-  if (!mine.length) return;
-
-  setHTML(host, mine.map(a =>
-    `<button data-action="${esc(a.id)}" data-tip="${esc(a.prompt)}"
-      >${esc(a.label)}${a.after === "exit"
-        ? ` <span class="by">and exit</span>` : ""}</button>`).join(""));
-  // Wired rather than inlined, because a label with an apostrophe in it breaks
-  // an onclick attribute and HTML escaping does nothing about that.
-  host.querySelectorAll("button[data-action]").forEach(b => {
-    b.onclick = () => runCardAction(b.dataset.action);
-  });
-}
-
 // Actions as menu entries, so they are reachable from a card or from the
 // terminal rather than only from inside the card dialog.
 //
@@ -1351,6 +1223,8 @@ function fillMachineFields(s) {
   showForgeSettings(s);
   const exitWake = document.getElementById("s-exitwake");
   if (exitWake) exitWake.checked = s.unexpected_exit_wake !== false;
+  const cruft = document.getElementById("s-cruft");
+  if (cruft) cruft.checked = s.cruft_nightly === true;
   const guardRoot = document.getElementById("s-guardroot");
   if (guardRoot) guardRoot.checked = s.guard_card_root === true;
   fillIdlePark(s);
@@ -2014,6 +1888,20 @@ async function saveExitWake() {
   toast("saved", el.checked
     ? "a session this room interrupts mid-turn is told so when it comes back"
     : "nothing is typed after this room goes away mid-turn");
+}
+
+// The nightly cruft pass, on or off for this room.
+async function saveCruft() {
+  const el = document.getElementById("s-cruft");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", { method: "POST", body: JSON.stringify({ cruft_nightly: !!el.checked }) });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  afterMachineSave();
+  toast("saved", el.checked ? "this room runs the cruft pass every night" : "this room does not run the cruft pass");
 }
 
 // Whether the guard keeps a card's writes inside its own folder, on or off for this room.
