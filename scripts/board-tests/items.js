@@ -98,7 +98,7 @@ async function readyPopoutSection(browser, base) {
     await fakeTick(page, 1500);
     const got = await fakeRun(page, (a, done) => { (async () => {
       localStorage.removeItem("atrium.toastlog");
-      alerting.set({ debounce: 0, muted: true });
+      alerting.set({ debounce: 0, muted: true, alerts: { ready: { os: true } } });
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       const shown = t => [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t));
       const logged = t => toastLog().some(e => e.title === t);
@@ -671,7 +671,7 @@ async function readyNoSeedSection(browser, base) {
       { timeout: slow(15000) });
     await fakePause(page);
     await fakeTick(page, 1500);
-    await page.evaluate(() => alerting.set({ debounce: 0, muted: true, desktop: true }));
+    await page.evaluate(() => alerting.set({ debounce: 0, muted: true, desktop: true, alerts: { ready: { os: true } } }));
     const step = async list => {
       rows = list;
       await page.evaluate(() => refresh());

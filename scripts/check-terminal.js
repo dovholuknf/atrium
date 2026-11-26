@@ -546,6 +546,30 @@ if (/function setTermFont\(/.test(html)) {
   }
 }
 
+// Rule: the terminal font goes through the resize path, stays in the browser, and only a known face is honoured.
+if (/function applyTermFontFamily\(/.test(html)) {
+  const at = html.indexOf("function applyTermFontFamily(");
+  const end = html.indexOf("\nfunction ", at + 1);
+  const body = html.slice(at, end < 0 ? html.length : end);
+  if (!/onTermResize\(\)/.test(body)) {
+    fail("applyTermFontFamily does not go through onTermResize. A new face re-measures the cell, so it is a resize.");
+  }
+  if (/patchTask|\/v1\//.test(body + html.slice(html.indexOf("function setTermFontFamily("), at))) {
+    fail("the terminal font is sent to the daemon. It belongs to the browser, like the size.");
+  }
+  const read = html.slice(html.indexOf("function readTermFontFamily("), html.indexOf("function termFontStack("));
+  if (!/termFontKnown\(/.test(read) || !/TERM_FONT_FACES\.some/.test(html.slice(html.indexOf("const termFontKnown")))) {
+    fail("readTermFontFamily no longer checks the stored name against TERM_FONT_FACES, so a stale or edited value " +
+      "would reach xterm as a font-family.");
+  }
+  if (!/fontFamily: termFontStack\(termFontFor\(task\)\)/.test(html)) {
+    fail("a new terminal does not open in the chosen font.");
+  }
+  if (!/term\.options\.fontFamily = stack/.test(html.slice(html.indexOf("function keepShow(")))) {
+    fail("a kept terminal does not pick up a font changed while it was hidden.");
+  }
+}
+
 // Rule 14: back and forward do not record the journey they are undoing.
 //
 // The board is one page that swaps views and attaches terminals, so history is

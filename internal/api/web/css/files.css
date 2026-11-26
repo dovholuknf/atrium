@@ -98,17 +98,6 @@
   .fstate.oops span:not(.facts-row) { font: var(--fs-xs) var(--mono); color: var(--dimmest); overflow-wrap: anywhere; }
   .fstate .facts-row { display: flex; gap: var(--sp-2); margin-top: 4px; }
   /* Tags already in use, offered so the second card spells one the same way as the first. */
-  /* Messages said and not yet arrived. Dimmed, because the interesting fact is how many are stacked up rather
-     than what each one said. */
-  .queued { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-  .queued .q {
-    display: flex; gap: var(--sp-2); align-items: baseline;
-    font-size: var(--fs-xs); color: var(--dim);
-    border-left: 2px solid var(--warn); padding: 3px 0 3px 8px;
-  }
-  .queued .q .txt {
-    color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1;
-  }
   /* A hook that is offered rather than wanted. Quieter, because it being off is a decision and not a gap. */
   .row.line.optional .tool { color: var(--label); }
   .hintline.warn { color: var(--warn); }

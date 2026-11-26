@@ -35,6 +35,8 @@ machine" and not "it is deployed to the live hub".
 - A worker is launched with `repo` and `branch`, not with a worktree made by hand: the room makes the card's home
   under its `card_root` and adds the worktree there. `scratch: true` is for throwaway work. With the room setting
   `card_root_required` on, the room refuses an agent launch whose `cwd` is outside the card root.
+- A card has one lifetime choice, close when done, yes or no. `atrium_launch_worker` is yes, `atrium_launch` is no, and
+  `resident` is no and never culled. A card with no repo still gets a folder, only where it runs.
 - `claude/main` has to fast-forward onto `origin/main`. If it does not, rebase it on `origin/main` and fix the
   conflict before calling anything done. Landing on the remote `main` is the finish line.
 - A worker lands its branch with the merge queue: push it to the hub (`git push hub <branch>`), then run

@@ -501,6 +501,17 @@
     color: var(--dim, inherit); font: inherit; font-size: 11px; cursor: pointer;
   }
   .tkidfold:hover, .tkidfold:focus-visible { background: var(--lift); color: var(--head); }
+  /* The button stays on the top row, but its click area is the button's own x-range over the card's full height. The
+     card is the containing block and the anchor supplies the x-range, so no row below can change what it covers. */
+  @supports (anchor-name: --a) {
+    .card { anchor-scope: --kidfold; }
+    .tkidfold { anchor-name: --kidfold; }
+    .tkidfold::after {
+      content: ""; position: absolute; position-anchor: --kidfold;
+      left: anchor(left); right: anchor(right); top: 0; bottom: 0; border-radius: 4px;
+    }
+    .tkidfold:hover::after, .tkidfold:focus-visible::after { background: var(--lift); }
+  }
   /* 11px was a speck beside the count. 20px reads and taps; line-height 1 keeps the parent row's height. */
   .tkidfold .tcaret { font-size: 20px; line-height: 1; width: 16px; text-align: center; }
   /* Folded, the count and the running and waiting tallies are chips, the weight of the row's other badges. A tight

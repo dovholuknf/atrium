@@ -362,10 +362,10 @@ function artCloseView() {
 async function artLoad() {
   const id = termTask && termTask.id;
   if (!id) return;
+  if (arts.id !== id) { arts.picked.clear(); arts.viewing = null; arts.cur = 0; arts.id = id; arts.list = []; artPaint(); }
   let rows;
   try { rows = await api(`/v1/tasks/${id}/artifacts`); } catch (e) { return; }
   if (!termTask || termTask.id !== id) return;
-  if (arts.id !== id) { arts.picked.clear(); arts.viewing = null; arts.cur = 0; arts.id = id; }
   const had = arts.list.map(a => a.kind + a.path + a.href + a.at).join("|");
   arts.list = artItems(Array.isArray(rows) ? rows : [], termTask.worktree || "");
   if (arts.list.length && arts.list.map(a => a.kind + a.path + a.href + a.at).join("|") === had && arts.open) return;

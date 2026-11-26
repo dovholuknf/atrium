@@ -3,9 +3,9 @@
 // "unfinished tabs" switch on: its choice stands in for every area until that area is set. Loaded by the board and the phone page.
 const EMERGING_KEY = "atrium.emerging";
 const FLAGS_KEY = "atrium.flags";
-const EMERGING_AREAS = ["board", "stack", "history", "audit", "items", "pulls", "hubrepos", "backlog", "hubdocs"];
-const EMERGING_VIEWS = ["board", "stack", "history", "audit", "items", "pulls", "hubrepos", "backlog"];
-const EMERGING_PLAIN_TABS = ["board", "stack", "history"];
+const EMERGING_AREAS = ["board", "stack", "history", "audit", "items", "pulls", "hubrepos", "backlog", "hubdocs", "ciloop"];
+const EMERGING_VIEWS = ["board", "stack", "history", "audit", "items", "pulls", "hubrepos", "backlog", "ciloop"];
+const EMERGING_PLAIN_TABS = ["board", "stack", "history", "ciloop"];
 
 function emergingLegacy() {
   try { return localStorage.getItem(EMERGING_KEY) === "1"; } catch (e) { return false; }
@@ -56,8 +56,8 @@ prefLive(EMERGING_KEY, emergingApply);
 
 // Per-browser on/off switches for finished parts of the board, and the review (walk), which is off until it is finished.
 const FLAGS = ["walk", "queue", "chat", "usage", "chatter", "pathlinks", "mic", "popout", "lastread", "artifacts", "answers",
-  "replies", "seen", "switcher", "paste", "attention", "micin", "headsup"];
-const FLAGS_DEFAULT_OFF = ["walk", "attention", "micin", "headsup"];
+  "replies", "seen", "switcher", "paste", "attention", "micin", "headsup", "roomoff", "waitchip", "gatebar"];
+const FLAGS_DEFAULT_OFF = ["walk", "queue", "attention", "micin", "headsup", "roomoff", "waitchip", "gatebar"];
 const FLAG_VIEWS = { queue: "queue", chat: "chat", usage: "usage", chatter: "chatter" };
 
 function flagsRead() {

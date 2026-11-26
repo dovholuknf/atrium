@@ -563,14 +563,6 @@
     background: var(--chip-accent); border-color: var(--chip-accent-stroke);
     color: var(--chip-accent-text);
   }
-  /* The card's mark as the notification will draw it. Same PNG, at the size Windows uses, so a glyph that comes
-     out as a box comes out as a box here. */
-  .iconpreview { display: flex; align-items: center; flex: none; }
-  .iconpreview img {
-    width: 32px; height: 32px; border-radius: var(--r-sm); display: block;
-    border: 1px solid var(--stroke-dim);
-  }
-
   /* A row that opens a flyout rather than doing something. The caret says so, since a row that ignores a click
      and has no other sign is a broken row. */
   #cardmenu button .rowtag {
@@ -716,47 +708,6 @@
      had cards, which is not a reason to start another one there. See docs/backlog/backlog-2026-09-14-005.md. */
   .check { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; color: var(--label); }
   .check input { width: 16px; height: 16px; accent-color: var(--teal); cursor: pointer; }
-
-  /* The review screen: what a session was allowed to do. */
-  .rev-sum {
-    display: flex; gap: var(--sp-5); padding: 0 0 14px; margin-bottom: 14px;
-    border-bottom: 1px solid var(--stroke-dim); color: var(--dim); font-size: var(--fs-base);
-  }
-  .rev-sum b { color: var(--head); font-size: var(--fs-lg); margin-right: 4px; }
-  .rev-sum .hot b { color: var(--warn); }
-  .rev-group { margin-bottom: 10px; }
-  .rev-group > summary {
-    display: flex; align-items: center; gap: var(--sp-3); cursor: pointer;
-    padding: 7px 2px; list-style: none;
-  }
-  .rev-group > summary::-webkit-details-marker { display: none; }
-  .rev-group > summary::before { content: "\25B8"; color: var(--dimmest); }
-  .rev-group[open] > summary::before { content: "\25BE"; }
-  .rev-group > summary .tool { color: var(--head); font-weight: 600; }
-  .rev-group > summary .n { color: var(--dimmest); font: var(--fs-base) var(--mono); }
-  /* The same table the card's own history uses: verdict, count, command, what answered it. Two lists of the
-     same decisions read as two different things when only one of them is a table. */
-  .rev-rows {
-    border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
-    background: rgba(var(--sink-rgb),.35); overflow: hidden; margin-top: 6px;
-  }
-  .rev-row {
-    display: grid; align-items: baseline; gap: var(--sp-3);
-    grid-template-columns: 74px 44px minmax(0, 1fr) minmax(0, 150px);
-    padding: 5px 13px; font-size: var(--fs-sm);
-    border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.28);
-  }
-  .rev-row:last-child { border-bottom: none; }
-  .rev-row:hover { background: rgba(var(--chip-rgb),.4); }
-  .rev-row > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rev-row .verdict { font-weight: 600; color: var(--chip-accent-text); }
-  .rev-row .verdict.no { color: var(--warn); }
-  .rev-row code { font: var(--fs-xs)/1.5 var(--mono); color: var(--dim); min-width: 0; }
-  /* The rows nobody saw, brought forward. */
-  .rev-row.unseen code { color: var(--head); }
-  .rev-row .rep { font: var(--fs-xs) var(--mono); color: var(--dimmest); }
-  .rev-row .by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
-  .rev-row .by .auto { color: var(--warn); }
 
   /* ── a card's details, small ──────────────────────────────
      The popover a two-second hover or the menu's "details" opens, and the drawer on the terminal's shortcut
@@ -928,7 +879,6 @@
   /* A flex row with `align-items: center`, so the envelope and the count share one centre line with the chip. The
      envelope is an svg sized from the chip's own text, like `.chip.icon`, and so is the same on a phone. */
   .chip.mail, .chip.queued, .chip.held { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
-  /* `.queued` is also the message list in files.css, a column with a top margin. */
   .chip.queued { flex-direction: row; margin-top: 0; }
   .chip.mail { font-weight: 600; }
   .chip.mail svg, .chip.queued svg, .chip.held svg, .hmsg svg, .pb-mail svg {

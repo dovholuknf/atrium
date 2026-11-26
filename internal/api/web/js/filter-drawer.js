@@ -52,6 +52,12 @@ FD_TABS.queue = {
   rows: [["show", "yq-show", "seg multi"], ["sort by", "yq-sort", "seg"], ["group", "yq-group", "seg groupseg"]],
   repaint: () => yqRender()
 };
+FD_TABS.ciloop = {
+  host: "fd-ciloop", q: "ciloop-q", match: "ciloop-match",
+  placeholder: "project, verb, argument or rule",
+  rows: [["view", "ciloop-views", "seg"], ["show", "ciloop-show", "seg"]],
+  repaint: () => paintCiLoop()
+};
 const FD_NARROW = "(max-width: 520px)";
 // How far a drag has to carry the drawer, as a fraction of its height, for it to stay open when let go.
 const FD_SNAP = 1 / 3;

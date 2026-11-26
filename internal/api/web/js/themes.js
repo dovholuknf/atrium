@@ -332,7 +332,7 @@ function repoColorsHave(s) {
   }
   repoColorsNow = { default: typeof c.default === "string" ? c.default : "", repos };
   cardWearCache = new WeakMap();
-  if (typeof paintRepoColors === "function") paintRepoColors(true);
+  if (typeof lookPaint === "function") lookPaint();
   if (typeof runRefresh === "function") runRefresh();
   repoColorsMoveBrowser();
 }
@@ -560,71 +560,6 @@ function contrastRGB(a, b) {
   }, 0);
   const la = lum(a), lb = lum(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-}
-
-// Choosing what a terminal looks like.
-//
-// Applied to the live terminal immediately as well as stored, so the choice
-// is judged by looking at it rather than by reading a name. xterm takes a new
-// theme on the running instance, so nothing has to be torn down.
-// The card's mark, drawn the way a notification will draw it.
-//
-// The same canvas that produces the PNG, shown at the size the operating
-// system uses. A glyph that renders as a box on the notification renders as a
-// box here, which is worth finding out while you are still typing it.
-function paintIconPreview() {
-  const el = document.getElementById("d-icon-preview");
-  const input = document.getElementById("d-icon");
-  const clear = document.getElementById("d-icon-clear");
-  if (!el || !input) return;
-
-  // A card with a picture shows the picture, and its glyph field goes away:
-  // there is one mark, and offering to edit a glyph that is not being used
-  // would be a control with no effect.
-  const img = current && iconIsImage(current.icon);
-  input.hidden = !!img;
-  if (clear) clear.hidden = !img;
-  if (img) {
-    // Cache-busted, or replacing a picture shows the old one until something
-    // else evicts it. The URL is stable by design, which is what makes this
-    // necessary.
-    el.innerHTML = `<img alt="" src="${iconURLFor(current.id)}?v=${Date.now()}">`;
-    return;
-  }
-  el.innerHTML = `<img alt="" src="${iconDataURL("atrium", input.value.trim())}">`;
-}
-
-async function uploadIcon(input) {
-  const file = input.files && input.files[0];
-  input.value = "";
-  if (!file || !current) return;
-
-  const form = new FormData();
-  form.append("file", file, file.name);
-  try {
-    const res = await api(`/v1/tasks/${current.id}/icon`, { method: "POST", body: form });
-    current.icon = res.icon;
-  } catch (e) {
-    toast("that did not go up", e.message);
-    return;
-  }
-  paintIconPreview();
-  toast("icon set", file.name);
-  refresh();
-}
-
-async function clearIcon() {
-  if (!current) return;
-  try {
-    await api(`/v1/tasks/${current.id}/icon`, { method: "DELETE" });
-  } catch (e) {
-    toast("could not clear it", e.message);
-    return;
-  }
-  current.icon = "";
-  document.getElementById("d-icon").value = "";
-  paintIconPreview();
-  refresh();
 }
 
 // The mark a card wears on a desktop notification, asked for rather than
@@ -1307,81 +1242,3 @@ async function bringThemes() {
     themeEditRestore = null;
   });
 })();
-
-
-// ── settings: default colour and colours by repo ────────
-//
-// One draft, so the preview card wears a choice before it is saved. Nothing reaches the board until `save`.
-let rcDraft = null;
-let rcFocus = "default";
-
-function rcOptions(now, plain) { return themeOptionsWith(now, plain); }
-
-// Every repo the board's cards are in, less those already listed.
-function rcKnownRepos() {
-  const seen = new Set();
-  for (const t of (typeof lastTasks !== "undefined" ? lastTasks : [])) { const k = repoKeyOf(t); if (k) seen.add(k); }
-  return Array.from(seen).filter(k => !(k in rcDraft.repos)).sort();
-}
-
-function paintRepoColors(fromOther) {
-  const pane = document.getElementById("rc-rows");
-  if (!pane) return;
-  if (!rcDraft || fromOther) rcDraft = repoColors.get();
-  document.getElementById("rc-default").innerHTML = rcOptions(rcDraft.default, "plain card");
-  pane.innerHTML = Object.keys(rcDraft.repos).sort().map(k =>
-    `<div class="picker" data-repo="${esc(k)}"><span class="mono">${esc(k)}</span>` +
-    `<select onfocus="rcFocus=this.parentNode.dataset.repo;paintRepoPreview()" ` +
-    `onchange="repoColorsPick(this.parentNode.dataset.repo, this.value)">${themeOptionsHTML(rcDraft.repos[k])}</select>` +
-    `<button onclick="repoColorsDrop(this.parentNode.dataset.repo)">remove</button></div>`).join("");
-  const known = rcKnownRepos();
-  const add = document.getElementById("rc-add");
-  add.innerHTML = known.length
-    ? known.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("")
-    : `<option value="">no other repos on the board</option>`;
-  add.disabled = !known.length;
-  paintRepoPreview();
-}
-
-function rcDirty() {
-  const flat = v => JSON.stringify([v.default, Object.keys(v.repos).sort().map(k => [k, v.repos[k]])]);
-  return flat(repoColors.get()) !== flat(rcDraft);
-}
-
-function paintRepoPreview() {
-  const name = rcFocus === "default" ? rcDraft.default : rcDraft.repos[rcFocus];
-  document.getElementById("rc-for").textContent = rcFocus === "default" ? "default" : rcFocus;
-  const mine = rcFocus === "default" ? null
-    : (typeof lastTasks !== "undefined" ? lastTasks : []).find(t => repoKeyOf(t) === rcFocus);
-  const task = Object.assign({}, mine || SHOWCASE_TASK,
-    mine ? {} : { display_title: rcFocus === "default" ? "a card with no colour" : rcFocus });
-  paintShowcase(document.getElementById("rc-preview"), themeNamed(name), task);
-  const dirty = rcDirty();
-  document.getElementById("rc-save").disabled = !dirty;
-  document.getElementById("rc-revert").disabled = !dirty;
-}
-
-function repoColorsPick(which, name) {
-  rcFocus = which;
-  if (which === "default") rcDraft.default = name;
-  else if (name) rcDraft.repos[which] = name;
-  paintRepoColors();
-}
-function repoColorsAdd() {
-  const k = document.getElementById("rc-add").value;
-  if (!k) return;
-  rcDraft.repos[k] = rcDraft.default || "dracula";
-  rcFocus = k;
-  paintRepoColors();
-}
-function repoColorsDrop(k) {
-  delete rcDraft.repos[k];
-  if (rcFocus === k) rcFocus = "default";
-  paintRepoColors();
-}
-async function repoColorsSave() {
-  try { await repoColors.set(rcDraft); } catch (e) { toast("that did not save", e.message); return; }
-  rcDraft = null;
-  paintRepoColors();
-}
-function repoColorsRevert() { rcDraft = null; rcFocus = "default"; paintRepoColors(); }

@@ -108,7 +108,8 @@
 
   /* The board pane: the same grid and blocks, a narrower label column, and hints in a ? bubble. */
   .s-one > .ac-block { max-width: 600px; }
-  .s-grid { grid-template-columns: 7.5em minmax(0, 1fr); }
+  .s-grid { grid-template-columns: max-content minmax(0, 1fr); }
+  .s-grid > label { white-space: nowrap; }
   .s-pair { display: contents; }
   .s-pair[hidden] { display: none; }
   .s-grid > label .help, .ac-title .help { vertical-align: middle; margin-left: 4px; }

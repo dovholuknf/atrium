@@ -73,9 +73,11 @@
 <link rel="stylesheet" href="/css/caps.css">
 <link rel="stylesheet" href="/css/efficacy.css">
 <link rel="stylesheet" href="/css/changereq.css">
+<link rel="stylesheet" href="/css/ciloop.css">
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/filterdrawer.css">
+<link rel="stylesheet" href="/css/look.css">
 <link rel="stylesheet" href="/css/themes.css">
 <link rel="stylesheet" href="/css/access.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
@@ -213,6 +215,7 @@
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
       <div class="tab" data-view="backlog" hidden>backlog</div>
       <div class="tab" data-view="caps" hidden>capabilities</div>
+      <div class="tab" data-view="ciloop">ci loop</div>
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
@@ -764,6 +767,8 @@ Exports honor whatever filter is applied.">?</span>
           <!-- "Messages waiting, clear the line". Absolute, never focused. See js/heldline.js. -->
           <div class="heldline" id="t-heldline" role="status" aria-live="polite" hidden></div>
         </div>
+        <!-- The card's open gate or ask, with the queue's actions. See gbPaint in js/yourqueue.js. -->
+        <div class="gatebar" id="t-gatebar" role="region" aria-label="waiting on you" hidden></div>
         <!-- The attached card's details, slid up from the shortcut strip. Read
              only when opened. See js/peek.js. -->
         <div class="term-foot">
@@ -1002,6 +1007,10 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
         aria-label="close and end the item agent">&times;</button></div>
     <p class="pane-lead" id="newitem-note" role="status" hidden></p>
     <div class="chat-frame" id="newitem-frame"></div>
+  </div>
+  <div id="ciloop" hidden>
+    <div id="fd-ciloop"></div>
+    <div id="ciloop-body"></div>
   </div>
 
   <div id="audit" hidden>
@@ -1725,17 +1734,38 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         </div>
       </div>
     </div>
-    <!-- The OTHER theme system, reachable from here because the terminal bar's
-         edit button needs a terminal and somebody bringing their colours at
-         nine in the morning has not started one yet. -->
-    <h3 class="s-section">terminal themes</h3>
-    <div class="field">
-      <label class="eyebrow">the terminal's colours
-        <span class="help" tabindex="0" data-tip="Not the board. This is the sixteen ANSI colours a session is drawn in, and each card keeps its own choice. Import a Windows Terminal scheme, or edit any of them. Themes are kept on the daemon, so one brought here is there in every browser and on your phone. Which theme a card wears is picked on that terminal's own bar, against real output.">?</span></label>
-      <div class="picker">
-        <button onclick="document.getElementById('settings').close(); openThemeEditor('')"
-          >bring or edit a theme</button>
+    <!-- The look page: how a card looks, the one place for themes and colours. js/look.js fills it. -->
+    <h3 class="s-section">look</h3>
+    <div class="field s-one" id="look-host">
+      <div class="look-pv" id="look-pv"></div>
+      <label class="eyebrow">default
+        <span class="help" tabindex="0" data-tip="What every card wears unless it has an override. The font is this browser's, and the theme follows you to another browser.">?</span></label>
+      <div class="look-row" id="look-def"></div>
+      <div id="look-edit"></div>
+      <label class="eyebrow">overrides
+        <span class="help" tabindex="0" data-tip="Only the repos and cards you add. A card's own override wins over its repo's, and a repo's over the default. A font override is kept in this browser only.">?</span></label>
+      <div id="look-ovr"></div>
+      <div class="look-combo">
+        <input type="text" id="look-add" placeholder="add override: search repos and cards" autocomplete="off" spellcheck="false">
+        <div class="look-list" id="look-addlist" hidden></div>
       </div>
+      <label class="eyebrow">themes
+        <span class="help" tabindex="0" data-tip="Click a tile to preview it at the top. Themes are kept on the daemon, so one made here is there in every browser. Export writes a Windows Terminal scheme that import takes back.">?</span></label>
+      <div class="look-tool">
+        <input type="text" id="look-filter" placeholder="filter themes" autocomplete="off" spellcheck="false">
+        <button type="button" data-look="t-new">new</button>
+        <button type="button" data-look="t-import">import</button>
+        <input type="file" id="look-file" accept=".json,application/json" hidden>
+      </div>
+      <div class="look-imp" id="look-imp" hidden>
+        <textarea id="look-imptext" rows="4" spellcheck="false" placeholder="paste a theme as JSON, or a Windows Terminal settings.json"></textarea>
+        <div class="look-row">
+          <button type="button" class="go" data-look="imp-go">import</button>
+          <button type="button" data-look="imp-file">from a file</button>
+          <button type="button" data-look="t-import">cancel</button>
+        </div>
+      </div>
+      <div class="look-gal" id="look-gal"></div>
     </div>
     <h3 class="s-section">copying</h3>
     <div class="field">
@@ -1801,30 +1831,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <div id="dk-box" class="dk-box" aria-live="polite"></div>
       <div id="dk-result" class="dk-result"></div>
-    </div>
-    <h3 class="s-section">card colours</h3>
-    <div class="field">
-      <label class="eyebrow" for="rc-default">default colour
-        <span class="help" tabindex="0" data-tip="What a card wears when nobody coloured it: not its own, not its repo's. Plain card is the skin's look. Cards only wear colour when board cards wear their terminal colours is on in the board section. Kept in this browser.">?</span></label>
-      <div class="picker">
-        <select id="rc-default" onchange="repoColorsPick('default', this.value)"></select>
-      </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow">by repo</label>
-      <div id="rc-rows"></div>
-      <div class="picker">
-        <select id="rc-add"></select>
-        <button onclick="repoColorsAdd()">add</button>
-      </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow">preview <span id="rc-for"></span></label>
-      <div class="tshow" id="rc-preview"></div>
-      <div class="picker">
-        <button class="go" id="rc-save" onclick="repoColorsSave()">save</button>
-        <button id="rc-revert" onclick="repoColorsRevert()">revert</button>
-      </div>
     </div>
     <!-- ACCESSING ATRIUM: every way into the board and the room link, drawn by js/access.js into the one container below. -->
     <h3 class="s-section">accessing atrium</h3>
@@ -2122,12 +2128,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <label class="ac-check"><input type="checkbox" data-flag="walk" onchange="flagSet(this.dataset.flag, this.checked)"> use the review</label>
           <label>attention queue <span class="help" tabindex="0" data-tip="The asks waiting on you as an N for you pill beside the terminals filter box, which lists them in place of the sessions, with the ask picked over its card's terminal. It takes the place of the queue tab and of the questions chip on a terminal row.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="attention" onchange="flagSet(this.dataset.flag, this.checked)"> use the attention queue</label>
+          <label>queue <span class="help" tabindex="0" data-tip="The queue tab and the count of asks waiting on you in the header.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="queue" onchange="flagSet(this.dataset.flag, this.checked)"> queue tab and its badge</label>
+          <label>waiting-on-you chip <span class="help" tabindex="0" data-tip="A chip on a terminal row with the questions and approvals that card has waiting on you. Click it to open them.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="waitchip" onchange="flagSet(this.dataset.flag, this.checked)"> chip on terminal rows</label>
+          <label>gate bar <span class="help" tabindex="0" data-tip="The bar under a card's terminal that shows its open gate or ask with the queue's buttons.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="gatebar" onchange="flagSet(this.dataset.flag, this.checked)"> bar under the terminal</label>
           <label>keep to the card folder <span class="help" tabindex="0" data-tip="With the guard on, a card may not write or make a folder in the card root outside its own folder, so nothing is left behind when it closes. Applies to cards started after it is switched on. Saved on this room.">?</span></label>
           <label class="ac-check"><input id="s-guardroot" type="checkbox" data-saves="saveGuardRoot"> refuse writes outside the card's folder</label>
           <label>mic in every text box <span class="help" tabindex="0" data-tip="A mic beside every box that sends text to an agent, on the board and the phone page. Tap it, speak, and the words are typed into the box. One listens at a time. Needs a browser with speech recognition.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="micin" onchange="flagSet(this.dataset.flag, this.checked)"> use the mic in every text box</label>
           <label>restart heads-up <span class="help" tabindex="0" data-tip="A countdown with a pause button before a deploy restarts atrium, a cover while it is away and a note when it is back. Also the board updated notice with its Reload button.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="headsup" onchange="flagSet(this.dataset.flag, this.checked)"> use the restart heads-up</label>
+          <label>offline on purpose <span class="help" tabindex="0" data-tip="Mark a room that is away on purpose, from the rooms menu or the room's own pane. The rooms count then reads it as fine and the room as offline (expected). The mark lives on the hub and clears when the room reconnects.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="roomoff" onchange="flagSet(this.dataset.flag, this.checked)"> use offline on purpose</label>
           <label>board <span class="help" tabindex="0" data-tip="The board tab: cards laid out as a board.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="board" onchange="flagSet(this.dataset.flag, this.checked)"> show board tab</label>
           <label>stack <span class="help" tabindex="0" data-tip="The stack tab.">?</span></label>
@@ -2146,14 +2160,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           <label class="ac-check"><input type="checkbox" data-flag="backlog" onchange="flagSet(this.dataset.flag, this.checked)"> show backlog tab</label>
           <label>hub documents <span class="help" tabindex="0" data-tip="The hub documents on the files tab, and on the phone's files list.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="hubdocs" onchange="flagSet(this.dataset.flag, this.checked)"> show hub documents</label>
+          <label>ci loop <span class="help" tabindex="0" data-tip="The ci loop tab: what the push loop may do per project, its queue, a dry run of a request and every refusal. Sample data for now.">?</span></label>
+          <label class="ac-check"><input type="checkbox" data-flag="ciloop" onchange="flagSet(this.dataset.flag, this.checked)"> show ci loop tab</label>
         </div>
       </div>
 
       <div class="ac-block">
         <h4 class="ac-title">Feature flags <span class="help" tabindex="0" data-tip="Each is a finished part of the board that can be turned off without breaking the rest. Off hides its tab, button, chip or key, and nothing it stored is lost. Kept in this browser only.">?</span></h4>
         <div class="ac-grid s-grid">
-          <label>queue <span class="help" tabindex="0" data-tip="The queue tab and the count of asks waiting on you in the header.">?</span></label>
-          <label class="ac-check"><input type="checkbox" data-flag="queue" onchange="flagSet(this.dataset.flag, this.checked)"> queue tab and its badge</label>
           <label>chat <span class="help" tabindex="0" data-tip="The chat tab: a card's conversation as bubbles, with its composer.">?</span></label>
           <label class="ac-check"><input type="checkbox" data-flag="chat" onchange="flagSet(this.dataset.flag, this.checked)"> chat tab</label>
           <label>usage <span class="help" tabindex="0" data-tip="The usage tab, and a card's token use in its details.">?</span></label>
@@ -2209,6 +2223,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field dlg-sec" id="rc-facts-field">
       <table class="kv" id="rc-facts"></table>
       <div class="picker"><button id="rc-mark" onclick="busyWhile(this, markFromCog)" hidden></button><span class="help" tabindex="0" id="rc-mark-help" data-tip="Starts no new cards on this room and lets running work finish. It is the step before removing the room with atrium rooms. Press again to take the mark off.">?</span></div>
+      <div class="picker" id="rc-eo" hidden>
+        <input id="rc-eo-note" spellcheck="false" autocomplete="off" placeholder="note, optional">
+        <button id="rc-eo-btn" onclick="busyWhile(this, expectOfflineFromCog)"></button>
+        <span class="help" tabindex="0" data-tip="The rooms count treats this room as fine while it is away, and shows it as offline (expected). The mark clears itself when the room reconnects.">?</span>
+      </div>
       <span class="hintline" id="rc-state"></span>
     </div>
 
@@ -2437,6 +2456,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="picker">
         <label><input id="s-exitwake" type="checkbox" data-saves="saveExitWake">
           tell the session, so it picks its work back up</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="eyebrow" for="s-cruft">nightly cruft pass
+        <span class="help" tabindex="0" data-tip="Once a day after 3 am this room frees the folders of ended cards and tells the hub what it freed and what it kept. Closing a card works the same with it off. Off by default.">?</span></label>
+      <div class="picker">
+        <label><input id="s-cruft" type="checkbox" data-saves="saveCruft">
+          run the pass every night</label>
       </div>
     </div>
 
@@ -3581,20 +3609,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <dialog id="detail" class="wide">
   <div class="dlg-head">
     <div class="grow">
-      <div class="dlg-eyebrow">card details</div>
-      <h2 id="d-title"></h2>
-      <div class="chips" id="d-chips"></div>
+      <div class="d-titlerow"><h2 id="d-title"></h2><div class="chips" id="d-chips"></div></div>
     </div>
-    <!-- SAVE AND CLOSE, because that is what it already did. See `patchOnChange`. -->
-    <button class="go" onclick="detail.close()"
-      data-tip="every field here is written when you leave it, so this only closes">save and close</button>
+    <button type="button" class="no" onclick="forgetCurrent()">forget this card</button>
+    <button onclick="detail.close()"
+      data-tip="every field here is written when you leave it, so this only closes">close</button>
   </div>
   <div class="dlg-body">
    <div class="dlg-cols">
    <div class="dlg-main">
     <div class="field">
-      <label class="eyebrow" for="d-why">why am I doing this
-        <span class="help" tabindex="0" data-tip="Kept as soon as you leave the field. Nothing in here waits for a button.">?</span></label>
+      <label class="eyebrow" for="d-why">description
+        <span class="help" tabindex="0" data-tip="Why you are doing this. Press save changes to keep an edit.">?</span></label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
     </div>
     <!-- WHAT IT IS STOPPED ON. The stack row and the card both draw this and
@@ -3624,71 +3650,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="d-recap">what it says it did</label>
       <textarea id="d-recap" rows="4" spellcheck="false"></textarea>
       <span class="hintline" id="d-recap-when"></span>
-    </div>
-    <!-- A note is for YOU. Sending it is a second, separate act.
-
-         This one does not go anywhere until you say. What that buys is
-         ordering: three things thought of during a long turn, sent as one
-         instruction at the end rather than three interruptions.
-
-         SEND WAITS FOR THE TURN TO END, and immediately does not: it is typed
-         in as soon as the input line is empty, mid-turn or not. The same two
-         buttons the box below has. See internal/daemon/saywhen.go. -->
-    <div class="field">
-      <label class="eyebrow" for="d-note">notes to self</label>
-      <textarea id="d-note" rows="3" spellcheck="false"
-        placeholder="what you want next, while it is still working. nothing is sent until you press send."></textarea>
-      <div class="toolbar">
-        <button class="go" id="d-note-send" onclick="sendNote('done')"
-          data-tip="send it when the session's turn ends">send it</button>
-        <button id="d-note-now" onclick="sendNote('immediate')"
-          data-tip="type it in as soon as the input line is empty, even mid-turn">immediately</button>
-        <button id="d-note-clear" onclick="clearNote()">clear</button>
-        <span class="hintline grow" id="d-note-state"></span>
-      </div>
-    </div>
-    <!-- The things you say often enough to have got tired of typing. Above
-         the box rather than below it, because the whole point is not opening
-         the box. -->
-    <div class="field" id="d-actions-field" hidden>
-      <label class="eyebrow">do this
-        <span class="help" tabindex="0" data-tip="Your own, edited under rooms &rsaquo; actions. Each one is a prompt sent the same way as anything else you say, and the ones marked and exit ask the runner to quit afterwards.">?</span></label>
-      <div class="toolbar" id="d-actions"></div>
-    </div>
-    <!-- Saying something to a session that is already running. There is no
-         channel into a claude process from outside, so this goes one of two
-         ways: typed straight into the terminal when atrium owns one, or
-         queued to ride the next hook when it does not. The dialog says which
-         happened, because the second one can take minutes and would otherwise
-         read as nothing happening.
-
-         Send waits for the turn to end (enter). Immediately types it in as soon
-         as the input line is empty, mid-turn or not (ctrl-enter). -->
-    <div class="field">
-      <label class="eyebrow" for="d-say">say something to it</label>
-      <textarea id="d-say" rows="2" spellcheck="false"
-        placeholder="stop what you are doing and run the tests first"></textarea>
-      <div class="toolbar">
-        <button class="go" id="d-say-send" onclick="sayToCurrent('done')"
-          data-tip="send it when the session's turn ends (enter)">send</button>
-        <button id="d-say-now" onclick="sayToCurrent('immediate')"
-          data-tip="type it in as soon as the input line is empty, even mid-turn (ctrl-enter)">immediately</button>
-        <span class="hintline" id="d-say-how"></span>
-      </div>
-      <div class="queued" id="d-say-queue"></div>
-    </div>
-    <!-- WHAT IT HEARS. Hub events this card is subscribed to, by the human here or by the agent itself. Hidden on a
-         board with no hub. See js/hears.js. -->
-    <div class="field" id="d-hears-field" hidden>
-      <label class="eyebrow">hears</label>
-      <div class="chips" id="d-hears"></div>
-      <div class="toolbar" id="d-hears-form" hidden>
-        <input type="text" id="d-hears-repo" placeholder="owner/name, or empty for any" aria-label="repo">
-        <input type="text" id="d-hears-branch" placeholder="branch" aria-label="branch" size="10">
-        <button class="go" type="button" data-hears="add">subscribe</button>
-        <button type="button" data-hears="cancel">cancel</button>
-        <span class="hintline" id="d-hears-note"></span>
-      </div>
     </div>
     <!-- Getting a file back out. Folded, because most of the time you are not
          after one, and open when you are.
@@ -3727,21 +3688,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="hintline" id="d-usage-note"></span>
       </div>
     </div>
-    <div class="field">
-      <label class="eyebrow">history</label>
-      <!-- Decisions by default. A card that has been open for a day carries
-           hundreds of status changes, and none of them says anything the
-           decision beside it does not. -->
-      <div class="filters">
-        <div class="seg" id="d-ev-seg">
-          <button class="on" data-v="decisions">what it was allowed</button>
-          <button data-v="all">everything</button>
-        </div>
-        <span class="matchcount" id="d-ev-count"></span>
-      </div>
-      <div class="matchcount" id="d-ev-gaps"></div>
-      <div class="timeline" id="d-events"></div>
-    </div>
    </div>
    <aside class="dlg-side">
     <!-- No "move to" here. It is on the card's own menu, one right click from
@@ -3752,34 +3698,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="field">
       <label class="eyebrow">runner</label>
       <div class="toolbar" id="d-runner"></div>
-      <span class="hintline" id="d-auto-note"></span>
-    </div>
-    </section>
-    <section class="dlg-sec" id="d-launch-sec" hidden>
-    <div class="field">
-      <details id="d-launch-fold">
-        <summary class="eyebrow">launched with <button type="button" class="copybit" id="d-launch-copy"
-          data-tip="copy the full command" aria-label="copy the full command"></button></summary>
-        <pre id="d-launch" style="white-space:pre-wrap;word-break:break-all;max-height:14em;overflow:auto"></pre>
-      </details>
-    </div>
-    </section>
-    <!-- The context cycle, this card's switch and its own limit. Both are overrides on the card. See
-         docs/runtime/context-cycle-design.md. -->
-    <section class="dlg-sec" id="d-ctx-sec">
-    <div class="field">
-      <label class="eyebrow">context cycle
-        <span class="help" tabindex="0" data-tip="Past the limit atrium asks the agent to write a handoff and run atrium ready, then clears it and has it read the handoff back. Empty uses the hub's limit for its harness, from settings.">?</span></label>
-      <label class="check"><input type="checkbox" id="d-ctx-cycle" onchange="saveCardCycle()">
-        cycle this card's context at its limit</label>
-      <div class="picker">
-        <input id="d-ctx-limit" type="number" min="10" max="2000" placeholder="hub's limit"
-          onchange="saveCardCycle()" style="max-width:110px">
-        <span class="unit">k tokens</span>
-        <button type="button" id="d-ctx-clear" hidden onclick="clearCardLimit()"
-          data-tip="remove this card's own limit, so the hub's applies again">clear</button>
-      </div>
-      <span class="hintline" id="d-ctx-now"></span>
     </div>
     </section>
     <!-- What you call this, as opposed to what atrium worked out from the
@@ -3788,60 +3706,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <section class="dlg-sec">
     <div class="field">
       <label class="eyebrow" for="d-tags">tags
-        <span class="help" tabindex="0" data-tip="Comma separated. Group and sort by these, and click one on a card to see only that. Lower cased, so Lab and lab stay one tag.">?</span></label>
+        <span class="help" tabindex="0" data-tip="Group and sort by these, and click one on a card to see only that. Press save changes to keep an edit.">?</span></label>
+      <div class="chips" id="d-tag-chips"></div>
       <input type="text" id="d-tags" spellcheck="false"
-        placeholder="lab, discourse, prs, tangent">
+        placeholder="add a tag, then enter" oninput="paintKnownTags()">
       <div id="d-tag-known" class="tagsuggest"></div>
-    </div>
-    </section>
-    <section class="dlg-sec">
-    <!-- The tone this card rings with. Stored on the card, like its theme and
-         for the same reason: knowing which agent it was without looking only
-         works if the answer is the same tomorrow and in another browser. -->
-    <div class="field">
-      <label class="eyebrow" for="d-sound">its bell
-        <span class="help" tabindex="0" data-tip="Rings instead of the board's tone whenever this one card wants you, whether that is a permission or the end of a turn. Which agent is the thing you cannot work out with your back turned, so it wins over telling the two kinds apart.">?</span></label>
-      <div class="picker">
-        <select id="d-sound"></select>
-        <button onclick="previewCardSound()" data-tip="hear it">play</button>
-      </div>
-    </div>
-    <!-- The mark this card wears on a desktop notification. Beside the bell,
-         because it answers the same question in the other sense: one is which
-         agent when you cannot see, the other is which agent when you can. -->
-    <div class="field">
-      <label class="eyebrow" for="d-icon">its mark
-        <span class="help" tabindex="0" data-tip="One character, or an emoji. Drawn on desktop notifications from this card. Windows renders it small, so a single bold glyph reads and a word does not.">?</span></label>
-      <div class="picker">
-        <input id="d-icon" maxlength="16" spellcheck="false"
-          placeholder="empty means the atrium mark">
-        <span class="iconpreview" id="d-icon-preview"></span>
-        <!-- A picture instead of a glyph. Hidden input plus a button, because
-             the browser's own file control is the one piece of furniture on
-             this board that cannot be styled at all. -->
-        <input type="file" id="d-icon-file" accept="image/*" hidden
-          onchange="uploadIcon(this)">
-        <button onclick="document.getElementById('d-icon-file').click()"
-          data-tip="png, jpeg, gif, webp or svg">use a picture</button>
-        <button class="no" id="d-icon-clear" onclick="busyWhile(this, clearIcon, 'removing…')" hidden>back to a glyph</button>
-      </div>
     </div>
     </section>
    </aside>
    </div>
   </div>
-</dialog>
-
-<!-- The counterpart to auto mode. Trading interruption for review only works
-     if the review is worth opening, so it gets its own screen rather than a
-     line in the history. -->
-<!-- Wide for the same reason as the card's history: these rows are commands. -->
-<dialog id="review" class="wide">
-  <div class="dlg-head">
-    <div class="grow"><div class="dlg-eyebrow">card review</div><h2 id="rev-title">what it did</h2></div>
-    <button onclick="document.getElementById('review').close()">close</button>
+  <div class="dlg-foot">
+    <span class="hintline grow" id="d-save-note"></span>
+    <button class="go" type="button" id="d-save" disabled onclick="saveChanges()">Save changes</button>
   </div>
-  <div class="dlg-body" id="rev-body"></div>
 </dialog>
 
 <script src="/js/popfit.js"></script>
@@ -3866,6 +3744,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/hubrepos.js"></script>
 <script src="/js/backlog.js"></script>
 <script src="/js/newitem.js"></script>
+<script src="/js/ciloop.js"></script>
 <script src="/js/items-mock.js"></script>
 <script src="/js/items-data.js"></script>
 <script src="/js/efficacy.js"></script>
@@ -3904,7 +3783,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/notes-files.js"></script>
 <script src="/js/artifacts.js"></script>
 <script src="/js/usage.js"></script>
-<script src="/js/hears.js"></script>
 <script src="/js/usage-charts.js"></script>
 <script src="/js/usage-limits.js"></script>
 <script src="/js/usage-history.js"></script>
@@ -3919,6 +3797,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/hubprofile.js"></script>
 <script src="/js/hubtransports.js"></script>
 <script src="/js/themes.js"></script>
+<script src="/js/look.js"></script>
 <script src="/js/homes.js"></script>
 <script src="/js/terminal.js"></script>
 <script src="/js/termcursor.js"></script>

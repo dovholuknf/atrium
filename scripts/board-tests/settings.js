@@ -1,6 +1,6 @@
 // settings: settings, themes and skins, providers, preferences.
 //
-// Units: helpTip, helpRoomPane, helpGearBoard, skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant, dictBoop.
+// Units: helpTip, helpRoomPane, helpGearBoard, skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant, dictBoop, settingsLabelsOneLine.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/settings.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1091,9 +1091,8 @@ async function dictBoopSection(browser, base) {
       setDictBoop("blip");
       setDictBoopVol(50);
       const seen = [];
-      // the voice module keeps one context, so spy on the class's prototype, which that context shares
       const proto = window.AudioContext.prototype, was = proto.createGain;
-      proto.createGain = function () { const g = was.call(this); g.gain.linearRampToValueAtTime = (v) => seen.push(v); return g; };
+      proto.createGain = function () { const g = was.call(this); g.gain.linearRampToValueAtTime = v => seen.push(v); return g; };
       window.atriumVoice.boop();
       proto.createGain = was;
       return seen;
@@ -1274,13 +1273,6 @@ async function themePickerSection(browser, base) {
 
     // 4: one preview, three places.
     await p.evaluate(() => paintSettings());
-    await p.evaluate(() => { rcDraft = null; paintRepoColors(true); });
-    const rc = await p.evaluate(() => ({ card: !!document.querySelector("#rc-preview .tshow-card .card"), term: !!document.querySelector("#rc-preview .tshow-term"),
-      stamped: !!document.querySelector("#rc-preview [data-id], #rc-preview [onclick]") }));
-    if (!rc.card || !rc.term || rc.stamped) fail(tag + "the card colours pane's preview is " + JSON.stringify(rc));
-    await p.evaluate(() => { rcFocus = "default"; repoColorsPick("default", "dracula"); });
-    const rcBg = await p.evaluate(() => getComputedStyle(document.querySelector("#rc-preview .tshow-term")).backgroundColor);
-    if (rcBg !== "rgb(40, 42, 54)") fail(tag + "the card colours preview terminal is " + rcBg + ".");
     await p.evaluate(() => { openThemeEditor("nord"); });
     const ed = await p.evaluate(() => ({ card: !!document.querySelector("#th-sample .tshow-card .card"), h: document.querySelector("#th-sample .tshow-term").offsetHeight,
       sub: /attached terminal follows/.test(document.getElementById("theme").textContent) }));
@@ -1411,6 +1403,33 @@ async function prefsEverywhereSection(browser, base) {
   if (!bad) console.log("prefsEverywhere ok");
 }
 
+// A settings label never wraps: its ? stays on the label's line however long the label is.
+async function settingsLabelsOneLineSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof showSettingsPane === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => { document.getElementById("settings").showModal(); paintSettings(); });
+    const names = await p.evaluate(() => Array.from(document.querySelectorAll("#settings .pane")).map(x => x.dataset.name));
+    if (!names.length) fail("settingsLabelsOneLine: the settings dialog has no panes");
+    for (const name of names) {
+      await p.evaluate(n => showSettingsPane(n), name);
+      const bad = await p.evaluate(() => Array.from(document.querySelectorAll("#settings .pane:not([hidden]) .s-grid > label"))
+        .filter(l => l.offsetParent && !l.classList.contains("ac-check") && l.textContent.trim())
+        .filter(l => {
+          const r = document.createRange();
+          r.selectNodeContents(l);
+          const tops = Array.from(r.getClientRects()).filter(x => x.height > 0).map(x => Math.round(x.top));
+          return Math.max(...tops) - Math.min(...tops) > 4;
+        }).map(l => l.textContent.trim().slice(0, 40)));
+      if (bad.length) fail("settingsLabelsOneLine: " + name + " wraps its label(s): " + bad.join(", "));
+    }
+  } finally {
+    await ctx.close();
+  }
+}
+
 // Help under a field is a ? after its label, never a paragraph. The tip shows on hover and on keyboard focus, and
 // Escape takes it away without closing the dialog it is in.
 async function helpTipSection(browser, base) {
@@ -1494,6 +1513,65 @@ async function helpGearBoardSection(browser, base) {
   }
 }
 
+// THE LOOK PAGE, the one page for how a card looks: the font list
+// has a proportional group, an override is added from what atrium knows and none exists on a fresh browser, and an
+// exported theme is the Windows Terminal scheme that import reads. The selected nav entry has no bar down its edge.
+async function themeLookSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof showSettingsPane === "function" && typeof lookPaint === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => { document.getElementById("gear").onclick(); });
+    const nav = () => p.evaluate(() => [...document.querySelectorAll("#settings .pane-nav button")]
+      .filter(b => getComputedStyle(b).display !== "none").map(b => b.dataset.pane));
+    const on = await nav();
+    if (!on.includes("look") || on.includes("terminal themes") || on.includes("card colours")) fail("themeLook: wrong panes in the nav: " + JSON.stringify(on));
+    if (await p.evaluate(() => document.querySelector('input[data-flag="look"]'))) fail("themeLook: the look switch is still in experimental features");
+    await p.evaluate(() => showSettingsPane("look"));
+    const bar = await p.evaluate(() => getComputedStyle(document.querySelector('#settings .pane-nav button[data-pane="look"]')).boxShadow);
+    if (bar !== "none") fail("themeLook: the selected nav entry has a shadow bar: " + bar);
+    const groups = await p.evaluate(() => [...document.querySelectorAll("#look-def select[data-look=d-font] optgroup")].map(g => g.label));
+    if (!groups.includes("proportional")) fail("themeLook: no proportional font group: " + JSON.stringify(groups));
+    const fresh = await p.evaluate(() => ({ rows: document.querySelectorAll("#look-ovr .look-ovr[data-kind=repo]").length,
+      saved: Object.keys(repoColors.get().repos).length, fonts: Object.keys(readTermFontMap(TERM_FONT_REPOS_KEY)).length }));
+    if (fresh.rows !== fresh.saved || fresh.fonts) fail("themeLook: overrides listed that nobody added: " + JSON.stringify(fresh));
+    await p.evaluate(() => lookAdd("repo", "github/acme/webapp"));
+    await p.selectOption('#look-ovr [data-look="o-font"]', "JetBrains Mono");
+    const stored = await p.evaluate(() => localStorage.getItem(TERM_FONT_REPOS_KEY));
+    if (!/JetBrains Mono/.test(stored || "")) fail("themeLook: the repo font override stored " + stored);
+    // Compact and inside the pane at both widths: one line per override on a desktop, nothing past the edge on a phone.
+    await p.evaluate(() => { lookAdd("repo", "github/acme/webapp"); lookAdd("repo", "github/acme/api"); lookAdd("card", "a1"); });
+    for (const [w, h] of [[1400, 900], [390, 844]]) {
+      await p.setViewportSize({ width: w, height: h });
+      await p.evaluate(() => showSettingsPane("look"));
+      const m = await p.evaluate(() => {
+        const body = document.querySelector("#settings .dlg-body"), r = body.getBoundingClientRect();
+        const over = [...document.querySelectorAll("#look-host, #look-host *")].filter(e => {
+          const b = e.getBoundingClientRect();
+          return b.width && !e.closest(".look-gal, .look-list") && (b.right > r.right + 1 || b.left < r.left - 1);
+        }).map(e => (e.id || e.className || e.tagName) + ":" + Math.round(e.getBoundingClientRect().right));
+        const rows = [...document.querySelectorAll("#look-ovr .look-ovr")].map(e => Math.round(e.getBoundingClientRect().height));
+        const def = document.getElementById("look-def").getBoundingClientRect().height;
+        return { over: over.slice(0, 6), rows, def, scroll: body.scrollWidth - body.clientWidth };
+      });
+      if (m.over.length || m.scroll > 1) fail("themeLook: overflow at " + w + "px: " + JSON.stringify(m));
+      if (w > 700 && (m.rows.some(x => x > 60) || m.def > 60)) fail("themeLook: rows are not one line at " + w + "px: " + JSON.stringify(m));
+      if (process.env.LOOK_SHOTS) await p.screenshot({ path: path.join(process.env.LOOK_SHOTS, "look-" + w + ".png") });
+    }    const scheme = await p.evaluate(() => themeExportScheme("dracula"));
+    if (scheme.name !== "dracula" || !scheme.cursorColor || !scheme.purple || !scheme.brightPurple || "cursor" in scheme || "magenta" in scheme) {
+      fail("themeLook: the export is not a Windows Terminal scheme: " + JSON.stringify(scheme));
+    }
+    await p.evaluate(() => showSettingsPane("look"));
+    await p.hover('#look-gal .look-tile[data-name="dracula"]');
+    const [dl] = await Promise.all([p.waitForEvent("download", { timeout: slow(10000) }),
+      p.click('#look-gal [data-look="t-export"][data-name="dracula"]')]);
+    if (dl.suggestedFilename() !== "dracula.json") fail("themeLook: the export file is not dracula.json");
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("themeLook ok");
+}
 const units = [
   { name: "helpTip", run: ({ browser, base }) => helpTipSection(browser, base) },
   { name: "helpRoomPane", run: ({ browser, base }) => helpRoomPaneSection(browser, base) },
@@ -1513,8 +1591,10 @@ const units = [
   { name: "themePickerShots", run: ({ browser, base }) => themePickerShotsSection(browser, base) },
   { name: "dictBoop", run: ({ browser, base }) => dictBoopSection(browser, base) },
   { name: "dropdownsInstant", run: ({ browser, base }) => dropdownsInstantSection(browser, base) },
+  { name: "settingsLabelsOneLine", run: ({ browser, base }) => settingsLabelsOneLineSection(browser, base) },
+  { name: "themeLook", run: ({ browser, base }) => themeLookSection(browser, base) },
 ];
-const sections = { helpTip: helpTipSection, helpRoomPane: helpRoomPaneSection, helpGearBoard: helpGearBoardSection, skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection, dictBoop: dictBoopSection };
+const sections = { helpTip: helpTipSection, helpRoomPane: helpRoomPaneSection, helpGearBoard: helpGearBoardSection, skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection, dictBoop: dictBoopSection, themeLook: themeLookSection, settingsLabelsOneLine: settingsLabelsOneLineSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

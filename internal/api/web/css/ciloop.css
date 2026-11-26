@@ -1,0 +1,123 @@
+/* The ci loop tab (js/ciloop.js). Existing tokens only, so every skin wears it. */
+main > #ciloop { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: visible; }
+#ciloop > #ciloop-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 var(--sp-3) var(--sp-5) 2px; }
+#ciloop[hidden] { display: none; }
+#ciloop button, #ciloop select, #ciloop input[type=text] {
+  font: inherit; font-size: var(--fs-sm); padding: 4px 11px; border-radius: var(--r-sm); cursor: pointer;
+  background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke);
+}
+#ciloop button:hover { background: var(--btn-hover); color: var(--head); }
+#ciloop button.on { background: var(--chip); border-color: var(--teal); color: var(--head); }
+#ciloop button.primary { background: var(--teal); color: var(--bg-0); border-color: var(--teal); font-weight: 600; }
+#ciloop button.primary:hover { background: var(--teal); color: var(--bg-0); }
+#ciloop input[type=text] { cursor: text; background: var(--bg-2); }
+
+#ciloop .ci-help {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px;
+  margin-left: 6px; border-radius: 50%; border: 1px solid var(--stroke); color: var(--label); cursor: help;
+  font: 700 10px/1 var(--sans); vertical-align: middle; text-transform: none; letter-spacing: 0;
+}
+#ciloop .ci-help:hover, #ciloop .ci-help:focus { color: var(--head); border-color: var(--teal); outline: none; }
+#ciloop .ci-help:hover::after, #ciloop .ci-help:focus::after {
+  content: attr(data-tip); position: absolute; z-index: 60; left: 50%; top: 135%; transform: translateX(-30%);
+  width: max-content; max-width: 280px; padding: 7px 10px; border-radius: var(--r-sm); text-align: left;
+  background: var(--shell-0); color: var(--body); border: 1px solid var(--stroke); box-shadow: var(--shadow-pop);
+  font: 400 var(--fs-sm)/1.4 var(--sans); white-space: normal;
+}
+
+#ciloop .ci-status { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+#ciloop .ci-pill { font: 600 var(--fs-xs)/1.7 var(--mono); padding: 0 10px; border-radius: var(--r-pill); border: 1px solid var(--stroke); background: var(--shell-0); color: var(--body); }
+#ciloop .ci-pill.ok { color: var(--teal); border-color: var(--teal); background: var(--teal-bg); }
+#ciloop .ci-pill.bad { color: var(--danger-text); border-color: var(--danger); background: rgba(var(--danger-rgb), .18); }
+#ciloop .ci-pill.warn { color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg); }
+#ciloop .ci-pill.dim { color: var(--dim); }
+#ciloop .ci-pill.run { color: var(--path); border-color: var(--path); background: rgba(var(--path-rgb), .12); }
+
+#ciloop .ci-sec { background: var(--shell-0); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); margin-bottom: 16px; }
+#ciloop .ci-sec > h3 { margin: 0; padding: 10px 14px; font: 700 var(--fs-xs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--label); border-bottom: 1px solid var(--stroke-dim); display: flex; align-items: center; }
+#ciloop .ci-sec > h3 .ci-sp { flex: 1; }
+#ciloop .ci-body { padding: 12px 14px; }
+#ciloop .ci-seg { display: inline-flex; }
+#ciloop .ci-seg button { border-radius: 0; margin-left: -1px; }
+#ciloop .ci-seg button:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); margin-left: 0; }
+#ciloop .ci-seg button:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+
+#ciloop table.ci-t { width: 100%; border-collapse: collapse; }
+#ciloop table.ci-t th { text-align: left; font: 700 var(--fs-xs)/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--label); padding: 9px 12px; border-bottom: 1px solid var(--stroke-dim); white-space: nowrap; }
+#ciloop table.ci-t td { padding: 9px 12px; border-bottom: 1px solid var(--hairline); vertical-align: middle; white-space: nowrap; }
+#ciloop table.ci-t td[colspan] { white-space: normal; }
+#ciloop table.ci-t .ci-verbs { white-space: normal; min-width: 260px; }
+#ciloop table.ci-t tr:last-child td { border-bottom: 0; }
+#ciloop table.ci-t tr.sel td { background: var(--lift); }
+#ciloop table.ci-t tr.clk { cursor: pointer; }
+#ciloop .ci-mono { font-family: var(--mono); font-size: var(--fs-sm); }
+#ciloop .ci-proj { color: var(--head); font-weight: 600; }
+#ciloop .ci-sub { color: var(--dim); font-size: var(--fs-xs); }
+#ciloop .ci-verbs { display: flex; flex-wrap: wrap; gap: 4px; }
+#ciloop .ci-vchip { font: 600 var(--fs-xs)/1.6 var(--mono); padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--stroke-dim); color: var(--dimmest); background: transparent; cursor: pointer; }
+#ciloop .ci-vchip.on { color: var(--teal); border-color: var(--teal); background: var(--teal-bg); }
+#ciloop .ci-vchip.inherited { border-style: dashed; }
+#ciloop .ci-vchip.denied { color: var(--danger-text); border-color: var(--danger); background: transparent; }
+#ciloop .ci-vchip.allowed { color: #2e9b57; border-color: #2e9b57; background: rgba(46, 155, 87, .16); }
+#ciloop .ci-vchip { position: relative; padding: 0 1.45em; }
+#ciloop .ci-vchip .ci-g { position: absolute; left: .35em; width: .9em; text-align: center; }
+#ciloop table.ci-fix { table-layout: fixed; }
+#ciloop table.ci-fix .c-proj { width: 190px; }
+#ciloop table.ci-fix .c-rule { width: 160px; }
+#ciloop table.ci-fix .ci-first { overflow: hidden; text-overflow: ellipsis; }
+#ciloop .ci-vchip.ro { cursor: default; }
+#ciloop .ci-src { color: var(--dim); font-size: var(--fs-xs); margin-left: 6px; }
+#ciloop .ci-res { font: 700 var(--fs-xs)/1.7 var(--mono); padding: 0 9px; border-radius: var(--r-pill); border: 1px solid; white-space: nowrap; }
+#ciloop .ci-res.done { color: var(--teal); border-color: var(--teal); background: var(--teal-bg); }
+#ciloop .ci-res.refused { color: var(--danger-text); border-color: var(--danger); background: rgba(var(--danger-rgb), .16); }
+#ciloop .ci-res.pending { color: var(--warn); border-color: var(--warn-stroke); background: var(--warn-bg); }
+#ciloop .ci-res.running { color: var(--path); border-color: var(--path); background: rgba(var(--path-rgb), .12); }
+#ciloop .ci-vb { font: 700 var(--fs-xs)/1.6 var(--mono); padding: 0 8px; border-radius: var(--r-sm); background: var(--chip); color: var(--head); }
+#ciloop pre.ci-log { margin: 0; padding: 10px 12px; background: var(--bg-2); color: var(--body); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); font: 400 var(--fs-sm)/1.5 var(--mono); white-space: pre-wrap; }
+#ciloop .ci-why { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-sm); background: rgba(var(--danger-rgb), .12); border: 1px solid var(--danger); color: var(--danger-text); margin-bottom: 10px; }
+#ciloop .ci-why b { color: var(--danger-text); font-family: var(--mono); font-size: var(--fs-sm); white-space: nowrap; }
+#ciloop .ci-ok { padding: 10px 12px; border-radius: var(--r-sm); background: var(--teal-bg); border: 1px solid var(--teal); color: var(--head); margin-bottom: 10px; }
+#ciloop .ci-rule { display: grid; grid-template-columns: 4.6em 1fr auto; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--hairline); }
+#ciloop .ci-rule:last-child { border-bottom: 0; }
+#ciloop .ci-rule code { color: var(--path); font: 600 var(--fs-sm)/1.2 var(--mono); }
+#ciloop .ci-rule .ci-n { color: var(--dim); font: 600 var(--fs-xs)/1 var(--mono); }
+#ciloop .ci-rule .ci-hits { color: var(--label); font-size: var(--fs-xs); white-space: nowrap; }
+#ciloop .ci-fld { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+#ciloop .ci-fld > label { width: 76px; color: var(--label); font-size: var(--fs-sm); }
+#ciloop .ci-empty { text-align: center; color: var(--label); padding: 40px 0; }
+#ciloop .ci-lock { color: var(--dim); }
+#ciloop .ci-scroll { overflow-x: auto; }
+
+#ciloop { min-width: 0; }
+#ciloop .ci-pill { white-space: normal; max-width: 100%; }
+#ciloop .ci-ask { color: var(--head); font-size: var(--fs-sm); }
+#ciloop .ci-bad { color: var(--danger-text); font-size: var(--fs-sm); }
+#ciloop button.danger { color: var(--danger-text); border-color: var(--danger); }
+#ciloop .ci-vchip { font-family: var(--mono); }
+#ciloop .ci-vchip:hover { background: transparent; color: var(--head); }
+#ciloop .ci-vchip.on:hover { background: var(--teal-bg); color: var(--teal); }
+#ciloop .ci-vchip.allowed:hover { color: #2e9b57; background: rgba(46, 155, 87, .16); }
+#ciloop .ci-vchip.denied:hover { color: var(--danger-text); }
+#ciloop .ci-add { border-bottom: 1px solid var(--stroke-dim); }
+#ciloop .ci-add .ci-fld { margin-bottom: 8px; }
+#ciloop .ci-first .ci-res { margin-left: 8px; }
+#ciloop .ci-rule > div { min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 700px) {
+  #ciloop > #ciloop-body { padding-right: 0; }
+  #ciloop .ci-scroll { overflow-x: visible; }
+  #ciloop table.ci-t, #ciloop table.ci-t tbody, #ciloop table.ci-t tr, #ciloop table.ci-t td { display: block; width: auto; }
+  #ciloop table.ci-t thead, #ciloop table.ci-t colgroup { display: none; }
+  #ciloop table.ci-t tr { padding: 10px 12px; border-bottom: 1px solid var(--stroke-dim); }
+  #ciloop table.ci-t tr:last-child { border-bottom: 0; }
+  #ciloop table.ci-t td, #ciloop table.ci-t td[colspan] { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 3px 0; border: 0; white-space: normal; }
+  #ciloop table.ci-t td[data-l]::before { content: attr(data-l); flex: 0 0 92px; color: var(--label); font: 700 var(--fs-xs)/1.4 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+  #ciloop table.ci-t td.ci-first { display: block; padding-bottom: 6px; }
+  #ciloop table.ci-t .ci-verbs { min-width: 0; flex: 1 1 100%; }
+  #ciloop table.ci-t tr.sel td { background: transparent; }
+  #ciloop table.ci-t tr.sel { background: var(--lift); }
+  #ciloop .ci-rule { grid-template-columns: auto 1fr; }
+  #ciloop .ci-rule .ci-hits { grid-column: 2; }
+  #ciloop .ci-fld > label { width: 62px; }
+  #ciloop .ci-help:hover::after, #ciloop .ci-help:focus::after { left: 0; transform: none; max-width: min(280px, 80vw); }
+}

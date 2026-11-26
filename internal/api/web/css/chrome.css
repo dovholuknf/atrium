@@ -130,6 +130,7 @@
   /* The board lost the hub. This chip is the only connection indicator on a hub, so it has to be able to say
      so: a green counter beside a red `reconnecting` was two controls contradicting each other. */
   /* Attached rooms set up differently (missing hooks). The tooltip names each. */
+  .rooms.partial .dot { background: var(--warn); box-shadow: none; }
   .rooms.warn { color: var(--warn); border-color: var(--warn); }
   .rooms.warn .dot { width: auto; height: auto; background: none; box-shadow: none; border-radius: 0; }
   .rooms.warn .dot::before { content: "\26A0\FE0E"; font-size: var(--fs-xl); line-height: 1; }
@@ -192,6 +193,19 @@
     margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--stroke-dim);
   }
   #setuppop .setupfixall { color: var(--teal); border-color: var(--chip-accent-stroke); }
+  #setuppop .ver { font: 500 var(--fs-xxs)/1.5 var(--mono); color: var(--dim); }
+  #setuppop .mk { font-size: var(--fs-xs); color: var(--dim); }
+  #setuppop .mk.warn { color: var(--warn); }
+  #setuppop a { color: var(--teal); }
+  #setuppop code { font: 500 var(--fs-xs)/1.5 var(--mono); color: var(--head); white-space: nowrap; }
+  #setuppop .relline { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding-bottom: var(--sp-2); font-size: var(--fs-xs); color: var(--dim); }
+  #setuppop .relblock { grid-column: 1 / -1; width: 0; min-width: 100%; padding-bottom: var(--sp-2); }
+  #setuppop .relhead { display: flex; align-items: center; gap: var(--sp-2); }
+  #setuppop .relhead .tx { flex: 1; white-space: normal; }
+  @media (max-width: 520px) { #setuppop .it .tx, #setuppop .it code { white-space: normal; } }
+  .rooms .upn { font: 600 var(--fs-xs)/1 var(--sans); color: var(--warn); }
+  .rooms .upn[hidden] { display: none; }
+  @media (min-width: 901px) and (max-width: 1500px) { .rooms .upn .w { display: none; } }
   .setupline { display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px; }
   .setupline .chip.warn { color: var(--warn); border-color: var(--warn); }
   .rooms.down { color: var(--danger-text); border-color: var(--danger); }

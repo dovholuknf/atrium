@@ -573,6 +573,8 @@ async function hubReposBranchDelete(p, tag) {
   await p.route(/\/_hub\/git\/branches$/, rt => rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ computed: at, counts: {}, branches: list }) }));
   await p.route(/\/_hub\/git\/delete$/, rt => {
     posts.push(JSON.parse(rt.request().postData() || "{}"));
+    // the hub drops the branch when it deletes it, so a refetch before the click lands cannot lose the row early
+    if (answer.status === 200) list = list.filter(b => b.name !== posts[posts.length - 1].branch);
     rt.fulfill({ status: answer.status, contentType: "application/json", body: JSON.stringify(answer.body) });
   });
   await p.evaluate(() => { Object.assign(hubRepos.br, { loaded: false, data: null, del: {}, said: "" }); hubRepos.mem = ""; });
@@ -592,7 +594,6 @@ async function hubReposBranchDelete(p, tag) {
   const bad = await p.locator(row("claude/held") + " .hr-bsaid.bad").textContent();
   if (!/open merge request/.test(bad) || posts.length !== 1 || posts[0].repo !== repo || posts[0].branch !== "claude/held") fail(tag + ": the refusal is wrong " + JSON.stringify({ bad, posts }));
   answer = { status: 200, body: { note: "fix/y was at 3f9a1c2 and is deleted" } };
-  list = list.filter(b => b.name !== "fix/y");
   await click('.hr-bdel[data-mode="fix/y"]');
   await click('.hr-byes[data-mode="fix/y"]');
   await p.waitForFunction(() => document.querySelectorAll(".hr-brrow").length === 2 && /is deleted/.test((document.querySelector("p.hr-bsaid") || {}).textContent || ""), null, { timeout: slow(8000) })

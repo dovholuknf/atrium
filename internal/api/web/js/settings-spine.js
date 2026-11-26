@@ -60,6 +60,7 @@ function splitIntoPanes(host, headingClass, key, opts) {
   panes.forEach(p => {
     const b = document.createElement("button");
     b.textContent = p.dataset.name;
+    b.dataset.pane = p.dataset.name;
     b.onclick = () => showPane(host, p.dataset.name, key, opts);
     nav.appendChild(b);
   });
@@ -144,7 +145,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-termkeeplines").value = String(termKeepLines());
   document.getElementById("s-cardcolors").checked = cardColors;
   document.querySelectorAll("input[data-flag]").forEach(b => { b.checked = flagOn(b.dataset.flag); });
-  paintRepoColors(true);
+  if (typeof lookPaint === "function") lookPaint();
   for (const k of ["selected", "idle", "exited"])
     document.getElementById("s-termwear-" + k).checked = termWearOn[k];
   document.getElementById("s-inputlag").checked = lagOn;
@@ -495,27 +496,13 @@ async function openTask(id) {
   if (typeof loadHomes === "function") await loadHomes();
   document.getElementById("d-title").textContent = current.display_title;
   document.getElementById("d-chips").innerHTML = [
-    `<span class="chip accent">${esc(current.runner || "?")}</span>`,
-    `<span class="chip" data-tip="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
-    current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
+    `<span class="chip">${esc(current.runner || "?")}</span>`,
     (typeof homePathChips === "function" && homePathChips(current)) ||
-      (current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : ""),
-    // What the card owns on disk, measured on ask. A click measures it again. See internal/api/resources.go.
-    current.disk_bytes ? `<button type="button" class="chip" id="d-disk" onclick="measureCardDisk()" ` +
-      `data-tip="its worktree and review folder, as last measured. click to measure again">` +
-      `${esc(diskLabel(current.disk_bytes))} on disk</button>` : "",
-    `<span class="chip">idle ${ago(cardIdleAge(current))}</span>`,
-    current.created_at
-      ? `<span class="chip" data-tip="${esc(current.created_at)}">first seen ${
-          esc(firstSeen(current.created_at))}</span>`
-      : ""
+      (current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "")
   ].join("");
-  document.getElementById("d-why").value = current.why || "";
   // The session's own account, when there is one. Editable, because deciding
   // an account was wrong is the operator's call, and read-only text somebody
   // disagrees with is worse than no text.
-  paintNote();
-  paintCardActions();
   // Offered only where there is a directory to look in. Folded shut each time
   // the dialog opens, since a panel that remembered being open would fetch a
   // listing every time you glanced at a card.
@@ -525,7 +512,6 @@ async function openTask(id) {
   document.getElementById("d-files-toggle").classList.remove("open");
   // Token use on record, folded the same way. See js/usage.js.
   paintUsageField();
-  paintHears();
   // The question, when there is one, named the way the row names it: a card
   // stopped on another SESSION reads differently from one stopped on you, and
   // that difference is the whole reason `ask_peer` exists.
@@ -538,7 +524,7 @@ async function openTask(id) {
   document.getElementById("d-ask-how").textContent = current.ask_peer
     ? "it put this to " + current.ask_peer + " rather than to you. it is still stopped, so " +
       "saying something here still reaches it."
-    : "say something below and this comes off. any message answers it.";
+    : "";
   paintMoreAsks(current.id, current.asks_open || 0);
 
   const recapField = document.getElementById("d-recap-field");
@@ -547,315 +533,22 @@ async function openTask(id) {
   document.getElementById("d-recap-when").textContent = current.recap_at
     ? "said so " + firstSeen(current.recap_at) + ". edit it if it is wrong, or clear it."
     : "";
-  document.getElementById("d-tags").value = (current.tags || []).join(", ");
-  paintKnownTags();
+  const whyEl = document.getElementById("d-why");
+  if (whyFor !== current.id || !whyDirty()) { whyFor = current.id; whyEl.value = current.why || ""; }
+  if (tagsFor !== current.id || !tagsDirty()) { tagsFor = current.id; tagDraft = (current.tags || []).slice(); }
+  paintTags();
 
   // Terminate is only offered when atrium knows the process. A window-mode
   // launch owns itself, so saying so beats a button that cannot work.
   document.getElementById("d-runner").innerHTML = [
-    current.supervised
-      ? `<button class="go" onclick="attachCurrent()">attach terminal</button>`
-      : "",
+    current.resume_id
+      ? `<button class="go big" onclick="resumeCurrent()">resume</button>`
+      : `<span class="dis"><button class="big" disabled>resume</button>${helpTip("There is no earlier session on this card to pick up. It appears once the agent has run.")}</span>`,
     current.pid > 0
-      ? `<button class="no" onclick="killTask()">terminate pid ${current.pid}</button>`
-      : `<span class="hintline">atrium does not own this process, so it cannot stop it.
-         close it in its own terminal.</span>`,
-    current.resume_id ? `<button onclick="resumeCurrent()">resume</button>` : "",
-    // Auto mode and the review that pays for it, side by side.
-    `<button class="${current.auto_approve ? "no" : ""}" onclick="toggleAuto()">${
-      current.auto_approve ? "stop auto mode" : "auto mode"}</button>`,
-    `<button onclick="openReview()">what did it do?</button>`,
-    // Deleting one card. It left the context menu, which is a list of things
-    // you do often and this is not one of them, and there is nowhere else to
-    // do it: `clear` takes a whole column. It asks first.
-    `<button class="no" onclick="forgetCurrent()">forget this card</button>`
+      ? `<button class="no small" onclick="killTask()">terminate</button>`
+      : `<span class="dis"><button class="no small" disabled>terminate</button>${helpTip("Nothing is running under atrium, so there is nothing to stop. If the agent runs in a terminal of its own, close it there.")}</span>`
   ].join("");
-  const full = launchFull(current);
-  document.getElementById("d-launch-sec").hidden = !full;
-  document.getElementById("d-launch").textContent = full;
-  const lc = document.getElementById("d-launch-copy");
-  lc.innerHTML = copyIcon();
-  lc.onclick = e => { e.preventDefault(); e.stopPropagation(); copyLogRow(lc, launchFull(current)); };
-  document.getElementById("d-auto-note").textContent = current.auto_approve
-    ? "requests from this session are approved without asking. everything is still recorded, " +
-      "and never rules and paused cards still block."
-    : "";
-
-  paintCardCycle(current);
-
-  // "the board's tone" rather than an empty row, because empty reads as
-  // broken where the default is a real choice.
-  document.getElementById("d-sound").innerHTML =
-    `<option value=""${current.sound ? "" : " selected"}>the board's tone</option>` +
-    soundOptions(current.sound);
-  const iconEl = document.getElementById("d-icon");
-  iconEl.value = current.icon || "";
-  paintIconPreview();
-  // Drawn as you type, since a glyph that renders as a box here will render as
-  // a box on the notification, and that is worth finding out before it does.
-  iconEl.oninput = paintIconPreview;
-  document.getElementById("d-say").value = "";
-  // A message rides a hook, and a session that has ended fires no more of
-  // them. Said rather than prevented: a card can be wrong about being dead,
-  // and queueing something for a session you are about to resume is fair.
-  document.getElementById("d-say-how").textContent =
-    ["dead", "done"].includes(current.status)
-      ? "this session has ended, so anything queued waits until something resumes it."
-      : "";
-  paintQueued();
-
-  const ev = await api(`/v1/tasks/${id}/events?limit=400`);
-  detailEvents = ev.events || [];
-  paintHistoryGaps(ev);
-  paintTimeline();
   detail.showModal();
-}
-
-// Says something to the open card.
-//
-// The reply names which of the two routes it took, and that is the whole point
-// of reporting it: a message typed into a terminal has already landed, and a
-// queued one has not and might not for minutes. One button doing two very
-// different things in silence is how you end up sending it four times.
-//
-// `when` is "done" for send, which waits for the turn to end, or "immediate"
-// for the button beside it, typed in as soon as the input line is empty.
-//
-// Through `busyWhile` on both routes, so Enter pressed again while the first
-// is posting cannot send the same text twice. See js/core.js.
-function sayToCurrent(when = "done") {
-  if (!current) return;
-  const box = document.getElementById("d-say");
-  const text = box.value.trim();
-  if (!text) return;
-  const other = document.getElementById(when === "immediate" ? "d-say-send" : "d-say-now");
-  if (other && other.dataset.busy) return;
-  const btn = document.getElementById(when === "immediate" ? "d-say-now" : "d-say-send");
-  return busyWhile(btn, () => sayNow(current, box, text, when), "sending…");
-}
-
-async function sayNow(task, box, text, when) {
-  const how = document.getElementById("d-say-how");
-  how.textContent = "";
-  try {
-    const res = await api(`/v1/tasks/${task.id}/message`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, when })
-    });
-    box.value = "";
-    how.textContent = sayOutcome(res);
-    await paintQueued();
-  } catch (e) {
-    how.textContent = `not sent: ${e.message || e}`;
-  }
-}
-
-// What happened to a message, from the room's answer. A room without the
-// `when` field answers as it always did.
-function sayOutcome(res) {
-  if (res.delivered === "terminal") return "typed into its terminal.";
-  if (res.warning) return res.warning;
-  if (res.when === "done") return "waiting for its turn to end, then typed in or carried by its Stop hook.";
-  return `queued. it is typed in when the input line clears, or arrives on the session's next tool call${turnEndReach()}`;
-}
-
-// Whether the end of a turn is a second way in, said only when it is true.
-//
-// A queued message rides the next tool call, and a session sitting idle makes
-// none. The Stop hook is the only thing that reaches one, and it is off by
-// default. Claiming a message will arrive "when its turn ends" on a machine
-// where that hook is not wired is the box promising something that will not
-// happen, and the message sits in the queue looking ignored.
-function turnEndReach() {
-  const h = (hookReport && hookReport.hooks || []).find(x => x.event === "turn-end");
-  if (h && h.installed && !h.stale) return ", or when its turn ends.";
-  return ". a session sitting idle makes no tool calls, so it will wait there until " +
-    "something happens. wire the Stop hook under rooms > runners to reach an idle session.";
-}
-
-// What has been said and has not arrived. Only ever queued messages: one typed
-// into a terminal is already gone and has nothing to wait for.
-async function paintQueued() {
-  const host = document.getElementById("d-say-queue");
-  if (!current) return;
-  let msgs = [];
-  try {
-    ({ messages: msgs } = await api(`/v1/tasks/${current.id}/messages`));
-  } catch { return; }
-  setHTML(host, (msgs || []).map(m =>
-    `<div class="q"><span>waiting</span><span class="txt">${esc(m.text)}</span>
-     <span data-tip="${esc(m.created_at)}">${esc(ago(sinceSecs(m.created_at)))} ago</span></div>`
-  ).join(""));
-}
-
-let detailEvents = [];
-
-// The house-keeping kinds. Real, worth keeping, and not what anyone opens a
-// card to read.
-const NOISE_EVENTS = ["status-changed", "prompted", "submitted"];
-
-function paintTimeline() {
-  const seg = document.querySelector("#d-ev-seg .on");
-  const all = seg && seg.dataset.v === "all";
-  const shown = all
-    ? detailEvents
-    : detailEvents.filter(e => !NOISE_EVENTS.includes(e.kind));
-  const hidden = detailEvents.length - shown.length;
-  document.getElementById("d-ev-count").textContent =
-    hidden > 0 ? `${hidden} housekeeping events hidden` : "";
-  setHTML(document.getElementById("d-events"), timelineHTML(shown));
-}
-
-// Says what the history below does not hold, when the room keeps part of it
-// out of the db: older events rolled off the hot window, or kinds routed to a
-// cold sink only. Silent under the default, where the db has everything.
-function paintHistoryGaps(ev) {
-  const gaps = [];
-  if (ev.rolled_off) gaps.push("older events rolled off");
-  const cold = ev.cold_only_kinds || [];
-  if (cold.length) gaps.push(`${cold.join(", ")} kept in the event archive only`);
-  document.getElementById("d-ev-gaps").textContent =
-    gaps.length ? `not shown: ${gaps.join("; ")}` : "";
-}
-
-// One line per thing that happened, newest first.
-//
-// A permission used to take three lines: the request, a status change into
-// needs-permission, and the decision, with the command on the first and the
-// outcome on the third. Reading what was allowed meant pairing them by eye.
-// They are one line here, and the status changes those requests caused are
-// dropped, since the request line already says the session was waiting.
-function timelineHTML(events) {
-  if (!events.length) return '<div class="empty">nothing has happened yet</div>';
-
-  const decisions = {};
-  events.forEach(e => {
-    if (e.kind === "perm-decided" && e.payload && e.payload.id) {
-      decisions[e.payload.id] = e.payload;
-    }
-  });
-
-  const rows = [];
-  events.slice().reverse().forEach(e => {
-    const p = e.payload || {};
-    // Folded into its request below.
-    if (e.kind === "perm-decided" && decisions[p.id]) return;
-    // Churn between running and waiting is what a permission IS, so it says
-    // nothing the request line does not.
-    if (e.kind === "status-changed" && isPermChurn(p)) return;
-
-    if (e.kind === "perm-requested") {
-      rows.push(permRow(e, p, decisions[p.id]));
-      return;
-    }
-    if (e.kind === "notified" && (p.by === "context-cycle" || p.by === "new-context")) {
-      rows.push(cycleRow(e, p));
-      return;
-    }
-    if (e.kind === "notified" && p.by === "cache-cold") {
-      const text = p.started ? "handed off before its cache went cold" : "cache handoff not started: " + (p.error || "");
-      rows.push(evRow({
-        cls: "key cold-handoff", verdict: "❄ cache handoff", vcls: p.started ? "" : "no", at: evTime(e),
-        by: "cache going cold", text: esc(text), title: esc(text)
-      }));
-      return;
-    }
-    const detail = p.text || p.content || p.command
-      || (p.from ? `${p.from} to ${p.to}` : "")
-      || (p.decision ? `${p.decision}: ${p.reason || ""}` : "");
-    rows.push(evRow({
-      cls: KEY_EVENTS.includes(e.kind) ? "key" : "",
-      verdict: esc(e.kind), at: evTime(e),
-      text: esc(String(detail).slice(0, 400))
-    }));
-  });
-  return `<div class="evtable">${rows.join("")}</div>`;
-}
-
-// A context cycle's line. The handoff `atrium ready` stored is a `handoff` row with its full text behind a
-// disclosure, so it can be read after the temporary directory it was written to is cleaned.
-function cycleRow(e, p) {
-  const at = evTime(e);
-  const by = p.by === "context-cycle" ? "context cycle" : "new context";
-  if (p.handoff !== undefined) {
-    const head = `${p.bytes || String(p.handoff).length} bytes from ${p.path || "the handoff file"}` +
-      (p.cut ? `, ${p.cut}` : "");
-    return evRow({
-      cls: "key", verdict: "handoff", at, by: esc(by), title: esc(p.path || ""),
-      text: `<details class="handoff"><summary>${esc(head)}</summary><pre>${esc(p.handoff)}</pre></details>`
-    });
-  }
-  const k = n => Math.round(Number(n) / 1000) + "k";
-  const text = p.started ? `past its limit, ${k(p.tokens)} of ${k(p.limit)}. asked for a handoff at ${p.path || ""}`
-    : p.done ? `cleared and woken on ${p.path || "its handoff"}`
-    : p.dropped ? `dropped: ${p.dropped}`
-    : p.failed ? `failed: ${p.failed}`
-    : "";
-  return evRow({
-    cls: "key", verdict: p.failed ? "cycle failed" : "context", vcls: p.failed ? "no" : "",
-    at, by: esc(by), text: esc(text.slice(0, 400)), title: esc(text)
-  });
-}
-
-// One event, one row, five columns. Anything with nothing to put in a column
-// leaves it empty rather than pushing the rest along, so the columns line up
-// down the whole list and can be read as one.
-function evRow(r) {
-  return `<div class="evr ${r.cls || ""}">
-    <span class="c-verdict ${r.vcls || ""}">${r.verdict}</span>
-    <span class="c-at">${esc(r.at)}</span>
-    <span class="c-tool">${r.tool || ""}</span>
-    <span class="c-cmd" data-tip="${r.title || ""}">${r.text || ""}</span>
-    <span class="c-by">${r.by || ""}</span>
-  </div>`;
-}
-
-const isPermChurn = p =>
-  (p.from === "running" && p.to === "needs-permission") ||
-  (p.from === "needs-permission" && p.to === "running");
-
-const evTime = e => (e.at || "").slice(11, 19);
-
-// A request and what answered it, on one line.
-//
-// The verdict leads, because scanning an audit log is looking for the ones that
-// were allowed. What answered it matters as much as the answer: approved by a
-// standing rule, by auto mode, or by you are three different things.
-function permRow(e, p, d) {
-  const raw = String(p.command || p.text || "");
-  const row = {
-    cls: "key", at: evTime(e),
-    tool: esc(p.tool || ""), text: esc(raw.slice(0, 400)), title: esc(raw)
-  };
-  if (!d) {
-    return evRow(Object.assign(row, { verdict: "asked", vcls: "pending" }));
-  }
-  const ok = d.decision === "approve";
-  return evRow(Object.assign(row, {
-    verdict: ok ? "approved" : "blocked",
-    vcls: ok ? "ok" : "no",
-    // A block's reason is the useful half, so it takes the column that would
-    // otherwise say what refused it.
-    by: esc(!ok && d.reason ? d.reason : decidedHow(d))
-  }));
-}
-
-// Who or what answered. `by` carries the rule's own pattern when a rule
-// matched, so anything that is not one of the known words IS the rule.
-function decidedHow(d) {
-  switch (d.by) {
-    case "auto": return "auto mode";
-    case "global-auto": return "global auto";
-    // An answer given earlier and handed back to a retry. Said out loud,
-    // because a refusal nobody remembers giving is the confusing one.
-    case "replay": return "replayed an earlier answer";
-    // Nobody answered this: the session that asked it went away first.
-    case "orphaned": return "the session went away";
-    case "you": case "": case undefined: return "you";
-    case "message": return "a message you queued";
-    case "paused": return "the card was paused";
-    default: return `rule ${d.by}`;
-  }
 }
 
 // Reads its arguments off `current` rather than carrying a worktree path
@@ -864,71 +557,6 @@ function decidedHow(d) {
 function resumeCurrent() {
   if (!current) return;
   openLaunch(current.runner || "claude", current.resume_id, current.worktree || "");
-}
-
-// Auto mode: stop asking, keep recording.
-//
-// Turning it on is confirmed, since it changes what the gate does. Turning it
-// off is not: going back to being asked is the safe direction.
-async function toggleAuto() {
-  if (!current) return;
-  const on = !current.auto_approve;
-  if (on) {
-    const ok = await confirmUser("let this session run unattended?",
-      `Requests from <b>${esc(current.display_title)}</b> will be approved without asking you.` +
-      `<br><br>Everything is still recorded, and <b>never</b> rules and paused cards still block. ` +
-      `Read what it did afterwards with <b>what did it do?</b>`,
-      "turn auto mode on");
-    if (!ok) return;
-  }
-  const title = current.display_title;
-  await patch({ auto_approve: on });
-  detail.close();
-  toast(on ? "auto mode on" : "auto mode off",
-    on ? `${title} will not stop to ask` : `${title} will ask again`);
-}
-
-// The counterpart to auto mode: what this session was allowed to do.
-//
-// The daemon folds repeats, groups by tool, and puts the decisions nobody saw
-// first, since a flat list of four hundred approvals will not be read.
-async function openReview() {
-  if (!current) return;
-  const rev = await api(`/v1/tasks/${current.id}/review`);
-  const title = current.display_title;
-  if (!rev.total) {
-    tellText("nothing to review", `${title} has not been asked about anything yet.`);
-    return;
-  }
-
-  const head = `<div class="rev-sum">
-    <span><b>${rev.total}</b> decisions</span>
-    <span class="${rev.unattended ? "hot" : ""}"><b>${rev.unattended}</b> nobody saw</span>
-    <span class="${rev.blocked ? "hot" : ""}"><b>${rev.blocked}</b> blocked</span>
-  </div>`;
-
-  const body = rev.groups.map(g => `
-    <details class="rev-group" ${g.unattended ? "open" : ""}>
-      <summary>
-        <span class="tool">${esc(g.tool)}</span>
-        <span class="n">${g.count}</span>
-        ${g.unattended ? `<span class="chip auto">${g.unattended} unseen</span>` : ""}
-        ${g.blocked ? `<span class="chip warn">${g.blocked} blocked</span>` : ""}
-      </summary>
-      <div class="rev-rows">${g.entries.map(e => `
-        <div class="rev-row ${e.unattended ? "unseen" : ""}">
-          <span class="verdict ${e.decision === "approve" ? "" : "no"}">${
-            e.decision === "approve" ? "approved" : "blocked"}</span>
-          <span class="rep" ${e.repeats > 1 ? `data-tip="identical calls folded together"` : ""}>${
-            e.repeats > 1 ? "&times;" + e.repeats : ""}</span>
-          <code data-tip="${esc(e.command)}">${esc(e.command)}</code>
-          <span class="by">${e.unattended ? `<span class="auto">auto</span>` : esc(e.by || "you")}</span>
-        </div>`).join("")}</div>
-    </details>`).join("");
-
-  reviewDlg.querySelector("#rev-title").textContent = `what ${title} did`;
-  reviewDlg.querySelector("#rev-body").innerHTML = head + body;
-  reviewDlg.showModal();
 }
 
 // Patches the card the detail dialog is open on. Goes through patchTask so
@@ -1095,121 +723,32 @@ async function killTaskNow(t) {
   refresh();
 }
 
-// COMMITTING ON CHANGE IS THE ONLY WAY THIS DIALOG COMMITS, and the button at
-// the top says so rather than adding a second one.
-//
-// `patchOnChange` is what every field here does: `change` fires when focus
-// leaves the field, and pressing the button at the top of the dialog moves
-// focus, so the write lands on the way out. That is correct and it was
-// invisible, which made it indistinguishable from having lost the edit, and
-// `close` is the wrong word for a button that commits.
-//
-// TWO WAYS OUT OF THAT, and only one of them is whole.
-//
-// Holding the edits and committing on a button was the other, and it was
-// refused. This dialog is LIVE: it repaints, it polls the queue, it draws a
-// timeline, and the daemon changes the card underneath it while it is open. A
-// held draft would have to argue with all of that, and every other field in the
-// board (tags, sound, icon, recap, the settings screen) commits on change, so
-// this would become the one dialog on the board that behaves differently.
-//
-// Adding a save button while `change` still patched was refused for a simpler
-// reason: two ways to commit, one of them still invisible, which is the defect
-// with a button in front of it.
-//
-// So: commit on change, keep it the only path, and SAY SO. The button is named
-// for what it does and the field says the edit is already kept. Nothing here
-// can be lost by pressing the wrong thing, because there is no wrong thing to
-// press.
+// Recap commits on change. Tags and the description wait for "Save changes".
 const patchOnChange = (id, build) =>
   document.getElementById(id).addEventListener("change", e => patch(build(e.target.value)));
 
-patchOnChange("d-why", v => ({ why: v }));
 patchOnChange("d-recap", v => ({ recap: v }));
 
-// Picked and heard in one place. Choosing a bell you cannot hear until the
-// next time that agent wants you is choosing blind, and by then it is too late
-// to be the one you meant.
-document.getElementById("d-sound").addEventListener("change", e => {
-  const name = e.target.value;
-  patch({ sound: name });
-  if (name) alerting.preview(name);
+// Tags and the description are held until "Save changes", so a poll repaint must not overwrite a draft.
+let tagDraft = [], tagsFor = "", whyFor = "";
+const whyDirty = () => document.getElementById("d-why").value !== ((current && current.why) || "");
+document.getElementById("d-why").addEventListener("input", () => paintSave());
+const tagsDirty = () => JSON.stringify(tagDraft) !== JSON.stringify((current && current.tags) || []);
+function paintTags() {
+  setHTML(document.getElementById("d-tag-chips"), tagDraft.map(t =>
+    `<span class="chip tagchip">${esc(t)}<button type="button" class="tag-x" aria-label="remove ${esc(t)}"` +
+    ` onclick="dropTag('${esc(t).replace(/'/g, "&#39;")}')">&times;</button></span>`).join(""));
+  paintKnownTags();
+  paintSave();
+}
+function dropTag(t) { tagDraft = tagDraft.filter(x => x !== t); paintTags(); }
+document.getElementById("d-tags").addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== ",") return;
+  e.preventDefault();
+  const v = e.target.value.trim().toLowerCase();
+  e.target.value = "";
+  if (v) addTag(v);
 });
-function previewCardSound() {
-  const name = document.getElementById("d-sound").value;
-  alerting.preview(name || alerting.get().input);
-}
-
-// THE CONTEXT CYCLE, this card's switch and its own limit, both overrides. The line under them says the limit in
-// force and which layer it came from: the card's own, the hub's for its harness, or the built-in default.
-function paintCardCycle(t) {
-  const sw = document.getElementById("d-ctx-cycle");
-  const box = document.getElementById("d-ctx-limit");
-  const now = document.getElementById("d-ctx-now");
-  if (!sw || !box || !now || !t) return;
-  const o = t.overrides || {};
-  sw.checked = String(o.context_cycle || "").toLowerCase() !== "off";
-  box.value = o.context_limit_k || "";
-  const c = t.context_size || {};
-  box.max = c.ceiling_k || 2000;
-  const clr = document.getElementById("d-ctx-clear");
-  if (clr) clr.hidden = !o.context_limit_k;
-  const ceil = c.ceiling_k ? ` its runner compacts on its own soon after ${c.ceiling_k}k, so that is the most it takes.` : "";
-  now.textContent = !t.context_size
-    ? "this card has no context size yet, so nothing cycles it."
-    : !sw.checked
-      ? `its cycle is off. its limit would be ${limitFrom(t)}.${ceil}`
-      : `cycles at ${limitFrom(t)}${c.source === "card" ? ", its own" : ""}.${ceil}`;
-}
-
-// Clears the card's own limit, so the hub's applies again.
-function clearCardLimit() {
-  const box = document.getElementById("d-ctx-limit");
-  if (!box) return;
-  box.value = "";
-  saveCardCycle();
-}
-
-async function saveCardCycle() {
-  if (!current) return;
-  const sw = document.getElementById("d-ctx-cycle");
-  const box = document.getElementById("d-ctx-limit");
-  const overrides = {
-    context_cycle: sw.checked ? "" : "off",
-    context_limit_k: String(box.value || "").trim()
-  };
-  // patchTask says why itself when the room refuses, and answers nothing.
-  const res = await patchTask(current.id, { overrides });
-  if (!res) { paintCardCycle(current); return; }
-  current.overrides = Object.assign({}, current.overrides, overrides);
-  flashSaved(box);
-  paintCardCycle(current);
-  refresh();
-}
-
-// Saved on the way out of the field, not on every keystroke. An emoji arrives
-// a code unit at a time and half of one is not a mark worth storing.
-patchOnChange("d-icon", v => ({ icon: v.trim() }));
-
-// Enter sends, shift-enter is a newline. The chat convention, because this is
-// one: short things said to somebody, in a row. Escape would close the dialog
-// out from under a half-typed message, so it is caught and only clears the box.
-// Ctrl-enter is the immediately button.
-document.getElementById("d-say").addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sayToCurrent(e.ctrlKey || e.metaKey ? "immediate" : "done");
-  } else if (e.key === "Escape" && e.target.value) {
-    e.preventDefault();
-    e.stopPropagation();
-    e.target.value = "";
-  }
-});
-
-// Saved on change rather than on every keystroke, so a half-typed tag is not
-// stored and read straight back under the cursor. The daemon lower cases and
-// dedupes, so what comes back may differ from what was typed.
-patchOnChange("d-tags", v => ({ tags: v.split(",").map(s => s.trim()).filter(Boolean) }));
 
 // Every tag already in use, so the second card gets the same spelling as the
 // first. Free text with no memory is how "discourse" and "discource" both end
@@ -1223,21 +762,31 @@ function knownTags() {
 function paintKnownTags() {
   const host = document.getElementById("d-tag-known");
   if (!host) return;
-  const mine = new Set(current && current.tags || []);
-  const rest = knownTags().filter(t => !mine.has(t));
+  const typed = document.getElementById("d-tags").value.trim().toLowerCase();
+  const mine = new Set(tagDraft);
+  const rest = typed ? knownTags().filter(t => !mine.has(t) && t.includes(typed)).slice(0, 6) : [];
   setHTML(host, rest.map(t =>
-    `<button class="chip tag" style="--ghue:${groupHue(t)}"
-       onclick="addTag('${esc(t).replace(/'/g, "&#39;")}')">+ ${esc(t)}</button>`).join(""));
+    `<a onclick="addTag('${esc(t).replace(/'/g, "&#39;")}')">${esc(t)}</a>`).join(""));
 }
+function helpTip(t) { return `<span class="help" tabindex="0" data-tip="${esc(t)}">?</span>`; }
 
 function addTag(tag) {
-  const el = document.getElementById("d-tags");
-  const have = el.value.split(",").map(s => s.trim()).filter(Boolean);
-  if (have.includes(tag)) return;
-  have.push(tag);
-  el.value = have.join(", ");
-  patch({ tags: have });
-  paintKnownTags();
+  if (!tagDraft.includes(tag)) tagDraft.push(tag);
+  paintTags();
+}
+
+function paintSave() {
+  const dirty = tagsDirty() || whyDirty();
+  document.getElementById("d-save").disabled = !dirty;
+  document.getElementById("d-save-note").textContent = dirty ? "edits are kept when you save" : "";
+}
+
+async function saveChanges() {
+  const body = {};
+  if (tagsDirty()) body.tags = tagDraft;
+  if (whyDirty()) body.why = document.getElementById("d-why").value;
+  if (Object.keys(body).length) await patch(body);
+  paintSave();
 }
 
 // Holding the repaint while you type is TURNED OFF.
@@ -1389,6 +938,8 @@ function repaintLists(signal, fromStore) {
     backlog: () => Promise.resolve(),
     // Read on open and on its refresh button. See js/hubrepos.js.
     hubrepos: () => Promise.resolve(),
+    // Sample data that repaints itself on a click, so a board event has nothing to do. See js/ciloop.js.
+    ciloop: () => Promise.resolve(),
     // Live by its own `pr` events, like the audit pane. See js/pulls.js.
     pulls: () => { pullsPaint(); return Promise.resolve(); },
     // Live by its own `usage` events. See js/usage-charts.js.

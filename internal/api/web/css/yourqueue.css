@@ -169,3 +169,24 @@ main > #queue { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: co
   content: attr(data-tip); position: absolute; right: -6px; top: 22px; z-index: 40; width: 260px; padding: 6px 8px; text-align: left;
   background: var(--shell-1); color: var(--body); border: 1px solid var(--stroke); border-radius: 6px; font: 400 var(--fs-sm)/1.4 var(--sans);
 }
+
+/* The gate bar, under the terminal, in that terminal's own colours. */
+.gatebar {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; max-height: 40%; overflow: auto;
+  background: var(--term-bg, var(--shell-0)); color: var(--term-fg, var(--body));
+  border-top: 2px solid var(--term-edge, var(--wait)); font-size: var(--fs-sm);
+}
+.gatebar[hidden] { display: none; }
+.gatebar .gb-line { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.gatebar .gb-verb { flex: none; font-weight: 700; color: var(--term-edge, var(--wait)); }
+.gatebar .gb-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6.5em; overflow: auto; }
+.gatebar .gb-link { color: var(--term-edge, var(--teal)); text-decoration: underline; }
+.gatebar .gb-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#t-gatebar .yq-reply {
+  flex: 1 1 220px; min-width: 0; resize: vertical; font: inherit; padding: 4px 8px; border-radius: var(--r-sm);
+  background: transparent; color: var(--term-fg, var(--body)); border: 1px solid var(--term-line, var(--stroke));
+}
+#t-gatebar .yq-btn { background: transparent; color: var(--term-fg, var(--body)); border-color: var(--term-line, var(--stroke)); }
+#t-gatebar .yq-btn.primary {
+  background: var(--term-edge, var(--teal)); border-color: var(--term-edge, var(--teal)); color: var(--term-bg, #fff);
+}

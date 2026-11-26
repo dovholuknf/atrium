@@ -788,6 +788,13 @@ const alerting = (() => {
       return;
     }
 
+    // A kind whose notification switch is off draws no box on the board either, and the tray still records it.
+    if (!alertWants(prefs, cat, "os")) {
+      logNotification(title, body, goTo, permId || (opts.pending ? subject : "") || null,
+        taskFor || artFor || null);
+      return;
+    }
+
     // THE KEY IS WHAT RETIRES IT, so only a pending item gets one. `reapToasts`
     // takes down every keyed toast whose key is not waiting or pending, in the
     // same poll that raised it. Keyed by any subject, "X is on the board", a

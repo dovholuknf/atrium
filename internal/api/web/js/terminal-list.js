@@ -186,14 +186,12 @@ function paintTermShow() {
 prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); repaintMinionViews(); });
 
 // WHICH KIND OF ROW A CARD IS, to the chips:
-//   `gone`    a closed card with no session. Nothing to resume, listed only while it is the attached one.
 //   `live`    a runner is up, or it was joined from the operator's own terminal. Always listed.
 //   `paused`  stopped, or idle-parked: no process, and it CAN be resumed (a dead one cannot). Behind the paused chip.
 //             Parking frees the process and the chip is what lists it.
 //   `dead`    pinned, with its runner gone. Behind the dead chip.
 //   ``        not a row of the list.
 function termRowKind(t) {
-  if (termClosedGone(t)) return "gone";
   if (t.status === "paused") return "paused";
   if (t.supervised || termJoined(t)) return "live";
   if (t.parked_at) return "paused";
@@ -294,7 +292,7 @@ async function joinedClick(id) {
 function termKept(t, show) {
   if (!termTask || t.id !== termTask.id) return false;
   const k = termRowKind(t);
-  return k === "gone" || (k === "paused" && !show.has("paused")) || (k === "dead" && !show.has("dead"));
+  return (k === "paused" && !show.has("paused")) || (k === "dead" && !show.has("dead"));
 }
 
 // Whether the list holds this card at all, given the chips. Live rows always, the rest by their chip.
@@ -833,6 +831,11 @@ function termMenuItems(id, t) {
     { sep: true },
     // Everything about what this card is, the context limit included (settings-spine.js).
     { label: "settings", act: () => openTask(id) },
+    typeof openLookFor === "function" ? {
+      label: "look…",
+      help: "Opens the look page on this card's theme and font, to change them for this card alone.",
+      act: () => openLookFor(id)
+    } : null,
     { sep: true },
     typeof naCloneItem === "function" ? naCloneItem(id, t) : null,
     // What the board calls paused. It stops the runner and the card keeps its place, hidden from this list unless
@@ -1248,7 +1251,7 @@ function termRow(t, deep, kid, inherit, plain) {
            // so the bucket keeps the shape you gave it, and it still answers
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
-           termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${!kid && !plain && termAgeOrder() ? " noreorder" : ""}${wear.cls}${newCardClass(t)}"
+           termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${waitRowCls(t)}${!kid && !plain && termAgeOrder() ? " noreorder" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"${kid || plain ? "" : termAgeOrder() ? "" : ` draggable="true"`}
          data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. resume it from the right-click menu"
            : "\nthis one has exited. resume it from the right-click menu") +
@@ -1401,6 +1404,56 @@ function termNest(list) {
   return { kids, nested };
 }
 
+// What a row waits on you for, or null: its open questions (the last turn's and atrium asks) and its gate.
+function waitsOf(t) {
+  if (!t || termCold(t)) return null;
+  const s = t.seen;
+  const qs = s && s.answered === false ? s.open_questions || [] : [];
+  const unread = s && s.answered === false && !qs.length && s.questions_unparsed ? 1 : 0;
+  const mine = !!t.ask && !t.ask_peer;
+  const n = mine ? Math.max(1, Number(t.asks_open) || 1) : 0;
+  const verb = mine && t.ask_verb ? String(t.ask_verb).toLowerCase() : "";
+  const acts = verb ? [{ verb, text: t.ask }] : [];
+  const asks = mine ? (verb ? [] : [t.ask]).concat(n > 1 ? [`+${n - 1} more`] : []) : [];
+  const q = qs.length + unread + (mine ? n - acts.length : 0);
+  if (!q && !acts.length) return null;
+  const lines = qs.concat(unread ? ["questions atrium could not read"] : [], asks);
+  const tip = [
+    q ? q + " question" + (q > 1 ? "s" : "") + ":\n" + lines.map((x, i) => "  " + (i + 1) + ". " + x).join("\n") : "",
+    acts.length ? acts.length + " to act on:\n" + acts.map(a => "  " + a.verb + ": " + a.text).join("\n") : ""
+  ].filter(Boolean).join("\n\n");
+  return { q, a: acts.length, word: acts.length === 1 ? acts[0].verb : String(acts.length), tip };
+}
+
+const WAIT_HAND = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path fill="currentColor"
+  d="M7.2 1.6c.6 0 1 .4 1 1V7h.4V2.2c0-.6.4-1 1-1s1 .4 1 1V7h.4V3.4c0-.6.4-1 1-1s1 .4 1 1v6.2c0 3-2.1 5.2-4.9 5.2-1.7 0-3-.7-4-2.1L2.3 9.6c-.4-.5-.3-1.1.2-1.4.5-.3 1.1-.2 1.4.2l1.3 1.7V3.2c0-.6.4-1 1-1 .4 0 .7.2.9.5V2.6c0-.6.4-1 1-1z"/></svg>`;
+
+function waitRowCls(t) { return waitsOf(t) ? " wyou" : ""; }
+
+// The card itself: its terminal, with its ask strip under it, or one click away with the attention flag off.
+function waitOpen(id) {
+  const a = typeof yqAsks === "function" && yqAsks(lastTasks).find(x => x.card && x.card.id === id);
+  if (!a) return attachTask(id);
+  if (yqAttn()) return yqOpenAsk(a);
+  Object.assign(yqView, { key: a.key, ask: a, mode: "term", at: Date.now(), qi: 0, drop: false, page: 0, sent: null, listed: false });
+  attachTask(id);
+  yqPaintAsk(true);
+}
+
+function waitChip(t) {
+  if (!flagOn("waitchip")) return "";
+  const w = waitsOf(t);
+  if (!w) return "";
+  const id = esc(t.id);
+  const q = w.q ? `<span class="wq">? ${w.q}</span>` : "";
+  const a = w.a ? `<span class="wa">${WAIT_HAND}${esc(w.word)}</span>` : "";
+  return `<span class="chip wchip wtip${w.q ? " hasq" : ""}${w.a ? " hasa" : ""}" role="button" tabindex="0" data-tip="${esc(w.tip)}"
+    aria-label="${esc("waiting on you. " + w.tip)}"
+    onclick="event.stopPropagation();waitOpen('${id}')"
+    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();waitOpen('${id}')}"
+    >${q}${a}</span>`;
+}
+
 // The chips on the right of a terminal row: a held peer message, and the
 // popped-out marker. Drawn in one .chips box so a row can carry both.
 function termRowChips(t, lead) {
@@ -1426,7 +1479,7 @@ function termRowChips(t, lead) {
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
   const wk = typeof walkChip === "function" ? walkChip(t) : "";
-  const inner = (lead || "") + minion + wk + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true, typeof yqAttn === "function" && yqAttn()) + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + wk + termLeftoverChip(t) + stuck + newCardChip(t) + lim + ncx + seenChips(t, true, !termCold(t) || (typeof yqAttn === "function" && yqAttn())) + held + waitChip(t) + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -2042,8 +2095,7 @@ async function renderTermList() {
   // A live joined card (see `termJoined`) is listed too, unattachable. A parked
   // or exited one is cold, so only a pin keeps it here.
   // WHICH ROWS THE LIST CAN HOLD AT ALL is `termRowKind`: live ones always, a stopped card or a pinned row whose runner
-  // is gone only while its chip is on, a closed card (`atrium:closed`, nothing left to resume) only while it is the
-  // attached one. The attached one stays whatever is off, so turning a chip off never pulls the pane out from under you.
+  // is gone only while its chip is on, a closed card (`atrium:closed`) like any other. The attached one stays whatever is off, so turning a chip off never pulls the pane out from under you.
   const show = termShow();
   const pool = all.filter(t => !t.offline);
   const tasks = pool.filter(t => termListed(t, show));
@@ -2166,6 +2218,7 @@ async function renderTermList() {
   }
   termHeadPlace();
   if (typeof yqAttn === "function" && yqAttn()) yqPaint();
+  else if (typeof gbPaint === "function") gbPaint();
   requestAnimationFrame(placeTabBridge);
   // Scrolling the rows moves the attached card under a bridge that is not
   // moving with it, and so does the tray rolling up or down. A capturing
@@ -2208,7 +2261,7 @@ const TERM_ENDED_MAX = 30;
 const termEndedMore = new Set();
 
 function termEnded(t) {
-  return !!t && !t.offline && !t.supervised && !t.pinned && !t.parked_at && !termClosedGone(t) &&
+  return !!t && !t.offline && !t.supervised && !t.pinned && !t.parked_at &&
     (t.status === "done" || t.status === "dead");
 }
 

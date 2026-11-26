@@ -206,6 +206,7 @@
   function badge() {
     const b = document.getElementById("m-queue-btn");
     if (!b) return;
+    b.hidden = typeof flagOn === "function" && !flagOn("queue");
     const n = asks().length;
     b.textContent = "queue";
     if (n) b.appendChild(el("em", "", String(n)));
