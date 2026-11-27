@@ -5,7 +5,7 @@ go 1.26.11
 require (
 	github.com/dovholuknf/atrium/internal/base v0.0.0
 	github.com/google/uuid v1.6.0
-	modernc.org/sqlite v1.62.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
